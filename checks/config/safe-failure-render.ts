@@ -748,7 +748,17 @@ const EXEMPT_LOOKBACK = 8;
 const MIN_REASON_CHARS = 30;
 const PLACEHOLDER = /^(todo|tbd|fixme|n\/?a|none|safe|ok|fine|why|reason|\.+|-+|\?+)\b/i;
 
-const SOURCES = "gateway/*/src/main/kotlin/**/*.kt";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const SOURCES = [
+  "gateway/*/src/main/kotlin/**/*.kt", "client/src/main/kotlin/**/*.kt", "core/src/main/kotlin/**/*.kt",
+  "upstream/src/main/kotlin/**/*.kt", "dialects/*/src/main/kotlin/**/*.kt", "providers/*/src/main/kotlin/**/*.kt",
+  "daemon/*/src/main/kotlin/**/*.kt", "app/src/main/kotlin/**/*.kt", "quality/*/src/main/kotlin/**/*.kt",
+];
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -798,7 +808,9 @@ function disposition(
 /** Every rendered-throwable site under a credential/state file, with its disposition. */
 function sites(root: string): Site[] {
   const out: Site[] = [];
-  const files = [...new Bun.Glob(SOURCES).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = SOURCES
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   for (const rel of files) {
     const path = join(root, rel);
     const text = readFileSync(path, "utf8");
@@ -861,7 +873,7 @@ function main(argv: string[]): number {
     return 2;
   }
   // THE ROOT IS PASSED AS GIVEN, never resolved: the walk globs argv[2] verbatim and prints the
-  // paths that yields, so `check .` reports `gateway/app/...` and an absolute root reports
+  // paths that yields, so `check .` reports `app/...` and an absolute root reports
   // absolute paths. The caller chooses the shape of every reported path by how it spells the root.
   // Resolving here made every path absolute, which the tree differential could not see (no violation
   // lines to print on a clean tree) and the arms could not see either (they pass an absolute root).

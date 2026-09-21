@@ -58,7 +58,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const LOOP = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/AuthProbeLoop.kt");
+const LOOP = resolve(ROOT, "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(text: string | null): string[] {

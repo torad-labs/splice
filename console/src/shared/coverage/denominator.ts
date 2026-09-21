@@ -83,16 +83,16 @@ export function parseRouteNames(markdown: string): string[] {
 }
 
 /** The runtime knob enum — the denominator for `kind: 'knob'`. */
-export const KNOB_SOURCE = 'gateway/core/src/main/kotlin/splice/core/config/Knob.kt';
+export const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';
 
 /** The six topology sources named by M1-04; CompactionScope.kt declares no @SerialName. */
 export const TOPOLOGY_SOURCES: readonly string[] = [
-  'gateway/core/src/main/kotlin/splice/core/topology/Topology.kt',
-  'gateway/core/src/main/kotlin/splice/core/topology/QuirksConfig.kt',
-  'gateway/core/src/main/kotlin/splice/core/topology/TopologySchema.kt',
-  'gateway/core/src/main/kotlin/splice/core/prompt/HeadSystemPrompt.kt',
-  'gateway/core/src/main/kotlin/splice/core/model/TokenCost.kt',
-  'gateway/core/src/main/kotlin/splice/core/compaction/CompactionScope.kt',
+  'core/src/main/kotlin/splice/core/topology/Topology.kt',
+  'core/src/main/kotlin/splice/core/topology/QuirksConfig.kt',
+  'core/src/main/kotlin/splice/core/topology/TopologySchema.kt',
+  'core/src/main/kotlin/splice/core/prompt/HeadSystemPrompt.kt',
+  'core/src/main/kotlin/splice/core/model/TokenCost.kt',
+  'core/src/main/kotlin/splice/core/compaction/CompactionScope.kt',
 ];
 
 export const FEATURES_SOURCE = '.dev/campaigns/web-console/FEATURES.md';

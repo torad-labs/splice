@@ -59,14 +59,14 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // exact file that now holds the declaration, NOT widened to the package: a directory-wide search
 // would pass on the field living anywhere, which is precisely the resolution loss this campaign
 // exists to prevent. If ConfigLayers moves again, move this path with it.
-const LAYERS = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/config/ConfigResults.kt");
+const LAYERS = resolve(ROOT, "core/src/main/kotlin/splice/core/config/ConfigResults.kt");
 // HD-24: configJson (the "perHead" emitter) and the /api/config route (the head query-param read)
 // split across two files when ControlServer decomposed — the head param stayed in ControlServer's
 // route table, "perHead" moved with configJson into ConfigRoutes. Concatenated like the campaign's
 // other multi-file wall keys: ALL-OF still applies, and either file missing is a vacuity RED.
 const CTRL_FILES = [
-  resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/ControlServer.kt"),
-  resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/api/ConfigRoutes.kt"),
+  resolve(ROOT, "daemon/control/src/main/kotlin/splice/control/ControlServer.kt"),
+  resolve(ROOT, "daemon/control/src/main/kotlin/splice/control/api/fleet/ConfigRoutes.kt"),
 ];
 const WEBUI = resolve(ROOT, "console/src/entities/config/api/index.ts");
 

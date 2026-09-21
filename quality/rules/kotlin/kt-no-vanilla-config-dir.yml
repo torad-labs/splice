@@ -29,7 +29,7 @@
 #
 # WHAT THIS RULE CANNOT SEE, and what covers it. The wall is a LINT shape: a regression that reaches
 # the vanilla dir through Keys.CLAUDE (the materializer's own globalDir()) is not a literal and is not
-# matched here. That half is the BEHAVIOURAL pin — gateway/core/src/test/kotlin/splice/core/launch/
+# matched here. That half is the BEHAVIOURAL pin — client/src/test/kotlin/splice/client/
 # ClaudeConfigIsolationTest.kt — which materializes a head into a temp HOME and asserts (a) nothing
 # under the head dir resolves outside it, and (b) nothing under the fake vanilla dir was created or
 # modified except the session registry. Same-checker-twice: the lint shape blocks the spelling at
@@ -50,12 +50,14 @@ note: >
   generated state belongs under its OWN CLAUDE_CONFIG_DIR. A shared projects tree is the 2026-09-16
   incident: it put 95 head transcripts in the vanilla tree and broke the vanilla client's resume.
 files:
-  - gateway/core/src/main/kotlin/splice/core/launch/**/*.kt
-  - gateway/control/src/main/kotlin/splice/control/Launch*.kt
-  - gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
+  # restructure PR 3: core/launch became the :client module, so the launch seam this wall binds is
+  # client/'s whole main source set. Same files, same wall — only the directory changed.
+  - client/src/main/kotlin/splice/client/**/*.kt
+  - daemon/control/src/main/kotlin/splice/control/Launch*.kt
+  - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
 ignores:
   # the ONE dated entry: the single source of the vanilla dir's NAME (Keys.CLAUDE / Keys.CLAUDE_DIR)
-  - gateway/core/src/main/kotlin/**/launch/ClaudeConfigKeys.kt
+  - client/src/main/kotlin/**/ClaudeConfigKeys.kt
 rule:
   kind: string_literal
   has:

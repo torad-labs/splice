@@ -27,7 +27,7 @@
 #   6  the concentration leg removed from / commented out of gate.sh -> routing guard, forward half
 #  13  85 band-low files in ONE package, file census green      -> PACKAGE REGRESSION arm (V4-93)
 #  14  PACKAGE_MAX_FILES held above the measured worst package   -> PACKAGE SLACK arm (V4-93)
-#  16  SRC_GLOB pointed at nothing                              -> empty-census refusal (V4-93)
+#  16  SRC_GLOBS pointed at nothing                             -> empty-census refusal (V4-93)
 #
 # plus the GREEN arms, which assert a census rather than a refusal: 7/7b (the type census against
 # ast-grep's own AST) and 15 (the PACKAGE census's files / summed C / median C for a planted
@@ -61,13 +61,19 @@ mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/gateway"
 # The routing wall (V4-145) and the oracle (V4-158) are bun, and both import the Python-semantics
 # shims from ../e2e/.
 cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$tmp/checks/e2e/"
-for main in "$ROOT"/gateway/*/src/main; do
-  [ -d "$main" ] || continue
-  mod="${main#"$ROOT"/gateway/}"
-  mod="${mod%%/*}"
-  ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
+# THE LINK SET COMES FROM settings.gradle.kts, never from one directory (restructure PR 3 moves the
+# modules out of gateway/ one commit at a time): a harness that measures a tree with a module
+# missing hands its control a red that reads exactly like a real regression — or, worse, a green
+# over a smaller tree. Every module home the build declares is linked; none is spelled here.
+module_dirs="$(grep -oE 'projectDir = file\("[^"]+"\)' "$ROOT/settings.gradle.kts" | sed -E 's/.*file\("([^"]+)"\)/\1/' | sort -u)"
+[ -n "$module_dirs" ] || { echo "  ✗ concentration-selftest: settings.gradle.kts states no projectDir — nothing to link"; exit 1; }
+for dir in $module_dirs; do
+  [ -d "$ROOT/$dir/src/main" ] || continue
+  mkdir -p "$tmp/$(dirname "$dir")"
+  [ -e "$tmp/$dir" ] || ln -s "$ROOT/$dir" "$tmp/$dir"
 done
-[ -e "$tmp/gateway/core" ] || { echo "  ✗ concentration-selftest: no gateway modules found under $ROOT"; exit 1; }
+[ -e "$tmp/core/src/main" ] || { echo "  ✗ concentration-selftest: :core is not linked — the harness lost the first module that moved out of gateway/"; exit 1; }
+[ -e "$tmp/client/src/main" ] || { echo "  ✗ concentration-selftest: :client is not linked — the harness lost a module home"; exit 1; }
 
 reset_oracle() { cp "$ROOT/checks/concentration.ts" "$ORACLE"; }
 reset_config() {
@@ -207,7 +213,7 @@ const path = process.argv[2];
 let text = readFileSync(path, "utf8");
 const empty = "export const CEILING_EXCEPTIONS: [string, number, string][] = [];";
 const injected = `export const CEILING_EXCEPTIONS: [string, number, string][] = [
-  ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", 9.99, "2099-01-01: selftest padded fixture"],
+  ["upstream/src/main/kotlin/splice/upstream/transport/UpstreamClient.kt", 9.99, "2099-01-01: selftest padded fixture"],
 ];`;
 if (text.split(empty).length === 2) {
   text = text.replace(empty, () => injected);
@@ -348,7 +354,7 @@ rm -rf "$tmp/gateway/zz-selftest-census"
 if ! command -v ast-grep >/dev/null 2>&1; then
   err "7b. source annotation census — ast-grep is unavailable, so the external denominator cannot run"
 elif ! ast-grep run --kind class_declaration --lang kotlin --json=compact \
-  "$ROOT"/gateway/*/src/main >"$tmp/annotation-ast.json"
+  $(for dir in $module_dirs; do [ -d "$ROOT/$dir/src/main" ] && printf '%s ' "$ROOT/$dir/src/main"; done) >"$tmp/annotation-ast.json"
 then
   err "7b. source annotation census — ast-grep could not enumerate production class declarations"
 elif ! step "$ORACLE" "$tmp/annotation-ast.json" >"$tmp/annotation-check" 2>&1 <<'TS'
@@ -551,8 +557,13 @@ grep -q "splice.selftestclump" "$tmp/out" ||
 if grep -q "REGRESSION: band HIGH rose" "$tmp/out"; then
   err "13. PACKAGE arm — the FILE plane also went red, so this fixture is perturbing the plane it is not testing"
 fi
-grep -qE 'band HIGH +baseline +0 +measured +0' "$tmp/out" ||
-  err "13. PACKAGE arm — band HIGH is not still 0, so the arm does not prove the file census passes over a clump: $(grep -m1 'band HIGH' "$tmp/out")"
+# The assertion is "the FILE plane did not move", not "the file plane reads zero": the clump is
+# band-LOW by construction, so measured must equal the oracle's own RATCHET_MAX_HIGH whatever that
+# number is. Pinning the literal 0 made this arm fail the day the baseline was re-measured
+# (2026-09-20, the :client extraction) for a reason that has nothing to do with what it proves.
+high_baseline="$(bun -e 'console.log((await import(process.argv[1])).RATCHET_MAX_HIGH)' "$ORACLE")"
+grep -qE "band HIGH +baseline +${high_baseline} +measured +${high_baseline}" "$tmp/out" ||
+  err "13. PACKAGE arm — band HIGH moved off its baseline ($high_baseline), so the arm does not prove the file census passes over a clump: $(grep -m1 'band HIGH' "$tmp/out")"
 rm -rf "$tmp/gateway/zz-selftest-clump"
 
 # -- 14. PACKAGE SLACK: a baseline held above the measured worst package -----------------------
@@ -584,9 +595,9 @@ fi
 rm -rf "$tmp/gateway/zz-selftest-census-pkg"
 
 # -- 16. the BORING case: an empty package census must REFUSE, not pass (CLAUDE.md s24) --------
-# The file plane already passes over an empty tree -- high == baseline == 0 and no debt -- so
-# without this arm a lost SRC_GLOB would read as a perfectly clean repo.
-if ! replace_once "$ORACLE" '^export const SRC_GLOB = .*$' 'export const SRC_GLOB = "gateway/*/src/nowhere";' "the SRC_GLOB assignment"; then
+# The file plane already passes over an empty tree -- high == baseline and no debt -- so without
+# this arm a lost SRC_GLOBS would read as a perfectly clean repo.
+if ! replace_once "$ORACLE" '^export const SRC_GLOBS = .*$' 'export const SRC_GLOBS = ["gateway/*/src/nowhere"];' "the SRC_GLOBS assignment"; then
   err "16. empty package census — fixture could not be built"
 else
   oracle --ratchet --max-ratio 1.8

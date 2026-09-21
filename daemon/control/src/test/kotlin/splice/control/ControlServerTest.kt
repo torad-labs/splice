@@ -1,0 +1,624 @@
+// PORT-OF: server/test/control-server.test.mjs @ pre-public-port-baseline — bearer guard, /api/status, /api/heads
+// + lifecycle, /api/config GET+PATCH (single-JVM: no fanout targets), /api/usage soft-warn
+// firing from a seeded 90% ratelimit, /api/auth masked, dashboard serving, 404s. Payload shapes
+// match console/src/shared/api/index.ts (the contract).
+package splice.control
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.expectSuccess
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import splice.core.SHIM_VERSION
+import splice.core.auth.AuthDescription
+import splice.core.auth.AuthProvider
+import splice.core.config.ConfigService
+import splice.core.config.MgmtKey
+import splice.core.config.StatePaths
+import splice.core.head.Head
+import splice.core.head.HeadHealth
+import java.net.ServerSocket
+import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
+private class StubHead(
+    override val key: String,
+    override val port: Int,
+    override val label: String = key,
+) : Head {
+    var running = true
+    override suspend fun start() { running = true }
+    override suspend fun stop() { running = false }
+    override fun healthSnapshot() = HeadHealth(ok = running, running = running, port = port, version = "kt-1")
+}
+
+private class FakeAuth : AuthProvider {
+    override suspend fun credentials() = null
+    override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", mapOf("account_id_masked" to "acct…5678"))
+}
+
+/** An api-key head with NO key set — launch must still work but must carry the warning. */
+private class FakeAbsentAuth : AuthProvider {
+    override suspend fun credentials() = null
+    override suspend fun describe() = AuthDescription(false, "api-key", mapOf("env_var" to "OPENROUTER_API_KEY"))
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class ControlServerTest {
+
+    private lateinit var control: ControlServer
+    private lateinit var key: String
+    private val port = freshPort()
+    private val client = HttpClient(CIO) { expectSuccess = false }
+    private val json = Json { ignoreUnknownKeys = true }
+    private val head = StubHead("codex", 3099)
+    private val shutdownRequests = AtomicInteger()
+    private val shutdownRequested = CountDownLatch(1)
+
+    // Two rows one and two hours old, the files reaching back nine days: /api/perf/summary input.
+    private val perfNow = System.currentTimeMillis()
+    private val perfRows = listOf(
+        PerfRow(perfNow - 2 * HOUR_MS, "error:upstream-failed", mapOf("total" to 300L)),
+        PerfRow(perfNow - HOUR_MS / 2, "ok", mapOf("first_byte" to 100L, "stream_end" to 400L, "total" to 500L)),
+    )
+    private val fakePerfRows = PerfRowsSource { since ->
+        PerfRowsWindow(perfRows.filter { it.ts >= since }, oldestHeldTs = perfNow - 9 * DAY_MS)
+    }
+
+    private val fakePerf = splice.control.HeadPerfSource { n ->
+        listOf(
+            mapOf("ts" to 1L, "headers" to 100L, "total" to 400L),
+            mapOf("ts" to 2L, "headers" to 300L, "total" to 800L),
+        ).takeLast(n)
+    }
+
+    @BeforeAll
+    fun setUp() {
+        val tmp = Files.createTempDirectory("control-test")
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val mgmt = MgmtKey(paths)
+        key = mgmt.get()
+        val managed = ManagedHead(
+            head = head,
+            auth = FakeAuth(),
+            usage = object : HeadUsageSource {
+                override fun snapshot() = UsageView(
+                    0L,
+                    3,
+                    RateLimitView(1000, 100, "6m0s"), // 90% used -> warn
+                )
+            },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) =
+                    CompactView(2, mapOf("model_text" to 2), listOf(mapOf("outcome" to "model_text")))
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
+                override fun path() = "/tmp/codex.log"
+            },
+            warnPct = 80,
+            warnTokens5h = 0,
+            perf = fakePerf,
+            perfRows = fakePerfRows,
+        )
+        val launchSpec = launchSpecFixture(tmp, mgmt.get())
+        control = ControlServer(
+            port = port,
+            heads = mapOf(
+                "codex" to managed.copy(launchSpec = launchSpec),
+                "openrouter" to openrouterHead(managed, launchSpec),
+                // Two heads sharing one wrapper command `dup` — a misconfigured topology used to
+                // exercise the ambiguous-launch path (distinct 409, not an unknown-head 404).
+                "dupA" to sharedCommandHead(managed, launchSpec, "dupA"),
+                "dupB" to sharedCommandHead(managed, launchSpec, "dupB"),
+            ),
+            config = ConfigService(paths),
+            mgmtKey = mgmt,
+            dashboardHtml = { "<!doctype html><title>splice</title>" },
+            log = {},
+            launchService = LaunchService(
+                splice.client.ClaudeConfigMaterializer(tmp),
+            ),
+            shutdownDaemon = {
+                shutdownRequests.incrementAndGet()
+                shutdownRequested.countDown()
+            },
+            topologyDigest = TopologyDigest { "boot-digest-abc" },
+            configPath = "/tmp/splice.toml",
+            topologyStale = { true },
+        )
+        control.start()
+    }
+
+    private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
+        trees = splice.control.HeadTrees(tmp.resolve(".claude-codex-test")),
+        pinnedModel = "gpt-5.6-sol",
+        availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
+        modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
+        // what LaunchSpecFactory passes: the pinned row's window (ModelCatalog.clientLaunchWindow)
+        contextWindow = 272_000,
+        modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
+        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+        loginCommand = "claudex login",
+        signInLabel = "Codex (ChatGPT)",
+        policy = splice.client.ClaudePolicy(share = emptySet(), isolate = emptySet()),
+        port = 3099,
+        inferenceToken = inferenceToken,
+        apiTimeoutMs = 960_000,
+    )
+
+    /** A second head whose wrapper COMMAND differs from its topology KEY (the starter's
+     *  openrouter → claude-openrouter shape) and whose api-key auth is absent. */
+    private fun openrouterHead(managed: ManagedHead, launchSpec: LaunchSpec): ManagedHead = managed.copy(
+        head = StubHead("openrouter", 3101, label = "claude-openrouter"),
+        auth = FakeAbsentAuth(),
+        authKind = "api-key",
+        launchSpec = launchSpec.copy(port = 3101),
+    )
+
+    /** A launchable head whose wrapper COMMAND (label) is the shared `dup` — two of these collide. */
+    private fun sharedCommandHead(
+        managed: ManagedHead,
+        launchSpec: LaunchSpec,
+        key: String,
+    ): ManagedHead = managed.copy(
+        head = StubHead(key, 3200, label = "dup"),
+        launchSpec = launchSpec.copy(port = 3200),
+    )
+
+    @AfterAll
+    fun tearDown() {
+        control.stop()
+        client.close()
+    }
+
+    private suspend fun authed(path: String) =
+        client.get("http://127.0.0.1:$port$path") { header("Authorization", "Bearer $key") }.bodyAsText()
+
+    @Test
+    fun `control health is unauthenticated for the launch shim liveness probe`() = runTest {
+        val resp = client.get("http://127.0.0.1:$port/health") // no Authorization header
+        assertEquals(HttpStatusCode.OK, resp.status)
+        val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+        assertEquals("true", body["ok"]?.jsonPrimitive?.content)
+        assertTrue(body.containsKey("version"))
+        assertEquals(SHIM_VERSION, body["wantShimVersion"]?.jsonPrimitive?.content)
+        // JW-04: the booted config identity + per-request staleness recompute ride /health so
+        // shim/doctor/dashboard can see an edited-but-inert splice.toml.
+        assertEquals("boot-digest-abc", body["topologyDigest"]?.jsonPrimitive?.content)
+        assertEquals("/tmp/splice.toml", body["configPath"]?.jsonPrimitive?.content)
+        assertEquals("true", body["topologyStale"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `degraded health denominator counts configured heads so ready plus failed equals heads`() = runTest {
+        // An ASSEMBLY-failed head never enters the `heads` map but IS counted in failedHeads;
+        // reporting heads.size (assembled only) broke the readyHeads + failedHeads == heads
+        // invariant a launch shim waits on. Report the configured total (review 2026-07-23).
+        val tmp = Files.createTempDirectory("control-degraded")
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val degradedPort = freshPort()
+        val degraded = ControlServer(
+            port = degradedPort,
+            heads = emptyMap(), // the sole configured head failed to ASSEMBLE — never entered `heads`
+            config = ConfigService(paths),
+            mgmtKey = MgmtKey(paths),
+            dashboardHtml = { "" },
+            log = {},
+            failedHeads = { 1 },
+            configuredHeads = 1,
+        )
+        degraded.start()
+        try {
+            val body = json.parseToJsonElement(
+                client.get("http://127.0.0.1:$degradedPort/health").bodyAsText(),
+            ).jsonObject
+            val heads = body["heads"]!!.jsonPrimitive.content.toInt()
+            val ready = body["readyHeads"]!!.jsonPrimitive.content.toInt()
+            val failed = body["failedHeads"]!!.jsonPrimitive.content.toInt()
+            assertEquals(1, heads)
+            assertEquals(0, ready)
+            assertEquals(1, failed)
+            assertEquals(heads, ready + failed) // the invariant the launch shim converges on
+        } finally {
+            degraded.stop()
+        }
+    }
+
+    @Test
+    fun `bearer guard - 401 without the key, 200 with`() = runTest {
+        val unauth = client.get("http://127.0.0.1:$port/api/status")
+        assertEquals(HttpStatusCode.Unauthorized, unauth.status)
+        val ok = client.get("http://127.0.0.1:$port/api/status") { header("Authorization", "Bearer $key") }
+        assertEquals(HttpStatusCode.OK, ok.status)
+    }
+
+    @Test
+    fun `dashboard served at root without auth`() = runTest {
+        val body = client.get("http://127.0.0.1:$port/").bodyAsText()
+        assertTrue(body.contains("splice"))
+    }
+
+    @Test
+    fun `status lists heads and registry`() = runTest {
+        val obj = json.parseToJsonElement(authed("/api/status")).jsonObject
+        assertEquals("control", obj["server"]?.jsonPrimitive?.content)
+        assertTrue(obj["heads"]!!.jsonArray.any { it.jsonPrimitive.content == "codex" })
+        assertEquals("codex", obj["registry"]!!.jsonArray.first().jsonObject["key"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `heads status carries the webui shape`() = runTest {
+        val h = json.parseToJsonElement(authed("/api/heads")).jsonObject["heads"]!!.jsonArray.first().jsonObject
+        assertEquals("codex", h["key"]?.jsonPrimitive?.content)
+        assertEquals("3099", h["port"]?.jsonPrimitive?.content)
+        assertEquals("true", h["running"]?.jsonPrimitive?.content)
+        assertTrue(h.containsKey("gate") && h.containsKey("pids") && h.containsKey("healthy"))
+        assertTrue(h.containsKey("health"))
+    }
+
+    @Test
+    fun `perf aggregates stages with p50 p95 max over the tail`() = runTest {
+        val obj = json.parseToJsonElement(authed("/api/perf")).jsonObject
+        val head = obj["heads"]!!.jsonArray.first().jsonObject
+        assertEquals("codex", head["key"]?.jsonPrimitive?.content)
+        assertEquals("2", head["count"]?.jsonPrimitive?.content)
+        val headers = head["stages"]!!.jsonObject["headers"]!!.jsonObject
+        assertEquals("100", headers["p50"]?.jsonPrimitive?.content)
+        assertEquals("300", headers["p95"]?.jsonPrimitive?.content)
+        assertEquals("300", headers["max"]?.jsonPrimitive?.content)
+        // ts is excluded from aggregation
+        assertTrue("ts" !in head["stages"]!!.jsonObject)
+    }
+
+    @Test
+    fun `perf summary serves the requested window per head with per-tag failure shares`() = runTest {
+        val week = json.parseToJsonElement(authed("/api/perf/summary?window=7d")).jsonObject
+        assertEquals("7d", week["window"]?.jsonPrimitive?.content)
+        val codex = week["heads"]!!.jsonArray.first().jsonObject
+        assertEquals("codex", codex["key"]?.jsonPrimitive?.content)
+        assertEquals("2", codex["count"]?.jsonPrimitive?.content)
+        assertEquals("false", codex["clamped"]?.jsonPrimitive?.content, "the files reach past the window")
+        assertEquals("0.5", codex["failure_shares"]!!.jsonObject["error:upstream-failed"]?.jsonPrimitive?.content)
+        assertEquals("100", codex["time_before_first_byte_ms"]!!.jsonObject["p50"]?.jsonPrimitive?.content)
+        val hour = json.parseToJsonElement(authed("/api/perf/summary?window=1h")).jsonObject
+        assertEquals("1", hour["heads"]!!.jsonArray.first().jsonObject["count"]?.jsonPrimitive?.content)
+        val absent = json.parseToJsonElement(authed("/api/perf/summary")).jsonObject
+        assertEquals("24h", absent["window"]?.jsonPrimitive?.content, "no window means the default")
+        val unknown = client.get("http://127.0.0.1:$port/api/perf/summary?window=2h") {
+            header("Authorization", "Bearer $key")
+        }
+        assertEquals(HttpStatusCode.BadRequest, unknown.status, "an unknown window is refused, as the CLI refuses it")
+        assertTrue(unknown.bodyAsText().contains("2h"), unknown.bodyAsText())
+    }
+
+    @Test
+    fun `head lifecycle - stop then start flips running`() = runTest {
+        val stopped = client.post("http://127.0.0.1:$port/api/heads/codex/stop") {
+            header("Authorization", "Bearer $key")
+        }.bodyAsText()
+        assertEquals("false", json.parseToJsonElement(stopped).jsonObject["running"]?.jsonPrimitive?.content)
+        val started = client.post("http://127.0.0.1:$port/api/heads/codex/start") {
+            header("Authorization", "Bearer $key")
+        }.bodyAsText()
+        assertEquals("true", json.parseToJsonElement(started).jsonObject["running"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `guarded daemon shutdown acknowledges before requesting process stop`() = runTest {
+        val unauthorized = client.post("http://127.0.0.1:$port/api/daemon/shutdown")
+        assertEquals(HttpStatusCode.Unauthorized, unauthorized.status)
+        assertEquals(0, shutdownRequests.get())
+
+        val accepted = client.post("http://127.0.0.1:$port/api/daemon/shutdown") {
+            header("Authorization", "Bearer $key")
+        }
+        assertEquals(HttpStatusCode.Accepted, accepted.status)
+        // AWAITED, NOT READ INSTANTLY — and the reason is this test's own subject. The handler ACKS
+        // FIRST and calls shutdownDaemon() afterwards (ControlServer.kt:110-115); that ordering is
+        // what the test exists to pin, and it is exactly why the client can observe 202 before the
+        // server has reached the call. Reading the counter on the next line therefore races the
+        // very window being asserted. Caught in CI 2026-07-30 (0/10 locally — a load-dependent
+        // window looks like that). The callback counts a latch down, so the wait is on the call
+        // itself, bounded (V4-139; it was a 5 ms poll of the counter).
+        assertTrue(shutdownRequested.await(10, TimeUnit.SECONDS), "no shutdown request after a 202")
+        assertEquals(1, shutdownRequests.get(), "exactly one shutdown request after a 202")
+    }
+
+    @Test
+    fun `config exposes effective plus five layers plus restart keys`() = runTest {
+        val obj = json.parseToJsonElement(authed("/api/config")).jsonObject
+        assertTrue(obj.containsKey("effective"))
+        val layers = obj["layers"]!!.jsonObject
+        assertTrue(
+            layers.containsKey("defaults") && layers.containsKey("toml") && layers.containsKey("file") &&
+                layers.containsKey("env") && layers.containsKey("runtime"),
+        )
+        assertTrue(obj["restart_required_keys"]!!.jsonArray.any { it.jsonPrimitive.content == "port" })
+    }
+
+    @Test
+    fun `config patch applies without fanout targets`() = runTest {
+        val body = client.patch("http://127.0.0.1:$port/api/config") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("""{"effort":"high","bogus":1}""")
+        }.bodyAsText()
+        val obj = json.parseToJsonElement(body).jsonObject
+        assertEquals("high", obj["applied"]!!.jsonObject["effort"]?.jsonPrimitive?.content)
+        assertTrue(obj["rejected"]!!.jsonObject.containsKey("bogus"))
+        assertEquals(0, obj["targets"]!!.jsonArray.size) // single JVM, no fanout
+    }
+
+    @Test
+    fun `usage soft-warn fires from a 90 percent ratelimit`() = runTest {
+        // Node shape: {window_hours, warn_pct, warn_tokens_5h, heads:[{key,label,usage:{...,warn}}]}
+        val payload = json.parseToJsonElement(authed("/api/usage")).jsonObject
+        assertEquals("5", payload["window_hours"]?.jsonPrimitive?.content)
+        val warn = payload["heads"]!!.jsonArray.first().jsonObject["usage"]!!.jsonObject["warn"]!!.jsonObject
+        assertEquals("warn", warn["level"]?.jsonPrimitive?.content)
+        assertEquals("ratelimit", warn["source"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `auth is masked, compact summarized, logs tailed`() = runTest {
+        // Auth is keyed by head; compact is aggregate stats + tail; logs {key,path,lines[]}.
+        val auth = json.parseToJsonElement(authed("/api/auth")).jsonObject["codex"]!!.jsonObject
+        assertEquals("acct…5678", auth["account_id_masked"]?.jsonPrimitive?.content)
+        assertEquals("automated", auth["login"]?.jsonPrimitive?.content) // oauth -> automated
+        val compact = json.parseToJsonElement(authed("/api/compact")).jsonObject["stats"]!!.jsonObject
+        assertTrue(compact["tail"]!!.jsonArray.isNotEmpty())
+        val logs = json.parseToJsonElement(authed("/api/logs/codex?tail=10")).jsonObject
+        assertEquals("codex", logs["key"]?.jsonPrimitive?.content)
+        assertTrue(logs["lines"]!!.jsonArray.any { it.jsonPrimitive.content.contains("line one") })
+    }
+
+    @Test
+    fun `unknown head 404s`() = runTest {
+        val r = client.get("http://127.0.0.1:$port/api/logs/nope") { header("Authorization", "Bearer $key") }
+        assertEquals(HttpStatusCode.NotFound, r.status)
+    }
+
+    @Test
+    fun `launch returns an exec recipe with head env and argv`() = runTest {
+        val body = client.post("http://127.0.0.1:$port/launch/codex") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("""{"dangerouslySkipPermissions":"true","args":["-c"]}""")
+        }.bodyAsText()
+        val obj = json.parseToJsonElement(body).jsonObject
+        val env = obj["env"]!!.jsonObject
+        assertEquals("http://127.0.0.1:3099", env["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
+        // a bearer AUTH_TOKEN (no /login); discovery stays OFF — the materialized bare-id roster
+        // is the picker's one source (the wrapped /v1/models spelling doubled every row and makes
+        // Claude Code ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS — LaunchService header).
+        assertEquals(key, env["ANTHROPIC_AUTH_TOKEN"]?.jsonPrimitive?.content)
+        assertFalse(env.containsKey("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"))
+        assertEquals("gpt-5.6-sol", env["ANTHROPIC_MODEL"]?.jsonPrimitive?.content)
+        // the pinned row's window (ModelCatalog.clientLaunchWindow): its counts ride raw; the other
+        // rows are usage-scaled on the wire, and a later TOML edit reaches a running session
+        // through the window that session reports on its status line
+        assertEquals("272000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]?.jsonPrimitive?.content)
+        assertEquals("272000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]?.jsonPrimitive?.content)
+        // ANTHROPIC_API_KEY is UNSET (else Claude Code's custom-key approval dead-ends at /login)
+        assertTrue(obj["unset"]!!.jsonArray.any { it.jsonPrimitive.content == "ANTHROPIC_API_KEY" })
+        val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(argv.contains("--dangerously-skip-permissions"))
+        assertTrue(argv.contains("-c")) // extra args passed through
+        assertFalse(argv.contains("--model")) // model comes from env + picker, not a locked flag
+    }
+
+    @Test
+    fun `launch resolves a head by its wrapper command and warns when auth is absent`() = runTest {
+        // The shim asks by argv[0] (the wrapper command, `claude-openrouter`), not the topology key
+        // (`openrouter`) — the starter topology broke here once (v0.1.1 first-run bug).
+        val body = client.post("http://127.0.0.1:$port/launch/claude-openrouter") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("""{"args":[]}""")
+        }.bodyAsText()
+        val obj = json.parseToJsonElement(body).jsonObject
+        assertEquals("http://127.0.0.1:3101", obj["env"]!!.jsonObject["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
+        val warning = obj["warning"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(warning.contains("OPENROUTER_API_KEY"), "warning should name the env var: $warning")
+        assertTrue(warning.contains("splice restart"), "warning should name the fix: $warning")
+    }
+
+    @Test
+    fun `launch by an ambiguous wrapper command 409s naming both heads`() = runTest {
+        // Two heads share the wrapper command `dup`; resolving it must NOT report "unknown head"
+        // (which would hide the misconfiguration) but a distinct ambiguity error naming both.
+        val response = client.post("http://127.0.0.1:$port/launch/dup") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("{}")
+        }
+        assertEquals(HttpStatusCode.Conflict, response.status)
+        val error = json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(error.contains("ambiguous"), "should be a distinct ambiguity error: $error")
+        assertTrue(error.contains("dupA") && error.contains("dupB"), "ambiguity error names both heads: $error")
+    }
+
+    @Test
+    fun `a non-launch route 409s an ambiguous wrapper command instead of unknown head`() = runTest {
+        // Same misconfiguration as the launch test, on /api/logs — the other by-name routes
+        // (headAction/authAction/logs) share one resolver, so ambiguity must never read as a typo.
+        val response = client.get("http://127.0.0.1:$port/api/logs/dup") { header("Authorization", "Bearer $key") }
+        assertEquals(HttpStatusCode.Conflict, response.status)
+        val error = json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(error.contains("ambiguous"), "should be a distinct ambiguity error: $error")
+        assertTrue(error.contains("dupA") && error.contains("dupB"), "ambiguity error names both heads: $error")
+    }
+
+    @Test
+    fun `a non-launch route resolves a head by its wrapper command label`() = runTest {
+        // /api/logs used bare heads[key] (topology key only); the shared lookup now also accepts
+        // the wrapper command, so `claude-openrouter` (openrouter's label) resolves instead of 404ing.
+        val logs = json.parseToJsonElement(authed("/api/logs/claude-openrouter")).jsonObject
+        assertEquals("claude-openrouter", logs["key"]?.jsonPrimitive?.content)
+        assertTrue(logs["lines"]!!.jsonArray.isNotEmpty(), "resolved head's log lines should be returned")
+    }
+
+    @Test
+    fun `launch 404 names the configured wrapper commands`() = runTest {
+        val response = client.post("http://127.0.0.1:$port/launch/nope") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("{}")
+        }
+        assertEquals(HttpStatusCode.NotFound, response.status)
+        val error = json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(error.contains("claude-openrouter"), "404 should list launchable commands: $error")
+    }
+
+    @Test
+    fun `launch defaults to safe when dangerouslySkipPermissions is omitted`() = runTest {
+        val body = client.post("http://127.0.0.1:$port/launch/codex") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            // V4-113: the null rides in the same request on purpose — JsonNull IS a JsonPrimitive
+            // whose content is the literal string "null", so the old `(it as? JsonPrimitive)?.content`
+            // chain handed a null argument to the launched client as a live word. This is
+            // CLIENT-supplied JSON becoming a process argv, the shape the wall's header names.
+            // V4-183: `-c` is resolved by the daemon now, so a plain flag stands in as the live word.
+            setBody("""{"args":["--verbose",null]}""")
+        }.bodyAsText()
+        val obj = json.parseToJsonElement(body).jsonObject
+        val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertFalse(argv.contains("--dangerously-skip-permissions"))
+        assertTrue(argv.contains("--verbose"))
+        assertFalse(argv.contains("null"), "a JSON null is absence, not an argument: $argv")
+        assertFalse(obj.containsKey("warning"))
+    }
+
+    @Test
+    fun `launch refuses to return a recipe for a stopped head`() = runTest {
+        head.running = false
+        try {
+            val response = client.post("http://127.0.0.1:$port/launch/codex") {
+                header("Authorization", "Bearer $key")
+                header("Content-Type", "application/json")
+                setBody("{}")
+            }
+            assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+            assertTrue(response.bodyAsText().contains("head is not running"))
+        } finally {
+            head.running = true
+        }
+    }
+
+    @Test
+    fun `statusline renders the model from stdin json`() = runTest {
+        val line = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":{"display_name":"Codex 5.6 Sol"},"current_usage":{"input_tokens":100,"context_window":272000}}""",
+            )
+        }.bodyAsText()
+        assertTrue(line.contains("Codex 5.6 Sol"))
+    }
+
+    @Test
+    fun `statusline rejects oversized input before rendering`() = runTest {
+        val response = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("x".repeat(70_000))
+        }
+        assertEquals(413, response.status.value)
+    }
+}
+
+// OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
+// collide at bind time on busy hosts; ports are OS-assigned. No readiness poll: ControlServer.start
+// returns routed and bound (Ktor's default SEQUENTIAL startup runs the modules before
+// NettyApplicationEngine's bind(...).sync(); V4-139).
+private const val HOUR_MS = 3_600_000L
+private const val DAY_MS = 24 * HOUR_MS
+
+private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
+
+// JW-06 lives in its own class: ControlServerTest sits at detekt's LargeClass ceiling.
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class ControlServerPerHeadConfigTest {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val client = HttpClient(CIO)
+
+    @AfterAll
+    fun tearDown() = client.close()
+
+    @Test
+    fun `config head param folds that head's override layer into effective - JW-06`() = runTest {
+        // [heads.<key>.overrides] was a real precedence layer that /api/config could not show:
+        // "why is kimi's maxInflight 8 when the panel says 100" was unanswerable.
+        val tmp = Files.createTempDirectory("control-perhead")
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val mgmt = MgmtKey(paths)
+        val perHeadPort = freshPort()
+        val svc = ConfigService(
+            paths,
+            headOverrides = mapOf("maxInflight" to "100"),
+            perHeadOverrides = mapOf("kimi" to mapOf("maxInflight" to "8")),
+        )
+        val server = ControlServer(
+            port = perHeadPort,
+            heads = emptyMap(),
+            config = svc,
+            mgmtKey = mgmt,
+            dashboardHtml = { "" },
+            log = {},
+        )
+        server.start()
+        try {
+            val bearer = mgmt.get()
+            suspend fun getConfig(path: String) = json.parseToJsonElement(
+                client.get("http://127.0.0.1:$perHeadPort$path") {
+                    header("Authorization", "Bearer $bearer")
+                }.bodyAsText(),
+            ).jsonObject
+
+            val global = getConfig("/api/config")
+            assertEquals(
+                "100",
+                global["effective"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "the unparameterized view stays global",
+            )
+            val perHeadLayer = global["layers"]!!.jsonObject["perHead"]!!.jsonObject
+            assertEquals(
+                "8",
+                perHeadLayer["kimi"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "the override-carrying head appears in the perHead layer",
+            )
+
+            val kimi = getConfig("/api/config?head=kimi")
+            assertEquals(
+                "8",
+                kimi["effective"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "?head folds the head's layer exactly as admission does",
+            )
+            assertEquals("kimi", kimi["head"]!!.jsonPrimitive.content)
+        } finally {
+            server.stop()
+        }
+    }
+}

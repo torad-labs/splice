@@ -120,10 +120,20 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // The knob half of the denominator. Fixed path on purpose: a checker that silently loses
 // its source is a checker that passes.
-const KNOB_REL = "gateway/core/src/main/kotlin/splice/core/config/Knob.kt";
+const KNOB_REL = "core/src/main/kotlin/splice/core/config/Knob.kt";
 
 // Where main sources live. The seam scan walks these.
-const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt"];
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const MAIN_GLOBS = [
+  "gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt", "core/src/main/**/*.kt", "upstream/src/main/**/*.kt",
+  "dialects/*/src/main/**/*.kt", "providers/*/src/main/**/*.kt", "daemon/*/src/main/**/*.kt", "app/src/main/**/*.kt",
+  "quality/*/src/main/**/*.kt",
+];
 
 // The one file an operator copies to write a config.
 const SURFACE = "config/splice.example.toml";
@@ -589,8 +599,8 @@ function audit(root: string): string[] {
 
 // ── selftest fixtures ─────────────────────────────────────────────────────────────────
 
-const SEAM_SOURCE_REL = "gateway/app/src/main/kotlin/splice/app/cli/Fixture.kt";
-const COMPUTED_SOURCE_REL = "gateway/app/src/main/kotlin/splice/app/cli/Computed.kt";
+const SEAM_SOURCE_REL = "app/src/main/kotlin/splice/app/cli/Fixture.kt";
+const COMPUTED_SOURCE_REL = "app/src/main/kotlin/splice/app/cli/Computed.kt";
 
 const SEAM_SOURCE = `package splice.app.cli
 
@@ -869,14 +879,14 @@ function selftest(): number {
     }
 
     writeTree(root, COMPLIANT_DOC, SEAM_SOURCE, KNOB_SOURCE, COMPUTED_SOURCE, [
-      "gateway/app/src/main/kotlin/splice/app/cli/Sneaky.kt",
+      "app/src/main/kotlin/splice/app/cli/Sneaky.kt",
       DIRECT_GETENV_SOURCE,
     ]);
     hits = audit(root);
     if (!hits.some((h) => h.includes("DIRECT READ OUTSIDE THE SEAM"))) {
       failures.push(`a direct System.getenv call must be RED, got: ${hits}`);
     }
-    rmSync(join(root, "gateway/app/src/main/kotlin/splice/app/cli/Sneaky.kt"));
+    rmSync(join(root, "app/src/main/kotlin/splice/app/cli/Sneaky.kt"));
 
     writeTree(root, COMPLIANT_DOC, NO_SEAM_SOURCE, KNOB_SOURCE, null);
     hits = audit(root);

@@ -9,9 +9,9 @@
  *       operator copies — ids, labels, context windows, per-provider commentary. This
  *       file is the SOURCE: it is the one an operator reads, and the one whose windows
  *       carry the measured justification (see the k3[1m] note about 1e6 vs 1048576).
- *   gateway/app/src/main/kotlin/splice/app/cli/AddProfileCatalog.kt  the rows
+ *   app/src/main/kotlin/splice/app/cli/add/AddProfileCatalog.kt  the rows
  *       `splice add <vendor>` renders into the operator's file.
- *   gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt         DEFAULT_TOML, the
+ *   app/src/main/kotlin/splice/app/daemon/TopologyLoader.kt         DEFAULT_TOML, the
  *       starter materialized on first run when no config exists.
  *
  * Nothing paired them. A context window corrected in the example stayed wrong in the two
@@ -107,8 +107,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // The source of truth. A fixed path on purpose: a checker that silently loses its source is
 // a checker that passes.
 const EXAMPLE_REL = "config/splice.example.toml";
-const CATALOG_REL = "gateway/app/src/main/kotlin/splice/app/cli/AddProfileCatalog.kt";
-const STARTER_REL = "gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt";
+const CATALOG_REL = "app/src/main/kotlin/splice/app/cli/add/AddProfileCatalog.kt";
+const STARTER_REL = "app/src/main/kotlin/splice/app/daemon/TopologyLoader.kt";
 
 const STARTER_MARKER = "DEFAULT_TOML";
 

@@ -15,7 +15,7 @@ message: "L3: `end_turn` is derived inside SseEmitter.emitTerminal — no other 
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt
+  - daemon/head/src/main/kotlin/**/wire/SseEmitter.kt
 rule:
   any:
     - kind: string_content

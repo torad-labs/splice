@@ -1,4 +1,4 @@
-// `splice doctor --json`, typed from the code that builds it (gateway/app/.../cli/DoctorReport.kt
+// `splice doctor --json`, typed from the code that builds it (app/.../cli/DoctorReport.kt
 // build(), schema version 1) and from the shape pass that renders each check
 // (DoctorReportShape.checks).
 //

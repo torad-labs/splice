@@ -54,7 +54,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const LOCK = resolve(ROOT, "gateway/provider-spi/src/main/kotlin/splice/spi/CredentialLock.kt");
+const LOCK = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly.
  *

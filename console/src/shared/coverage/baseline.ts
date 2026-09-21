@@ -27,7 +27,7 @@ const PENDING: readonly PendingGroup[] = [
   {
     kind: 'knob',
     where: 'M2-05',
-    // gateway/core/.../config/Knob.kt, every enum entry. The counts are printed
+    // core/.../config/Knob.kt, every enum entry. The counts are printed
     // by the wall and recorded on the M1-04 ledger note, never restated here.
     names: [
       'PORT',

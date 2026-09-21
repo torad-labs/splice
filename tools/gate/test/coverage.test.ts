@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { proveCoverage, type CoverageReport } from "../src/lib/coverage.ts";
 import { layout } from "../src/lib/repo.ts";
+import { readGradleModules } from "../src/lib/sources.ts";
 import { EXCLUSIONS, ROUTED_CONFIG } from "../src/commands/rules.ts";
 
 const { repoRoot, buildRoot } = layout();
@@ -75,17 +76,20 @@ describe("the P1 coverage proof", () => {
 
   test("mutant (b): a glob that loses one module while the others still match", async () => {
     const copy = copyOfTheRealRules();
-    // :core drops out; every other module still matches, so `ast-grep scan` stays green.
-    edit(
-      copy.rule("kt-no-lateinit"),
-      '"**/src/main/**/*.kt"',
-      '"gateway/{app,control,gateway,provider-spi,provider-codex,provider-grok,provider-kimi,provider-muse,provider-openai,dialect-anthropic-passthrough,dialect-openai-responses,dialect-openai-chat,fir-checks}/src/main/**/*.kt"',
-    );
+    // :core drops out; every other module still matches, so `ast-grep scan` stays green. The
+    // "every other module" list is READ FROM THE BUILD (settings.gradle.kts), never retyped: a
+    // hand-kept brace list lost :client, then :upstream, as the restructure moved them out of
+    // gateway/, and the mutant then lost three roots instead of the one it claims to.
+    const others = readGradleModules(repoRoot, buildRoot)
+      .filter((m) => m.id !== "core")
+      .map((m) => m.dir);
+    edit(copy.rule("kt-no-lateinit"), '"**/src/main/**/*.kt"', `"{${others.join(",")}}/src/main/**/*.kt"`);
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-lateinit", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("kt-no-lateinit reaches 0 of 135 files in gateway/core/src/main/kotlin");
+    // the file count is the tree's, not the test's: it moved 135 -> 103 when :client left :core
+    expect(lost[0]).toMatch(/kt-no-lateinit reaches 0 of \d+ files in core\/src\/main\/kotlin/);
     expect(lost[0]).toContain("no dated exclusion covers it");
     // the loss is invisible to the scan: the other thirteen modules are still enforced
     expect(report.coveredPairs).toBeGreaterThan(700);
@@ -96,13 +100,13 @@ describe("the P1 coverage proof", () => {
     edit(
       copy.rule("kt-no-unsafe-cast"),
       'files:\n  - "**/src/main/**/*.kt"',
-      'files:\n  - "**/src/main/**/*.kt"\nignores:\n  - gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt',
+      'files:\n  - "**/src/main/**/*.kt"\nignores:\n  - core/src/main/kotlin/splice/core/wire/HttpStatus.kt',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-unsafe-cast", "file-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("kt-no-unsafe-cast loses 1 file(s) inside covered gateway/core/src/main/kotlin");
+    expect(lost[0]).toContain("kt-no-unsafe-cast loses 1 file(s) inside covered core/src/main/kotlin");
     expect(lost[0]).toContain("splice/core/wire/HttpStatus.kt");
   });
 
@@ -118,16 +122,16 @@ describe("the P1 coverage proof", () => {
   });
 
   test("a files-row can never excuse a WHOLLY lost source root", async () => {
-    // kt-no-vanilla-config-dir carries a files-row spanning all of :control's main sources. If its
-    // glob for :control disappears, that row must not absorb the loss — losing a module is the
+    // kt-no-vanilla-config-dir carries a files-row spanning all of :daemon-control's main sources. If its
+    // glob for :daemon-control disappears, that row must not absorb the loss — losing a module is the
     // failure the proof exists for, and a broad file exemption is the obvious way to hide it.
     const copy = copyOfTheRealRules();
-    edit(copy.rule("kt-no-vanilla-config-dir"), "  - gateway/control/src/main/kotlin/splice/control/Launch*.kt\n", "");
+    edit(copy.rule("kt-no-vanilla-config-dir"), "  - daemon/control/src/main/kotlin/splice/control/Launch*.kt\n", "");
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-vanilla-config-dir", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("gateway/control/src/main/kotlin");
+    expect(lost[0]).toContain("daemon/control/src/main/kotlin");
   });
 
   test("mutant (e): a modules row typed as a scalar cannot waive the source root it names", async () => {
@@ -149,15 +153,15 @@ describe("the P1 coverage proof", () => {
     // and the loss it used to excuse is reported again, by name
     const lost = messagesFor(report, "kt-no-println", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("gateway/app/src/main/kotlin");
+    expect(lost[0]).toContain("app/src/main/kotlin");
   });
 
   test("mutant (f): a files row typed as a scalar cannot become a whole-source-root row", async () => {
     const copy = copyOfTheRealRules();
     edit(
       copy.exclusions,
-      'files = ["gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]',
-      'files = "gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"',
+      'files = ["core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]',
+      'files = "core/src/main/kotlin/splice/core/wire/HttpStatus.kt"',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
@@ -177,11 +181,11 @@ describe("the P1 coverage proof", () => {
     edit(
       copy.exclusions,
       '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["app"]',
-      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["provider-openai"]',
+      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["providers-openai"]',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     expect(report.findings.some((f) => f.kind === "exclusion-stale" && f.message.includes("kt-no-println"))).toBe(true);
-    expect(report.findings.some((f) => f.kind === "source-root-lost" && f.message.includes("gateway/app/src/main/kotlin"))).toBe(true);
+    expect(report.findings.some((f) => f.kind === "source-root-lost" && f.message.includes("app/src/main/kotlin"))).toBe(true);
   });
 });

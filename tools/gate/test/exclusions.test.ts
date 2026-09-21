@@ -29,7 +29,7 @@ describe("reading the exclusion table", () => {
   test("the row that reads as every module: three scalars where three lists belong", async () => {
     const read = await table(
       `[[exclusion]]\nrule = "kt-no-println"\nmodules = "core"\nsourceSets = "main"\n` +
-        `files = "gateway/core/src/main/kotlin/X.kt"\n${DATED}`,
+        `files = "core/src/main/kotlin/X.kt"\n${DATED}`,
     );
     expect(read.problems).toHaveLength(3);
     for (const field of ["modules", "sourceSets", "files"]) {
@@ -65,14 +65,14 @@ describe("reading the exclusion table", () => {
   test("a well-formed row still reads, in both spellings", async () => {
     const read = await table(
       `[[exclusion]]\nrules = ["a", "b"]\nrule = "c"\nmodules = ["core"]\nmodule = "app"\n` +
-        `sourceSets = ["main"]\nfiles = ["gateway/core/src/main/kotlin/X.kt"]\n${DATED}`,
+        `sourceSets = ["main"]\nfiles = ["core/src/main/kotlin/X.kt"]\n${DATED}`,
     );
     expect(read.problems).toEqual([]);
     expect(read.rows).toHaveLength(1);
     expect(read.rows[0]!.rules).toEqual(["a", "b", "c"]);
     expect(read.rows[0]!.modules).toEqual(["core", "app"]);
     expect(read.rows[0]!.sourceSets).toEqual(["main"]);
-    expect(read.rows[0]!.files).toEqual(["gateway/core/src/main/kotlin/X.kt"]);
+    expect(read.rows[0]!.files).toEqual(["core/src/main/kotlin/X.kt"]);
   });
 
   test("an omitted scope still means every module and every source set", async () => {

@@ -88,9 +88,9 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // preceded this named only ChatToolCalls.kt, which left both other steps unread — and moved the
 // vacuity guard off the translator, so deleting ChatStreamTranslator.kt no longer made the key None.
 const CHAT = [
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
 ];
 // LIST, not a single file (HD-24 decomposition, 2026-08-17): a target may move the validation latch
 // and its parser to siblings. Every path must exist or the whole key reads as missing (vacuity
@@ -105,10 +105,10 @@ const CHAT = [
 // The four files below are exactly the CX-01 carrier chain: entry point, accumulate+latch, parse,
 // convert-to-Failure.
 const RESP = [
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesFrameParse.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesItemFold.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesFrameParse.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt"),
 ];
 export const PATHS: Record<string, string[]> = { chat: CHAT, responses: RESP };
 

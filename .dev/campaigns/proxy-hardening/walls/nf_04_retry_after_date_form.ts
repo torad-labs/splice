@@ -28,7 +28,7 @@
  *  header is a wall that gets allowlisted: a file is a second parser only when it BOTH names the
  *  Retry-After header AND carries a token that only a parser has — an RFC_1123_DATE_TIME format, the
  *  digit-only seconds guard (`it in '0'..'9'`, either polarity), or the leading-zero normalizer. A file
- *  that merely reads the header and hands it to splice.spi.RetryAfter has none of those, so delegating
+ *  that merely reads the header and hands it to splice.upstream.retry.RetryAfter has none of those, so delegating
  *  stays cheap and re-implementing goes red. Measured against the tree at authoring: of every main
  *  source, exactly ONE file carries a marker, and it is the one allowed file.
  *
@@ -75,7 +75,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const CLIENT = resolve(ROOT, "gateway/provider-spi/src/main/kotlin/splice/spi/RetryAfter.kt");
+const CLIENT = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/retry/RetryAfter.kt");
 const NEXT_FUNCTION_RE = /^[ \t]*(?:(?:public|private|internal|protected|override|suspend|inline)[ \t]+)*fun[ \t]+\w+[ \t]*\(/m;
 const RETURN_CHAIN_RE = /\breturn[ \t\n]+secondsFormMs\s*\([^)]*\)\s*\?:\s*httpDateMs\s*\([^)]*\)/;
 const SECONDS_HELPER_RE = /\bfun\s+secondsFormMs\s*\([^)]*\)[^=]*=\s*\w+\.toLongOrNull\s*\(/;
@@ -146,12 +146,15 @@ export function detect(clientText: string | null): string[] {
 // --- the WIDENED leg (V4-100) ------------------------------------------------------------------
 // Detection stays pure (path -> code text) so the selftest can feed a second parser synthetically
 // instead of having to write one to disk.
-const MAIN_SOURCE = "gateway";
+// Every §2.2 module home, walked whole exactly as gateway/ was (restructure PR 3 moves the modules
+// out of gateway/ one commit at a time; an absent home contributes nothing, so the second-parser
+// prohibition can only widen as modules land, never shrink).
+const MAIN_SOURCES = ["gateway", "client", "core", "upstream", "dialects", "providers", "daemon", "app", "quality"];
 const HEADER_MENTION_RE = /Retry-After|retry_after|retryAfter/i;
 // Tokens ONLY a parser carries: the RFC 7231 date format, the digit-only seconds guard (either
 // polarity — `all { it in '0'..'9' }` accepts it, `any { it !in '0'..'9' }` rejects non-digits), and
 // the leading-zero normalizer that makes an arbitrarily padded seconds value small. A file that
-// merely hands the header to splice.spi.RetryAfter carries none of them, which is what keeps
+// merely hands the header to splice.upstream.retry.RetryAfter carries none of them, which is what keeps
 // delegating free and re-implementing red.
 const PARSER_MARKER_RES = [
   /RFC_1123_DATE_TIME/,
@@ -171,7 +174,7 @@ export function detectSecondParser(sources: Record<string, string>): string[] {
     if (markers.length > 0) {
       problems.push(
         `${path} parses the Retry-After header itself (${markers.length} parser token(s): ` +
-          `${markers.join(", ")}). splice.spi.RetryAfter is the ONE parser — a second copy is ` +
+          `${markers.join(", ")}). splice.upstream.retry.RetryAfter is the ONE parser — a second copy is ` +
           "a second set of ordering and clamping rules for the same header, which is the gap " +
           "this wall was blind to. Call it, do not re-derive it.",
       );
@@ -180,15 +183,14 @@ export function detectSecondParser(sources: Record<string, string>): string[] {
   return problems;
 }
 
-/** Every main-source Kotlin file under gateway/ that is not the one allowed parser, code-only and
+/** Every main-source Kotlin file under every module home that is not the one allowed parser, code-only and
  *  keyed by repo-relative path. The allowed file is excluded because its markers are the POINT —
  *  detect() is what judges it. */
 export function mainSourceFiles(): Record<string, string> {
   const allowed = CLIENT;
   const out: Record<string, string> = {};
-  const base = resolve(ROOT, MAIN_SOURCE);
   const found: string[] = [];
-  const stack = [base];
+  const stack = MAIN_SOURCES.map((home) => resolve(ROOT, home)).filter((dir) => existsSync(dir));
   while (stack.length > 0) {
     const cur = stack.pop() as string;
     for (const e of readdirSync(cur, { withFileTypes: true })) {
@@ -277,7 +279,7 @@ export const DECOY_HELPERS_FIX =
 // something that is not this header (marker, no mention). The leg is the AND of the two, and each
 // control fails if it silently becomes an OR.
 export const SECOND_PARSER_FIXTURE: Record<string, string> = {
-  "gateway/app/src/main/kotlin/splice/app/SecondParser.kt":
+  "app/src/main/kotlin/splice/app/SecondParser.kt":
     "private fun retryAfterMs(header: String?): Long? {\n" +
     "    val value = header?.trim() ?: return null\n" +
     "    if (value.all { it in '0'..'9' }) return value.toLongOrNull()\n" +
@@ -286,17 +288,17 @@ export const SECOND_PARSER_FIXTURE: Record<string, string> = {
     "}",
 };
 export const DELEGATING_FIXTURE: Record<string, string> = {
-  "gateway/app/src/main/kotlin/splice/app/Delegating.kt":
+  "app/src/main/kotlin/splice/app/Delegating.kt":
     'val ms = retryAfter.retryAfterMs(response.headers["Retry-After"], clock)\n',
 };
 export const UNRELATED_DATE_FIXTURE: Record<string, string> = {
-  "gateway/app/src/main/kotlin/splice/app/OtherDates.kt":
+  "app/src/main/kotlin/splice/app/OtherDates.kt":
     "val expiry = ZonedDateTime.parse(cookie, DateTimeFormatter.RFC_1123_DATE_TIME)\n",
 };
 // A seconds-ONLY re-derivation in a different module: no date token at all, so it is caught by the
 // digit/normalizer markers rather than the RFC one — the leg is not "the date parser moved".
 export const SECOND_PARSER_FIXTURE_OTHER_MODULE: Record<string, string> = {
-  "gateway/gateway/src/main/kotlin/splice/gateway/head/SecondParser.kt":
+  "daemon/head/src/main/kotlin/splice/gateway/head/SecondParser.kt":
     'private val RETRY_AFTER = Regex("retry[-_]after", RegexOption.IGNORE_CASE)\n' +
     "fun seconds(value: String): Long = " +
     "value.trimStart('0').ifEmpty { \"0\" }.toLong()\n",
@@ -341,7 +343,7 @@ function selftest(): number {
   }
   if (detectSecondParser(DELEGATING_FIXTURE).length > 0) {
     fails.push(
-      "a file that merely delegates to splice.spi.RetryAfter must be GREEN, got " +
+      "a file that merely delegates to splice.upstream.retry.RetryAfter must be GREEN, got " +
         pyRepr(detectSecondParser(DELEGATING_FIXTURE)),
     );
   }

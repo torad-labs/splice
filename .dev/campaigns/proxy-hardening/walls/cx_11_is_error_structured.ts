@@ -71,8 +71,8 @@ function pyRepr(items: string[]): string {
 const ROOT = resolve(import.meta.dir, "../../../..");
 
 export const PATHS: Record<string, string> = {
-  wire: "gateway/core/src/main/kotlin/splice/core/wire/ContentBlock.kt",
-  guard: "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/LoopGuard.kt",
+  wire: "core/src/main/kotlin/splice/core/wire/ContentBlock.kt",
+  guard: "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/LoopGuard.kt",
 };
 
 // key -> (token, why it is the thing that must exist)

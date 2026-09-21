@@ -45,7 +45,7 @@ const SOURCE = join(ROOT, 'server/test/codex-proxy.test.mjs');
 const VENDORED = join(HERE, 'mock-upstream.vendored.mjs');
 const FIXTURES = join(HERE, 'fixtures');
 const EXPECTATIONS = join(HERE, 'expectations.toml');
-const JAR = join(ROOT, 'gateway/app/build/libs/app-all.jar');
+const JAR = join(ROOT, 'app/build/libs/app-all.jar');
 
 const START = "import http from 'node:http';";
 const END = "mock.listen(0, '127.0.0.1');";

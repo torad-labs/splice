@@ -25,13 +25,7 @@ import { join } from "node:path";
 import { SUMS, enumerationProblem, readManifest } from "../lib/dist.ts";
 import { launcherRehearsal } from "../lib/launcher.ts";
 import { shimPath } from "../lib/shim.ts";
-import {
-  commentDecoy,
-  parseWorkflow,
-  prereleaseProblem,
-  releaseFilesProblem,
-  stageStepProblem,
-} from "../lib/workflow.ts";
+import { commentDecoy, parseWorkflow, prereleaseProblem, releaseFilesProblem, stageStepProblem, tagMutantEnv } from "../lib/workflow.ts";
 
 export const usage =
   "verify                               the release rehearsal: install.sh, the launch shim, release.yml, the stage/accept mutants, then stage + accept for real";
@@ -120,7 +114,7 @@ export async function verify(argv: readonly string[], repoRoot: string): Promise
     ["v0.0.0-mismatch", "does not match package version"],
   ];
   for (const [tag, reason] of tagMutants) {
-    const mutant = gradle(repoRoot, ["-q", ":app:stageRelease", "--no-parallel"], { SPLICE_RELEASE_TAG: tag });
+    const mutant = gradle(repoRoot, ["-q", ":app:stageRelease", "--no-parallel"], tagMutantEnv(tag));
     if (mutant.ok) return fail(`release verify: invalid release tag unexpectedly passed: ${tag}`);
     if (!mutant.output.includes(reason)) {
       return fail(`release verify: ${tag} failed for the wrong reason (expected "${reason}")\n${mutant.output}`);

@@ -31,6 +31,22 @@ export const STAGE_TASK = ":app:stageRelease";
 export const RESOLVED_VERSION = "${{ steps.version.outputs.version }}";
 export const PRERELEASE_INPUT = "${{ contains(needs.build.outputs.version, '-') }}";
 
+/**
+ * The environment a TAG MUTANT runs under.
+ *
+ * A real pushed tag beats SPLICE_RELEASE_TAG inside :app:stageRelease (app/build.gradle.kts, DR-19),
+ * which is correct for staging and wrong for the mutants: on a `v*` tag push GITHUB_REF_TYPE is
+ * "tag", the real and VALID tag wins over the bad tag this leg is feeding in, stageRelease succeeds,
+ * and the leg reports that an invalid tag passed. The failure is the harness, not the code, and it
+ * only ever appears on the one run that ships a release.
+ *
+ * Neutralising the ref makes the mutant the authority again. Skipping the leg under
+ * GITHUB_REF_TYPE=tag would also go green, and would drop the tag gate exactly where it matters.
+ */
+export function tagMutantEnv(tag: string): Record<string, string> {
+  return { SPLICE_RELEASE_TAG: tag, GITHUB_REF_TYPE: "", GITHUB_REF_NAME: "" };
+}
+
 export function parseWorkflow(text: string): Workflow | Error {
   let parsed: unknown;
   try {

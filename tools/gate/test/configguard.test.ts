@@ -2,7 +2,7 @@
 // this proves the wall can actually fail. The real checker runs against a mirrored tree — every
 // file it and its two subprocess legs read — so fixtures never touch the repo's own config.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { configGuardProblems } from "../src/lib/configguard.ts";

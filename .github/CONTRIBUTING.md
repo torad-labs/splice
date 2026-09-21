@@ -19,13 +19,14 @@ npm run test:hooks        # orchestrator hook test suite
 bun test tools/gate           # the gate CLI's own red-green arms
 ./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
 npm run lint -w console && npm test -w console && ./gradlew :console:build
-npm run oss:verify
+bun tools/gate audit         # the dependency audit
+bun tools/release verify     # the release rehearsal: stage, accept, the launcher against the shim
 ```
 
-`npm run gate` (`bun tools/gate run`: the Gradle ladder of tools/gate/config/ladder.json, then the OSS readiness scripts) runs the complete list: Gradle module-law/detekt/tests,
+`npm run gate` (`bun tools/gate run`: the Gradle ladder of tools/gate/config/ladder.json, then the release rehearsal) runs the complete list: Gradle module-law/detekt/tests,
 ast-grep walls, hook tests, campaign walls, config guard, console lint/test (the bundle builds in the gradle tier)
-with a committed-dist check, staged release acceptance, dependency audit, and every OSS
-readiness check. The individual commands are listed only so a contributor can run one in
+with a committed-dist check, the dependency audit, the release-readiness law, and the staged
+release acceptance. The individual commands are listed only so a contributor can run one in
 isolation while iterating. The Gradle build is rooted at the repository root with its own
 JDK 21 toolchain; its modules live under `gateway/`.
 

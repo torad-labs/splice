@@ -19,7 +19,7 @@
 // is gone is skipped on read. Bounded to the newest MAX_OWNED_SESSIONS so a head's file never grows without
 // limit; cwd paths are canonicalised (realpath) on both sides, since the shim sends $PWD and the hook
 // sends Claude Code's cwd, which can spell one directory two ways through a symlink.
-package splice.core.launch
+package splice.client.resume
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray

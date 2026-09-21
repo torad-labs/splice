@@ -6,18 +6,23 @@
 // like any named resume. No session of this head there means a NEW session, said in one sentence —
 // never the newest foreign one. A launch that names a session (`-r <id>`) or has no `-c` is
 // untouched, and so is one from a shim too old to send its cwd: that shim is named as the fix.
-package splice.control
+package splice.client.resume
 
-import splice.core.launch.SessionOwnership
+import java.nio.file.Path
 
 private const val CONTINUE_SHORT = "-c"
 private const val CONTINUE_LONG = "--continue"
 private const val RESUME_LONG = "--resume"
 
-internal data class ContinueResolution(val args: List<String>, val warning: String?)
+public data class ContinueResolution(val args: List<String>, val warning: String?)
 
-internal class HeadBoundedContinue {
-    fun resolve(spec: LaunchSpec, args: List<String>, cwd: String?): ContinueResolution {
+/**
+ * [ownTree] is the head's own config tree, where [SessionOwnership] keeps the sessions this head
+ * wrote — the one thing the resolution reads, so :daemon-control's launch spec stays on its side of
+ * the module law (`:client -> :core` only).
+ */
+public class HeadBoundedContinue {
+    public fun resolve(ownTree: Path, args: List<String>, cwd: String?): ContinueResolution {
         val index = args.indexOfFirst { it == CONTINUE_SHORT || it == CONTINUE_LONG }
         return when {
             index < 0 || args.any(::namesResume) -> ContinueResolution(args, null)
@@ -26,12 +31,12 @@ internal class HeadBoundedContinue {
                 "this launch shim sent no cwd, so -c is not bounded to this head's own sessions — " +
                     "run `splice install` to refresh bin/splice-launch",
             )
-            else -> bounded(spec, args.filterIndexed { position, _ -> position != index }, cwd)
+            else -> bounded(ownTree, args.filterIndexed { position, _ -> position != index }, cwd)
         }
     }
 
-    private fun bounded(spec: LaunchSpec, rest: List<String>, cwd: String): ContinueResolution {
-        val newest = SessionOwnership(spec.trees.own).newestFor(cwd)
+    private fun bounded(ownTree: Path, rest: List<String>, cwd: String): ContinueResolution {
+        val newest = SessionOwnership(ownTree).newestFor(cwd)
             ?: return ContinueResolution(
                 rest,
                 "no session of this head in $cwd to continue — starting a new one " +

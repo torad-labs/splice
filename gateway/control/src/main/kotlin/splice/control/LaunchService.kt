@@ -15,6 +15,7 @@ package splice.control
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudeLogins
 import splice.client.MaterializeSpec
+import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
 import splice.client.wrap.WrapStateRead
@@ -100,7 +101,7 @@ public class LaunchService(
         // launch pointed elsewhere). Copying first would write through the very link this row removes.
         // V4-183 BEFORE the adoption: a bounded -c becomes a named resume, and a named resume is what
         // adoptResume judges.
-        val bounded = headBoundedContinue.resolve(effective, extraArgs, cwd)
+        val bounded = headBoundedContinue.resolve(effective.trees.own, extraArgs, cwd)
         val adoption = adoptResume(effective, bounded.args)
         val env = buildEnv(effective, slots)
         val unset = staleEnvUnsets(effective, slots)

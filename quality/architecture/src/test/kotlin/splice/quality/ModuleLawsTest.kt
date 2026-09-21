@@ -1,4 +1,6 @@
 // NEW: Konsist module-law arms (V4-91), split out of ArchitectureLawsTest to clear detekt LargeClass.
+package splice.quality
+
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -64,12 +66,12 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are
  *  harnesses rather than product layers — the same set splice.module-law.gradle.kts calls `nonLibrary`. */
-private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
+private val UNRESTRICTED_MODULES = setOf(":app", ":quality-architecture", ":fir-checks")
 
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":arch-tests", ":fir-checks",
+    ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A

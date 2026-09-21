@@ -11,10 +11,12 @@
 // list omits.
 //
 // THE SOURCE OF TRUTH IS GRADLE'S OWN PROJECT MODEL, handed to this JVM by
-// gateway/arch-tests/build.gradle.kts as one system property ([ProjectMap.PROPERTY]) — never a
+// quality/architecture/build.gradle.kts as one system property ([ProjectMap.PROPERTY]) — never a
 // regex over settings.gradle.kts, which is a second reading of the same fact and can disagree with
 // the build that actually runs. The channel is parsed HERE and nowhere else, and it fails BY NAME
 // when it is absent or malformed: a law that cannot see the modules must not pass.
+package splice.quality
+
 import java.io.File
 
 /** Gradle path (`:core`) -> the module's directory relative to the Gradle root (`gateway/core`). */
@@ -89,13 +91,13 @@ internal class ProjectMap private constructor(
      *  the law named `.claude/worktrees/v0.4.0/gateway/core` against mapped `gateway/core`. [from]
      *  itself is exempt because the repository root carries `.git` too, and pruning it would blank
      *  the sweep — a law that reports nothing is the fail-open shape this file exists against.
-     *  gateway/arch-tests/build.gradle.kts applies the same rule to the task's census fingerprint;
+     *  quality/architecture/build.gradle.kts applies the same rule to the task's census fingerprint;
      *  a tree one of them reads and the other does not is an UP-TO-DATE green over an unrun sweep. */
     private fun swept(from: File): Sequence<File> =
         from.walkTopDown().onEnter { it.name !in notSwept && (it == from || !File(it, ".git").exists()) }
 
     internal companion object {
-        /** The channel: `:path=directory` pairs, `;`-separated, written by arch-tests/build.gradle.kts. */
+        /** The channel: `:path=directory` pairs, `;`-separated, written by quality/architecture/build.gradle.kts.kts. */
         const val PROPERTY: String = "splice.projectMap"
 
         /** The absolute Gradle root the laws read the tree from — the REPOSITORY root since the
@@ -122,7 +124,7 @@ internal class ProjectMap private constructor(
             check(!raw.isNullOrBlank()) {
                 "no -D$PROPERTY: the laws grade the modules the BUILD declares, and an absent map " +
                     "grades nothing while every law still reports green. " +
-                    "gateway/arch-tests/build.gradle.kts is what supplies it."
+                    "quality/architecture/build.gradle.kts is what supplies it."
             }
             val directories = mutableMapOf<String, String>()
             raw.split(ENTRY_SEPARATOR).forEach { entry ->
@@ -148,7 +150,7 @@ internal class ProjectMap private constructor(
             check(!raw.isNullOrBlank()) {
                 "no -D$CENSUS_PROPERTY: the unmapped-source sweep skips exactly the directory names " +
                     "the build's census input excludes, and a sweep that cannot see that list would " +
-                    "walk trees the build never fingerprints. gateway/arch-tests/build.gradle.kts " +
+                    "walk trees the build never fingerprints. quality/architecture/build.gradle.kts " +
                     "is what supplies it."
             }
             return raw.split(ENTRY_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }.toSet()

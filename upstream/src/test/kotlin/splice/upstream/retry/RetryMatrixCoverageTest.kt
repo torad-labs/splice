@@ -1,10 +1,10 @@
 // NEW: V4-117 (error taxonomy, 2026-09-18) — the enumeration test the brief calls for: every
 // (FailureCause, FailurePhase) pair must answer, and the answer must carry a written reason.
 //
-// WHY IT LIVES HERE AND NOT IN :arch-tests, WHERE THE ROW'S FILE LIST PUT IT: the matrix and its two
+// WHY IT LIVES HERE AND NOT IN :quality-architecture, WHERE THE ROW'S FILE LIST PUT IT: the matrix and its two
 // result types are `internal` to :upstream — deliberately, see RetryMatrix.kt's visibility note,
 // because the retry loop that consumes them (RetryRules) is in this same module, so `public` would
-// declare a surface no other module uses and red the public-surface ratchet. A test in :arch-tests
+// declare a surface no other module uses and red the public-surface ratchet. A test in :quality-architecture
 // cannot see an internal declaration at all, so the enumeration runs here, in a friend of this
 // module's main source set. The path is reported to the orchestrator rather than silently deviated
 // from.

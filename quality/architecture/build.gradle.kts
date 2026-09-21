@@ -24,7 +24,7 @@ val moduleDirectories: Map<String, String> = rootProject.subprojects
 // P0, from the review of fdc71fad: THE CENSUS. ProjectMap.unmappedProductionDirViolations sweeps the
 // WHOLE root for src/main/kotlin trees no module claims, but the mapped inputs below name only the
 // trees the map already knows — so a tree added under providers/x without touching
-// settings.gradle.kts changed no declared input, an ordinary :arch-tests:test stayed UP-TO-DATE,
+// settings.gradle.kts changed no declared input, an ordinary :quality-architecture:test stayed UP-TO-DATE,
 // and the unclaimed tree passed in silence. The census is its own input: every production Kotlin
 // file anywhere under the root, minus the directory names the sweep never enters. ONE list, written
 // here and handed to the test JVM as a property, so the build cannot fingerprint a narrower tree

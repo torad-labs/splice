@@ -1,6 +1,8 @@
 // NEW: Konsist architecture laws (P1-KONSIST) — ring 3 of the enforcement stack.
-// These arm as code lands: an empty scope passes vacuously, a violation fails :arch-tests:test.
+// These arm as code lands: an empty scope passes vacuously, a violation fails :quality-architecture:test.
 // Grow this file as modules land; every new law gets a red/green proof in the ledger note.
+package splice.quality
+
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.verify.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals

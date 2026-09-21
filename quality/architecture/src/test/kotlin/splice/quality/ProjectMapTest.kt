@@ -10,6 +10,8 @@
 // fifth, from the review of fdc71fad: the census channel — the sweep skips exactly the names the
 // build's census input excludes, so the build cannot leave the sweep UP-TO-DATE over a tree it
 // never fingerprinted.
+package splice.quality
+
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -25,7 +27,7 @@ private const val NESTED_DIR = "providers/x"
 
 private const val MISSING_BUILD_FILE_EXPECTED = "the project map places :provider-x at providers/x, which ships no build.gradle.kts — a module whose build file cannot be read is UNGRADED, not compliant. Fix the module's directory or restore its build file."
 
-private const val ABSENT_CHANNEL_EXPECTED = "no -Dsplice.projectMap: the laws grade the modules the BUILD declares, and an absent map grades nothing while every law still reports green. gateway/arch-tests/build.gradle.kts is what supplies it."
+private const val ABSENT_CHANNEL_EXPECTED = "no -Dsplice.projectMap: the laws grade the modules the BUILD declares, and an absent map grades nothing while every law still reports green. quality/architecture/build.gradle.kts is what supplies it."
 
 private const val MALFORMED_ENTRY_EXPECTED = "splice.projectMap entry 'core=core' is not ':<gradle path>=<directory relative to the repository root>' — a half-read map is a map that drops modules silently."
 
@@ -37,7 +39,7 @@ private const val UNMAPPED_DIR_EXPECTED = "providers/x ships production Kotlin u
 
 private const val STALE_NAME_EXPECTED = "the project map has no :ghost — the laws grade the modules the build declares, so a name this file asks for and the build does not include is a stale entry, not a gap."
 
-private const val ABSENT_CENSUS_EXPECTED = "no -Dsplice.censusNotSwept: the unmapped-source sweep skips exactly the directory names the build's census input excludes, and a sweep that cannot see that list would walk trees the build never fingerprints. gateway/arch-tests/build.gradle.kts is what supplies it."
+private const val ABSENT_CENSUS_EXPECTED = "no -Dsplice.censusNotSwept: the unmapped-source sweep skips exactly the directory names the build's census input excludes, and a sweep that cannot see that list would walk trees the build never fingerprints. quality/architecture/build.gradle.kts is what supplies it."
 
 private const val GENERATED_DIR_EXPECTED = "build ships production Kotlin under src/main/kotlin and the project map claims no module there — include it in settings.gradle.kts so every law grades it, or delete the sources; a module the build never included is silently ungoverned."
 
@@ -235,7 +237,7 @@ class ProjectMapTest {
     //
     // THE ROOT IS EXEMPT ON PURPOSE: it carries `.git` too, and pruning it would blank the whole
     // sweep — a law that reports nothing, which is the fail-open shape this file exists against.
-    // The Gradle twin is the `productionSourceCensus` fileTree in gateway/arch-tests/build.gradle.kts,
+    // The Gradle twin is the `productionSourceCensus` fileTree in quality/architecture/build.gradle.kts,
     // which excludes exactly these directories from the task fingerprint.
     @Test
     fun `a nested git worktree is another repository's tree, not an unclaimed module - PR2`(@TempDir temp: File) {

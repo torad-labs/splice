@@ -1,6 +1,6 @@
 // The Gradle root is the REPOSITORY root (restructure plan §6.2 PR 2). The modules still live under
 // gateway/<id> until PR 3 moves them, so every include()d project names its directory explicitly
-// below — that map is also what the laws grade through (gateway/arch-tests/build.gradle.kts reads
+// below — that map is also what the laws grade through (quality/architecture/build.gradle.kts reads
 // Gradle's own project model, so a module in a nested directory is graded like any other).
 // Module graph is LAW — see build-logic/src/main/kotlin/splice.module-law.gradle.kts.
 pluginManagement {
@@ -34,7 +34,7 @@ include(
     ":daemon-head",
     ":daemon-control",
     ":app",
-    ":arch-tests",
+    ":quality-architecture",
     ":fir-checks",
 )
 
@@ -53,5 +53,5 @@ project(":providers-openai").projectDir = file("providers/openai")
 project(":daemon-head").projectDir = file("daemon/head")
 project(":daemon-control").projectDir = file("daemon/control")
 project(":app").projectDir = file("app")
-project(":arch-tests").projectDir = file("gateway/arch-tests")
+project(":quality-architecture").projectDir = file("quality/architecture")
 project(":fir-checks").projectDir = file("gateway/fir-checks")

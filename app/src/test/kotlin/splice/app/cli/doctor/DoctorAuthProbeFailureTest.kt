@@ -11,9 +11,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.doctor.CheckStatus
-import splice.app.cli.doctor.DoctorInstallProbes
-import splice.app.cli.doctor.DoctorProbes
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path

@@ -27,7 +27,7 @@
 # this rule's shape, a boundary of the tool. What this wall does is make the DIRECT form
 # inexpressible, so the shape cannot come back the obvious way, and it names the transitive
 # instance above so the sibling fix row has it. Catching the transitive form needs a call-graph
-# check (:arch-tests / Konsist) or the fix that removes it; both are outside a wall row's fence.
+# check (:quality-architecture / Konsist) or the fix that removes it; both are outside a wall row's fence.
 #
 # THE CENSUS (measured 2026-09-17, gateway/*/src/main). Denominator from the source, both levels:
 # 112 `synchronized(` blocks in scope; of those, 3 lexical blocking-IO hits, all in one function,

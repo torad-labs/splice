@@ -52,7 +52,7 @@ date = "2026-09-20"
 reason = """
 Production-only walls: each grades what the shipped daemon does, and binds src/main by design. Test
 sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test) and
-kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in :arch-tests.
+kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in :quality-architecture.
 """
 
 [[exclusion]]

@@ -295,6 +295,16 @@ internal object AutoCloseableClosed {
         return hits.sorted()
     }
 
+    /** The report: each problem, then where src/test closes the type — the pointer a fix starts from. */
+    fun render(problems: List<String>, tests: Map<String, String>): String =
+        problems.joinToString(
+            separator = "\n  - ",
+            prefix = "AUTOCLOSEABLE CLOSED (V4-95) violated:\n  - ",
+        ) { problem ->
+            val name = problem.split(Regex("\\s+")).getOrElse(1) { "" }
+            problem + testOnlyClosers(tests, name).joinToString("") { "\n      closed only here: $it" }
+        }
+
     fun concreteCloseables(main: Map<String, String>): List<Decl> {
         val decls = declarations(main)
         val closure = closeableClosure(decls)
@@ -313,14 +323,7 @@ class AutoCloseableClosedLawTest {
         }
         val problems = AutoCloseableClosed.audit(main)
         assertTrue(problems.isEmpty()) {
-            val tests = AutoCloseableClosed.read(map, "src/test", "src/testFixtures")
-            problems.joinToString(
-                separator = "\n  - ",
-                prefix = "AUTOCLOSEABLE CLOSED (V4-95) violated:\n  - ",
-            ) { problem ->
-                val name = problem.split(Regex("\\s+")).getOrElse(1) { "" }
-                problem + AutoCloseableClosed.testOnlyClosers(tests, name).joinToString("") { "\n      closed only here: $it" }
-            }
+            AutoCloseableClosed.render(problems, AutoCloseableClosed.read(map, "src/test", "src/testFixtures"))
         }
         assertTrue(
             AutoCloseableClosed.concreteCloseables(main).isNotEmpty(),
@@ -375,13 +378,10 @@ class AutoCloseableClosedLawTest {
                 },
                 "3e. exactly ONE finding is expected here, got: ${repr(hits)}",
             )
-            assertTrue(
-                AutoCloseableClosed.testOnlyClosers(
-                    AutoCloseableClosed.read(synthetic, "src/test"),
-                    "JvmCodeModeRuntime",
-                ).isNotEmpty(),
-                "3d. the reporting aid must locate the test-only closers",
-            )
+            val report = AutoCloseableClosed.render(hits, AutoCloseableClosed.read(synthetic, "src/test"))
+            assertTrue("closed only here: $TEST:5" in report) {
+                "3d. the report must point at the test-only closer by file and line, got:\n$report"
+            }
         }
     }
 

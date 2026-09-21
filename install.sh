@@ -127,6 +127,14 @@ check_runtime curl "this installer's release downloads need it" \
   "$(runtime_fix curl https://curl.se)"
 check_runtime node "Claude Code's runtime and the launch shim's (Node 24)" \
   "$(runtime_fix nodejs https://nodejs.org)"
+# The shim replaces itself with `claude` through process.execve (Node 22.15+); an older Node would
+# learn that at the first launch, from the shim's own message — cheaper to say it here.
+if command -v node >/dev/null 2>&1 && ! node -e 'process.exit(typeof process.execve === "function" ? 0 : 1)'; then
+  echo "splice: ✗ node $(node -v) is too old — the launch shim needs Node 22.15+ (24 recommended)"
+  if ! offer_fix "Node 24" "$(runtime_fix nodejs https://nodejs.org)"; then
+    RUNTIME_GAPS=$((RUNTIME_GAPS + 1))
+  fi
+fi
 check_runtime claude "splice wraps Claude Code — install it before launching a head" \
   "npm install -g @anthropic-ai/claude-code"
 if [ "$RUNTIME_GAPS" -gt 0 ]; then

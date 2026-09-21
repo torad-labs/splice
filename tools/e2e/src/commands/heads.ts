@@ -108,13 +108,14 @@ export function liveStateDir(home: string = homedir(), env: Record<string, strin
   // a DIRECTORY. "cannot be stat-ed" is not absence — an unreadable ~/.splice would otherwise adopt
   // the pre-0.4 root here while the daemon declines and warns — and a REGULAR FILE at either path
   // is not a state root either.
+  // ENOENT alone is absence. `throwIfNoEntry: false` answers undefined on ENOTDIR too — a REGULAR
+  // FILE where ~/.splice belongs — and adopted the pre-0.4 root where StatePaths declines.
   const probe = (dir: string): "dir" | "absent" | "unusable" => {
     try {
-      const found = statSync(dir, { throwIfNoEntry: false });
-      if (found === undefined) return "absent";
-      return found.isDirectory() ? "dir" : "unusable";
-    } catch {
-      return "unusable"; // EACCES on the parent: present-or-absent is UNKNOWN, which is not absent.
+      return statSync(dir).isDirectory() ? "dir" : "unusable";
+    } catch (failure) {
+      // EACCES on the parent, ENOTDIR: present-or-absent is UNKNOWN, which is not absent.
+      return (failure as NodeJS.ErrnoException).code === "ENOENT" ? "absent" : "unusable";
     }
   };
   const current = join(home, ".splice", "state");

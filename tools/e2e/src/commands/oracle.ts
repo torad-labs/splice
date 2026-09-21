@@ -171,6 +171,118 @@ export function corpusDrift(oracleDir: string): string | null {
   return null;
 }
 
+/**
+ * The corpus's ENROLMENT checks, shared by the replay and its test — the half that grades the
+ * expectations table against the fixture directory rather than against itself.
+ *
+ * Retired here from cx_19_oracle_replay.ts (2026-09-21). The wall and this function ask the same
+ * questions; the difference that matters is WHERE the denominator comes from. `readdirSync` of the
+ * fixture directory is the source, so a scenario captured and never enrolled is visible, and so is
+ * a row that outlived its fixture. A checker whose denominator is the expectations table cannot
+ * fail for what the table omits, which is the whole reason bun#34441 ("wasn't counted and wasn't
+ * protected against regression") is quoted at the top of that file.
+ *
+ * Status is a CLOSED vocabulary. `not-yet-replayed` and `kotlin-wrong` are the honest birth and
+ * bug states — they are legitimate to write down and illegitimate to ship, so they red here rather
+ * than being silently tolerated. Every disposition carries its reason: a `passing` row cites its
+ * proof, a `sanctioned` row cites its authority AND pins the bytes, an `[[excluded]]` row says why
+ * it was never frozen. A blank reason is an absence wearing a label.
+ *
+ * NOT covered, because the table cannot know it: a DELETED [[divergence]] row. Nothing states how
+ * many divergences should exist, so this check and the wall it replaces are both green on it. The
+ * replay is that row's denominator — the diff it sanctioned goes unsanctioned the moment it leaves
+ * (oracle.test.ts pins both directions).
+ *
+ * Returns the FATAL diagnostic (every problem, one per line), or null when enrolment is sound.
+ */
+export function enrolmentDrift(oracleDir: string): string | null {
+  const text = readExpectations(oracleDir);
+  const onDisk = new Set(
+    readdirSync(oracleDir)
+      .filter((f) => f.endsWith(".json") && f !== MANIFEST_NAME)
+      .map((f) => f.replace(/\.json$/, "")),
+  );
+  const problems: string[] = [];
+  const blocks = (tag: string) => text.split(new RegExp(`^\\[\\[${tag}\\]\\]$`, "m")).slice(1);
+
+  const enrolled = new Set<string>();
+  for (const block of blocks("scenario")) {
+    const name = tomlStr(block, "name");
+    if (name === undefined) {
+      problems.push("a [[scenario]] row has no name — it can grade nothing");
+      continue;
+    }
+    enrolled.add(name);
+    if (!onDisk.has(name)) {
+      problems.push(`NO FIXTURE   ${name}: enrolled row names a fixture that is not on disk`);
+    }
+    const status = tomlStr(block, "status");
+    switch (status) {
+      case "passing":
+        if (!tomlStr(block, "proof")) {
+          problems.push(`UNPROVEN     ${name}: passing with no proof — a verdict with nothing behind it`);
+        }
+        break;
+      case "sanctioned":
+        if (!tomlStr(block, "authority")) {
+          problems.push(`UNCITED      ${name}: sanctioned divergence with no authority`);
+        }
+        if (!tomlStr(block, "pinned_sha256")) {
+          problems.push(`UNPINNED     ${name}: sanctioned divergence with no pinned bytes — an unmonitored hole`);
+        }
+        break;
+      case "not-yet-replayed":
+        problems.push(`UNREPLAYED   ${name}: captured but never graded — the fixture is inert (bun#34441)`);
+        break;
+      case "kotlin-wrong":
+        problems.push(`KOTLIN-WRONG ${name}: an open bug, by this file's own definition`);
+        break;
+      default:
+        problems.push(`UNKNOWN      ${name}: status ${status === undefined ? "(absent)" : JSON.stringify(status)} is not one this table defines`);
+    }
+  }
+  for (const block of blocks("excluded")) {
+    const name = tomlStr(block, "name");
+    if (name === undefined) {
+      problems.push("an [[excluded]] row has no name — nothing is excluded by it");
+      continue;
+    }
+    enrolled.add(name);
+    if (onDisk.has(name)) {
+      problems.push(`CONTRADICTED ${name}: excluded from the corpus, yet a fixture for it is on disk`);
+    }
+    if (!tomlStr(block, "reason")) {
+      problems.push(`UNEXPLAINED  ${name}: excluded with no reason — a disposition with nothing in it`);
+    }
+  }
+  for (const block of blocks("divergence")) {
+    const field = tomlStr(block, "field");
+    if (field === undefined) {
+      problems.push("a [[divergence]] row names no field — it sanctions nothing");
+      continue;
+    }
+    // Same law as a sanctioned scenario, through the same branch: cite what authorised it, pin the
+    // expected bytes. Before 2026-08-07 a loader that read only the scenario array made a
+    // divergence block a comment with TOML syntax.
+    if (tomlStr(block, "status") !== "sanctioned") {
+      problems.push(`UNKNOWN      ${field}: a [[divergence]] row exists only to sanction, so its status must say so`);
+      continue;
+    }
+    if (!tomlStr(block, "authority")) {
+      problems.push(`UNCITED      ${field}: sanctioned divergence with no authority`);
+    }
+    if (!tomlStr(block, "pinned_sha256")) {
+      problems.push(`UNPINNED     ${field}: sanctioned divergence with no pinned bytes`);
+    }
+  }
+  for (const name of [...onDisk].sort()) {
+    if (!enrolled.has(name)) {
+      problems.push(`UNENROLLED   ${name}: fixture on disk with no expectations row — captured and unprotected`);
+    }
+  }
+  return problems.length === 0 ? null : `FATAL enrolment drift:\n  ${problems.join("\n  ")}`;
+}
+
 /** True when something is already listening — used to fail closed on a leaked daemon. */
 function portInUse(port: number): Promise<boolean> {
   return new Promise((res) => {
@@ -509,7 +621,10 @@ export async function oracle(argv: readonly string[]): Promise<number> {
 }
 
 async function replay({ oracleDir, jar, only, keep, jsonOut }: ReplayOptions): Promise<number> {
-  const drift = corpusDrift(oracleDir);
+  // Integrity first (are the bytes the captured bytes), then enrolment (is every captured scenario
+  // actually being graded). Both are harness failures, not gateway verdicts: a corpus that cannot
+  // be trusted produces no verdict at all.
+  const drift = corpusDrift(oracleDir) ?? enrolmentDrift(oracleDir);
   if (drift !== null) {
     console.error(drift);
     return HARNESS_EXIT;

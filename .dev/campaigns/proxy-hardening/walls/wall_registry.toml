@@ -24,7 +24,12 @@
 [[item]]
 id = "CX-19"
 phase = "W0-net"
-wall = ".dev/campaigns/proxy-hardening/walls/cx_19_oracle_replay.ts"
+wall = ""
+retired_to = [
+  "tools/e2e/src/commands/oracle.ts",
+  "tools/e2e/test/oracle.test.ts",
+]
+proof = "2026-09-21: the wall graded the expectations table; enrolmentDrift() grades that table against readdirSync of the fixture directory and the replay fails closed on it (HARNESS_EXIT) before touching a jar, so the guarantee now runs in BOTH the oracleReplay and oracleSelftest ladder legs. Equivalence measured on scratch copies of the frozen corpus, wall and checker on the same mutation: tampered fixture byte, deleted fixture, row demoted to not-yet-replayed, row marked kotlin-wrong, invented status, enrolled row with no fixture, sanction stripped of authority, sanction stripped of pinned_sha256, passing row stripped of proof, orphan fixture with no row, excluded scenario contradicted by a fixture, excluded row stripped of its reason, and all three divergence-row clauses — RED on both sides in every case, both GREEN restored (24/24). Three mutations of the new home proved its arms can fail: replay no longer consulting enrolmentDrift, the roster denominator taken from the enrolled set instead of the directory, and the status vocabulary opened up. STRICTLY STRONGER in one place the wall could not reach: the wall was GREEN with BOTH [[divergence]] blocks deleted — the precise hole its own docstring says the 2026-08-07 repair closed — because grading the rows that exist is not a denominator. Neither checker can have a table-side denominator for that row and the new one says so out loud; the replay is its denominator, pinned in both directions (isSanctioned true with the table intact, false without it), so a deleted divergence reds the replay instead of passing silently"
 
 [[item]]
 id = "NF-01"

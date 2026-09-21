@@ -13,6 +13,7 @@ import {
   ORACLE_DIR,
   canonicalize,
   corpusDrift,
+  enrolmentDrift,
   gradeUpstream,
   isSanctioned,
   jsonDiff,
@@ -64,6 +65,143 @@ describe("corpus integrity", () => {
 
   test("a missing fat jar is a harness failure (exit 2) that names the producer, never a nested gradle", async () => {
     expect(await oracle(["replay", "--artifact", "/nonexistent/app-all.jar"])).toBe(HARNESS_EXIT);
+  });
+});
+
+describe("enrolment", () => {
+  // Retired here from cx_19_oracle_replay.ts (2026-09-21). The denominator is readdirSync of the
+  // fixture directory, never the expectations table: a checker whose denominator is the list it
+  // checks cannot fail for what the list omits, which is bun#34441 restated.
+  /** The committed table, with one edit applied to a scratch copy. Throws when the edit matched
+   *  nothing — a mutation that changed no bytes proves nothing about the checker. */
+  function drifted(edit: (text: string) => string): string {
+    const { dir, done } = corpusCopy();
+    try {
+      const f = join(dir, "expectations.toml");
+      const before = readFileSync(f, "utf8");
+      const after = edit(before);
+      expect(after).not.toBe(before);
+      writeFileSync(f, after);
+      return enrolmentDrift(dir) ?? "NULL — the checker is blind to this";
+    } finally {
+      done();
+    }
+  }
+  /** Drop one `key = ...` line from the block that names [row]. */
+  const cut = (text: string, row: string, key: string): string => {
+    const at = text.indexOf(`name = "${row}"`);
+    const line = text.indexOf(`${key} = `, at);
+    return text.slice(0, line) + text.slice(text.indexOf("\n", line) + 1);
+  };
+  // The string "[[divergence]]" also appears inside basic's proof text, so indexOf() on the bare
+  // tag anchors on prose and the leg silently mutates a scenario row instead (caught 2026-09-21
+  // because the finding named `multipart`). Anchor on the line.
+  const DIVERGENCE_AT = "\n[[divergence]]\n";
+
+  test("the committed corpus is fully enrolled — every fixture graded, every row disposed", () => {
+    expect(enrolmentDrift(ORACLE_DIR)).toBeNull();
+  });
+
+  test("RED: a fixture on disk with no expectations row is captured and unprotected", () => {
+    const { dir, done } = corpusCopy();
+    try {
+      cpSync(join(dir, "basic.json"), join(dir, "orphan.json"));
+      expect(enrolmentDrift(dir)).toMatch(/UNENROLLED\s+orphan/);
+    } finally {
+      done();
+    }
+  });
+
+  test("RED: an enrolled row whose fixture is gone", () => {
+    const { dir, done } = corpusCopy();
+    try {
+      rmSync(join(dir, "prefill.json"));
+      expect(enrolmentDrift(dir)).toMatch(/NO FIXTURE\s+prefill/);
+    } finally {
+      done();
+    }
+  });
+
+  test("RED: an excluded scenario contradicted by a fixture on disk", () => {
+    const { dir, done } = corpusCopy();
+    try {
+      cpSync(join(dir, "basic.json"), join(dir, "idle.json"));
+      expect(enrolmentDrift(dir)).toMatch(/CONTRADICTED\s+idle/);
+    } finally {
+      done();
+    }
+  });
+
+  test("RED: the two states this table calls unfinished are refused, not tolerated", () => {
+    const demote = (status: string) => (t: string) =>
+      t.replace('name = "basic"\nstatus = "passing"', `name = "basic"\nstatus = "${status}"`);
+    expect(drifted(demote("not-yet-replayed"))).toMatch(/UNREPLAYED\s+basic/);
+    expect(drifted(demote("kotlin-wrong"))).toMatch(/KOTLIN-WRONG basic/);
+  });
+
+  test("RED: a status outside the table's own vocabulary is refused, never assumed benign", () => {
+    expect(drifted((t) => t.replace('name = "basic"\nstatus = "passing"', 'name = "basic"\nstatus = "fine-probably"'))).toMatch(
+      /UNKNOWN\s+basic: status "fine-probably"/,
+    );
+  });
+
+  test("RED: every disposition cites its reason — proof, authority, pin, exclusion", () => {
+    expect(drifted((t) => cut(t, "basic", "proof"))).toMatch(/UNPROVEN\s+basic/);
+    expect(drifted((t) => cut(t, "multipart", "authority"))).toMatch(/UNCITED\s+multipart/);
+    expect(drifted((t) => cut(t, "multipart", "pinned_sha256"))).toMatch(/UNPINNED\s+multipart/);
+    expect(drifted((t) => cut(t, "drip", "reason"))).toMatch(/UNEXPLAINED\s+drip/);
+  });
+
+  test("RED: a [[divergence]] row obeys the sanctioned-scenario law through the same branch", () => {
+    const first = (edit: (t: string, at: number) => string) => (t: string) => edit(t, t.indexOf(DIVERGENCE_AT));
+    expect(
+      drifted(first((t, at) => {
+        const line = t.indexOf("authority = ", at);
+        return t.slice(0, line) + t.slice(t.indexOf("\n", line) + 1);
+      })),
+    ).toMatch(/UNCITED\s+expected_upstream_requests\[\]\.stream_options/);
+    expect(
+      drifted(first((t, at) => {
+        const line = t.indexOf("pinned_sha256 = ", at);
+        return t.slice(0, line) + t.slice(t.indexOf("\n", line) + 1);
+      })),
+    ).toMatch(/UNPINNED\s+expected_upstream_requests\[\]\.stream_options/);
+    expect(
+      drifted(first((t, at) => {
+        const line = t.indexOf('status = "sanctioned"', at);
+        return t.slice(0, line) + 'status = "kotlin-wrong"' + t.slice(line + 'status = "sanctioned"'.length);
+      })),
+    ).toMatch(/UNKNOWN\s+expected_upstream_requests\[\]\.stream_options/);
+  });
+
+  test("a DELETED [[divergence]] row is caught by the replay, not by this table — the roster has no denominator for it", () => {
+    // Honest limit, measured: enrolmentDrift and cx_19's wall are BOTH green when the blocks are
+    // deleted, because nothing says how many divergences should exist. The replay is the
+    // denominator — the diff those rows sanctioned goes unsanctioned the moment they leave.
+    const text = readFileSync(join(ORACLE_DIR, "expectations.toml"), "utf8");
+    const without = text.slice(0, text.indexOf(DIVERGENCE_AT));
+    expect(without).not.toBe(text);
+    const entry = { path: "[0].stream_options", exp: undefined, obs: { reasoning_summary_delivery: "sequential_cutoff" } };
+    expect(isSanctioned(entry, sanctionedFields(text))).toBe(true);
+    expect(isSanctioned(entry, sanctionedFields(without))).toBe(false);
+  });
+
+  test("RED: enrolment drift is a harness failure (exit 2) that NAMES the drift, before any jar", () => {
+    const { dir, done } = corpusCopy();
+    try {
+      // An ORPHAN fixture, not a deleted one: corpusDrift walks the manifest, so an extra file is
+      // invisible to it and only the enrolment check can produce this. Asserting the exit code
+      // alone proved nothing — a missing jar exits 2 as well, so this arm stayed green with the
+      // enrolment call deleted from replay(). The DIAGNOSTIC is what discriminates.
+      cpSync(join(dir, "basic.json"), join(dir, "orphan.json"));
+      expect(corpusDrift(dir)).toBeNull();
+      const r = run("oracle", "--fixtures", dir, "--artifact", "/nonexistent/app-all.jar");
+      expect(r.status).toBe(HARNESS_EXIT);
+      expect(r.stderr).toMatch(/FATAL enrolment drift/);
+      expect(r.stderr).toMatch(/UNENROLLED\s+orphan/);
+    } finally {
+      done();
+    }
   });
 });
 

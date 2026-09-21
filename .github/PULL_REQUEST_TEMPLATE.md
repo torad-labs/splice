@@ -13,9 +13,9 @@
 ## Gates
 
 - [ ] `npm run gate` (complete Kotlin, Node, console, release, and OSS gate)
-- [ ] `npm run gate:rules` (ast-grep walls: tree scan + rule red/green)
+- [ ] `npm run gate:rules` (ast-grep walls, rule routing, config guard, coverage proof)
 - [ ] `npm run test:hooks`
-- [ ] `bash checks/config-guard.sh`
+- [ ] `bun test tools/gate`
 - [ ] `./gradlew check`
 
 ## Notes

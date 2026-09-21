@@ -36,7 +36,7 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
    header that states the law, the scar, the census and the remedy):
    - ast-grep rule: quality/rules/kotlin/kt-no-lambda-seam.yml, quality/rules/kotlin/kt-no-extension-functions.yml
    - rule-test: quality/rules/rule-tests/kt-catch-swallows-cancellation-test.yml (ast-grep test format;
-     `npm run --silent gate:rules` runs scan + test); routing: sgconfig.yml, checks/rule-routing-selftest.sh;
+     `npm run --silent gate:rules` runs scan + test); routing: sgconfig.yml, `bun tools/gate rules` + tools/gate/test/routing.test.ts;
      rule docs wall: checks/config/ast-grep-rule-docs.py (a new rule may need a doc entry — run it).
    - bun wall with an IN-FILE --selftest: checks/config/shared-quirks-no-vendor-defaults.ts;
      bun wall with a SEPARATE red-green selftest: tools/gate/src/lib/no-python.ts + tools/gate/test/no-python.test.ts

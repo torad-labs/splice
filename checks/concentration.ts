@@ -114,7 +114,7 @@
  * that pretends otherwise buys its green by lying about what is reachable. They are named in
  * CEILING_EXCEPTIONS below with a ceiling and a justification a reader can evaluate, in the idiom
  * this repo already uses twice — `nonLibrary` in splice.module-law.gradle.kts and UNROUTED_ALLOWLIST
- * in checks/rule-routing.sh. Four properties, each of which is what stops the list becoming a
+ * in tools/gate/src/lib/routing.ts. Four properties, each of which is what stops the list becoming a
  * laundry:
  *
  *   - A CEILING, NOT A BLANKET. An excepted file is graded against its own recorded ceiling instead
@@ -143,7 +143,7 @@
  * checks/gate.sh, from every package.json script and from CI, so `npm run gate` printed GATE: PASS
  * while saying nothing about concentration and every ratio in the campaign was advisory — the same
  * defect class as the 2026-07-16 style pack that sat unrouted for a month while 336 top-level
- * functions accumulated under a green gate (see checks/rule-routing.sh, the wall written for that
+ * functions accumulated under a green gate (see tools/gate/src/lib/routing.ts, the wall written for that
  * scar). A wall nobody routes is a wall nobody has, and that was true of this oracle itself.
  *
  * `--max-ratio 1.8` cannot be the gate leg today: it is red on 42 files, so landing it would mean
@@ -329,7 +329,7 @@ export const CAUSE_DOMINANCE = 2 / 3;
 // --------------------------------------------------------------------------------------------
 // The files this tree provably cannot bring under the gate by refactoring. Format:
 // [path, ceiling ratio, "YYYY-MM-DD: why"], the same shape as UNROUTED_ALLOWLIST in
-// checks/rule-routing.sh. Read CEILING EXCEPTIONS in the header before adding one; the short
+// tools/gate/src/lib/routing.ts. Read CEILING EXCEPTIONS in the header before adding one; the short
 // version is that an entry here is a CEILING that still fails when breached, its justification is
 // mechanically required, a stale entry is a hard error, and every run prints the list. Empty after
 // HD-25: UpstreamClient measured 1.78 (C=91.0 / d=51.0) which is under --max-ratio 1.8, so the
@@ -337,7 +337,7 @@ export const CAUSE_DOMINANCE = 2 / 3;
 // this list exists to prevent.
 export const CEILING_EXCEPTIONS: [string, number, string][] = [];
 
-// Every exemption starts with a date, exactly as checks/rule-routing.sh requires of
+// Every exemption starts with a date, exactly as tools/gate/src/lib/routing.ts requires of
 // UNROUTED_ALLOWLIST — an undated one is how the next exemption hides.
 const PY_WS = " \t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85\xa0                　";
 export const EXCEPTION_JUSTIFICATION = new RegExp(`^\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd}{2}: [^${PY_WS}]`, "u");

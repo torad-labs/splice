@@ -97,8 +97,9 @@ zstd_request_body = true
 # Setting true is an experiment, not demonstrated task-efficiency parity.
 # parallel_tool_calls = false
 # code_mode (default TRUE for chatgpt-oauth + openai-responses providers, off everywhere else):
-# adds splice's JAR-bundled JavaScript runner and orchestration instructions only to eligible GPT-6
-# Astra and Sol turns. Ordinary tools remain Claude Code's permission-checked client handlers, which
+# adds splice's JAR-bundled JavaScript runner and orchestration instructions only to eligible turns:
+# GPT-6 Astra and Sol in both families by default, or the ids in code_mode_models. Set the list to
+# the models this box routes, e.g. ["gpt-6-astra", "gpt-5.6-sol"], so subagent tiers get it too. Ordinary tools remain Claude Code's permission-checked client handlers, which
 # execute the real operations. Code mode requires neither Codex nor Node. Only chatgpt-oauth +
 # openai-responses providers may enable it; code_mode = false turns it off. Compact/toolless/forced-
 # tool turns retain the ordinary path; a single tool result over 64 KiB is truncated at admission
@@ -114,6 +115,7 @@ zstd_request_body = true
 #   code_mode_workers = 4      the GraalJS child-JVM pool size
 #   code_mode_timeout_ms = 5000 ms one worker exchange may wait for the child's answer
 #   code_mode_heap = 128       MB each child JVM's -Xmx
+#   code_mode_models = ["gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol"]  models offered the runner
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
 # request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
 [providers.codex.quirks.tool_surface]

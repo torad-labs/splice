@@ -8,7 +8,7 @@
  *    1. the grant parse runs on the COMMAND as written — a var set earlier in the shell (or as a
  *       separate command before `&&`, or passed as an argument) never satisfies it;
  *    2. the handover carve-out is path-exact — one path outside the set refuses BY NAME, so a
- *       "one webui path plus one src path" near-miss is refused, not waved through;
+ *       "one console path plus one src path" near-miss is refused, not waved through;
  *    3. the guard is WIRED (law 19): the runner dispatch drives the real module, so a renamed or
  *       deleted module (or a disabled hook chain) fails the wired cases, not just the direct ones.
  *
@@ -198,15 +198,15 @@ test("aliased git is not caught", () => {
 // --- console handover: path-exact carve-out -----------------------------------
 
 test("handover add inside passes", () => {
-  assertAllowed("git add webui/x.ts");
+  assertAllowed("git add console/x.ts");
 });
 
 test("handover add outside is blocked by name", () => {
   assertBlocked("git add src/y.py", undefined, "src/y.py");
 });
 
-test("handover near miss one webui one src is blocked", () => {
-  assertBlocked("git add webui/x.ts src/y.py", undefined, "src/y.py");
+test("handover near miss one console one src is blocked", () => {
+  assertBlocked("git add console/x.ts src/y.py", undefined, "src/y.py");
 });
 
 test("handover exact files pass", () => {
@@ -239,7 +239,7 @@ test("commit with nothing staged is refused", () => {
 test("commit staged inside passes", () => {
   const root = makeRepo();
   try {
-    stage(root, "webui/x.ts");
+    stage(root, "console/x.ts");
     assertAllowed("git commit -m x", root);
   } finally {
     rmSync(root, { recursive: true, force: true });

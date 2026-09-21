@@ -9,7 +9,7 @@
 # call shapes are now enumerated (single- and double-quoted bracket forms
 # included — the double-quoted form was an audit addition with its own
 # rule-test case, per §9 of the audit). Real tree stays 0 hits across 45
-# webui/src files.
+# console/src files.
 id: webui-fetch-only-in-api
 language: typescript
 severity: error
@@ -19,10 +19,10 @@ note: |
   view selector. The api segment polls/mutates through the shared mgmt client
   and writes to the store; nothing else talks to the network.
 files:
-  - webui/src/**/*.ts
+  - console/src/**/*.ts
 ignores:
-  - webui/src/shared/api/**
-  - webui/src/entities/*/api/**
+  - console/src/shared/api/**
+  - console/src/entities/*/api/**
 rule:
   any:
     - pattern: fetch($$$A)

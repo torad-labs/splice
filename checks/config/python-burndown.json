@@ -56,7 +56,7 @@
     "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt",
     "gateway/provider-spi/src/test/kotlin/UpstreamFailurePolicyRefusalTest.kt",
     "install.sh",
-    "webui/.impeccable/review/material-spec.md"
+    "console/.impeccable/review/material-spec.md"
   ],
   "pendingTools": []
 }

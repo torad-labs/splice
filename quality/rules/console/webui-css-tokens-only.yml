@@ -21,9 +21,9 @@ note: |
   inside instruments, var(--space-5)/var(--space-6) between them. Border widths
   and radii are not gated by this rule.
 files:
-  - webui/src/**/*.css
+  - console/src/**/*.css
 ignores:
-  - webui/src/shared/tokens.css
+  - console/src/shared/tokens.css
 rule:
   kind: declaration
   all:

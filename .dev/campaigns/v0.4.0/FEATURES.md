@@ -192,7 +192,7 @@ results in the dashboard. Empty or stale data is not presented as healthy zero-l
   retention.
 
 Evidence (rechecked 2026-09-13): `gateway/control/src/main/kotlin/splice/control/api/PerfPayloads.kt:23`,
-`gateway/core/src/main/kotlin/splice/core/perf/PerfKeys.kt:7`, `webui/src/app/App.tsx:12`.
+`gateway/core/src/main/kotlin/splice/core/perf/PerfKeys.kt:7`, `console/src/app/App.tsx:12`.
 
 ## 4. First-class session visibility
 
@@ -231,7 +231,7 @@ manual registry inspection; unavailable sessions are not represented as active.
 orchestration engine in this proposal.
 
 Evidence (rechecked 2026-09-13): `README.md:170` (the shared `~/.claude/sessions` registry,
-`README.md:172` to `README.md:176`), `webui/src/app/App.tsx:12`; no `sessions` verb exists in
+`README.md:172` to `README.md:176`), `console/src/app/App.tsx:12`; no `sessions` verb exists in
 `gateway/app/src/main/kotlin/splice/app/cli/Command.kt`.
 
 ## 5. Safe, straightforward upgrades
@@ -497,7 +497,7 @@ Proposed scope:
   accounts from the console, show each account's plan and quota windows, show which account
   every head and session is currently on, and offer a manual switch. Today the auth page is
   one card per head with a refresh action only, and browser or device login must run in a
-  terminal (`webui/src/pages/auth/index.tsx:1`, `AuthRoutes.kt:42`).
+  terminal (`console/src/pages/auth/index.tsx:1`, `AuthRoutes.kt:42`).
 
 **Proposed acceptance:** enumerate the configuration surface from its authoritative schemas
 and registries, then require a console disposition for every knob: editable, or explicitly
@@ -667,7 +667,7 @@ Requirement source: user discussion, 2026-09-13. Evidence: `README.md:193`,
 `gateway/app/src/main/kotlin/splice/app/quota/QuotaProbes.kt`,
 `gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:21`,
 `gateway/control/src/main/kotlin/splice/control/api/UsagePayloads.kt`,
-`webui/src/pages/auth/index.tsx:1`, `gateway/app/src/main/kotlin/splice/app/cli/Command.kt:34`.
+`console/src/pages/auth/index.tsx:1`, `gateway/app/src/main/kotlin/splice/app/cli/Command.kt:34`.
 
 ## 12. Head-bounded sessions, cross-head resume on demand
 

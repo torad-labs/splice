@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../../gate/src/lib/repo.ts";
-import { GATED_STAGE_RUN } from "../src/lib/workflow.ts";
+import { GATED_STAGE_RUN, tagMutantEnv } from "../src/lib/workflow.ts";
 
 const { repoRoot } = layout();
 const read = (rel: string) => readFileSync(join(repoRoot, rel), "utf8");
@@ -57,5 +57,24 @@ describe("release verify", () => {
 
   test("the shim the build stages is the shim every reader resolves", () => {
     expect(existsSync(join(repoRoot, "app/src/main/dist/bin/splice-launch"))).toBe(true);
+  });
+});
+
+describe("the tag mutants", () => {
+  test("carry the mutant tag they are meant to feed in", () => {
+    expect(tagMutantEnv("v1.2.3-01").SPLICE_RELEASE_TAG).toBe("v1.2.3-01");
+  });
+
+  // DR-19 runs the other way for a mutant. A real pushed tag beats SPLICE_RELEASE_TAG inside
+  // stageRelease, so on a `v*` tag push the real and VALID tag would win over the bad tag this leg
+  // feeds in: stageRelease succeeds and verify reports that an invalid tag passed. The failure is
+  // the harness, and it appears only on the run that ships.
+  test("neutralise a real pushed tag, so the mutant is the authority", () => {
+    const env = tagMutantEnv("v0.0.0-mismatch");
+    // PRESENT, not merely absent. The child runs under { ...Bun.env, ...env }, so an unset key
+    // would leave CI's own GITHUB_REF_TYPE=tag in place and the neutralisation would do nothing.
+    expect(Object.keys(env)).toContain("GITHUB_REF_TYPE");
+    expect(Object.keys(env)).toContain("GITHUB_REF_NAME");
+    expect(env.GITHUB_REF_TYPE).not.toBe("tag");
   });
 });

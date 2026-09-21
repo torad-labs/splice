@@ -14,8 +14,8 @@ import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.dialect.responses.ImageDisposition
 import splice.dialect.responses.ResponsesToolResultMedia
-import splice.spi.BuiltTurn
-import splice.spi.CodeModeResult
+import splice.upstream.BuiltTurn
+import splice.upstream.codemode.CodeModeResult
 
 /** [media] is the dialect's own tool_result image renderer (V4-179): the bridge renders a result's
  *  follow-ups ONCE with the same policy the ordinary path applies, persists them on the record and

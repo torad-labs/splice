@@ -44,9 +44,9 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.head.HeadServer
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.net.ServerSocket
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds

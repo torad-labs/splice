@@ -5,8 +5,8 @@ import kotlinx.serialization.json.JsonElement
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.spi.CodeModeResult
-import splice.spi.WireSink
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.sse.WireSink
 
 private data class CodeModeResultBatch(
     val results: Map<String, CodeModeResult>,

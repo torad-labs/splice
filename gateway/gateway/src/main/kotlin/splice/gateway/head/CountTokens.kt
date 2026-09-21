@@ -10,7 +10,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.spi.Provider
+import splice.upstream.Provider
 
 private const val TOKEN_ESTIMATE_BYTES = 3
 

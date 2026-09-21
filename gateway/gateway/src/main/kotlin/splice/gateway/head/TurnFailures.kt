@@ -4,12 +4,12 @@
 package splice.gateway.head
 
 import kotlinx.coroutines.CancellationException
-import splice.spi.Provider
-import splice.spi.SseFrameTooLargeException
-import splice.spi.StreamTornBeforeClient
-import splice.spi.UpstreamAuthMissing
-import splice.spi.UpstreamFailed
-import splice.spi.transport.TransportFailureReason
+import splice.upstream.Provider
+import splice.upstream.failure.SseFrameTooLargeException
+import splice.upstream.transport.StreamTornBeforeClient
+import splice.upstream.transport.TransportFailureReason
+import splice.upstream.transport.UpstreamAuthMissing
+import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
 
 /** The per-turn error boundary and the failure-message shaping around it. */

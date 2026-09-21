@@ -6,9 +6,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeRuntime
-import splice.spi.RoundInterceptor
+import splice.upstream.RoundInterceptor
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
 import java.nio.file.Path
 import java.time.Clock
 import kotlin.time.Duration

@@ -14,13 +14,13 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.EnvReader
-import splice.spi.LocalHttp
-import splice.spi.local.LocalLiveProbe
-import splice.spi.local.LocalModel
-import splice.spi.local.LocalRowVerdict
-import splice.spi.local.LocalRuntime
-import splice.spi.local.LocalRuntimeKind
-import splice.spi.local.LocalRuntimeProbe
+import splice.upstream.local.LocalLiveProbe
+import splice.upstream.local.LocalModel
+import splice.upstream.local.LocalRowVerdict
+import splice.upstream.local.LocalRuntime
+import splice.upstream.local.LocalRuntimeKind
+import splice.upstream.local.LocalRuntimeProbe
+import splice.upstream.transport.LocalHttp
 
 private const val FIX_START = "start it (Ollama / LM Studio / vLLM), then re-run"
 private const val FIX_TOOLS = "a model without tool calls cannot drive Claude Code's tools"
@@ -83,7 +83,7 @@ internal class DoctorLocalRuntime(
         // and BEFORE the verdicts: its one request loads the model, and a loaded model is the only
         // one whose served window the runtime reports, so the verdicts read the exact number.
         // V4-103: the kind is bound to a NAME here rather than reached through `runtime.kind` at each
-        // use. These three types cross the :provider-spi -> :app boundary as members of
+        // use. These three types cross the :upstream -> :app boundary as members of
         // LocalRuntimeProbe's public API, and a boundary consumed only by INFERENCE is invisible both
         // to public-surface --ratchet (which measures names in another module's main sources) and to
         // a reader asking who depends on this surface. Naming them is the same code with the boundary

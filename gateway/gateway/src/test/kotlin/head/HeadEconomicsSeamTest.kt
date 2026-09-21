@@ -56,11 +56,11 @@ import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.UsagePayloadBuilder
-import splice.spi.InflightGate
-import splice.spi.LiveLimit
-import splice.spi.ProviderTuning
-import splice.spi.TurnWatchdog
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.retry.LiveLimit
+import splice.upstream.retry.TurnWatchdog
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean

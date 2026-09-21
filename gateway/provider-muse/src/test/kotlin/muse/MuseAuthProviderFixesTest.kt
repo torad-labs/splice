@@ -30,7 +30,7 @@ import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
 import splice.provider.muse.MuseMintHolds
 import splice.provider.muse.MuseSubscriptionKey
-import splice.spi.ProcessDispatchers
+import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger

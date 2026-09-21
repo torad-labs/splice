@@ -12,7 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolChoiceMapping
-import splice.spi.ToolSearchController
+import splice.upstream.ToolSearchController
 
 /** [ResponsesRequestAssembler.buildRequestObject]'s internal return — the request bytes plus the
  *  tool-surface facts only the builder knows (the partition sizes for TurnMeta, the search

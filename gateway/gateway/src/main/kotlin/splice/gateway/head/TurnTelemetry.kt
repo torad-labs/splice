@@ -18,8 +18,8 @@ import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.TurnEconomics
-import splice.spi.WatchdogFired
-import splice.spi.WatchdogHeld
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.retry.WatchdogHeld
 
 // V4-122: ERR_SNIPPET lives in splice.core.util now, at the same 200 this declaration carried.
 // It was declared three times — here at 200, in UpstreamClient.kt and WsLogKeys.kt at 160 — for one

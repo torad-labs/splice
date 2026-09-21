@@ -3,8 +3,8 @@ package splice.provider.grok
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.spi.CredentialShape
-import splice.spi.CredentialTokens
+import splice.upstream.credentials.CredentialShape
+import splice.upstream.credentials.CredentialTokens
 
 public class GrokCredentialShape : CredentialShape {
     override fun material(root: JsonObject): CredentialTokens {

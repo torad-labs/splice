@@ -7,8 +7,8 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
-import splice.spi.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import java.nio.file.Files
 import java.nio.file.Path
 

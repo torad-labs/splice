@@ -6,9 +6,9 @@ package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
-import splice.spi.ReanchorController
-import splice.spi.ReanchorRound
-import splice.spi.ToolSearchController
+import splice.upstream.ReanchorController
+import splice.upstream.ReanchorRound
+import splice.upstream.ToolSearchController
 
 /** V4-106: a continuation TOGETHER with the Failure it was computed from.
  *

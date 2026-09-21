@@ -45,7 +45,7 @@ import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughRequestBuilder
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 import java.nio.file.Files
 import java.nio.file.Path
 

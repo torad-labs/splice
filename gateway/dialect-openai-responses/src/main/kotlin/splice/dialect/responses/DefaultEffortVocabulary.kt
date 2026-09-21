@@ -2,7 +2,7 @@
 // not a vendor fact — CodexQuirks uses this default; grok supplies GrokEffortVocabulary.
 package splice.dialect.responses
 
-import splice.spi.EffortVocabulary
+import splice.upstream.EffortVocabulary
 
 public class DefaultEffortVocabulary : EffortVocabulary {
     override fun normalize(raw: String): String? = when (raw) {

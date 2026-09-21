@@ -16,12 +16,12 @@ import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.TurnTerminal
 import splice.gateway.wire.TurnTrace
-import splice.spi.AccountSelection
-import splice.spi.InflightGate
-import splice.spi.RemainingTurnWait
-import splice.spi.RoundInterceptor
-import splice.spi.ToolSearchController
-import splice.spi.TurnWatchdog
+import splice.upstream.RoundInterceptor
+import splice.upstream.ToolSearchController
+import splice.upstream.credentials.AccountSelection
+import splice.upstream.retry.InflightGate
+import splice.upstream.retry.TurnWatchdog
+import splice.upstream.transport.RemainingTurnWait
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 

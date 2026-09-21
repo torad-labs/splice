@@ -10,12 +10,12 @@ import splice.control.HeadAccountSwitchView
 import splice.control.HeadAccountView
 import splice.core.util.WallClock
 import splice.gateway.usage.QuotaTracker
-import splice.spi.AccountPool
-import splice.spi.AccountPoolView
-import splice.spi.AccountQuotaSource
-import splice.spi.PoolAccount
-import splice.spi.ProcessElapsedNow
-import splice.spi.RateLimitCooldown
+import splice.upstream.codemode.ProcessElapsedNow
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountPoolView
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.PoolAccount
+import splice.upstream.retry.RateLimitCooldown
 
 internal class HeadAccountPools {
     private val elapsedNow = ProcessElapsedNow()

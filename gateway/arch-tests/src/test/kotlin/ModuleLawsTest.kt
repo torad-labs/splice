@@ -12,7 +12,7 @@ private val DIALECTS = setOf(
 )
 
 /** The domain plus the provider contract: what every adapter (dialect, provider, transport) starts from. */
-private val ADAPTER_BASE = setOf(":core", ":provider-spi")
+private val ADAPTER_BASE = setOf(":core", ":upstream")
 
 /** Ports-and-adapters dependency direction (HD-11): module -> the internal modules it may depend on
  *  in a TEST configuration.
@@ -45,7 +45,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // discovery and sharing, wrapping the plain `claude`, resuming across heads. Domain only.
     ":client" to setOf(":core"),
     // the provider contract. Speaks the domain and nothing else.
-    ":provider-spi" to setOf(":core"),
+    ":upstream" to setOf(":core"),
     // a dialect adapts the contract to one wire format.
     ":dialect-anthropic-passthrough" to ADAPTER_BASE,
     ":dialect-openai-responses" to ADAPTER_BASE,
@@ -69,7 +69,7 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":provider-spi", ":dialect-anthropic-passthrough", ":dialect-openai-responses", ":dialect-openai-chat",
+    ":dialect-anthropic-passthrough", ":dialect-openai-responses", ":dialect-openai-chat",
     ":provider-codex", ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai",
     ":gateway", ":control", ":app", ":arch-tests", ":fir-checks",
 )
@@ -400,9 +400,9 @@ private fun lawDriftViolations(
  *  $module, which the project map does not include — it currently governs nothing"), one level
  *  down: an allowance nothing uses governs nothing either, and it reads as architecture that exists.
  *  The one live instance, `:provider-muse -> :dialect-anthropic-passthrough` (provider-muse's build
- *  file declares only :core/:provider-spi and MusePassthroughArm lives in :app — the allowance
+ *  file declares only :core/:upstream and MusePassthroughArm lives in :app — the allowance
  *  described a wire nobody ran), was dropped in V4-103: MusePassthroughArm stays in :app, so the
- *  provider module keeps only the :core/:provider-spi edges it actually declares. */
+ *  provider module keeps only the :core/:upstream edges it actually declares. */
 private fun staleAllowanceViolations(
     gradleMain: Map<String, Set<String>>,
     mainEdges: Set<Pair<String, String>>,

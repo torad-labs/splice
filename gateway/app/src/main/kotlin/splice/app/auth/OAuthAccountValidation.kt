@@ -10,7 +10,7 @@ import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
-import splice.spi.AccountLabelPolicy
+import splice.upstream.credentials.AccountLabelPolicy
 import java.nio.file.Files
 import java.nio.file.Path
 

@@ -25,12 +25,12 @@ import splice.gateway.round.RoundInterception
 import splice.gateway.round.RoundStrategy
 import splice.gateway.round.RunnerSignals
 import splice.gateway.wire.SseEmitterFactory
-import splice.spi.FoldController
-import splice.spi.ReanchorController
-import splice.spi.RetryBackoff
-import splice.spi.RoundInterceptor
-import splice.spi.ToolSearchController
-import splice.spi.WireSink
+import splice.upstream.FoldController
+import splice.upstream.ReanchorController
+import splice.upstream.RetryBackoff
+import splice.upstream.RoundInterceptor
+import splice.upstream.ToolSearchController
+import splice.upstream.sse.WireSink
 
 private fun continuationBody() = buildJsonObject { }
 

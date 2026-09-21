@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
-import splice.spi.CodeModeCell
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeRuntime
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeStep
 import java.nio.file.Files
 import java.nio.file.Path
 

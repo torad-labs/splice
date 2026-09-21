@@ -6,9 +6,9 @@ import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
-import splice.spi.FailureSource
-import splice.spi.Provider
-import splice.spi.UpstreamFailureClassifier
+import splice.upstream.Provider
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
 
 internal class ZeroEventFailure(
     private val provider: Provider,

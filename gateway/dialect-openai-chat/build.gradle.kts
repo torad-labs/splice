@@ -5,6 +5,6 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":provider-spi"))
+    implementation(project(":upstream"))
     testImplementation(libs.kotlinx.coroutines.test)
 }

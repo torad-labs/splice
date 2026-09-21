@@ -27,7 +27,7 @@ import splice.dialect.responses.ResponsesWsRunner
 import splice.dialect.responses.ResponsesWsSession
 import splice.dialect.responses.WsUpstream
 import splice.dialect.responses.responsesRequestJson
-import splice.spi.NEVER_PINGED_MS
+import splice.upstream.NEVER_PINGED_MS
 import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket

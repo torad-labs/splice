@@ -11,10 +11,10 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.spi.ClientFrameEmitted
-import splice.spi.StreamTornBeforeClient
-import splice.spi.WireSink
-import splice.spi.transport.TransportFailureReason
+import splice.upstream.ClientFrameEmitted
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.StreamTornBeforeClient
+import splice.upstream.transport.TransportFailureReason
 import java.io.IOException
 
 internal class SseRoundDriver(

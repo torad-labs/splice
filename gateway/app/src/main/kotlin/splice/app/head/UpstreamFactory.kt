@@ -1,14 +1,14 @@
 // PORT-OF: splice/app/Daemon.kt (assembleHead's UpstreamClient + Transport construction) @ ed5c868
 // — invariants unchanged: the transport for one head. Split out because it is the only thing in
-// this decomposition importing splice.spi.UpstreamClient.
+// this decomposition importing splice.upstream.transport.UpstreamClient.
 package splice.app.head
 
 import splice.app.provider.ProviderBuild
 import splice.core.config.Knob
 import splice.core.config.SpliceConfig
 import splice.core.util.LogSink
-import splice.spi.UpstreamClient
-import splice.spi.UpstreamTransport
+import splice.upstream.transport.UpstreamClient
+import splice.upstream.transport.UpstreamTransport
 
 internal class UpstreamFactory {
     internal fun upstreamFor(ctx: ProviderBuild, cfg: SpliceConfig, log: LogSink): UpstreamClient = UpstreamClient(

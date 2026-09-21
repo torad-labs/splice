@@ -28,7 +28,7 @@
  *  header is a wall that gets allowlisted: a file is a second parser only when it BOTH names the
  *  Retry-After header AND carries a token that only a parser has — an RFC_1123_DATE_TIME format, the
  *  digit-only seconds guard (`it in '0'..'9'`, either polarity), or the leading-zero normalizer. A file
- *  that merely reads the header and hands it to splice.spi.RetryAfter has none of those, so delegating
+ *  that merely reads the header and hands it to splice.upstream.retry.RetryAfter has none of those, so delegating
  *  stays cheap and re-implementing goes red. Measured against the tree at authoring: of every main
  *  source, exactly ONE file carries a marker, and it is the one allowed file.
  *
@@ -75,7 +75,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const CLIENT = resolve(ROOT, "gateway/provider-spi/src/main/kotlin/splice/spi/RetryAfter.kt");
+const CLIENT = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/retry/RetryAfter.kt");
 const NEXT_FUNCTION_RE = /^[ \t]*(?:(?:public|private|internal|protected|override|suspend|inline)[ \t]+)*fun[ \t]+\w+[ \t]*\(/m;
 const RETURN_CHAIN_RE = /\breturn[ \t\n]+secondsFormMs\s*\([^)]*\)\s*\?:\s*httpDateMs\s*\([^)]*\)/;
 const SECONDS_HELPER_RE = /\bfun\s+secondsFormMs\s*\([^)]*\)[^=]*=\s*\w+\.toLongOrNull\s*\(/;
@@ -154,7 +154,7 @@ const HEADER_MENTION_RE = /Retry-After|retry_after|retryAfter/i;
 // Tokens ONLY a parser carries: the RFC 7231 date format, the digit-only seconds guard (either
 // polarity — `all { it in '0'..'9' }` accepts it, `any { it !in '0'..'9' }` rejects non-digits), and
 // the leading-zero normalizer that makes an arbitrarily padded seconds value small. A file that
-// merely hands the header to splice.spi.RetryAfter carries none of them, which is what keeps
+// merely hands the header to splice.upstream.retry.RetryAfter carries none of them, which is what keeps
 // delegating free and re-implementing red.
 const PARSER_MARKER_RES = [
   /RFC_1123_DATE_TIME/,
@@ -174,7 +174,7 @@ export function detectSecondParser(sources: Record<string, string>): string[] {
     if (markers.length > 0) {
       problems.push(
         `${path} parses the Retry-After header itself (${markers.length} parser token(s): ` +
-          `${markers.join(", ")}). splice.spi.RetryAfter is the ONE parser — a second copy is ` +
+          `${markers.join(", ")}). splice.upstream.retry.RetryAfter is the ONE parser — a second copy is ` +
           "a second set of ordering and clamping rules for the same header, which is the gap " +
           "this wall was blind to. Call it, do not re-derive it.",
       );
@@ -343,7 +343,7 @@ function selftest(): number {
   }
   if (detectSecondParser(DELEGATING_FIXTURE).length > 0) {
     fails.push(
-      "a file that merely delegates to splice.spi.RetryAfter must be GREEN, got " +
+      "a file that merely delegates to splice.upstream.retry.RetryAfter must be GREEN, got " +
         pyRepr(detectSecondParser(DELEGATING_FIXTURE)),
     );
   }

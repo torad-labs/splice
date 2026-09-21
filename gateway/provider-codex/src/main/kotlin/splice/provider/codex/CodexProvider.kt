@@ -15,8 +15,8 @@ import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesToolResultMedia
-import splice.spi.BuiltTurn
-import splice.spi.ProviderTuning
+import splice.upstream.BuiltTurn
+import splice.upstream.ProviderTuning
 
 public class CodexProvider(
     tuning: ProviderTuning,

@@ -4,8 +4,8 @@ package splice.dialect.passthrough
 
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
-import splice.spi.ClientGone
-import splice.spi.WatchdogProbe
+import splice.upstream.ClientGone
+import splice.upstream.WatchdogProbe
 
 public data class PassthroughTurnContext(
     val clientGone: ClientGone,

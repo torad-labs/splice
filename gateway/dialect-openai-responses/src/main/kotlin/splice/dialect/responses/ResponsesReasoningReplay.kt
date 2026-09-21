@@ -5,7 +5,7 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 /** onItemDone's replay half: emit the encrypted reasoning IN POSITION (gated) and collect its
  *  envelope for fold/re-anchor replay. */

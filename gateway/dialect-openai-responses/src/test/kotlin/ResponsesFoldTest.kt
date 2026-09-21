@@ -22,7 +22,7 @@ import splice.core.turn.Usage
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesContinuation
 import splice.dialect.responses.ResponsesFoldController
-import splice.spi.FoldRound
+import splice.upstream.FoldRound
 import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
 private val CONFIG = FoldConfig(models = setOf("gpt-5.6-luna"))

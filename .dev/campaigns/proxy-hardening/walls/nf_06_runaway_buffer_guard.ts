@@ -7,7 +7,7 @@
  *  deltas forever does not fail a turn, it OOMs codex+grok+kimi simultaneously.
  *
  *  GREEN requires ALL of:
- *    1. a shared splice.spi.BufferCapacity definition exists (one cap, one predicate — the same
+ *    1. a shared splice.upstream.transport.BufferCapacity definition exists (one cap, one predicate — the same
  *       single-source move TerminalStates made for terminal precedence);
  *    2. ALL THREE translators (chat, responses, passthrough) call BufferCapacity.over at the live guard;
  *    3. the chat translator no longer carries its own private MAX_BUFFERED_CHARS (code MOTION,
@@ -57,7 +57,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const SPI = resolve(ROOT, "gateway/provider-spi/src/main/kotlin/splice/spi/BufferCapacity.kt");
+const SPI = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/transport/BufferCapacity.kt");
 const CHAT = resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt");
 const RESP = resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt");
 const PASS = resolve(ROOT, "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt");
@@ -115,7 +115,7 @@ export function detect(
   }
   if (spi === null || !spi.includes("object BufferCapacity")) {
     problems.push(
-      "no shared splice.spi.BufferCapacity — the cap either does not exist or " +
+      "no shared splice.upstream.transport.BufferCapacity — the cap either does not exist or " +
         "is a per-dialect copy waiting to drift",
     );
   }
@@ -153,7 +153,7 @@ const IMPORT_LINE = /^import .*$/gm;
  *  Applied to read() (the required tokens) and deliberately NOT to readRaw(), which feeds the
  *  private-fork BAN. The two directions want opposite treatment: stripping makes a required token
  *  harder to satisfy, but would make a banned string easier to hide. Both stay strict this way.
- *  The import strip matters here specifically — `import splice.spi.BufferCapacity` would otherwise
+ *  The import strip matters here specifically — `import splice.upstream.transport.BufferCapacity` would otherwise
  *  keep every translator green with its guard deleted. */
 export function codeOnly(text: string | null): string | null {
   if (text === null) return null;
@@ -199,7 +199,7 @@ export const CONSTANT_GUARD = guarded("0", "0", "toolIndexCount = 0", "pendingAr
 export const CHAT_PRIVATE = "private const val MAX_BUFFERED_CHARS = 20_000_000\n" + CHAT_GUARDED;
 
 export const COMMENTED_GUARD =
-  "import splice.spi.BufferCapacity\n" +
+  "import splice.upstream.transport.BufferCapacity\n" +
   "fun driveRound() { upstream.takeWhile {\n" +
   "// val withinCapacity = !BufferCapacity.over(state.textBuf.length, " +
   "state.thinkingBuf.length, toolIndexCount = state.blocks.size, " +

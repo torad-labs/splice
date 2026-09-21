@@ -25,7 +25,7 @@ import splice.core.topology.AuthKind
 import splice.provider.codex.CodexOAuth
 import splice.provider.grok.GrokOAuth
 import splice.provider.kimi.KimiOAuth
-import splice.spi.AccountLabelPolicy
+import splice.upstream.credentials.AccountLabelPolicy
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress

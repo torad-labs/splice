@@ -10,10 +10,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.wire.FIELD_ERROR
 import splice.core.wire.FIELD_TYPE
-import splice.spi.CodeModeCall
-import splice.spi.CodeModeLimits
-import splice.spi.CodeModeProtocol
-import splice.spi.CodeModeResult
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeLimits
+import splice.upstream.codemode.CodeModeProtocol
+import splice.upstream.codemode.CodeModeResult
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException

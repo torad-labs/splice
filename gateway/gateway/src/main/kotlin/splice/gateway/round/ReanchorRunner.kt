@@ -13,12 +13,12 @@ package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
-import splice.spi.ProcessWaiter
-import splice.spi.ReanchorController
-import splice.spi.RetryBackoff
-import splice.spi.RetryNotice
-import splice.spi.ToolSearchController
-import splice.spi.UpstreamTransport
+import splice.upstream.ReanchorController
+import splice.upstream.RetryBackoff
+import splice.upstream.RetryNotice
+import splice.upstream.ToolSearchController
+import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.transport.UpstreamTransport
 
 internal class ReanchorRunner(
     private val key: String,

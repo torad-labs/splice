@@ -127,7 +127,7 @@ internal class AuthRoutes(
     }
 
     /** POST /api/auth/{head}/switch (FEATURES.md §4.5 "Manual switch"): a REAL pin in
-     *  [splice.spi.AccountPool] — [select] tries it FIRST, ahead of the primary preference, from
+     *  [splice.upstream.credentials.AccountPool] — [select] tries it FIRST, ahead of the primary preference, from
      *  the next turn. Body: `{"label": "..."}`, required. A head with no pool (one login, or an
      *  unpooled kind) answers 400 naming it, never a silent no-op. */
     suspend fun switchAccount(call: ApplicationCall) {

@@ -13,7 +13,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 
 internal class TestResponsesQuirks {
     fun profile(): ResponsesQuirks = ResponsesQuirks(

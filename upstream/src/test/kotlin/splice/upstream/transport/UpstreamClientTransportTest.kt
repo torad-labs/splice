@@ -1,0 +1,581 @@
+// NEW: transport-retry pins (kimi 07:00 burst, 2026-07-18: a ~2-minute DNS blip produced 37
+// user-visible `error:unexpected` turns, attempts=1 on every one — the retry loop only handled
+// HTTP-status failures, never thrown transport errors). Connection-phase DNS/connect failures now
+// retry on the normal backoff budget and rethrow only when exhausted; non-transport exceptions
+// still fail immediately; the retryable set is pinned by predicate tests. MockEngine — no network.
+//
+// V4-66 (2026-09-16): a failure the classifier does NOT name now retries too — the allowlist
+// answers which failures may be RE-ISSUED as a stream, and it was never meant to gate the
+// connect-phase attempt budget. The pins below cover both directions: the unnamed IOException
+// spends the budget as a possible duplicate, the named types keep their exact phase, and
+// cancellation still aborts on attempt one. What reaches the seam at all is catchCancellable's
+// catch list — IOException, SerializationException, IllegalArgumentException — so a truncated
+// body now retries (the row's best consequence) and a bad base_url spends the whole ~1.5s budget
+// before failing (its trade). An IllegalState, an NPE, any other RuntimeException is never
+// captured and still fails on attempt one: retrying our own bugs was never the law.
+package splice.upstream.transport
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
+import io.ktor.http.headersOf
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertArrayEquals
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.upstream.ClientFrameEmitted
+import splice.upstream.RetryNotice
+import splice.upstream.Waiter
+import splice.upstream.retry.ReissueRules
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.nio.channels.UnresolvedAddressException
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
+
+class UpstreamClientTransportTest {
+
+    private val fakeAuth = object : RefreshableAuthProvider {
+        override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
+        override suspend fun refresh(): Credentials? = null
+        override suspend fun describe(): AuthDescription = AuthDescription(true, "fake", emptyMap())
+    }
+
+    private fun ctx(
+        onRetry: RetryNotice = RetryNotice {},
+        clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
+    ) = PostContext(
+        url = "https://api.example.test/v1",
+        auth = fakeAuth,
+        extraHeaders = { emptyMap() },
+        onRetry = onRetry,
+        clientFrameEmitted = clientFrameEmitted,
+    )
+
+    private fun clientOver(
+        engine: MockEngine,
+        // no real sleep in tests by default
+        backoff: suspend (Int, Long) -> Unit = { _, _ -> },
+        dnsBackoff: suspend (Int) -> Unit = { _ -> },
+    ) = UpstreamClient(
+        firstByteTimeoutMs = 5_000,
+        totalTimeoutMs = 5_000,
+        maxRetries = 3,
+        client = HttpClient(engine),
+        backoff = backoff,
+        dnsBackoff = dnsBackoff,
+    )
+
+    @Test
+    fun `default backoff keeps the 200ms doubling curve`() = runTest {
+        val waits = mutableListOf<Long>()
+        val backoff = UpstreamTransport().defaultBackoff(
+            object : Waiter {
+                override suspend fun wait(ms: Long) {
+                    waits += ms
+                }
+            },
+        )
+
+        repeat(3) { attempt -> backoff(attempt, 0) }
+        backoff(56, 0)
+        val dnsBackoff = UpstreamTransport().defaultDnsBackoff(
+            object : Waiter {
+                override suspend fun wait(ms: Long) {
+                    waits += ms
+                }
+            },
+        )
+        dnsBackoff(54)
+
+        assertTrue(waits[0] in 180L..219L, "attempt 0 must be 200ms with +/-10% jitter: $waits")
+        assertTrue(waits[1] in 360L..439L, "attempt 1 must double to 400ms with jitter: $waits")
+        assertTrue(waits[2] in 720L..879L, "attempt 2 must double to 800ms with jitter: $waits")
+        assertTrue(waits[3] in 9_000L..10_999L, "generic backoff must saturate without shift overflow: $waits")
+        assertTrue(waits[4] in 3_600L..4_399L, "DNS backoff must saturate without shift overflow: $waits")
+    }
+
+    @Test
+    fun `dns failure retries and succeeds on a later attempt`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 2) throw UnresolvedAddressException()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).posted(
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(3, calls.get())
+        assertEquals(2, retries.size)
+        assertTrue(retries.all { it.startsWith("transport UnresolvedAddressException") })
+    }
+
+    @Test
+    fun `DNS-class failure uses the dnsBackoff schedule, not the generic backoff`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 2) throw UnresolvedAddressException()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val genericAttempts = mutableListOf<Int>()
+        val dnsAttempts = mutableListOf<Int>()
+        val out = clientOver(
+            engine,
+            backoff = { a, _ -> genericAttempts.add(a) },
+            dnsBackoff = { a -> dnsAttempts.add(a) },
+        ).posted(
+            ctx(),
+            "{}",
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(listOf(0, 1), dnsAttempts)
+        assertTrue(genericAttempts.isEmpty())
+    }
+
+    @Test
+    fun `UnknownHostException classifies as DNS same as UnresolvedAddressException`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() == 1) throw UnknownHostException("dns blip")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val genericAttempts = mutableListOf<Int>()
+        val dnsAttempts = mutableListOf<Int>()
+        val out = clientOver(
+            engine,
+            backoff = { a, _ -> genericAttempts.add(a) },
+            dnsBackoff = { a -> dnsAttempts.add(a) },
+        ).posted(
+            ctx(),
+            "{}",
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(listOf(0), dnsAttempts)
+        assertTrue(genericAttempts.isEmpty())
+    }
+
+    @Test
+    fun `non-DNS transport failure keeps the generic backoff, not dnsBackoff`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 2) throw ConnectException("refused")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val genericAttempts = mutableListOf<Int>()
+        val dnsAttempts = mutableListOf<Int>()
+        val out = clientOver(
+            engine,
+            backoff = { a, _ -> genericAttempts.add(a) },
+            dnsBackoff = { a -> dnsAttempts.add(a) },
+        ).posted(
+            ctx(),
+            "{}",
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(listOf(0, 1), genericAttempts)
+        assertTrue(dnsAttempts.isEmpty())
+    }
+
+    @Test
+    fun `persistent transport failure rethrows after the attempt budget`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            throw ConnectException("refused")
+        }
+        assertThrows<ConnectException> {
+            clientOver(engine).posted(
+                ctx(),
+                "{}",
+            ) { "unreachable" }
+        }
+        assertEquals(3, calls.get()) // maxRetries attempts, then the real exception surfaces
+    }
+
+    @Test
+    fun `non-transport exception fails immediately without retry`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            error("bug, not weather")
+        }
+        assertThrows<IllegalStateException> {
+            clientOver(engine).posted(
+                ctx(),
+                "{}",
+            ) { "unreachable" }
+        }
+        assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun `exception after the stream is handed to the block is never retried`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("body", HttpStatusCode.OK, headersOf())
+        }
+        assertThrows<ConnectException> {
+            clientOver(engine).posted(
+                ctx(),
+                "{}",
+            ) { throw ConnectException("mid-stream reset") } // retryable TYPE, but block owns it
+        }
+        assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun `stream torn before first client frame reissues within its own budget`() = runTest {
+        // G5: 2xx received (handoff) but the client saw no byte (clientFrameEmitted = false), so a
+        // torn connection is provably safe to re-issue. The block throws on its first 2 handoffs,
+        // then returns a sentinel on the 3rd — proving the reissue re-POSTs (a fresh engine call).
+        val engineCalls = AtomicInteger()
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine {
+            engineCalls.incrementAndGet()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).posted(
+            ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
+            "{}",
+        ) {
+            if (blockCalls.incrementAndGet() <= 2) throw ConnectException("torn before first frame")
+            "sentinel"
+        }
+        assertEquals("sentinel", out)
+        assertEquals(3, blockCalls.get())
+        assertEquals(3, engineCalls.get())
+        assertTrue(retries.any { it.contains("reissue") })
+    }
+
+    // Review 2026-07-19 (G5 reachability): in production the tear reaches post() wrapped as
+    // StreamTornBeforeClient — a plain RuntimeException thrown THROUGH the translator by the turn
+    // driver (the translators swallow raw IOException). It must drive the same reissue machinery
+    // via its IOException cause, not blow through post() uncaught.
+    @Test
+    fun `StreamTornBeforeClient thrown through the translator drives the reissue machinery`() = runTest {
+        val engineCalls = AtomicInteger()
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine {
+            engineCalls.incrementAndGet()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).posted(
+            ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
+            "{}",
+        ) {
+            if (blockCalls.incrementAndGet() <= 2) {
+                throw StreamTornBeforeClient(ConnectException("torn before first frame"))
+            }
+            "sentinel"
+        }
+        assertEquals("sentinel", out)
+        assertEquals(3, blockCalls.get())
+        assertEquals(3, engineCalls.get())
+        assertTrue(retries.any { it.contains("reissue") })
+    }
+
+    @Test
+    fun `stream torn before first client frame exhausts its reissue budget and rethrows`() = runTest {
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
+        assertThrows<ConnectException> {
+            clientOver(engine).posted(
+                ctx(clientFrameEmitted = { false }),
+                "{}",
+            ) {
+                blockCalls.incrementAndGet()
+                throw ConnectException("torn before first frame")
+            }
+        }
+        assertEquals(3, blockCalls.get()) // 1 initial + MAX_STREAM_REISSUES=2 reissues, then rethrow
+    }
+
+    @Test
+    fun `stream reissue does not sleep once the deadline has already expired`() = runTest {
+        // G4d follow-up: the reissue branch must re-check the deadline before its backoff sleep,
+        // same as the sibling applyBackoff path already does — an expired budget must not pay for
+        // one more real delay it can't use.
+        var now = 0L
+        val engineCalls = AtomicInteger()
+        val backoffCalls = AtomicInteger()
+        val retries = mutableListOf<String>()
+        val engine = MockEngine {
+            engineCalls.incrementAndGet()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val client = UpstreamClient(
+            firstByteTimeoutMs = 5_000,
+            totalTimeoutMs = 1_000,
+            maxRetries = 3,
+            client = HttpClient(engine),
+            backoff = { _, _ -> backoffCalls.incrementAndGet() },
+            clock = { now },
+        )
+        assertThrows<ConnectException> {
+            client.posted(
+                ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
+                "{}",
+            ) {
+                now = 5_000 // the deadline has already passed by the time the tear is observed
+                throw ConnectException("torn before first frame")
+            }
+        }
+        assertEquals(1, engineCalls.get(), "an expired deadline must not pay for a reissue POST")
+        assertEquals(0, backoffCalls.get(), "an expired deadline must not pay for the reissue backoff sleep")
+        assertTrue(retries.any { it.contains("deadline exceeded") && it.contains("stream reissue") })
+    }
+
+    @Test
+    fun `once client has seen a frame a torn stream never reissues`() = runTest {
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
+        assertThrows<ConnectException> {
+            clientOver(engine).posted(
+                ctx(clientFrameEmitted = { true }), // explicit: the hard no-retry-after-output case
+                "{}",
+            ) {
+                blockCalls.incrementAndGet()
+                throw ConnectException("torn after a frame")
+            }
+        }
+        assertEquals(1, blockCalls.get())
+    }
+
+    @Test
+    fun `canReissueStream predicate requires handoff, no client frame, retryable transport class, and remaining budget`() {
+        assertTrue(
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 0),
+        )
+        assertFalse(
+            ReissueRules().canReissueStream(false, ConnectException("torn"), { false }, 0),
+        )
+        assertFalse(
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { true }, 0),
+        )
+        assertFalse(
+            ReissueRules().canReissueStream(true, IllegalStateException("bug"), { false }, 0),
+        )
+        // budget spent — the literal 2 mirrors MAX_STREAM_REISSUES (kept private, like maxRetries).
+        assertFalse(
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 2),
+        )
+    }
+
+    @Test
+    fun `post sends the body as exact UTF-8 bytes with no content-encoding`() = runTest {
+        // B4 (#924 Phase 4): the gzip-request-body incident (xAI 400'd a gzipped body, 2026-07-18)
+        // as a transport-SHAPE assertion — this catches the CLASS (ANY request-body compression),
+        // where the kt-no-request-body-gzip ast-grep wall only catches the GZIPOutputStream NAME.
+        // The body must ride as the pre-encoded UTF-8 bytes post() computes once; the non-ASCII
+        // payload proves it is genuine UTF-8, not an accidental ASCII pass-through.
+        val bodyJson = """{"model":"x","content":"héllo-世界"}"""
+        var sentBody: ByteArray? = null
+        var contentEncoding: String? = "UNSET" // sentinel: a null here must mean "no header", not "handler never ran"
+        val engine = MockEngine { request ->
+            sentBody = (request.body as OutgoingContent.ByteArrayContent).bytes()
+            contentEncoding = request.headers[HttpHeaders.ContentEncoding]
+            respond("ok", HttpStatusCode.OK, headersOf())
+        }
+        clientOver(engine).posted(
+            ctx(),
+            bodyJson,
+        ) { "done" }
+        assertNull(contentEncoding, "request body must not be content-encoded (no gzip)")
+        assertArrayEquals(
+            bodyJson.toByteArray(Charsets.UTF_8),
+            sentBody,
+            "body must be the exact UTF-8(bodyJson) bytes",
+        )
+    }
+
+    @Test
+    fun `post-send SocketException logs a distinct possible-duplicate class`() = runTest {
+        // G16: a reset AFTER bytes may have left the client is not the same risk as a DNS blip
+        // that fires before any byte leaves — the log class must say so.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 2) throw SocketException("Connection reset")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).posted(
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(2, retries.size)
+        assertTrue(retries.all { it.startsWith("transport-possible-duplicate SocketException") })
+    }
+
+    @Test
+    fun `connect-phase ConnectException keeps the plain transport log class`() = runTest {
+        // Regression guard: CONNECT-phase classification must not drift into the G16 label.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 1) throw ConnectException("refused")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).posted(
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(1, retries.size)
+        retries.forEach {
+            assertTrue(it.startsWith("transport ConnectException"))
+            assertFalse(it.startsWith("transport-possible-duplicate"))
+        }
+    }
+
+    @Test
+    fun `post-send SocketTimeoutException also logs the possible-duplicate class`() = runTest {
+        // Second ambiguous type named in the evidence doc — same phase as SocketException.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 1) throw SocketTimeoutException("read timed out")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).posted(
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(1, retries.size)
+        assertTrue(retries.all { it.startsWith("transport-possible-duplicate SocketTimeoutException") })
+    }
+
+    @Test
+    fun `retryable predicate walks the cause chain and excludes cancellation`() {
+        assertTrue(TransportFailures().isRetryableTransport(UnresolvedAddressException()))
+        assertTrue(TransportFailures().isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
+        assertFalse(TransportFailures().isRetryableTransport(IllegalStateException("plain")))
+        assertFalse(TransportFailures().isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
+    }
+
+    @Test
+    fun `dns predicate matches only name-resolution failures`() {
+        assertTrue(TransportFailures().isDnsFailureTransport(UnresolvedAddressException()))
+        assertTrue(TransportFailures().isDnsFailureTransport(UnknownHostException()))
+        assertFalse(TransportFailures().isDnsFailureTransport(ConnectException("refused")))
+        assertFalse(TransportFailures().isDnsFailureTransport(SocketException("reset")))
+        assertTrue(TransportFailures().isDnsFailureTransport(RuntimeException(UnknownHostException())))
+    }
+
+    @Test
+    fun `an unclassified IOException retries to the budget as a possible duplicate`() = runTest {
+        // V4-66, the measured case: the JDK's header parser ("HTTP/1.1 header parser received no
+        // bytes") arrives as a BARE IOException, which no entry in the classifier's allowlist
+        // names. It rethrew on attempt one with the whole budget unspent — measured live
+        // 2026-09-16 on claude-deepseek: conn-reset at 234ms, perf attempts=1, no headers and no
+        // first_byte. Unclassifiable means POST_SEND: this seam cannot see whether the request
+        // reached the wire, so the honest label is the possible-duplicate one.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            throw IOException("HTTP/1.1 header parser received no bytes")
+        }
+        val retries = mutableListOf<String>()
+        val thrown = assertThrows<IOException> {
+            clientOver(engine).posted(ctx(onRetry = { retries.add(it) }), "{}") { "unreachable" }
+        }
+        assertEquals("HTTP/1.1 header parser received no bytes", thrown.message)
+        assertEquals(3, calls.get(), "the whole attempt budget is spent before the real failure surfaces")
+        assertEquals(2, retries.size)
+        assertTrue(
+            retries.all { it.startsWith("transport-possible-duplicate IOException") },
+            "an unnamed failure must claim the conservative half: $retries",
+        )
+    }
+}
+
+/** V4-66 pins, in their own class for the same reason V4-63 split its sibling: the class above
+ *  sits close to detekt's LargeClass ceiling, so a new pin reddens the gate before it can prove
+ *  anything. These four need no MockEngine and no client — they address the decision seam
+ *  directly, which is what the row changed. */
+class UnclassifiedTransportFailureTest {
+
+    @Test
+    fun `the transport seam rethrows cancellation with a full budget`() {
+        // The transport path cannot deliver a cancellation here: catchCancellable captures
+        // IOException, SerializationException and IllegalArgumentException, and a
+        // CancellationException is none of them, so it propagates before this seam. The guard
+        // V4-66 added is therefore proven where it lives rather than assumed from the call site.
+        assertThrows<CancellationException> {
+            TransportFailures().rethrowUnlessRetryableTransport(
+                CancellationException("cancelled mid-attempt"),
+                deadlineHit = false,
+                lastAttempt = false,
+            )
+        }
+    }
+
+    @Test
+    fun `the previously-named types keep their exact phase and the retryable set is not widened`() {
+        // V4-66 narrowed WHAT DECIDES, not what classifies: the retryable set still answers the
+        // G5 stream-reissue question, so widening it there would re-issue a stream on a failure
+        // nobody characterised. FOUR distinct JVM classes, not six names: ktor's
+        // ConnectTimeoutException EXTENDS java.net.ConnectException, and its
+        // io.ktor.client.network.sockets.SocketTimeoutException is a typealias for the java.net
+        // one, so each pair is one class (the ConnectTimeoutException branch is therefore
+        // unreachable behind the ConnectException branch — noted, not touched, by V4-66).
+        val failures = TransportFailures()
+        assertEquals(TransportFailurePhase.CONNECT, failures.classifyTransport(UnresolvedAddressException()))
+        assertEquals(TransportFailurePhase.CONNECT, failures.classifyTransport(UnknownHostException()))
+        assertEquals(TransportFailurePhase.CONNECT, failures.classifyTransport(ConnectException("refused")))
+        assertEquals(TransportFailurePhase.POST_SEND, failures.classifyTransport(SocketException("reset")))
+        assertEquals(TransportFailurePhase.POST_SEND, failures.classifyTransport(SocketTimeoutException("read")))
+        assertNull(failures.classifyTransport(IOException("HTTP/1.1 header parser received no bytes")))
+        assertFalse(failures.isRetryableTransport(IOException("parser")))
+        // The seam is where the decision moved: same throwable, a phase instead of a rethrow.
+        assertEquals(
+            TransportFailurePhase.POST_SEND,
+            failures.rethrowUnlessRetryableTransport(
+                IOException("parser"),
+                deadlineHit = false,
+                lastAttempt = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `the seam gives up on the deadline or the last attempt whatever the throwable`() {
+        // The two gates are unchanged and still end the loop — an unknown throwable buys the
+        // budget, never an unbounded loop.
+        val failures = TransportFailures()
+        assertThrows<IOException> {
+            failures.rethrowUnlessRetryableTransport(
+                IOException("unknown"),
+                deadlineHit = true,
+                lastAttempt = false,
+            )
+        }
+        assertThrows<IOException> {
+            failures.rethrowUnlessRetryableTransport(
+                IOException("unknown"),
+                deadlineHit = false,
+                lastAttempt = true,
+            )
+        }
+    }
+}

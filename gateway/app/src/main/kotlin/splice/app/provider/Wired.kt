@@ -3,8 +3,8 @@
 package splice.app.provider
 
 import splice.core.auth.RefreshableAuthProvider
-import splice.spi.CredentialHeaders
-import splice.spi.Provider
+import splice.upstream.CredentialHeaders
+import splice.upstream.Provider
 import java.nio.file.Path
 
 /** One discovered OAuth account, with secrets retained behind [auth]. */

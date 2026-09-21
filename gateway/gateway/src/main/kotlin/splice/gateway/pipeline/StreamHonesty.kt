@@ -6,7 +6,7 @@ package splice.gateway.pipeline
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.gateway.reasoning.Mirror
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 internal class StreamHonesty(private val mirrorReasoning: Boolean) {
     private val mirror = Mirror()

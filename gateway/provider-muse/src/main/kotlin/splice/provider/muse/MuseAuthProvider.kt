@@ -14,13 +14,13 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.spi.AccountCredentialIdentitySource
-import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
-import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
-import splice.spi.AccountCredentialIdentitySource.CredentialPresence
-import splice.spi.CredentialLock
-import splice.spi.ProcessDispatchers
-import splice.spi.SingleFlight
+import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.credentials.AccountCredentialIdentitySource
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.CredentialLock
+import splice.upstream.retry.SingleFlight
 import java.nio.file.Path
 import kotlin.coroutines.CoroutineContext
 

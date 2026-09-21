@@ -35,8 +35,8 @@ import splice.core.sessions.ProcessEnvironment
 import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
-import splice.spi.LifecycleScope
-import splice.spi.ProcessDispatchers
+import splice.upstream.LifecycleScope
+import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
-import splice.spi.BufferCapacity
+import splice.upstream.transport.BufferCapacity
 import java.io.IOException
 import java.net.http.WebSocket
 import java.util.concurrent.CompletionStage

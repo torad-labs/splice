@@ -10,9 +10,9 @@ package splice.gateway.head
 import splice.core.perf.PerfKeys
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.TurnTerminal
-import splice.spi.Provider
-import splice.spi.RemainingTurnWait
-import splice.spi.TurnWatchdog
+import splice.upstream.Provider
+import splice.upstream.retry.TurnWatchdog
+import splice.upstream.transport.RemainingTurnWait
 
 internal class TurnDriveFactory(
     private val provider: Provider,

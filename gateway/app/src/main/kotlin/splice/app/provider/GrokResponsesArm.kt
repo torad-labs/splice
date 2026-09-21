@@ -9,7 +9,7 @@ import splice.app.TopologyLoader
 import splice.core.util.LogSink
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 
 internal class GrokResponsesArm(

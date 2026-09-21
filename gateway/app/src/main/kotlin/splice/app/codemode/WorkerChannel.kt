@@ -6,7 +6,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
-import splice.spi.CodeModeTimeoutException
+import splice.upstream.failure.CodeModeTimeoutException
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream

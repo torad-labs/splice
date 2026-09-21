@@ -98,7 +98,7 @@ class ReplayMirrorTest {
     }
 }
 
-private fun sinkCapturing(texts: MutableList<String>): splice.spi.WireSink = object : splice.spi.WireSink {
+private fun sinkCapturing(texts: MutableList<String>): splice.upstream.sse.WireSink = object : splice.upstream.sse.WireSink {
     private var next = 0
     override suspend fun openText() = splice.core.index.WireBlockIndex(next++)
     override suspend fun openThinking() = splice.core.index.WireBlockIndex(next++)

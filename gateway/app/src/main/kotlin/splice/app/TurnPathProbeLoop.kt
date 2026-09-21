@@ -38,9 +38,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.util.LogSink
-import splice.spi.ProcessDispatchers
-import splice.spi.ProcessTicker
-import splice.spi.Ticker
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.codemode.ProcessTicker
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap

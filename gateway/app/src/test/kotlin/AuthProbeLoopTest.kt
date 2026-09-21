@@ -14,7 +14,7 @@ import splice.app.AuthProbeLoop
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.spi.Ticker
+import splice.upstream.Ticker
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 

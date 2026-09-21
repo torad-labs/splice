@@ -45,10 +45,10 @@ import splice.gateway.head.Preparation
 import splice.gateway.head.RequestBodyReader
 import splice.gateway.head.SessionProjectLookup
 import splice.gateway.head.TurnPreparation
-import splice.spi.BuiltTurn
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.BuiltTurn
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicInteger

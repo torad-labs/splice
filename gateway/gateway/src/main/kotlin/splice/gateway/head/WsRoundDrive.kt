@@ -9,9 +9,9 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
-import splice.spi.Provider
-import splice.spi.TurnSignals
-import splice.spi.WsRoundRunner
+import splice.upstream.Provider
+import splice.upstream.TurnSignals
+import splice.upstream.WsRoundRunner
 
 internal class WsRoundDrive(
     private val provider: Provider,
@@ -100,7 +100,7 @@ internal class WsRoundDrive(
     /** The loop break for [drive]'s own collection, and nothing else: private to this class, thrown
      *  and caught between two adjacent statements, never a seam. A plain RuntimeException because
      *  the translators' catch lists (IOException / SerializationException / IllegalArgumentException)
-     *  must not swallow it — the same reason [splice.spi.StreamTornBeforeClient] is one. The ANSWER
+     *  must not swallow it — the same reason [splice.upstream.transport.StreamTornBeforeClient] is one. The ANSWER
      *  the caller reads is [WsRoundResult], not this (V4-114). */
     private class RoundNeedsSse(val detail: String) : RuntimeException()
 }

@@ -7,11 +7,11 @@ import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.gateway.pipeline.FailurePresenter
-import splice.spi.FailureSource
-import splice.spi.Provider
-import splice.spi.UpstreamAuthMissing
-import splice.spi.UpstreamFailed
-import splice.spi.UpstreamFailureClassifier
+import splice.upstream.Provider
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
+import splice.upstream.transport.UpstreamAuthMissing
+import splice.upstream.transport.UpstreamFailed
 
 internal class TurnKnownEnd(
     private val provider: Provider,

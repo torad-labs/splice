@@ -7,8 +7,8 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.dialect.passthrough.IdentityHeaders
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.spi.Provider
-import splice.spi.ProviderTuning
+import splice.upstream.Provider
+import splice.upstream.ProviderTuning
 
 /**
  * The anthropic-passthrough construction site: the dialect's ONE provider fed effective quirks and

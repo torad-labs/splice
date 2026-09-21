@@ -26,9 +26,9 @@ import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.gateway.wire.TraceStore
 import splice.gateway.wire.WireTap
-import splice.spi.AccountPool
-import splice.spi.InflightGate
-import splice.spi.UpstreamClient
+import splice.upstream.credentials.AccountPool
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 
 /** A head's stored observations, all of them pointed at [tmp].

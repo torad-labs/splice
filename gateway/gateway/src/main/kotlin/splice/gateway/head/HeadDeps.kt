@@ -23,13 +23,13 @@ import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.gateway.wire.TraceStore
 import splice.gateway.wire.WireTap
-import splice.spi.AccountPool
-import splice.spi.InflightGate
-import splice.spi.ProcessTicker
-import splice.spi.ProcessWaiter
-import splice.spi.Ticker
-import splice.spi.UpstreamClient
-import splice.spi.Waiter
+import splice.upstream.Ticker
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessTicker
+import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.credentials.AccountPool
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 
 /** Was `HeadDeps.DEFAULT_MAX_REQUEST_BYTES` / `HeadDeps.DEFAULT_REQUEST_READ_TIMEOUT_MS`
  *  (companion consts); same names, now at file scope in the same package.
@@ -137,7 +137,7 @@ public data class HeadDeps(
 }
 
 // V4-134, FEATURES.md §6 — HeadEvents: what a head tells the console, at the seams that already hold each
-// fact. :gateway cannot see :control's EventBus (its build depends on :core and :provider-spi only),
+// fact. :gateway cannot see :control's EventBus (its build depends on :core and :upstream only),
 // so a head reports through this interface and :app adapts it to the bus, once, in
 // ConsoleEventPublisher. Nothing here is a new probe: every call site is a line that already knew
 // the fact — the head lifecycle mutex, the ready turn's admission, the one perf-row emitter.

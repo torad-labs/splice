@@ -29,7 +29,7 @@ import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnWiring
-import splice.spi.Provider
+import splice.upstream.Provider
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 

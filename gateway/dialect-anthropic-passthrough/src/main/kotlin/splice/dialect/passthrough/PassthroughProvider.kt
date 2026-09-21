@@ -18,13 +18,13 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
-import splice.spi.BuiltTurn
-import splice.spi.Provider
-import splice.spi.ProviderIdentity
-import splice.spi.ProviderTuning
-import splice.spi.ReanchorController
-import splice.spi.StreamTranslator
-import splice.spi.TurnSignals
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
+import splice.upstream.ProviderIdentity
+import splice.upstream.ProviderTuning
+import splice.upstream.ReanchorController
+import splice.upstream.StreamTranslator
+import splice.upstream.TurnSignals
 
 public class PassthroughProvider(
     private val tuning: ProviderTuning,

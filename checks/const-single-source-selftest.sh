@@ -229,14 +229,14 @@ case "$out" in
 esac
 
 # ── 6. a synthetic must-stay-equal comment ────────────────────────────────────────────────────
-# Names MAX_RATE_LIMIT_COOLDOWN_MS, which really is declared in provider-spi — so this fixture
+# Names MAX_RATE_LIMIT_COOLDOWN_MS, which really is declared in :upstream — so this fixture
 # also proves the detector resolves its counterpart against the REAL census, not a fixture list.
 build_harness
 mkdir -p "$SYNTH"
 cat > "$SYNTH/A.kt" <<'KT'
 package splice.selftest
 
-// Mirrors :provider-spi's MAX_RATE_LIMIT_COOLDOWN_MS. The two must stay equal — a client told to
+// Mirrors :upstream's MAX_RATE_LIMIT_COOLDOWN_MS. The two must stay equal — a client told to
 // come back before the cooldown ends is told a time that is not true.
 internal const val SELFTEST_CLIENT_HOLD_MS = 120_000L
 KT

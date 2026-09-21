@@ -37,12 +37,12 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.Preparation
 import splice.gateway.head.RequestBodyReader
 import splice.gateway.head.TurnPreparation
-import splice.spi.BuiltTurn
-import splice.spi.InflightGate
-import splice.spi.Provider
-import splice.spi.ProviderTuning
-import splice.spi.TurnEnd
-import splice.spi.UpstreamClient
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
+import splice.upstream.ProviderTuning
+import splice.upstream.TurnEnd
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 

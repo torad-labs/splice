@@ -4,7 +4,7 @@ package splice.dialect.responses
 
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.LogSink
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 
 internal data class ResponsesPartsInput(
     val tuning: ProviderTuning,

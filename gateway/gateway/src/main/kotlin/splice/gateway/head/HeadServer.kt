@@ -21,7 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.spi.Provider
+import splice.upstream.Provider
 
 // Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
 //

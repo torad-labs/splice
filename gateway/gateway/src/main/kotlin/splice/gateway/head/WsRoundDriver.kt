@@ -16,9 +16,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.onEach
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
-import splice.spi.HeaderRedaction
-import splice.spi.Provider
-import splice.spi.WsRoundRunner
+import splice.upstream.Provider
+import splice.upstream.WsRoundRunner
+import splice.upstream.transport.HeaderRedaction
 
 internal class WsRoundDriver(
     private val provider: Provider,

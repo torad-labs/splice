@@ -10,11 +10,11 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.gateway.wire.BufferingWireSink
-import splice.spi.FoldController
-import splice.spi.ReanchorController
-import splice.spi.ReanchorRound
-import splice.spi.RetryNotice
-import splice.spi.ToolSearchController
+import splice.upstream.FoldController
+import splice.upstream.ReanchorController
+import splice.upstream.ReanchorRound
+import splice.upstream.RetryNotice
+import splice.upstream.ToolSearchController
 
 internal class FoldRounds(
     key: String,

@@ -48,8 +48,8 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.head.HeadServer
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
 

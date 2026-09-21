@@ -7,7 +7,7 @@ package splice.dialect.responses
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.util.JsonScalars
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 private const val PART_SEPARATOR = "\n\n"
 

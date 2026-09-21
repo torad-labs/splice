@@ -14,8 +14,8 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.gateway.usage.QuotaTracker
-import splice.spi.ProcessTicker
-import splice.spi.Ticker
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class QuotaPoller(

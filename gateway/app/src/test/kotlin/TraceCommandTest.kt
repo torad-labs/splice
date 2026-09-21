@@ -22,7 +22,7 @@ import splice.core.util.WallClock
 import splice.gateway.wire.ClientInbound
 import splice.gateway.wire.TraceStore
 import splice.gateway.wire.TurnIdMint
-import splice.spi.WireAttempt
+import splice.upstream.sse.WireAttempt
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files

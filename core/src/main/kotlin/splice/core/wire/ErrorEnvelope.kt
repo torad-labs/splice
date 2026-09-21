@@ -1,12 +1,12 @@
 // NEW: V4-102 (arch-audit, 2026-09-17) — the Anthropic error envelope, built in ONE place.
 //
 // Four surfaces wrote this shape by hand — AdmissionResponses (as a String), CollectingTerminal
-// (with an optional usage), SseEmitter (wrapped in an SSE frame) and provider-spi's
+// (with an optional usage), SseEmitter (wrapped in an SSE frame) and :upstream's
 // RateLimitCooldown (our own fail-fast body) — and nothing held them together. They agreed by
 // convention, so a change to one was invisible to the others, which is the class the
 // kt-error-envelope-single-source wall exists to catch.
 //
-// WHY IT LIVES IN CORE, WHICH IS THE WHOLE DESIGN CONSTRAINT: provider-spi cannot import :gateway,
+// WHY IT LIVES IN CORE, WHICH IS THE WHOLE DESIGN CONSTRAINT: :upstream cannot import :gateway,
 // so a builder in the gateway's wire package is unreachable from the one site that most needs
 // it — our own synthesized failure body, the one the operator saw as braces in his transcript.
 // Core is the lowest module all four can reach.

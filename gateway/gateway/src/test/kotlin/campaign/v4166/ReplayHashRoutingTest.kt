@@ -23,9 +23,9 @@ import splice.dialect.passthrough.PassthroughQuirks
 import splice.gateway.head.AnthropicBodyParse
 import splice.gateway.head.CompactionReplay
 import splice.gateway.head.ProviderTurnBuild
-import splice.spi.BuiltTurn
-import splice.spi.Provider
-import splice.spi.ProviderTuning
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
+import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 

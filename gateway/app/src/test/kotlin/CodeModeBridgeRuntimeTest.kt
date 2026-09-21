@@ -28,9 +28,9 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeStep
-import splice.spi.WireSink
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.sse.WireSink
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit

@@ -7,8 +7,8 @@ package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
-import splice.spi.BufferCapacity
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
 
 /** Streamed tool-call state: opened blocks, pending (deferred-open) slots, and CX-01's terminal
  *  validation latch. [frame] resolves and parses the raw delta shape so this class never needs a

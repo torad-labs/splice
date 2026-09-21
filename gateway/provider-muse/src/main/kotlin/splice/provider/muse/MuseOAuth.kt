@@ -8,7 +8,7 @@ import kotlinx.serialization.json.booleanOrNull
 import splice.core.util.Cancellables
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
-import splice.spi.FailureRules
+import splice.upstream.failure.FailureRules
 import java.net.URI
 
 public object MuseOAuthEndpoints {

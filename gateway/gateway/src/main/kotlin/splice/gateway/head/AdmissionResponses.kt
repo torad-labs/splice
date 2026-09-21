@@ -14,7 +14,7 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
-import splice.spi.AccountResetText
+import splice.upstream.credentials.AccountResetText
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -29,7 +29,7 @@ internal class AdmissionResponses {
 
     // Relocated from a HeadServer member so respondAtCapacity shares one body builder; pure JSON
     // shaping with no instance state (review 2026-07-22 round 3).
-    // V4-102: the shape lives in core (splice.core.wire.ErrorEnvelope) so provider-spi can build the
+    // V4-102: the shape lives in core (splice.core.wire.ErrorEnvelope) so :upstream can build the
     // same envelope — it cannot import :gateway. Kept as a named delegate so the six admission
     // callers read unchanged; the local builder is gone, which is what the wall actually asks for.
     private fun errorBodyJson(type: String, message: String): String =

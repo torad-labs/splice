@@ -9,10 +9,10 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodexCodeModeTurnBuilder
-import splice.spi.CodeModeCell
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeRuntime
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     @Test

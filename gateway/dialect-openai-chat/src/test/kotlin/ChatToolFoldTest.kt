@@ -16,7 +16,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatTurnContext
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 private class FoldRec : WireSink {
     val calls = mutableListOf<String>()

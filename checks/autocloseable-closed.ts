@@ -462,7 +462,7 @@ function testOnlyClosers(root: string, typeName: string): string[] {
 
 // ── selftest fixtures ──────────────────────────────────────────────────────────────────────────
 
-const SPI_CONTRACT = `package splice.spi
+const SPI_CONTRACT = `package splice.upstream
 
 public interface CodeModeRuntime : AutoCloseable {
     public fun start(): Unit
@@ -576,7 +576,7 @@ function write(root: string, files: Record<string, string>): void {
 }
 
 const APP = "gateway/app/src/main/kotlin/splice/app/App.kt";
-const SPI = "gateway/provider-spi/src/main/kotlin/splice/spi/Spi.kt";
+const SPI = "upstream/src/main/kotlin/splice/upstream/Spi.kt";
 const TEST = "gateway/app/src/test/kotlin/RuntimeTest.kt";
 
 /** Python's repr() of a list of strings. */

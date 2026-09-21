@@ -1,11 +1,11 @@
 // NEW: v0.4.0 FEATURES.md §10 — the JDK implementation of the local-runtime probe's network seam.
 // Moved out of dialect-openai-chat (V4-103): the seam (LocalHttp/LocalHttpReply) lives in
-// provider-spi, and the JDK client — the thing that actually dials — lives here in :app.
+// :upstream, and the JDK client — the thing that actually dials — lives here in :app.
 package splice.app.provider
 
 import splice.core.util.Cancellables
-import splice.spi.LocalHttp
-import splice.spi.LocalHttpReply
+import splice.upstream.transport.LocalHttp
+import splice.upstream.transport.LocalHttpReply
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest

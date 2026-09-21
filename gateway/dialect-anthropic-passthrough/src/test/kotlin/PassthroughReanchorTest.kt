@@ -20,7 +20,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.dialect.passthrough.PassthroughReanchorController
-import splice.spi.ReanchorRound
+import splice.upstream.ReanchorRound
 
 class PassthroughReanchorTest {
 

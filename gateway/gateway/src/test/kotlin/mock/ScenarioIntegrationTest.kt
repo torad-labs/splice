@@ -22,7 +22,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
-import splice.spi.SseReader
+import splice.upstream.sse.SseReader
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ScenarioIntegrationTest {
@@ -149,7 +149,7 @@ class ScenarioIntegrationTest {
     }
 }
 
-class RecordingSink2 : splice.spi.WireSink {
+class RecordingSink2 : splice.upstream.sse.WireSink {
     val opens = mutableListOf<String>()
     val jsonDeltas = mutableListOf<String>()
     val redacted = mutableListOf<String>()

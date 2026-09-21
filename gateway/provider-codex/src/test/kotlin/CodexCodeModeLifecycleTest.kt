@@ -8,8 +8,9 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.transport.posted
 import kotlin.time.Duration.Companion.hours
 
 class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {

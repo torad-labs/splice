@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
-import splice.spi.BufferCapacity
+import splice.upstream.transport.BufferCapacity
 
 class ChatStreamTranslatorTest {
 
@@ -276,7 +276,7 @@ class ChatStreamTranslatorTest {
     @Test
     fun `finished turn beats a late watchdog fire - success not overloaded`() = runTest {
         val outcome = ChatStreamTranslator(
-            firedCtx(splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
+            firedCtx(splice.upstream.retry.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
         ).driveTurn(
             listOf(
                 ev("""{"choices":[{"delta":{"content":"done"},"finish_reason":null}]}"""),
@@ -290,7 +290,7 @@ class ChatStreamTranslatorTest {
     @Test
     fun `watchdog fire without a finish stays an overloaded failure`() = runTest {
         val outcome = ChatStreamTranslator(
-            firedCtx(splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
+            firedCtx(splice.upstream.retry.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
         ).driveTurn(
             listOf(ev("""{"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}""")).asFlow(),
             Rec(),

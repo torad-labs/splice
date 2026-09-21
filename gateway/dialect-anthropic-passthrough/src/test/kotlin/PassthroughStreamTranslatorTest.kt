@@ -24,9 +24,9 @@ import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughReanchorController
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
-import splice.spi.BufferCapacity
-import splice.spi.ReanchorRound
-import splice.spi.WireSink
+import splice.upstream.ReanchorRound
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
 
 private class Rec : WireSink {
     val calls = mutableListOf<String>()
@@ -430,7 +430,7 @@ class PassthroughStreamTranslatorTest {
         // Preferring watchdog discarded successful kimi turns and burned quota on retries.
         val late = PassthroughTurnContext(
             { false },
-            { splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000) },
+            { splice.upstream.retry.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000) },
             180_000,
             900_000,
         )

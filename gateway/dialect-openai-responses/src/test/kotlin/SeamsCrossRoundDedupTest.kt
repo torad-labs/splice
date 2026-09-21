@@ -26,8 +26,8 @@ import splice.dialect.responses.ResponsesTurnSeams
 import splice.dialect.responses.ResponsesTurnSeamsDeps
 import splice.dialect.responses.ToolSurfaceLatch
 import splice.dialect.responses.TurnOptionsDeps
-import splice.spi.TurnSignals
-import splice.spi.WireSink
+import splice.upstream.TurnSignals
+import splice.upstream.sse.WireSink
 
 private class SeamsSink : WireSink {
     val out = mutableListOf<String>()

@@ -5,8 +5,8 @@ package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
-import splice.spi.ToolSearchController
-import splice.spi.ToolSearchRound
+import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchRound
 
 /** The round-splicing laws BOTH runners obey (never two copies — the v29 law). Each runner holds
  *  its own `private val rounds = RoundSplice()`; the bodies below are the single definition. */

@@ -213,7 +213,7 @@ const path = process.argv[2];
 let text = readFileSync(path, "utf8");
 const empty = "export const CEILING_EXCEPTIONS: [string, number, string][] = [];";
 const injected = `export const CEILING_EXCEPTIONS: [string, number, string][] = [
-  ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", 9.99, "2099-01-01: selftest padded fixture"],
+  ["upstream/src/main/kotlin/splice/upstream/transport/UpstreamClient.kt", 9.99, "2099-01-01: selftest padded fixture"],
 ];`;
 if (text.split(empty).length === 2) {
   text = text.replace(empty, () => injected);

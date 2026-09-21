@@ -7,8 +7,8 @@ package splice.dialect.responses
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.spi.TerminalStates
-import splice.spi.WatchdogFired
+import splice.upstream.failure.TerminalStates
+import splice.upstream.retry.WatchdogFired
 
 private const val MS_PER_S = 1000L
 

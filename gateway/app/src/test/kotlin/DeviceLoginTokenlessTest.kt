@@ -27,7 +27,7 @@ import splice.app.TokenPollForm
 import splice.app.auth.OAuthLoginAccount
 import splice.app.cli.LoginKimi
 import splice.provider.kimi.KimiOAuth
-import splice.spi.Waiter
+import splice.upstream.Waiter
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress

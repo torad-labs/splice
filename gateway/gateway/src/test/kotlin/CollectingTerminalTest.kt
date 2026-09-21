@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.CollectingTerminal
-import splice.spi.BufferCapacity
+import splice.upstream.transport.BufferCapacity
 
 private const val ERROR_STATUS = 502
 private const val OK_STATUS = 200

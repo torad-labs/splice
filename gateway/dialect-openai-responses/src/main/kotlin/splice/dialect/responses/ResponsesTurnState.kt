@@ -7,8 +7,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ToolSearchCall
 import splice.core.util.JsonScalars
-import splice.spi.BufferCapacity
-import splice.spi.ClassifiedFailure
+import splice.upstream.failure.ClassifiedFailure
+import splice.upstream.transport.BufferCapacity
 
 /**
  * Folds the upstream SSE event stream into per-turn buffers/flags. One shared mutable ledger read

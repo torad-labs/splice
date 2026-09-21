@@ -9,8 +9,8 @@
 package splice.gateway.head
 
 import splice.gateway.usage.QuotaTracker
-import splice.spi.AccountPool
-import splice.spi.AccountSelection
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountSelection
 
 /** The one resolver: the SELECTED account's tracker if a selection (or a sticky session) is in
  *  hand, else the head's primary tracker. Owned by [HeadDeps] and read through

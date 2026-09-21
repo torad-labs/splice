@@ -4,8 +4,8 @@ package splice.provider.kimi
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.CredentialExpiry
 import splice.core.util.JsonScalars
-import splice.spi.CredentialShape
-import splice.spi.CredentialTokens
+import splice.upstream.credentials.CredentialShape
+import splice.upstream.credentials.CredentialTokens
 
 public class KimiCredentialShape : CredentialShape {
     override fun material(root: JsonObject): CredentialTokens = CredentialTokens(

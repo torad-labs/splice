@@ -1,4 +1,4 @@
-// NEW: (ws-transport WS-1, 2026-07-31; moved out of :provider-spi 2026-08-01) the Responses
+// NEW: (ws-transport WS-1, 2026-07-31; moved out of :upstream 2026-08-01) the Responses
 // WebSocket transport. It lives in the DIALECT because the Responses runner is its only caller:
 // keeping it in the shared SPI exposed connection-lifecycle details no other module needs
 // (review of #72). :gateway still sees only the WsRoundRunner seam, which is all the module
@@ -18,7 +18,7 @@
 //   terminal owns it), exactly like an SSE body tear today.
 //   NO NEW DEPENDENCIES — java.net.http.WebSocket (JDK 21), same lineage as UpstreamClient's Java
 //   engine. The dialect stays out of this file: the round-terminal predicate is INJECTED, so
-//   provider-spi never learns Responses event names.
+//   :upstream never learns Responses event names.
 //
 // Decomposition campaign (HD-24): WsConnection, WsConnectionPool, WsConnectionFactory,
 // WsRoundOpener, WsRoundStream, WsSeams, WsLogKeys, JdkWebSocketConnector and InboxListener all

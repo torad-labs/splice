@@ -15,7 +15,7 @@
 # the whole dotted string `kotlin.Suppress`, which the old anchored `^Suppress$` regex rejected.
 # Fixed by: matching either `annotation` or `file_annotation` via `any:`, and widening the
 # user_type regex to `^(.*\.)?Suppress$` so a qualified receiver doesn't hide the class name.
-# Verified this does NOT fire on the compliant real case `provider-spi/InflightGate.kt:37`
+# Verified this does NOT fire on the compliant real case `upstream/InflightGate.kt:37`
 # (`@Suppress("UseDataClass")`, not in the banned-rule list) or on `@Suppress("UNCHECKED_CAST")`.
 id: kt-no-quality-suppress
 language: kotlin

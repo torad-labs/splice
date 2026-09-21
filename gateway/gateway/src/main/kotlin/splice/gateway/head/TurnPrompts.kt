@@ -9,8 +9,8 @@ import splice.core.prompt.SLOT_PROMPT_CHANGED
 import splice.core.prompt.SYSTEM_PROMPT_APPLIED
 import splice.core.prompt.SYSTEM_PROMPT_LAYERS
 import splice.core.prompt.SystemPromptMode
-import splice.spi.BuiltTurn
-import splice.spi.Provider
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
 
 internal class TurnPrompts(private val provider: Provider, private val deps: HeadDeps) {
 

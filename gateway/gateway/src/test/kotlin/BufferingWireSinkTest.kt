@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.gateway.wire.BufferingWireSink
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 private class RecordingSink : WireSink {
     val calls = mutableListOf<String>()

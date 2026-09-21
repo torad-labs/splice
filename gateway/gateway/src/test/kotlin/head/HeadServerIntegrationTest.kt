@@ -43,8 +43,8 @@ import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
@@ -231,7 +231,7 @@ class HeadServerIntegrationTest {
     // TurnDriveFactory) was dead: the round loop posts drive.requestBody.toString() (RoundStrategy),
     // so a row pinning that field would have pinned nothing; it is deleted alongside this arm. The
     // real gap sat one level down: with SseRoundDriver's live dispatch body mutated to stream:false,
-    // every dialect contract suite, this whole suite and the provider-spi transport suites stayed
+    // every dialect contract suite, this whole suite and the :upstream transport suites stayed
     // GREEN. This arm reads the request the mock DECODED off the socket
     // (MockChatGptUpstream.upstreamBodies — zstd-inflated, exactly what the ChatGPT backend would
     // parse) and compares the WHOLE body to the canonical bytes of a basic TestResponsesProvider turn.

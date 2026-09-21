@@ -15,8 +15,8 @@ import splice.core.GATEWAY_VERSION
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
 import splice.gateway.wire.WireTap
-import splice.spi.InflightGate
-import splice.spi.Provider
+import splice.upstream.Provider
+import splice.upstream.retry.InflightGate
 
 internal class HeadDiagnostics(
     private val provider: Provider,

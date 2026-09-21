@@ -124,7 +124,7 @@ class RefreshRetryTest {
     fun `exhaustion by transport failure propagates the final throw - DR-82`() = runTest {
         val boom = IOException("network unreachable")
         val calls = AtomicInteger()
-        val quiet = RefreshRetry(waiter = splice.spi.Waiter { })
+        val quiet = RefreshRetry(waiter = splice.upstream.Waiter { })
         val outcome = runCatching {
             quiet.refreshWithRetry(
                 call = {
@@ -141,7 +141,7 @@ class RefreshRetryTest {
     @Test
     fun `exhaustion by status classification still returns null - DR-82 control`() = runTest {
         val client = clientOf(MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) })
-        val quiet = RefreshRetry(waiter = splice.spi.Waiter { })
+        val quiet = RefreshRetry(waiter = splice.upstream.Waiter { })
         assertNull(quiet.refreshWithRetry(call = { call(client) }, classify = { RefreshStep.Retry }))
     }
 
@@ -160,7 +160,7 @@ class RefreshRetryTest {
         val cancel = CancellationException("turn cancelled")
         val calls = AtomicInteger()
         val waits = mutableListOf<Long>()
-        val recording = RefreshRetry(waiter = splice.spi.Waiter { ms -> waits += ms })
+        val recording = RefreshRetry(waiter = splice.upstream.Waiter { ms -> waits += ms })
         val outcome = runCatching {
             recording.refreshWithRetry(
                 call = {
@@ -182,7 +182,7 @@ class RefreshRetryTest {
     fun `the backoff recorder does capture waits on a real retry - DR-166 control`() = runTest {
         val client = clientOf(MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) })
         val waits = mutableListOf<Long>()
-        val recording = RefreshRetry(waiter = splice.spi.Waiter { ms -> waits += ms })
+        val recording = RefreshRetry(waiter = splice.upstream.Waiter { ms -> waits += ms })
         assertNull(recording.refreshWithRetry(call = { call(client) }, classify = { RefreshStep.Retry }))
         assertEquals(2, waits.size, "three attempts sleep twice; the instrument sees them: $waits")
     }

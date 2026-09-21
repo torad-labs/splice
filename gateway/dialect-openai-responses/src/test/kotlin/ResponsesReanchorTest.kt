@@ -25,9 +25,9 @@ import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesReanchorController
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
-import splice.spi.ReanchorRound
-import splice.spi.WatchdogFired
-import splice.spi.WireSink
+import splice.upstream.ReanchorRound
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.sse.WireSink
 
 private fun previousBody(): JsonObject = Json.parseToJsonElement(
     """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"}],"store":false,"stream":true}""",

@@ -17,7 +17,7 @@ public fun interface HeadAccountAuthSource {
  *
  *  A SIBLING of [HeadAccountPoolSource], never a second method on it: that one-method fun
  *  interface is implemented by test doubles tree-wide through SAM conversion (a bare lambda), and
- *  widening it would break every one of them for a capability only the real [splice.spi.AccountPool]
+ *  widening it would break every one of them for a capability only the real [splice.upstream.credentials.AccountPool]
  *  has. A route discovers this with a checked cast — the same idiom [splice.control.api.StatuslineRoute]
  *  already uses for [HeadPerfSkipSource] (`managed.perf as? HeadPerfSkipSource`). */
 public fun interface HeadAccountPinSource {
@@ -33,7 +33,7 @@ public data class HeadAccountPoolView(
     val selectionUnknown: Boolean = false,
     /** V4-132: the operator-pinned label, or null when nothing is pinned. */
     val pinnedLabel: String? = null,
-    /** V4-132: the label [splice.spi.AccountPool.select] would choose next, by the real selector
+    /** V4-132: the label [splice.upstream.credentials.AccountPool.select] would choose next, by the real selector
      *  order — GET /api/accounts "the next target by the real selector order" (FEATURES.md §4.5). */
     val nextTargetLabel: String? = null,
 ) {
@@ -75,7 +75,7 @@ public data class HeadAccountView(
     val credentialPresent: Boolean = true,
     val authExcludedUntilEpochMillis: Long? = null,
     val authExclusionReason: String? = null,
-    /** V4-132: the window's own reported length in seconds (see [splice.spi.AccountView]). */
+    /** V4-132: the window's own reported length in seconds (see [splice.upstream.credentials.AccountView]). */
     val fiveHourWindowSeconds: Long? = null,
     val sevenDayWindowSeconds: Long? = null,
 )

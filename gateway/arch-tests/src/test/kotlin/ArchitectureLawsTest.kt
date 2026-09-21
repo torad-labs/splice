@@ -20,7 +20,7 @@ import java.io.File
  *  when a module moves under dialects/ or providers/, and [ProjectMap] is what turns it into a
  *  directory. */
 private val PORT_SCOPE_MODULES = listOf(
-    ":core", ":client", ":provider-spi", ":dialect-openai-responses", ":dialect-openai-chat",
+    ":core", ":client", ":upstream", ":dialect-openai-responses", ":dialect-openai-chat",
     ":dialect-anthropic-passthrough", ":provider-codex", ":provider-grok", ":provider-openai",
     ":provider-kimi", ":provider-muse", ":gateway", ":control", ":app", ":fir-checks",
 )

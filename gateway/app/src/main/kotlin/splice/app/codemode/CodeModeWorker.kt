@@ -14,10 +14,10 @@ import org.graalvm.polyglot.Value
 import org.graalvm.polyglot.io.IOAccess
 import org.graalvm.polyglot.proxy.ProxyExecutable
 import org.graalvm.polyglot.proxy.ProxyObject
-import splice.spi.CodeModeCall
-import splice.spi.CodeModeInfrastructureCategory
-import splice.spi.CodeModeInfrastructureClass
-import splice.spi.CodeModeResult
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.failure.CodeModeInfrastructureCategory
+import splice.upstream.failure.CodeModeInfrastructureClass
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException

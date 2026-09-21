@@ -6,9 +6,9 @@ package splice.gateway.head
 import splice.core.perf.TurnPerf
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.TurnTrace
-import splice.spi.AccountSelection
-import splice.spi.BuiltTurn
-import splice.spi.InflightGate
+import splice.upstream.BuiltTurn
+import splice.upstream.credentials.AccountSelection
+import splice.upstream.retry.InflightGate
 
 /** The hand-off seam, NAMED (kt-no-lambda-seam, V4-99 item 3).
  *

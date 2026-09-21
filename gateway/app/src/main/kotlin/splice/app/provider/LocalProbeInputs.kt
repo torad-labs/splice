@@ -11,9 +11,9 @@ import splice.core.model.ModelCatalog
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.provider.openai.ApiKeyAuthProvider
-import splice.spi.local.LocalRowVerdict
-import splice.spi.local.LocalRuntime
-import splice.spi.local.LocalRuntimeProbe
+import splice.upstream.local.LocalRowVerdict
+import splice.upstream.local.LocalRuntime
+import splice.upstream.local.LocalRuntimeProbe
 import java.nio.file.Paths
 
 internal class LocalProbeInputs {

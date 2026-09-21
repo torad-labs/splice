@@ -10,7 +10,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 
 public class OpenAiResponsesProvider(
     tuning: ProviderTuning,

@@ -17,13 +17,13 @@ import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
 import splice.dialect.chat.ID_SLOT_FIELD
 import splice.dialect.chat.SlotAffinity
-import splice.spi.BuiltTurn
-import splice.spi.Provider
-import splice.spi.ProviderIdentity
-import splice.spi.ProviderTuning
-import splice.spi.StreamTranslator
-import splice.spi.TurnEnd
-import splice.spi.TurnSignals
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
+import splice.upstream.ProviderIdentity
+import splice.upstream.ProviderTuning
+import splice.upstream.StreamTranslator
+import splice.upstream.TurnEnd
+import splice.upstream.TurnSignals
 
 public class OpenAiChatProvider(
     private val tuning: ProviderTuning,

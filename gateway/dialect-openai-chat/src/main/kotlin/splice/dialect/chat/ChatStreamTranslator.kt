@@ -19,16 +19,16 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.spi.BufferCapacity
-import splice.spi.FIRST_OUTPUT_TIER
-import splice.spi.MID_OUTPUT_TIER
-import splice.spi.MS_PER_S
-import splice.spi.SseFrameTooLargeException
-import splice.spi.StreamTornBeforeClient
-import splice.spi.StreamTranslator
-import splice.spi.TerminalStates
-import splice.spi.WatchdogFired
-import splice.spi.WireSink
+import splice.upstream.StreamTranslator
+import splice.upstream.failure.SseFrameTooLargeException
+import splice.upstream.failure.TerminalStates
+import splice.upstream.retry.FIRST_OUTPUT_TIER
+import splice.upstream.retry.MID_OUTPUT_TIER
+import splice.upstream.retry.MS_PER_S
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
+import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -169,7 +169,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             "upstream silent past the ${fired.elapsedMs / MS_PER_S}s total cap"
     }
 
-    /** What this round produced before it died, for [splice.spi.ReanchorController]. Mirrors
+    /** What this round produced before it died, for [splice.upstream.ReanchorController]. Mirrors
      *  [successOutcome]'s reads so a continuation and a success see the SAME buffers. [toolTearOpen]
      *  is left false on purpose: this dialect buffers tool arguments and flushes them before the
      *  terminal, so a raised [ChatToolCalls.hasToolUse] is already the fact that refuses a

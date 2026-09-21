@@ -45,7 +45,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
-import splice.spi.HeaderRedaction
+import splice.upstream.transport.HeaderRedaction
 import java.nio.file.Files
 import java.nio.file.Path
 

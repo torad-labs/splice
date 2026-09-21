@@ -18,7 +18,7 @@ import splice.gateway.wire.FrameWrite
 import splice.gateway.wire.SseEmitterFactory
 import splice.gateway.wire.TurnTerminal
 import splice.gateway.wire.TurnWiring
-import splice.spi.Provider
+import splice.upstream.Provider
 
 internal class LocalResponses(
     private val provider: Provider,

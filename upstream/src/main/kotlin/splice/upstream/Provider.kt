@@ -1,0 +1,106 @@
+// NEW: the Provider SPI (plan). The generic head hosting in :gateway consumes THIS; concrete
+// providers (:provider-codex/grok/openai) implement it by wiring their dialect translators +
+// auth + quirks. This is why :gateway never sees a concrete dialect — the module law forces it.
+package splice.upstream
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonObject
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.ModelCatalog
+import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
+import splice.core.turn.WatchdogBudget
+import splice.upstream.sse.WireSink
+
+/** A per-turn stream state machine: drives the WireSink from upstream events, returns an outcome
+ *  AFTER the loop (cross-event state + harvest). Imperative, not a Flow operator (see the dialect). */
+public fun interface StreamTranslator {
+    public suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome
+}
+
+// BuiltTurn + TurnSignals live in ProviderTurns.kt (concentration, 2026-08-19).
+
+/** The dialect-invariant identity a provider exposes: which head it is, its catalog, auth, budget.
+ *  Every concrete provider shares this exact cluster, so it's grouped (see [ProviderTuning]) and
+ *  delegated instead of re-threaded through each constructor. */
+public interface ProviderIdentity {
+    public val key: String
+    public val label: String
+    public val catalog: ModelCatalog
+    public val pinnedModel: String
+    public val auth: RefreshableAuthProvider
+    public val watchdog: WatchdogBudget
+
+    /** The per-head `<command> login` instruction (empty when the provider has no OAuth login
+     *  flow, e.g. api-key-only heads) — surfaced by [splice.gateway.head.TurnDriver] as an
+     *  operator hint on AUTHENTICATION-classified failures. */
+    public val loginCommand: String
+}
+
+/** The construction bundle every concrete provider takes: its [ProviderIdentity] plus the upstream
+ *  base URL each provider turns into its own [Provider.upstreamUrl]. One cohesive param in place of
+ *  the seven knobs that were identical across codex/grok/openai. */
+public data class ProviderTuning(
+    override val key: String,
+    override val label: String,
+    override val catalog: ModelCatalog,
+    override val pinnedModel: String,
+    override val auth: RefreshableAuthProvider,
+    val baseUrl: String,
+    override val watchdog: WatchdogBudget,
+    override val loginCommand: String = "",
+) : ProviderIdentity
+
+/** Everything the generic head needs to serve one provider. */
+public interface Provider : ProviderIdentity {
+    public val upstreamUrl: String
+    public val showReasoning: ReasoningDisplay
+    public val replayReasoning: Boolean
+
+    public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
+
+    /** Append resolved custom text at this dialect's tail seam. The unchanged default preserves
+     *  current behavior for a provider whose dialect has not opted into the 0.4.0 capability. */
+    public fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn = turn
+
+    /** Place the head's standing system prompt at this dialect's system seam, on EVERY turn.
+     *  [mode] is APPEND (the default: the client's own system field survives byte-identically and
+     *  the prompt rides beside it), REPLACE (that field is substituted) or STRIP (the prompt is a
+     *  pattern list and the matching paragraphs are deleted from that field). The unchanged default
+     *  preserves current behavior for a provider whose dialect has not opted into the capability —
+     *  and TurnPreparation then reports the prompt as NOT APPLIED rather than claiming text the
+     *  wire never carried. */
+    public fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn = turn
+
+    public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
+
+    /** Default: the bare SSE accept header every Responses/Chat upstream needs. Providers with a
+     *  credential-derived header (codex's ChatGPT-Account-ID, passthrough's identity headers)
+     *  override with more; this covers the three that don't. */
+    public fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
+
+    /** Reasoning-continuation folding for this turn, or null when the feature is off for this
+     *  model/head (the default — every non-codex provider stays pure passthrough). */
+    public fun foldController(meta: TurnMeta): FoldController? = null
+
+    /** Mid-stream re-anchoring policy for FAILED rounds; null = surface the failure (pre-reanchor behaviour). */
+    public fun reanchorController(meta: TurnMeta): ReanchorController? = null
+
+    /** RC-4 (reasoning-cache 2026-07-24): one-shot request-body amendment on a
+     *  deterministic upstream rejection — (status, responseText, bodyJson) -> amended
+     *  body or null. Default null keeps every provider on the plain retry plan. */
+    public fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = null
+
+    /** ws-transport WS-3: the WebSocket overlay for this provider, or null (the default, and every
+     *  provider that has not opted in). Non-null lets the head attempt a WS round before its normal
+     *  SSE post; the runner returns null for "ride SSE", so the overlay can only ever remove work,
+     *  never add a failure mode the SSE path did not already have. */
+    public val wsRunner: WsRoundRunner? get() = null
+
+    /** Cancel provider-owned per-turn resources when a head stops; the provider remains restartable. */
+    public fun onHeadStop() {}
+}

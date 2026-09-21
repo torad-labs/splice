@@ -26,7 +26,7 @@ note() { printf '  %s\n' "$1"; }
 
 CHECKER="$tmp/checks/autocloseable-closed.ts"
 APP="$tmp/gateway/app/src/main/kotlin/splice/app"
-SPI="$tmp/gateway/provider-spi/src/main/kotlin/splice/spi"
+SPI="$tmp/upstream/src/main/kotlin/splice/upstream"
 
 mkdir -p "$tmp/checks" "$APP" "$SPI"
 cp "$ROOT/checks/autocloseable-closed.ts" "$CHECKER"
@@ -77,7 +77,7 @@ fi
 # ── the mirrored fixtures ─────────────────────────────────────────────────────────────────────
 write_contract() {
   cat > "$SPI/Contract.kt" <<'KOT'
-package splice.spi
+package splice.upstream
 
 public interface CodeModeRuntime : AutoCloseable {
     public fun start(): Unit

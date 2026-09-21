@@ -18,11 +18,11 @@
  *
  * THE THREE DUPLICATES THIS ROW WAS OPENED FOR, each verified against the declarations rather than
  * taken from the audit (2026-09-17):
- *   ElapsedNow (provider-spi/RuntimeSeams.kt:40) == ElapsedClock (core/util/RuntimePorts.kt:143).
+ *   ElapsedNow (upstream/RuntimeSeams.kt:40) == ElapsedClock (core/util/RuntimePorts.kt:143).
  *       ElapsedNow's KDoc: "A monotonic now-reading in milliseconds. The seam behind retry deadlines
  *       and the shared 429 cooldown." ElapsedClock's: "Reads a MONOTONIC timebase in milliseconds …
  *       for budgets, deadlines, watchdog caps and elapsed timings." Same role, two modules.
- *   AccountNow (provider-spi/AccountSelection.kt:22) == WallClock (core/util/RuntimePorts.kt:105).
+ *   AccountNow (upstream/AccountSelection.kt:22) == WallClock (core/util/RuntimePorts.kt:105).
  *       AccountNow's KDoc: "Epoch time seam used to compare provider reset timestamps." WallClock's
  *       contract is exactly "a real point in calendar time … compared against a foreign epoch".
  *   HeaderLookup (gateway/usage/RateLimitHeaders.kt:22) == QuotaHeaderRead (core/usage/QuotaHeaders.kt:15).

@@ -22,9 +22,9 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
-import splice.spi.BufferCapacity
-import splice.spi.WatchdogFired
-import splice.spi.WireSink
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
 
 private class RecordingSink : WireSink {
     val calls = mutableListOf<String>()

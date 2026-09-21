@@ -3,7 +3,7 @@
 package splice.dialect.responses
 
 import splice.core.util.LogSink
-import splice.spi.FailureRules
+import splice.upstream.failure.FailureRules
 
 internal class ResponsesFailureAmend(
     private val quirks: ResponsesQuirks,

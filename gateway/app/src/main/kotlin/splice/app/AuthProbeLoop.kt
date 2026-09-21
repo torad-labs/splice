@@ -1,5 +1,5 @@
 // NEW: pre-traffic auth/health probe (G8). Mirrors the delay-loop idiom in
-// provider-spi/src/main/kotlin/splice/spi/Watchdog.kt:47-52 (scope.launch { while (isActive) { ... } }).
+// upstream/src/main/kotlin/splice/spi/Watchdog.kt:47-52 (scope.launch { while (isActive) { ... } }).
 // A cheap per-head background check: read credentials() (cached/local — no new network for
 // api-key heads, since RefreshableAuthProvider.refresh() == credentials() there), and on a null
 // result explicitly call refresh() — the existing SingleFlight-protected path every real turn
@@ -17,8 +17,8 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.spi.ProcessTicker
-import splice.spi.Ticker
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
 
 public class AuthProbeLoop(
     private val key: String,

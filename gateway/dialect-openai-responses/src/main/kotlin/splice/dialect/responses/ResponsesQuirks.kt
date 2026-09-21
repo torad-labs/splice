@@ -4,7 +4,7 @@
 // consumers. Every member kept its identical name and argument list.
 package splice.dialect.responses
 
-import splice.spi.EffortVocabulary
+import splice.upstream.EffortVocabulary
 
 /** The finite quirk surface separating codex / xai / openai-platform on this dialect. */
 public data class ResponsesQuirks(

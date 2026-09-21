@@ -25,7 +25,7 @@ import splice.dialect.responses.ResponsesToolSearchController
 import splice.dialect.responses.ToolDeferralPolicy
 import splice.dialect.responses.ToolSearchIndex
 import splice.dialect.responses.responsesRequestJson
-import splice.spi.ToolSearchRound
+import splice.upstream.ToolSearchRound
 import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
 private val DEFERRED = List(12) { ToolDefinition(name = "mcp__exa__tool_$it", description = "tool number $it") }

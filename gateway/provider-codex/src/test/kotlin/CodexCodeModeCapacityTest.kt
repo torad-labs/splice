@@ -12,12 +12,13 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
-import splice.spi.CodeModeCall
-import splice.spi.CodeModeCapacityException
-import splice.spi.CodeModeCell
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeRuntime
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeCapacityException
+import splice.upstream.transport.posted
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.minutes
 

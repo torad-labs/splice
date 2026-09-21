@@ -10,7 +10,7 @@ import splice.provider.grok.GrokQuirks
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 
 internal class ApiKeyResponsesArm {

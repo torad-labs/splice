@@ -58,8 +58,8 @@ import kotlinx.serialization.json.put
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
-import splice.spi.ReanchorController
-import splice.spi.ReanchorRound
+import splice.upstream.ReanchorController
+import splice.upstream.ReanchorRound
 
 public class PassthroughReanchorController(
     private val prefill: Boolean = false,

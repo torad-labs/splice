@@ -52,8 +52,8 @@
     "gateway/control/src/test/kotlin/McpRoutesTest.kt",
     "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt",
     "gateway/gateway/src/test/kotlin/head/ActivityLabelTest.kt",
-    "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt",
-    "gateway/provider-spi/src/test/kotlin/UpstreamFailurePolicyRefusalTest.kt",
+    "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
+    "upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailurePolicyRefusalTest.kt",
     "install.sh",
     "quality/rules/kotlin/kt-tests-no-wall-clock.yml",
     "webui/.impeccable/review/material-spec.md"

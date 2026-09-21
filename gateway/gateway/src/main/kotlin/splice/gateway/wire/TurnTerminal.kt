@@ -1,4 +1,4 @@
-// NEW: the gateway-side sink that CAN end a turn. WireSink (provider-spi) is deliberately
+// NEW: the gateway-side sink that CAN end a turn. WireSink (:upstream) is deliberately
 // terminal-less (L3: a provider translator cannot fake a clean stop); the two terminal verbs live
 // only on the gateway's own sinks. Both the streaming SseEmitter and the non-stream
 // CollectingTerminal implement this, so the honesty pipeline (promote/mirror/terminal) and the
@@ -9,7 +9,7 @@ package splice.gateway.wire
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 import java.util.concurrent.atomic.AtomicLong
 
 /**

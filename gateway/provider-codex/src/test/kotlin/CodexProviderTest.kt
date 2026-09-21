@@ -26,9 +26,10 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ToolDeferralPolicy
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
-import splice.spi.ProviderTuning
-import splice.spi.TurnSignals
-import splice.spi.WireSink
+import splice.upstream.ProviderTuning
+import splice.upstream.TurnSignals
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.fakeAuth
 import kotlin.time.Duration.Companion.seconds
 
 class CodexProviderTest {

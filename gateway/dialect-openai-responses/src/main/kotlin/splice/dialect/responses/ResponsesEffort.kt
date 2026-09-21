@@ -5,7 +5,7 @@
 package splice.dialect.responses
 
 import splice.core.turn.ReasoningDisplay
-import splice.spi.EffortVocabulary
+import splice.upstream.EffortVocabulary
 
 /**
  * The effort/summary vocabulary: vendor rungs arrive through [EffortVocabulary]; summary aliases

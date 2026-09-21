@@ -8,7 +8,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.util.LogSink
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.provider.muse.MuseKeyMintCall
-import splice.spi.CredentialHeaders
+import splice.upstream.CredentialHeaders
 
 private const val MUSE_TOOL_NAME_CAP = 64
 private val MUSE_BASE_HEADERS = mapOf("User-Agent" to "splice/$GATEWAY_VERSION")

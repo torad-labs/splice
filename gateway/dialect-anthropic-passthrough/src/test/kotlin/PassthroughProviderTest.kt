@@ -26,7 +26,7 @@ import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughReanchorController
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
 private val CATALOG = ModelCatalog(

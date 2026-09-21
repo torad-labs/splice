@@ -22,8 +22,8 @@ import splice.gateway.head.NoHeadEvents
 import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.head.SessionProjectLookup
 import splice.gateway.wire.WireTap
-import splice.spi.InflightGate
-import splice.spi.Provider
+import splice.upstream.Provider
+import splice.upstream.retry.InflightGate
 import java.nio.file.Path
 import java.nio.file.Paths
 

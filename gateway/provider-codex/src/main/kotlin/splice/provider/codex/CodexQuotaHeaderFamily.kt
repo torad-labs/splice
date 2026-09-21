@@ -9,7 +9,7 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.usage.SEVEN_DAYS_SECONDS
 import splice.core.util.WallClock
-import splice.spi.QuotaHeaderFamily
+import splice.upstream.retry.QuotaHeaderFamily
 
 public class CodexQuotaHeaderFamily : QuotaHeaderFamily {
     private val slots = QuotaSlots()

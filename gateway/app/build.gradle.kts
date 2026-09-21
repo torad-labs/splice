@@ -20,7 +20,7 @@ plugins {
 dependencies {
     implementation(project(":core"))
     implementation(project(":client"))
-    implementation(project(":provider-spi"))
+    implementation(project(":upstream"))
     implementation(project(":dialect-openai-responses"))
     implementation(project(":dialect-openai-chat"))
     implementation(project(":dialect-anthropic-passthrough"))

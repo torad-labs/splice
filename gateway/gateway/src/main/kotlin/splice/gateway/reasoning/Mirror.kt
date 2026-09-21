@@ -10,7 +10,7 @@ import splice.core.turn.MIRROR_MIN_CHARS
 import splice.core.turn.ReasoningDisplay
 import splice.core.wire.ContentBlock
 import splice.core.wire.ThinkingBlock
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 /** The reasoning mirror: the gate predicate, the wire format, and the single [mirrorInto].
  *  Collaborators construct one (`private val mirror = Mirror()`); it holds no state, so the

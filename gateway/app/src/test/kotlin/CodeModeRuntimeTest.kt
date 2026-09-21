@@ -21,13 +21,13 @@ import splice.app.codemode.ReleaseCodeModeCell
 import splice.app.codemode.WorkerChannel
 import splice.app.codemode.WorkerPermit
 import splice.app.codemode.WorkerReply
-import splice.spi.CodeModeCall
-import splice.spi.CodeModeInfrastructureCategory
-import splice.spi.CodeModeInfrastructureClass
-import splice.spi.CodeModeInfrastructureException
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeStep
-import splice.spi.CodeModeTimeoutException
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeInfrastructureCategory
+import splice.upstream.failure.CodeModeInfrastructureClass
+import splice.upstream.failure.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeTimeoutException
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
@@ -495,7 +495,7 @@ class CodeModeRuntimeTest {
         return step as CodeModeStep.Completed
     }
 
-    private fun assertClosed(cell: splice.spi.CodeModeCell) {
+    private fun assertClosed(cell: splice.upstream.codemode.CodeModeCell) {
         assertThrows(IllegalStateException::class.java) {
             runBlocking { cell.advance() }
         }

@@ -6,13 +6,13 @@ package splice.gateway.head
 import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
-import splice.spi.NEVER_PINGED_MS
-import splice.spi.PathEvidence
-import splice.spi.Provider
-import splice.spi.TurnSignals
-import splice.spi.UpstreamResponse
-import splice.spi.UpstreamTransport
-import splice.spi.WsPathPulse
+import splice.upstream.NEVER_PINGED_MS
+import splice.upstream.Provider
+import splice.upstream.TurnSignals
+import splice.upstream.WsPathPulse
+import splice.upstream.retry.PathEvidence
+import splice.upstream.transport.UpstreamResponse
+import splice.upstream.transport.UpstreamTransport
 import java.io.IOException
 
 internal class SseRoundConsume(

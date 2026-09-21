@@ -9,8 +9,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.compaction.EffectiveCompactionInstructions
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.TurnPerf
-import splice.spi.BuiltTurn
-import splice.spi.Provider
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
 
 internal class ProviderTurnBuild(
     private val provider: Provider,

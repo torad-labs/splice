@@ -11,7 +11,7 @@ import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 
 public class GrokProvider(
     tuning: ProviderTuning,

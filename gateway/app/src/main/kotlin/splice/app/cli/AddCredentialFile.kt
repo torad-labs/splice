@@ -15,7 +15,7 @@ import splice.provider.codex.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
 import splice.provider.kimi.KimiCredentialShape
 import splice.provider.muse.MuseCredentialShape
-import splice.spi.CredentialShape
+import splice.upstream.credentials.CredentialShape
 import java.nio.file.Files
 import java.nio.file.Path
 

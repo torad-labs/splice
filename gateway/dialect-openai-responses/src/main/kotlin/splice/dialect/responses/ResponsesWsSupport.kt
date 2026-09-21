@@ -6,7 +6,7 @@ package splice.dialect.responses
 
 import splice.core.auth.Credentials
 import splice.core.util.LogSink
-import splice.spi.WsRoundRunner
+import splice.upstream.WsRoundRunner
 
 /** The v2 Responses-WebSocket beta value codex-rs sends (codex-rs/core/src/client.rs:155),
  *  confirmed accepted by the live backend in the WS-0 spike. */

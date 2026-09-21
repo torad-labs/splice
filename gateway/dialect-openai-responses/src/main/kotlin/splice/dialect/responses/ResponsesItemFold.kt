@@ -4,7 +4,7 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 internal class ResponsesItemFold(
     private val state: ResponsesTurnState,

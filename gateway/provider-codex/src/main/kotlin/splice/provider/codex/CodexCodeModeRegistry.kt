@@ -4,8 +4,8 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import splice.spi.CodeModeCell
-import splice.spi.CodeModeResult
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
 
 internal class CodexCodeModeRegistry(
     private val config: CodeModeBridgeConfig,

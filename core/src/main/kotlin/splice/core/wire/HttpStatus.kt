@@ -15,8 +15,8 @@
 // exactly one hit, and the reference carries where the number's authority comes from.
 //
 // WHY CORE: the same constraint ErrorEnvelope.of records one file over. The sites are spread over
-// :provider-spi, :provider-grok, :dialect-openai-responses, :gateway, :control and :app, and
-// :provider-spi cannot import :gateway — so any module below the top of that fan-in is the only
+// :upstream, :provider-grok, :dialect-openai-responses, :gateway, :control and :app, and
+// :upstream cannot import :gateway — so any module below the top of that fan-in is the only
 // place all of them can reach. Core is the floor they share.
 //
 // WHAT IS DELIBERATELY NOT HERE. 200/202 (HTTP_OK, HTTP_ACCEPTED, OK_STATUS) are left as they are:

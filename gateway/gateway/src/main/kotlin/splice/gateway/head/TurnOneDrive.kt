@@ -8,7 +8,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.gateway.wire.Heartbeat
-import splice.spi.Provider
+import splice.upstream.Provider
 
 internal class TurnOneDrive(
     private val provider: Provider,

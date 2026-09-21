@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test
 import splice.dialect.responses.InboxListener
 import splice.dialect.responses.WsConnection
 import splice.dialect.responses.WsUpstream
-import splice.spi.BufferCapacity
+import splice.upstream.transport.BufferCapacity
 import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket

@@ -11,7 +11,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatTurnContext
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 internal class Rec : WireSink {
     val calls = mutableListOf<String>()
@@ -39,7 +39,7 @@ internal class Rec : WireSink {
 internal fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 internal fun ctx() = ChatTurnContext({ false }, { null }, 180_000, 900_000)
 
-internal fun firedCtx(fired: splice.spi.WatchdogFired?) = ChatTurnContext({ false }, { fired }, 180_000, 900_000)
+internal fun firedCtx(fired: splice.upstream.retry.WatchdogFired?) = ChatTurnContext({ false }, { fired }, 180_000, 900_000)
 
 internal suspend fun driveEvents(vararg evs: JsonObject): TurnOutcome =
     ChatStreamTranslator(ctx()).driveTurn(evs.toList().asFlow(), Rec())

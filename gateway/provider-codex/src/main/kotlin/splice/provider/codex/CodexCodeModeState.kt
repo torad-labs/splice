@@ -4,7 +4,7 @@ package splice.provider.codex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import splice.spi.CodeModeResult
+import splice.upstream.codemode.CodeModeResult
 
 @Serializable
 internal data class CodeModePersistedState(

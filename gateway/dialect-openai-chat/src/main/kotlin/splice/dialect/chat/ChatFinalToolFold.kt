@@ -6,7 +6,7 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 /** Non-stream / final-message shape: tool_calls land on `message`, not `delta`. Classified PER
  *  CALL, not per turn — a turn-global gap-fill flag dropped a call present only in the final

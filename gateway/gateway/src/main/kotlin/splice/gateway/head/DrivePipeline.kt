@@ -6,7 +6,7 @@ package splice.gateway.head
 import splice.core.turn.TurnMeta
 import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.usage.OutputClampPolicy
-import splice.spi.Provider
+import splice.upstream.Provider
 
 internal class DrivePipeline(
     private val provider: Provider,

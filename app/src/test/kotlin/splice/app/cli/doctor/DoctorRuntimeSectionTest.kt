@@ -4,6 +4,8 @@
 // longer print "Everything checks out."
 package splice.app.cli.doctor
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -26,6 +28,40 @@ class DoctorRuntimeSectionTest {
         } finally {
             System.setOut(original)
         }
+    }
+
+    // The row-level grade, added when the wall's retirement proof caught the report-level one
+    // passing for the wrong reason (2026-09-21). The arm below asserts `splice logs --head codex
+    // --tail 50` appears SOMEWHERE in doctor's output — and that exact string is also produced by
+    // the perf-tail row in DoctorProbeWrite, so deleting the fix from the error-counter row left
+    // the whole report still containing it and the arm still green. A fix belongs to a row: this
+    // grades the row that names the errors, which is the one an operator acts on.
+    @Test
+    fun `the error-counter row carries its own fix, not one borrowed from a sibling row - JW-05`(@TempDir tmp: Path) {
+        val statePaths = splice.core.config.StatePaths(baseOverride = tmp.resolve("state"))
+        val rows = DoctorRuntime().headRuntimeRows(
+            splice.app.daemon.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 1, providerErrors = 7),
+            statePaths,
+        )
+        val counters = rows.single { it.name == "head codex errors" }
+        assertEquals(CheckStatus.WARN, counters.status, "non-zero errors are a WARN: $counters")
+        assertEquals(
+            "splice logs --head codex --tail 50",
+            counters.fix,
+            "the row that names the errors carries the verb that reads them: $counters",
+        )
+    }
+
+    @Test
+    fun `a clean head states it and offers no fix, so the WARN fix is not a constant - JW-05`(@TempDir tmp: Path) {
+        val statePaths = splice.core.config.StatePaths(baseOverride = tmp.resolve("state"))
+        val rows = DoctorRuntime().headRuntimeRows(
+            splice.app.daemon.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 0, providerErrors = 0),
+            statePaths,
+        )
+        val counters = rows.single { it.name == "head codex errors" }
+        assertEquals(CheckStatus.OK, counters.status, "no errors is OK: $counters")
+        assertNull(counters.fix, "a clean row has nothing to fix: $counters")
     }
 
     private fun baseEnv(tmp: Path, port: Int): Map<String, String?> {

@@ -61,7 +61,14 @@ proof = "2026-09-21: (a) retryAfterMs mutated to drop the httpDateMs fallback ->
 [[item]]
 id = "NF-06"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/nf_06_runaway_buffer_guard.ts"
+wall = ""
+retired_to = [
+    "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+    "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+    "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+    "quality/architecture/src/test/kotlin/splice/quality/ConstSingleSourceLawTest.kt",
+]
+proof = "2026-09-21: four mutations, no new law — requirement 3 turned out to be homed already, and the wall turned out to be BLIND to it. Legs A-C neuter each translator's live guard (`val withinCapacity = !BufferCapacity.over(...)` -> `= true`, which keeps the `if (!withinCapacity)` branch and simply never trips it): chat -> wall RED and ChatRunawayGuardTest 3/3 RED; responses -> wall RED and ResponsesRunawayGuardTest 3/3 RED; passthrough -> wall RED and PassthroughStreamTranslatorTest 21 tests 1 failure. Leg D is requirement 3, `the chat translator no longer carries its own private MAX_BUFFERED_CHARS`: re-declaring `private const val MAX_BUFFERED_CHARS: Int = 20_000_000` in ChatStreamTranslator.kt left the WALL GREEN while ConstSingleSourceLawTest went RED (7 tests, 1 failure, `every duplicated const name is strict-free and at or under its recorded ratchet`). So the wall states requirement 3 but does not enforce it, and the guarantee is already carried generically by the COPY ratchet — the same const NAME in two files with the same normalised value — which needs no knowledge of this constant at all. Restored, wall GREEN, 3/3, 3/3, 21/21. FILTER NOTE, fifth occurrence in this migration and the first where the resolver existed and was not used: chat's arms are in ChatRunawayGuardTest and responses' in ResponsesRunawayGuardTest, both SIBLING classes inside the *StreamTranslatorTest.kt files; filtering on the file's main class ran 22 unrelated tests and reported a false GREEN under a mutation the wall had already reddened"
 
 [[item]]
 id = "SH-06"

@@ -215,7 +215,12 @@ proof = "2026-09-21: the logs-dir probe replaced by a plain INFO row that still 
 [[item]]
 id = "CX-01"
 phase = "W4-correctness-walls"
-wall = ".dev/campaigns/proxy-hardening/walls/cx_01_tool_args_validated.ts"
+wall = ""
+retired_to = [
+    "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatToolFoldTest.kt",
+    "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+]
+proof = "2026-09-21: three mutations, each red on both sides, and NO new law — this wall's three claims are already pinned behaviourally in both dialects, so inventing a structural law here would be an element that earns nothing. (a) the chat latch neutered (toolArgsInvalid never assigned) -> wall RED (chat translator never latches toolArgsInvalid at terminal) and ChatToolFoldTest `under-delivered stream args echoed by id are caught as a Failure - CX-01` RED (6 tests, 1 failure). (b) both responses latch sites neutered -> wall RED and ResponsesToolArgsValidationTest `truncated tool arguments plus a terminal is a Failure, not corrupt Success - CX-01` RED (3, 2). (c) the chat terminal's `toolArgsInvalid != null -> Failure` arm made unreachable, which is the half-fix the wall was REPAIRED in 2026-08-17 to catch -> wall RED and the same chat arm RED. Restored, wall GREEN, 6/6 and 3/3. The arms assert the OUTCOME (a truncated tool call closes as Failure, never a Success carrying corrupt tool_use) where the wall checks the call sites that produce it, so they hold even if the latch is spelled differently. Unlike sh_01 and cx_02 there is no fourth-implementation case to guard: the wall covers the two OpenAI-family translators and there are exactly two, with anthropic passthrough forwarding tool args untouched. NOTE the filter trap: the responses arm lives in ResponsesToolArgsValidationTest, a sibling class in ResponsesStreamTranslatorTest.kt — filtering on the file's main class runs none of it"
 
 [[item]]
 id = "CX-02"

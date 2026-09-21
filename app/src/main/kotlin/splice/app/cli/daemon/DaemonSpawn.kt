@@ -11,15 +11,15 @@ import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal class DaemonSpawn(private val health: DaemonHealth) {
+internal open class DaemonSpawn(private val health: DaemonHealth) {
 
-    internal fun logsDir(): Path = StatePaths().logsDir
+    internal open fun logsDir(): Path = StatePaths().logsDir
 
     /** The jar to (re)launch from, or null (with a printed reason) when cold-start must be REFUSED.
      *  Waits a short bounded window for the control port to free first: spawning while a prior daemon
      *  still holds it (stopped answering /health but not yet exited — BS-4 DEFECT B) would let the new
      *  daemon win the just-released lock and then die on the uncaught control bind, leaving zero serving. */
-    internal fun startableJar(port: Int): Path? {
+    internal open fun startableJar(port: Int): Path? {
         var polls = PORT_FREE_POLLS
         while (health.controlPortBound(port) && polls-- > 0) Thread.sleep(POLL_INTERVAL_MS)
         if (health.controlPortBound(port)) {
@@ -34,7 +34,7 @@ internal class DaemonSpawn(private val health: DaemonHealth) {
     /** Spawn the detached daemon process; false (with a message) if it can't be launched.
      *  JVM opts ride $SPLICE_JVM_OPTS inside the argv the caller built — expanded BY THE SHELL so
      *  the wall keeping System.getenv out of non-config code stays intact. */
-    internal fun spawnDaemon(argv: List<String>): Boolean =
+    internal open fun spawnDaemon(argv: List<String>): Boolean =
         Cancellables.runCatchingCancellable {
             ProcessBuilder(argv)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -50,7 +50,7 @@ internal class DaemonSpawn(private val health: DaemonHealth) {
         )
 
     /** JW-01: shown when the daemon never answers after a cold start. Reads only the filesystem. */
-    internal fun printBootLogTail() {
+    internal open fun printBootLogTail() {
         val bootLog = logsDir().resolve("daemon-boot.log")
         // DR-68: a boot log that EXISTS but cannot be read is diagnosis gold going missing —
         // say so; only proven absence stays quiet.

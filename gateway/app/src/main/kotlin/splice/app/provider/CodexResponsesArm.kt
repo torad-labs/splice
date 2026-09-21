@@ -67,6 +67,7 @@ internal class CodexResponsesArm(
                 foldConfig = quirksOverlay.foldConfigFrom(cfg),
                 accountIdHeader = providerCfg.quirks.accountIdHeader,
                 codeModeBridge = codeModeBridge(ctx),
+                codeModeModels = ctx.providerCfg.quirks.codeModeModels,
             ),
             auth,
             accounts,

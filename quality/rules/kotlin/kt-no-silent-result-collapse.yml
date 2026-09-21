@@ -72,13 +72,14 @@ note: >
 # cries wolf; closing it properly needs failure-consumption tracking the pattern layer lacks.
 files:
   - upstream/src/main/**/*.kt
-  - providers/grok/src/main/**/*.kt
-  - providers/kimi/src/main/**/*.kt
-  - providers/codex/src/main/**/*.kt
-  - providers/openai/src/main/**/*.kt
+  - integrations/providers/grok/src/main/**/*.kt
+  - integrations/providers/kimi/src/main/**/*.kt
+  - integrations/providers/codex/src/main/**/*.kt
+  - integrations/providers/openai/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
   - app/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt
+  - features/heads/src/main/**/*.kt
 rule:
   any:
     # A. direct chain — the original wall, unchanged

@@ -5,7 +5,7 @@
 // ROOT: ArchitectureLawsTest listed the root's immediate child directories, and ModuleLawsTest
 // resolved `:<id>` to `root/<id>/build.gradle.kts`, returning emptySet() when that file was
 // missing. Both readings are true only while every module is a direct child of the Gradle root. A
-// module under `dialects/anthropic` or `providers/openai` would stop being graded SILENTLY, with
+// module under `integrations/dialects/anthropic` or `integrations/providers/openai` would stop being graded SILENTLY, with
 // every law still reporting green — the same fail-open shape DR-165 removed from the slot-header
 // law one level up, where a denominator taken from the list being checked cannot fail for what the
 // list omits.

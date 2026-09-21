@@ -81,6 +81,7 @@ note: "The tag is a wire contract compared by string identity in PerfRowsFileSou
 files:
   - daemon/head/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
+  - features/heads/src/main/**/*.kt
 rule:
   kind: string_literal
   any:

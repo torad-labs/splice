@@ -10,8 +10,9 @@ gateway:
           - 'client/**'
           - 'core/**'
           - 'upstream/**'
-          - 'dialects/**'
-          - 'providers/**'
+          - 'integrations/dialects/**'
+          - 'integrations/providers/**'
+          - 'features/**'
           - 'daemon/**'
           - 'app/**'
           - 'quality/architecture/**'
@@ -25,13 +26,13 @@ documentation:
   - changed-files:
       - any-glob-to-any-file:
           - '**/*.md'
-          - '.docs/**'
+          - 'docs/**'
 
 ci:
   - changed-files:
       - any-glob-to-any-file:
           - '.github/**'
-          - 'checks/**'
+          - 'tools/**'
           - 'quality/**'
 
 release:

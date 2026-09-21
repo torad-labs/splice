@@ -24,16 +24,17 @@ include(
     ":core",
     ":client",
     ":upstream",
-    ":dialects-anthropic",
-    ":dialects-openai-responses",
-    ":dialects-openai-chat",
-    ":providers-codex",
-    ":providers-grok",
-    ":providers-kimi",
-    ":providers-muse",
-    ":providers-openai",
+    ":integrations-dialects-anthropic",
+    ":integrations-dialects-openai-responses",
+    ":integrations-dialects-openai-chat",
+    ":integrations-providers-codex",
+    ":integrations-providers-grok",
+    ":integrations-providers-kimi",
+    ":integrations-providers-muse",
+    ":integrations-providers-openai",
     ":daemon-head",
     ":daemon-control",
+    ":features-heads",
     ":app",
     ":quality-architecture",
     ":quality-compiler-plugin",
@@ -44,16 +45,17 @@ project(":core").projectDir = file("core")
 // The FIRST module to leave gateway/ (restructure plan §2.3): :client is the Claude Code side.
 project(":client").projectDir = file("client")
 project(":upstream").projectDir = file("upstream")
-project(":dialects-anthropic").projectDir = file("dialects/anthropic")
-project(":dialects-openai-responses").projectDir = file("dialects/openai-responses")
-project(":dialects-openai-chat").projectDir = file("dialects/openai-chat")
-project(":providers-codex").projectDir = file("providers/codex")
-project(":providers-grok").projectDir = file("providers/grok")
-project(":providers-kimi").projectDir = file("providers/kimi")
-project(":providers-muse").projectDir = file("providers/muse")
-project(":providers-openai").projectDir = file("providers/openai")
+project(":integrations-dialects-anthropic").projectDir = file("integrations/dialects/anthropic")
+project(":integrations-dialects-openai-responses").projectDir = file("integrations/dialects/openai-responses")
+project(":integrations-dialects-openai-chat").projectDir = file("integrations/dialects/openai-chat")
+project(":integrations-providers-codex").projectDir = file("integrations/providers/codex")
+project(":integrations-providers-grok").projectDir = file("integrations/providers/grok")
+project(":integrations-providers-kimi").projectDir = file("integrations/providers/kimi")
+project(":integrations-providers-muse").projectDir = file("integrations/providers/muse")
+project(":integrations-providers-openai").projectDir = file("integrations/providers/openai")
 project(":daemon-head").projectDir = file("daemon/head")
 project(":daemon-control").projectDir = file("daemon/control")
+project(":features-heads").projectDir = file("features/heads")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
 project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")

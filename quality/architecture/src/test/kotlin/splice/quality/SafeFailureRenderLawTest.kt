@@ -75,16 +75,6 @@ internal object SafeFailureRender {
         Regex("readString"),
     )
 
-    // The checker's SOURCES globs, translated to the module HOMES they name: a literal directory,
-    // or `<parent>/*` for a home whose modules are its direct children. The homes are matched
-    // against the BUILD's project map, so a module is graded because the build declares it rather
-    // than because a glob happened to reach its directory — and the file set is the same one the
-    // globs yielded (744 files either way, diffed at the port).
-    private val SOURCE_HOMES = listOf(
-        "gateway/*", "client", "core", "upstream", "dialects/*",
-        "providers/*", "daemon/*", "app", "quality/*",
-    )
-
     // Identifiers that name a throwable, in TWO tiers, because `it` is Kotlin's UNIVERSAL lambda
     // parameter: treating it as a throwable everywhere flagged "Bearer $it" and nine more where it
     // is a String, and a wall that cries wolf gets its exemptions rubber-stamped.
@@ -791,19 +781,30 @@ internal object SafeFailureRender {
         return Site(path, idx + 1, lens.lines[idx].trim(), verdict.verdict, verdict.detail, markers)
     }
 
-    private fun isSourceHome(dir: String): Boolean = SOURCE_HOMES.any { home ->
-        if (home.endsWith("/*")) dir.substringBeforeLast('/', "") == home.dropLast(2) else dir == home
-    }
+    /** Every production Kotlin source the BUILD's map names. The map IS the denominator; there is
+     *  no second physical-prefix list to keep in step with it.
+     *
+     *  There was one until the 2026-09-21 relocation, and how it survived is the reason it is gone.
+     *  It named the `dialects` and `providers` parents, which the move left matching nothing, under a
+     *  TOTAL-file floor too coarse to notice: 295 of 1313 files would have dropped out of this law
+     *  in silence while it sat ten times above VACUITY_FILES. A floor answers "did the denominator
+     *  collapse" and never "did it lose a part", and losing a part is what a directory move does.
+     *  Removing the list was measured, not assumed — it selected 17 of the 18 mapped modules,
+     *  excluded only :console, and :console ships no Kotlin, so filtered and unfiltered are the
+     *  SAME 747 files. Its dead `gateway` entry had been naming nothing since before the move. A
+     *  module is graded because the build declares it, and for no other reason. */
+    fun sources(map: ProjectMap): List<File> =
+        KotlinText.kotlinFiles(map, "src/main").sortedBy { KotlinText.rel(map, it) }
 
-    /** Every production source the checker's SOURCES list names, read off the BUILD's map. */
-    fun sources(map: ProjectMap): List<File> {
-        val homes = map.modules.map { map.relativeDir(it) }.filter(::isSourceHome).map { "$it/" }
-        return KotlinText.kotlinFiles(map, "src/main")
-            .map { KotlinText.rel(map, it) to it }
-            .filter { (rel, _) -> homes.any { rel.startsWith(it) } }
-            .sortedBy { it.first }
-            .map { it.second }
-    }
+    /** Every mapped module that ships production Kotlin and yet contributed NO file to [swept].
+     *  This is the check a total-file floor cannot express: a module dropping out of the
+     *  denominator leaves the total merely smaller, and "smaller" clears any floor set low enough
+     *  not to be brittle. */
+    fun modulesMissingFrom(swept: List<String>, map: ProjectMap): List<String> =
+        map.modules.sorted().filter { module ->
+            val ships = File(map.dir(module), "src/main").walkTopDown().any { it.isFile && it.extension == "kt" }
+            ships && swept.none { it.startsWith("${map.relativeDir(module)}/") }
+        }
 
     /** The undispositioned sites as the lines the checker's `check` verb prints: the blame, the
      *  sink text, and why the file is in scope. An undispositioned site fails BY NAME. */
@@ -843,6 +844,37 @@ class SafeFailureRenderLawTest {
         val problems = SafeFailureRender.violations(roll)
         assertTrue(problems.isEmpty()) {
             problems.joinToString(separator = "\n  - ", prefix = "SAFE FAILURE RENDER (DR-65) violated:\n  - ")
+        }
+    }
+
+    @Test
+    fun `every mapped module that ships production Kotlin contributes to the denominator`() {
+        val swept = SafeFailureRender.sources(map).map { KotlinText.rel(map, it) }
+        val missing = SafeFailureRender.modulesMissingFrom(swept, map)
+        assertTrue(missing.isEmpty()) {
+            "SAFE FAILURE RENDER lost ${missing.size} module(s) WHOLE: ${missing.joinToString()} — the map declares " +
+                "them and they ship production Kotlin, so a sweep that reaches none of their files has lost a part " +
+                "of the tree rather than shrunk."
+        }
+    }
+
+    /** The proof that the arm above is not decorative, and that the floor it supplements cannot do
+     *  its job: withhold one real module's files and the per-module check names that module, while
+     *  the surviving set stays comfortably above VACUITY_FILES. That second assertion is the point
+     *  — it is the 2026-09-21 relocation in miniature, where 295 files left and 1018 remained. */
+    @Test
+    fun `the per-module check can actually fail - withholding one module names it, and the floor does not notice`() {
+        val swept = SafeFailureRender.sources(map).map { KotlinText.rel(map, it) }
+        val victim = map.modules.sorted().first { module ->
+            swept.any { it.startsWith("${map.relativeDir(module)}/") }
+        }
+        val withheld = swept.filterNot { it.startsWith("${map.relativeDir(victim)}/") }
+        assertEquals(listOf(victim), SafeFailureRender.modulesMissingFrom(withheld, map)) {
+            "withholding every file of $victim must name exactly $victim and nothing else"
+        }
+        assertTrue(withheld.size > VACUITY_FILES) {
+            "the withheld set still holds ${withheld.size} file(s), above the floor of $VACUITY_FILES — if this " +
+                "ever fails the floor has become strict enough to catch a lost module and this arm is redundant."
         }
     }
 
@@ -901,17 +933,19 @@ class SafeFailureRenderLawTest {
             assertHit(SafeFailureRender.violations(raw), "Boring.kt:4:", BLAME) { "the one site must be RED by name" }
 
             // A file with neither file I/O nor credential vocabulary is not in the denominator, and
-            // neither is a module the checker's SOURCES homes never named — the only thing the
-            // glob-to-map translation can get wrong.
+            // neither is a tree THE MAP NEVER NAMED. That second clause used to read "a module the
+            // checker's SOURCES homes never named", which graded the glob-to-map translation; there
+            // is no translation now, so the only way out of the denominator is to be absent from the
+            // build's map, and this proves that is still a way out.
             place("$PROBE_DIR/Pure.kt", OUT_OF_SCOPE)
-            place(OUTSIDE_HOME, BORING_RAW)
-            assertTrue(File(root, OUTSIDE_HOME).isFile, "the out-of-home fixture must exist to prove anything")
+            place(OUTSIDE_MAP, BORING_RAW)
+            assertTrue(File(root, OUTSIDE_MAP).isFile, "the unmapped fixture must exist to prove anything")
             assertEquals(
                 listOf("$PROBE_DIR/Boring.kt", "$PROBE_DIR/Pure.kt"),
                 SafeFailureRender.sources(map).map { KotlinText.rel(map, it) },
-                "the SOURCES homes name :app and not :console, so only app's sources are graded",
+                "the map names :app and :console and nothing else, so a tree it never declared is not graded",
             )
-            assertEquals(1, census().size, "an out-of-scope file and an out-of-home module add no sites")
+            assertEquals(1, census().size, "an out-of-scope file and an unmapped tree add no sites")
         }
     }
 
@@ -947,7 +981,7 @@ class SafeFailureRenderLawTest {
 
     private companion object {
         const val PROBE_DIR = "app/src/main/kotlin/splice/probe"
-        const val OUTSIDE_HOME = "console/src/main/kotlin/splice/console/Outside.kt"
+        const val OUTSIDE_MAP = "unmapped/src/main/kotlin/splice/outside/Outside.kt"
         const val BLAME = "renders a throwable raw"
         const val VACUITY_FILES = 100
         const val VACUITY_SITES = 20

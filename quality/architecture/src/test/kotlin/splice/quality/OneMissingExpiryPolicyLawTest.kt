@@ -39,7 +39,7 @@ internal object OneMissingExpiryPolicy {
     const val HELPER_FILE: String = "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt"
 
     /** Any auth provider under any provider module — the set is read from the tree, never listed. */
-    private val AUTH_PROVIDER = Regex("^providers/[^/]+/src/main/.*/[A-Za-z]*AuthProvider\\.kt$")
+    private val AUTH_PROVIDER = Regex("^integrations/providers/[^/]+/src/main/.*/[A-Za-z]*AuthProvider\\.kt$")
 
     /** The disposition a provider writes when the policy does not apply to its credential kind. */
     private val EXEMPT = Regex("//\\s*NO-EXPIRY-EXEMPT\\[(\\d{4}-\\d{2}-\\d{2})]:(.*)")
@@ -58,7 +58,7 @@ internal object OneMissingExpiryPolicy {
         val problems = mutableListOf<String>()
         val providers = sources.keys.filter { AUTH_PROVIDER.matches(it) }.sorted()
         if (providers.isEmpty()) {
-            problems += "no *AuthProvider.kt under providers/ was swept — this law's denominator comes from the " +
+            problems += "no *AuthProvider.kt under integrations/providers/ was swept — this law's denominator comes from the " +
                 "tree, so an empty sweep means the extractor or the project map broke, not that the policy holds"
         }
         problems += helperProblems(sources[HELPER_FILE])
@@ -212,8 +212,8 @@ class OneMissingExpiryPolicyLawTest {
         ) + files.toMap()
 
     private companion object {
-        const val NEW = "providers/new/src/main/kotlin/splice/provider/new/NewAuthProvider.kt"
-        const val OTHER = "providers/new/src/main/kotlin/splice/provider/new/NewTokens.kt"
+        const val NEW = "integrations/providers/new/src/main/kotlin/splice/provider/new/NewAuthProvider.kt"
+        const val OTHER = "integrations/providers/new/src/main/kotlin/splice/provider/new/NewTokens.kt"
         const val HELPER_SOURCE = "public const val SYNTHETIC_EXPIRY_TTL_MS: Long = 4 * 60 * 60 * 1000L\n"
         const val COMPLIANT = "val e = CredentialExpiry.synthesizedExpiryMs(m, n)\n"
         const val BLANK_REASON = "// NO-EXPIRY-EXEMPT[2026-09-21]:   "

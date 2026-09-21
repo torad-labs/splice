@@ -26,9 +26,9 @@ dependencies {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
     testImplementation(libs.ktor.client.cio)
-    testImplementation(project(":dialects-openai-responses"))
-    testImplementation(project(":dialects-anthropic"))
-    testImplementation(project(":providers-codex"))
+    testImplementation(project(":integrations-dialects-openai-responses"))
+    testImplementation(project(":integrations-dialects-anthropic"))
+    testImplementation(project(":integrations-providers-codex"))
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.serialization.json)
     testFixturesImplementation(libs.zstd.jni) // CX-03: the mock decodes zstd like the real upstream

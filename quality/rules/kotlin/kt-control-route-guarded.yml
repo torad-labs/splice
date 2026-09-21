@@ -62,6 +62,7 @@ note: >
   `guarded(call, mcp = true) { … }` for the MCP access key.
 files:
   - daemon/control/src/main/**/*.kt
+  - features/heads/src/main/**/*.kt
 rule:
   all:
     # A route registration: an HTTP verb, a PATH string literal, and a handler lambda. The path

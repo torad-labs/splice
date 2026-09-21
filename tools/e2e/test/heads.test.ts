@@ -8,7 +8,7 @@
 // The loopback answers /health first so the verb will not cold-start the installed splice.jar,
 // and it binds EPHEMERAL ports, so two of these suites can run side by side.
 //
-// Receipts land in an isolated dir under the temp tree, NEVER checks/e2e/receipts — DR-111: the
+// Receipts land in an isolated dir under the temp tree, NEVER tools/e2e/receipts — DR-111: the
 // loopback head key deliberately matches the real head in splice.example.toml, so an unredirected
 // tier-1 pass would FABRICATE the real head's in-repo receipt and the #924 binding would grade
 // loopback bytes. The in-repo receipt is snapshotted and asserted untouched at the end.
@@ -38,7 +38,7 @@ const HARNESS_SRC = join(ROOT, "tools/e2e/src/commands/heads.ts");
 const MGMT = "mgmt-key-for-selftest-32bytes!!";
 /** The same head key the real roster carries — the DR-111 trap, kept deliberately. */
 const HEAD_KEY = "claude-splice";
-const REPO_RECEIPT = join(ROOT, "checks/e2e/receipts", `${HEAD_KEY}.json`);
+const REPO_RECEIPT = join(ROOT, "tools/e2e/receipts", `${HEAD_KEY}.json`);
 
 let tmp = "";
 let state = "";
@@ -98,7 +98,7 @@ beforeAll(async () => {
   const ready = join(tmp, "ready");
   loopback = Bun.spawn(
     [
-      process.execPath, join(ROOT, "checks/e2e/loopback_control.ts"),
+      process.execPath, join(ROOT, "tools/e2e/fixtures/loopback_control.ts"),
       "--record", record,
       "--ready-file", ready,
       "--head-key", HEAD_KEY,

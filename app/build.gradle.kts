@@ -22,14 +22,14 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":client"))
     implementation(project(":upstream"))
-    implementation(project(":dialects-openai-responses"))
-    implementation(project(":dialects-openai-chat"))
-    implementation(project(":dialects-anthropic"))
-    implementation(project(":providers-codex"))
-    implementation(project(":providers-grok"))
-    implementation(project(":providers-kimi"))
-    implementation(project(":providers-muse"))
-    implementation(project(":providers-openai"))
+    implementation(project(":integrations-dialects-openai-responses"))
+    implementation(project(":integrations-dialects-openai-chat"))
+    implementation(project(":integrations-dialects-anthropic"))
+    implementation(project(":integrations-providers-codex"))
+    implementation(project(":integrations-providers-grok"))
+    implementation(project(":integrations-providers-kimi"))
+    implementation(project(":integrations-providers-muse"))
+    implementation(project(":integrations-providers-openai"))
     implementation(project(":daemon-head"))
     implementation(project(":daemon-control"))
     implementation(libs.kotlinx.serialization.json)
@@ -42,8 +42,8 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":daemon-head")))
-    testImplementation(testFixtures(project(":dialects-openai-responses")))
-    testImplementation(testFixtures(project(":dialects-anthropic")))
+    testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
+    testImplementation(testFixtures(project(":integrations-dialects-anthropic")))
 }
 
 application {
@@ -82,11 +82,11 @@ val bom = complianceDir.map { it.file("bom.cdx.json") }
 val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
 val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
-val icuLicense = repositoryRoot.file("checks/release/icu-LICENSE.txt")
+val icuLicense = repositoryRoot.file("tools/release/licenses/icu-LICENSE.txt")
 val licenseFile = repositoryRoot.file("LICENSE")
-// PR 6: PROVENANCE.md lives under .docs/ — the repository root keeps only the files GitHub itself
+// PR 6: PROVENANCE.md lives under docs/ — the repository root keeps only the files GitHub itself
 // reads. Both consumers (the jar's META-INF copy below and stageRelease) read it from HERE.
-val provenance = repositoryRoot.file(".docs/PROVENANCE.md")
+val provenance = repositoryRoot.file("docs/PROVENANCE.md")
 // PR 6: the launch shim ships from the application's dist layout, not from bin/ — one path, read by
 // stageRelease here and by `bun tools/release accept`/`verify` through tools/release/src/lib/shim.ts.
 val launchShim = layout.projectDirectory.file("src/main/dist/bin/splice-launch")

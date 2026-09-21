@@ -70,6 +70,7 @@ note: >
   value the repo composes itself gets a DATED entry in this rule's header, never an inline ignore.
 files:
   - daemon/control/src/main/**/*.kt
+  - features/heads/src/main/**/*.kt
 rule:
   all:
     - any:

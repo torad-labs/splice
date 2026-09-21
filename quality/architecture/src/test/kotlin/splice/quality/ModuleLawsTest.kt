@@ -8,9 +8,9 @@ import java.io.File
 
 /** Every dialect module — what :daemon-head is allowed to know about, and what a provider picks from. */
 private val DIALECTS = setOf(
-    ":dialects-anthropic",
-    ":dialects-openai-responses",
-    ":dialects-openai-chat",
+    ":integrations-dialects-anthropic",
+    ":integrations-dialects-openai-responses",
+    ":integrations-dialects-openai-chat",
 )
 
 /** The domain plus the provider contract: what every adapter (dialect, provider, transport) starts from. */
@@ -49,19 +49,22 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // the provider contract. Speaks the domain and nothing else.
     ":upstream" to setOf(":core"),
     // a dialect adapts the contract to one wire format.
-    ":dialects-anthropic" to ADAPTER_BASE,
-    ":dialects-openai-responses" to ADAPTER_BASE,
-    ":dialects-openai-chat" to ADAPTER_BASE,
+    ":integrations-dialects-anthropic" to ADAPTER_BASE,
+    ":integrations-dialects-openai-responses" to ADAPTER_BASE,
+    ":integrations-dialects-openai-chat" to ADAPTER_BASE,
     // a provider speaks its own dialect(s) — never another provider, never the transport.
-    ":providers-codex" to ADAPTER_BASE + ":dialects-openai-responses",
-    ":providers-grok" to ADAPTER_BASE + ":dialects-openai-responses",
-    ":providers-kimi" to ADAPTER_BASE + ":dialects-anthropic",
-    ":providers-muse" to ADAPTER_BASE,
-    ":providers-openai" to ADAPTER_BASE + setOf(":dialects-openai-responses", ":dialects-openai-chat"),
+    ":integrations-providers-codex" to ADAPTER_BASE + ":integrations-dialects-openai-responses",
+    ":integrations-providers-grok" to ADAPTER_BASE + ":integrations-dialects-openai-responses",
+    ":integrations-providers-kimi" to ADAPTER_BASE + ":integrations-dialects-anthropic",
+    ":integrations-providers-muse" to ADAPTER_BASE,
+    ":integrations-providers-openai" to ADAPTER_BASE + setOf(":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":daemon-head" to ADAPTER_BASE + DIALECTS,
-    // the management plane reads the domain, and the client side it assembles a launch spec for.
-    ":daemon-control" to setOf(":core", ":client"),
+    // a feature slice: the head-start extraction, owning its own start path. Domain-free so far.
+    ":features-heads" to emptySet(),
+    // the management plane reads the domain, the client side it assembles a launch spec for, and
+    // the head-start slice it delegates starting a head to.
+    ":daemon-control" to setOf(":core", ":client", ":features-heads"),
     // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
     ":console" to emptySet(),
 )
@@ -402,12 +405,12 @@ private fun staleAllowanceViolations(
  *  inversion fails immediately, and this map is the visible worklist. Delete a line when the edge goes
  *  — a listed edge that no longer exists FAILS the law, so the list cannot rot into blanket permission. */
 private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
-    (":providers-grok" to ":daemon-head") to
+    (":integrations-providers-grok" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — grok's tests drive a real gateway server " +
         "(testImplementation + testFixtures); the harness belongs somewhere both can depend on.",
-    (":providers-openai" to ":daemon-head") to
+    (":integrations-providers-openai" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as :providers-grok.",
-    (":daemon-head" to ":providers-codex") to
+    (":daemon-head" to ":integrations-providers-codex") to
         "pre-existing, 2026-08-16, tracked for removal — two :daemon-head tests still compile " +
         "against :providers-codex (AccountTurnSelectionTest ChatGPT-Account-ID, " +
         "CodexCodeModeReanchorTest CodexCodeModeBridge); other gateway tests now use " +

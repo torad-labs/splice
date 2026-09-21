@@ -80,9 +80,9 @@ kt-no-delay-in-production, which binds src/main.
 [[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-head", "app", "quality-compiler-plugin",
+  "core", "client", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "daemon-head", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -101,7 +101,7 @@ would find 28 — local filesystem paths in daemon-log lines, not HTTP-supplied 
 [[exclusion]]
 rule = "kt-json-scalars-single-source"
 modules = [
-  "core", "client", "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
+  "core", "client", "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat",
   "daemon-head", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
@@ -121,8 +121,8 @@ adding `client/src/main/**/*.kt` to the rule, fixing those two, and deleting `cl
 [[exclusion]]
 rule = "kt-no-exception-as-outcome"
 modules = [
-  "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
-  "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai",
+  "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat",
+  "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai",
   "daemon-head", "daemon-control", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
@@ -146,9 +146,9 @@ Daemon LOGGING still flows through the injected log lambda."
 [[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-head", "daemon-control", "quality-compiler-plugin",
+  "core", "client", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "daemon-head", "daemon-control", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -164,7 +164,7 @@ names no coroutine at all.
 
 [[exclusion]]
 rule = "kt-no-runcatching-in-coroutine"
-modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai", "quality-compiler-plugin"]
+modules = ["core", "client", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai", "quality-compiler-plugin"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
@@ -179,7 +179,7 @@ imports no kotlinx.coroutines at all.
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["core", "client", "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat", "quality-compiler-plugin"]
+modules = ["core", "client", "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat", "quality-compiler-plugin"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
@@ -196,20 +196,20 @@ rule, burning those 16 down, and deleting `client` here.
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["providers-muse"]
+modules = ["integrations-providers-muse"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 :providers-muse is the ONE provider missing from this wall's files: list, which names :upstream,
 grok, kimi, codex and openai. An inconsistency in the rule, not a design: muse performs the same
 credential refresh the other four do. Recorded rather than closed — widening a rule is a change to
-quality/rules/, out of this stage's fence. Close it by adding `providers/muse/src/main/**/*.kt` to
+quality/rules/, out of this stage's fence. Close it by adding `integrations/providers/muse/src/main/**/*.kt` to
 the rule and deleting this row.
 """
 
 [[exclusion]]
 rule = "kt-no-stream-options-request"
-modules = ["dialects-openai-chat"]
+modules = ["integrations-dialects-openai-chat"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
@@ -221,9 +221,9 @@ reopen the incident."
 [[exclusion]]
 rule = "kt-no-vanilla-config-dir"
 modules = [
-  "core", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-head", "quality-compiler-plugin",
+  "core", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "daemon-head", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -240,9 +240,9 @@ wall did not narrow; its subject moved module, and :client's main is covered fil
 [[exclusion]]
 rule = "kt-outcome-tag-single-source"
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "app", "quality-compiler-plugin",
+  "core", "client", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -258,9 +258,9 @@ Measured: 0 in :client, which writes no perf row.
 [[exclusion]]
 rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-control", "app", "quality-compiler-plugin",
+  "core", "client", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "daemon-control", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -449,3 +449,62 @@ rule = "webui-fetch-only-in-api"
 files = ["console/src/shared/api/**", "console/src/entities/*/api/**"]
 date = "2026-09-20"
 reason = "FSD: the api segments ARE the HTTP layer the rule confines fetch to."
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
+  "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-heads"]
+sourceSets = ["main"]
+date = "2026-09-21"
+reason = """
+:features-heads is new: splice.heads.start was EXTRACTED OUT OF daemon/control (ControlServer.kt
+and api/fleet/HeadRoutes.kt). That origin is the denominator for this row, and the module's current
+contents are NOT. An earlier version of this row reasoned from what the 37 lines happen to contain
+today — "declares no refusal type, logs nothing, opens no wire" — which is the §24 defect exactly:
+absence of a violating expression is not a reason a rule stops applying, because the rule exists for
+the line somebody writes tomorrow. The test used here instead: does the rule's declared files: scope
+COVER daemon/control, the place this code came from? If yes, the extraction punched a hole in that
+rule and the remedy is to widen its glob. If no, the rule never reached this code and nothing was
+lost by moving it.
+
+SIX RULES FAILED THAT TEST AND ARE NOT IN THIS ROW. kt-control-route-guarded,
+kt-json-scalars-single-source, kt-log-escapes-caller-input, kt-no-runcatching-in-coroutine,
+kt-no-silent-result-collapse and kt-outcome-tag-single-source all name daemon/control/src/main in
+their files:, so each lost reach when the code moved. All six now carry
+`features/heads/src/main/**/*.kt` in their own files: list — widened at the rule, never excused
+here. kt-log-escapes-caller-input is the one to notice: StartHead.handle reads
+call.parameters["head"] and hands that caller-supplied name to StartHeadAudit.record, which is the
+forged-audit-line hazard the rule was written for. Excluding it would have retired a live
+protection, not waived a dormant one.
+
+THE SIX BELOW PASS THAT TEST — each names a scope this code was never inside:
+  kt-no-exception-as-outcome          pinned to upstream/, core/, client/ — the DECLARATION sites
+                                      for refusal types. The extracted code came from
+                                      daemon/control, which this rule has never covered, so no
+                                      declaration left its reach.
+  kt-no-runblocking-exported-bridge   pinned to app/**/Main.kt and app/**/cli/** — the CLI process
+                                      boundary, where a runBlocking bridge is the exported entry.
+                                      :features-heads is a library module with no main().
+  kt-no-vanilla-config-dir            pinned to the LAUNCH SEAM: client/**, app's
+                                      LaunchSpecFactory.kt, and daemon/control's Launch*.kt. It is
+                                      the one rule here that names daemon/control at all, so it was
+                                      checked by hand: LaunchResponse.kt, LaunchService.kt and
+                                      LaunchTypes.kt are all still at that path and none of them was
+                                      part of this extraction. The seam did not move.
+  kt-quota-tracker-single-resolution  pinned to daemon/head — the turn-admission path that owns
+                                      QuotaTracker selection. Extraction source was daemon/control.
+  kt-turn-finally-flush-quietly       pinned to daemon/head/**/splice/head/** — the head's TURN
+                                      cleanup. This is splice.heads.start in another module, with
+                                      no turn lifecycle. Extraction source was daemon/control.
+  kt-wire-catch-ioexception-alone     pinned to daemon/head/**/wire/** — the head's wire layer.
+                                      Extraction source was daemon/control, and this module opens
+                                      no socket.
+
+WHAT WOULD INVALIDATE THIS ROW: any later move of code INTO :features-heads from upstream/, core/,
+client/, app/'s CLI, the launch seam, or daemon/head. That is a different origin from this one, so
+re-run the test above rather than extending this row — the row is dated to the heads/start
+extraction and covers only it.
+"""

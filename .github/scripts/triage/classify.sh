@@ -22,8 +22,9 @@ MODEL="${TRIAGE_MODEL:-google/gemma-4-31b-it}"
 ALLOWLIST="bug enhancement documentation question gateway console ci release"
 
 SYSTEM="You label GitHub issues for splice, a local LLM gateway daemon
-(Kotlin gateway under gateway/, operator console under console/, CI gates under checks/
-and .github/, release pipeline in install.sh and bin/).
+(Kotlin capabilities under features/, adapters under integrations/, executable under app/,
+operator console under console/, CI gates under tools/gate/, quality/ and .github/,
+release pipeline in tools/release/ and install.sh).
 Reply with ONLY a JSON object, no prose, no code fences: {\"labels\": [...]}.
 Allowed labels — type: bug, enhancement, documentation, question;
 area: gateway, console, ci, release.

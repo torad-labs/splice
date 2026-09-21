@@ -1,5 +1,5 @@
 {
-  "about": "The gate ladder: every leg of the gate of record that is not yet a Gradle task of its own. build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts registers one Exec task per row under `gateOfRecord` (entered through `bun tools/gate run`), and checks/config/concentration-leg-routed.ts reads the same rows to prove the concentration leg is routed. A row is data, not code: it is present or absent, and its argv is an array Gradle hands to the process without a shell. `why` is the leg's reason for existing — keep it when you move the leg.",
+  "about": "The gate ladder: every leg of the gate of record that is not yet a Gradle task of its own. build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts registers one Exec task per row under `gateOfRecord` (entered through `bun tools/gate run`), and tools/gate/test/run.test.ts reads the same rows WITHOUT Gradle to prove each one is a real leg: a unique task, a reason, and an argv whose target exists — it caught two legs still pointing into checks/ on 2026-09-21, after the move. The concentration leg's own routing check retired with the checker it routed; configguard.ts:11-13 records why. A row is data, not code: it is present or absent, and its argv is an array Gradle hands to the process without a shell. `why` is the leg's reason for existing — keep it when you move the leg.",
   "legs": [
     {
       "task": "gateRules",
@@ -24,12 +24,12 @@
     {
       "task": "campaignCliSelftest",
       "why": "DR-184: the ledger CLI's own suite, which nothing ran — every arm guarding the instrument that owns campaign memory fired only when a session remembered to type it.",
-      "command": ["bash", "checks/campaign-cli-selftest.sh"]
+      "command": ["bash", "tools/gate/test/campaign-cli-selftest.sh"]
     },
     {
       "task": "campaignCliSelftestCanary",
       "why": "The canary over the CLI selftest: a suite that stopped running would otherwise stay green.",
-      "command": ["bash", "checks/campaign-cli-selftest-canary.sh"]
+      "command": ["bash", "tools/gate/test/campaign-cli-selftest-canary.sh"]
     },
     {
       "task": "oracleReplay",

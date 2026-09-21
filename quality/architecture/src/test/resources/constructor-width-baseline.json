@@ -48,19 +48,19 @@
       "params": 17,
       "subsystems": 10
     },
-    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesQuirks.kt ResponsesQuirks": {
+    "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesQuirks.kt ResponsesQuirks": {
       "params": 23,
       "subsystems": 3
     },
-    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesRequest.kt ResponsesRequest": {
+    "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesRequest.kt ResponsesRequest": {
       "params": 14,
       "subsystems": 0
     },
-    "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecord": {
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecord": {
       "params": 22,
       "subsystems": 0
     },
-    "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecordSnapshot": {
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecordSnapshot": {
       "params": 22,
       "subsystems": 0
     },

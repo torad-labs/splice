@@ -51,7 +51,7 @@ describe("release verify", () => {
     expect(build).toContain('tasks.register("stageRelease")');
     expect(build).toContain("val releaseAssets = listOf(");
     // the two moved sources, read from one place each
-    expect(build).toContain('repositoryRoot.file(".docs/PROVENANCE.md")');
+    expect(build).toContain('repositoryRoot.file("docs/PROVENANCE.md")');
     expect(build).toContain('layout.projectDirectory.file("src/main/dist/bin/splice-launch")');
   });
 

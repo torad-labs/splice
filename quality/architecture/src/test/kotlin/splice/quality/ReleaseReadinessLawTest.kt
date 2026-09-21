@@ -25,10 +25,15 @@
 //
 // PARSE. Substring and regex over whole files, case-insensitive where the shell used `grep -i`.
 // Nothing is tokenized: these were the ladder's greps and they stay greps, with the file named.
-// One grep is narrower than the shell's: `|| true` is a swallowed failure only on a line that
-// downloads or attests (curl, gh, verify_attestation, sha256sum). install.sh's best-effort
-// `previous` link carries `|| true` and reads the link back on the next line, which the shell's
-// bare grep could not tell from a swallowed download.
+// ONE RULE IS NOT A GREP. `|| true` is a swallowed failure on every line of install.sh but the two
+// this repo has decided to allow, and those two are matched by their EXACT text. The shell's bare
+// `grep -qE '\|\| true'` could not tell the best-effort `previous` link — whose result is read back
+// on the very next line — from a swallowed download, and a narrowing that names the downloading
+// commands trades that hole for its mirror: `mv "$JAR_TMP" "$SHARE_DIR/splice.jar" || true` carries
+// none of those tokens, and the installer would print success over a stale jar. So does a wrapper
+// call, and so does a `|| true` continued onto the next physical line. An exact-line list has
+// neither hole, and rewording a listed line is re-deciding that swallow — a decision that belongs
+// in a diff beside the list rather than inside a regex nobody re-reads (PR 6 review, F1).
 //
 // VIOLATIONS, failed BY NAME (rule id, then the file and what it lacks or still carries): every
 // [ReleaseReadiness.Rule] below; one mutation per rule in the red proof.
@@ -66,6 +71,16 @@ private const val LAUNCH_SERVICE = "daemon/control/src/main/kotlin/splice/contro
 private const val TOPOLOGY_LOADER = "app/src/main/kotlin/splice/app/daemon/TopologyLoader.kt"
 private const val TESTNET = "daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt"
 private const val ENCRYPTED_COT = "encrypted CoT"
+private const val GATE_LADDER = "build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts"
+private const val INCLUDED_BUILD_TEST = "gradle.includedBuild(\"build-logic\").task(\":test\")"
+private const val OR_TRUE = "|| true"
+
+// The two swallowed failures install.sh is allowed, by their exact trimmed text (install.sh:370-383):
+// each is the best-effort `previous` link, and each result is READ BACK on the next line, so the
+// swallow is a decision someone wrote down rather than an omission. See the PARSE paragraph above.
+private const val ALLOWED_LINK = "ln -sfn \"\$1\" \"\${SHARE_DIR}/releases/previous\" || true"
+private const val ALLOWED_PREVIOUS = "link_previous \"\$(readlink \"\$CURRENT_LINK\")\" || true"
+private val ALLOWED_OR_TRUE = listOf(ALLOWED_LINK, ALLOWED_PREVIOUS)
 private val HEALTH_FILES = listOf(
     SECURITY_MD,
     ".github/CONTRIBUTING.md",
@@ -93,9 +108,16 @@ internal class ReleaseRepo(val root: File, val tracked: List<String>, val kotlin
         return if (text.contains(needle, ignoreCase)) "$rel still contains '$needle'" else null
     }
 
-    fun lacksMatch(rel: String, pattern: Regex, what: String): String? {
+    /** Lines of [rel] carrying [needle] whose exact trimmed text is not one of [allowed]. */
+    fun onlyOn(rel: String, needle: String, allowed: List<String>, what: String): String? {
         val text = text(rel) ?: return missing(rel)
-        return pattern.find(text)?.let { "$rel still contains $what: ${it.value.trim()}" }
+        val offenders = text.lines().mapIndexedNotNull { index, line ->
+            if (needle in line && line.trim() !in allowed) "line ${index + 1}: ${line.trim()}" else null
+        }
+        if (offenders.isEmpty()) return null
+        return "$rel carries $what outside the ${allowed.size} line(s) this repo has decided to allow " +
+            "[${allowed.joinToString("; ")}] — ${offenders.joinToString("; ")}. Rewording an allowed line is " +
+            "re-deciding that swallow: change the line and this list in the same commit."
     }
 
     fun matches(rel: String, pattern: Regex, what: String): String? {
@@ -136,7 +158,6 @@ internal object ReleaseReadiness {
     private val UNPINNED_ACTION = Regex("""uses: .*@v[0-9]+(?:[.][0-9]+)*[ \t]*$""", RegexOption.MULTILINE)
     private val FIXED_PORT = Regex("""= 39[0-9]{3}""")
     private val SLEEP_1100 = Regex("""Thread\.sleep\(1100\)""")
-    private val SWALLOWED_FAILURE = Regex("""(?:curl|gh |verify_attestation|sha256sum)[^\n]*\|\| true""")
     private val FORK_RECORD = Regex("""UNRESOLVED|upstream""", RegexOption.IGNORE_CASE)
     private val FONT_LICENSE = Regex("""OFL|LICENSE""", RegexOption.IGNORE_CASE)
     private val CLAUDE_PRIVATE = listOf(
@@ -193,6 +214,11 @@ internal object ReleaseReadiness {
         },
         Rule("hook-tracked") { repo -> repo.trackedFile(HOOK) },
         Rule("tracked-agents") { repo -> repo.untracked("agents/crystallize-agent/") },
+        // build-logic is EXCLUDED from the unmapped-source census (quality/architecture/build.gradle.kts)
+        // because it is a separate Gradle build no project map can claim. That exclusion is earned by
+        // this rule and by nothing else: build-logic's sources are governed because gateOfRecord runs
+        // that build's own tests, and the day the dependency goes, the exclusion is a blind spot.
+        Rule("build-logic-tested") { repo -> repo.contains(GATE_LADDER, INCLUDED_BUILD_TEST) },
     )
 
     private fun workflowRules(): List<Rule> = listOf(
@@ -214,7 +240,7 @@ internal object ReleaseReadiness {
         Rule("install-no-fork-url") { repo -> repo.lacks(INSTALL, "marcospaulo/splice") },
         Rule("install-downloads-from-releases") { repo -> repo.contains(INSTALL, "releases/download") },
         Rule("install-no-or-true") { repo ->
-            repo.lacksMatch(INSTALL, SWALLOWED_FAILURE, "a swallowed download or attestation failure")
+            repo.onlyOn(INSTALL, OR_TRUE, ALLOWED_OR_TRUE, "a swallowed failure (`|| true`)")
         },
         Rule("install-requires-gh") { repo -> repo.contains(INSTALL, "GitHub CLI (gh) is required") },
         Rule("install-attests-jar") { repo -> repo.contains(INSTALL, "verify_attestation \"\$JAR_TMP\" splice.jar") },
@@ -277,6 +303,7 @@ private const val INSTALL_RELEASE = "RELEASE_BASE=releases/download\n"
 private const val INSTALL_GH = "echo 'GitHub CLI (gh) is required'\n"
 private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" splice.jar\n"
 private const val INSTALL_SHIM = "verify_attestation \"\$SHIM_TMP\" splice-launch\n"
+private const val INSTALL_PREVIOUS = "  $ALLOWED_LINK\n  $ALLOWED_PREVIOUS\n"
 
 // The Kotlin fixtures are assembled at runtime so this file, which the live rules also scan, does
 // not trip its own port and sleep rules.
@@ -310,7 +337,10 @@ private class Tree(val root: File) {
         file(LAUNCH_SERVICE, "// dangerously-skip-permissions is opt-in\n")
         file(CI_WORKFLOW, "permissions: {}\nsteps:\n  - uses: actions/checkout@3d3c42e5aac5 # v7.0.1\n")
         file(RELEASE_WORKFLOW, "permissions: {}\n  draft: true\n  files: dist/THIRD_PARTY_LICENSES.txt\n")
-        file(INSTALL, INSTALL_RELEASE + INSTALL_GH + INSTALL_JAR + INSTALL_SHIM)
+        // The compliant installer CARRIES both allowed swallows: an allowlist never exercised on the
+        // green side proves only that the file had nothing to match.
+        file(INSTALL, INSTALL_RELEASE + INSTALL_GH + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS)
+        file(GATE_LADDER, "gateOfRecord { dependsOn($INCLUDED_BUILD_TEST) }\n")
         file(
             README,
             "splice is not affiliated with anyone. Each head runs the splice-launch shim.\n" +
@@ -362,6 +392,16 @@ private fun repositoryMutations(): List<Mutation> = listOf(
     Mutation("a tracked crystallize agent", "tracked-agents", "agents/crystallize-agent/") {
         files += "agents/crystallize-agent/agent.md"
     },
+    Mutation("build-logic's own tests out of the gate", "build-logic-tested", INCLUDED_BUILD_TEST) {
+        file(GATE_LADDER, "// a ladder that no longer runs the included build's tests\n")
+    },
+    // THE MISSING-FILE BRANCH of each reader (PR 6 review). `contains`, `lacks`, `matches` and
+    // `onlyOn` all answer `missing(rel)` when the file is not there, and nothing proved it: a rule
+    // whose subject is DELETED must fail, never pass for want of anything to read.
+    Mutation("no README at all", "readme-not-affiliated", "is missing") { delete(README) },
+    Mutation("no README to read for encrypted CoT", "readme-no-encrypted-cot", "is missing") { delete(README) },
+    Mutation("no PROVENANCE at all", "provenance", "is missing") { delete(PROVENANCE) },
+    Mutation("no install.sh at all", "install-no-or-true", "is missing") { delete(INSTALL) },
 )
 
 private fun workflowMutations(): List<Mutation> = listOf(
@@ -391,8 +431,17 @@ private fun installerMutations(): List<Mutation> = listOf(
     Mutation("install.sh not downloading from releases", "install-downloads-from-releases", "releases/download") {
         file(INSTALL, INSTALL_GH + INSTALL_JAR + INSTALL_SHIM)
     },
-    Mutation("install.sh swallowing a download failure", "install-no-or-true", "|| true") {
-        append(INSTALL, "curl -fsSL \"\$URL\" -o x || true\n")
+    // Each of these was ACCEPTED by the narrowed regex this list replaced, and each is a swallow the
+    // shell's bare grep rejected: a commit carrying none of the downloading commands, a download
+    // through a wrapper, and a `|| true` continued onto the next physical line.
+    Mutation("install.sh swallowing the commit of a downloaded jar", "install-no-or-true", "mv ") {
+        append(INSTALL, "  mv \"\$JAR_TMP\" \"\$SHARE_DIR/splice.jar\" || true\n")
+    },
+    Mutation("install.sh swallowing a download through a wrapper", "install-no-or-true", "download ") {
+        append(INSTALL, "  download \"\$JAR_URL\" \"\$JAR_TMP\" || true\n")
+    },
+    Mutation("install.sh swallowing on a continuation line", "install-no-or-true", OR_TRUE) {
+        append(INSTALL, "  verify_attestation \"\$JAR_TMP\" splice.jar \\\n    || true\n")
     },
     Mutation("install.sh not requiring gh", "install-requires-gh", "GitHub CLI (gh) is required") {
         file(INSTALL, INSTALL_RELEASE + INSTALL_JAR + INSTALL_SHIM)

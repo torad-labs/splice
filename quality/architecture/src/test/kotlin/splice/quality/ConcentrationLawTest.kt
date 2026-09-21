@@ -329,7 +329,7 @@ internal object Concentration {
 
     private fun baseName(file: String) = file.substring(file.lastIndexOf('/') + 1)
 
-    private fun named(rows: List<Row>) = rows.joinToString(" | ") { "${baseName(it.file)} ${floatStr(it.ratio)}" }
+    fun named(rows: List<Row>) = rows.joinToString(" | ") { "${baseName(it.file)} ${floatStr(it.ratio)}" }
 
     /** Structural faults in the ceiling list, which fail whatever question the caller asked: a
      *  malformed list is a broken instrument, not a failing measurement. */
@@ -453,13 +453,14 @@ class ConcentrationLawTest {
                 "that reads no files passes vacuously."
         }
         val problems = Concentration.problems(rows)
+        // The standing debt rides on the failure text rather than on an assertion of its own. The
+        // assertion that used to sit here compared the debt against band HIGH, which HIGH implies by
+        // construction — a check proven unable to fail is not a check (PR 6 review, F7). What the
+        // debt is FOR is naming the files a red should be attributed against, so that is where it is.
         assertTrue(problems.isEmpty()) {
-            problems.joinToString(separator = "\n  - ", prefix = "CONCENTRATION RATCHET violated:\n  - ")
-        }
-        // The debt is REPORTED, never gated — but a run that cannot name it is not auditable.
-        val debt = Concentration.debt(rows, Concentration.LIVE, Concentration.GATE_RATIO)
-        assertTrue(debt.size >= Concentration.gradedHigh(rows, Concentration.LIVE).size) {
-            "every band-HIGH file is above the gate ratio by construction; the debt count cannot be smaller"
+            problems.joinToString(separator = "\n  - ", prefix = "CONCENTRATION RATCHET violated:\n  - ") +
+                "\n  standing debt above ${Concentration.floatStr(Concentration.GATE_RATIO)}, reported and never " +
+                "gated: " + Concentration.named(Concentration.debt(rows, Concentration.LIVE, Concentration.GATE_RATIO))
         }
     }
 
@@ -537,6 +538,12 @@ class ConcentrationLawTest {
                 rows().first { it.file.endsWith("God.kt") }.band,
                 "the fixture must BE a god object first",
             )
+
+            // The standing debt is what a red is attributed against, so it has to NAME the file
+            // that just rose rather than count it (PR 6 review, F7 — the assertion this replaces
+            // compared the debt against band HIGH, which band HIGH implies).
+            val debt = Concentration.named(Concentration.debt(rows(), control, GATE))
+            assertTrue("God.kt" in debt) { "the debt report must name the file above the gate ratio, got: $debt" }
 
             // SLACK: a baseline held above the measured count is unearned room, and is RED too.
             val padded = Concentration.Baseline(99, 1, emptyList())

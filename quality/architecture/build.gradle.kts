@@ -34,7 +34,17 @@ val moduleDirectories: Map<String, String> = rootProject.subprojects
 // file anywhere under the root, minus the directory names the sweep never enters. ONE list, written
 // here and handed to the test JVM as a property, so the build cannot fingerprint a narrower tree
 // than the sweep walks.
-val censusNotSwept: List<String> = listOf("build", ".git", ".gradle", "node_modules")
+// `build-logic` is on this list for a different reason than the other four, and it is a DISPOSITION
+// rather than a blind spot. It is a separate Gradle BUILD — settings.gradle.kts includes it, it is
+// not a project — so no project map can claim it, and the sweep reported it by name the moment the
+// first plain `.kt` landed there (splice/hygiene/CatalogMetadata.kt, restructure PR 6 §4.2). Its
+// sources are compiled by that build and its tests run inside the gate of record:
+// splice.gate-ladder.gradle.kts makes gateOfRecord depend on
+// `gradle.includedBuild("build-logic").task(":test")`. So it is governed, just not by these laws.
+// ReleaseReadinessLawTest's `build-logic-tested` rule is what keeps that sentence true — delete the
+// dependency and the release-readiness law reds BY NAME — which is what makes this exclusion earned
+// rather than an absence wearing a label.
+val censusNotSwept: List<String> = listOf("build", ".git", ".gradle", "node_modules", "build-logic")
 
 // THE `.git` RULE (PR 2 review), the Gradle half of ProjectMap.swept(). A directory BELOW the root
 // carrying a `.git` entry — a FILE reading `gitdir: …` for a worktree, a DIRECTORY for a submodule
@@ -56,6 +66,16 @@ val nestedRepositories: List<String> = nestedRepositoriesBelow(repoRoot.asFile)
     .map { it.relativeTo(repoRoot.asFile).invariantSeparatorsPath }
     .sorted()
 
+// PR 6 review (F3): GIT'S INDEX is an input of these laws. `claude-dir-untracked`,
+// `tracked-capture-artifacts`, `tracked-agents`, `settings-hook` and `hook-tracked` ask `git
+// ls-files` which paths are TRACKED, and the conventional-type census asks the same question — so
+// `git add` changes a verdict while every byte on disk stays where it was. The path is read out of
+// git rather than assumed to be `.git/index`, because in a worktree it is not.
+val gitIndex = providers.exec {
+    workingDir = repoRoot.asFile
+    commandLine("git", "rev-parse", "--git-path", "index")
+}.standardOutput.asText.map { path -> repoRoot.asFile.resolve(path.trim()) }
+
 tasks.withType<Test>().configureEach {
     systemProperty("splice.root", repoRoot.asFile.absolutePath)
     // THE CHANNEL: `:path=directory` pairs, ';'-separated, parsed by ProjectMap.kt and nowhere
@@ -74,9 +94,14 @@ tasks.withType<Test>().configureEach {
     // module edits and the laws silently stop running (caught red-handed in P1-KONSIST's
     // first red/green attempt). P0: the trees are named through the map, so a NESTED module's
     // edit re-runs them too — `*/src/main/kotlin/**` only ever saw the root's direct children.
+    // PR 6 review (F4): the tree named here is `src/main`, not `src/main/kotlin`, because seven laws
+    // walk `<module>/src/main` — KotlinText.kotlinFiles's default — and grade every `.kt` they find
+    // under it. A `.kt` parked beside the Kotlin root, under src/main/resources or src/main/java,
+    // was graded and never fingerprinted. The class is empty today; a fingerprint narrower than the
+    // walk is the shape that comes back UP-TO-DATE-green over a law that did not run.
     inputs.files(
         moduleDirectories.values.map { dir ->
-            repoRoot.dir("$dir/src/main/kotlin").asFileTree.matching { include("**/*.kt") }
+            repoRoot.dir("$dir/src/main").asFileTree.matching { include("**/*.kt") }
         },
     ).withPropertyName("scannedProductionSources")
     // The census: production Kotlin ANYWHERE under the root. A file that appears in a tree the
@@ -131,4 +156,31 @@ tasks.withType<Test>().configureEach {
     // the instrument this wall was written against — so the detekt config is an input too, or
     // deleting the rule would come back UP-TO-DATE-green on the one law that exists because of it.
     inputs.files(repoRoot.file("quality/detekt/detekt.yml")).withPropertyName("scannedPremiseConfig")
+    // PR 6 review (F3): the OPERATOR SURFACES. ReleaseReadinessLawTest grades the installer, the
+    // health files, the workflows, the packaging metadata and the fork record; CampaignLedgerLawTest
+    // grades the ledgers under .dev/campaigns; ConventionalTypeLawTest grades the one list of
+    // conventional commit types. None of it is Kotlin and none of it was fingerprinted, so
+    // `printf 'curl x || true\n' >> install.sh` left this task UP-TO-DATE and the law written to
+    // catch exactly that never ran. The gate of record is immune (clean, --no-build-cache); every
+    // incremental and local run was not — the same hole the example config's input closed above.
+    inputs.files(
+        repoRoot.file("install.sh"),
+        repoRoot.file("README.md"),
+        repoRoot.file(".gitignore"),
+        repoRoot.file("THIRD_PARTY_NOTICES.md"),
+        repoRoot.file("package.json"),
+        repoRoot.file(".docs/PROVENANCE.md"),
+        repoRoot.file(".dev/release/history-rewrite-runbook.md"),
+        repoRoot.file("gradle/verification-metadata.xml"),
+        repoRoot.file("gradle/wrapper/gradle-wrapper.properties"),
+        repoRoot.file(".claude/settings.json"),
+        repoRoot.file("tools/gate/src/lib/jdk.ts"),
+        repoRoot.file("tools/gate/src/lib/hook.ts"),
+        repoRoot.file("tools/gate/src/lib/conventional.ts"),
+        repoRoot.file("build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts"),
+        repoRoot.dir(".github").asFileTree,
+        repoRoot.dir("console/src/shared/fonts").asFileTree,
+        repoRoot.dir(".dev/campaigns").asFileTree.matching { include("**/*.toml") },
+    ).withPropertyName("scannedOperatorSurfaces")
+    inputs.files(gitIndex).withPropertyName("gitIndex")
 }

@@ -22,16 +22,6 @@
       "command": ["npm", "run", "--silent", "gate:campaign:selftest"]
     },
     {
-      "task": "campaignLedgerFloor",
-      "why": "DR-181: the walls guard the SOURCE TREE a campaign describes; nothing guarded the campaign MEMORY itself. On 2026-09-01 drift-repair.toml lost 164 rows and 2604 lines, was committed and pushed, and the ladder passed 13 of 13 — because no leg read the file.",
-      "command": ["bun", "checks/campaign-ledger-floor.ts", "--check"]
-    },
-    {
-      "task": "campaignLedgerFloorSelftest",
-      "why": "The floor's own red-green arms.",
-      "command": ["bash", "checks/campaign-ledger-floor-selftest.sh"]
-    },
-    {
       "task": "campaignCliSelftest",
       "why": "DR-184: the ledger CLI's own suite, which nothing ran — every arm guarding the instrument that owns campaign memory fired only when a session remembered to type it.",
       "command": ["bash", "checks/campaign-cli-selftest.sh"]
@@ -106,12 +96,6 @@
       "afterAllTests": true
     },
     { "task": "verifyTestDiscoverySelftest", "why": "The discovery wall's own arms.", "command": ["bun", "checks/config/tests-are-discovered.ts", "--selftest"] },
-    {
-      "task": "oneConventionalTypeList",
-      "why": "V4-30: the conventional-type vocabulary lives once, in tools/gate/src/lib/conventional.ts, which `gate title` enforces. CONTRIBUTING.md and AGENTS.md had both restated it and both had drifted. Denominator is `git ls-files`, so an untracked sidecar cannot red the gate; a second copy must be tracked to reach main.",
-      "command": ["bun", "checks/config/one-conventional-type-list.ts", "check", "."]
-    },
-    { "task": "oneConventionalTypeListSelftest", "why": "The one-list wall's own arms.", "command": ["bash", "checks/one-conventional-type-list-selftest.sh"] },
     { "task": "prTitle", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
     {
       "task": "secretScanAllowlist",

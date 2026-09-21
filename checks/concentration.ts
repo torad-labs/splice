@@ -356,7 +356,7 @@ export const EXCEPTION_JUSTIFICATION = new RegExp(`^\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd
 // and printed on every run as DEBT. See THE GATED CRITERION IS THE HIGH BAND in the header for
 // the control that forced the change.
 export const RATCHET_RECORDED = "2026-09-21";
-export const RATCHET_MAX_HIGH = 13; // files in band HIGH  (re-measured 2026-09-21 after restructure PR 3's package split: 1 -> 13; THE 2026-09-21 MOVE below)
+export const RATCHET_MAX_HIGH = 13; // files in band HIGH  (re-measured 2026-09-21 after restructure PR 3's package split: 0 -> 13 from the PR base 49b418c2 (the intermediate client-extraction baseline read 1); THE 2026-09-21 MOVE below)
 //
 // THE 2026-09-20 MOVE, AND WHY IT IS A MEASUREMENT AND NOT A CONCESSION. Restructure PR 3 step 1
 // took 32 files out of `splice.core.launch` and made them the :client module across six packages.

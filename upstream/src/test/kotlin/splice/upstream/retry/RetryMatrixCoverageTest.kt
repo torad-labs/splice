@@ -13,10 +13,8 @@
 // so a cause added tomorrow is covered the moment it exists rather than when someone remembers to
 // add a row — and `of` fails closed on an unceilinged cause, so that same addition is a red test
 // instead of a silent "entitled to nothing".
-// No package declaration, matching every sibling test in this directory: `internal` is scoped to
-// the MODULE, not the package, and this test source set is a friend of main, so the matrix is
-// reachable without one. Declaring a package here would also put the file's location out of step
-// with it, which detekt reds as InvalidPackageDeclaration.
+// The package matches the directory (detekt InvalidPackageDeclaration); `internal` is scoped to the
+// MODULE and this test source set is a friend of main, so the matrix is reachable either way.
 package splice.upstream.retry
 
 import org.junit.jupiter.api.Assertions.assertEquals

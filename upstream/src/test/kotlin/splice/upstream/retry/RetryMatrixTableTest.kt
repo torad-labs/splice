@@ -10,8 +10,8 @@
 // build/retry-matrix-rendered.md, so when this test reddens the fix is to paste that file's
 // contents between the markers rather than to work out what the table should say.
 //
-// No package declaration, matching every sibling test in this directory (see
-// RetryMatrixCoverageTest for why that is correct rather than an omission).
+// The package matches the directory (detekt InvalidPackageDeclaration); `internal` is scoped to the
+// MODULE and this test source set is a friend of main, so the matrix is reachable either way.
 package splice.upstream.retry
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -24,13 +24,15 @@ class RetryMatrixTableTest {
     @Test
     fun `the committed table is exactly what the matrix renders`() {
         val rendered = RetryMatrix.table()
-        // Gradle runs a test with the module directory as the working directory, so the repo root
-        // is two levels up and the artifact lands in this module's own build dir.
+        // Gradle runs a test with the module directory as the working directory, so the artifact
+        // lands in this module's own build dir and the repo root is found by walking up.
         val artifact = File("build/retry-matrix-rendered.md")
         artifact.parentFile?.mkdirs()
         artifact.writeText(rendered + "\n")
 
-        val agents = File("../../AGENTS.md")
+        // the repository root is found by walking up to settings.gradle.kts — the module's depth
+        // changed once (gateway/provider-spi -> upstream) and a fixed `../..` was the drift
+        val agents = File(repoRoot(), "AGENTS.md")
         assertTrue(agents.isFile, "AGENTS.md not found at ${agents.absolutePath}")
 
         val committed = blockBetweenMarkers(agents.readText())
@@ -51,6 +53,10 @@ class RetryMatrixTableTest {
         assertTrue(end > from, "AGENTS.md has no $END_MARKER after the begin marker")
         return text.substring(from, end).trimEnd('\n')
     }
+
+    private fun repoRoot(): File =
+        generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
 }
 
 // Private top-level consts rather than a companion object: the campaign wall forbids companions, and

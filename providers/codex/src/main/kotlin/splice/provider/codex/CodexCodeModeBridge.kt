@@ -63,7 +63,7 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
     private val machine = CodexCodeModeMachine(config, registry, validation)
     private val driver = CodexCodeModeDriver(config, registry, wire, validation, machine)
     private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
-    private val controller = CodexCodeModeTurn(registry, wire, driver, resume, config.log)
+    private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, config.log)
 
     init {
         require(config.maxRecords > 0) { "code-mode maxRecords must be positive" }

@@ -120,6 +120,7 @@ const PENDING: readonly PendingGroup[] = [
       'code_mode_workers',
       'code_mode_timeout_ms',
       'code_mode_heap',
+      'code_mode_models',
       'zstd_request_body',
       'reasoning_effort',
       'tool_surface',

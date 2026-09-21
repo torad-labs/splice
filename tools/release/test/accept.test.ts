@@ -1,5 +1,5 @@
-// `release accept`'s bundle legs, each proven able to fail (checks/release/accept.sh:8-43 and the
-// python block's head until PR 6). The bundle here is SYNTHETIC — a real one needs a 71 MB fat jar
+// `release accept`'s bundle legs, each proven able to fail (checks/release/accept.sh:8-43 and its
+// inline verifier's head until PR 6). The bundle here is SYNTHETIC — a real one needs a 71 MB fat jar
 // and a full install rehearsal, which `release verify` runs; what is proven here is that every leg
 // reds on its own mutant and that the legs before it were green when it did.
 //

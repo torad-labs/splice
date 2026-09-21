@@ -6,17 +6,18 @@
 //   1. no detekt baseline — a baseline.xml silently whitelists every finding present when created;
 //   2. the zero-tolerance posture (maxIssues 0, warningsAsErrors true) intact;
 //   3. every ast-grep rule document a blocking error (structure-derived, see ruledocs.ts);
-//   4. the Dependabot Kotlin ignore block scoped to the toolchain, not kotlinx
-//      (checks/config/dependabot-kotlin-scope.ts, run as it is until PR 6 moves it into build-logic).
-//      It runs with cwd = root, because it resolves its inputs from there and its test arms mirror
-//      the tree. The fifth guard, the concentration leg's routing, retired with the checker it
-//      routed: ConcentrationLawTest runs inside :quality-architecture:test, which gateOfRecord
-//      carries as a Gradle task rather than a ladder row (restructure PR 6).
+//   4. the Dependabot Kotlin ignore block scoped to the toolchain, not kotlinx (dependabot.ts —
+//      in-process since PR 6; it was checks/config/dependabot-kotlin-scope.ts run as a subprocess).
+//      The fifth guard, the concentration leg's routing, retired with the checker it routed:
+//      ConcentrationLawTest runs inside :quality-architecture:test, which gateOfRecord carries as a
+//      Gradle task rather than a ladder row (restructure PR 6).
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { dependabotScopeProblems } from "./dependabot.ts";
 import { severityViolations } from "./ruledocs.ts";
 
 const DETEKT = "quality/detekt/detekt.yml";
+const DEPENDABOT = ".github/dependabot.yml";
 const SKIP = new Set(["node_modules", ".git", "build", ".gradle", "dist"]);
 const BASELINE_NAMES = new Set(["detekt-baseline.xml", "baseline.xml"]);
 
@@ -46,15 +47,6 @@ function baselineFiles(root: string): string[] {
   return out.sort();
 }
 
-/** A checker that still lives in checks/config, run exactly as the shell leg ran it; its output is
- *  part of the problem text so a failure keeps its own diagnosis (the test arms pin phrases in it). */
-function subprocess(root: string, label: string, script: string): string[] {
-  const proc = Bun.spawnSync(["bun", script], { cwd: root, stdout: "pipe", stderr: "pipe" });
-  if (proc.exitCode === 0) return [];
-  const output = (proc.stdout.toString() + proc.stderr.toString()).trim();
-  return [`${label} failed (exit ${proc.exitCode}):\n${output}`];
-}
-
 export function configGuardProblems(root: string): string[] {
   const problems: string[] = [];
   const detektPath = join(root, DETEKT);
@@ -65,6 +57,9 @@ export function configGuardProblems(root: string): string[] {
   if (!/maxIssues:\s*0/.test(detekt)) problems.push("detekt.yml build.maxIssues must be 0");
   if (!/warningsAsErrors:\s*true/.test(detekt)) problems.push("detekt.yml config.warningsAsErrors must be true");
   for (const v of severityViolations(root)) problems.push(`  ✗ ${v}`);
-  problems.push(...subprocess(root, "dependabot-kotlin-scope", "checks/config/dependabot-kotlin-scope.ts"));
+  const dependabotPath = join(root, DEPENDABOT);
+  const dependabot = existsSync(dependabotPath) ? readFileSync(dependabotPath, "utf8") : null;
+  if (dependabot === null) problems.push(`${DEPENDABOT} is missing — the Kotlin scope cannot be checked`);
+  else for (const v of dependabotScopeProblems(dependabot)) problems.push(`dependabot-kotlin-scope: ${v}`);
   return problems;
 }

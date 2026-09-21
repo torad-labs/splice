@@ -24,8 +24,6 @@
     ".github/scripts/live-probe/test-update-issue-step.sh",
     ".github/scripts/triage/find-duplicates.sh",
     ".github/scripts/triage/test-find-duplicates.sh",
-    ".github/secret-scan-allow.README.md",
-    ".github/secret-scan-allow.toml",
     "CHANGELOG.md",
     "checks/e2e/docker/Dockerfile",
     "checks/e2e/docker/inside.sh",

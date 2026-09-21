@@ -47,8 +47,10 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 - Effort precedence (v27): explicit body effort field, then the Claude
   `/effort` picker (`thinking.budget_tokens`), then config/env fallback, then
   `high`. Compact turns inherit the session's own model AND effort (a mismatch on
-  either invalidates the prompt cache and re-reads the whole transcript cold);
-  tools stripped.
+  either invalidates the prompt cache and re-reads the whole transcript cold), and
+  are built EXACTLY like a turn — same tools, same code-mode declaration and
+  guidance (2026-09-21: dropping `splice_exec` on compaction cost the whole
+  transcript's cache on every compaction, `cached_tokens=0`).
 - Mirror wire format: `\n[reasoning summary]\n<text>\n` (`mirrorWireText`).
 - Reasoning replay envelope (`reasoning/replay.mjs`): encrypted reasoning rides
   as a `redacted_thinking` block tagged `splice-reasoning` v1; encode/decode
@@ -211,7 +213,8 @@ exit masked BUILD FAILED twice — never trust one.
 
 Detection is a POSITIVE marker only: the verbatim v2.1.207 summarizer prompt
 ("tasked with summarizing conversations"), tools-agnostic — real compaction
-requests carry tools; the builder strips them upstream. Never add size/content
+requests carry tools, and the builder keeps them: a compaction's upstream bytes
+must match the preceding turn's prefix (cache law). Never add size/content
 heuristics (the v13/v24 misfire class). The shadow classifier logs
 `{has_marker, tool_count, sys_len}` on every request; the marker canary test
 pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.

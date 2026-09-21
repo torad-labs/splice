@@ -22,7 +22,7 @@ npm run lint -w console && npm test -w console && ./gradlew :console:build
 npm run oss:verify
 ```
 
-`npm run gate` (`checks/gate.sh`) runs the complete list: Gradle module-law/detekt/tests,
+`npm run gate` (`bun tools/gate run`: the Gradle ladder of tools/gate/config/ladder.json, then the OSS readiness scripts) runs the complete list: Gradle module-law/detekt/tests,
 ast-grep walls, hook tests, campaign walls, config guard, console lint/test (the bundle builds in the gradle tier)
 with a committed-dist check, staged release acceptance, dependency audit, and every OSS
 readiness check. The individual commands are listed only so a contributor can run one in

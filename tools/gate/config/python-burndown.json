@@ -35,7 +35,6 @@
     "checks/e2e/heads-e2e-selftest.sh",
     "checks/e2e/heads-e2e.sh",
     "checks/e2e/reasoning-cache-probe.sh",
-    "checks/gate.sh",
     "checks/oss/verify-OSS-C.sh",
     "checks/oss/verify-OSS-D.sh",
     "checks/release/accept.sh",

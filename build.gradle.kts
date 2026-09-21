@@ -15,6 +15,9 @@ plugins {
     // Coverage visibility: org.jetbrains.kotlinx.kover is applied at the root so the aggregated
     // :koverXmlReport task merges reports from every Kotlin module (kover { merge { allProjects() } }).
     alias(libs.plugins.kover)
+    // The gate ladder (gateOfRecord and one Exec task per row of tools/gate/config/ladder.json) —
+    // build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts, entered through `bun tools/gate run`.
+    id("splice.gate-ladder")
 }
 
 // The plugin jar's path is derived from :quality-compiler-plugin' build layout (default archive name

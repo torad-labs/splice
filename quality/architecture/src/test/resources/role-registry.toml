@@ -36,9 +36,13 @@
 # differs from its siblings, and each carries a reason saying what it IS. The wall stays useful
 # because ADDING a lambda-shaped port still costs one sentence.
 #
-# HOW TO ADD AN ENTRY. Run `bun checks/role-registry.ts report .` for the census, then write
-# the signature verbatim, today's date, the names, and a reason that says what each role IS. A
-# reason a reviewer cannot check is worse than none, because it looks like work.
+# HOW TO ADD AN ENTRY. The census comes from the law itself — `./gradlew :quality-architecture:test
+# --tests 'splice.quality.RoleRegistryLawTest'` computes it on every run and prints it under the
+# failure that sent you here. (Until 2026-09-21 this line named `bun checks/role-registry.ts report
+# .`; that script was deleted with the port to Kotlin, so the remedy named a command nobody could
+# run, which is an absence wearing a label.) Then write the signature verbatim, today's date, the
+# names, and a reason that says what each role IS. A reason a reviewer cannot check is worse than
+# none, because it looks like work.
 
 # ── 15 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]

@@ -637,7 +637,41 @@ class SchemaKeysConsumedLawTest {
 
         fun violations(with: SchemaKeysConsumed.Policy = policy) = SchemaKeysConsumed.violations(files(), with)
 
+        fun census(with: SchemaKeysConsumed.Policy = policy) = SchemaKeysConsumed.census(files(), with)
+
         fun allow(vararg entries: Pair<String, String>) = policy.copy(allowlist = entries.toList())
+    }
+
+    /** THE CENSUS PORT HAD NO READER — not a test, not a task, nothing in the tree called it. A
+     *  report nobody runs is one nobody can trust on the day it is needed, and that day is always
+     *  a day something else is already red. So it runs here against the same fixture the law's own
+     *  arms use, and its DEAD column is proved to MOVE: green has none, the planted dead key
+     *  produces exactly one, and the header's count moves with it. */
+    @Test
+    fun `the census reads every key and marks the dead one - V4-91`(@TempDir root: File) {
+        with(Tree(root)) {
+            write()
+            val green = census()
+            assertTrue(green.isNotEmpty()) { "the census printed nothing at all" }
+            val examined = SchemaKeysConsumed.unconsumed(files(), policy).examined
+            assertTrue(green.first() == "schema-keys-consumed: $examined key(s), 0 parsed-and-never-acted-on") {
+                "the census header disagrees with the audit it reports on:\n${green.first()}"
+            }
+            assertTrue(green.drop(1).size >= examined) {
+                "fewer lines than keys examined — the census is not printing one line per key:\n" +
+                    green.joinToString("\n")
+            }
+            assertTrue(green.none { "DEAD" in it }) {
+                "the compliant fixture has no dead key:\n" + green.joinToString("\n")
+            }
+
+            write(deadKey = true)
+            val red = census()
+            val dead = red.filter { " DEAD " in it }
+            assertEquals(1, dead.size, "exactly the planted key must read DEAD:\n" + red.joinToString("\n"))
+            assertTrue("zz_dead_dir" in dead.single()) { "the DEAD line must name the key: ${dead.single()}" }
+            assertTrue("1 parsed-and-never-acted-on" in red.first()) { red.first() }
+        }
     }
 
     @Test

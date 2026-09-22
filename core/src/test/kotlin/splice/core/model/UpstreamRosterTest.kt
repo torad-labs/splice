@@ -12,6 +12,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.topology.Dialect
 
+/** The Codex backend's base, named once: two cases assert against it and a wrapped call would put
+ *  the same literal on two lines apiece. */
+private const val CODEX_BASE = "https://chatgpt.com/backend-api/codex"
+
 class UpstreamRosterTest {
 
     private val parser = UpstreamRosterParser()
@@ -32,33 +36,45 @@ class UpstreamRosterTest {
 
     @Test
     fun `each dialect names where it publishes, and an override outranks every default`() {
-        assertEquals("https://api.x.ai/v1/models", UpstreamRosterUrl.of(Dialect.OPENAI_CHAT, "https://api.x.ai/v1", null))
+        assertEquals(
+            "https://api.x.ai/v1/models",
+            UpstreamRosterUrl.of(Dialect.OPENAI_CHAT, "https://api.x.ai/v1", null),
+        )
         assertEquals(
             "https://api.kimi.com/coding/v1/models",
             UpstreamRosterUrl.of(Dialect.ANTHROPIC_PASSTHROUGH, "https://api.kimi.com/coding", null),
         )
         // A trailing slash on base_url must not produce a doubled one.
-        assertEquals("https://api.x.ai/v1/models", UpstreamRosterUrl.of(Dialect.OPENAI_CHAT, "https://api.x.ai/v1/", null))
+        assertEquals(
+            "https://api.x.ai/v1/models",
+            UpstreamRosterUrl.of(Dialect.OPENAI_CHAT, "https://api.x.ai/v1/", null),
+        )
         // DeepSeek: the list is off the dialect's path, so the override is the whole point.
         assertEquals(
             "https://api.deepseek.com/models",
-            UpstreamRosterUrl.of(Dialect.ANTHROPIC_PASSTHROUGH, "https://api.deepseek.com/anthropic", "https://api.deepseek.com/models"),
+            UpstreamRosterUrl.of(
+                Dialect.ANTHROPIC_PASSTHROUGH,
+                "https://api.deepseek.com/anthropic",
+                "https://api.deepseek.com/models",
+            ),
         )
     }
 
     @Test
     fun `the responses dialect has no list until one is named`() {
-        assertEquals(null, UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, "https://chatgpt.com/backend-api/codex", null))
         assertEquals(
-            "https://chatgpt.com/backend-api/codex/models?client_version=1.2.0",
-            UpstreamRosterUrl.of(
-                Dialect.OPENAI_RESPONSES,
-                "https://chatgpt.com/backend-api/codex",
-                "https://chatgpt.com/backend-api/codex/models?client_version=1.2.0",
-            ),
+            null,
+            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, null),
+        )
+        assertEquals(
+            "$CODEX_BASE/models?client_version=1.2.0",
+            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, "$CODEX_BASE/models?client_version=1.2.0"),
         )
         // A blank override is not an answer — it must fall through to the dialect's own verdict.
-        assertEquals(null, UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, "https://chatgpt.com/backend-api/codex", "  "))
+        assertEquals(
+            null,
+            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, "  "),
+        )
     }
 
     // ── parsing ─────────────────────────────────────────────────────────────────
@@ -80,7 +96,9 @@ class UpstreamRosterTest {
 
     @Test
     fun `a display name and a models envelope are both read`() {
-        val moonshot = published("""{"data":[{"id":"kimi-for-coding","display_name":"K2.8 Preview","context_length":1048576}]}""")
+        val moonshot = published(
+            """{"data":[{"id":"kimi-for-coding","display_name":"K2.8 Preview","context_length":1048576}]}""",
+        )
         assertEquals("K2.8 Preview", moonshot.single().label)
         assertEquals(1_048_576L, moonshot.single().contextWindow)
         // llama-server answers under `models`, and a row without a window is "not published", not zero.
@@ -132,7 +150,9 @@ class UpstreamRosterTest {
 
     @Test
     fun `a window over the published ceiling is a fault and a window under it is a cap`() {
-        val upstream = published("""{"data":[{"id":"grok-4.6","context_length":500000},{"id":"grok-4.3","context_length":1000000}]}""")
+        val upstream = published(
+            """{"data":[{"id":"grok-4.6","context_length":500000},{"id":"grok-4.3","context_length":1000000}]}""",
+        )
         val rows = diff.of(listOf(entry("grok-4.6", 1_000_000), entry("grok-4.3", 256_000)), upstream)
         assertEquals(RosterVerdict.OVER_CEILING, verdict(rows, "grok-4.6"))
         assertEquals(RosterVerdict.CAPPED, verdict(rows, "grok-4.3"))
@@ -142,7 +162,9 @@ class UpstreamRosterTest {
 
     @Test
     fun `an id the endpoint does not list is unserved, and a model no row declares is new`() {
-        val upstream = published("""{"data":[{"id":"grok-4.7","context_length":500000},{"id":"grok-4.20","context_length":1000000}]}""")
+        val upstream = published(
+            """{"data":[{"id":"grok-4.7","context_length":500000},{"id":"grok-4.20","context_length":1000000}]}""",
+        )
         val rows = diff.of(listOf(entry("grok-4.6", 500_000)), upstream)
         assertEquals(RosterVerdict.UNSERVED, verdict(rows, "grok-4.6"))
         assertEquals(RosterVerdict.NEW, verdict(rows, "grok-4.7"))

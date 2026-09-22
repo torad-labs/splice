@@ -191,20 +191,31 @@ public class RosterDiff {
         return declaredRows + newRows
     }
 
-    private fun row(entry: ModelEntry, upstream: UpstreamModel?, local: Boolean): RosterRow {
+    /** Split in two on the one question that decides everything below it — did the endpoint list
+     *  this row at all — because a single function carrying both halves sat exactly at detekt's
+     *  cyclomatic ceiling (2026-09-22). The verdicts are unchanged; only the seam is new. */
+    private fun row(entry: ModelEntry, upstream: UpstreamModel?, local: Boolean): RosterRow =
+        if (upstream == null) unmatched(entry, local) else matched(entry, upstream)
+
+    /** The endpoint lists nothing under this id, under any spelling. On a remote provider that is
+     *  the refused turn; on a local runtime it is a naming difference (see [of]). */
+    private fun unmatched(entry: ModelEntry, local: Boolean): RosterRow {
         val bare = ModelTierSuffix.strip(entry.id)
-        if (upstream == null) {
-            return RosterRow(
-                id = entry.id,
-                verdict = if (local) RosterVerdict.SERVED else RosterVerdict.UNSERVED,
-                declaredWindow = entry.contextWindow,
-                note = if (local) {
-                    "the runtime lists no '$bare' — it serves the model it loaded whatever id is sent"
-                } else {
-                    "the endpoint lists no model '$bare' — turns chosen on this row are refused upstream"
-                },
-            )
+        val note = if (local) {
+            "the runtime lists no '$bare' — it serves the model it loaded whatever id is sent"
+        } else {
+            "the endpoint lists no model '$bare' — turns chosen on this row are refused upstream"
         }
+        return RosterRow(
+            id = entry.id,
+            verdict = if (local) RosterVerdict.SERVED else RosterVerdict.UNSERVED,
+            declaredWindow = entry.contextWindow,
+            note = note,
+        )
+    }
+
+    /** The endpoint serves this row, so the verdict is entirely about the WINDOW. */
+    private fun matched(entry: ModelEntry, upstream: UpstreamModel): RosterRow {
         val ceiling = upstream.contextWindow
             ?: return RosterRow(
                 id = entry.id,
@@ -212,7 +223,7 @@ public class RosterDiff {
                 declaredWindow = entry.contextWindow,
                 note = "served; the endpoint publishes no window, so this row's number is unchecked",
             )
-        val aliased = if (upstream.id == bare) "" else " (→ ${upstream.id})"
+        val aliased = aliasNote(entry.id, upstream)
         return when {
             entry.contextWindow > ceiling -> RosterRow(
                 id = entry.id,
@@ -237,4 +248,10 @@ public class RosterDiff {
             )
         }
     }
+
+    /** " (→ <upstream id>)" when the declared row reached this model through an ALIAS, else "" —
+     *  which spelling answered is the difference between a row an operator can verify at the vendor
+     *  and one they cannot find there at all. */
+    private fun aliasNote(declared: String, upstream: UpstreamModel): String =
+        if (upstream.id == ModelTierSuffix.strip(declared)) "" else " (→ ${upstream.id})"
 }

@@ -50,8 +50,11 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
     /** The access token stored for this provider, or null when there is no file, no shape for the
      *  kind, or no token inside. The value is returned, never printed — callers put it on a header. */
     fun accessToken(provider: ProviderConfig): String? {
-        val path = pathFor(provider) ?: return null
-        val shape = shapeFor(provider.auth.kind) ?: return null
+        // One guard, not two returns: "no file for this kind" and "no reader for this kind" are the
+        // same answer to this method's question, and detekt caps a function at three exits.
+        val path = pathFor(provider)
+        val shape = shapeFor(provider.auth.kind)
+        if (path == null || shape == null) return null
         // An unreadable or unparseable credential file is the same answer as an absent one for this
         // method's contract ("splice holds no token") — and the DIAGNOSIS is not lost, because every
         // caller reports the absence itself: `splice add` and `splice doctor` through

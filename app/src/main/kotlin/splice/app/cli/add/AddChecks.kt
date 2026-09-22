@@ -11,9 +11,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.app.auth.LoginIo
+import splice.app.auth.StoredCredential
 import splice.app.daemon.TopologyLoader
-import splice.core.config.KeyStore
-import splice.core.config.KeyStorePath
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
@@ -23,7 +22,6 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import java.nio.file.Path
-import java.nio.file.Paths
 
 private const val HTTP_OK = 200
 private const val LISTED_SHOWN = 10
@@ -43,6 +41,7 @@ internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
     private val json = Json { ignoreUnknownKeys = true }
     private val loginIo = LoginIo()
     private val credentialFile = AddCredentialFile(json)
+    private val credentials = StoredCredential(json)
 
     /** The candidate file must parse as a topology before anyone is asked to sign in. */
     fun parses(text: String): Result<Topology> = Cancellables.runCatchingCancellable { TopologyLoader.parse(text) }
@@ -59,9 +58,9 @@ internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
         return AddCheck("credential", problem == null, problem ?: "present")
     }
 
-    private fun oauthPath(provider: ProviderConfig): Path? =
-        (provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind))
-            ?.let { Paths.get(TopologyLoader.expandHome(it)) }
+    /** [StoredCredential] owns where a kind keeps its file (2026-09-22), so this check and
+     *  `splice models`' bearer lookup cannot drift into two answers. */
+    private fun oauthPath(provider: ProviderConfig): Path? = credentials.pathFor(provider)
 
     /** Any HTTP answer counts — an unauthenticated 401 still proves the endpoint is there. */
     fun reachable(baseUrl: String): AddCheck {
@@ -136,9 +135,7 @@ internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
         return AddCheck("live turn", reply?.status == HTTP_OK, detail)
     }
 
-    private fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
-        if (provider.auth.kind != "api-key") return null
-        val envVar = provider.auth.effectiveApiKeyEnv(key)
-        return env(envVar)?.takeIf { it.isNotBlank() } ?: KeyStore(KeyStorePath.defaultPath(env)).read(envVar)
-    }
+    /** [StoredCredential] owns this too (2026-09-22), for the same reason [oauthPath] delegates. */
+    private fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? =
+        credentials.apiKey(provider, key, env)
 }

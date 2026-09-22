@@ -76,11 +76,6 @@ public data class ModelCatalog(
 
     public val defaultModel: String get() = models.first().id
 
-    // Numeric bracketed tier hints, not arbitrary trailing brackets: a provider that ships ONE id
-    // per model (xAI — grok-4.6 IS 500k) can offer two picker rows over one upstream id, while a
-    // genuine vendor id such as model[preview] still reaches that provider byte-for-byte.
-    private val suffixHint = Regex("\\[\\d+[km]]$", RegexOption.IGNORE_CASE)
-
     // Canonical (suffix-stripped) ids — `contains` and `contextWindowFor` both strip the query the
     // same way. Storing the RAW picker id (e.g. "k3[1m]") let membership pass after the contains
     // fix while contextWindowFor("k3[1m]") looked up stripped "k3" and missed → default 256k window
@@ -112,8 +107,12 @@ public data class ModelCatalog(
 
     /** Discovery wrapper + any valid trailing numeric tier ("[1m]", "[500k]") stripped — what the
      *  upstream actually sees. Only the [<digits><k|m>] grammar strips (DR-27): a non-numeric
-     *  bracket and a malformed tier ride to the wire byte-for-byte. */
-    public fun stripSuffixes(id: String): String = unwrap(id).replace(suffixHint, "")
+     *  bracket and a malformed tier ride to the wire byte-for-byte — a provider that ships ONE id
+     *  per model (xAI — grok-4.6 IS 500k) can offer two picker rows over one upstream id, while a
+     *  genuine vendor id such as model[preview] still reaches that provider byte-for-byte. The
+     *  grammar itself is [ModelTierSuffix] (2026-09-22), so the roster comparison and the wire path
+     *  cannot drift into two readings of what a tier suffix is. */
+    public fun stripSuffixes(id: String): String = ModelTierSuffix.strip(unwrap(id))
 
     /** Exact -> ordered startsWith prefix rules -> default. Order is the law. */
     public fun contextWindowFor(model: String?, defaultOverride: Long? = null): Long {

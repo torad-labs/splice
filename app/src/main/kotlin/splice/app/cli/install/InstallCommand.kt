@@ -86,6 +86,8 @@ private val verbs: Map<String, CommandFactory> = mapOf(
     // add-model` did not parse and the feature was unreachable from argv — the tests construct the
     // verb directly, which is exactly the gap a parse table can hide. Wired 2026-09-16.
     "add-model" to CommandFactory { a -> Command.AddModel(a.drop(1)) },
+    // 2026-09-22: `splice models [provider]` — the endpoint's own roster beside the declared one.
+    "models" to CommandFactory { a -> Command.Models(a.drop(1)) },
     "upgrade" to CommandFactory { a -> Command.Upgrade(a.drop(1)) },
     "status" to CommandFactory { Command.Status },
     "restart" to CommandFactory { Command.Restart },

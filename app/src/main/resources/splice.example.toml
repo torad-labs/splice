@@ -606,6 +606,13 @@ command = "claude-muse"
 dialect = "anthropic-passthrough"
 base_url = "https://api.deepseek.com/anthropic"
 auth = { kind = "api-key", env = "DEEPSEEK_API_KEY" }
+# `splice models` asks each provider what it actually serves and prints that beside the rows
+# below — a model the vendor shipped, a row the vendor retired, and a declared window ABOVE the
+# real ceiling all show up there and nowhere else. It looks for the list where the DIALECT keeps
+# it (openai-chat: <base_url>/models; anthropic-passthrough: <base_url>/v1/models). DeepSeek is
+# the one vendor here that serves its list off the API root rather than under the /anthropic base
+# this dials, so it names the URL instead of splice carrying a per-vendor table.
+models_url = "https://api.deepseek.com/models"
 [providers.deepseek.quirks]
 # The endpoint's OWN accepted set, read out of its deserializer by POSTing an unknown
 # variant (it replies `unknown variant X, expected one of ...`). Derived that way on

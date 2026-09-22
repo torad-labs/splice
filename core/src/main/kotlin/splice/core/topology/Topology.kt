@@ -136,6 +136,12 @@ public data class ProviderConfig(
     /** v0.4.0 (FEATURES.md §10): a user-managed local runtime (Ollama, LM Studio, vLLM) on the
      *  openai-chat dialect. Absent = auto: an openai-chat provider on a loopback base_url is local. */
     val local: Boolean? = null,
+    /** 2026-09-22: where this provider publishes its model list, when that is not where its dialect
+     *  says ([UpstreamRosterUrl]). Read by `splice models` only — never by a turn. It exists so the
+     *  one vendor whose list sits off its own base_url (DeepSeek serves `/models` at the API root
+     *  while splice dials its `/anthropic` base) needs no entry in a per-vendor table: a hardcoded
+     *  vendor table is precisely the hand-authored list this comparison exists to retire. */
+    @SerialName("models_url") val modelsUrl: String? = null,
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean

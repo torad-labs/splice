@@ -11,6 +11,7 @@ import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.doctor.DoctorCommand
 import splice.app.cli.install.InstallCommand
+import splice.app.cli.models.ModelsCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.LogsCommand
@@ -65,6 +66,12 @@ public sealed class Command {
     /** V4-34: `splice add-model` — pick OpenRouter catalog rows through the prompt toolkit. */
     public data class AddModel(val args: List<String> = emptyList()) : Command() {
         override fun run(): Int = outcomeExitCode(AddModelVerb().add(TopologyLoader.configPath()))
+    }
+
+    /** 2026-09-22: `splice models [provider]` — what each provider publishes, against splice.toml.
+     *  Nonzero when a declared row is over a published ceiling or is no longer served. */
+    public data class Models(val args: List<String> = emptyList()) : Command() {
+        override fun run(): Int = outcomeExitCode(ModelsCommand().models(args))
     }
 
     /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */

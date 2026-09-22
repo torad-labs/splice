@@ -102,7 +102,8 @@ internal class ModelsCommand(
         val shown = if (all) fresh else fresh.take(NEW_SHOWN)
         (declared + shown).forEach(::line)
         if (shown.size < fresh.size) {
-            println("    $YELLOW+$RESET $DIM… and ${fresh.size - shown.size} more — `splice models <provider> $ALL_FLAG`$RESET")
+            val more = "… and ${fresh.size - shown.size} more — `splice models <provider> $ALL_FLAG`"
+            println("    $YELLOW+$RESET $DIM$more$RESET")
         }
         val faults = declared.count { it.verdict in FAULTS }
         println(
@@ -128,5 +129,4 @@ internal class ModelsCommand(
         RosterVerdict.UNSERVED -> "$RED✗$RESET"
         RosterVerdict.NEW -> "$YELLOW+$RESET"
     }
-
 }

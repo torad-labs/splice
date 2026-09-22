@@ -4,10 +4,10 @@
 // because SIGKILL is the designed-for case here — earlyoom is active and buildgate sets
 // `choom -n 800`, which nominates a long gradle run as the first thing to die under pressure.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, truncateSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acquireRunSentinel, probeRunSentinel, releaseForTests, sentinelPath } from "../src/lib/sentinel.ts";
+import { acquireRunSentinel, describeOpenRun, probeRunSentinel, releaseForTests, sentinelPath } from "../src/lib/sentinel.ts";
 
 const workspaces: string[] = [];
 function scratchSentinel(): string {
@@ -85,6 +85,37 @@ describe("the gate run sentinel", () => {
     expect(refused, "the second acquire must be refused, not granted a fresh inode").not.toBeNull();
     expect(refused!.headAtStart).toBe("first");
     expect(probeRunSentinel()!.headAtStart, "the first run still owns it").toBe("first");
+  });
+
+  // THE LIFECYCLE ARM, and the shape this suite did not have. Every other arm is a contention or
+  // death scenario — refused, killed, inherited — and each performs at most ONE successful acquire
+  // per path, so none could reach the state a normal day produces: a run finishes, the next starts.
+  // The denominator came from the threat model instead of the lifecycle, and the untested path was
+  // the DESIGNED one. (splice-lead, 2026-09-21)
+  test("the SECOND run of a session is the one reported, not the first", () => {
+    scratchSentinel();
+    expect(acquireRunSentinel("aaaaaaaaaaaa")).toBeNull();
+    releaseForTests();
+    expect(acquireRunSentinel("bbbbbbbbbbbb"), "the path is free again, so B must take it").toBeNull();
+    const open = probeRunSentinel();
+    expect(open!.headAtStart, "a peer must be told the LIVE run, never one that has exited").toBe("bbbbbbbbbbbb");
+    // the field read is what you notice; the record COUNT is the shape that caused it. Asserting
+    // both means a change that makes the reader take the LAST match, rather than fixing the write,
+    // still reds.
+    expect(readFileSync(sentinelPath(), "utf8").match(/^head_at_start=/gm) ?? []).toHaveLength(1);
+  });
+
+  // Liveness may never depend on the metadata being readable. Truncating a held sentinel is the
+  // window the ftruncate opens, and the answer must still be OPEN — with honest "unknown" fields
+  // rather than the `pid 0` a silently-empty record used to report.
+  test("a HELD but unreadable sentinel still reads OPEN, and says unknown rather than pid 0", () => {
+    const path = scratchSentinel();
+    expect(acquireRunSentinel("ccccccccccc")).toBeNull();
+    truncateSync(path, 0);
+    const open = probeRunSentinel();
+    expect(open, "the lock is held, so this must NOT read FREE").not.toBeNull();
+    expect(open!.headAtStart).toBe("unknown");
+    expect(describeOpenRun(open!)).not.toContain("pid 0,");
   });
 
   test("a SIGKILLed run releases it — staleness is inexpressible, not merely detectable", async () => {

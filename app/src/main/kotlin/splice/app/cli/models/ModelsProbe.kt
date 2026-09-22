@@ -5,7 +5,11 @@
 // `x-api-key` and a version header; an openai-chat one wants a bearer. Both are sent where they
 // apply rather than being switched on a provider KEY, because a per-vendor table is the hand-
 // authored list this feature exists to retire. A vendor whose version header differs already
-// declares it in `extra_headers`, and that declaration wins.
+// declares it in `extra_headers`, and that declaration wins — the same precedence a turn uses.
+//
+// A REFUSAL NAMES WHICH REFUSAL IT IS. "The stored credential was rejected" and "splice held no
+// credential to send" are different problems with different fixes, and a 401 alone cannot tell them
+// apart — so whether a bearer was found is carried to the sentence rather than guessed at from it.
 package splice.app.cli.models
 
 import splice.app.auth.StoredCredential
@@ -18,13 +22,8 @@ import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.core.wire.HttpStatus
 
-// 200 stays file-local: HttpStatus deliberately excludes it (that file's "what is not here" note),
-// and every other OK check in :app spells it this way. 401/403 come from there — they are exactly
-// the declarations kt-http-status-single-source exists to keep from drifting into copies.
-private const val HTTP_OK = 200
-
 /** The Anthropic wire requires a version header on every request; a provider that declares its own
- *  in `extra_headers` overrides this default, which is the same precedence a turn uses. */
+ *  in `extra_headers` overrides this default. */
 private const val ANTHROPIC_VERSION_HEADER = "anthropic-version"
 private const val ANTHROPIC_VERSION_DEFAULT = "2023-06-01"
 
@@ -44,56 +43,76 @@ internal class ModelsProbe(
 
     fun probe(key: String, provider: ProviderConfig, env: EnvReader): ProbedProvider {
         val url = UpstreamRosterUrl.of(provider.dialect, provider.baseUrl, provider.modelsUrl)
-            ?: return ProbedProvider(key, provider, null, UpstreamRoster.Unpublished(UpstreamRosterUrl.RESPONSES_HAS_NO_LIST))
+            ?: return unpublished(key, provider, null, UpstreamRosterUrl.RESPONSES_HAS_NO_LIST)
         if (provider.auth.kind == AuthKind.Client.wire) {
-            return ProbedProvider(
-                key,
-                provider,
-                url,
-                UpstreamRoster.Unpublished(
-                    "this provider forwards your own Claude login, so splice holds no credential to ask $url with",
-                ),
-            )
+            val why = "this provider forwards your own Claude login, so splice holds no credential to ask $url with"
+            return unpublished(key, provider, url, why)
         }
-        val reply = http(url, headers(provider, key, env))
-        return ProbedProvider(key, provider, url, read(reply, url, provider, key))
+        val bearer = credentials.bearer(provider, key, env)
+        val answer = http(url, headers(provider, bearer))
+        return ProbedProvider(key, provider, url, read(answer, url, provider, key, bearer != null))
     }
 
-    /** A 401 is the one status worth naming on its own: it is almost always an expired stored
-     *  credential, and the fix is a sign-in rather than anything about the model list. */
-    private fun read(reply: ModelsReply?, url: String, provider: ProviderConfig, key: String): UpstreamRoster = when {
+    private fun unpublished(key: String, provider: ProviderConfig, url: String?, why: String) =
+        ProbedProvider(key, provider, url, UpstreamRoster.Unpublished(why))
+
+    private fun read(
+        answer: ModelsAnswer,
+        url: String,
+        provider: ProviderConfig,
+        key: String,
+        held: Boolean,
+    ): UpstreamRoster = when (answer) {
+        is ModelsAnswer.Answered -> served(answer, url, provider, key, held)
         // A local runtime that is not running is not a configuration fault — it is a process the
         // operator starts when they want it, and failing the verb over it would make `splice models`
         // red on any box where one of three local packs is up.
-        reply == null && provider.isLocal ->
-            UpstreamRoster.Unpublished("nothing answers at $url — this local runtime is not running")
-        reply == null -> UpstreamRoster.Unreadable("nothing answers at $url")
-        reply.status == HTTP_OK -> parser.parse(reply.body, url)
-        reply.status == HttpStatus.UNAUTHORIZED || reply.status == HttpStatus.FORBIDDEN ->
-            UpstreamRoster.Unreadable("$url refused the stored credential (HTTP ${reply.status}) — ${signIn(provider, key)}")
-        else -> UpstreamRoster.Unreadable("HTTP ${reply.status} from $url")
+        is ModelsAnswer.NotListening ->
+            if (provider.isLocal) {
+                UpstreamRoster.Unpublished("nothing answers at $url — this local runtime is not running")
+            } else {
+                UpstreamRoster.Unreadable("nothing answers at $url")
+            }
+        // NOT routed through the local branch above: a URL that does not parse or a TLS failure is a
+        // fault whether the endpoint is on this machine or not, and "not running" would send the
+        // operator to restart a process that is already up.
+        is ModelsAnswer.Failed -> UpstreamRoster.Unreadable("$url could not be asked — ${answer.detail}")
     }
 
-    private fun signIn(provider: ProviderConfig, key: String): String =
-        if (provider.auth.kind == "api-key") {
+    private fun served(
+        answer: ModelsAnswer.Answered,
+        url: String,
+        provider: ProviderConfig,
+        key: String,
+        held: Boolean,
+    ): UpstreamRoster = when {
+        answer.status == HttpStatus.OK -> parser.parse(answer.body, url)
+        answer.status != HttpStatus.UNAUTHORIZED && answer.status != HttpStatus.FORBIDDEN ->
+            UpstreamRoster.Unreadable("HTTP ${answer.status} from $url")
+        held -> UpstreamRoster.Unreadable(
+            "$url refused the stored credential (HTTP ${answer.status}) — ${fix(provider, key)}",
+        )
+        else -> UpstreamRoster.Unreadable(
+            "$url wants a credential and splice holds none for '$key' (${provider.auth.kind}) — ${fix(provider, key)}",
+        )
+    }
+
+    private fun fix(provider: ProviderConfig, key: String): String =
+        if (provider.auth.isApiKey) {
             "set ${provider.auth.effectiveApiKeyEnv(key)} with `splice key set`"
         } else {
-            "sign in again"
+            "run `splice login $key`"
         }
 
-    private fun headers(provider: ProviderConfig, key: String, env: EnvReader): Map<String, String> {
-        val bearer = credentials.bearer(provider, key, env)
-        val declared = provider.staticHeaders
-        return buildMap {
-            put("Accept", "application/json")
-            if (provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH) {
-                put(ANTHROPIC_VERSION_HEADER, ANTHROPIC_VERSION_DEFAULT)
-                bearer?.let { put("x-api-key", it) }
-            }
-            bearer?.let { put("Authorization", "Bearer $it") }
-            // The operator's own declarations last: a vendor that needs a different version header,
-            // an account id or a beta flag says so once, in splice.toml, for turns AND for this.
-            putAll(declared)
+    private fun headers(provider: ProviderConfig, bearer: String?): Map<String, String> = buildMap {
+        put("Accept", "application/json")
+        if (provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH) {
+            put(ANTHROPIC_VERSION_HEADER, ANTHROPIC_VERSION_DEFAULT)
+            bearer?.let { put("x-api-key", it) }
         }
+        bearer?.let { put("Authorization", "Bearer $it") }
+        // The operator's own declarations last: a vendor that needs a different version header, an
+        // account id or a beta flag says so once, in splice.toml, for turns AND for this.
+        putAll(provider.staticHeaders)
     }
 }

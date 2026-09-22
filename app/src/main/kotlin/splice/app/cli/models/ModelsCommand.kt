@@ -31,7 +31,14 @@ import splice.core.model.UpstreamRoster
 import splice.core.topology.DialectWires
 import splice.core.util.EnvReader
 
+// why: the id column is padded to the longest id that still reads as a column rather than a wrap —
+// an aggregator's vendor-prefixed ids ("inclusionai/ling-3.0-flash-vl:free") run past any width, and
+// a row that overruns pushes its own window right instead of truncating an id the operator must be
+// able to copy into splice.toml verbatim.
 private const val ID_PAD = 30
+
+// why: nine digits right-aligns every window splice can declare, up to a 100M-token ceiling, so the
+// numbers form a column an eye can compare without reading them.
 private const val WINDOW_PAD = 9
 
 /** How many undeclared upstream models are printed before the rest become a counted line.
@@ -44,6 +51,11 @@ private const val NEW_SHOWN = 8
 
 /** Print every undeclared upstream model rather than the first [NEW_SHOWN]. */
 private const val ALL_FLAG = "--all"
+
+/** The two verdicts that are CONFIG FAULTS this verb just proved — a window the endpoint will not
+ *  honor, and a row it will refuse. A NEW model is news, not a fault: an operator is allowed to not
+ *  want a model. */
+private val FAULTS = setOf(RosterVerdict.OVER_CEILING, RosterVerdict.UNSERVED)
 
 internal class ModelsCommand(
     private val probe: ModelsProbe = ModelsProbe(),
@@ -117,10 +129,4 @@ internal class ModelsCommand(
         RosterVerdict.NEW -> "$YELLOW+$RESET"
     }
 
-    private companion object {
-        /** The two verdicts that are CONFIG FAULTS this verb just proved — a window the endpoint will
-         *  not honor, and a row it will refuse. A NEW model is news, not a fault: an operator is
-         *  allowed to not want a model. */
-        private val FAULTS = setOf(RosterVerdict.OVER_CEILING, RosterVerdict.UNSERVED)
-    }
 }

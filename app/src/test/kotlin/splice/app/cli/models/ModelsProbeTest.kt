@@ -4,6 +4,7 @@
 package splice.app.cli.models
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.UpstreamRoster
@@ -33,16 +34,18 @@ class ModelsProbeTest {
         local = local,
     )
 
-    private fun probeWith(reply: ModelsReply?) = ModelsProbe(
-        http = { url, headers -> reply.also { asked += url to headers } },
+    private fun probeWith(answer: ModelsAnswer) = ModelsProbe(
+        http = { url, headers -> answer.also { asked += url to headers } },
     )
 
-    private fun roster(provider: ProviderConfig, reply: ModelsReply?): UpstreamRoster =
-        probeWith(reply).probe("test", provider, env).roster
+    private fun roster(provider: ProviderConfig, answer: ModelsAnswer): UpstreamRoster =
+        probeWith(answer).probe("test", provider, env).roster
+
+    private fun ok(body: String) = ModelsAnswer.Answered(200, body)
 
     @Test
     fun `an openai-chat provider is asked at its dialect path with a bearer`() {
-        val answer = roster(provider(), ModelsReply(200, """{"data":[{"id":"m-1","context_length":128000}]}"""))
+        val answer = roster(provider(), ok("""{"data":[{"id":"m-1","context_length":128000}]}"""))
         assertEquals("https://api.example.test/v1/models", asked.single().first)
         assertEquals("Bearer key-abc", asked.single().second["Authorization"])
         assertTrue(answer is UpstreamRoster.Published)
@@ -51,7 +54,7 @@ class ModelsProbeTest {
 
     @Test
     fun `an anthropic provider also gets x-api-key and a version, and its own header wins`() {
-        roster(provider(dialect = Dialect.ANTHROPIC_PASSTHROUGH, baseUrl = "https://api.example.test"), ModelsReply(200, """{"data":[]}"""))
+        roster(provider(dialect = Dialect.ANTHROPIC_PASSTHROUGH, baseUrl = "https://api.example.test"), ok("""{"data":[]}"""))
         val headers = asked.single().second
         assertEquals("https://api.example.test/v1/models", asked.single().first)
         assertEquals("key-abc", headers["x-api-key"])
@@ -61,7 +64,7 @@ class ModelsProbeTest {
         // the operator's splice.toml is the same source a TURN reads.
         roster(
             provider(dialect = Dialect.ANTHROPIC_PASSTHROUGH, baseUrl = "https://api.example.test", headers = mapOf("anthropic-version" to "2026-01-01")),
-            ModelsReply(200, """{"data":[]}"""),
+            ok("""{"data":[]}"""),
         )
         assertEquals("2026-01-01", asked.single().second["anthropic-version"])
     }
@@ -70,27 +73,27 @@ class ModelsProbeTest {
     fun `models_url outranks the dialect path`() {
         roster(
             provider(dialect = Dialect.ANTHROPIC_PASSTHROUGH, baseUrl = "https://api.example.test/anthropic", modelsUrl = "https://api.example.test/models"),
-            ModelsReply(200, """{"data":[]}"""),
+            ok("""{"data":[]}"""),
         )
         assertEquals("https://api.example.test/models", asked.single().first)
     }
 
     @Test
     fun `a refused credential names the sign-in, and any other status names itself`() {
-        val refused = roster(provider(), ModelsReply(401, ""))
+        val refused = roster(provider(), ModelsAnswer.Answered(401, ""))
         assertTrue(refused is UpstreamRoster.Unreadable)
         assertTrue((refused as UpstreamRoster.Unreadable).detail.contains("TEST_API_KEY"))
-        val other = roster(provider(), ModelsReply(404, ""))
+        val other = roster(provider(), ModelsAnswer.Answered(404, ""))
         assertTrue((other as UpstreamRoster.Unreadable).detail.contains("404"))
     }
 
     @Test
     fun `a responses provider and a client-auth provider are unpublished, not failures`() {
-        val responses = roster(provider(dialect = Dialect.OPENAI_RESPONSES), ModelsReply(200, """{"data":[]}"""))
+        val responses = roster(provider(dialect = Dialect.OPENAI_RESPONSES), ok("""{"data":[]}"""))
         assertTrue(responses is UpstreamRoster.Unpublished)
         // Nothing was even asked: there is no URL to ask.
         assertTrue(asked.isEmpty())
-        val client = roster(provider(kind = "client"), ModelsReply(200, """{"data":[]}"""))
+        val client = roster(provider(kind = "client"), ok("""{"data":[]}"""))
         assertTrue(client is UpstreamRoster.Unpublished)
         assertTrue((client as UpstreamRoster.Unpublished).reason.contains("your own Claude login"))
         assertTrue(asked.isEmpty())
@@ -98,11 +101,36 @@ class ModelsProbeTest {
 
     @Test
     fun `a local runtime that is not running is unpublished, while a remote silence is unreadable`() {
-        val down = roster(provider(baseUrl = "http://127.0.0.1:8099/v1"), null)
+        val notListening = ModelsAnswer.NotListening("connection refused")
+        val down = roster(provider(baseUrl = "http://127.0.0.1:8099/v1"), notListening)
         assertTrue(down is UpstreamRoster.Unpublished, "a loopback base_url is local by default")
         assertTrue((down as UpstreamRoster.Unpublished).reason.contains("not running"))
         asked.clear()
-        val remote = roster(provider(), null)
+        val remote = roster(provider(), notListening)
         assertTrue(remote is UpstreamRoster.Unreadable)
+    }
+
+    @Test
+    fun `a transport fault keeps its reason even on a local provider, and is never called not running`() {
+        // The defect this pins: every throwable used to arrive as null, so a malformed models_url on
+        // a loopback provider printed "this local runtime is not running" and sent the operator to
+        // restart a process that was already up.
+        val failed = ModelsAnswer.Failed("no protocol: api.example.test/models")
+        val local = roster(provider(baseUrl = "http://127.0.0.1:8099/v1"), failed)
+        assertTrue(local is UpstreamRoster.Unreadable, "a transport fault is a fault, local or not")
+        val detail = (local as UpstreamRoster.Unreadable).detail
+        assertTrue(detail.contains("no protocol"), "the rendered reason survives: $detail")
+        assertFalse(detail.contains("not running"), "absence must not be printed over a fault: $detail")
+    }
+
+    @Test
+    fun `a refusal says whether splice even held a credential`() {
+        // 401 with a key set and 401 with none are different problems; the status alone cannot say.
+        val held = roster(provider(), ModelsAnswer.Answered(401, ""))
+        assertTrue((held as UpstreamRoster.Unreadable).detail.contains("refused the stored credential"))
+        val none = ModelsProbe(http = { _, _ -> ModelsAnswer.Answered(401, "") })
+            .probe("test", provider(kind = "api-key"), EnvReader { null })
+            .roster
+        assertTrue((none as UpstreamRoster.Unreadable).detail.contains("splice holds none"), none.detail)
     }
 }

@@ -47,15 +47,15 @@ public data class UpstreamModel(
 
 /** What asking a provider for its model list yielded. Three outcomes, never collapsed into two: a
  *  dialect that publishes no list and an endpoint that refused to serve one have different fixes. */
-public sealed interface UpstreamRoster {
+public sealed class UpstreamRoster {
     /** The endpoint answered with a list. May legitimately be empty. */
-    public data class Published(public val models: List<UpstreamModel>) : UpstreamRoster
+    public data class Published(public val models: List<UpstreamModel>) : UpstreamRoster()
 
     /** This provider shape has no list to ask for; [reason] says why, in the operator's terms. */
-    public data class Unpublished(public val reason: String) : UpstreamRoster
+    public data class Unpublished(public val reason: String) : UpstreamRoster()
 
     /** There is a list, and it could not be read: unreachable, refused, or not a model list. */
-    public data class Unreadable(public val detail: String) : UpstreamRoster
+    public data class Unreadable(public val detail: String) : UpstreamRoster()
 }
 
 /** The trailing numeric tier hint a picker row may carry — `[1m]`, `[500k]` — declared ONCE.

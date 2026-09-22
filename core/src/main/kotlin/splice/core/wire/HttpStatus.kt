@@ -19,12 +19,14 @@
 // :upstream cannot import :daemon-head — so any module below the top of that fan-in is the only
 // place all of them can reach. Core is the floor they share.
 //
-// WHAT IS DELIBERATELY NOT HERE. 200/202 (HTTP_OK, HTTP_ACCEPTED, OK_STATUS) are left as they are:
-// the wall's subject is a status DECLARATION that had drifted into copies, and 200 was never
-// flagged or duplicated across modules — converting it would perturb a baselined COPY group for
-// no correctness gain. The same goes for the non-status magnitudes that merely look like statuses
-// (499/599 range ends, 501, 202): they are not codes any site answers with, so they stay local
-// until something makes them a second site.
+// 200 IS HERE NOW (2026-09-22), AND THE TEN EXISTING HTTP_OK COPIES ARE NOT TOUCHED. The original
+// note said 200 was "left as it is" because converting it would perturb a baselined COPY group for
+// no correctness gain — which still holds for those ten. What changed is the other direction: a
+// NEW site (`splice models`) had no way to name 200 except by making the group eleven, and
+// ConstSingleSourceLawTest fails a group that GROWS. So the member exists for new code to reach
+// for, the ten stay where they are, and the group stops growing. The non-status magnitudes that
+// merely look like statuses (499/599 range ends, 501, 202) are still not codes any site answers
+// with, so they stay local until something makes them a second site.
 //
 // WALL: quality/rules/kotlin/kt-http-status-single-source.yml names THIS path in its `ignores:` —
 // the sole allowed declaration site, exempt BY PATH, so no other file can claim the exemption.
@@ -33,6 +35,9 @@ package splice.core.wire
 /** Every HTTP status code splice names, in one place. A member here is a WIRE fact and nothing
  *  more: what a status MEANS for retry or refusal stays with the module that decides it. */
 public object HttpStatus {
+
+    /** The endpoint answered, and answered successfully. */
+    public const val OK: Int = 200
 
     /** The client sent something the head cannot parse, or a model it does not proxy. */
     public const val BAD_REQUEST: Int = 400

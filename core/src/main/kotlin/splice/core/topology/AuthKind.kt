@@ -17,6 +17,14 @@
 // the operator chooses — the split lets the native apps and the splice heads use different accounts.
 package splice.core.topology
 
+/** The wire spelling of the one scheme that is deliberately NOT a registered [AuthKind]: a key
+ *  splice holds, named by env var, with no credential file and no refresh to model. It is still a
+ *  domain fact, and it was being re-typed as a bare "api-key" literal at each call site — which
+ *  ConstSingleSourceLawTest caught the moment a second file declared a const for it (2026-09-22).
+ *  Compare through [AuthConfig.isApiKey] rather than against this directly wherever an AuthConfig
+ *  is in hand. */
+public const val API_KEY_WIRE: String = "api-key"
+
 public sealed class AuthKind(
     public val wire: String,
     public val defaultAuthFile: String?,

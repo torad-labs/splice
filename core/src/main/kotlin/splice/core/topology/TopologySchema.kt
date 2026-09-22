@@ -52,6 +52,9 @@ public data class AuthConfig(
     val file: String? = null,
     val env: String? = null,
 ) {
+    /** True for the api-key scheme — [API_KEY_WIRE], declared once beside the registered kinds. */
+    public val isApiKey: Boolean get() = kind == API_KEY_WIRE
+
     /** The api-key env var a head actually reads: the explicit [env], else the derived
      *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a
      *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */

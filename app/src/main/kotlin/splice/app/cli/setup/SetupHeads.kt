@@ -13,6 +13,7 @@ import splice.app.cli.prompt.SelectOption
 import splice.app.cli.prompt.WizardFrame
 import splice.app.cli.upgrade.DaemonRestart
 import splice.app.daemon.TopologyLoader
+import splice.core.topology.API_KEY_WIRE
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -132,4 +133,7 @@ private val TICK_EXCLUDED = mapOf(
     "api-key" to "needs a base URL; run: splice add api-key --base-url URL --name NAME",
 )
 
-internal const val API_KEY_KIND = "api-key"
+// The literal itself lives in :core beside the registered kinds (API_KEY_WIRE, 2026-09-22); this
+// name stays because the call sites here compare a PROFILE's declared authKind string, not an
+// AuthConfig, so AuthConfig.isApiKey is not the accessor they can use.
+internal const val API_KEY_KIND = API_KEY_WIRE

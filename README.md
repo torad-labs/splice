@@ -194,6 +194,7 @@ splice status         # per-head status
 splice doctor         # check the whole install; every failing check prints its fix
 splice doctor --json  # the same as a redacted, shareable report (--with-logs, --out FILE, --live)
 splice add <profile>  # add a provider + head without editing TOML (codex|grok|kimi|muse|claude|api-key)
+splice models         # what each provider ACTUALLY serves, against your declared rows (--all, or one provider)
 splice upgrade        # verified upgrade to the latest release (--to vX, --now, --rollback)
 splice sessions       # the Claude Code sessions on this machine, joined to their heads
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)

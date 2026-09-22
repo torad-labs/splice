@@ -37,7 +37,7 @@
 // (hostshield MANIFEST.toml:38, `owner = true`), and borrowing another component's runtime directory
 // couples this to a layout we do not control.
 import { dlopen, FFIType, suffix } from "bun:ffi";
-import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import { closeSync, ftruncateSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const LOCK_EX = 2;
@@ -46,6 +46,8 @@ const LOCK_NB = 4;
 const { symbols: libc } = dlopen(`libc.${suffix}.6`, {
   flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
 });
+
+const UNKNOWN_RUN: OpenRun = { headAtStart: "unknown", start: "unknown", pid: 0 };
 
 export interface OpenRun {
   readonly headAtStart: string;
@@ -77,9 +79,18 @@ export function acquireRunSentinel(headAtStart: string): OpenRun | null {
   if (libc.flock(fd, LOCK_EX | LOCK_NB) !== 0) {
     const open = readOpenRun(path);
     closeSync(fd);
-    return open ?? { headAtStart: "unknown", start: "unknown", pid: 0 };
+    return open ?? UNKNOWN_RUN;
   }
-  writeSync(fd, `head_at_start=${headAtStart}\nstart=${new Date().toISOString()}\npid=${process.pid}\n`, 0);
+  // TRUNCATE AFTER THE LOCK, BEFORE THE WRITE. `a+` is the only safe OPEN mode — `w+` would truncate
+  // a live holder's metadata before we know whether we get the lock — but it sets O_APPEND, and on
+  // Linux a positional write on an O_APPEND fd IGNORES the offset and appends anyway (pwrite(2),
+  // BUGS; contrary to POSIX). So the offset-0 write this replaced appended a record instead of
+  // overwriting one, records accumulated for the life of the file, and readOpenRun's non-global
+  // .match() returned the OLDEST — every HELD report naming the first run since boot, because tmpfs
+  // clears only on reboot. Safe by the same argument that fixed the ordering: no rename, no new
+  // inode, and any reader that matters takes the lock first. (splice-lead, 2026-09-21)
+  ftruncateSync(fd, 0);
+  writeSync(fd, `head_at_start=${headAtStart}\nstart=${new Date().toISOString()}\npid=${process.pid}\n`);
   held = fd;
   return null;
 }
@@ -90,7 +101,11 @@ export function probeRunSentinel(): OpenRun | null {
   mkdirSync(dirname(path), { recursive: true });
   const fd = openSync(path, "a+");
   const free = libc.flock(fd, LOCK_EX | LOCK_NB) === 0;
-  const open = free ? null : readOpenRun(path);
+  // LIVENESS IS THE LOCK, NEVER THE CONTENTS. With readOpenRun now able to return null, a bare
+  // `free ? null : readOpenRun(path)` would return null while the file is HELD-but-unreadable, and a
+  // caller reads null as FREE — turning a metadata lie into a liveness lie, which is the one thing
+  // this file may not do. Coalescing here keeps exit 0/1 answering the flock alone.
+  const open = free ? null : (readOpenRun(path) ?? UNKNOWN_RUN);
   closeSync(fd); // closing releases the probe's own lock; the holder's is untouched
   return open;
 }
@@ -103,12 +118,22 @@ function readOpenRun(path: string): OpenRun | null {
     return null;
   }
   const field = (name: string): string => text.match(new RegExp(`^${name}=(.*)$`, "m"))?.[1]?.trim() ?? "";
+  // Without this the fallbacks below are DEAD CODE: this returns null only when readFileSync throws,
+  // which cannot happen on a path just opened successfully. An empty or malformed file matched no
+  // field, every field fell through to "", and the caller got a non-null record reading `pid 0`
+  // instead of an honest "unknown" — true today for any partially-written sentinel, and true for the
+  // microsecond window the ftruncate above opens. (splice-lead, 2026-09-21)
+  if (field("head_at_start") === "") return null;
   const pid = Number.parseInt(field("pid"), 10);
   return { headAtStart: field("head_at_start"), start: field("start"), pid: Number.isNaN(pid) ? 0 : pid };
 }
 
 export function describeOpenRun(open: OpenRun): string {
-  return `pid ${open.pid}, started ${open.start}, HEAD at start ${open.headAtStart}`;
+  // pid 0 is the ABSENCE of a pid, never a process — rendering it literally is the same misreport
+  // the "unknown" fields exist to prevent, and it is the one field a reader is most likely to go
+  // check against /proc, where an arbitrary old number can match a recycled, unrelated process.
+  const pid = open.pid === 0 ? "unknown" : String(open.pid);
+  return `pid ${pid}, started ${open.start}, HEAD at start ${open.headAtStart}`;
 }
 
 /** Test seam only: drop the lock inside one process so an arm can prove both states. */

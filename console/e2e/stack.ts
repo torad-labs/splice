@@ -295,14 +295,20 @@ async function postTurn(headPort: number, key: string, body: unknown, headers: R
   }
 }
 
-/** One plain turn through a head. Exported: a journey drives its own turn after a console write. */
-export async function driveOneTurn(headPort: number, key: string): Promise<void> {
-  await postTurn(headPort, key, {
-    model: STACK.model,
-    max_tokens: 64,
-    stream: true,
-    messages: [{ role: 'user', content: TURN_PROMPT }],
-  });
+/** One plain turn through a head. Exported: a journey drives its own turn after a console write.
+ *  With `sessionId` the turn carries the client's session header, so its perf row is tagged to it. */
+export async function driveOneTurn(headPort: number, key: string, sessionId?: string): Promise<void> {
+  await postTurn(
+    headPort,
+    key,
+    {
+      model: STACK.model,
+      max_tokens: 64,
+      stream: true,
+      messages: [{ role: 'user', content: TURN_PROMPT }],
+    },
+    sessionId === undefined ? {} : { 'x-claude-code-session-id': sessionId },
+  );
 }
 
 /** The sender's turn after its SendMessage call: the call is the last assistant message of the
@@ -401,6 +407,10 @@ export async function startStack(): Promise<Stack> {
       if (child.exitCode === null) child.kill('SIGKILL');
     }
     await new Promise<void>((ok) => mock.close(() => ok()));
+    // A route that threw is logged by the daemon (RouteFailure) and nowhere else, and the home is
+    // about to go: the lines reach the run's own output, so a journey's 500 names its cause.
+    const failures = readFileSync(log, 'utf8').split('\n').filter((line) => /\[control\] \S+ \S+ failed: /.test(line));
+    if (failures.length > 0) console.log(`console e2e: the daemon answered route failures:\n${failures.join('\n')}`);
     if (process.env.CONSOLE_E2E_KEEP === undefined) rmSync(home, { recursive: true, force: true });
     else console.log(`console e2e: kept ${home}`);
   };

@@ -41,8 +41,8 @@ internal class PerfCommand {
         val statePaths = StatePaths(envReader = envReader)
         println("${BOLD}splice perf$RESET $DIM— last ${window.label} per head, from the perf files$RESET")
         heads.forEach { key ->
-            val s = summary.summarize(PerfRowsFileSource(statePaths.perfStatsFile(key)), window)
-            printHead(key, s)
+            val rows = PerfRowsFileSource(statePaths.perfStatsFile(key), statePaths.perfArchiveDir)
+            printHead(key, summary.summarize(rows, window))
         }
         return true
     }

@@ -103,16 +103,16 @@ class ClaudeHeadRoutesWiringTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val key = mgmt.get()
-        val port = ServerSocket(0).use { it.localPort }
         val control = ControlServer(
-            port = port,
+            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = mapOf("claude-splice" to managedHead(tmp.resolve(".claude-claude-splice"))),
             config = ConfigService(paths),
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html>" },
             log = { },
         )
-        control.start()
+        runBlocking { control.start() }
+        val port = control.listeningPort
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
             runBlocking {

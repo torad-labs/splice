@@ -6,13 +6,18 @@
 // should read rather than a strip that silently stops updating. It also carries what the rack has
 // no column for: the day the counts start at, which the daemon sends rather than letting the
 // console guess a boundary.
+//
+// Below it, what governs the repo, from the same row: the compaction rules a compaction here resolves
+// to and, per head, the trusted root its statusline probes the repo under. Both read the row this
+// detail polls; neither starts a read of its own.
 import { useEffect } from 'react';
 import { startProjectPolling, useProject } from '@entities/project';
-import type { ProjectRow } from '@entities/project';
+import type { ProjectCompactionRule, ProjectRow } from '@entities/project';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
-import { Strip, StripField } from '@shared/ui';
+import { Empty, Strip, StripField } from '@shared/ui';
 import type { Basis } from '@shared/ui';
+import { CompactionRuleStrip } from '@widgets/compaction-rule';
 import { S } from './strings';
 
 export interface DetailField {
@@ -90,4 +95,70 @@ export function ProjectDetail({ id, row }: { id: string; row?: ProjectRow | unde
       </Strip>
     </>
   );
+}
+
+// ── what governs the repo (FEATURES.md 4.14: "its compaction scope and the effective instructions,
+// the statusline roots entry") ───────────────────────────────────────────────────────────────────
+
+/** Said when the daemon never wired its compaction table: the row's `compaction` is null, which is
+ *  the daemon's failure to report, not "no rule" — printing no rule there would be a confident false
+ *  negative about instructions the daemon may be compacting with. */
+export const COMPACTION_UNWIRED = 'the daemon did not wire its compaction table';
+
+/** No rule applies anywhere in this repo: the client's own compaction instructions stand. */
+export const CLIENT_OWN = { text: 'no rule applies here: the client instructions stand', source: '[compaction] in splice.toml' };
+
+export type CompactionView =
+  | { kind: 'unwired' }
+  | { kind: 'client' }
+  | { kind: 'rules'; rules: ProjectCompactionRule[] };
+
+/** The three different facts the row's `compaction` can carry, kept apart. */
+export function compactionViewOf(row: ProjectRow): CompactionView {
+  if (row.compaction === null) return { kind: 'unwired' };
+  return row.compaction.length === 0 ? { kind: 'client' } : { kind: 'rules', rules: row.compaction };
+}
+
+/** A head's statusline entry as printed. `none` is the asked-and-nothing answer: the repo lies
+ *  outside every trusted root of that head, so its statusline shows no branch here. */
+export function statuslineFieldsOf(row: ProjectRow): { head: string; root: string; entry: string }[] {
+  return row.statusline_roots.map((entry) => ({
+    head: entry.head,
+    root: entry.root ?? S.none,
+    entry: entry.entry ?? S.none,
+  }));
+}
+
+/** The row ProjectDetail polls, for THIS id only: these sections start no read of their own. */
+function useOpenRow(id: string, row: ProjectRow | undefined): ProjectRow | null {
+  const state = useProject((s) => s);
+  return row ?? (state.data !== null && state.data.id === id ? state.data : null);
+}
+
+export function ProjectCompaction({ id, row }: { id: string; row?: ProjectRow | undefined }) {
+  const data = useOpenRow(id, row);
+  if (data === null) return null;
+  const view = compactionViewOf(data);
+  if (view.kind === 'unwired') return <Fault message={COMPACTION_UNWIRED} />;
+  if (view.kind === 'client') return <Empty text={CLIENT_OWN.text} source={CLIENT_OWN.source} />;
+  return view.rules.map((rule) => <CompactionRuleStrip key={`${rule.scope}:${rule.source}`} rule={rule} />);
+}
+
+export function ProjectStatusline({ id, row }: { id: string; row?: ProjectRow | undefined }) {
+  const data = useOpenRow(id, row);
+  if (data === null) return null;
+  const heads = statuslineFieldsOf(data);
+  if (heads.length === 0) return <Empty text="no heads configured" source="/api/projects/{id}" />;
+  return heads.map((head) => (
+    <Strip
+      key={head.head}
+      edge={head.root === S.none ? 'grey' : 'green'}
+      edgeLabel={head.root === S.none ? S.untrusted : S.trusted}
+      ariaLabel={`${S.statusline} ${head.head}`}
+    >
+      <StripField w={14} label={S.head} value={head.head} mono={false} />
+      <StripField w={44} label={S.root} value={head.root} />
+      <StripField w={18} label={S.entry} value={head.entry} mono={false} />
+    </Strip>
+  ));
 }

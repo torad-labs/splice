@@ -46,7 +46,6 @@ import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -82,8 +81,11 @@ class HeadServerReviewTest {
         mock.stop()
     }
 
+    /** Heads built so far: each one's store files are keyed by it, since the port it binds (0, so
+     *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
+    private var built = 0
+
     private fun buildHead(
-        port: Int,
         gate: InflightGate,
         matGate: RequestMaterializationGate,
         ratelimitFile: Path,
@@ -105,9 +107,10 @@ class HeadServerReviewTest {
             configEffort = "high",
             configSummary = "detailed",
         )
+        val id = ++built
         return HeadServer(
             provider = provider,
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
@@ -115,15 +118,13 @@ class HeadServerReviewTest {
                 log = {},
                 seams = HeadDeps.HeadSeams(waiter = waiter, requestMaterializationGate = matGate),
             ).copy(
-                // This rig keys its store files by port and points the RATE-LIMIT store at a file the
+                // This rig keys its store files per head and points the RATE-LIMIT store at a file the
                 // assertions read directly, so the default stores would not be the ones under test.
-                stores = headStores(tmp, suffix = "-$port")
-                    .copy(usageStore = UsageStore(tmp.resolve("usage-$port.json"), ratelimitFile)),
+                stores = headStores(tmp, suffix = "-$id")
+                    .copy(usageStore = UsageStore(tmp.resolve("usage-$id.json"), ratelimitFile)),
             ),
         )
     }
-
-    private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
     // Dead-air wall: the Responses backend commits 200 + headers, then reasons for seconds before
     // any content event. message_start needs nothing from upstream, so the client must see the turn
@@ -133,14 +134,13 @@ class HeadServerReviewTest {
     // then arrive only after the latch releases.
     @Test
     fun `message_start reaches the client while upstream is still silent`() = runBlocking {
-        val port = freshPort()
         val head = buildHead(
-            port,
             InflightGate(maxInflight = { 4 }),
             RequestMaterializationGate(),
             tmp.resolve("rl-hs.json"),
         )
         head.start()
+        val port = head.port
         mock.resetStartHold()
         val opened = CompletableDeferred<Long>()
         try {
@@ -226,7 +226,6 @@ class HeadServerReviewTest {
     @Test
     fun `a waiter promoted during the stop drain is bounced with 529 head-is-stopping`() = runBlocking {
         val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
-        val port = freshPort()
         // The stop drain's FIRST wait is the event "accepting is already false": HeadServer.stopLocked
         // closes the window before its drain loop ever waits. Armed only for the restart, because the
         // same seam paces every backoff on the turn path; the wait itself stays real.
@@ -237,8 +236,10 @@ class HeadServerReviewTest {
             if (drainArmed.get()) draining.complete(Unit)
             processWaiter.wait(ms)
         }
-        val head = buildHead(port, gate, RequestMaterializationGate(), tmp.resolve("rl-e.json"), drainWaiter)
+        val head = buildHead(gate, RequestMaterializationGate(), tmp.resolve("rl-e.json"), drainWaiter)
         head.start()
+        // Read once, before the restart below rebinds a fresh OS-assigned port: both turns go to this one.
+        val port = head.port
         try {
             // req1 holds the one inflight slot until we release the mock latch.
             val req1 = async(Dispatchers.IO) { turn(port, "hold").bodyAsText() }
@@ -270,9 +271,9 @@ class HeadServerReviewTest {
     @Test
     fun `count_tokens 529s with the busy shape when the materialization gate is saturated`() = runBlocking {
         val matGate = RequestMaterializationGate(maxConcurrent = 1)
-        val port = freshPort()
-        val head = buildHead(port, InflightGate(maxInflight = { 4 }), matGate, tmp.resolve("rl-g.json"))
+        val head = buildHead(InflightGate(maxInflight = { 4 }), matGate, tmp.resolve("rl-g.json"))
         head.start()
+        val port = head.port
         try {
             // Hold the sole materialization permit so count_tokens' fast-fail lease is contended.
             val acquired = CompletableDeferred<Unit>()
@@ -303,9 +304,9 @@ class HeadServerReviewTest {
     @Test
     fun `upstream rate-limit headers survive to durable UsageStore state`() = runBlocking {
         val ratelimitFile = tmp.resolve("rl-i.json")
-        val port = freshPort()
-        val head = buildHead(port, InflightGate(maxInflight = { 4 }), RequestMaterializationGate(), ratelimitFile)
+        val head = buildHead(InflightGate(maxInflight = { 4 }), RequestMaterializationGate(), ratelimitFile)
         head.start()
+        val port = head.port
         try {
             // A successful turn whose response carries x-ratelimit-* headers.
             assertEquals(200, turn(port, "ratelimit").status.value)
@@ -325,14 +326,13 @@ class HeadServerReviewTest {
     @Test
     fun `a stream torn before any client frame ends as one honest error, not a truncated 200`() =
         runBlocking {
-            val port = freshPort()
             val head = buildHead(
-                port,
                 InflightGate(maxInflight = { 4 }),
                 RequestMaterializationGate(),
                 tmp.resolve("rl-h.json"),
             )
             head.start()
+            val port = head.port
             try {
                 val before = mock.upstreamBodies.count { it.first == "tear" }
                 val resp = turn(port, "tear")

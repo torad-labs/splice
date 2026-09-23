@@ -12,6 +12,7 @@
 package splice.app.auth
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
@@ -20,6 +21,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.models.list.ModelCredentialSource
 import splice.provider.codex.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
 import splice.provider.kimi.KimiCredentialShape
@@ -50,7 +52,16 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
     /** The token stored for this provider that a request presents ([CredentialShape.presented] — the
      *  access token, or Muse's minted api_key), or null when there is no file, no shape for the kind,
      *  or no token inside. The value is returned, never printed — callers put it on a header. */
-    fun presentedToken(provider: ProviderConfig): String? {
+    fun presentedToken(provider: ProviderConfig): String? =
+        stored(provider)?.let { (shape, root) -> shape.presented(root) }?.takeIf { it.isNotBlank() }
+
+    /** When the stored token expires, in epoch milliseconds, or null when there is no file, no shape
+     *  for the kind, or no expiry the shape can read (Codex's comes from the access token's JWT `exp`). */
+    fun expiresAtMs(provider: ProviderConfig): Long? =
+        stored(provider)?.let { (shape, root) -> shape.material(root)?.expiresAtMs }
+
+    /** This provider's credential file, parsed, with the shape that reads it; null when either is absent. */
+    private fun stored(provider: ProviderConfig): Pair<CredentialShape, JsonObject>? {
         // One guard, not two returns: "no file for this kind" and "no reader for this kind" are the
         // same answer to this method's question, and detekt caps a function at three exits.
         val path = pathFor(provider)
@@ -67,7 +78,7 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-22: absence is this method's whole contract; every caller names the absence itself (see above).
         val root = Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
             .getOrNull() ?: return null
-        return shape.presented(root)?.takeIf { it.isNotBlank() }
+        return shape to root
     }
 
     /** The api-key this provider authenticates with: the environment first, then splice's own key
@@ -81,4 +92,13 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
     /** The bearer to present for this provider, whichever way it authenticates. */
     fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
         apiKey(provider, key, env) ?: presentedToken(provider)
+}
+
+/** The model probe's view of [StoredCredential]: the bearer a request presents and when it expires. */
+internal class StoredModelCredentials(private val stored: StoredCredential = StoredCredential()) :
+    ModelCredentialSource {
+    override fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
+        stored.bearer(provider, key, env)
+
+    override fun expiresAtMs(provider: ProviderConfig): Long? = stored.expiresAtMs(provider)
 }

@@ -15,10 +15,11 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import type { CompactPayload } from '@shared/api';
 import { startCompactPolling, startInstructionsPolling, useCompact, useInstructions } from '@entities/compact-stats';
-import type { InstructionRule, InstructionsState } from '@entities/compact-stats';
+import type { InstructionsState } from '@entities/compact-stats';
 import { Blank, Fault } from '@shared/controls';
-import { Bay, Reveal, Strip, StripField } from '@shared/ui';
+import { Bay, Reveal } from '@shared/ui';
 import { CompactFeed } from '@widgets/compact-feed';
+import { CompactionRuleStrip } from '@widgets/compaction-rule';
 import { dispositions } from './coverage';
 import { S } from './strings';
 import './compaction.css';
@@ -45,26 +46,6 @@ export const LAW_TEXT =
   + 'reasoning off the session and miss the backend prompt cache on the whole transcript, which is '
   + 'the most expensive turn class there is. This page reads outcomes; it never offers a model.';
 
-/** A rule's length as printed: the live character count, `opt-out` for an empty text (the client's
- *  own instructions stand), and `unavailable` when the rule's file cannot be read (its source label
- *  says so too). Zero is never printed as a length: it is a decision, not a size. */
-export function charsText(chars: number | null): string {
-  if (chars === null) return S.unavailable;
-  return chars === 0 ? S.optOut : String(chars);
-}
-
-/** One configured rule. */
-function RuleStrip({ rule }: { rule: InstructionRule }) {
-  return (
-    <Strip edge="grey" edgeLabel={S.rule} ariaLabel={`${S.instruction} ${rule.source}`}>
-      <StripField w={14} label={S.scope} value={rule.scope} mono={false} />
-      <StripField w={44} label={S.source} value={rule.source} mono={false} />
-      <StripField w={12} label={S.chars} value={charsText(rule.chars)} />
-      <StripField w={36} label={S.heads} value={rule.heads.join(' ')} mono={false} />
-    </Strip>
-  );
-}
-
 /** The rules bay: a rule per strip, every head that could not be asked named in the daemon's
  *  words, and no rule at all said as what it means. */
 export function InstructionsBay({ instructions, error = null }: { instructions: InstructionsState | null; error?: string | null }) {
@@ -84,7 +65,9 @@ export function InstructionsBay({ instructions, error = null }: { instructions: 
             empty: { text: 'no rule configured: the client instructions stand', source: '[compaction] in splice.toml' },
           })}
       >
-        {instructions?.rules.map((rule) => <RuleStrip key={`${rule.scope}:${rule.source}`} rule={rule} />)}
+        {instructions?.rules.map((rule) => (
+          <CompactionRuleStrip key={`${rule.scope}:${rule.source}`} rule={rule} heads={rule.heads} />
+        ))}
       </Bay>
     </section>
   );

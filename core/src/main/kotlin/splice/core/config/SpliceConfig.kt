@@ -63,6 +63,10 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     /** V4-174: how many UTC days of trace files a traced head keeps; at least one. */
     public val traceRetentionDays: Int get() = long(Knob.TRACE_RETENTION_DAYS).toInt().coerceAtLeast(1)
 
+    /** V4-133: how many days of retired perf generations a head archives; 0 turns the archive off,
+     *  which is the one-generation rotate every install had before it. */
+    public val perfArchiveRetentionDays: Int get() = long(Knob.PERF_ARCHIVE_RETENTION_DAYS).toInt().coerceAtLeast(0)
+
     /** V4-174: the longest body a trace record keeps whole, in characters; at least one. */
     public val traceMaxBodyChars: Int
         get() = long(Knob.TRACE_MAX_BODY_CHARS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()

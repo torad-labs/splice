@@ -12,6 +12,7 @@ import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
 import splice.control.HeadTrees
 import splice.control.LaunchSpec
+import splice.control.ModelTiers
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
@@ -69,9 +70,12 @@ internal class LaunchSpecFactory(
             discoveryPrefix = head.discoveryPrefix,
             availableModelIds = ctx.catalog.availableModelIds(),
             modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
-            modelSlots = head.models.orEmpty().mapNotNull { model ->
-                model.slot?.let { slot -> model.id to slot }
-            }.toMap(),
+            tiers = ModelTiers(
+                slots = head.models.orEmpty().mapNotNull { model ->
+                    model.slot?.let { slot -> model.id to slot }
+                }.toMap(),
+                candidates = ctx.catalog.tierModelIds(),
+            ),
             // The pinned row's declared window (ModelCatalog.clientLaunchWindow): exact numbers on
             // the row a session starts on; every other row, and a window edited later in the TOML,
             // is applied by usage scaling on the wire against the window the session really runs

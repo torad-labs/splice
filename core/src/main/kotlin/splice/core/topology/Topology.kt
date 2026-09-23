@@ -24,10 +24,12 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
+import splice.core.model.DiscoveredModel
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
+import splice.core.model.ModelTierSuffix
 import splice.core.model.WindowRule
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptMode
@@ -137,11 +139,15 @@ public data class ProviderConfig(
      *  openai-chat dialect. Absent = auto: an openai-chat provider on a loopback base_url is local. */
     val local: Boolean? = null,
     /** 2026-09-22: where this provider publishes its model list, when that is not where its dialect
-     *  says ([UpstreamRosterUrl]). Read by `splice models` only — never by a turn. It exists so the
-     *  one vendor whose list sits off its own base_url (DeepSeek serves `/models` at the API root
-     *  while splice dials its `/anthropic` base) needs no entry in a per-vendor table: a hardcoded
-     *  vendor table is precisely the hand-authored list this comparison exists to retire. */
+     *  says ([UpstreamRosterUrl]). Read by the daemon at start, to discover the models its heads
+     *  offer, and by `splice models` — never by a turn. It exists so the one vendor whose list sits
+     *  off its own base_url (DeepSeek serves `/models` at the API root while splice dials its
+     *  `/anthropic` base) needs no entry in a per-vendor table: a hardcoded vendor table is precisely
+     *  the hand-authored list discovery exists to retire. */
     @SerialName("models_url") val modelsUrl: String? = null,
+    /** 2026-09-22: which of the models this provider's endpoint publishes join its heads' pickers
+     *  beyond the [models] declared here. Absent = every published model that can run a turn. */
+    val discovery: ModelDiscoveryConfig = ModelDiscoveryConfig(),
 ) {
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean
@@ -212,9 +218,18 @@ public data class ProviderConfig(
      *  — which is why it lives on the provider and takes the head, and why the two types stay in one
      *  file. A non-empty [HeadConfig.models] is an ordered per-head allowlist; an absent list preserves
      *  the provider-wide surface for older topologies. [contextWindowOverride] wins over the declared
-     *  per-head window and, when positive, replaces the window on every selected entry. */
-    public fun catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
-        val selectedModels = withHeadRates(modelsFor(head), head.rates)
+     *  per-head window and, when positive, replaces the window on every selected entry.
+     *
+     *  2026-09-22: [discovered] is what the provider's list endpoint published at daemon start. The
+     *  provider's surface is its declared rows, then every published model no declared row already
+     *  covers ([rosterWith]); an allowlist may name either kind. Empty = the declared rows alone,
+     *  exactly the catalog every topology produced before discovery. */
+    public fun catalogFor(
+        head: HeadConfig,
+        contextWindowOverride: Long? = null,
+        discovered: List<DiscoveredModel> = emptyList(),
+    ): ModelCatalog {
+        val selectedModels = withHeadRates(modelsFor(head, rosterWith(discovered)), head.rates)
         head.contextWindow?.let { require(it > 0) { "head context_window must be positive" } }
         val window = contextWindowOverride?.takeIf { it > 0 } ?: head.contextWindow
         return ModelCatalog(
@@ -250,17 +265,48 @@ public data class ProviderConfig(
         return entries.map { entry -> rates[entry.id]?.let { rate -> entry.copy(rates = rate) } ?: entry }
     }
 
-    private fun modelsFor(head: HeadConfig): List<ModelEntry> {
-        val requested = head.models ?: return models
+    /** The declared rows, then each [discovered] model that no declared row covers under any of its
+     *  spellings (a `[1m]` row covers its bare id, an alias row covers the model it aliases) and that
+     *  [discovery] admits, in the endpoint's order. A declared row always wins its model: its window,
+     *  label, rates and place carry decisions no endpoint can supply. */
+    private fun rosterWith(discovered: List<DiscoveredModel>): List<ModelEntry> {
+        val covered = models.mapTo(HashSet()) { ModelTierSuffix.strip(it.id) }
+        val extra = discovered
+            .filter { model -> model.id.isNotBlank() && model.spellings.none { it in covered } }
+            .filter { discovery.admits(it.id) }
+            .distinctBy { it.id }
+            .map { ModelEntry(id = it.id, label = it.label, contextWindow = windowFor(it), discovered = true) }
+        return models + extra
+    }
+
+    /** A discovered row's window: what the operator declared for that exact id ([extraWindows]), else
+     *  what the endpoint publishes — the model's real ceiling, the fact discovery exists to learn —
+     *  else the provider's prefix rules and default, else the floor every undeclared window uses. */
+    private fun windowFor(model: DiscoveredModel): Long =
+        extraWindows.firstOrNull { it.id == model.id }?.contextWindow
+            ?: model.contextWindow?.takeIf { it > 0 }
+            ?: windowRules.firstOrNull { model.id.startsWith(it.prefix) }?.contextWindow
+            ?: defaultContextWindow.takeIf { it > 0 }
+            ?: DEFAULT_WINDOW_FLOOR
+
+    /** The pinned model as the catalog's only row, windowed like any undeclared id. Not a
+     *  discovered row: the operator named it, so it is the head's tier model too. */
+    private fun pinnedOnly(id: String): ModelEntry = ModelEntry(id = id, contextWindow = windowFor(DiscoveredModel(id)))
+
+    private fun modelsFor(head: HeadConfig, roster: List<ModelEntry>): List<ModelEntry> {
+        // A provider that declares no rows and whose endpoint listed nothing (or was not asked) still
+        // serves its head's pinned model: that is the one model the operator named, and a catalog
+        // with no row for it would refuse every turn the head was launched to serve.
+        val requested = head.models ?: return roster.ifEmpty { listOf(pinnedOnly(head.pinnedModel)) }
         require(requested.isNotEmpty()) { "head model list must not be empty" }
         require(requested.map { it.id }.distinct().size == requested.size) { "head model list contains duplicates" }
         val slots = requested.mapNotNull { it.slot?.lowercase() }
         require(slots.all { it in headModelSlots }) { "unknown Claude model slot" }
         require(slots.distinct().size == slots.size) { "head model slots contain duplicates" }
-        val byId = models.associateBy(ModelEntry::id)
+        val byId = roster.associateBy(ModelEntry::id)
         val selected = requested.map { model ->
             requireNotNull(byId[model.id]) {
-                "head model '${model.id}' is not declared by provider '${head.provider}'"
+                "head model '${model.id}' is not declared by provider '${head.provider}' nor listed by its endpoint"
             }
         }
         // The failing id can come from OUTSIDE the TOML: resolveHeadConfig swaps pinned_model with

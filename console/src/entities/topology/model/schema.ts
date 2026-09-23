@@ -100,6 +100,8 @@ const provider: SchemaNode = {
     default_context_window: {},
     local: {},
     models_url: {},
+    // Which published models join the picker beyond the declared rows (ModelDiscoveryConfig).
+    discovery: { keys: { include: {}, exclude: {} } },
     rates: ratesTable,
   },
 };

@@ -180,6 +180,13 @@ public class Daemon(
         // two-plus same-kind heads nothing was seeded, and the unconditional overwrite handed
         // every sibling the first head's (or the default) port/model/base.
         val legacySolo = TopologyKnobLayer(topology).soleLegacyHeadKeys()
+        // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
+        // catalog exists — so each picker is its declared rows plus what its provider lists.
+        controlPlane.modelRosters.resolve(
+            topology.heads.mapNotNull { (key, head) ->
+                topology.providers[head.provider]?.let { key to buildInputs.effectiveProvider(key, it, key in legacySolo) }
+            }.toMap(),
+        )
         val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
             val legacy = key in legacySolo
             val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)

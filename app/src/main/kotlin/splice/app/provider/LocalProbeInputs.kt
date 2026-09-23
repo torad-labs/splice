@@ -31,13 +31,6 @@ internal class LocalProbeInputs {
         ).keyNow()
     }
 
-    /** Upstream id -> the window the head advertises for it; two picker rows over one id keep the wider. */
-    fun effectiveRows(catalog: ModelCatalog): Map<String, Long> {
-        val rows = catalog.models.map { catalog.stripSuffixes(it.id) to it.contextWindow } +
-            catalog.extraWindows.map { catalog.stripSuffixes(it.id) to it.contextWindow }
-        return rows.groupBy({ it.first }, { it.second }).mapValues { (_, windows) -> windows.max() }
-    }
-
     /** Ask the runtime behind [provider] about [catalog]'s rows. ONE sequence for the boot refusal
      *  (ChatArm) and for a window edited while the daemon runs (V4-162, TopologyWindows), so the two
      *  cannot come to disagree about what the runtime allows. Blocking network: never on a request
@@ -47,7 +40,7 @@ internal class LocalProbeInputs {
         val runtime = probe.detect() ?: return LocalRowsCheck.Down
         // The HEAD's effective rows, not the provider's: a head context_window override and a picker
         // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
-        val rows = effectiveRows(catalog)
+        val rows = catalog.effectiveWindows()
         val listed = probe.models(runtime, rows.keys) ?: return LocalRowsCheck.Unlisted(runtime)
         return LocalRowsCheck.Checked(runtime, rows, probe.validate(rows, listed, runtime.kind).filterNot { it.ok })
     }

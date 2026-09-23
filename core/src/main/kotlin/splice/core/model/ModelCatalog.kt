@@ -10,6 +10,7 @@ package splice.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /** What Claude Code returns for a "[1m]" id — the literal it hardcodes, NOT 1024*1024. */
 private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
@@ -39,6 +40,10 @@ public data class ModelEntry(
      *  (see TokenCost.ratesFor) — the case that needs it is two heads on ONE provider billed
      *  differently. */
     val rates: ModelRates? = null,
+    /** 2026-09-22: true for a row the provider's list endpoint contributed rather than splice.toml
+     *  ([DiscoveredModel]). Never read from TOML: provenance is a fact about where the row came
+     *  from, not a setting. It decides one thing — [ModelCatalog.tierModelIds]. */
+    @Transient val discovered: Boolean = false,
 )
 
 @Serializable
@@ -222,6 +227,13 @@ public data class ModelCatalog(
 
     /** settings.json availableModels allowlist — UNWRAPPED ids. */
     public fun availableModelIds(): List<String> = models.map { it.id }
+
+    /** The rows a launch may promote to a Claude tier alias when the head declares no slots: the
+     *  DECLARED ones, in declared order. A discovered row is offered in the picker but never tiered —
+     *  its place is the vendor's list order, and the positional heuristic would otherwise hand a
+     *  sonnet-tier subagent to whatever the endpoint happened to list second (on OpenRouter, the
+     *  first id ending "-sol" or containing "mini" among 380). */
+    public fun tierModelIds(): List<String> = models.filterNot { it.discovered }.map { it.id }
 }
 
 @Serializable

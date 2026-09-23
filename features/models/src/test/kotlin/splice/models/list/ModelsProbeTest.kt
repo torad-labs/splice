@@ -111,12 +111,17 @@ class ModelsProbeTest {
         assertTrue((other as UpstreamRoster.Unreadable).detail.contains("404"))
     }
 
+    // 2026-09-22: a responses provider publishes too — the Codex backend with a client version, an
+    // api-key one at `{base}/models` (UpstreamRosterTest pins both URLs).
     @Test
-    fun `a responses provider and a client-auth provider are unpublished, not failures`() {
+    fun `a responses provider is asked for its list like any other`() {
         val responses = roster(provider(dialect = Dialect.OPENAI_RESPONSES), ok(EMPTY_LIST))
-        assertTrue(responses is UpstreamRoster.Unpublished)
-        // Nothing was even asked: there is no URL to ask.
-        assertTrue(asked.isEmpty())
+        assertTrue(responses is UpstreamRoster.Published)
+        assertEquals("$TEST_BASE/v1/models", asked.single().first)
+    }
+
+    @Test
+    fun `a client-auth provider is unpublished, not a failure`() {
         val client = roster(provider(kind = "client"), ok(EMPTY_LIST))
         assertTrue(client is UpstreamRoster.Unpublished)
         assertTrue((client as UpstreamRoster.Unpublished).reason.contains("your own Claude login"))

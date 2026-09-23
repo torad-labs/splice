@@ -22,19 +22,32 @@ public data class HeadTrees(
     val siblings: List<Path> = emptyList(),
 )
 
+/** How a head's models map onto Claude Code's tier slots ("opus"/"sonnet"/"haiku"/"fable"). One
+ *  value, because both halves answer the same question and [LaunchSpec] sits at the constructor-width
+ *  ratchet. */
+public data class ModelTiers(
+    /** id -> tier slot, declared per row in the head's catalog. Empty = fall back to
+     *  [LaunchService]'s positional heuristic, which is what every catalog used before slots existed
+     *  and is the reason splice.toml carries an "ORDER IS LOAD-BEARING" banner. Non-empty = ONLY the
+     *  declared tiers are emitted — positional order is fully retired for that head, and an
+     *  undeclared tier stays un-set rather than pointing a second alias at an already-claimed model
+     *  (the 2-model duplication this exists to remove). */
+    val slots: Map<String, String> = emptyMap(),
+    /** The ids the positional heuristic may place, in catalog order (ModelCatalog.tierModelIds), or
+     *  null for every offered id. 2026-09-22: a model the endpoint lists but no row declares joins
+     *  the picker and never a slot — slot order is a decision splice.toml makes, and a vendor's list
+     *  order is not one (OpenRouter's would put an arbitrary model behind `opus`). */
+    val candidates: List<String>? = null,
+)
+
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
 public data class LaunchSpec(
     val trees: HeadTrees,
     val pinnedModel: String,
     val availableModelIds: List<String>,
     val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
-    /** id -> Claude tier slot ("opus"/"sonnet"/"haiku"/"fable"), declared per row in the head's
-     *  catalog. Empty = fall back to [LaunchService]'s positional heuristic, which is what every
-     *  catalog used before slots existed and is the reason splice.toml carries an "ORDER IS
-     *  LOAD-BEARING" banner. Non-empty = ONLY the declared tiers are emitted — positional order is
-     *  fully retired for that head, and an undeclared tier stays un-set rather than pointing a
-     *  second alias at an already-claimed model (the 2-model duplication this exists to remove). */
-    val modelSlots: Map<String, String> = emptyMap(),
+    /** Which models may stand behind Claude Code's tier slots — see [ModelTiers]. */
+    val tiers: ModelTiers = ModelTiers(),
     /** The head's discovery prefix ("claude-codex--"): a tier that repeats an earlier tier's model
      *  is planted under this wrapped spelling so the picker's allowlist hides its row (see
      *  LaunchService.buildEnv). Blank keeps the duplicate row. */

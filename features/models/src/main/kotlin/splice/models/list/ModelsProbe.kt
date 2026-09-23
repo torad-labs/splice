@@ -27,7 +27,7 @@ private const val ANTHROPIC_VERSION_DEFAULT = "2023-06-01"
 internal data class ProbedProvider(
     val key: String,
     val provider: ProviderConfig,
-    val url: String?,
+    val url: String,
     val roster: UpstreamRoster,
 )
 
@@ -38,8 +38,7 @@ internal class ModelsProbe(
 ) {
 
     fun probe(key: String, provider: ProviderConfig, env: EnvReader): ProbedProvider {
-        val url = UpstreamRosterUrl.of(provider.dialect, provider.baseUrl, provider.modelsUrl)
-            ?: return unpublished(key, provider, null, UpstreamRosterUrl.RESPONSES_HAS_NO_LIST)
+        val url = UpstreamRosterUrl.of(provider)
         if (provider.auth.kind == AuthKind.Client.wire) {
             val why = "this provider forwards your own Claude login, so splice holds no credential to ask $url with"
             return unpublished(key, provider, url, why)
@@ -49,7 +48,7 @@ internal class ModelsProbe(
         return ProbedProvider(key, provider, url, read(answer, url, provider, key, bearer != null))
     }
 
-    private fun unpublished(key: String, provider: ProviderConfig, url: String?, why: String) =
+    private fun unpublished(key: String, provider: ProviderConfig, url: String, why: String) =
         ProbedProvider(key, provider, url, UpstreamRoster.Unpublished(why))
 
     private fun read(

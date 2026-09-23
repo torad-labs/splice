@@ -124,11 +124,13 @@ class LaunchServiceTest {
         val available = listOf("grok-4.6", "grok-build-latest", "grok-4.3", "grok-build-0.1")
         val env = service.launch(
             spec("grok", pinned = "grok-4.6", available = available).copy(
-                modelSlots = mapOf(
-                    "grok-4.6" to "opus",
-                    "grok-4.3" to "sonnet",
-                    "grok-build-0.1" to "haiku",
-                    "grok-build-latest" to "fable",
+                tiers = ModelTiers(
+                    mapOf(
+                        "grok-4.6" to "opus",
+                        "grok-4.3" to "sonnet",
+                        "grok-build-0.1" to "haiku",
+                        "grok-build-latest" to "fable",
+                    ),
                 ),
             ),
             extraArgs = emptyList(),
@@ -150,7 +152,7 @@ class LaunchServiceTest {
     fun `a two-model roster declaring opus and sonnet emits no haiku or fable slot`() {
         val recipe = service.launch(
             spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5"))
-                .copy(modelSlots = mapOf("grok-4.6" to "opus", "grok-4.5" to "sonnet")),
+                .copy(tiers = ModelTiers(mapOf("grok-4.6" to "opus", "grok-4.5" to "sonnet"))),
             extraArgs = emptyList(),
             dangerouslySkipPermissions = false,
         )
@@ -182,10 +184,12 @@ class LaunchServiceTest {
         val recipe = service.launch(
             spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5"))
                 .copy(
-                    modelSlots = mapOf(
-                        "grok-4.6" to "opus",
-                        "grok-retired" to "sonnet",
-                        "grok-4.5" to "turbo",
+                    tiers = ModelTiers(
+                        mapOf(
+                            "grok-4.6" to "opus",
+                            "grok-retired" to "sonnet",
+                            "grok-4.5" to "turbo",
+                        ),
                     ),
                 ),
             extraArgs = emptyList(),
@@ -205,7 +209,7 @@ class LaunchServiceTest {
         val available = listOf("grok-4.6", "grok-build-latest", "grok-4.3")
         val env = service.launch(
             spec("grok", pinned = "grok-4.6", available = available)
-                .copy(modelSlots = mapOf("grok-4.3" to "haiku")),
+                .copy(tiers = ModelTiers(mapOf("grok-4.3" to "haiku"))),
             extraArgs = emptyList(),
             dangerouslySkipPermissions = false,
         ).env

@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Added
+- **Each head's picker offers what its provider serves, not only what splice.toml lists.** At start
+  the daemon asks every head's endpoint for its model list — the URL `splice models` already asked,
+  presenting the credential the head's turns present — and adds each model no row declares, windowed
+  as the endpoint publishes it, so a model a vendor ships is offered at the next restart with no TOML
+  edit, and a provider may declare no rows at all. Declared rows keep everything they decide (order,
+  label, window, rates, slot), and a discovered model is never placed behind a tier slot. What the
+  endpoint itself says cannot run a turn stays out (OpenRouter's non-text or tool-less models, the
+  Codex backend's hidden ones), and a new per-provider `discovery = { include, exclude }` glob filter
+  names out the rest (xAI's `grok-imagine-*`); `exclude = ["*"]` turns it off. Every head is asked at
+  once under a 10s deadline, and no answer ever costs a head its start: the last list the endpoint
+  served is kept per head under the state directory, and with neither the head boots on its declared
+  rows exactly as before. The Codex backend now lists too (`/models?client_version=…`, which
+  answered HTTP 400 without one), and Muse presents its minted API key rather than the OAuth access
+  token it refuses. `splice models` marks each undeclared model `+` discovered or `–` kept out, with
+  the reason.
 - **A team member's `checks` field reads a real outcome (V4-159).** `GET /api/teams/{id}/economics`
   shipped every slot's `checks` as an honest empty (`checks: null`) because the daemon had no
   per-member signal to fill it with. It now reads the outcome tag of the slot's most recently

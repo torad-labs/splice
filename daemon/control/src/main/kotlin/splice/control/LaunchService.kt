@@ -337,7 +337,7 @@ public class LaunchService(
     // so declaring anything retires positional order outright: a tier the head does not declare is
     // not emitted, never pointed at an already-claimed model.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
-        val ids = (listOf(spec.pinnedModel) + spec.availableModelIds).distinct()
+        val ids = (listOf(spec.pinnedModel) + (spec.tiers.candidates ?: spec.availableModelIds)).distinct()
         val declared = declaredSlots(spec, ids)
         if (declared.isNotEmpty()) {
             return listOf("OPUS", "SONNET", "HAIKU", "FABLE").mapNotNull { slot ->
@@ -382,7 +382,7 @@ public class LaunchService(
      *  naming a model the head does not serve is ignored rather than planted, so a stale row in
      *  splice.toml cannot point a tier at a model every turn would 400 on. */
     private fun declaredSlots(spec: LaunchSpec, ids: List<String>): Map<String, String> =
-        spec.modelSlots
+        spec.tiers.slots
             .filterKeys { it in ids }
             .entries
             .associate { (model, slot) -> slot.lowercase() to model }

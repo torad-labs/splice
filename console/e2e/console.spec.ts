@@ -180,6 +180,25 @@ test('the draining restart confirms inline and prints the daemon\'s refusal verb
   expect(posts).toHaveLength(2);
 });
 
+test('doctor renders the stack\'s report, the CLI\'s own masked values included, rather than refusing it', async ({ page }) => {
+  const faults = await open(page, 'doctor');
+  const main = page.locator('main');
+  // The api-key head's env var is absent, so its credential check fails with a fix whose value the
+  // CLI masks: `export CONSOLE_E2E_NO_SUCH_KEY=<redacted>`. The console read that mask as a leak and
+  // refused the whole report ('key-value at checks[28].detail') until M4-07.
+  const masked = 'CONSOLE_E2E_NO_SUCH_KEY=<redacted>';
+  const strip = main.getByRole('button').filter({ hasText: masked });
+  await expect(strip, 'the masked check is not in the rack').toBeVisible({ timeout: 15_000 });
+  await expect(main.getByText('report refused')).toHaveCount(0);
+  // The rest of the report prints with it: the report's own facts beside the rack.
+  await expect(main.getByText('schema_version', { exact: true })).toBeVisible();
+  // Opening the check prints its detail, the daemon's sentence ahead of the fix.
+  await strip.click();
+  const detail = page.getByRole('complementary', { name: 'check detail' });
+  await expect(detail).toContainText('CONSOLE_E2E_NO_SUCH_KEY is not set');
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
 test('doctor\'s playground sends one prompt through a head to the upstream and shows both sides', async ({ page }) => {
   const faults = await open(page, 'doctor');
   const detail = page.getByRole('complementary', { name: 'check detail' });

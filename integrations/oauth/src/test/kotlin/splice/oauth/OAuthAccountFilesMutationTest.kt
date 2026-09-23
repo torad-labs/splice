@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.AuthKind
+import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -111,7 +112,7 @@ class OAuthAccountFilesMutationTest {
         assertFalse(Files.exists(dir.resolve("plus-a.json")), "the old credential file must not remain")
         assertFalse(Files.exists(dir.resolve("plus-a-quota.json")), "the old quota file must move with it")
         assertTrue(Files.exists(dir.resolve("plus-b-quota.json")))
-        val discovered = files.discover(kind, primary).single { it.label == "plus-b" }
+        val discovered = files.discover(kind, primary, LogSink {}).single { it.label == "plus-b" }
         assertTrue(discovered.credentialPresent)
     }
 

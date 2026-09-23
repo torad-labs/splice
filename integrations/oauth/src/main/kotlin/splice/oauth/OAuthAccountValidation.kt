@@ -14,8 +14,8 @@ import splice.upstream.credentials.AccountLabelPolicy
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal class OAuthAccountValidation(private val json: Json, private val log: LogSink) {
-    fun validatedLabel(kind: AuthKind.OAuth, path: Path): String? {
+internal class OAuthAccountValidation(private val json: Json) {
+    fun validatedLabel(kind: AuthKind.OAuth, path: Path, log: LogSink): String? {
         val label = path.fileName.toString().removeSuffix(".json")
         val raw = readCredential(kind, path)
         val declaredKind = raw?.get(FIELD_KIND)

@@ -39,7 +39,11 @@ internal class KimiOAuth(
             TopologyLoader.expandHome(ctx.providerCfg.auth.file ?: AuthKind.KimiOAuth.authFile),
         )
         val tokenUrl = KimiOAuthEndpoints.tokenUrl(System::getenv)
-        return accountFiles.discover(AuthKind.KimiOAuth, primaryPath).map { file ->
+        return accountFiles.discover(
+            AuthKind.KimiOAuth,
+            primaryPath,
+            HeadScopedLogs.headScopedLog(ctx.key, log),
+        ).map { file ->
             val identity = KimiDeviceIdentity(deviceIdPath(file.credentialFile, file.primary, file.label))
             KimiOAuthAccount(
                 label = file.label,

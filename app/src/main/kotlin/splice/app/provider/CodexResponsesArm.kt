@@ -77,7 +77,11 @@ internal class CodexResponsesArm(
     private fun codexAccounts(ctx: ProviderBuild, primaryPath: Path): List<WiredAccount> {
         // Refresh hits the OAuth ISSUER's token endpoint (auth.openai.com), not the API base_url.
         val tokenUrl = CodexOAuthEndpoints.tokenUrl(System::getenv)
-        return accountFiles.discover(AuthKind.ChatgptOAuth, primaryPath).map { file ->
+        return accountFiles.discover(
+            AuthKind.ChatgptOAuth,
+            primaryPath,
+            HeadScopedLogs.headScopedLog(ctx.key, log),
+        ).map { file ->
             WiredAccount(
                 label = file.label,
                 primary = file.primary,

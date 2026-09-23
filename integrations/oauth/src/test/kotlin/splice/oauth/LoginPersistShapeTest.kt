@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
+import splice.core.util.LogSink
 import splice.oauth.codex.LoginCodex
 import splice.provider.codex.CodexOAuth
 import splice.provider.grok.GrokOAuth
@@ -157,7 +158,7 @@ class LoginCollisionTest {
         assertTrue(second.first, second.second)
         assertEquals(
             listOf("primary", "$label-2", "$label-3"),
-            store.discover(AuthKind.ChatgptOAuth, primary).map { it.label },
+            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {}).map { it.label },
         )
         assertTrue(Files.readString(pool.resolve("$label-3.json")).contains("renewed-refresh"))
         assertTrue(Files.readString(pool.resolve("$label-2.json")).contains("other-token"))
@@ -172,7 +173,7 @@ class LoginCollisionTest {
         assertTrue(third.first, third.second)
         assertEquals(
             listOf("primary", "$label-2", "$label-3"),
-            store.discover(AuthKind.ChatgptOAuth, primary).map { it.label },
+            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {}).map { it.label },
         )
         assertFalse(Files.exists(pool.resolve("$label.json")))
         assertTrue(Files.readString(pool.resolve("$label-3.json")).contains("third-refresh"))
@@ -208,7 +209,7 @@ class LoginCollisionTest {
         assertFalse(Files.exists(pool.resolve("$label-2-quota.json")))
         assertEquals(
             listOf("primary", "$label-2"),
-            store.discover(AuthKind.ChatgptOAuth, primary).map { it.label },
+            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {}).map { it.label },
         )
     }
 

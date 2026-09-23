@@ -35,7 +35,11 @@ internal class MuseOAuth(
         val primaryPath = Paths.get(
             TopologyLoader.expandHome(ctx.providerCfg.auth.file ?: AuthKind.MuseOAuth.authFile),
         )
-        return accountFiles.discover(AuthKind.MuseOAuth, primaryPath).map { file ->
+        return accountFiles.discover(
+            AuthKind.MuseOAuth,
+            primaryPath,
+            HeadScopedLogs.headScopedLog(ctx.key, log),
+        ).map { file ->
             MuseOAuthAccount(
                 label = file.label,
                 primary = file.primary,

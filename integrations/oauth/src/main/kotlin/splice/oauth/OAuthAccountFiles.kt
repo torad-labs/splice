@@ -112,14 +112,14 @@ public data class OAuthAccountWrite(public val file: Path, public val retainedQu
 public class OAuthAccountRefused(public val reason: String) : IllegalArgumentException(reason)
 
 /** Finds the in-place legacy primary and validated labeled accounts for one OAuth kind. */
-public class OAuthAccountFiles(
-    private val json: Json = Json { ignoreUnknownKeys = true },
-    log: LogSink = LogSink(System.err::print),
-) {
-    private val validation = OAuthAccountValidation(json, log)
+public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys = true }) {
+    private val validation = OAuthAccountValidation(json)
     private val writes = OAuthAccountWrites(json, validation)
 
-    public fun discover(kind: AuthKind.OAuth, primaryFile: Path): List<OAuthAccountFile> {
+    /** Every account of [primaryFile]'s pool, the primary first. [log] receives each pool file skipped
+     *  as not a credential: the daemon hands in the head's log, so the line reaches /mgmt/logs. It
+     *  was a constructor default of `System.err::print`, which reached stderr only (LAYOUT-01). */
+    public fun discover(kind: AuthKind.OAuth, primaryFile: Path, log: LogSink): List<OAuthAccountFile> {
         val poolDir = poolDir(kind, primaryFile)
         val found = mutableListOf(account(PRIMARY, primaryFile, poolDir, primary = true))
         if (!Files.isDirectory(poolDir)) return found
@@ -130,7 +130,7 @@ public class OAuthAccountFiles(
                 .filter { !it.fileName.toString().endsWith("-quota.json") }
                 .sorted()
                 .forEach { path ->
-                    validation.validatedLabel(kind, path)?.let { label ->
+                    validation.validatedLabel(kind, path, log)?.let { label ->
                         found += account(label, path, poolDir, primary = false)
                     }
                 }
@@ -256,7 +256,9 @@ public class OAuthAccountFiles(
         writes.retainedQuota(poolDir(kind, primaryFile), label) != null
 
     private fun ordinalLabel(kind: AuthKind.OAuth, primaryFile: Path): OAuthAccountLabel {
-        val used = discover(kind, primaryFile).mapTo(mutableSetOf(), OAuthAccountFile::label)
+        // Silent on purpose: occupiedLabels below reserves every .json name, skipped or not, so a
+        // skipped stray file cannot move this ordinal; the daemon's discovery reports it at boot.
+        val used = discover(kind, primaryFile, LogSink {}).mapTo(mutableSetOf(), OAuthAccountFile::label)
         used += occupiedLabels(kind, primaryFile)
         val resolved = OAuthAccountLabels.ordinal(kind, used)
         return OAuthAccountLabel { resolved }

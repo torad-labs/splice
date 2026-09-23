@@ -70,7 +70,7 @@ ignores:
   - app/src/test/kotlin/splice/app/cli/upgrade/UpgradeInflightTest.kt
   - app/src/test/kotlin/splice/app/probe/TurnPathProbeLoopTest.kt
   # the login flow renders redirect_uri from the port before it binds the redirect listener
-  - app/src/test/kotlin/splice/app/auth/OAuthLoginObserverTest.kt
+  - integrations/oauth/src/test/kotlin/splice/oauth/OAuthLoginObserverTest.kt
 rule:
   any:
     # the lease: the lambda's whole body is the port read, so the socket closes before the number

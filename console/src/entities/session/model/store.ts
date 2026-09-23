@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { createResource } from '@shared/lib';
-import type { SessionEdgesSlice, SessionsPayload } from './types';
+import type { BoardEdgesPayload, SessionEdgesPayload, SessionsPayload } from './types';
 
-// TWO stores live in this slice and their names say which is which. `sessionStore` is the
+// THREE stores live in this slice and their names say which is which. `sessionStore` is the
 // management-key gate the shell's unlock-mgmt reads (locked/hasKey); `sessionRegistryStore` is
-// Claude Code's own session registry, one row per interactive session.
+// Claude Code's own session registry, one row per interactive session; the two edge stores are the
+// message edges between those sessions.
 
 export interface SessionState {
   locked: boolean;
@@ -20,5 +21,8 @@ export const sessionStore = create<SessionState>(() => ({
  *  here is an error to report, not a route to wait for. */
 export const sessionRegistryStore = createResource<SessionsPayload>();
 
-/** One session's message edges (GET /api/sessions/{id}/edges), pending V4-130. */
-export const sessionEdgesStore = createResource<SessionEdgesSlice>();
+/** One session's message edges (GET /api/sessions/{id}/edges), read when it is opened. */
+export const sessionEdgesStore = createResource<SessionEdgesPayload>();
+
+/** Every registry session's edges (GET /api/sessions/edges), polled with the board. */
+export const boardEdgesStore = createResource<BoardEdgesPayload>();

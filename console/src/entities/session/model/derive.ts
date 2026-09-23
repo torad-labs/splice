@@ -120,21 +120,31 @@ export function availabilityCounts(rows: readonly SessionRow[]): AvailabilityCou
 }
 
 /**
- * The addresses a session exchanged messages with, most recent first, deduplicated.
+ * The session on the other end of one edge, as the board names it.
+ *
+ * The two ends are different KINDS of value, so each direction resolves its own way: a sent edge's
+ * `to` is the address (or name) the SendMessage call used, owned by the session whose registry
+ * address it is; a received edge's `from` is the sender's SESSION ID, never an address. Resolving
+ * `from` as an address matched nobody and printed the receiver's own socket as its peer. A peer the
+ * registry no longer holds prints what the edge carries: the address the call used, or the sender's
+ * session tag (its first 8, as sessionLabel prints an unnamed session).
+ */
+export function peerLabel(rows: readonly SessionRow[], edge: SessionEdge): string {
+  if (edge.direction === 'out') return nameForAddress(rows, edge.to) ?? edge.to;
+  const sender = rows.find((row) => row.session_id === edge.from);
+  return sender === undefined ? edge.from.slice(0, 8) : sessionLabel(sender);
+}
+
+/**
+ * The peer a session last exchanged a message with, or null when it has no edges.
  *
  * Direction is deliberately NOT filtered: the peer on the other end is the same peer whether this
  * session sent the message or received it, and a hand-off reads as one relationship, not two.
  */
-export function peerAddresses(edges: readonly SessionEdge[]): string[] {
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const edge of [...edges].sort((a, b) => b.at - a.at)) {
-    const peer = edge.direction === 'out' ? edge.to : edge.from;
-    if (peer === '' || seen.has(peer)) continue;
-    seen.add(peer);
-    ordered.push(peer);
-  }
-  return ordered;
+export function latestPeer(rows: readonly SessionRow[], edges: readonly SessionEdge[]): string | null {
+  let newest: SessionEdge | null = null;
+  for (const edge of edges) if (newest === null || edge.at > newest.at) newest = edge;
+  return newest === null ? null : peerLabel(rows, newest);
 }
 
 /**

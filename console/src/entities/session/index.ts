@@ -1,19 +1,21 @@
-import { sessionEdgesStore, sessionRegistryStore, sessionStore } from './model/store';
+import { boardEdgesStore, sessionEdgesStore, sessionRegistryStore, sessionStore } from './model/store';
 
 export {
   initSession,
   unlock,
+  fetchBoardEdges,
   fetchSessions,
   fetchSessionEdges,
+  startBoardEdgesPolling,
   startSessionsPolling,
-  PENDING_EDGES,
 } from './api';
 export {
   availabilityCounts,
   groupKeyOf,
   groupSessions,
+  latestPeer,
   nameForAddress,
-  peerAddresses,
+  peerLabel,
   sessionLabel,
   timeline,
   UNATTRIBUTED,
@@ -21,11 +23,11 @@ export {
 export type { AvailabilityCounts, GroupBy, SessionGroup, SessionTimeField, Timeline, TimelineBucket, TimelineOptions } from './model/derive';
 export { UNKNOWN_HEAD } from './model/types';
 export type {
+  BoardEdgesPayload,
   EdgeDirection,
   SessionAvailability,
   SessionEdge,
   SessionEdgesPayload,
-  SessionEdgesSlice,
   SessionRepo,
   SessionRow,
   SessionsPayload,
@@ -34,3 +36,4 @@ export { LIVE_KINDS } from './model/live';
 export const useSession = sessionStore;
 export const useSessionRegistry = sessionRegistryStore.use;
 export const useSessionEdges = sessionEdgesStore.use;
+export const useBoardEdges = boardEdgesStore.use;

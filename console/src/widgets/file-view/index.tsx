@@ -7,7 +7,7 @@
 // brief). Nothing here writes: the route is read-only by design.
 import { useEffect } from 'react';
 import { fetchProjectFiles, useProjectFiles } from '@entities/project';
-import type { ProjectFilesPayload, ProjectFilesSlice } from '@entities/project';
+import type { ProjectFilesPayload } from '@entities/project';
 import { Fault } from '@shared/controls';
 import { Empty, Reveal, Strip, StripField } from '@shared/ui';
 import { S } from './strings';
@@ -24,7 +24,7 @@ function lookedIn(data: ProjectFilesPayload): string {
  * reach the store and the shipped build never carries it. When it is provided
  * this reads nothing.
  */
-export function FileView({ projectId, files }: { projectId: string; files?: ProjectFilesSlice }) {
+export function FileView({ projectId, files }: { projectId: string; files?: ProjectFilesPayload }) {
   const state = useProjectFiles((s) => s);
 
   useEffect(() => {
@@ -34,9 +34,6 @@ export function FileView({ projectId, files }: { projectId: string; files?: Proj
   if (files === undefined && state.error !== null) return <Fault message={state.error} />;
   const data = files ?? state.data;
   if (data === undefined || data === null) return null;
-  if ('pending' in data) {
-    return <Empty text="project files not routed yet" source="row V4-131" />;
-  }
   if (data.files.length === 0) {
     // FEATURES.md 4.14: the empty names the setting when the client's memory is
     // off, and always names the directories the reader looked in.

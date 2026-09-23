@@ -208,8 +208,6 @@ describe('pending routes', () => {
     expect(transcriptStore.get().data).toEqual({ pending: PENDING_TRANSCRIPT });
     await fetchDoctor();
     expect(doctorStore.get().data).toEqual({ pending: 'V4-127' });
-    await fetchProjects();
-    expect(projectsStore.get().data).toEqual({ pending: 'V4-131' });
     await fetchBudgets();
     expect(budgetsStore.get().data).toEqual({ pending: 'V4-133' });
     await fetchAlerts();
@@ -231,6 +229,10 @@ describe('pending routes', () => {
     await fetchMcp();
     expect(mcpStore.get().error).toBe('HTTP 404');
     expect(mcpStore.get().data).toBeNull();
+    // Served since V4-131 (ProjectsRoutes.list), so a 404 is a failure, never the pending row.
+    await fetchProjects();
+    expect(projectsStore.get().error).toBe('HTTP 404');
+    expect(projectsStore.get().data).toBeNull();
   });
 
   test('the live routes land their payloads', async () => {

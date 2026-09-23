@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.daemon.TopologyLoader
 import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
 import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
 import java.nio.file.Path

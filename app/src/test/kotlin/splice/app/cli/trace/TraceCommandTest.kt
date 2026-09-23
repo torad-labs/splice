@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.daemon.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
@@ -23,6 +22,7 @@ import splice.core.util.WallClock
 import splice.head.wire.ClientInbound
 import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
+import splice.topology.TopologyLoader
 import splice.upstream.sse.WireAttempt
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream

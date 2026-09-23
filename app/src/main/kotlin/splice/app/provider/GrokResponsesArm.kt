@@ -5,10 +5,10 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.auth.GrokRefresh
-import splice.app.daemon.TopologyLoader
 import splice.core.util.LogSink
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
+import splice.topology.TopologyLoader
 import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 

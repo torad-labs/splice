@@ -1,4 +1,4 @@
-package splice.app.daemon
+package splice.topology
 
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals

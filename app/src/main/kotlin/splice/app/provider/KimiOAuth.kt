@@ -5,7 +5,6 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.auth.KimiRefresh
 import splice.app.auth.OAuthAccountFiles
-import splice.app.daemon.TopologyLoader
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
@@ -13,6 +12,7 @@ import splice.core.util.LogSink
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiOAuthEndpoints
+import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths
 

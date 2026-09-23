@@ -30,11 +30,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.daemon.TopologyLoader
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.head.awaitListening
 import splice.head.freshPort
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

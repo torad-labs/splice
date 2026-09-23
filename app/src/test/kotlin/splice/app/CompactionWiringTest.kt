@@ -5,10 +5,10 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.daemon.TopologyLoader
 import splice.core.compaction.CompactionScope
 import splice.core.config.StatePaths
 import splice.head.compaction.CompactionTail
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 

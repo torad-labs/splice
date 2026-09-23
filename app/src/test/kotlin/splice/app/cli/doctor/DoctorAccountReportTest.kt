@@ -12,10 +12,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.status.AccountPoolProjection
-import splice.app.daemon.TopologyLoader
 import splice.control.HeadAccountPoolView
 import splice.control.HeadAccountView
 import splice.core.config.StatePaths
+import splice.topology.TopologyLoader
 import java.nio.file.Path
 
 class DoctorAccountReportTest {

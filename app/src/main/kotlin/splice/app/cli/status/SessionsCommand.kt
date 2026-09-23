@@ -8,7 +8,6 @@
 // syntax — name or socket — is backslash/quote-escaped so the printed command stays valid.
 package splice.app.cli.status
 
-import splice.app.daemon.TopologyLoader
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
@@ -25,6 +24,7 @@ import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRegistry
+import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Paths

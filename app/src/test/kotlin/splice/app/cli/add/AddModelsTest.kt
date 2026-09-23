@@ -28,7 +28,7 @@ import splice.app.cli.prompt.SelectPrompt
 import splice.app.cli.prompt.SttyCommand
 import splice.app.cli.prompt.SttyResult
 import splice.app.cli.prompt.TerminalMode
-import splice.app.daemon.TopologyLoader
+import splice.topology.TopologyLoader
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path

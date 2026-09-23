@@ -26,6 +26,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.turn.WatchdogBudget
+import splice.topology.TopologyLoader
 import splice.upstream.LifecycleScope
 import java.nio.file.Files
 import java.nio.file.Path

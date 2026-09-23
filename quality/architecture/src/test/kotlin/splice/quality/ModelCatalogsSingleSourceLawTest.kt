@@ -495,7 +495,7 @@ internal object ModelRosters {
 internal object ModelCatalogsSingleSource {
     const val EXAMPLE_REL = "app/src/main/resources/splice.example.toml"
     const val CATALOG_IN_APP = "splice/app/cli/add/AddProfileCatalog.kt"
-    const val STARTER_IN_APP = "splice/app/daemon/TopologyLoader.kt"
+    const val STARTER_IN_TOPOLOGY = "splice/topology/TopologyLoader.kt"
 
     private const val PROVIDER_COLUMN = 12
     private const val ROWS_COLUMN = 2
@@ -519,10 +519,10 @@ internal object ModelCatalogsSingleSource {
     /** An example provider seen from a derived roster: its name and its declared windows. */
     private data class Target(val provider: String, val windows: Map<String, Long?>)
 
-    /** The three surfaces, resolved through the BUILD's map — `:app` wherever the build puts it. */
+    /** The three surfaces, resolved through the BUILD's map — `:app` and `:integrations-topology` wherever the build puts them. */
     fun surfaces(map: ProjectMap): Surfaces {
         val catalog = File(map.mainSources(":app"), CATALOG_IN_APP)
-        val starter = File(map.mainSources(":app"), STARTER_IN_APP)
+        val starter = File(map.mainSources(":integrations-topology"), STARTER_IN_TOPOLOGY)
         return Surfaces(
             Surface(EXAMPLE_REL, File(map.root, EXAMPLE_REL)),
             Surface(KotlinText.rel(map, catalog), catalog),
@@ -731,7 +731,7 @@ class ModelCatalogsSingleSourceLawTest {
     /** The synthetic tree the red proof writes into: the SOURCE and the two emitters, each
      *  replaceable per arm, under the same relative paths the live tree uses. */
     private class Tree(val root: File) {
-        private val synthetic = ProjectMap.parse(root, ":app=app;:core=core", setOf("build"))
+        private val synthetic = ProjectMap.parse(root, ":app=app;:core=core;:integrations-topology=integrations/topology", setOf("build"))
         val surfaces = ModelCatalogsSingleSource.surfaces(synthetic)
 
         fun write(example: String = EXAMPLE_OK, catalog: String = CATALOG_OK, starter: String = STARTER_OK) {
@@ -788,7 +788,7 @@ class ModelCatalogsSingleSourceLawTest {
                     "    [grok        ]  1 rows  agrees with [xai]",
                     "    [kimi        ]  1 rows  agrees with [kimi]",
                     "    [api-key     ]  0 rows  no-roster (no base_url, no models)",
-                    "  app/src/main/kotlin/splice/app/daemon/TopologyLoader.kt:DEFAULT_TOML",
+                    "  integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt:DEFAULT_TOML",
                     "    [xai         ]  1 rows  agrees with [xai]",
                 ),
                 ModelCatalogsSingleSource.census(surfaces),

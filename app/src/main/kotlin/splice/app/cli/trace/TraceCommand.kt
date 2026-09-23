@@ -5,10 +5,10 @@
 // splice.app.cli sits at the concentration ceiling (V4-173's own gate said so).
 package splice.app.cli.trace
 
-import splice.app.daemon.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path

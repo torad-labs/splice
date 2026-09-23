@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.Dialect
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 

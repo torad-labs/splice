@@ -3,13 +3,13 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.auth.KimiRefresh
-import splice.app.daemon.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.dialect.anthropic.IdentityHeaders
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiQuirks
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.topology.TopologyLoader
 import splice.upstream.CredentialHeaders
 import java.nio.file.Paths
 

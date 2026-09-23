@@ -9,12 +9,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.LockOutcome
-import splice.app.daemon.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.topology.TopologyLoader
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths

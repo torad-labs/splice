@@ -574,3 +574,20 @@ client-home launching, quota selection, turn cleanup, and streaming wire catches
 DID select those sources were widened to features/models, except the CLI bridge rule, whose
 stricter companion kt-no-runblocking-in-daemon now bans runBlocking there outright.
 """
+
+[[exclusion]]
+rules = [
+  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-topology"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The splice.toml loader and its structural preflight came from app/daemon. None of these nine
+scopes selected either file there: they grade control-plane routes, route logging, exceptions as
+outcomes, the CLI's runBlocking bridge, client-home launching, outcome tags, quota selection, turn
+cleanup, and streaming wire catches. Every rule that DID select them was widened to
+integrations/topology instead of being excluded, and kt-no-println now reaches them too.
+"""

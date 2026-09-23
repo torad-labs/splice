@@ -12,7 +12,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.app.auth.LoginIo
 import splice.app.auth.StoredCredential
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
@@ -21,6 +20,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.topology.TopologyLoader
 import java.nio.file.Path
 
 private const val HTTP_OK = 200

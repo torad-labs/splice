@@ -3,9 +3,9 @@
 // InstallCommand.kt (concentration HIGH, 2026-08-19).
 package splice.app.cli.install
 
-import splice.app.daemon.TopologyLoader
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import kotlin.io.path.isSymbolicLink
 

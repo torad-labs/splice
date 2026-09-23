@@ -3,10 +3,10 @@
 // KimiPassthroughArm. ProviderAssembly rejects registered incompatible kinds first.
 package splice.app.provider
 
-import splice.app.daemon.TopologyLoader
 import splice.core.auth.ClientAuthProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.topology.TopologyLoader
 import java.nio.file.Paths
 
 internal class PassthroughArm(

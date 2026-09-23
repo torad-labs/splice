@@ -3,13 +3,13 @@
 // plus the dated session-id cache_key arm. Reasoning display knobs come from ConfigService.
 package splice.app.provider
 
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.ApiKeyProviderRegistry
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
+import splice.topology.TopologyLoader
 import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 

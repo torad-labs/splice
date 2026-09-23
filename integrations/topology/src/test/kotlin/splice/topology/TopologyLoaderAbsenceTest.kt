@@ -4,7 +4,7 @@
 // parent was one recovered access away from a starter clobber, and a concurrent creator between
 // check and write lost its file. CREATE_NEW closes the race by construction; these arms pin the
 // two deterministic faces.
-package splice.app.daemon
+package splice.topology
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -68,9 +68,9 @@ class TopologyLoaderAbsenceTest {
     fun `a concurrent creator between proven absence and the claim wins - DR-66`(@TempDir tmp: Path) {
         val file = tmp.resolve("cfg").resolve("splice.toml")
         val foreign = "[daemon]\ncontrol_port = 4242\n"
-        val interleaved = splice.app.daemon.StarterWrite { path, starter ->
+        val interleaved = splice.topology.StarterWrite { path, starter ->
             Files.writeString(path, foreign)
-            splice.app.daemon.ExclusiveStarterWrite.claim(path, starter)
+            splice.topology.ExclusiveStarterWrite.claim(path, starter)
         }
 
         val loaded = TopologyLoader.loadOrMaterializeWithDigest(file, interleaved)

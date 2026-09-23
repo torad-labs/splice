@@ -6,11 +6,11 @@
 // widest row per upstream id), never the raw provider table.
 package splice.app.provider
 
-import splice.app.daemon.TopologyLoader
 import splice.core.model.ModelCatalog
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.topology.TopologyLoader
 import splice.upstream.local.LocalRowVerdict
 import splice.upstream.local.LocalRuntime
 import splice.upstream.local.LocalRuntimeProbe

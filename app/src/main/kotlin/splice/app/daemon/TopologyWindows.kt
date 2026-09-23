@@ -40,6 +40,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files

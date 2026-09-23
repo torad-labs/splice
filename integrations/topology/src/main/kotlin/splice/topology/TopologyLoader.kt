@@ -3,11 +3,10 @@
 // ktoml adopted per spike P0-TOML. Loaded ONCE at daemon start — adding a provider/head is an
 // operator action that implies a restart (no hot topology). V4-162: the context windows are the
 // exception, re-read by TopologyWindows while the daemon runs.
-package splice.app.daemon
+package splice.topology
 
 import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
-import splice.control.TopologyStale
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.topology.Topology
@@ -162,18 +161,9 @@ command = "claude-openrouter"
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): fail-open by design (see the doc above): an unreadable or absent splice.toml must degrade the staleness signal, never break /health or a launch, so null IS the whole reading.
         Cancellables.runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
 
-    /** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
-     *  signal, never /health. Lives here rather than beside its Daemon caller because the fact it
-     *  computes is this loader's (Kotlin style law, 2026-08-15: it can no longer be a file-level
-     *  helper, and [currentDigest] is the thing it wraps). */
-    internal fun staleProbe(path: Path?, bootDigest: String): TopologyStale = TopologyStale {
-        val now = path?.let { currentDigest(it) }
-        now != null && bootDigest.isNotEmpty() && now != bootDigest
-    }
-
     /** sha-256 of splice.toml bytes, the one spelling of a topology digest: boot, [currentDigest] and
      *  the live window re-read (V4-162, TopologyWindows) all hash through here. */
-    internal fun sha256Hex(bytes: ByteArray): String =
+    public fun sha256Hex(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     public fun parse(text: String): Topology {

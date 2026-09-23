@@ -37,11 +37,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
-import splice.app.daemon.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
 import splice.head.awaitListening
 import splice.head.freshPort
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 
 private fun topologyToml(controlPort: Int, headPort: Int): String = """

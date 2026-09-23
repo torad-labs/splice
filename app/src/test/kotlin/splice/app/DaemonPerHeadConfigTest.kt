@@ -9,9 +9,9 @@ package splice.app
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
-import splice.app.daemon.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.milliseconds
 

@@ -18,6 +18,8 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-claude-code" to setOf(":core", ":features-sessions"),
     ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
     ":integrations-http" to setOf(":core"),
+    // the splice.toml file on disk: load, first-run starter, structural preflight and digest.
+    ":integrations-topology" to setOf(":core"),
     ":integrations-upstream" to setOf(":core"),
     ":integrations-dialects-anthropic" to setOf(":core", ":integrations-upstream"),
     ":integrations-dialects-openai-responses" to setOf(":core", ":integrations-upstream"),

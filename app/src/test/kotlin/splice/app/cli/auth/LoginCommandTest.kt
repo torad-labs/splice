@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.LoginIo
-import splice.app.daemon.TopologyLoader
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig
@@ -24,6 +23,7 @@ import splice.core.topology.Topology
 import splice.provider.muse.MuseMintAttempt
 import splice.provider.muse.MuseMintMode
 import splice.provider.muse.MuseSubscriptionKey
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths

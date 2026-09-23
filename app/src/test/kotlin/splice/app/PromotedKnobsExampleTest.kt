@@ -8,8 +8,8 @@ package splice.app
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.Dialect
+import splice.topology.TopologyLoader
 
 class PromotedKnobsExampleTest {
 

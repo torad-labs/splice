@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.add.AddHttp
 import splice.app.cli.add.AddHttpReply
-import splice.app.daemon.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files

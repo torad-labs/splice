@@ -4,7 +4,7 @@
 // through the RosterEditor seam.
 package splice.app.cli.add
 
-import splice.app.daemon.TomlStructureMasker
+import splice.topology.TomlStructureMasker
 
 /** The roster edit as a role: given the config text, the head key and the ids to add, return the
  *  edited text. The verb's fail-closed re-parse sits behind this seam so a test can hand it an

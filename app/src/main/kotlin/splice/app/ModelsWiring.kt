@@ -2,13 +2,13 @@
 package splice.app
 
 import splice.app.auth.StoredCredential
-import splice.app.daemon.TopologyLoader
 import splice.core.util.EnvReader
 import splice.models.list.ModelConfiguration
 import splice.models.list.ModelConfigurationSource
 import splice.models.list.ModelCredentialSource
 import splice.models.list.ModelReportOutput
 import splice.models.list.ModelsCommand
+import splice.topology.TopologyLoader
 
 internal object ModelsWiring {
     fun run(args: List<String>): Boolean {

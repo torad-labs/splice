@@ -22,12 +22,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import splice.app.daemon.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.head.awaitListening
 import splice.head.freshPort
+import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList

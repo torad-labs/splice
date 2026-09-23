@@ -8,11 +8,11 @@ package splice.app.cli.doctor
 
 import splice.app.cli.AdminSupport
 import splice.app.cli.install.InstallCommand
-import splice.app.daemon.TopologyLoader
 import splice.core.config.InstallPaths
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit

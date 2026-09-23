@@ -8,7 +8,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
-import splice.app.daemon.TopologyLoader
 import splice.app.sources.PerfRowsFileSource
 import splice.control.api.usage.PerfSummary
 import splice.control.api.usage.PerfWindow
@@ -21,6 +20,7 @@ import splice.core.terminal.YELLOW
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
 import java.util.Locale

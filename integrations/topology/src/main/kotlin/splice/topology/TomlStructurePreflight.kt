@@ -4,7 +4,7 @@
 // several shapes the TOML spec forbids — a duplicated models key, a reopened table, a roster
 // spelled as an array of strings — and each would otherwise merge or loop silently. These run
 // on MASKED text (strings and comments blanked) so quoted content cannot fake or hide structure.
-package splice.app.daemon
+package splice.topology
 
 internal object TomlStructurePreflight {
 
@@ -79,14 +79,14 @@ internal object TomlStructurePreflight {
     }
 }
 
-/** V4-83: `internal`, not `private` — `splice add-model` edits the head roster by offset and must
+/** V4-83: `public`, not `private` — `splice add-model` (in :app) edits the head roster by offset and must
  *  find its structure on the same mask this preflight uses (a comment or a string must not be able
  *  to fake or hide an array bracket in EITHER reader). Offsets are preserved byte-for-byte: every
  *  masked character is replaced in place, never removed. */
-internal class TomlStructureMasker(private val text: String) {
+public class TomlStructureMasker(private val text: String) {
     private val masked = StringBuilder(text)
 
-    fun mask(): String {
+    public fun mask(): String {
         var index = 0
         while (index < text.length) {
             val keyLength = quotedModelsKeyLength(index)

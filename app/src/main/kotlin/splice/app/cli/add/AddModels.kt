@@ -11,8 +11,8 @@ import splice.app.cli.prompt.SelectOption
 import splice.app.cli.prompt.SelectOutcome
 import splice.app.cli.prompt.SelectPrompt
 import splice.app.cli.prompt.TerminalMode
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.Topology
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

@@ -24,13 +24,13 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.app.daemon.DaemonLock
-import splice.app.daemon.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.head.MockChatGptUpstream
 import splice.head.awaitListening
 import splice.head.freshPort
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CancellationException

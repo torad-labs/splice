@@ -90,8 +90,11 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts"),
     // the daemon's own lifecycle: the draining restart and the upgrade surface.
     ":features-lifecycle" to emptySet(),
-    // the doctor report and the one-prompt playground.
-    ":features-diagnostics" to setOf(":core", ":integrations-http"),
+    // the doctor report, the one-prompt playground, and the operator's reads of a running head
+    // (`splice wire`) through the daemon client.
+    ":features-diagnostics" to setOf(
+        ":core", ":integrations-http", ":integrations-daemon-client", ":integrations-topology",
+    ),
     // launching Claude Code against a head: the exec recipe, the Claude head's wrap, the resume hook,
     // and the wrapper commands `splice install` links to the launch shim from splice.toml's heads.
     ":features-launch" to setOf(":core", ":integrations-claude-code", ":integrations-http", ":integrations-topology"),

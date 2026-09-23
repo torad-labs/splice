@@ -20,10 +20,11 @@ import splice.app.cli.status.PerfCommand
 import splice.app.cli.status.SessionsCommand
 import splice.app.cli.status.StatusCommand
 import splice.app.cli.upgrade.UpgradeCommand
-import splice.app.cli.wire.WireCommand
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.diagnostics.wire.WireCommand
 import splice.topology.TopologyLoader
 
 /** The splice CLI verbs as a closed, exhaustively-dispatched hierarchy: argv is parsed into a typed
@@ -102,7 +103,10 @@ public sealed class Command {
 
     /** V4-173: the upstream request bodies a head sent, when its operator opted in. */
     public data class Wire(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(WireCommand().wire(args))
+        override fun run(): Int {
+            val verb = WireCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+            return outcomeExitCode(verb.wire(args, EnvReader(System::getenv)))
+        }
     }
 
     /** V4-174: a head's full request/response trace, from its day files, when its operator opted in. */

@@ -6,27 +6,26 @@
 // verb needs the daemon up and the key file readable, unlike `splice logs`. Each record prints one
 // header line and then the body string verbatim; --json prints the head's payload as served.
 //
-// IN A SUBPACKAGE (splice.app.cli.wire), not beside the other verbs: splice.app.cli is the repo's
-// most crowded package and the concentration ratchet gates its file count (the gate went red at 85
-// files, baseline 84, when this file first landed there) — the same reason V4-156 put the doctor's
-// project checks under splice.app.cli.doctor.
-package splice.app.cli.wire
+// A diagnostics slice since LAYOUT-01: the operator's read of what a head sent. It reaches the head
+// through integrations/daemon-client (the management key, the loopback GET) and the head's port
+// through integrations/topology; the lines leave through TerminalOutput.
+package splice.diagnostics.wire
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.app.cli.AdminSupport
-import splice.app.cli.add.AddHttp
-import splice.app.cli.add.AddHttpReply
-import splice.app.cli.add.JdkAddHttp
 import splice.core.terminal.BOLD
 import splice.core.terminal.DIM
 import splice.core.terminal.RESET
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.daemonclient.ControlPlaneClient
+import splice.daemonclient.ControlReply
+import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.topology.TopologyLoader
 import java.io.IOException
@@ -34,21 +33,38 @@ import java.net.HttpURLConnection
 import java.nio.file.Files
 import java.time.Instant
 
+// why: the 5s budget JdkAddHttp gave this verb before it read through the daemon client; the ring of
+// bodies a head serves can be large, and ControlPlaneClient's 3s default was sized for shutdown answers.
+private const val WIRE_READ_TIMEOUT_MS = 5_000
+
 private const val WIRE_USAGE = "usage: splice wire <head> [--last N] [--json]"
 
 internal data class WireOpts(val head: String, val last: Int, val json: Boolean)
 
 private data class WireTarget(val port: Int, val key: String)
 
-internal class WireCommand(private val http: AddHttp = JdkAddHttp()) {
+/** The one network seam of `splice wire`: a request to the head's own port under the management key,
+ *  or null when nothing answers. The method rides along so a test pins the whole request. */
+public fun interface WireFetch {
+    public fun request(method: String, url: String, bearer: String): ControlReply?
+}
+
+/** `splice wire`. [output] is stdout, [errors] stderr: `--json | jq` must never read a refusal. */
+public class WireCommand(
+    private val output: TerminalOutput,
+    private val errors: TerminalOutput,
+    private val http: WireFetch = WireFetch { method, url, bearer ->
+        ControlPlaneClient.send(url, method, bearer, readTimeoutMs = WIRE_READ_TIMEOUT_MS)
+    },
+) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    internal fun wire(args: List<String>, envReader: EnvReader = EnvReader(System::getenv)): Boolean {
+    public fun wire(args: List<String>, envReader: EnvReader): Boolean {
         val opts = parseWireArgs(args)
             ?: return fail("unknown or malformed arguments ${args.joinToString(" ")}\n$WIRE_USAGE")
         val target = target(opts.head, envReader) ?: return false
         val url = "http://127.0.0.1:${target.port}/wire?last=${opts.last}"
-        return report(opts, target.port, http("GET", url, target.key, null))
+        return report(opts, target.port, http.request("GET", url, target.key))
     }
 
     /** Where to ask and what to present: the head's port from the topology, the management key. */
@@ -59,14 +75,14 @@ internal class WireCommand(private val http: AddHttp = JdkAddHttp()) {
     }
 
     /** The management key, or null with the reason printed: the route takes nothing else. */
-    private fun mgmtKey(envReader: EnvReader): String? = when (val read = AdminSupport.readMgmtKey(envReader)) {
+    private fun mgmtKey(envReader: EnvReader): String? = when (val read = MgmtKeyFile().read(envReader)) {
         is MgmtKeyRead.Present -> read.key
         MgmtKeyRead.Absent -> fail("no management key yet — the daemon mints it on first launch").let { null }
         is MgmtKeyRead.Unreadable -> fail("management key unreadable: ${read.reason}").let { null }
     }
 
     /** What the head answered, in the head's own words when it refused. */
-    private fun report(opts: WireOpts, port: Int, reply: AddHttpReply?): Boolean = when (reply?.status) {
+    private fun report(opts: WireOpts, port: Int, reply: ControlReply?): Boolean = when (reply?.status) {
         null -> fail("head ${opts.head} is not answering on :$port — is the daemon running? (splice status)")
         HttpURLConnection.HTTP_OK -> printPayload(reply.body, opts.json)
         HttpURLConnection.HTTP_NOT_FOUND -> fail(JsonScalars.str(parse(reply.body), "error") ?: reply.body)
@@ -91,15 +107,17 @@ internal class WireCommand(private val http: AddHttp = JdkAddHttp()) {
 
     private fun printPayload(body: String, raw: Boolean): Boolean {
         if (raw) {
-            println(body)
+            output.line(body)
             return true
         }
         val payload = parse(body) ?: return fail("head answered something that is not the wire payload: $body")
         val records = payload["records"] as? JsonArray ?: JsonArray(emptyList())
         val keep = JsonScalars.strOrEmpty(payload["keep"])
         val head = JsonScalars.strOrEmpty(payload["key"])
-        println("${BOLD}splice wire $head$RESET $DIM— ${records.size}/$keep kept upstream bodies, oldest first$RESET")
-        if (records.isEmpty()) println("  ${DIM}no upstream request since the daemon started$RESET")
+        output.line(
+            "${BOLD}splice wire $head$RESET $DIM— ${records.size}/$keep kept upstream bodies, oldest first$RESET",
+        )
+        if (records.isEmpty()) output.line("  ${DIM}no upstream request since the daemon started$RESET")
         records.forEach { record -> printRecord(record.jsonObject) }
         return true
     }
@@ -109,10 +127,10 @@ internal class WireCommand(private val http: AddHttp = JdkAddHttp()) {
         val session = JsonScalars.str(record, "session") ?: "-"
         val compact = if (JsonScalars.str(record, "compact") == "true") " compact" else ""
         val body = JsonScalars.strOrEmpty(record["body"])
-        println()
+        output.line("")
         val model = JsonScalars.strOrEmpty(record["model"])
-        println("$BOLD── $ts$RESET  session=$session  model=$model$compact  ${DIM}${body.length} bytes$RESET")
-        println(body)
+        output.line("$BOLD── $ts$RESET  session=$session  model=$model$compact  ${DIM}${body.length} bytes$RESET")
+        output.line(body)
     }
 
     private fun parse(text: String): JsonObject? =
@@ -120,7 +138,7 @@ internal class WireCommand(private val http: AddHttp = JdkAddHttp()) {
         Cancellables.runCatchingCancellable { json.parseToJsonElement(text).jsonObject }.getOrNull()
 
     private fun fail(message: String): Boolean {
-        System.err.println("splice wire: $message")
+        errors.line("splice wire: $message")
         return false
     }
 

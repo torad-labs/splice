@@ -293,8 +293,14 @@ export function DoctorPage() {
                 ariaLabel={S.upgrade}
               >
                 <StripField w={NARROW} label={S.installed} value={payload?.splice.version ?? S.absent} />
-                <StripField w={NARROW} label={S.latest} value={upgradePayload?.latest ?? S.absent} />
-                <StripField w={NARROW} label={S.rollback} value={upgradePayload === null ? S.absent : String(upgradePayload.rollback_available)} mono={false} />
+                <StripField w={NARROW} label={S.latest} value={upgradePayload?.latest ?? S.absent} {...(upgradePayload === null ? {} : { basis: upgradePayload.latest_basis })} />
+                <StripField
+                  w={NARROW}
+                  label={S.rollback}
+                  value={upgradePayload === null || upgradePayload.rollback_basis !== 'measured' ? S.absent : (upgradePayload.rollback_target ?? S.none)}
+                  {...(upgradePayload === null ? {} : { basis: upgradePayload.rollback_basis })}
+                  mono={false}
+                />
               </Strip>
             </div>
             <p className="myx-doc-note">{`claude code ${payload?.claude_code.version ?? S.absent}`}</p>

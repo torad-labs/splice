@@ -1,11 +1,11 @@
-// The payload contract of the model entity: GET /api/models, PENDING V4-127. Typed from
-// FEATURES.md 6 ("catalog per head with slots, windows, sources, rates, pinned") and 4.8, and from
-// the daemon values that will answer it:
-//   splice/core/model/ModelCatalog.kt  ModelEntry, ExtraWindow, WindowRule, ModelCatalog
-//   splice/core/model/TokenCost.kt     ModelRates
-//   splice/core/topology/Topology.kt   HeadModel (id + slot), HeadConfig.pinnedModel/contextWindow
-// The route does not exist, so this is the contract the console builds against; the honest empty a
-// page renders is the pending state, never a mocked catalog.
+// The payload contract of the model entity: GET /api/models, served by V4-127 (ModelsRoute.kt) and
+// typed as that route writes it — FEATURES.md 6 names each row's columns (id, label, description,
+// slot, context window and its source, rates, pinned) plus the head's provider, and nothing at the
+// head level beyond the pinned model. The head's own windows (its forced window, the provider
+// default, extra windows and prefix rules) are TOPOLOGY, read from GET /api/topology by the page
+// that shows them. Until 2026-09-22 this file declared them here, on a route that never sent them,
+// and the fleet's model column and the usage rates join both keyed on a `key` the daemon spells
+// `head` (V4-140's defect class: a declaration standing in for a measurement).
 
 import type { PendingRoute } from '@shared/api';
 
@@ -26,25 +26,14 @@ export interface ModelRates {
   cache_write?: number;
 }
 
-/** A window-only id the picker does not list (ModelCatalog.extraWindows). */
-export interface ExtraWindow {
-  id: string;
-  context_window: number;
-}
-
-/** An ordered prefix rule for ids the catalog does not name exactly, first match wins. */
-export interface WindowRule {
-  prefix: string;
-  context_window: number;
-}
-
 export interface CatalogModel {
   id: string;
   label: string;
   description: string;
   /** The Claude Code tier this row fills, or null for a row the operator did not slot. */
   slot: ModelSlot | null;
-  context_window: number;
+  /** Null only on an unresolved row whose declared id no catalog entry or extra window names. */
+  context_window: number | null;
   /** Where that number came from, in the daemon's own words (an exact row, an extra window, a
    *  prefix rule, the provider default). Free text on purpose: naming it lets the page print the
    *  provenance without inventing an enum the daemon may resolve differently. */
@@ -58,29 +47,22 @@ export interface CatalogModel {
   rates?: ModelRates | null;
   /** True for the head's pinned model, the one every launch plants as the client's window. */
   pinned: boolean;
+  /** False for a DECLARED slot that resolved to no catalog model: its own row, never dropped, because
+   *  "the tiers Claude Code will not get on this head" is what the page exists to show. */
+  resolved: boolean;
+  /** Why an unresolved row did not resolve, in the daemon's words; absent on a resolved row. */
+  reason?: string;
 }
 
 export interface HeadCatalog {
-  key: string;
-  label: string;
-  /** The provider this head runs on, when the payload reports one.
-   *
-   *  NEEDED BY THE MODELS PAGE'S by-provider view, and NOT in FEATURES.md section 6's description
-   *  of the route ("catalog per head with slots, windows, sources, rates, pinned"). It is optional
-   *  because the route does not exist yet: when it lands without this field the view groups under
-   *  one honest bay saying the payload does not report a provider, rather than deriving a provider
-   *  from the head key and printing a guess as data. Requested on the M2-06 ledger note. */
-  provider?: string;
-  discovery_prefix: string;
+  /** The head's topology key. */
+  head: string;
+  /** The registry's provider key for the head (FEATURES.md 6, decided with the daemon lead for
+   *  V4-127: the models page groups by provider). */
+  provider: string;
   /** The head's pinned model (ANTHROPIC_MODEL at launch), or "" when the head pins none. */
   pinned_model: string;
-  /** The forced head-wide window from [heads.<key>].context_window, or null when the head
-   *  declares none and window resolution falls through to prefix rules and the provider default. */
-  context_window: number | null;
-  default_context_window: number;
   models: CatalogModel[];
-  extra_windows: ExtraWindow[];
-  window_rules: WindowRule[];
 }
 
 export interface ModelsPayload {

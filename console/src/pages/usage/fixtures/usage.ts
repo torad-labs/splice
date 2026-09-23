@@ -62,48 +62,38 @@ export const fixtureEconomics: EconomicsPayload = {
 export const fixtureModels: ModelsPayload = {
   heads: [
     {
-      key: 'claudex',
-      label: 'claudex',
-      discovery_prefix: 'claude',
+      head: 'claudex',
+      provider: 'chatgpt-oauth',
       pinned_model: 'gpt-5.6-sol',
-      context_window: 400_000,
-      default_context_window: 200_000,
       models: [
         {
           id: 'gpt-5.6-sol', label: 'sol', description: 'frontier reasoning',
           slot: 'opus', context_window: 400_000, context_window_source: 'head declaration',
-          rates: { input: 1.25, cache_read: 0.125, cache_write: 1.5, output: 10 }, pinned: true,
+          rates: { input: 1.25, cache_read: 0.125, cache_write: 1.5, output: 10 }, pinned: true, resolved: true,
         },
         {
           id: 'gpt-5.6-luna', label: 'luna', description: 'fast builder',
           slot: 'sonnet', context_window: 272_000, context_window_source: 'provider model entry',
-          rates: { input: 0.4, cache_read: 0.04, cache_write: 0.5, output: 3.2 }, pinned: false,
+          rates: { input: 0.4, cache_read: 0.04, cache_write: 0.5, output: 3.2 }, pinned: false, resolved: true,
         },
         {
           id: 'gpt-5.5', label: 'terra', description: 'long-context reviewer',
           slot: 'haiku', context_window: 200_000, context_window_source: 'prefix rule 5.5*',
-          rates: null, pinned: false,
+          rates: null, pinned: false, resolved: true,
         },
       ],
-      extra_windows: [{ id: 'gpt-5.6-mini', context_window: 128_000 }],
-      window_rules: [{ prefix: 'gpt-5.5', context_window: 200_000 }],
     },
     {
-      key: 'claude-deepseek',
-      label: 'claude-deepseek',
-      discovery_prefix: 'claude',
+      head: 'claude-deepseek',
+      provider: 'api-key',
       pinned_model: 'deepseek-flash',
-      context_window: null,
-      default_context_window: 128_000,
       models: [
         {
           id: 'deepseek-flash', label: 'flash', description: 'cheap builder',
           slot: 'sonnet', context_window: 128_000, context_window_source: 'provider default',
-          rates: { input: 0.14, cache_read: 0.014, output: 0.28 }, pinned: true,
+          rates: { input: 0.14, cache_read: 0.014, output: 0.28 }, pinned: true, resolved: true,
         },
       ],
-      extra_windows: [],
-      window_rules: [],
     },
   ],
 };

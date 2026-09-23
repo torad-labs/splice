@@ -18,7 +18,7 @@ import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windo
 import { CompactionBoard } from '../src/pages/compaction';
 import { fixtureCompact } from '../src/pages/compaction/fixtures/compaction';
 import { ModelsBoard } from '../src/pages/models';
-import { byProvider, findModel, PROVIDER_UNKNOWN } from '../src/pages/models/model';
+import { byProvider, findModel, headWindows, PROVIDER_UNKNOWN } from '../src/pages/models/model';
 import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
@@ -204,7 +204,7 @@ describe('models page', () => {
 
   test('with a catalog the board draws a strip per tier, and an undeclared tier is a struck one', () => {
     const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
-    for (const head of fixtureCatalog.heads) expect(markup).toContain(head.key);
+    for (const head of fixtureCatalog.heads) expect(markup).toContain(head.head);
     expect(markup).toContain('gpt-5.6-sol');
     // The struck tier's edge prints its state and its model cell prints the absence glyph: the
     // holder edge carries a state inside the contract's 6ch budget and the rack prints its column
@@ -225,21 +225,27 @@ describe('models page', () => {
   test('the by-provider view groups on the reported provider and never guesses one', () => {
     const groups = byProvider(fixtureCatalog.heads);
     expect(groups.map((group) => group.provider)).toEqual(['api-key', 'chatgpt-oauth', 'kimi-oauth']);
-    // Rebuilt field by field rather than spread with `provider: undefined`: under
-    // exactOptionalPropertyTypes an explicit undefined is not the same as an absent key, and "the
-    // payload does not carry this field" is exactly the case this view has to survive.
-    const head = first(fixtureCatalog.heads);
-    const withoutProvider: HeadCatalog = {
-      key: head.key, label: head.label, discovery_prefix: head.discovery_prefix,
-      pinned_model: head.pinned_model, context_window: head.context_window,
-      default_context_window: head.default_context_window, models: head.models,
-      extra_windows: head.extra_windows, window_rules: head.window_rules,
-    };
+    // An empty provider is grouped under the honest label, never under the head key.
+    const withoutProvider: HeadCatalog = { ...first(fixtureCatalog.heads), provider: '' };
     expect(byProvider([withoutProvider])[0]?.provider).toBe(PROVIDER_UNKNOWN);
   });
 
+  test('a head\'s windows come from its topology, joined on the head and provider keys', () => {
+    const head = first(fixtureCatalog.heads);
+    const topology = {
+      heads: { [head.head]: { provider: head.provider, context_window: 400_000 } },
+      providers: { [head.provider]: { default_context_window: 200_000, extra_windows: [{ id: 'x', context_window: 1 }], window_rules: [] } },
+    };
+    expect(headWindows(topology, head)).toEqual({ headWindow: 400_000, defaultWindow: 200_000, extraWindows: 1, windowRules: 0 });
+    // A window the topology does not set is an absence, never the daemon's internal zero.
+    const bare = { heads: { [head.head]: {} }, providers: { [head.provider]: { default_context_window: 0 } } };
+    expect(headWindows(bare, head)).toEqual({ headWindow: null, defaultWindow: null, extraWindows: 0, windowRules: 0 });
+    expect(headWindows(null, head)).toBeNull();
+    expect(headWindows({ heads: {}, providers: {} }, head)).toBeNull();
+  });
+
   test('the opened model is found anywhere in the catalog, and a pending payload finds nothing', () => {
-    expect(findModel(fixtureCatalog, 'kimi-k2.5')?.head.key).toBe('claude-kimi');
+    expect(findModel(fixtureCatalog, 'kimi-k2.5')?.head.head).toBe('claude-kimi');
     expect(findModel(fixtureCatalog, 'nope')).toBeNull();
     expect(findModel({ pending: 'V4-127' }, 'kimi-k2.5')).toBeNull();
   });

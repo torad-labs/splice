@@ -75,6 +75,29 @@
       "creates": "app/build/receipts"
     },
     {
+      "task": "consoleWireKeys",
+      "why": "Every key the console's types declare for every `request<T>()` it makes, read against the fat jar booted isolated. The console's types were written against payloads nobody read and its tests were fed fixtures shaped like those types, so on 2026-09-22 five pages were broken against the real daemon (accounts threw, turns 400ed every poll, doctor printed `undefined`) with every unit test green. The probe existed since V4-140 and ran in nothing.",
+      "command": ["bun", "tools/e2e/probes/console-wire-keys.ts", "--boot", "app/build/libs/app-all.jar"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
+      "task": "consoleWireKeysSelftest",
+      "why": "The wire probe proven able to fail on the same jar's real payloads: per checked route, a renamed top-level key, a renamed key inside an array element and an empty payload must each print a FAIL the plain run did not. A probe that stopped reading keys would otherwise stay green.",
+      "command": ["bun", "tools/e2e/probes/console-wire-keys.ts", "--boot", "app/build/libs/app-all.jar", "--selftest"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
+      "task": "consoleWireKeysReplay",
+      "why": "The probe finds its sources from an unrelated cwd and fails an empty replay rather than passing it (tools/e2e/test/console-wire-keys.test.ts), which no row ran.",
+      "command": ["bun", "test", "tools/e2e/test/console-wire-keys.test.ts"]
+    },
+    {
+      "task": "consoleE2e",
+      "why": "Every console page in a real browser against the fat jar's own bundle, booted with a mock upstream, a pooled OAuth account and a driven turn (console/e2e): a page fails on the router's error screen, a read the daemon refused, a console error or a printed `undefined`, and four journeys check the values the stack put there. The wire probe checks keys; only a browser sees a page throw on them. The page set is read from src/pages, so a new page is visited with no edit here.",
+      "command": ["npm", "run", "--silent", "e2e:console"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
       "task": "dependencyAudit",
       "why": "bun audit --audit-level=critical over bun.lock, three attempts capped at a minute each (checks/oss/verify-OSS-I.sh until PR 6): the registry's advisory endpoint has hung and answered 503 mid-gate, and a critical advisory must still red all three attempts.",
       "command": ["bun", "tools/gate", "audit"]

@@ -32,7 +32,7 @@ export function groupKeyOf(row: SessionRow, by: GroupBy): string {
     case 'repo':
       return row.repo?.root ?? row.cwd ?? UNATTRIBUTED;
     case 'team':
-      return row.team !== undefined && row.team !== '' ? row.team : UNATTRIBUTED;
+      return row.team !== undefined && row.team !== null && row.team !== '' ? row.team : UNATTRIBUTED;
   }
 }
 

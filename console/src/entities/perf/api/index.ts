@@ -5,12 +5,13 @@ import { pendingOf as routePendingOf, request } from '@shared/api';
 import type { HeadsPayload } from '@shared/api';
 import { poll } from '@shared/lib';
 import { inflightFrom } from '../model/derive';
+import { mergeTurns } from '../model/turns-wire';
 import { captureStore, perfStore, perfSummaryStore, perfTurnsStore } from '../model/store';
 import type {
   CaptureState,
   PerfPayload,
   PerfSummaryPayload,
-  PerfTurnsPayload,
+  PerfTurnsWire,
   PerfWindowLabel,
 } from '../model/types';
 
@@ -44,26 +45,43 @@ export async function fetchPerfSummary(label: PerfWindowLabel = '24h'): Promise<
   }
 }
 
+/** One head's turns, or the failure that kept them from being read. */
+type HeadRead = { ok: true; wire: PerfTurnsWire } | HeadFailure;
+type HeadFailure = { ok: false; head: string; err: unknown };
+
+async function readHeadTurns(head: string, n: number, since: number | undefined): Promise<HeadRead> {
+  const query = new URLSearchParams({ head, n: String(n) });
+  if (since !== undefined) query.set('since', String(since));
+  try {
+    return { ok: true, wire: await request<PerfTurnsWire>(`/api/perf/turns?${query.toString()}`) };
+  } catch (err) {
+    return { ok: false, head, err };
+  }
+}
+
 /**
- * NOTE for the daemon: a 404 is unambiguous while the whole route family is absent. Once
- * /api/perf/turns exists, an UNKNOWN HEAD must answer something else (a named error, or 400) or a
- * typo'd head will read to the operator as "not built yet".
- *
  * The landed rows plus the in-flight set. The live half comes from GET /api/heads rather than from
  * the heads entity because a slice may not import a sibling slice (eslint-plugin-boundaries): the
  * turns store stays self-contained at the cost of one more heads read per tick.
+ *
+ * GET /api/perf/turns answers ONE head per request: an absent head is refused with 400 by design
+ * (PerfRoutes.turns, pinned by ConsoleRoutesTest), and asking without one is why this page 400ed on
+ * every poll from V4-127 until 2026-09-22. So the whole fleet is every configured head, read in
+ * parallel off the same heads read and merged (model/turns-wire.ts). One head failing does not
+ * blank the others: it is named in `unread`, and only a read where EVERY head failed is an error.
  */
 export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: number): Promise<void> {
   perfTurnsStore.startLoading();
-  const query = new URLSearchParams({ n: String(n) });
-  if (head !== undefined && head !== '') query.set('head', head);
-  if (since !== undefined) query.set('since', String(since));
   try {
-    const [turns, heads] = await Promise.all([
-      request<PerfTurnsPayload>(`/api/perf/turns?${query.toString()}`),
-      request<HeadsPayload>('/api/heads'),
-    ]);
-    perfTurnsStore.setData({ inflight: inflightFrom(heads.heads), landed: turns.turns });
+    const heads = await request<HeadsPayload>('/api/heads');
+    const keys = head !== undefined && head !== '' ? [head] : heads.heads.map((status) => status.key);
+    const reads = await Promise.all(keys.map((key) => readHeadTurns(key, n, since)));
+    const failed = reads.filter((read): read is HeadFailure => !read.ok);
+    const first = failed[0];
+    if (first !== undefined && failed.length === reads.length) throw first.err;
+    const merged = mergeTurns(reads.flatMap((read) => (read.ok ? [read.wire] : [])), n);
+    const unread = [...merged.unread, ...failed.map((read) => ({ head: read.head, reason: messageOf(read.err) }))];
+    perfTurnsStore.setData({ inflight: inflightFrom(heads.heads), landed: merged.landed, unread });
   } catch (err) {
     const pending = routePendingOf(err, PENDING_TURNS);
     if (pending !== null) {

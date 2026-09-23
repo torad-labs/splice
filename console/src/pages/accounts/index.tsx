@@ -42,7 +42,8 @@ export const DEFAULT_VIEWS: readonly View[] = [
 
 /** The key the detail column is showing. One thing open at a time, addressed by what it is. */
 export function openAccountKey(account: AccountRow): string {
-  return `account:${account.kind}:${account.label}`;
+  // A single-login head has no label; its credential file (or its heads) is what it is.
+  return `account:${account.kind}:${account.label ?? account.credential_path ?? account.heads.join(',')}`;
 }
 
 export function openHeadKey(head: string): string {
@@ -252,7 +253,8 @@ export function AccountsPage() {
                   fallback that can never be taken. */}
               {opened !== null ? (
                 <>
-                  <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} />
+                  {/* Relabel and remove act on a POOL; a single-login head has none. */}
+                  {opened.label !== null ? <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} /> : null}
                   {/* ONE AccountLogin, NOT TWO (M2-28, found while reading M2-24). This sat
                       outside the branch, and HeadActions renders its OWN AccountLogin
                       (account-login/index.tsx:305), so opening a HEAD drew the `add account`

@@ -60,9 +60,10 @@ export interface SessionRow {
   availability: SessionAvailability;
   /** PENDING V4-130. Absent until the daemon resolves it. */
   repo?: SessionRepo;
-  /** PENDING V4-131/V4-133. The team the operator assigned the session to (FEATURES.md 4.13): the
-   *  daemon binds sessions to slots, and the console groups by that binding. */
-  team?: string;
+  /** The team the operator assigned the session to (FEATURES.md 4.13, 6: "the bound team id or
+   *  null"): the daemon binds sessions to slots, and the console groups by that binding. Null for a
+   *  session bound to no team, which is most of them. */
+  team?: string | null;
 }
 
 export interface SessionsPayload {

@@ -43,9 +43,13 @@ function account(over: Partial<AccountRow> = {}): AccountRow {
   return {
     kind: 'chatgpt-oauth',
     label: 'acct-a',
+    single_login: false,
+    credential_path: null,
     primary: false,
     selected: false,
     available: true,
+    pinned: false,
+    next_target: false,
     credential_present: true,
     windows: [],
     heads: ['claudex'],

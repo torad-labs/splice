@@ -14,6 +14,7 @@ __pycache__/
 # the console bundle is :console:bundle's output (PR 4), never committed
 /console/dist/
 /console/build/
+/console/e2e/.results/
 /.cache/
 
 # gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts

@@ -316,6 +316,16 @@ test('projects opens the stack repository with the detail its own route reports'
   await expect(detail).toContainText(/turns today\s*1/);
   await expect(detail).toContainText(/cost today\s*n\/r/);
   await expect(detail).toContainText(`${repo}/CLAUDE.md`);
+  // What governs the repo (FEATURES.md 4.14), from the same row: the stack's project rule for this
+  // repo shadows its model and global rules here, so it is the only one listed; and every head's
+  // statusline probes the repo under the daemon's HOME, the stack's temp home.
+  const rule = (source: string) => detail.getByRole('button', { name: `instruction ${source}` });
+  await expect(rule(`project:${repo}`)).toContainText(String(STACK.compactProject.length));
+  await expect(rule('global')).toHaveCount(0);
+  await expect(rule(`model:${STACK.model}`)).toHaveCount(0);
+  const statusline = detail.getByRole('button', { name: `statusline roots ${STACK.oauthHead}` });
+  await expect(statusline).toContainText(dirname(repo));
+  await expect(statusline).toContainText(/entry\s*home/);
   expect(faults.pageErrors, 'opening a project threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });

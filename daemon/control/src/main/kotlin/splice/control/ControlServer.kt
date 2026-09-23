@@ -70,10 +70,12 @@ import splice.core.version.ClientVersionTracker
 import splice.heads.HeadStatusListing
 import splice.heads.ListHeads
 import splice.sessions.http.ActivitySource
+import splice.sessions.http.CompactionSource
 import splice.sessions.http.ProjectsRoutes
 import splice.sessions.http.RepoOf
 import splice.sessions.http.SentTextSource
 import splice.sessions.http.SessionsRoutes
+import splice.sessions.http.StatuslineRootOf
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamsRoutes
 import splice.sessions.registry.SessionSource
@@ -152,7 +154,14 @@ public class ControlServer(
         )
     }
     private val projectsRoutes = sessionsRoutes?.let { routes ->
-        ProjectsRoutes(sessions, sessionHeads, RepoOf(routes::repoOf), TeamSource { ports.teams })
+        ProjectsRoutes(
+            sessions,
+            sessionHeads,
+            RepoOf(routes::repoOf),
+            TeamSource { ports.teams },
+            statuslineRoot = StatuslineRootOf(routes::statuslineRootOf),
+            compaction = CompactionSource { ports.compaction },
+        )
     }
     private val payloads =
         ControlPayloads(

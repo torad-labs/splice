@@ -16,7 +16,7 @@ import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import type { Basis } from '@shared/ui';
 import { timeAgo } from '@shared/lib';
-import { ProjectDetail } from './detail';
+import { ProjectCompaction, ProjectDetail, ProjectStatusline } from './detail';
 import { S } from './strings';
 import './projects.css';
 
@@ -259,6 +259,12 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
               {/* A capture's sample row IS the detail: nothing is read behind a fixture. */}
               <Bay label={S.activity}>
                 <ProjectDetail id={open.id} {...(sample === undefined ? {} : { row: open })} />
+              </Bay>
+              <Bay label={S.compaction}>
+                <ProjectCompaction id={open.id} {...(sample === undefined ? {} : { row: open })} />
+              </Bay>
+              <Bay label={S.statusline}>
+                <ProjectStatusline id={open.id} {...(sample === undefined ? {} : { row: open })} />
               </Bay>
               <Bay label={S.files}>
                 {openFiles === undefined ? (

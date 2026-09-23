@@ -31,6 +31,7 @@ import {
   wantsAttention,
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
+import type { PlaygroundState } from '../src/pages/doctor/model';
 import { EMPTIES as MCP_EMPTIES, arrangeServers, hostLimits, stateEdge, stateLabel } from '../src/pages/mcp/model';
 import { dispositions as mcpDispositions } from '../src/pages/mcp/coverage';
 import { dispositions as doctorDispositions } from '../src/pages/doctor/coverage';
@@ -185,26 +186,58 @@ describe('the playground never persists a body', () => {
     // kept them would be a body store the operator never asked for.
     expect(state.request).toBeNull();
     expect(state.response).toBeNull();
-    state = playgroundNext(state, { kind: 'answered', request: { model: 'x' }, response: { text: 'hi' } });
+    state = playgroundNext(state, { kind: 'answered', run: state.run, request: { model: 'x' }, response: { text: 'hi' } });
 
     expect(state.step).toBe('answered');
     expect(state.response).toEqual({ text: 'hi' });
     expect(writes).toEqual([]);
   });
 
+  /** A run that has been sent, so the answer events below have a run to belong to. */
+  function sent(): PlaygroundState {
+    let state = playgroundNext(IDLE_PLAYGROUND, { kind: 'head', value: 'claudex' });
+    state = playgroundNext(state, { kind: 'prompt', value: 'say hi' });
+    return playgroundNext(state, { kind: 'send' });
+  }
+
   test('reset leaves no residue behind', () => {
-    const answered = playgroundNext(IDLE_PLAYGROUND, {
-      kind: 'answered', request: { secret: 'x' }, response: { text: 'hi' },
-    });
-    expect(playgroundNext(answered, { kind: 'reset' })).toEqual(IDLE_PLAYGROUND);
+    const running = sent();
+    const answered = playgroundNext(running, { kind: 'answered', run: running.run, request: { secret: 'x' }, response: { text: 'hi' } });
+    const cleared = playgroundNext(answered, { kind: 'reset' });
+    expect({ ...cleared, run: IDLE_PLAYGROUND.run }).toEqual(IDLE_PLAYGROUND);
   });
 
-  test('a pending route clears the bodies and names its row, so nothing is left on screen', () => {
-    const answered = playgroundNext(IDLE_PLAYGROUND, { kind: 'answered', request: { a: 1 }, response: { b: 2 } });
-    const pending = playgroundNext(answered, { kind: 'pending', row: 'V4-133' });
-    expect(pending.request).toBeNull();
-    expect(pending.response).toBeNull();
-    expect(pending.note).toBe('V4-133');
+  // THE SEND IS A REAL REQUEST NOW (M4-03), so an answer can arrive after the operator moved on. A
+  // reply that landed after `clear` would put back on screen the very body the operator just
+  // dropped, which is the storing this reducer exists to refuse.
+  test('an answer that lands after a reset is dropped, not resurrected', () => {
+    const running = sent();
+    const cleared = playgroundNext(running, { kind: 'reset' });
+    const late = playgroundNext(cleared, { kind: 'answered', run: running.run, request: { a: 1 }, response: { b: 2 } });
+    expect(late.request).toBeNull();
+    expect(late.response).toBeNull();
+    expect(late.step).toBe('idle');
+  });
+
+  test('an answer for an earlier run never lands on a later one', () => {
+    const first = sent();
+    const second = playgroundNext(playgroundNext(first, { kind: 'reset' }), { kind: 'head', value: 'claudex' });
+    const again = playgroundNext(playgroundNext(second, { kind: 'prompt', value: 'again' }), { kind: 'send' });
+    expect(again.run).not.toBe(first.run);
+    const stale = playgroundNext(again, { kind: 'answered', run: first.run, request: { old: 1 }, response: { old: 2 } });
+    expect(stale.step).toBe('sending');
+    expect(stale.response).toBeNull();
+    const failedLate = playgroundNext(again, { kind: 'failed', run: first.run, note: 'old failure' });
+    expect(failedLate.note).toBeNull();
+  });
+
+  test('a refusal prints the daemon\'s sentence and holds no body', () => {
+    const running = sent();
+    const failed = playgroundNext(running, { kind: 'failed', run: running.run, note: 'unknown head: nope' });
+    expect(failed.step).toBe('failed');
+    expect(failed.note).toBe('unknown head: nope');
+    expect(failed.request).toBeNull();
+    expect(failed.response).toBeNull();
   });
 
   test('a send with no head or no prompt does nothing at all', () => {
@@ -214,11 +247,17 @@ describe('the playground never persists a body', () => {
 });
 
 describe('pending routes render an empty naming their row', () => {
-  test('the doctor empties name V4-127, V4-74 and V4-133', () => {
+  test('the doctor empties name V4-127 and V4-133', () => {
     expect(render(h(Empty, DOCTOR_EMPTIES.noReport))).toContain('V4-127');
     expect(render(h(Empty, DOCTOR_EMPTIES.upgrade))).toContain('V4-127');
-    expect(render(h(Empty, DOCTOR_EMPTIES.restart))).toContain('V4-74');
-    expect(render(h(Empty, DOCTOR_EMPTIES.playground))).toContain('V4-133');
+    expect(render(h(Empty, DOCTOR_EMPTIES.capture))).toContain('V4-133');
+  });
+
+  // M4-03: POST /api/daemon/restart and POST /api/playground are served and the page drives both, so
+  // the two empties that said they were not built are gone with the controls that replaced them.
+  test('the restart and the playground are controls now, not empties', () => {
+    expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('restart');
+    expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('playground');
   });
 
   test('the mcp restart empty names the fact that there is no route, not a row', () => {

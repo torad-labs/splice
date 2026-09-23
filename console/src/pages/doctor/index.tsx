@@ -11,6 +11,8 @@ import { useLocation } from 'react-router';
 import { checkFix, fetchUpgrade, isRedacted, leaksIn, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
 import type { DoctorCheck } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
+import { runPlayground } from '@entities/playground';
+import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Bay, Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
@@ -118,14 +120,26 @@ function ColumnNames({ columns }: { columns: readonly { w: number; label: string
 }
 
 /** The playground. A Reveal panel, not a page: the rail has thirteen addresses and no room for a
- *  fourteenth, and a prompt sent once is not a destination. */
+ *  fourteenth, and a prompt sent once is not a destination.
+ *
+ *  THE SEND IS ONE POST /api/playground (M4-03): one prompt through the named head, and the daemon
+ *  hands back the request it sent upstream and the response it got, neither recorded. Both land in
+ *  the reducer's state for the run that asked, and a refusal lands as the daemon's own sentence. */
 function Playground({ heads }: { heads: readonly string[] }) {
   const [state, dispatch] = useState(IDLE_PLAYGROUND);
   const send = (event: PlaygroundEvent) => dispatch((current) => playgroundNext(current, event));
 
-  if (state.step === 'pending') {
-    return <Empty text={EMPTIES.playground.text} source={`row ${state.note ?? 'V4-133'}`} />;
-  }
+  const start = () => {
+    if (!canSend(state)) return;
+    // The run this request belongs to is the one the `send` below opens, so its answer can be told
+    // apart from the answer to any request the operator has since walked away from.
+    const run = state.run + 1;
+    send({ kind: 'send' });
+    runPlayground(state.head.trim(), state.prompt).then(
+      (wire) => send({ kind: 'answered', run, request: wire.request, response: wire.response }),
+      (err: unknown) => send({ kind: 'failed', run, note: err instanceof Error ? err.message : String(err) }),
+    );
+  };
 
   return (
     <Reveal label={S.playground}>
@@ -150,8 +164,8 @@ function Playground({ heads }: { heads: readonly string[] }) {
           onChange={(value) => send({ kind: 'prompt', value })}
         />
         <div className="myx-doc-row">
-          <button type="button" className="myx-doc-btn" disabled={!canSend(state)} onClick={() => send({ kind: 'send' })}>
-            {S.send}
+          <button type="button" className="myx-doc-btn" disabled={!canSend(state)} onClick={start}>
+            {state.step === 'sending' ? S.sending : S.send}
           </button>
           <button type="button" className="myx-doc-btn" onClick={() => send({ kind: 'reset' })}>{S.clear}</button>
         </div>
@@ -160,9 +174,9 @@ function Playground({ heads }: { heads: readonly string[] }) {
         {state.response === null ? null : (
           <>
             <p className="myx-doc-note">{S.request}</p>
-            <pre className="myx-doc-fix">{JSON.stringify(state.request, null, 2)}</pre>
+            <pre className="myx-doc-raw">{JSON.stringify(state.request, null, 2)}</pre>
             <p className="myx-doc-note">{S.response}</p>
-            <pre className="myx-doc-fix">{JSON.stringify(state.response, null, 2)}</pre>
+            <pre className="myx-doc-raw">{JSON.stringify(state.response, null, 2)}</pre>
           </>
         )}
         {state.note === null || state.step !== 'failed' ? null : (
@@ -282,8 +296,9 @@ export function DoctorPage() {
         </div>
 
         <aside className="myx-doc-detail" aria-label={S.detail}>
-          {/* Rendered whether or not the report itself has landed: these three empties name rows
-              the operator is waiting on, and hiding them behind the report hid them entirely. */}
+          {/* Rendered whether or not the report itself has landed: the empties name rows the
+              operator is waiting on, and the restart is an action on the daemon rather than on the
+              report, so hiding either behind the report hid it entirely. */}
           <section className="myx-doc-section">
             <h2 className="myx-doc-section-title">{S.version}</h2>
             <div className="myx-doc-row">
@@ -306,7 +321,8 @@ export function DoctorPage() {
             <p className="myx-doc-note">{`claude code ${payload?.claude_code.version ?? S.absent}`}</p>
             <p className="myx-doc-note">{`${attentionCount(checks)} need attention`}</p>
             <Empty text={EMPTIES.upgrade.text} source={EMPTIES.upgrade.source} />
-            <Empty text={EMPTIES.restart.text} source={EMPTIES.restart.source} />
+            {/* The draining restart (WC-08), the same control the fleet's head detail mounts. */}
+            <DaemonRestart />
             <Empty text={EMPTIES.capture.text} source={EMPTIES.capture.source} />
           </section>
 

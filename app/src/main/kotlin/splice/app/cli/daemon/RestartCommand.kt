@@ -17,6 +17,11 @@ import splice.daemonclient.DaemonProbe
 import splice.daemonclient.MgmtKeyRead
 import splice.topology.TopologyLoader
 
+/** Restarts the daemon the plain way (`splice restart`: stop, then cold start from this shell). */
+internal fun interface DaemonRestart {
+    operator fun invoke(): Boolean
+}
+
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
 internal class RestartCommand {

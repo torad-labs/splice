@@ -3,10 +3,11 @@
 // jar last — and every pointer restored when any step throws, so a failure never leaves the daemon on
 // a release the metadata does not name. When the restoration itself fails, the refusal SAYS which
 // pointer it could not put back, never a bare exception. Split from UpgradeCommand.kt (2026-09-13).
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.nio.file.Files
@@ -19,6 +20,7 @@ internal fun interface LinkPointer {
 }
 
 internal class UpgradeActivation(
+    private val output: TerminalOutput,
     private val layout: UpgradeLayout,
     private val wrapper: UpgradeWrapper,
     private val point: LinkPointer = LinkPointer(layout::point),
@@ -52,7 +54,7 @@ internal class UpgradeActivation(
             val why = "activating $version failed (${SafeFailureText.render(e)})"
             throw UpgradeRefused(if (failed.isEmpty()) "$why; $from restored" else "$why; recovery FAILED for $failed")
         }
-        println("  $GREEN✓$RESET ${"activated".padEnd(UPGRADE_PAD)} $version ($from kept for --rollback)")
+        output.line("  $GREEN✓$RESET ${"activated".padEnd(UPGRADE_PAD)} $version ($from kept for --rollback)")
     }
 
     /** Puts every pointer back, continuing past a step that fails; returns the names it could NOT

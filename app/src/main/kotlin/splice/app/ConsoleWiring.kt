@@ -34,7 +34,6 @@ package splice.app
 
 import splice.app.auth.ConsoleAccountsImpl
 import splice.app.cli.doctor.DoctorCommand
-import splice.app.console.ConsoleUpgradeStatus
 import splice.app.console.DrainingRestartAdapter
 import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
@@ -45,6 +44,7 @@ import splice.core.model.HeadDiscoveredModels
 import splice.core.storage.ACTIVITY_DIRECTORY
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
+import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
@@ -52,6 +52,7 @@ import splice.events.bus.ConsoleEvent
 import splice.events.bus.EventBus
 import splice.head.HeadEvents
 import splice.head.HeadLifecycle
+import splice.lifecycle.upgrade.ConsoleUpgradeStatus
 import splice.lifecycle.upgrade.UpgradeStatus
 import splice.sessions.activity.ALL_HEADS
 import splice.sessions.activity.ActivityStores
@@ -79,7 +80,7 @@ internal object ConsoleWiring {
         // instead of a quiet lie.
         srv.ports.declaredHeads = topology.declaredHeads
         srv.ports.doctor = DoctorReport(DoctorCommand()::reportJson)
-        srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus()::json)
+        srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus(EnvReader(System::getenv))::json)
         // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
         // unassigned is SAFE BY CONSTRUCTION — ConsolePorts.supervised is null until set and the
         // route refuses on null, so an unwired port declines to drain rather than draining a daemon

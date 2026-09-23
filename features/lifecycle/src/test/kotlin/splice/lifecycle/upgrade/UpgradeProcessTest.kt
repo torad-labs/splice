@@ -1,6 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §5 — the upgrade's process seam has a deadline: a verifier that hangs
 // (gh waiting on a network that never answers) ends as a failure, never as an upgrade that hangs.
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

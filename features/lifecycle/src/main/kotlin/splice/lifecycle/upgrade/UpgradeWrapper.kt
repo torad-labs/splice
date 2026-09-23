@@ -6,16 +6,17 @@
 // every launch). A live shim that differs from its release's pristine copy — or has no pristine copy
 // to compare with — is SAVED beside the release it belonged to (splice-launch.edited) and the diff
 // against the new release's copy is printed so the operator can port the edit. Never lost.
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
+import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
-internal class UpgradeWrapper(private val process: UpgradeProcess) {
+internal class UpgradeWrapper(private val output: TerminalOutput, private val process: UpgradeProcess) {
 
     /** Activates [release] at [live]. Returns the file holding the bytes [live] had before — [pristine]
      *  when they were identical, [keepEditAt] (written here) when they differed or no pristine copy
@@ -39,15 +40,15 @@ internal class UpgradeWrapper(private val process: UpgradeProcess) {
     private fun report(live: Path, release: Path, pristine: Path?, previous: Path?) {
         val label = "wrapper".padEnd(UPGRADE_PAD)
         if (previous == null || previous == pristine) {
-            println("  $GREEN✓$RESET $label $live refreshed from the release")
+            output.line("  $GREEN✓$RESET $label $live refreshed from the release")
             return
         }
         val comparable = pristine != null && Files.exists(pristine)
         val why = if (comparable) "edited since its release was installed" else "no pristine copy to compare with"
-        println("  $YELLOW!$RESET $label $live refreshed from the release ($why)")
+        output.line("  $YELLOW!$RESET $label $live refreshed from the release ($why)")
         val indent = "".padEnd(UPGRADE_PAD)
-        println("  $indent   your copy is saved at $previous; its diff against the new release's copy:")
-        println(diff(release, previous))
+        output.line("  $indent   your copy is saved at $previous; its diff against the new release's copy:")
+        output.line(diff(release, previous))
     }
 
     private fun replace(live: Path, release: Path) {

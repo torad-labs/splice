@@ -3,7 +3,7 @@
 // the release the other was activating). An OS file lock under releases/, gone with the process
 // however it ends; a second run is refused before it fetches anything. Split from UpgradeCommand.kt
 // (concentration, 2026-09-14).
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException

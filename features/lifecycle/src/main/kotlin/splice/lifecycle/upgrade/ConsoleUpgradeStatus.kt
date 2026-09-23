@@ -29,12 +29,11 @@
 // read its version. UpgradeLayout records no last-checked version and UpgradeFetch returns a body
 // without the final URL a `releases/latest/download` redirect would carry the tag in, so there is no
 // cheaper path in the tree. The field says so instead of inventing one.
-package splice.app.console
+package splice.lifecycle.upgrade
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.app.cli.upgrade.UpgradeLayout
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -48,12 +47,12 @@ internal const val LATEST_NOT_CHECKED =
     "no upgrade check has succeeded on this daemon; splice learns the latest version by fetching and " +
         "verifying a release, which no poll may do"
 
-internal class ConsoleUpgradeStatus(
-    private val layout: UpgradeLayout = UpgradeLayout(EnvReader(System::getenv)),
-) {
+/** Reads the release layout under [env]'s share dir; app hands in the process environment. */
+public class ConsoleUpgradeStatus(env: EnvReader) {
+    private val layout = UpgradeLayout(env)
 
     /** The upgrade bay's payload: the three facts, each with the basis it rests on. */
-    fun json(): String {
+    public fun json(): String {
         val rollback = rollbackTarget()
         return buildJsonObject {
             // ALWAYS MEASURED: the current link's target, or this build's own version on a flat

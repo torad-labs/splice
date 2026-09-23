@@ -5,11 +5,9 @@
 // proof — the restart verb polled for the OLD CLI's own version and called a good restart a failure,
 // and a unit whose file names the jar but whose daemon was started by hand restarted a JVM that lost
 // the daemon lock and exited 0 while the squatter kept serving the old jar (review 2026-09-14).
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
-import splice.app.cli.AdminSupport
-import splice.app.cli.daemon.RestartCommand
-import splice.daemonclient.DaemonProbe
+import splice.core.terminal.TerminalOutput
 import java.nio.file.Path
 
 private const val POLL_MS = 2_000L
@@ -18,15 +16,10 @@ private const val NANOS_PER_MS = 1_000_000L
 private const val CONFIRM_POLLS = 60
 private const val CONFIRM_POLL_MS = 250L
 
-/** Restarts the daemon the plain way (`splice restart`: stop, then cold start from this shell). */
-internal fun interface DaemonRestart {
-    operator fun invoke(): Boolean
-}
-
 /** Restarts the daemon the plain way (`splice restart`: stop, then cold start from this shell),
- *  waiting for a daemon that reports [expectedVersion]. */
-internal fun interface VersionedRestart {
-    operator fun invoke(expectedVersion: String): Boolean
+ *  waiting for a daemon that reports [expectedVersion]. The restart verb is app's; it arrives here. */
+public fun interface VersionedRestart {
+    public operator fun invoke(expectedVersion: String): Boolean
 }
 
 /** What /health reports as the daemon's version right now, or null when nothing answers. */
@@ -47,12 +40,11 @@ internal sealed class DaemonRestarted {
 }
 
 internal class UpgradeDaemon(
+    private val output: TerminalOutput,
     private val process: UpgradeProcess,
     private val inflight: UpgradeInflight,
-    private val restartVerb: VersionedRestart = VersionedRestart { RestartCommand().restart(expectedVersion = it) },
-    private val healthVersion: DaemonVersionRead = DaemonVersionRead {
-        DaemonProbe.healthView(AdminSupport.controlPort())?.version
-    },
+    private val restartVerb: VersionedRestart,
+    private val healthVersion: DaemonVersionRead,
     private val pollMs: Long = POLL_MS,
     private val maxWaitMs: Long = MAX_WAIT_MS,
     private val confirmPollMs: Long = CONFIRM_POLL_MS,
@@ -60,7 +52,7 @@ internal class UpgradeDaemon(
      *  own it and cannot assume one is there — an absent or inactive unit is the "started by hand"
      *  arm below, which the restart verb handles. Hardcoding the name made a box whose packager
      *  called the unit something else look permanently unsupervised. */
-    private val userUnit: String = AdminSupport.supervisorUnit(),
+    private val userUnit: String,
 ) {
     /** True only when every head reports zero turns, or no daemon exists at all. A read that cannot
      *  see the turns (key, timeout, shape) is waited out like a busy one and then refused: an unknown
@@ -70,12 +62,12 @@ internal class UpgradeDaemon(
         val start = System.nanoTime()
         var read = inflight()
         while (!idle(read) && (System.nanoTime() - start) / NANOS_PER_MS < maxWaitMs) {
-            println("  ${"waiting".padEnd(UPGRADE_PAD)} ${describe(read)}")
+            output.line("  ${"waiting".padEnd(UPGRADE_PAD)} ${describe(read)}")
             Thread.sleep(pollMs)
             read = inflight()
         }
         if (read is InflightRead.Unknown) {
-            println("  ${"waiting".padEnd(UPGRADE_PAD)} ${describe(read)}; not activating")
+            output.line("  ${"waiting".padEnd(UPGRADE_PAD)} ${describe(read)}; not activating")
         }
         return idle(read)
     }

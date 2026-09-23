@@ -10,8 +10,8 @@ import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddProfiles
 import splice.app.cli.add.DaemonUpProbe
 import splice.app.cli.auth.LoginCommand
+import splice.app.cli.daemon.DaemonRestart
 import splice.app.cli.daemon.RestartCommand
-import splice.app.cli.upgrade.DaemonRestart
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader

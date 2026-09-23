@@ -1,7 +1,7 @@
 // `splice upgrade` reads the daemon's in-flight count (v0.4.0, FEATURES.md §5): NoDaemon needs
 // POSITIVE absence evidence — a refused connect on the control port — and every other failure to
 // see the turns is Unknown, which the upgrade waits on or refuses, never treats as zero.
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

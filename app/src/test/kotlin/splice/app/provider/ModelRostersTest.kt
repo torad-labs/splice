@@ -12,6 +12,7 @@ import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
+import splice.core.topology.ModelDiscoveryConfig
 import splice.core.topology.ProviderConfig
 import splice.core.util.LogSink
 import splice.models.discovery.Discovery
@@ -49,6 +50,18 @@ class ModelRostersTest {
         assertEquals(chat, next.forHead("xai"))
         assertTrue(lines.any { "HTTP 503" in it && "published last" in it }, "$lines")
     }
+
+    // The operator reads this line to learn what joined the picker. It once said "385 discovered" for
+    // an OpenRouter head whose filter let 294 join (2026-09-23), so the filter's share is named on it.
+    @Test
+    fun `the line counts what the endpoint listed and what the provider's filter keeps out`(@TempDir tmp: Path) =
+        runBlocking {
+            val rosters = rosters(tmp, HeadModelsSource { _, _ -> Discovery.Found(LIST_URL, chat) })
+            val filtered = provider.copy(discovery = ModelDiscoveryConfig(exclude = listOf("m-2")))
+            rosters.resolve(mapOf("xai" to provider, "or" to filtered))
+            assertTrue("[xai] models: 2 listed at $LIST_URL\n" in lines, "$lines")
+            assertTrue("[or] models: 2 listed at $LIST_URL, 1 kept out by its discovery filter\n" in lines, "$lines")
+        }
 
     @Test
     fun `no answer and nothing kept is the declared rows, said once`(@TempDir tmp: Path) = runBlocking {

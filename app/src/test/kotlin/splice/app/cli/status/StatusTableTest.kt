@@ -3,12 +3,21 @@ package splice.app.cli.status
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.CliPalette
+import splice.core.terminal.ColorDepth
 import splice.core.topology.AuthConfig
 import splice.core.topology.AuthKindRegistry
+import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
+import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.util.EnvReader
+import java.nio.file.Files
+import java.nio.file.Path
 
 // DR-175 (grok-splice source sweep): the status table's backend column told kimi operators they
 // were on "OpenAI platform". backendLabel matched three wire STRINGS and let everything else fall
@@ -26,6 +35,75 @@ class StatusTableTest {
         baseUrl = "https://example.invalid",
         auth = AuthConfig(kind),
     )
+
+    // ROW HAD NO ARMS AT ALL before 2026-09-22. Every assertion in this class called backendLabel,
+    // so the table's actual layout — glyph, columns, the action text — could be rewritten wholesale
+    // and the suite stayed green. It was, and it did. These arms exist so the next rewrite cannot.
+
+    private fun head(command: String, port: Int = 3099) =
+        HeadConfig(
+            provider = "p",
+            port = port,
+            discoveryPrefix = "test--",
+            pinnedModel = "test-model",
+            claude = ClaudeWrapperConfig(command = command),
+        )
+
+    /** Hermetic: SPLICE_BIN_DIR decides wrapperInstalled, and an explicit auth.env decides the
+     *  api-key credential, so neither answer comes from the developer's own machine. */
+    private fun env(bin: Path, vararg extra: Pair<String, String>): EnvReader {
+        val map = mapOf("SPLICE_BIN_DIR" to bin.toString()) + extra.toMap()
+        return EnvReader { name -> map[name] }
+    }
+
+    private fun apiKeyProvider() = ProviderConfig(
+        dialect = Dialect.OPENAI_CHAT,
+        baseUrl = "https://example.invalid",
+        auth = AuthConfig(kind = "api-key", env = "TEST_STATUS_KEY"),
+    )
+
+    private fun ready(bin: Path, command: String): EnvReader {
+        Files.createSymbolicLink(bin.resolve(command), bin.resolve("target"))
+        return env(bin, "TEST_STATUS_KEY" to "sk-present")
+    }
+
+    @Test
+    fun `a blocked row names the one command that would fix it`(@TempDir bin: Path) {
+        val plain = StatusTable(CliPalette(ColorDepth.NONE))
+        val row = plain.row("or", head("claude-or"), apiKeyProvider(), env(bin))
+        // No wrapper and no key. The wrapper is the blocking one, so that is what it must say —
+        // telling the operator to set a key for a command that is not on PATH is advice they
+        // cannot act on yet.
+        assertTrue(row.contains("splice install"), row)
+        assertFalse(row.contains("set the api key"), "two actions in one row is no action: $row")
+    }
+
+    @Test
+    fun `state survives NO_COLOR, carried by the glyph rather than the tone`(@TempDir bin: Path) {
+        val plain = StatusTable(CliPalette(ColorDepth.NONE))
+        val blocked = plain.row("or", head("claude-or"), apiKeyProvider(), env(bin))
+        val live = plain.row("or", head("claude-or"), apiKeyProvider(), ready(bin, "claude-or"))
+        assertFalse(blocked.contains("\u001B"), "an SGR sequence reached a NO_COLOR terminal: $blocked")
+        assertFalse(live.contains("\u001B"), live)
+        assertNotEquals(
+            blocked.trimStart().first(),
+            live.trimStart().first(),
+            "the two states open with the same glyph, so colour was the only carrier",
+        )
+        assertTrue(live.contains("ready"), live)
+    }
+
+    @Test
+    fun `the action column holds its offset when head names differ in length`(@TempDir bin: Path) {
+        val plain = StatusTable(CliPalette(ColorDepth.NONE))
+        val short = plain.row("or", head("or"), apiKeyProvider(), env(bin))
+        val long = plain.row("claude-muse", head("claude-muse"), apiKeyProvider(), env(bin))
+        assertEquals(
+            short.indexOf("splice install"),
+            long.indexOf("splice install"),
+            "columns drifted, so the table stops scanning as a grid:\n$short\n$long",
+        )
+    }
 
     @Test
     fun `the shipped kimi pair never renders an OpenAI label - DR-175`() {

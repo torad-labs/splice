@@ -9,11 +9,8 @@ import splice.app.cli.daemon.DaemonHealth
 import splice.app.cli.doctor.HealthView
 import splice.app.daemon.TopologyLoader
 import splice.core.GATEWAY_VERSION
-import splice.core.terminal.BOLD
-import splice.core.terminal.DIM
-import splice.core.terminal.GREEN
-import splice.core.terminal.RESET
-import splice.core.terminal.YELLOW
+import splice.core.terminal.CliPalette
+import splice.core.terminal.ColorDepthProbe
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
@@ -32,10 +29,14 @@ internal fun interface HealthProbe {
 internal class StatusCommand(
     private val healthProbe: HealthProbe = HealthProbe { port -> DaemonHealth().healthView(port) },
     private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
+    /** ONE palette per command, threaded into the table: resolving it twice could in principle
+     *  disagree between the header and the rows, and a table whose tones shift mid-render is worse
+     *  than one with no colour at all. */
+    private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
 ) {
 
     private val loginIo = LoginIo()
-    private val table = StatusTable()
+    private val table = StatusTable(palette)
     private val extras = StatusExtras(accountPools)
 
     internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
@@ -44,24 +45,29 @@ internal class StatusCommand(
         val health = healthProbe(port)
         val up = health?.version == GATEWAY_VERSION
 
-        println("${BOLD}splice$RESET $DIM— Claude Code, wrapped$RESET")
-        println()
+        // The daemon's state rides on the wordmark line rather than taking a labelled row of its
+        // own: it is one fact, and a row per fact is what pushed the heads — the actual answer —
+        // below the fold on a short terminal.
         val daemonLine = if (up) {
-            "${GREEN}running$RESET $DIM· control :$port$RESET"
+            palette.paint(palette.live, "daemon running on $port")
         } else {
-            "${YELLOW}stopped$RESET $DIM(starts on first launch)$RESET"
+            palette.paint(palette.strain, "daemon stopped") +
+                palette.paint(palette.quiet, " (starts on first launch)")
         }
-        println("  daemon    $daemonLine")
-        clientVersionWarning(health)?.let { println("  warning   $YELLOW$it$RESET") }
-        println("  config    $DIM${TopologyLoader.configPath()}$RESET")
-        println("  jar       $DIM${jarLine()}$RESET")
+        println("  " + palette.paint(palette.strong, "splice $GATEWAY_VERSION") + "     " + daemonLine)
+        clientVersionWarning(health)?.let { println("  " + palette.paint(palette.strain, "! $it")) }
         println()
-        println("  ${BOLD}HEAD          COMMAND        BACKEND                AUTH          WRAPPER$RESET")
+        println(palette.paint(palette.quiet, STATUS_HEADER))
         for ((key, head) in topology.heads) {
             val provider = topology.providers[head.provider] ?: continue
             println("  " + table.row(key, head, provider, envReader))
         }
         if (up) extras.printAccounts(port, envReader)
+        println()
+        // Paths sink below the table: they are reference, not the answer, and an operator who wants
+        // them knows they are here. Above the heads they read as though something were wrong.
+        println("  " + palette.paint(palette.quiet, "config  ${TopologyLoader.configPath()}"))
+        println("  " + palette.paint(palette.quiet, "jar     ${jarLine()}"))
         println()
         table.printNextSteps(topology, envReader)
     }

@@ -113,9 +113,15 @@ export const SELF = new Set([
  *  three names drops EXACTLY the 16 importers and keeps every burn-down invoker charged. It cannot
  *  become a dodge: a file that actually runs `python3` still matches on that token however often
  *  it also names python-json. Red-green: test/no-python.test.ts, "a .ts that only IMPORTS a compat
- *  module" (green) beside "imports a compat module AND shells into python3" (red). */
+ *  module" (green) beside "imports a compat module AND shells into python3" (red).
+ *
+ *  A THIRD TIME, 2026-09-22 (LAYOUT-01): this wall's own config is python-burndown.json, and the
+ *  restructure census lists every source path, that one included. Measured over every tracked file:
+ *  stripping the name drops EXACTLY ONE charge, the census (41 -> 40), and every invoker keeps its
+ *  charge. Red-green: "a census that only NAMES the burn-down config" (green) beside "names the
+ *  burn-down config AND shells into python3" (red). */
 export function namesPython(text: string): boolean {
-  const named = ["no-python", "python-http", "python-json", "python-values"];
+  const named = ["no-python", "python-http", "python-json", "python-values", "python-burndown"];
   return /\bpython3?\b/.test(named.reduce((t, name) => t.replaceAll(name, ""), text));
 }
 

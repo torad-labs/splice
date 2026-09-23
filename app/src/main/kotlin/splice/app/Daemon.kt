@@ -51,7 +51,7 @@ public class Daemon(
     private val dashboardHtml: DashboardPage,
     private val log: LogSink = LogSink { System.err.print(it) },
     private val shutdownDaemon: ShutdownDaemon = ShutdownDaemon {},
-    private val refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh()::refresh),
+    private val refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh(log)::refresh),
     // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
     // Defaults keep every existing test constructor compiling; Main always passes both.
     private val topologyDigest: String = "",

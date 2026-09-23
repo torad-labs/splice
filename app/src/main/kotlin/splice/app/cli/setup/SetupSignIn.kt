@@ -13,8 +13,8 @@
 // the shape is the tree's own.
 package splice.app.cli.setup
 
-import splice.app.auth.LoginIo
 import splice.app.cli.AdminSupport
+import splice.app.cli.auth.CliSignIn
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.topology.AuthKind
@@ -33,7 +33,7 @@ internal class SetupSignIn(
     private val palette: CliPalette = CliPalette(ColorDepthProbe(env).depth()),
 ) {
 
-    private val loginIo = LoginIo()
+    private val signIn = CliSignIn()
 
     private fun pendingOAuthHeads(topology: Topology): List<PendingOAuthHead> =
         topology.heads.entries.mapNotNull { (key, head) ->
@@ -137,7 +137,7 @@ internal class SetupSignIn(
     /** A head that can launch as-is: the client's own login, or a credential splice can find. */
     private fun credentialed(key: String, provider: ProviderConfig): Boolean =
         AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client ||
-            loginIo.credentialConfigured(key, provider, env)
+            signIn.credentialConfigured(key, provider, env)
 
     /** One command and what it is for, the command padded so the descriptions form a column. */
     private fun verb(command: String, purpose: String) {

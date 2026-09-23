@@ -14,11 +14,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.RefreshAttempt
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
+import splice.core.util.LogSink
 import java.util.concurrent.atomic.AtomicInteger
 
 class KimiRefreshTest {
+
+    private val kimiRefresh = KimiRefresh(LogSink {})
 
     private fun clientOver(engine: MockEngine) = HttpClient(engine)
 
@@ -40,7 +41,7 @@ class KimiRefreshTest {
                 )
             }
         }
-        val result = KimiRefresh().refresh(
+        val result = kimiRefresh.refresh(
             "https://auth.kimi.com/token",
             "old-refresh",
             identityHeaders,
@@ -60,7 +61,7 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("unauthorized", HttpStatusCode.Unauthorized, headersOf())
         }
-        val result = KimiRefresh().refresh(
+        val result = kimiRefresh.refresh(
             "https://auth.kimi.com/token",
             "dead-refresh",
             identityHeaders,
@@ -77,7 +78,7 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest, headersOf())
         }
-        val result = KimiRefresh().refresh(
+        val result = kimiRefresh.refresh(
             "https://auth.kimi.com/token",
             "dead-refresh",
             identityHeaders,
@@ -94,7 +95,7 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("down", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        val result = KimiRefresh().refresh(
+        val result = kimiRefresh.refresh(
             "https://auth.kimi.com/token",
             "refresh",
             identityHeaders,
@@ -114,21 +115,14 @@ class KimiRefreshTest {
                 headersOf(),
             )
         }
-        val stderr = ByteArrayOutputStream()
-        val realErr = System.err
-        System.setErr(PrintStream(stderr, true))
-        try {
-            KimiRefresh().refresh(
-                "https://auth.kimi.com/token",
-                "dead-refresh",
-                identityHeaders,
-                clientOver(engine),
-            )
-        } finally {
-            System.setErr(realErr)
-        }
-        val logged = stderr.toString()
+        val logged = StringBuilder()
+        KimiRefresh(LogSink { logged.append(it) }).refresh(
+            "https://auth.kimi.com/token",
+            "dead-refresh",
+            identityHeaders,
+            clientOver(engine),
+        )
         assertTrue(logged.contains("HTTP 400"), "status must remain diagnosable: $logged")
-        assertTrue(!logged.contains(secret), "response body must not reach stderr: $logged")
+        assertTrue(!logged.contains(secret), "response body must not reach the log: $logged")
     }
 }

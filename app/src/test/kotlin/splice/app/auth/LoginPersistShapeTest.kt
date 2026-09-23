@@ -23,8 +23,6 @@ import splice.provider.codex.CodexOAuth
 import splice.provider.grok.GrokOAuth
 import splice.provider.kimi.KimiOAuth
 import splice.upstream.credentials.AccountLabelPolicy
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -35,14 +33,8 @@ import java.util.Base64
 class LoginPersistShapeTest {
 
     private fun persist(path: Path, authJson: String): Pair<Boolean, String> {
-        val savedOut = System.out
-        val out = ByteArrayOutputStream()
-        return try {
-            System.setOut(PrintStream(out, true))
-            LoginIo().persistIfSignedIn(path, authJson) to out.toString()
-        } finally {
-            System.setOut(savedOut)
-        }
+        val out = StringBuilder()
+        return LoginIo(LoginOutput { out.appendLine(it) }).persistIfSignedIn(path, authJson) to out.toString()
     }
 
     @Test
@@ -283,14 +275,12 @@ class LoginCollisionTest {
             response.responseBody.use { it.write(bytes) }
         }
         server.start()
-        val savedOut = System.out
-        val out = ByteArrayOutputStream()
+        val out = StringBuilder()
+        val flow = OAuthLoginFlow(LoginOutput { out.appendLine(it) })
         return try {
-            System.setOut(PrintStream(out, true))
             val local = spec.copy(tokenUrl = "http://127.0.0.1:${server.address.port}/token")
-            runBlocking { OAuthLoginFlow.exchangeAndPersist(local, "test-code") } to out.toString()
+            runBlocking { flow.exchangeAndPersist(local, "test-code") } to out.toString()
         } finally {
-            System.setOut(savedOut)
             server.stop(0)
         }
     }

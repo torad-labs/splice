@@ -24,7 +24,7 @@ internal class KimiPassthroughArm(
     private val statePaths: StatePaths,
     probeScope: CoroutineScope,
     log: LogSink,
-    kimiRefresh: KimiRefresh = KimiRefresh(),
+    kimiRefresh: KimiRefresh = KimiRefresh(log),
 ) {
     private val passthroughAssembly = PassthroughAssembly()
     private val kimiOAuth = KimiOAuth(probeScope, log, kimiRefresh)

@@ -10,8 +10,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import splice.app.auth.LoginIo
 import splice.app.auth.StoredCredential
+import splice.app.cli.auth.CliSignIn
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
@@ -39,7 +39,7 @@ internal sealed class ListedModels {
 
 internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val loginIo = LoginIo()
+    private val signIn = CliSignIn()
     private val credentialFile = AddCredentialFile(json)
     private val credentials = StoredCredential(json)
 
@@ -51,7 +51,7 @@ internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
         val kind = provider.auth.kind
         val problem = when {
             kind == AuthKind.Client.wire -> null
-            !loginIo.credentialConfigured(key, provider, env) -> "no credential for '$key' ($kind)"
+            !signIn.credentialConfigured(key, provider, env) -> "no credential for '$key' ($kind)"
             AuthKindRegistry.isOAuth(kind) -> oauthPath(provider)?.let { credentialFile.problem(it, kind) }
             else -> null
         }

@@ -70,7 +70,7 @@ class OAuthLoginObserverTest {
 
         val ok = try {
             runBlocking {
-                val running = async(Dispatchers.IO) { OAuthLoginFlow.run(spec, observer) }
+                val running = async(Dispatchers.IO) { OAuthLoginFlow(LoginOutput {}).run(spec, observer) }
                 awaitAnnouncement(observer)
                 assertEquals(authorizeUrl, observer.detail.get()?.browserUrl)
                 withTimeout(TIMEOUT_MS) {

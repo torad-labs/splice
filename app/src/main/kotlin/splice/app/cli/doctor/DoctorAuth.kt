@@ -5,7 +5,7 @@
 // credentialVerdict + credentialLabel are pure, and splitBrainChecks is the daemon-side comparison.
 package splice.app.cli.doctor
 
-import splice.app.auth.LoginIo
+import splice.app.cli.auth.CliSignIn
 import splice.app.cli.daemon.RestartCommand
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
@@ -19,9 +19,9 @@ import splice.topology.TopologyLoader
  *  each call site is a receiver insertion. */
 internal class DoctorAuth {
 
-    // Credential presence is LoginIo's fact (StatusCommand delegates to the same methods).
-    // Reading LoginIo directly keeps splice.app as an honest neighbour vote.
-    private val loginIo = LoginIo()
+    // Credential presence is CliSignIn's fact (StatusCommand delegates to the same methods).
+    // Reading CliSignIn directly keeps splice.app.cli.auth as an honest neighbour vote.
+    private val signIn = CliSignIn()
     private val verdict = DoctorAuthVerdict()
     private val restart = RestartCommand()
 
@@ -98,7 +98,7 @@ internal class DoctorAuth {
             command,
             envVar,
             isOAuth,
-            selfManaged || loginIo.credentialConfigured(key, provider, envReader),
+            selfManaged || signIn.credentialConfigured(key, provider, envReader),
             selfManaged,
         )
     }

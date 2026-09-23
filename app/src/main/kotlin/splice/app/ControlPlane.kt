@@ -60,7 +60,7 @@ internal class ControlPlane(
      *  width ratchet's max of 12 — see BootedTopology.kt for why these three and not some other
      *  three. Still never the Topology object itself: only Daemon holds that. */
     private val topology: BootedTopology = BootedTopology(),
-    refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh()::refresh),
+    refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh(log)::refresh),
     /** v0.4.0 shared MCP hosting knobs ([daemon] mcp_hosting / mcp_hosting_exclude). */
     private val mcpHosting: McpHostingSettings = McpHostingSettings(),
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),

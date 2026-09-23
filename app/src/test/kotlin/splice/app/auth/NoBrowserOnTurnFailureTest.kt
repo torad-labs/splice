@@ -24,14 +24,16 @@ class NoBrowserOnTurnFailureTest {
     @Test
     fun `the browser primitive is called from exactly the three operator-initiated surfaces`() {
         // Sorted, module-relative. OAuthLoginFlow and DeviceLoginFlow are the two login verbs'
-        // flows; AdminSupport.openUrl exists for `splice dashboard`. Nothing else may reach it.
+        // flows; AdminSupport.openUrl exists for `splice dashboard`. Nothing else may reach it. The
+        // primitive has two spellings since LAYOUT-01: LoginIo.openBrowser, and a constructed
+        // SystemBrowserOpener, which AdminSupport builds directly and each flow defaults to.
         assertEquals(
             listOf(
                 "app/src/main/kotlin/splice/app/auth/OAuthLoginFlow.kt",
                 "app/src/main/kotlin/splice/app/cli/AdminSupport.kt",
                 "app/src/main/kotlin/splice/app/auth/DeviceLoginFlow.kt",
             ).sorted(),
-            referencing("openBrowser(").filterNot { it.endsWith("splice/app/auth/LoginIo.kt") }.sorted(),
+            browserPrimitive().filterNot { it.endsWith("splice/app/auth/LoginIo.kt") }.sorted(),
             "a new browser call site is a new way to open the operator's browser — sanction it here " +
                 "deliberately, or do not ship it",
         )
@@ -51,7 +53,7 @@ class NoBrowserOnTurnFailureTest {
         // adapters) and the provider arms must have no path to the primitive, whatever status or
         // failure class reaches them. This is the assertion that keeps the class dead for kimi, for
         // muse, and for the next head — not just for grok.
-        val offenders = (referencing("openBrowser(") + referencing("openUrl("))
+        val offenders = (browserPrimitive() + referencing("openUrl("))
             .filter { path -> path.contains("/head/") || path.substringAfterLast('/').startsWith("Turn") }
         assertTrue(offenders.isEmpty(), "a turn-failure path can reach the browser: $offenders")
     }
@@ -69,6 +71,10 @@ class NoBrowserOnTurnFailureTest {
         File(root, ".claude/worktrees/x/.git").writeText("gitdir: /elsewhere\n")
         assertEquals(listOf("app/src/main/kotlin/splice/app/Here.kt"), referencing(root, "openBrowser("))
     }
+
+    /** Every production source that can reach the system browser, under either spelling. */
+    private fun browserPrimitive(): List<String> =
+        (referencing("openBrowser(") + referencing("SystemBrowserOpener(")).distinct()
 
     /** Module-relative paths of every production Kotlin source under the gateway tree that contains
      *  [token]. Module-relative so the expected sets above read the same from any working directory. */

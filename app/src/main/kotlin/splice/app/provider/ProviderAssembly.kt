@@ -28,7 +28,7 @@ internal class ProviderAssembly(
     private val museArm: MusePassthroughArm = MusePassthroughArm(log, probeScope),
     private val kimiArm: KimiPassthroughArm = KimiPassthroughArm(statePaths, probeScope, log),
 ) {
-    private val grokRefresh = GrokRefresh()
+    private val grokRefresh = GrokRefresh(log)
     private val passthroughAssembly = PassthroughAssembly()
     private val chatArm = ChatArm(probeScope, log, grokRefresh)
     private val passthroughArm = PassthroughArm(passthroughAssembly)

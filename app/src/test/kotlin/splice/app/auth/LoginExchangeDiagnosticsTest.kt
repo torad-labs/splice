@@ -15,8 +15,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -44,13 +42,11 @@ class LoginExchangeDiagnosticsTest {
             authPath = tmp.resolve("auth.json"),
             toAuthJson = { body -> Json.parseToJsonElement(body).toString() },
         )
-        val savedOut = System.out
-        val out = ByteArrayOutputStream()
+        val out = StringBuilder()
+        val flow = OAuthLoginFlow(LoginOutput { out.appendLine(it) })
         val ok = try {
-            System.setOut(PrintStream(out, true))
-            runBlocking { OAuthLoginFlow.exchangeAndPersist(spec, "the-code") }
+            runBlocking { flow.exchangeAndPersist(spec, "the-code") }
         } finally {
-            System.setOut(savedOut)
             server.stop(0)
         }
         val printed = out.toString()
@@ -98,14 +94,11 @@ class LoginTokenlessSuccessTest {
     )
 
     private fun exchange(server: HttpServer, authPath: Path): Pair<Boolean, String> {
-        val savedOut = System.out
-        val out = ByteArrayOutputStream()
+        val out = StringBuilder()
+        val flow = OAuthLoginFlow(LoginOutput { out.appendLine(it) })
         return try {
-            System.setOut(PrintStream(out, true))
-            runBlocking { OAuthLoginFlow.exchangeAndPersist(specFor(server, authPath), "the-code") } to
-                out.toString()
+            runBlocking { flow.exchangeAndPersist(specFor(server, authPath), "the-code") } to out.toString()
         } finally {
-            System.setOut(savedOut)
             server.stop(0)
         }
     }

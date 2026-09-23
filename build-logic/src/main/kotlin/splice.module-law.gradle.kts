@@ -61,9 +61,11 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     // asks the local daemon through its client and repoints the files launch's install layout names.
     ":features-lifecycle" to setOf(":core", ":integrations-daemon-client", ":features-launch"),
     // the doctor report, the one-prompt playground, and the operator's reads of a running head
-    // (`splice wire`) through the daemon client.
+    // (`splice wire`, `splice logs`) through the daemon client. `splice doctor` reads every surface it
+    // diagnoses: the account pools, the local runtimes, the Claude head's wrap, the installed shim.
     ":features-diagnostics" to setOf(
         ":core", ":integrations-http", ":integrations-daemon-client", ":integrations-topology",
+        ":integrations-upstream", ":integrations-claude-code", ":features-accounts", ":features-launch",
     ),
     // launching Claude Code against a head: the exec recipe, the Claude head's wrap, the resume hook,
     // and the wrapper commands `splice install` links to the launch shim from splice.toml's heads.

@@ -33,7 +33,6 @@
 package splice.app
 
 import splice.app.auth.ConsoleAccountsImpl
-import splice.app.cli.doctor.DoctorCommand
 import splice.app.console.DrainingRestartAdapter
 import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
@@ -79,7 +78,7 @@ internal object ConsoleWiring {
         // nobody has ever looked. The deletion pins in ConsoleWiringPinTest are what make that a red
         // instead of a quiet lie.
         srv.ports.declaredHeads = topology.declaredHeads
-        srv.ports.doctor = DoctorReport(DoctorCommand()::reportJson)
+        srv.ports.doctor = DoctorReport(DoctorWiring::consoleJson)
         srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus(EnvReader(System::getenv))::json)
         // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
         // unassigned is SAFE BY CONSTRUCTION — ConsolePorts.supervised is null until set and the

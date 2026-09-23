@@ -1,0 +1,105 @@
+// NEW: (split from DoctorCommand.kt, which sits at detekt's 14-function file budget) the doctor
+// AUTH section — per-head credential presence, the honest severity rule, and the split-brain check
+// that catches a key exported after the daemon booted. PHASED so the I/O and the verdict are
+// separable: authChecks composes, probeHeads + headAuthOf do every read (env, keystore, topology),
+// credentialVerdict + credentialLabel are pure, and splitBrainChecks is the daemon-side comparison.
+package splice.diagnostics.doctor
+
+import splice.accounts.status.CredentialPresence
+import splice.core.terminal.TerminalOutput
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
+import splice.core.topology.ProviderConfig
+import splice.core.topology.Topology
+import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
+
+/** The doctor auth section as a constructed collaborator (Kotlin style law, 2026-08-15: main
+ *  sources carry no top-level functions). Every member keeps the old function's name so the diff at
+ *  each call site is a receiver insertion. */
+internal class DoctorAuth(output: TerminalOutput) {
+
+    // Credential presence is the accounts feature's fact, the same answer status, setup and add read
+    // through the CLI's CliSignIn; an unreadable credential file's line goes to [output].
+    private val presence = CredentialPresence(output)
+    private val verdict = DoctorAuthVerdict()
+    private val splitBrain = SplitBrainChecks()
+
+    internal fun authChecks(
+        topo: DoctorTopology,
+        envReader: EnvReader,
+        snapshot: DaemonSnapshot,
+    ): List<DoctorCheck> {
+        val topology = (topo as? DoctorTopology.Parsed)?.topology
+            ?: return listOf(DoctorCheck("auth", CheckStatus.INFO, "skipped (no readable topology)"))
+        val heads = probeHeads(topology, envReader)
+        if (heads.isEmpty()) return listOf(DoctorCheck("auth", CheckStatus.INFO, "no heads configured"))
+        // Severity is honest to "can I use splice at all": with zero authed heads a missing credential
+        // is THE blocker (FAIL); once any head works, the others are ignorable (WARN).
+        val missingStatus = if (heads.none { it.present }) CheckStatus.FAIL else CheckStatus.WARN
+        val checks = verdict.credentialVerdict(heads, missingStatus)
+        return checks + splitBrain.checks(heads, snapshot, envReader) + sharedFileChecks(topology)
+    }
+
+    /** 2026-09-05: a head whose auth.file is the vendor app's own credential file shares one
+     *  refresh-token family with that app, and a refresh by either side signs the other out (the
+     *  AuthKind header). Splice's own file is the default now; a config written against the old
+     *  example still names the app's, works until the next rotation, and is told so here. WARN, never
+     *  FAIL: the head serves. */
+    private fun sharedFileChecks(topology: Topology): List<DoctorCheck> =
+        topology.heads.mapNotNull { (key, head) ->
+            topology.providers[head.provider]?.let { provider -> sharedFileCheck(key, head.provider, provider) }
+        }
+
+    private fun sharedFileCheck(key: String, providerKey: String, provider: ProviderConfig): DoctorCheck? {
+        val kind = AuthKindRegistry.from(provider.auth.kind) as? AuthKind.OAuth
+        val file = provider.auth.file
+        if (kind == null || file == null) return null
+        if (TopologyLoader.expandHome(file) != TopologyLoader.expandHome(kind.nativeAppFile)) return null
+        return DoctorCheck(
+            "auth",
+            CheckStatus.WARN,
+            "$key signs in with the ${kind.nativeApp}'s own credential file ($file) — " +
+                "a token refresh by either side signs the other out",
+            fix = "remove `file` from [providers.$providerKey] auth in splice.toml, then: splice login $key",
+        )
+    }
+
+    /** PHASE 1, all I/O: every configured head's credential state, read through StatusCommand.
+     *  Heads whose provider does not resolve are dropped here exactly as they always were — the
+     *  configuration section is what reports a dangling provider reference, not this one. */
+    private fun probeHeads(topology: Topology, envReader: EnvReader): List<DoctorHeadAuth> =
+        topology.heads.mapNotNull { (key, head) ->
+            val provider = topology.providers[head.provider] ?: return@mapNotNull null
+            headAuthOf(key, head.claude.command ?: key, provider, envReader)
+        }
+
+    // api-key heads read the EFFECTIVE env var (explicit auth.env OR the derived <KEY>_API_KEY default
+    // the daemon wires) so a derived-default head always gets an `export` fix, never the OAuth dead-end;
+    // OAuth heads keep a null env var so they read as "signed in"/"login" and skip the split-brain probe.
+    private fun headAuthOf(
+        key: String,
+        command: String,
+        provider: ProviderConfig,
+        envReader: EnvReader,
+    ): DoctorHeadAuth {
+        val isOAuth = AuthKindRegistry.isOAuth(provider.auth.kind)
+        // A client-auth head keeps a NULL env var like an OAuth head: it has no api key, and the
+        // derived default would be nonsense — `effectiveApiKeyEnv("claude-splice", …)` is
+        // "CLAUDE-MAX_API_KEY", a name `export` cannot even accept, offered as the fix for a head
+        // that works.
+        val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
+        val envVar = when {
+            isOAuth || selfManaged -> provider.auth.env
+            else -> provider.auth.effectiveApiKeyEnv(key)
+        }
+        return DoctorHeadAuth(
+            key,
+            command,
+            envVar,
+            isOAuth,
+            selfManaged || presence.configured(key, provider, envReader),
+            selfManaged,
+        )
+    }
+}

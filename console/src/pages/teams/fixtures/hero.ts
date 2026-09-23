@@ -6,20 +6,33 @@
 // address carries ?fixture=hero (CONTRACTS.md section 4). The shipped dist
 // carries none of these bytes, which the row's note proves by grepping the
 // built file.
-import type { TeamActivity, TeamMemberRow, TeamMessage, TeamPayload, TeamRow } from '@entities/team';
+import type { TeamActivity, TeamEconomicsPayload, TeamMemberRow, TeamMessage, TeamPayload, TeamRow, TeamSlot } from '@entities/team';
+
+/** A slot as the daemon writes one, with the fields the comp does not print left at their empty. */
+const slot = (id: string, fields: Pick<TeamSlot, 'role' | 'head' | 'model' | 'account' | 'lead' | 'session'>): TeamSlot => ({
+  id,
+  ...fields,
+  instructions: null,
+  instructions_updated_epoch_millis: null,
+  sessions_history: fields.session === null ? [] : [fields.session],
+});
 
 const TEAM: TeamRow = {
   id: 'team_7f2c1b4a',
   name: 'storefront-api',
   goal: 'promoter bookkeeping lives on fly raw',
+  features: [],
   repo: '~/Documents/dev/infra/storefront-api',
+  archived: false,
   created_epoch_millis: Date.UTC(2025, 4, 22, 9, 12, 33),
   updated_epoch_millis: Date.UTC(2025, 4, 22, 14, 2, 5),
   slots: [
-    { role: 'lead', head: 'claude', model: 'fable', account: 'acct-a', lead: true, session: 'gs-backend-claude' },
-    { role: 'builder', head: 'claude-deepseek', model: 'deepseek-flash', account: 'acct-a', lead: false, session: 'gs-backend-builder' },
-    { role: 'builder', head: 'claude', model: 'fable', account: 'acct-b', lead: false, session: 'gs-backend-builder2' },
+    slot('slot-lead', { role: 'lead', head: 'claude', model: 'fable', account: 'acct-a', lead: true, session: 'gs-backend-claude' }),
+    slot('slot-builder-1', { role: 'builder', head: 'claude-deepseek', model: 'deepseek-flash', account: 'acct-a', lead: false, session: 'gs-backend-builder' }),
+    slot('slot-builder-2', { role: 'builder', head: 'claude', model: 'fable', account: 'acct-b', lead: false, session: 'gs-backend-builder2' }),
   ],
+  idempotency_key: null,
+  create_fingerprint: null,
 };
 
 // The comp racks two sessions: the lead on head claude and one builder on head
@@ -27,6 +40,7 @@ const TEAM: TeamRow = {
 // session is not racked in this viewport, so it is not a member row here.
 const MEMBERS: TeamMemberRow[] = [
   {
+    slot: 'slot-lead',
     name: 'gs-backend-claude',
     role: 'lead',
     head: 'claude',
@@ -51,6 +65,7 @@ const MEMBERS: TeamMemberRow[] = [
     checks: 'pass',
   },
   {
+    slot: 'slot-builder-1',
     name: 'gs-backend-builder',
     role: 'builder',
     head: 'claude-deepseek',
@@ -136,16 +151,17 @@ export const heroHandoff: TeamMessage = MESSAGES[2];
 //      `4 slots, 3 bound` from the data it is given.
 //   2. comp-c's cost table says the builder role took 8 turns while its own bar chart gives
 //      gs-backend-builder 8 and gs-backend-builder2 5. The two cannot both be read off one set of
-//      turns, so the TOKEN sums are the comp's exactly and the turn counts are the bars'.
-import type { TeamTurn, TeamEconomicsSession, TeamViewData } from '@widgets/team-board';
+//      turns, so the TOKEN sums are the comp's exactly and the turn counts are the bars', which
+//      the daemon's role tally sums (8 + 5).
+import type { TeamTurn, TeamViewData } from '@widgets/team-board';
 
 const VIEW_TEAM: TeamRow = {
   ...TEAM,
   slots: [
     ...TEAM.slots.slice(0, 2),
-    { role: 'builder', head: 'claude-deepseek', model: 'deepseek-flash', account: 'acct-a', lead: false, session: 'gs-backend-builder2' },
+    slot('slot-builder-2', { role: 'builder', head: 'claude-deepseek', model: 'deepseek-flash', account: 'acct-a', lead: false, session: 'gs-backend-builder2' }),
     // comp-b: the reviewer bay is empty and names the head an operator would launch into it.
-    { role: 'reviewer', head: 'claudex', model: null, account: null, lead: false, session: null },
+    slot('slot-reviewer', { role: 'reviewer', head: 'claudex', model: null, account: null, lead: false, session: null }),
   ],
 };
 
@@ -154,6 +170,7 @@ const VIEW_MEMBERS: TeamMemberRow[] = [
   { ...MEMBERS[1], state: 'GS-41 done' },
   {
     ...MEMBERS[1],
+    slot: 'slot-builder-2',
     name: 'gs-backend-builder2',
     state: 'reading GS-42',
     sessionId: 's-9d04c3e7',
@@ -199,14 +216,35 @@ const VIEW_TURNS: TeamTurn[] = [
   { id: 't-1828', member: 'gs-backend-builder2', time: '13:59', duration: '3m 05s', input: 7923, output: 2945, live: true },
 ];
 
-/** The day's turns summed per session, as GET /api/teams/{id}/economics will serve them. The ids
- *  are the TURN LOG's, longer than the board's printed session id, which is what the panel's
- *  8-character prefix join is for. */
-const VIEW_ECONOMICS: TeamEconomicsSession[] = [
-  { session: 's-1a7c9e2d41b0', input: 132116, output: 56656, turns: 6, oldestTurnId: 't-1801', oldestTurnAt: '09:14' },
-  { session: 's-5f3b8a11c7de', input: 121400, output: 49300, turns: 8, oldestTurnId: 't-1804', oldestTurnAt: '09:21' },
-  { session: 's-9d04c3e7aa52', input: 72883, output: 28931, turns: 5, oldestTurnId: 't-1817', oldestTurnAt: '13:27' },
-];
+/** A lifetime tally with no cache traffic, as TeamsEconomics.kt writes one. */
+const tally = (turns: number, input: number, output: number, cost: number, lastTurn: number) => ({
+  turns,
+  tokens: { input, cache_read: 0, cache_write: 0, output },
+  cost_usd: cost,
+  unpriced_turns: 0,
+  last_turn_at_epoch_millis: lastTurn,
+});
+
+/** The daemon's own words for where a slot's `checks` came from (TeamsEconomics.kt CHECKS_SOURCE). */
+const CHECKS_SOURCE = "the outcome tag of the slot's most recently tallied turn (PerfRow.outcome)";
+
+/** GET /api/teams/{id}/economics for the views' team: the comp's token sums per role, and its bars'
+ *  turn counts per slot. The reviewer slot has held no session and so has no tally. */
+const VIEW_ECONOMICS: TeamEconomicsPayload = {
+  team_id: TEAM.id,
+  heads_read: ['claude', 'claude-deepseek'],
+  unattributed_turns: 0,
+  oldest_turn_epoch_millis: Date.UTC(2025, 4, 22, 9, 14),
+  roles: [
+    { role: 'lead', ...tally(6, 132116, 56656, 0.412, Date.UTC(2025, 4, 22, 14, 0)) },
+    { role: 'builder', ...tally(13, 194283, 78231, 0.324, Date.UTC(2025, 4, 22, 14, 0)) },
+  ],
+  slots: [
+    { slot: 'slot-lead', ...tally(6, 132116, 56656, 0.412, Date.UTC(2025, 4, 22, 14, 0)), checks: 'pass', checks_source: CHECKS_SOURCE },
+    { slot: 'slot-builder-1', ...tally(8, 121400, 49300, 0.183, Date.UTC(2025, 4, 22, 13, 58)), checks: 'pass', checks_source: CHECKS_SOURCE },
+    { slot: 'slot-builder-2', ...tally(5, 72883, 28931, 0.141, Date.UTC(2025, 4, 22, 14, 0)), checks: 'pass', checks_source: CHECKS_SOURCE },
+  ],
+};
 
 /** Turns in flight, sampled minute by minute over the hour comp-b's chart draws (13:02 to 14:02). */
 const LAST_HOUR = [

@@ -54,6 +54,9 @@ export const STACK = {
   fiveHourUsedPercent: 42,
   sevenDayUsedPercent: 7,
   plan: 'plus',
+  /** The Claude Code session id the driven turn carries (the `x-claude-code-session-id` header the
+   *  daemon tags perf rows from, first 8 characters), so a team slot bound to it has a turn to tally. */
+  session: 'e2e5e551-7c1a-4b2e-9d3f-0a1b2c3d4e5f',
 } as const;
 
 export interface Stack {
@@ -225,7 +228,12 @@ async function until<T>(what: string, timeoutMs: number, probe: () => Promise<T 
 async function driveOneTurn(headPort: number, key: string): Promise<void> {
   const res = await fetch(`http://127.0.0.1:${headPort}/v1/messages`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': key },
+    headers: {
+      'content-type': 'application/json',
+      'anthropic-version': '2023-06-01',
+      'x-api-key': key,
+      'x-claude-code-session-id': STACK.session,
+    },
     body: JSON.stringify({
       model: STACK.model,
       max_tokens: 64,

@@ -131,3 +131,56 @@ test('models opens a model with the head windows its topology declares', async (
   await expect(detail).toContainText(`${STACK.headWindow / 1000}k`);
   expect(faults.pageErrors, 'opening a model threw').toEqual([]);
 });
+
+test('teams creates a team through the composer, binds the driven session, prices its turn, and unbinds it', async ({ page }) => {
+  const faults = await open(page, 'teams');
+  const main = page.locator('main');
+  // Another run of this test may already have left a team in the stack's daemon, in which case the
+  // composer opens on it and the create form is one key away.
+  await expect(main).toContainText(/no teams yet|new team/, { timeout: 15_000 });
+  const fresh = page.getByRole('button', { name: 'new team' });
+  if ((await fresh.count()) > 0) await fresh.click();
+
+  const name = `e2e crew ${Date.now()}`;
+  const form = page.getByRole('form', { name: 'compose team' });
+  await form.getByRole('textbox', { name: 'name', exact: true }).fill(name);
+  await form.getByRole('textbox', { name: 'repo', exact: true }).fill('/tmp/console-e2e');
+  await form.getByRole('textbox', { name: 'role', exact: true }).fill('lead');
+  await form.getByRole('textbox', { name: 'head', exact: true }).fill(STACK.oauthHead);
+  await form.getByRole('textbox', { name: 'session', exact: true }).fill(STACK.session);
+  await form.getByRole('button', { name: 'create team' }).click();
+
+  // The page opens the team it made: the composer now edits it rather than creating another, and
+  // still prints the daemon's answer to the create; then its board and its row.
+  const edit = page.getByRole('form', { name: `edit ${name}` });
+  await expect(edit).toBeVisible({ timeout: 15_000 });
+  await expect(edit.getByRole('status')).toContainText(`saved ${name} as team-`);
+  await expect(page.locator('.myx-board-header')).toContainText(name);
+  await expect(main).toContainText('1 slots, 1 bound');
+  // The bound session is racked under its head, and the registry does not list it (the stack runs
+  // no Claude Code), which the strip says rather than inventing a state.
+  await expect(page.locator('.myx-board-bay-0')).toContainText(STACK.session);
+  await expect(page.locator('.myx-board-bay-0')).toContainText('unlisted');
+  // The chat and activity were READ for this team: empty, never unreadable.
+  await expect(main).toContainText('no messages today');
+  await expect(main).toContainText('nothing sampled today');
+
+  // The daemon joined the stack's one turn to the slot on the session tag: the timeline's economics
+  // price it under the lead role, and the day's turn log racks it in the session's column.
+  await page.getByRole('tab', { name: 'timeline' }).click();
+  await expect(main).toContainText('lifetime, joined by the daemon', { timeout: 15_000 });
+  const bars = page.locator('.myx-board-bars');
+  await expect(bars).toContainText(STACK.session);
+  await expect(bars.locator('.myx-board-bar-figure')).toHaveText('1');
+  await expect(page.locator('.myx-board-table')).toContainText('lead');
+
+  // Opening the seat is its own write: the replace keeps a binding its body leaves null.
+  await edit.getByRole('textbox', { name: 'role instructions' }).fill('drive the e2e packet');
+  await edit.getByRole('button', { name: 'unbind' }).click();
+  await edit.getByRole('button', { name: 'save team' }).click();
+  await expect(edit.getByRole('status')).toContainText(`saved ${name} as team-`);
+  await expect(main).toContainText('1 slots, 0 bound', { timeout: 15_000 });
+
+  expect(faults.pageErrors, 'the journey threw').toEqual([]);
+  expect([...new Set(faults.failedReads)], 'a write or read the daemon refused').toEqual([]);
+});

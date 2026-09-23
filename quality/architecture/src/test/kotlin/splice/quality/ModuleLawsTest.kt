@@ -80,7 +80,9 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-providers-openai" to ADAPTER_BASE + setOf(":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":features-turns" to ADAPTER_BASE + DIALECTS + setOf(":integrations-http", ":features-sessions"),
-    ":features-sessions" to setOf(":core", ":integrations-http"),
+    // the session registry and its routes, and `splice sessions`, which names each session's head from
+    // splice.toml.
+    ":features-sessions" to setOf(":core", ":integrations-http", ":integrations-topology"),
     ":features-models" to setOf(":core"),
     // Head lifecycle, logs, and status own their sequences and use the shared head contract.
     ":features-heads" to setOf(":core"),

@@ -46,7 +46,9 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-providers-muse" to setOf(":core", ":integrations-upstream"),
     ":integrations-providers-openai" to setOf(":core", ":integrations-upstream", ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
     ":features-turns" to setOf(":core", ":integrations-upstream", ":integrations-http", ":features-sessions"),
-    ":features-sessions" to setOf(":core", ":integrations-http"),
+    // the session registry and its routes, and `splice sessions`, which names each session's head from
+    // splice.toml.
+    ":features-sessions" to setOf(":core", ":integrations-http", ":integrations-topology"),
     ":features-models" to setOf(":core"),
     ":features-heads" to setOf(":core"),
     // sign-in, refresh, the account pool and their console routes; the pool is a read model every

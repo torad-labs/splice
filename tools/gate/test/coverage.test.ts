@@ -3,7 +3,7 @@
 // broken in one of the four ways a glob can silently stop enforcing something, and each must turn
 // the proof RED with a message that names the rule and what it lost. The same rules, copied and NOT
 // broken, must be green — a baseline that is red would make every mutant meaningless.
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,11 @@ import { proveCoverage, type CoverageReport } from "../src/lib/coverage.ts";
 import { layout } from "../src/lib/repo.ts";
 import { readGradleModules } from "../src/lib/sources.ts";
 import { EXCLUSIONS, ROUTED_CONFIG } from "../src/commands/rules.ts";
+
+// Every case runs the whole-tree proof (ast-grep over every source root), about 1.7 s each on an
+// idle box. Bun's 5 s default failed two of them at load average 82 on 2026-09-22 while they
+// passed in 25.7 s under a longer limit: a budget for the work, not a hang detector.
+setDefaultTimeout(60_000);
 
 const { repoRoot, buildRoot } = layout();
 const workspaces: string[] = [];

@@ -29,14 +29,9 @@ internal fun interface HealthProbe {
 internal class StatusCommand(
     private val healthProbe: HealthProbe = HealthProbe { port -> DaemonHealth().healthView(port) },
     private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
-    /** ONE palette per command, threaded into the table: resolving it twice could in principle
-     *  disagree between the header and the rows, and a table whose tones shift mid-render is worse
-     *  than one with no colour at all. */
-    private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
 ) {
 
     private val loginIo = LoginIo()
-    private val table = StatusTable(palette)
     private val extras = StatusExtras(accountPools)
 
     internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
@@ -44,6 +39,12 @@ internal class StatusCommand(
         val port = AdminSupport.controlPort()
         val health = healthProbe(port)
         val up = health?.version == GATEWAY_VERSION
+        // ONE palette per call, from the env this call was handed — the same env every row reads,
+        // so NO_COLOR set there reaches the output. It used to resolve from System::getenv at
+        // construction, and a table whose tones answer to a different environment than its rows
+        // cannot be tested for NO_COLOR at all.
+        val palette = CliPalette(ColorDepthProbe(envReader).depth())
+        val table = StatusTable(palette)
 
         // The daemon's state rides on the wordmark line rather than taking a labelled row of its
         // own: it is one fact, and a row per fact is what pushed the heads — the actual answer —
@@ -57,11 +58,7 @@ internal class StatusCommand(
         println("  " + palette.paint(palette.strong, "splice $GATEWAY_VERSION") + "     " + daemonLine)
         clientVersionWarning(health)?.let { println("  " + palette.paint(palette.strain, "! $it")) }
         println()
-        println(palette.paint(palette.quiet, STATUS_HEADER))
-        for ((key, head) in topology.heads) {
-            val provider = topology.providers[head.provider] ?: continue
-            println("  " + table.row(key, head, provider, envReader))
-        }
+        for (line in table.lines(topology, envReader)) println(line)
         if (up) extras.printAccounts(port, envReader)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants
@@ -69,7 +66,11 @@ internal class StatusCommand(
         println("  " + palette.paint(palette.quiet, "config  ${TopologyLoader.configPath()}"))
         println("  " + palette.paint(palette.quiet, "jar     ${jarLine()}"))
         println()
-        table.printNextSteps(topology, envReader)
+        // The panel is the one affordance the rows cannot carry. The footer used to add "launch"
+        // (the command column again) and "sign in" (each row's action again) — the same facts
+        // re-derived by a second predicate, which had already drifted from the rows once, and which
+        // on a ten-head topology was a single line of a hundred and seventy characters.
+        println("  " + palette.paint(palette.quiet, "panel   ") + palette.paint(palette.signal, "splice dashboard"))
     }
 
     internal fun clientVersionWarning(health: HealthView?): String? = health?.clientVersionWarning

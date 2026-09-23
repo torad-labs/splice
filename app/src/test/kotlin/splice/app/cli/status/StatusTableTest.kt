@@ -15,6 +15,7 @@ import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -62,6 +63,14 @@ class StatusTableTest {
         auth = AuthConfig(kind = "api-key", env = "TEST_STATUS_KEY"),
     )
 
+    /** A topology of the given heads, all routed to [apiKeyProvider] under key "p". */
+    private fun topology(vararg heads: Pair<String, HeadConfig>) =
+        Topology(providers = mapOf("p" to apiKeyProvider()), heads = linkedMapOf(*heads))
+
+    /** The single data row of a one-head table (line 0 is the header). */
+    private fun onlyRow(table: StatusTable, command: String, env: EnvReader): String =
+        table.lines(topology("or" to head(command)), env)[1]
+
     private fun ready(bin: Path, command: String): EnvReader {
         Files.createSymbolicLink(bin.resolve(command), bin.resolve("target"))
         return env(bin, "TEST_STATUS_KEY" to "sk-present")
@@ -70,19 +79,31 @@ class StatusTableTest {
     @Test
     fun `a blocked row names the one command that would fix it`(@TempDir bin: Path) {
         val plain = StatusTable(CliPalette(ColorDepth.NONE))
-        val row = plain.row("or", head("claude-or"), apiKeyProvider(), env(bin))
+        val row = onlyRow(plain, "claude-or", env(bin))
         // No wrapper and no key. The wrapper is the blocking one, so that is what it must say —
         // telling the operator to set a key for a command that is not on PATH is advice they
         // cannot act on yet.
         assertTrue(row.contains("splice install"), row)
-        assertFalse(row.contains("set the api key"), "two actions in one row is no action: $row")
+        assertFalse(row.contains("login"), "two actions in one row is no action: $row")
+    }
+
+    @Test
+    fun `a keyless api-key row names the login command, not an instruction`(@TempDir bin: Path) {
+        // The column's contract is a COMMAND the operator types. "set the api key" is an errand:
+        // it names no variable, no file and no verb. `<command> login` is the real fix for an
+        // api-key head too — the launch shim routes it to LoginCommand, which prompts for the key
+        // and stores it where the daemon reads it.
+        val plain = StatusTable(CliPalette(ColorDepth.NONE))
+        Files.createSymbolicLink(bin.resolve("claude-or"), bin.resolve("target"))
+        val row = onlyRow(plain, "claude-or", env(bin))
+        assertTrue(row.contains("claude-or login"), row)
     }
 
     @Test
     fun `state survives NO_COLOR, carried by the glyph rather than the tone`(@TempDir bin: Path) {
         val plain = StatusTable(CliPalette(ColorDepth.NONE))
-        val blocked = plain.row("or", head("claude-or"), apiKeyProvider(), env(bin))
-        val live = plain.row("or", head("claude-or"), apiKeyProvider(), ready(bin, "claude-or"))
+        val blocked = onlyRow(plain, "claude-or", env(bin))
+        val live = onlyRow(plain, "claude-or", ready(bin, "claude-or"))
         assertFalse(blocked.contains("\u001B"), "an SGR sequence reached a NO_COLOR terminal: $blocked")
         assertFalse(live.contains("\u001B"), live)
         assertNotEquals(
@@ -96,13 +117,26 @@ class StatusTableTest {
     @Test
     fun `the action column holds its offset when head names differ in length`(@TempDir bin: Path) {
         val plain = StatusTable(CliPalette(ColorDepth.NONE))
-        val short = plain.row("or", head("or"), apiKeyProvider(), env(bin))
-        val long = plain.row("claude-muse", head("claude-muse"), apiKeyProvider(), env(bin))
+        // Longer than any value in the shipped example — the widths used to be constants sized to
+        // that example, and an operator's real topology (claude-bonsai-second) broke every column.
+        val lines = plain.lines(topology("or" to head("or"), "bonsai-second" to head("claude-bonsai-second")), env(bin))
+        val (header, short, long) = lines
         assertEquals(
             short.indexOf("splice install"),
             long.indexOf("splice install"),
-            "columns drifted, so the table stops scanning as a grid:\n$short\n$long",
+            "columns drifted, so the table stops scanning as a grid:\n${lines.joinToString("\n")}",
         )
+        // ...and the labels sit over their data, not one gutter to the left of it.
+        assertEquals(header.indexOf("port"), short.indexOf("3099"), lines.joinToString("\n"))
+    }
+
+    @Test
+    fun `a topology with no heads lays out the header alone`() {
+        // Column widths are a max over the rows; with zero rows that max must not throw. DR-173 was
+        // this exact shape in doctor, on a running daemon with no heads.
+        val lines = StatusTable(CliPalette(ColorDepth.NONE)).lines(Topology(), EnvReader { null })
+        assertEquals(1, lines.size, lines.toString())
+        assertTrue(lines.single().contains("upstream"), lines.single())
     }
 
     @Test

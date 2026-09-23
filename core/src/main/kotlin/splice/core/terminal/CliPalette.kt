@@ -17,7 +17,8 @@ import splice.core.util.EnvReader
 
 /** How much colour the attached terminal may be given. Resolved once, from the environment. */
 public enum class ColorDepth {
-    /** `NO_COLOR` is set, or the terminal declares itself dumb. Attributes only — bold and dim. */
+    /** `NO_COLOR` is set, or the terminal declares itself dumb. No escape bytes at all — not even
+     *  bold or dim, which are attributes rather than colours: see [CliPalette.strong]. */
     NONE,
 
     /** The eight ANSI colours every terminal since the 1980s renders. */

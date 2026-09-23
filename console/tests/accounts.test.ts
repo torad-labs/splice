@@ -167,7 +167,7 @@ describe('not reported by provider', () => {
 
 describe('the selector order is printed, not implied', () => {
   test('the sentence is the daemon rule word for word', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('primary then sticky then lowest 7-day used');
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned then primary then sticky then lowest 7-day used');
   });
 });
 

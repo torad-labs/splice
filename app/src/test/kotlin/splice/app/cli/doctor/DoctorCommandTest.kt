@@ -265,6 +265,22 @@ class DoctorCommandTest {
     }
 
     @Test
+    fun `NO_COLOR in doctor's own environment reaches the report`() {
+        // The palette used to resolve from System::getenv while every check read the env handed to
+        // doctor(), so NO_COLOR set in that env changed nothing and no test could prove otherwise.
+        // The control arm is what makes this one able to fail: a doctor that never coloured
+        // anything would pass the first assertion for free.
+        val tmp = Files.createTempDirectory("doctor-nocolor")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val coloured = env(tmp, bin, share, mapOf("TERM" to "xterm-256color"))
+        val (_, plain) = runDoctor(coloured + ("NO_COLOR" to ""))
+        val (_, painted) = runDoctor(coloured)
+        assertFalse(plain.contains(ESC), "an SGR sequence reached a NO_COLOR report:\n$plain")
+        assertTrue(painted.contains(ESC), "the control run carried no colour, so the arm above proves nothing")
+    }
+
+    @Test
     fun `a probe that blocks on its inherited stdin cannot hang doctor`() {
         val tmp = Files.createTempDirectory("doctor-hang")
         val bin = Files.createDirectories(tmp.resolve("bin"))
@@ -570,3 +586,6 @@ class DoctorTopologyLeakTest {
         assertFalse(output.contains("sk-SENT-99"), "parse text must not quote config bytes: $output")
     }
 }
+
+/** The escape byte every SGR sequence opens with. */
+private const val ESC = "\u001B"

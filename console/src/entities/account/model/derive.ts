@@ -6,8 +6,9 @@
 //     page, so the account the operator should watch reads as the one with the most room;
 //   - labelling a window by its position (first = 5h, second = weekly) is wrong the moment a
 //     provider reports a 30-day period, which Grok already does;
-//   - "lowest used" without the primary/sticky rules names a different account than the daemon
-//     will actually take next, so the mark lands on the wrong strip.
+//   - a next-target mark the console derives for itself names a different account than the daemon
+//     will actually take next (it skipped the pin, and ran over every pool at once), so the mark
+//     is the daemon's own flag and the console only names the rule that explains it.
 import { fmtDurationS } from '@shared/lib';
 import type { Edge } from '@shared/ui';
 import type { AccountRow, AccountWindow } from './types';
@@ -18,14 +19,19 @@ import type { AccountRow, AccountWindow } from './types';
  *  of saying nothing is here. */
 export const NOT_REPORTED = 'unknown';
 
-/** The selector's real order (AccountPool.kt:101-112), as one printed sentence. */
-export const SELECTOR_ORDER_TEXT = 'primary then sticky then lowest 7-day used';
-
-export const SELECTOR_RULES = ['primary', 'sticky', 'lowest 7-day used'] as const;
+/** The selector's real order (AccountPool.candidates, AccountPool.kt:179-186): the operator's pin,
+ *  then primary, then the caller's previous account (the session's sticky one), then the lowest
+ *  seven-day used. Each word is also the reason printed beside the account that rule chose. */
+export const SELECTOR_RULES = ['pinned', 'primary', 'sticky', 'lowest 7-day used'] as const;
 export type SelectorRule = (typeof SELECTOR_RULES)[number];
 
+/** The selector's order as one printed sentence, made from the rules so the two cannot disagree. */
+export const SELECTOR_ORDER_TEXT = SELECTOR_RULES.join(' then ');
+
 /** The window length the daemon calls the seven-day window, for the selector's third rule. */
-const SEVEN_DAY_SECONDS = 604800;
+/** The daemon's slot boundary (Quota.kt FIVE_HOUR_SLOT_MAX_SECONDS): a provider window up to six
+ *  hours long is the five-hour slot, anything longer the seven-day slot, whatever its length. */
+const FIVE_HOUR_SLOT_MAX_SECONDS = 6 * 3600;
 
 /** A window's used figure as printed text. */
 export function windowUsedText(window: AccountWindow): string {
@@ -77,48 +83,55 @@ export function nearestOverall(accounts: readonly AccountRow[]): NearestOverall 
 }
 
 /**
- * An account's seven-day used figure for the selector's third rule. An account with NO snapshot
- * sorts as zero used — that is the daemon's own rule (AccountPool.kt:101-112), not a convenience:
+ * An account's seven-day SLOT used figure for the selector's third rule, read the way the daemon
+ * reads it (AccountPool.kt:258 sevenDayUsed over QuotaSlots' seven-day slot): the first window
+ * longer than six hours, so Grok's 30-day window counts, where matching 604800 exactly read it as 0.
+ * An account with NO snapshot sorts as zero used, which is the daemon's own rule, not a convenience:
  * a freshly added account has no poller reading yet and must still be selectable.
  */
 export function sevenDayUsed(account: AccountRow): number {
-  const window = account.windows.find((w) => w.seconds === SEVEN_DAY_SECONDS);
+  const window = account.windows.find((w) => w.seconds > FIVE_HOUR_SLOT_MAX_SECONDS);
   if (window === undefined || window.used_percent === null) return 0;
   return window.used_percent;
 }
 
-export interface NextTarget {
-  label: string;
-  rule: SelectorRule;
+/**
+ * Whether two rows are accounts of one pool. A head rides at most one pool, and the daemon folds a
+ * pool once per head riding it, joining a login two heads share into ONE row that carries both
+ * (AccountsRoute.merge): so the rows of one pool carry that pool's heads, and two pools share none.
+ */
+function samePool(left: AccountRow, right: AccountRow): boolean {
+  return left === right || left.heads.some((head) => right.heads.includes(head));
+}
+
+/** The daemon's tie-break inside its seven-day rule: the label, in Kotlin's String order (UTF-16
+ *  code units), which is `<` on JS strings and not localeCompare. */
+function byLabel(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /**
- * The account the selector takes next, by the daemon's real order: primary if available, else the
- * session's sticky account, else the lowest seven-day used. Returns null only when nothing in the
- * pool is available at all — which is the state that fails a turn in words naming the earliest
- * reset, so it is a real answer and not an edge case to paper over.
+ * Why the daemon takes [account] next, or null when it does not.
+ *
+ * THE MARK IS THE DAEMON'S FLAG, NOT A RE-DERIVATION (M4-08). AccountsRoute writes `next_target`
+ * per pool from that pool's own nextTargetLabel (AccountPool.kt:163), which walks the pin, primary,
+ * the caller's previous account and the lowest seven-day used, in that order. The console used to
+ * run a selector of its own over every account on the page at once and mark each strip whose label
+ * matched its one answer: one pool's answer stamped on every pool with an account of that label, a
+ * pool whose answer differed left unmarked, and the pin never consulted. So the flag picks the
+ * account, and the order only NAMES why, inside the account's own pool: pinned, then primary, then
+ * the lowest seven-day account; a target that is none of those can only have been the previous
+ * one, which is the sticky rule. A single login's flag is null, since no pool selects it.
  */
-export function nextTarget(accounts: readonly AccountRow[], stickyLabel?: string): NextTarget | null {
-  // Only pooled accounts are candidates: a single-login head has no label and no pool verdict.
-  const usable = accounts.filter((account): account is AccountRow & { label: string } =>
-    account.available === true && account.label !== null);
-  if (usable.length === 0) return null;
-
-  const primary = usable.find((account) => account.primary);
-  if (primary !== undefined) return { label: primary.label, rule: 'primary' };
-
-  if (stickyLabel !== undefined) {
-    const sticky = usable.find((account) => account.label === stickyLabel);
-    if (sticky !== undefined) return { label: sticky.label, rule: 'sticky' };
-  }
-
-  let best: (AccountRow & { label: string }) | null = null;
-  let bestUsed = Number.POSITIVE_INFINITY;
-  for (const account of usable) {
-    const used = sevenDayUsed(account);
-    if (used < bestUsed) { bestUsed = used; best = account; }
-  }
-  return best === null ? null : { label: best.label, rule: 'lowest 7-day used' };
+export function nextRuleOf(account: AccountRow, accounts: readonly AccountRow[]): SelectorRule | null {
+  if (account.next_target !== true || account.label === null) return null;
+  if (account.pinned === true) return 'pinned';
+  if (account.primary) return 'primary';
+  const lowest = accounts
+    .filter((row): row is AccountRow & { label: string } =>
+      row.available === true && row.label !== null && samePool(row, account))
+    .sort((left, right) => sevenDayUsed(left) - sevenDayUsed(right) || byLabel(left.label, right.label))[0];
+  return lowest?.label === account.label ? 'lowest 7-day used' : 'sticky';
 }
 
 /** A window inside this much of its length is cocked: the operator wants the warning while there

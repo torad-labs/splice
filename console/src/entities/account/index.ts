@@ -8,7 +8,7 @@ export {
   isExcluded,
   nearestOverall,
   nearestWindow,
-  nextTarget,
+  nextRuleOf,
   resetText,
   sevenDayUsed,
   windowLengthText,
@@ -23,7 +23,6 @@ export {
 export type {
   AccountState,
   NearestOverall,
-  NextTarget,
   SelectorRule,
 } from './model/derive';
 export { PENDING_ACCOUNTS } from './model/types';

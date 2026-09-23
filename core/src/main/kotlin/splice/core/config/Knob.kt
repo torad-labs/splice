@@ -527,11 +527,10 @@ public enum class Knob(
         "warn",
     ),
 
-    // V4-133: how many days of rolled-out perf generations PerfStats.archiveDir keeps (see its
-    // header) once an operator points a head's PerfStats at one. Same shape as
-    // activityRetentionDays: whole archived files older than the window are swept on the next
-    // rotation. Inert until PerfStats is constructed with a non-null archiveDir (ManagedHeadFactory,
-    // outside this row's fence — see the row's report for the exact wiring line).
+    // V4-133: how many days of rolled-out perf generations every head keeps in <state>/perf-archive
+    // (PerfStats' rotation archive, wired by ManagedHeadFactory; kt-perf-history-archived keeps it
+    // so). Same shape as activityRetentionDays: whole archived files older than the window are swept
+    // on the next rotation. 0 turns the archive off: the one-generation rotate of before.
     PERF_ARCHIVE_RETENTION_DAYS(
         "perfArchiveRetentionDays",
         KnobKind.NUMBER,

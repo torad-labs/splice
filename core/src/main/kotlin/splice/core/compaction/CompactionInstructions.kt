@@ -120,6 +120,36 @@ public class CompactionInstructions(
         global?.let(::add)
     }.map { EffectiveCompactionInstructions(currentText(it), it.scope, it.source) }
 
+    /** The configured rules a compaction in [project] can resolve to, in [resolve]'s precedence:
+     *  exactly the distinct outcomes of [resolve] over every model for that project, no more.
+     *
+     *  The project page's answer to "which instructions apply here" (FEATURES.md 4.14), and the same
+     *  one-owner rule as [rules]: the page must not rebuild precedence out of [rules]' flat list,
+     *  because shadowing is the whole question. So, in [resolve]'s own terms —
+     *   - per model, the longest project-model rule over [project];
+     *   - the longest model-less project rule, which, when it exists, SHADOWS every model rule and
+     *     the global one for this project (resolve stops at it for any model);
+     *   - otherwise each model rule no project-model rule already took for its model, then global.
+     *  A [project] that is not absolute is the unknown project [resolve] answers with global alone.
+     *  Empty means no rule applies anywhere in it: the client's own instructions stand. */
+    public fun rulesFor(project: Path): List<EffectiveCompactionInstructions> {
+        val path = project.normalize().takeIf { it.isAbsolute }?.let(::realPath)
+            ?: return listOfNotNull(global).map(::effective)
+        val projectModels = projects.mapNotNull { it.model }.distinct()
+            .mapNotNull { model -> projectRule(path, model)?.let { model to it } }
+        val projectWide = projectRule(path, null)
+        val taken = projectModels.map { it.first }.toSet()
+        val below = if (projectWide != null) {
+            listOf(projectWide)
+        } else {
+            models.filterKeys { it !in taken }.values + listOfNotNull(global)
+        }
+        return (projectModels.map { it.second } + below).map(::effective)
+    }
+
+    private fun effective(rule: Rule): EffectiveCompactionInstructions =
+        EffectiveCompactionInstructions(currentText(rule), rule.scope, rule.source)
+
     /** A file rule's text as of now: re-read when the file's modification time moved since the last
      *  read (one stat per compaction), so an edit is live without a restart and a file that becomes
      *  unreadable disables the rule the way it would have at boot (review 2026-09-14). */

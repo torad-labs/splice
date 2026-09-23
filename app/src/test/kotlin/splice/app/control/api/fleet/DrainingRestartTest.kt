@@ -59,8 +59,9 @@ private const val HEAD_KEY = "claude"
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DrainingRestartTest {
 
-    private val port = ServerSocket(0).use { it.localPort }
-    private val url = "http://127.0.0.1:$port"
+    // The server binds port 0 and reports what it got: no leased port can be taken before the bind.
+    private val port: Int get() = control.listeningPort
+    private val url: String get() = "http://127.0.0.1:$port"
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var control: ControlServer
@@ -78,7 +79,7 @@ class DrainingRestartTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -87,7 +88,7 @@ class DrainingRestartTest {
             shutdownDaemon = { drains.incrementAndGet() },
         )
         control.ports.supervised = DaemonSupervised { supervised }
-        control.start()
+        runBlocking { control.start() }
     }
 
     @AfterAll

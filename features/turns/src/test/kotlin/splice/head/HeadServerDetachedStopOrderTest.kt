@@ -168,15 +168,15 @@ class HeadServerDetachedStopOrderTest {
         val waiter = CountingWaiter()
         val gate = InflightGate({ 4 }, { 4 })
         val lines = CopyOnWriteArrayList<String>()
-        val port = freshPort()
         val head = HeadServer(
             provider = provider(mock),
-            listenPort = port,
+            listenPort = 0,
             deps = deps(tmp, gate, lines, waiter),
         )
         try {
             mock.resetHold()
             head.start()
+            val port = head.port
             awaitListening(port)
             openDetachedCompaction(mock, gate, lines, port)
             assertTrue(gate.snapshot().inflight == 1, "the slot travels with the detached drive")

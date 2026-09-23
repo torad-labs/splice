@@ -50,7 +50,6 @@ import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
 import splice.head.TestResponsesProvider
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
@@ -87,7 +86,7 @@ class UpstreamKeepaliveTest {
         mock.stop()
     }
 
-    private fun head(port: Int, tmp: Path, watchdog: WatchdogBudget): HeadServer = HeadServer(
+    private fun head(tmp: Path, watchdog: WatchdogBudget): HeadServer = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -108,7 +107,7 @@ class UpstreamKeepaliveTest {
             configEffort = "high",
             configSummary = "detailed",
         ),
-        listenPort = port,
+        listenPort = 0,
         // Generous upstream timeouts: this arm is about the WATCHDOG tier, and a socket timeout
         // firing underneath it would end the round for a reason the assertions could not name.
         deps = headDeps(
@@ -135,12 +134,12 @@ class UpstreamKeepaliveTest {
     @Test
     fun `a silent-but-alive upstream past the tier completes the turn when it speaks`() = runTest {
         val tmp = Files.createTempDirectory("head-keepalive")
-        val port = freshPort()
         // The upstream stays silent until the watchdog has held it, so a 1s first-output cap is
         // passed while the connection stays open and un-errored, however slowly the machine runs.
-        val server = head(port, tmp, WatchdogBudget(1.seconds, 1.seconds, 30.seconds))
+        val server = head(tmp, WatchdogBudget(1.seconds, 1.seconds, 30.seconds))
         mock.resetStartHold()
         server.start()
+        val port = server.port
         awaitListening(port)
         val sse = try {
             turn(port, "You are a test. SCENARIO:holdstart")

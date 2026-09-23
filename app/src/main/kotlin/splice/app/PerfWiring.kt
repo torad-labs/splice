@@ -13,6 +13,9 @@ internal object PerfWiring {
     fun command(): PerfCommand = PerfCommand(
         output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),
-        rows = HeadPerfRows { head, env -> PerfRowsFileSource(StatePaths(envReader = env).perfStatsFile(head)) },
+        rows = HeadPerfRows { head, env ->
+            val paths = StatePaths(envReader = env)
+            PerfRowsFileSource(paths.perfStatsFile(head), paths.perfArchiveDir)
+        },
     )
 }

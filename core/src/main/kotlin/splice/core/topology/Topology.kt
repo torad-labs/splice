@@ -31,9 +31,6 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
 import splice.core.model.WindowRule
-import splice.core.prompt.HeadSystemPrompt
-import splice.core.prompt.SystemPromptMode
-import java.nio.file.Path
 
 @Serializable
 public data class Topology(
@@ -240,7 +237,7 @@ public data class ProviderConfig(
             models = if (window == null) {
                 selectedModels
             } else {
-                selectedModels.map { it.copy(contextWindow = window) }
+                selectedModels.map { it.copy(contextWindow = headWindow(it, window, discovered)) }
             },
             extraWindows = if (window == null) extraWindows else extraWindows.map { it.copy(contextWindow = window) },
             windowRules = if (window == null) windowRules else windowRules.map { it.copy(contextWindow = window) },
@@ -270,13 +267,19 @@ public data class ProviderConfig(
      *  [discovery] admits, in the endpoint's order. A declared row always wins its model: its window,
      *  label, rates and place carry decisions no endpoint can supply. */
     private fun rosterWith(discovered: List<DiscoveredModel>): List<ModelEntry> {
-        val covered = models.mapTo(HashSet()) { ModelTierSuffix.strip(it.id) }
-        val extra = discovered
-            .filter { model -> model.id.isNotBlank() && model.spellings.none { it in covered } }
+        val extra = undeclared(discovered)
             .filter { discovery.admits(it.id) }
-            .distinctBy { it.id }
             .map { ModelEntry(id = it.id, label = it.label, contextWindow = windowFor(it), discovered = true) }
         return models + extra
+    }
+
+    /** The [discovered] models no declared row covers, once each, before [discovery] filters them —
+     *  the models that filter decides about, which is how daemon.log counts what it kept out. */
+    public fun undeclared(discovered: List<DiscoveredModel>): List<DiscoveredModel> {
+        val covered = models.mapTo(HashSet()) { ModelTierSuffix.strip(it.id) }
+        return discovered
+            .filter { model -> model.id.isNotBlank() && model.spellings.none { it in covered } }
+            .distinctBy { it.id }
     }
 
     /** A discovered row's window: what the operator declared for that exact id ([extraWindows]), else
@@ -289,15 +292,42 @@ public data class ProviderConfig(
             ?: defaultContextWindow.takeIf { it > 0 }
             ?: DEFAULT_WINDOW_FLOOR
 
-    /** The pinned model as the catalog's only row, windowed like any undeclared id. Not a
-     *  discovered row: the operator named it, so it is the head's tier model too. */
+    /** The pinned model's own row, windowed like any undeclared id. Not a discovered row: the
+     *  operator named it, so it is the head's tier model too. */
     private fun pinnedOnly(id: String): ModelEntry = ModelEntry(id = id, contextWindow = windowFor(DiscoveredModel(id)))
 
+    /** Whether an endpoint can list this provider's models at all: a local runtime and a provider
+     *  that forwards the client's own login are never asked, and `exclude = ["*"]` admits nothing.
+     *  Where none can, a model no row declares is a misspelling, never an endpoint's omission. */
+    private val listsModels: Boolean
+        get() = !isLocal && auth.kind != AuthKind.Client.wire && "*" !in discovery.exclude
+
+    /** [roster] with a row for [pinned] when no row serves it under its own spelling. A provider that
+     *  lists no models keeps the pre-discovery rule: its declared rows are the catalog, and only an
+     *  empty one gains the pinned row. */
+    private fun withPinned(roster: List<ModelEntry>, pinned: String): List<ModelEntry> {
+        val bare = ModelTierSuffix.strip(pinned)
+        val served = roster.any { ModelTierSuffix.strip(it.id) == bare }
+        val declaredOnly = roster.isNotEmpty() && !listsModels
+        return if (served || declaredOnly) roster else roster + pinnedOnly(pinned)
+    }
+
+    /** A head-wide window replaces a declared row's window, which is the operator's number for this
+     *  head. It never raises a model this provider does not declare past the ceiling the endpoint
+     *  published for it: that ceiling is the backend's fact, and a window above it compacts past what
+     *  the backend accepts (a 1M head window over a 262k model). An unpublished window takes the head's. */
+    private fun headWindow(entry: ModelEntry, window: Long, discovered: List<DiscoveredModel>): Long {
+        if (models.any { it.id == entry.id }) return window
+        val published = discovered.firstOrNull { it.id == entry.id }?.contextWindow?.takeIf { it > 0 }
+        return published?.let { minOf(window, it) } ?: window
+    }
+
     private fun modelsFor(head: HeadConfig, roster: List<ModelEntry>): List<ModelEntry> {
-        // A provider that declares no rows and whose endpoint listed nothing (or was not asked) still
-        // serves its head's pinned model: that is the one model the operator named, and a catalog
-        // with no row for it would refuse every turn the head was launched to serve.
-        val requested = head.models ?: return roster.ifEmpty { listOf(pinnedOnly(head.pinnedModel)) }
+        // The head's pinned model always has a row (2026-09-23): it is the one model the operator
+        // named, and a catalog without it refuses every turn the head was launched to serve. With no
+        // declared rows the roster is whatever the endpoint listed, which can omit the pinned id — a
+        // retired model, a discovery filter, an alias the roster does not spell, a start it missed.
+        val requested = head.models ?: return withPinned(roster, head.pinnedModel)
         require(requested.isNotEmpty()) { "head model list must not be empty" }
         require(requested.map { it.id }.distinct().size == requested.size) { "head model list contains duplicates" }
         val slots = requested.mapNotNull { it.slot?.lowercase() }
@@ -306,10 +336,17 @@ public data class ProviderConfig(
         val byId = roster.associateBy(ModelEntry::id)
         // A row the head's allowlist names is the operator's decision, whichever list supplied it, so
         // it is DECLARED for this head: it keeps the allowlist's order and may stand behind a tier.
-        val selected = requested.map { model ->
-            requireNotNull(byId[model.id]) {
-                "head model '${model.id}' is not declared by provider '${head.provider}' nor listed by its endpoint"
-            }.copy(discovered = false)
+        // An id the roster lacks is not served at this start. Where an endpoint could have listed it,
+        // that is the endpoint's doing (retired, filtered, or not answered in time) and the row is
+        // dropped, never the head; HeadBoot names it in daemon.log. Where nothing could have listed it,
+        // it is a misspelling, refused as it was before discovery existed.
+        val selected = requested.mapNotNull { model ->
+            byId[model.id]?.copy(discovered = false) ?: run {
+                require(listsModels) {
+                    "head model '${model.id}' is not declared by provider '${head.provider}', which lists no models"
+                }
+                pinnedOnly(model.id).takeIf { model.id == head.pinnedModel }
+            }
         }
         // The failing id can come from OUTSIDE the TOML: resolveHeadConfig swaps pinned_model with
         // the pinnedModel/grokModel knob for oauth heads, and env/config.json/PATCH override that
@@ -325,56 +362,8 @@ public data class ProviderConfig(
 }
 
 // Dialect / AuthConfig / ClaudeWrapperConfig / ClaudeSharingDefaults live in
-// TopologySchema.kt (concentration, 2026-08-19). Same-package FQCNs are unchanged.
-
-@Serializable
-public data class HeadModel(
-    val id: String,
-    val slot: String? = null,
-)
-
-@Serializable
-public data class HeadConfig(
-    val provider: String,
-    val port: Int,
-    @SerialName("discovery_prefix") val discoveryPrefix: String,
-    @SerialName("pinned_model") val pinnedModel: String,
-    val models: List<HeadModel>? = null,
-    @SerialName("context_window") val contextWindow: Long? = null,
-    val overrides: Map<String, String> = emptyMap(),
-    val claude: ClaudeWrapperConfig = ClaudeWrapperConfig(),
-    /** V4-36: standing instructions this head places on EVERY turn. Inline text or
-     *  [systemPromptFile] — never both (the resolver makes that a config error at load) — and
-     *  [systemPromptMode] picks the seam: `append` (the default) adds the text beside Claude
-     *  Code's own system field, `replace` SUBSTITUTES it, which strips the harness instructions
-     *  Claude Code ships in that field. Absent, or empty, is exactly today's bytes. */
-    @SerialName("system_prompt") val systemPrompt: String? = null,
-    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
-    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
-    /** V4-37: this head's OWN rate card, keyed by model id, USD per million tokens — an account
-     *  tier or a reseller markup that differs from the provider's published card. It WINS over the
-     *  provider model entry for the ids it names; an id it does not name keeps the provider's rates,
-     *  and with neither declared the statusline falls back to the client's own `total_cost_usd`
-     *  exactly as it does today. The case this exists for is two heads on ONE provider billed
-     *  differently — every other head is already correct from the provider entry alone.
-     *
-     *  It is folded into the catalog by [catalogFor] rather than threaded separately, because the
-     *  catalog is what the statusline already receives: the head's card then reaches the cost
-     *  segment without a new field on the runtime head handle or a second wiring path. */
-    val rates: Map<String, ModelRates>? = null,
-) {
-    /** V4-36: this head's standing prompt as its resolver. An ABSENT `system_prompt_mode` is the
-     *  documented default rather than a missing value — an operator who names no mode gets
-     *  `append` — so the default lives here, once, next to the schema that documents it, instead
-     *  of being re-spelt at each wiring site. [key] names the head in the resolved source. */
-    public fun systemPromptFor(key: String, configDir: Path): HeadSystemPrompt = HeadSystemPrompt(
-        text = systemPrompt,
-        file = systemPromptFile,
-        mode = systemPromptMode ?: SystemPromptMode.APPEND,
-        configDir = configDir,
-        source = "head:$key",
-    )
-}
+// TopologySchema.kt (concentration, 2026-08-19); HeadModel / HeadConfig in HeadConfig.kt
+// (concentration, 2026-09-23). Same-package FQCNs are unchanged.
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000
 private val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")

@@ -31,6 +31,17 @@ export const S = {
    *  all (m1 design review B10). */
   running: 'busy',
   quiet: 'quiet',
+  /** What governs the repo (FEATURES.md 4.14): its compaction rules and each head's statusline root. */
+  compaction: 'compaction rules',
+  statusline: 'statusline roots',
+  head: 'head',
+  root: 'root',
+  entry: 'entry',
+  /** A head whose trusted roots cover the repo, so its statusline shows the branch here, or not. */
+  trusted: 'trusted',
+  untrusted: 'no branch',
+  /** The asked-and-nothing answer (the vocabulary below): no trusted root covers the repo. */
+  none: 'none',
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
    *  replacing `no rates` in the cost cell and `unknown` in the last-seen cell. */
   absent: 'n/r',

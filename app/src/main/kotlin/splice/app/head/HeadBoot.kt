@@ -8,6 +8,7 @@ import splice.app.DaemonBoundary
 import splice.app.HeadAssembly
 import splice.app.control.ManagedHead
 import splice.core.config.StatePaths
+import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import splice.core.util.LogSink
@@ -48,7 +49,10 @@ internal class HeadBoot {
                 continue
             }
             boundary.runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
-                .onSuccess { heads[key] = it }
+                .onSuccess {
+                    heads[key] = it
+                    logUnlisted(key, head, it, log)
+                }
                 .onFailure {
                     // SAFE-RENDER-EXEMPT[2026-09-13]: assembly discovers pooled credential files,
                     // but OAuthAccountFiles wraps parser failures in an authored outer message and
@@ -64,6 +68,19 @@ internal class HeadBoot {
         // cross-process coordination if both run at once.
         logUsageKeyCollisions(statePaths, heads.keys, log)
         return failed
+    }
+
+    /** 2026-09-23: a model the head's `models` list names that its catalog does not carry was not
+     *  listed by the endpoint at this start (retired, filtered out, or not answered in time). The
+     *  topology drops that row rather than the head; this line is where the operator learns of it. */
+    private fun logUnlisted(key: String, head: HeadConfig, built: ManagedHead, log: LogSink) {
+        val catalog = built.catalog ?: return
+        val unlisted = head.models.orEmpty().map { it.id }.filterNot(catalog::contains)
+        if (unlisted.isEmpty()) return
+        log(
+            "[$key][boot] models list names ${unlisted.joinToString(", ")}, which its endpoint did not " +
+                "list at this start — not offered until it does\n",
+        )
     }
 
     /** IO-006: neither head is refused (that would break the codex/claudex usage-history migration

@@ -3,7 +3,9 @@
 // routes and the control-plane's passive health snapshot; EVERY catalog model still gets a
 // discovery row. Split out (HD-24) because the reporting plane shares no mutable state with
 // admission or lifecycle. Liveness arrives as the [running] parameter rather than a back-reference
-// to HeadEngine, which owns the route table that calls back into here.
+// to HeadEngine, which owns the route table that calls back into here. The PORT arrives the same way
+// (2026-09-23): it was a constructor Int, the configured number, so a head bound on port 0 reported
+// 0 on /health; HeadEngine owns the bound port and passes it at call time.
 package splice.head
 
 import kotlinx.serialization.json.Json
@@ -21,7 +23,6 @@ import splice.upstream.retry.InflightGate
 
 internal class HeadDiagnostics(
     private val provider: Provider,
-    private val listenPort: Int,
     /** The ONE thing this collaborator needs from the head (V4-105 item 3): it reads `deps.gate`
      *  and nothing else, so the whole 25-parameter bundle was carried to reach one snapshot. */
     private val gate: InflightGate,
@@ -31,13 +32,14 @@ internal class HeadDiagnostics(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun healthSnapshot(running: Boolean): HeadHealth {
+    /** [port] is the one the head listens on (HeadEngine.port), not the configured number. */
+    fun healthSnapshot(running: Boolean, port: Int): HeadHealth {
         val counts = driver.healthCounters()
         val gateSnap = gate.snapshot()
         return HeadHealth(
             ok = running,
             running = running,
-            port = listenPort,
+            port = port,
             version = GATEWAY_VERSION,
             localOriginErrors = counts.localOrigin,
             providerErrors = counts.providerError,
@@ -47,9 +49,10 @@ internal class HeadDiagnostics(
         )
     }
 
-    fun healthJson(): String = buildJsonObject {
+    /** GET /health. [port] is the one the head listens on (HeadEngine.port), not the configured one. */
+    fun healthJson(port: Int): String = buildJsonObject {
         put("ok", true)
-        put("port", listenPort)
+        put("port", port)
         put("version", GATEWAY_VERSION)
         put("head", provider.key)
     }.toString()

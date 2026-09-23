@@ -76,7 +76,7 @@ class HeadServerCompactCapTest {
         mock.stop()
     }
 
-    private fun head(port: Int, watchdog: WatchdogBudget): HeadServer {
+    private fun head(watchdog: WatchdogBudget): HeadServer {
         val tmp = Files.createTempDirectory("head-compact-cap")
         return HeadServer(
             provider = TestResponsesProvider(
@@ -99,7 +99,7 @@ class HeadServerCompactCapTest {
                 configEffort = "high",
                 configSummary = "detailed",
             ),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 30_000, maxRetries = 1),
@@ -111,9 +111,9 @@ class HeadServerCompactCapTest {
     // Drives one turn through a head built for this arm's budget; the mock stalls 6s per attempt.
     private suspend fun turnOn(watchdog: WatchdogBudget, system: String): String {
         headLog.clear()
-        val port = freshPort()
-        val server = head(port, watchdog)
+        val server = head(watchdog)
         server.start()
+        val port = server.port
         awaitListening(port)
         try {
             return turn(port, system)

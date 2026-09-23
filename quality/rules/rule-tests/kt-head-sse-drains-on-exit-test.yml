@@ -1,0 +1,11 @@
+id: kt-head-sse-drains-on-exit
+valid:
+  - 'call.respond(SseResponse { out -> out.write(frame) })'
+  - 'call.respondText(body, ContentType.Application.Json)'
+  - 'val note = "respondTextWriter"'
+invalid:
+  - 'call.respondTextWriter(ContentType.Text.EventStream) { write(frame) }'
+  - 'call.respondBytesWriter(ContentType.Text.EventStream) { writeStringUtf8(frame) }'
+  - 'call.respondOutputStream { write(bytes) }'
+  - 'call.respond(WriterContent({ write(frame) }, ContentType.Text.EventStream))'
+  - 'import io.ktor.server.response.respondTextWriter'

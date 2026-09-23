@@ -107,7 +107,7 @@ internal class ManagedHeadFactory(
                 forwardClientAuth = forwardClientAuth,
             ),
             perf = PerfStatsSource(stores.perfStats),
-            perfRows = PerfRowsFileSource(statePaths.perfStatsFile(key)),
+            perfRows = PerfRowsFileSource(statePaths.perfStatsFile(key), statePaths.perfArchiveDir),
             economics = EconomicsStoreSource(stores.economics),
             keyPresence = keyPresence,
             catalog = ctx.catalog,
@@ -130,7 +130,13 @@ internal class ManagedHeadFactory(
     ): HeadStores = HeadStores(
         usageStore = UsageStore(statePaths.usageFile(ctx.key), statePaths.ratelimitFile(ctx.key)),
         compactStats = CompactStats(statePaths.compactStatsFile(ctx.key)),
-        perfStats = PerfStats(statePaths.perfStatsFile(ctx.key)),
+        // V4-133's archive, wired: a generation the 64 MB rotate retires is kept for
+        // perfArchiveRetentionDays instead of discarded; 0 days is the one-generation rotate of old.
+        perfStats = PerfStats(
+            statePaths.perfStatsFile(ctx.key),
+            archiveDir = statePaths.perfArchiveDir.takeIf { ctx.cfg.perfArchiveRetentionDays > 0 },
+            archiveRetentionDays = ctx.cfg.perfArchiveRetentionDays,
+        ),
         economics = EconomicsStore(statePaths.economicsFile(ctx.key)),
         quota = primaryQuota,
         accountPool = accountPools.build(wired, accountQuotas),

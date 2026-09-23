@@ -2,27 +2,29 @@
 // credentialFileConfigured, wrapperInstalled) @ eedb2539 — invariants unchanged: the terminal-and-
 // install half of LoginIo, split off (LAYOUT-01) because the sign-in flows need none of it. Each
 // member is the CLI's: the login receipt the /login hook reads, the masked api-key prompt, and the
-// credential and wrapper presence that status, doctor, setup and add report.
+// credential and wrapper presence that status, doctor, setup and add report. Credential presence
+// itself is the accounts feature's CredentialPresence now; this delegates to it.
 package splice.app.cli.auth
 
+import splice.accounts.status.CredentialPresence
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.InstallPaths
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.config.StatePaths
-import splice.core.topology.AuthKindRegistry
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.oauth.OAuthLoginAccount
-import splice.topology.TopologyLoader
 import java.nio.file.Files
-import java.nio.file.Paths
 
 /** The CLI's sign-in facts and prompts, held as a collaborator like LoginIo was (Kotlin style law,
  *  2026-08-15). */
 internal class CliSignIn {
+
+    private val presence = CredentialPresence(TerminalOutput(::println))
 
     /** THE RECEIPT (2026-08-01). /login runs detached, so stdout is lost; one line on disk is
      *  the only channel the head's /login hook can read back. Written for both outcomes. */
@@ -63,43 +65,10 @@ internal class CliSignIn {
         }.onFailure { System.err.println("splice: failed to store key: ${SafeFailureText.render(it)}") }.isSuccess
     }
 
-    /** File / env / KeyStore presence for a head whose credential SPLICE holds. */
-    internal fun credentialConfigured(
-        key: String,
-        provider: ProviderConfig,
-        envReader: EnvReader,
-    ): Boolean {
-        val file = provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind)
-        val filePresent = file?.let { credentialFileConfigured(Paths.get(TopologyLoader.expandHome(it))) } == true
-        // OAuth heads authenticate by file only; api-key heads read the effective env var (the explicit
-        // auth.env OR the derived <KEY>_API_KEY default the daemon wires) so the derived path matches.
-        val oauth = AuthKindRegistry.isOAuth(provider.auth.kind)
-        val envVar = if (oauth) provider.auth.env else provider.auth.effectiveApiKeyEnv(key)
-        val envPresent = envVar?.let { envReader(it)?.isNotBlank() } == true
-        // The KeyStore is the third presence source for api-key heads — a key stored by
-        // `splice key set` / `<head> login` / token capture reads as configured here too.
-        val storePresent = !oauth && envVar != null &&
-            KeyStore(KeyStorePath.defaultPath(envReader)).read(envVar) != null
-        return filePresent || envPresent || storePresent
-    }
-
-    /** DR-70 (the DR-59 posture at CLI assembly): an UNREADABLE credential file counts as
-     *  configured — intact tokens one chmod away must never re-prompt a login — said out loud.
-     *  Only proven absence (NoSuch + no NOFOLLOW entry) reads as not-configured. */
-    private fun credentialFileConfigured(path: java.nio.file.Path): Boolean = Cancellables
-        .runCatchingCancellable { Files.getLastModifiedTime(path) }
-        .exceptionOrNull()
-        .let { failure ->
-            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
-                !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            if (failure != null && !genuinelyAbsent) {
-                println(
-                    "splice: $path unreadable (${SafeFailureText.render(failure)}) — " +
-                        "treating the credential as configured; fix access, not login",
-                )
-            }
-            !genuinelyAbsent
-        }
+    /** File / env / KeyStore presence for a head whose credential SPLICE holds — the accounts
+     *  feature's fact, which doctor reads too; an unreadable file's line goes to stdout. */
+    internal fun credentialConfigured(key: String, provider: ProviderConfig, envReader: EnvReader): Boolean =
+        presence.configured(key, provider, envReader)
 
     internal fun wrapperInstalled(command: String, envReader: EnvReader): Boolean =
         Files.isSymbolicLink(InstallPaths(envReader = envReader).binDir.resolve(command))

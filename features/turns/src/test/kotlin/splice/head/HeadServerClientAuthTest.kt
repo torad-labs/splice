@@ -179,12 +179,12 @@ class HeadServerClientAuthTest {
      *  The Ktor client cannot express this: `header(name, v)` twice arrives at the server as ONE
      *  comma-joined line, which would make a repeated-header test pass no matter what the server
      *  does with repeats. Raw bytes are the only way this assertion can fail. */
-    private fun rawTurn(port: Int, headers: List<Pair<String, String>>): String {
+    private fun rawTurn(port: Int, headers: List<Pair<String, String>>, host: String = "127.0.0.1:$port"): String {
         val body = """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
             """"messages":[{"role":"user","content":"hi"}],"stream":true}"""
         val request = buildString {
             append("POST /v1/messages HTTP/1.1\r\n")
-            append("Host: 127.0.0.1:$port\r\n")
+            append("Host: $host\r\n")
             append("Content-Type: application/json\r\n")
             append("Content-Length: ${body.toByteArray().size}\r\n")
             headers.forEach { (name, value) -> append("$name: $value\r\n") }
@@ -377,6 +377,22 @@ class HeadServerClientAuthTest {
         val port = startHead(forwardClientAuth = false)
         assertEquals(HttpStatusCode.OK, turn(port, mapOf("Authorization" to "Bearer $TURN_KEY")).first, "the turn key")
         assertEquals(HttpStatusCode.OK, turn(port, mapOf("Authorization" to "Bearer $MGMT_KEY")).first, "the mgmt key")
+    }
+
+    // v0.4.0: DNS rebinding. A client-auth head's turn door is open to any caller holding its own
+    // credential, and a page in the operator's browser that rebinds attacker.example to 127.0.0.1 is
+    // such a caller. Its requests name attacker.example in Host, the one thing rebinding cannot
+    // change, so the head refuses them before routing and nothing reaches the vendor.
+    @Test
+    fun `a request naming a foreign Host is refused before any route runs, on the open door too`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val credential = listOf("Authorization" to "Bearer caller-own-token")
+        val refused = rawTurn(port, credential, host = "attacker.example:$port")
+        assertTrue(refused.startsWith("HTTP/1.1 403"), refused.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "a rebinding page's turn never reaches the vendor")
+        val served = rawTurn(port, credential, host = "localhost:$port")
+        assertTrue(served.startsWith("HTTP/1.1 200"), served.lineSequence().first())
     }
 
     @Test

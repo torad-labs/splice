@@ -14,8 +14,11 @@
 package splice.control
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -63,6 +66,7 @@ import splice.control.api.usage.PerfRoutes
 import splice.control.api.usage.StatuslineRoute
 import splice.control.api.usage.UsagePayloads
 import splice.control.mcp.McpHost
+import splice.core.auth.LoopbackHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.TurnKey
@@ -93,6 +97,8 @@ private const val MAX_TAIL = 2_000
 /** V4-134: answered on /api/events until ControlPlane assigns [ConsolePorts.events]. NOT an empty
  *  stream: a stream that opens and stays quiet reads as a daemon with nothing happening, which is a
  *  confident false negative about a daemon serving turns right now. The text names what was not done. */
+private const val FOREIGN_HOST = "splice serves loopback names only (127.0.0.1, localhost, [::1])"
+
 /** Which scoped bearer a route admits BESIDE the management key, which opens every route. One door
  *  per route, so no route can be widened to two scoped keys by a flag pair. */
 private enum class Door { MANAGEMENT, MCP, SESSION }
@@ -231,6 +237,18 @@ public class ControlServer(
      *  in one body. Adding a route should not be a reason to restructure startup, or the reverse. */
     private fun controlEngine(): EmbeddedServer<NettyApplicationEngine, *> =
         embeddedServer(Netty, port = port, host = "127.0.0.1") {
+            // v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the operator's
+            // browser (see LoopbackHost). Refused before routing, so no route — guarded or open — runs.
+            intercept(ApplicationCallPipeline.Plugins) {
+                if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
+                    call.respondText(
+                        buildJsonObject { put("error", FOREIGN_HOST) }.toString(),
+                        ContentType.Application.Json,
+                        HttpStatusCode.Forbidden,
+                    )
+                    finish()
+                }
+            }
             routing {
                 // Unauthenticated liveness probe: the launch shim polls this to tell a running
                 // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.

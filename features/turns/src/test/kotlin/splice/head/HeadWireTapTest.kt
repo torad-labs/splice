@@ -45,7 +45,6 @@ import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
@@ -105,7 +104,6 @@ class HeadWireTapTest {
     )
 
     private fun startHead(wireTap: WireTap?, forwardClientAuth: Boolean = false): Int {
-        val port = ServerSocket(0).use { it.localPort }
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
                 key = "anthropic",
@@ -120,7 +118,9 @@ class HeadWireTapTest {
         )
         val head = HeadServer(
             provider = provider,
-            listenPort = port,
+            // 0: the head binds an OS-assigned port and reports it after start (no lease-then-bind
+            // window); its store files are keyed by its index, since the port is known only then.
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
@@ -129,12 +129,12 @@ class HeadWireTapTest {
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
                 inferenceToken = MGMT_KEY,
-                stores = headStores(tmp, suffix = "-$port", wireTap = wireTap),
+                stores = headStores(tmp, suffix = "-${heads.size}", wireTap = wireTap),
             ),
         )
         runBlocking { head.start() }
         heads += head
-        return port
+        return head.port
     }
 
     @BeforeAll

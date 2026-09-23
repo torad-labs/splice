@@ -77,7 +77,7 @@ private class EconomicsRig(tmp: Path) {
         engine { requestTimeout = 0 }
         defaultRequest { bearerAuth("test-inference-token") }
     }
-    val port = freshPort()
+    val port: Int get() = head.port
     val perfFile: Path = tmp.resolve("perf.jsonl")
     val economics = EconomicsStore(tmp.resolve("economics.json"))
     val head = HeadServer(
@@ -101,7 +101,7 @@ private class EconomicsRig(tmp: Path) {
             configEffort = "high",
             configSummary = "detailed",
         ),
-        listenPort = port,
+        listenPort = 0,
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),

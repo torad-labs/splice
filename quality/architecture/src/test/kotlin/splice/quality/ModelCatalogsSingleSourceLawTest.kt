@@ -731,7 +731,11 @@ class ModelCatalogsSingleSourceLawTest {
     /** The synthetic tree the red proof writes into: the SOURCE and the two emitters, each
      *  replaceable per arm, under the same relative paths the live tree uses. */
     private class Tree(val root: File) {
-        private val synthetic = ProjectMap.parse(root, ":app=app;:core=core;:integrations-topology=integrations/topology", setOf("build"))
+        private val synthetic = ProjectMap.parse(
+            root,
+            ":app=app;:core=core;:integrations-topology=integrations/topology",
+            setOf("build"),
+        )
         val surfaces = ModelCatalogsSingleSource.surfaces(synthetic)
 
         fun write(example: String = EXAMPLE_OK, catalog: String = CATALOG_OK, starter: String = STARTER_OK) {

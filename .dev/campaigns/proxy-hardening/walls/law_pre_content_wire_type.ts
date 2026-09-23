@@ -165,8 +165,8 @@ function line(code: string, at: number): number {
 function balancedEnd(code: string, openAt: number): number {
   let depth = 0;
   for (let at = openAt; at < code.length; at += 1) {
-    if ("([{".includes(code[at])) depth += 1;
-    else if (")]}".includes(code[at])) {
+    if ("([{".includes(code.charAt(at))) depth += 1;
+    else if (")]}".includes(code.charAt(at))) {
       depth -= 1;
       if (depth === 0) return at;
     }
@@ -179,7 +179,7 @@ function balancedEnd(code: string, openAt: number): number {
 function rhsOf(code: string, assignEnd: number): string {
   let depth = 0;
   for (let at = assignEnd; at < code.length; at += 1) {
-    const ch = code[at];
+    const ch = code.charAt(at);
     if ("([{".includes(ch)) depth += 1;
     else if (")]}".includes(ch)) depth -= 1;
     else if (ch === "\n" && depth <= 0) return code.slice(assignEnd, at);
@@ -202,7 +202,7 @@ function splitArgs(inner: string): string[] {
   let depth = 0;
   let start = 0;
   for (let at = 0; at < inner.length; at += 1) {
-    const ch = inner[at];
+    const ch = inner.charAt(at);
     if ("([{".includes(ch)) depth += 1;
     else if (")]}".includes(ch)) depth -= 1;
     else if (ch === "," && depth === 0) { parts.push(inner.slice(start, at)); start = at + 1; }
@@ -222,16 +222,16 @@ function enclosingCall(code: string, at: number): string {
   if (stack.length === 0) return "";
   const head = code.slice(0, stack[stack.length - 1]).replace(/\s+$/, "");
   const name = /([A-Za-z_]\w*)$/.exec(head);
-  return name ? name[1] : "";
+  return name?.[1] ?? "";
 }
 
 /** The receiver expression immediately left of the '.' at [dotAt]. */
 function receiverBefore(code: string, dotAt: number): string {
   let end = dotAt;
-  while (end > 0 && " \t\n".includes(code[end - 1])) end -= 1;
+  while (end > 0 && " \t\n".includes(code.charAt(end - 1))) end -= 1;
   let i = end;
   while (i > 0) {
-    const ch = code[i - 1];
+    const ch = code.charAt(i - 1);
     if (ch === ")") {
       let depth = 0;
       while (i > 0) {
@@ -283,7 +283,7 @@ export function governedTypes(seamCode: string): Set<string> {
   const brace = seamCode.indexOf("{", at);
   if (brace < 0) return new Set();
   const body = seamCode.slice(brace, balancedEnd(seamCode, brace));
-  return new Set([...body.matchAll(GOVERNED_RE)].map((m) => m[1]));
+  return new Set([...body.matchAll(GOVERNED_RE)].flatMap((m) => (m[1] === undefined ? [] : [m[1]])));
 }
 
 /** The parameter NAMES of the rule's own `fun of(`, so the content flag is identified by the rule's
@@ -299,9 +299,9 @@ export function ruleParams(seamCode: string): string[] {
   const inner = body.slice(sig.index + sig[0].length, balancedEnd(body, sig.index + sig[0].length - 1));
   const names: string[] = [];
   for (const param of splitArgs(inner)) {
-    const name = /^(?:\w+\s+)*([A-Za-z_]\w*)\s*:/.exec(param);
-    if (!name) return [];
-    names.push(name[1]);
+    const name = /^(?:\w+\s+)*([A-Za-z_]\w*)\s*:/.exec(param)?.[1];
+    if (name === undefined) return [];
+    names.push(name);
   }
   return names;
 }
@@ -317,14 +317,14 @@ function routingVerdict(expr: string, params: string[]): string {
   const positional: string[] = [];
   for (const arg of args) {
     const hit = NAMED_ARG_RE.exec(arg);
-    if (hit) named.set(hit[1], hit[2].trim());
+    const key = hit?.[1];
+    const value = hit?.[2];
+    if (key !== undefined && value !== undefined) named.set(key, value.trim());
     else positional.push(arg);
   }
   if (args.length > params.length || args.length < 2) return "of-unreadable";
-  let flag: string;
-  if (named.has(flagName)) flag = named.get(flagName)!;
-  else if (positional.length >= 2) flag = positional[1];
-  else return "of-unreadable";
+  const flag = (flagName === undefined ? undefined : named.get(flagName)) ?? positional[1];
+  if (flag === undefined) return "of-unreadable";
   return flag === "true" ? "flag-true" : "routed";
 }
 
@@ -377,13 +377,14 @@ function seamProblems(seamCode: string, params: string[]): string[] {
       continue;
     }
     const at = calls[0];
+    if (at === undefined) continue; // the two checks above leave exactly one call
     const call = body.slice(at, balancedEnd(body, at + ROUTED.length - 1) + 1);
     let bound: string | null = null;
     let verdict = "not-whole";
     for (const m of body.matchAll(BIND_RE)) {
       const rhs = rhsOf(body, m.index + m[0].length);
       if (rhs.includes(ROUTED)) {
-        bound = m[1];
+        bound = m[1] ?? null;
         verdict = routingVerdict(rhs, params);
         break;
       }
@@ -435,7 +436,7 @@ export function detect(sources: Record<string, string> | null, seamText: string 
   const problems = seamProblems(seamCode, params);
   let envelopes = 0;
   for (const path of Object.keys(sources).sort()) {
-    const code = codeView(sources[path]);
+    const code = codeView(sources[path] ?? "");
     if (path !== SEAM_FILE) {
       for (const m of code.matchAll(new RegExp(ROUTED.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))) {
         problems.push(`${path}:${line(code, m.index)} — a SECOND site applies ${ROUTED}…). The rule is applied once, at the emitter seam; a hand copy here is the V4-79 defect (four copies of one rule) that made a new ending able to skip it`);

@@ -108,6 +108,11 @@
       "command": ["bun", "tools/gate", "no-python"]
     },
     {
+      "task": "typescriptTypecheck",
+      "why": "Nothing in the gate ran tsc: bun executes TypeScript without checking it, so a campaign wall carried 19 errors the gate's own tsconfig reported and no leg read, and 49 of 437 tracked .ts files sat in no program (2026-09-23). Every tracked .ts is now in a program or excused by name, and tools/gate/config/typecheck.json's per-file baseline is the older debt, which may only shrink.",
+      "command": ["bun", "tools/gate", "typecheck"]
+    },
+    {
       "task": "gateTests",
       "why": "Every red-green arm of the gate CLI: the slot, the JDK resolver, the title preflight, rule routing, the config guard, the no-python wall (every census RED on its mutation, and the write guard still refusing a synthetic event), the write-time hook, the ledger checks and the coverage proof.",
       "command": ["bun", "test", "tools/gate"]

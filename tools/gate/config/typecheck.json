@@ -1,0 +1,31 @@
+{
+  "about": "The typecheck wall (tools/gate/src/lib/typecheck.ts): every program tsc runs, every tracked .ts that no program loads (excused, by name, with a reason), and the per-file type-error DEBT that predates the wall (baseline). The baseline may only SHRINK. The compiler is the native TypeScript 7 build the console already builds with (console/package.json @typescript/native): 0.15 s on tools/gate against 1.2 s for the root 5.9 tsc, same diagnostics.",
+  "compiler": "node_modules/@typescript/native/bin/tsc",
+  "programs": [
+    "tools/gate/tsconfig.json",
+    "tools/release/tsconfig.json",
+    "tools/e2e/tsconfig.json",
+    "console/tsconfig.json",
+    "console/tools/tsconfig.json",
+    ".dev/tsconfig.json",
+    ".claude/hooks/tsconfig.json"
+  ],
+  "excused": {},
+  "baseline": {
+    "console/tools/src/commands/capture.ts": 1,
+    "console/tools/src/commands/comp.ts": 3,
+    "console/tools/src/commands/exit.ts": 5,
+    "console/tools/src/commands/gate.ts": 3,
+    "console/tools/src/commands/leak.ts": 1,
+    "console/tools/src/commands/scan.ts": 6,
+    "console/tools/src/lib/coverage.ts": 3,
+    "console/tools/src/lib/typography.ts": 17,
+    "tools/e2e/docker/mock_chat.ts": 1,
+    "tools/e2e/docker/receipt-selftest.ts": 3,
+    "tools/e2e/fixtures/loopback_control.ts": 5,
+    "tools/e2e/local-models/e2e.ts": 37,
+    "tools/e2e/mcp-host/bench.ts": 41,
+    "tools/e2e/probes/muse-curate.ts": 1,
+    "tools/e2e/probes/stream_probe.ts": 9
+  }
+}

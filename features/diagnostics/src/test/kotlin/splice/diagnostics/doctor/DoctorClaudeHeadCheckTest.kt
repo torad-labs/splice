@@ -17,6 +17,7 @@ import kotlin.io.path.writeText
 class DoctorClaudeHeadCheckTest {
 
     private fun probes(home: Path, bin: Path, share: Path) = DoctorProbes(
+        runningJar = DoctorTestPorts.noJar,
         wrappedHead = WrappedHead(
             home = home,
             installPaths = InstallPaths(binOverride = bin, shareOverride = share),

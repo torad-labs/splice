@@ -7,6 +7,7 @@
 package splice.diagnostics.doctor
 
 import splice.core.config.InstallPaths
+import splice.core.config.RunningJar
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText

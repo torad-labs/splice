@@ -7,11 +7,11 @@ package splice.app
 import splice.app.cli.AdminSupport
 import splice.app.provider.JdkLocalHttp
 import splice.app.provider.LocalProbeInputs
+import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.diagnostics.doctor.DoctorCommand
 import splice.diagnostics.doctor.LocalRuntimeTransport
-import splice.diagnostics.doctor.RunningJar
 
 internal object DoctorWiring {
     private val probeInputs = LocalProbeInputs()

@@ -58,7 +58,7 @@ class DoctorOrphanWrapperTest {
         val bin = install(tmp, "claudeor", "splice")
         val rows = try {
             Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("--x------"))
-            DoctorInstallProbes(DoctorProbes(), DoctorTestPorts.noJar)
+            DoctorInstallProbes(DoctorProbes(DoctorTestPorts.noJar), DoctorTestPorts.noJar)
                 .installationChecks(parsed(command = "claude-openrouter"), env(tmp))
         } finally {
             Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwx------"))
@@ -85,7 +85,7 @@ class DoctorOrphanWrapperTest {
     }
 
     private fun orphans(tmp: Path, topology: DoctorTopology) =
-        DoctorInstallProbes(DoctorProbes(), DoctorTestPorts.noJar).installationChecks(topology, env(tmp))
+        DoctorInstallProbes(DoctorProbes(DoctorTestPorts.noJar), DoctorTestPorts.noJar).installationChecks(topology, env(tmp))
             .filter { it.detail.contains("names no head in the topology") }
 
     private fun parsed(command: String?): DoctorTopology {

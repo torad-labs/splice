@@ -8,6 +8,7 @@
 package splice.diagnostics.doctor
 
 import splice.client.wrap.WrappedHead
+import splice.core.config.RunningJar
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -23,13 +24,15 @@ import java.util.concurrent.TimeUnit
  *  sources carry no top-level functions). DoctorCommand builds one and asks it for the
  *  prerequisites section; every member keeps the old function's name. */
 internal class DoctorProbes(
+    /** Where this process runs from — the executable's answer, handed to the install probes. */
+    runningJar: RunningJar,
     /** V4-129 (FEATURES.md 4.12): read fresh per report — wrap/unwrap can flip between two `splice
      *  doctor` runs, and a cached mode would report a stale one. */
     private val wrappedHead: WrappedHead = WrappedHead(Paths.get(System.getProperty("user.home"))),
 ) {
 
     private val path = DoctorPathCheck(this)
-    private val install = DoctorInstallProbes(this)
+    private val install = DoctorInstallProbes(this, runningJar)
 
     internal fun prerequisiteChecks(envReader: EnvReader): List<DoctorCheck> {
         val java = DoctorCheck("java", CheckStatus.OK, System.getProperty("java.version") ?: "unknown")

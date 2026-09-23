@@ -7,6 +7,7 @@
 package splice.app.provider
 
 import splice.core.model.ModelCatalog
+import splice.core.model.UpstreamWindows
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.provider.openai.ApiKeyAuthProvider
@@ -40,7 +41,7 @@ internal class LocalProbeInputs {
         val runtime = probe.detect() ?: return LocalRowsCheck.Down
         // The HEAD's effective rows, not the provider's: a head context_window override and a picker
         // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
-        val rows = catalog.effectiveWindows()
+        val rows = UpstreamWindows(catalog).byId()
         val listed = probe.models(runtime, rows.keys) ?: return LocalRowsCheck.Unlisted(runtime)
         return LocalRowsCheck.Checked(runtime, rows, probe.validate(rows, listed, runtime.kind).filterNot { it.ok })
     }

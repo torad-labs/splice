@@ -4,7 +4,6 @@ package splice.app.cli
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.app.cli.install.CommandParser
 
 class CommandParserTest {
 

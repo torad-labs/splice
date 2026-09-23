@@ -4,18 +4,19 @@
 // AddProfiles and installed by calling AddCommand; the wizard never writes those tables.
 package splice.app.cli.setup
 
+import splice.app.InstallWiring
 import splice.app.cli.AdminSupport
 import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddProfiles
 import splice.app.cli.add.DaemonUpProbe
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
-import splice.app.cli.install.InstallCommand
-import splice.app.cli.install.InstallLayout
 import splice.app.cli.upgrade.DaemonRestart
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.launch.install.InstallCommand
+import splice.launch.install.InstallLayout
 import splice.terminal.SelectOption
 import splice.terminal.SelectOutcome
 import splice.terminal.WizardCancelled
@@ -25,7 +26,7 @@ import java.nio.file.Path
 
 /** The `setup` verb. Production constructs with defaults so Command.Setup does not change. */
 internal class SetupCommand(
-    private val installCommand: InstallCommand = InstallCommand(),
+    private val installCommand: InstallCommand = InstallWiring.command(),
     loginHead: HeadSignIn = HeadSignIn { key -> LoginCommand().login(key) },
     /** V4-176: the six terminal seams as one collaborator — see SetupPrompts for why they were
      *  always one. A test replaces the bundle; production takes its defaults. */
@@ -159,9 +160,9 @@ internal class SetupCommand(
     }
 
     private fun runInstall(): Boolean {
-        installCommand.init()
-        if (!installCommand.install("--all")) return false
-        installCommand.installSelf()
+        InstallWiring.init(env)
+        if (!installCommand.install("--all", env)) return false
+        installCommand.installSelf(env)
         return true
     }
 }

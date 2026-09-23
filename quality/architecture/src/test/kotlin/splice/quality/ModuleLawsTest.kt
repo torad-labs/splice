@@ -88,8 +88,9 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":features-lifecycle" to emptySet(),
     // the doctor report and the one-prompt playground.
     ":features-diagnostics" to setOf(":core", ":integrations-http"),
-    // launching Claude Code against a head: the exec recipe, the Claude head's wrap, the resume hook.
-    ":features-launch" to setOf(":core", ":integrations-claude-code", ":integrations-http"),
+    // launching Claude Code against a head: the exec recipe, the Claude head's wrap, the resume hook,
+    // and the wrapper commands `splice install` links to the launch shim from splice.toml's heads.
+    ":features-launch" to setOf(":core", ":integrations-claude-code", ":integrations-http", ":integrations-topology"),
     // the daemon's knobs and splice.toml, read and written as data.
     ":features-configuration" to setOf(":core", ":integrations-http"),
     // the console's live event stream: the bus, its event shapes, and GET /api/events.

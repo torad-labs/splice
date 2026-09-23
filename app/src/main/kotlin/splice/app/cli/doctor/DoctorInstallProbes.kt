@@ -7,11 +7,11 @@
 package splice.app.cli.doctor
 
 import splice.app.cli.AdminSupport
-import splice.app.cli.install.InstallCommand
 import splice.core.config.InstallPaths
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.launch.install.InstallShim
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -25,9 +25,9 @@ internal const val FIX_RELINK = "splice install --all"
  *  the pipeline. Every member keeps the old function's name. */
 internal class DoctorInstallProbes(private val probes: DoctorProbes) {
 
-    // The installed-shim marker is InstallCommand's fact (it writes the shim), so shimCheck asks
-    // that verb rather than re-reading the file itself.
-    private val installCommand = InstallCommand()
+    // The installed-shim marker is the install feature's fact (it writes the shim), so shimCheck asks
+    // InstallShim rather than re-reading the file itself.
+    private val installShim = InstallShim()
     private val path = DoctorPathCheck(probes)
 
     internal fun installationChecks(topo: DoctorTopology, envReader: EnvReader): List<DoctorCheck> {
@@ -103,7 +103,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes) {
 
     private fun shimVersionCheck(shim: Path, envReader: EnvReader): DoctorCheck {
         val expected = TopologyLoader.shimVersion()
-        val installed = Cancellables.runCatchingCancellable { installCommand.installedShimVersion(envReader) }
+        val installed = Cancellables.runCatchingCancellable { installShim.installedShimVersion(envReader) }
             .getOrElse { failure ->
                 return DoctorCheck(
                     "shim",

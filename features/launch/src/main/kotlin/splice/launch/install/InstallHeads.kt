@@ -1,17 +1,18 @@
 // NEW: resolve a specific head arg to its single topology key. Shared by install
 // and uninstall. Split from InstallCommand.kt (concentration HIGH, 2026-08-19).
-package splice.app.cli.install
+package splice.launch.install
 
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 
-internal class InstallHeads {
+internal class InstallHeads(private val output: TerminalOutput) {
     // Printing (and returning null) for an unknown name OR an ambiguous one — the latter
     // distinct so the operator fixes the topology collision instead of chasing a phantom head.
     fun resolveSpecificHead(topology: Topology, headArg: String): String? {
         val keys = topology.resolveHeadKeys(headArg)
         if (keys.size == 1) return keys.single()
-        println(
+        output.line(
             if (keys.isEmpty()) {
                 "splice: no matching head '$headArg' in the topology"
             } else {

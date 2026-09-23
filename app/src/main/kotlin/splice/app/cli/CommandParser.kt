@@ -1,46 +1,7 @@
-// NEW: `splice install/uninstall/init` (P5-CLI) facade. Bodies live in InstallLinker /
-// UninstallCommand / InstallShim / InstallHeads / InstallLayout so this file is not billed
-// as a god object (concentration HIGH, 2026-08-19). Public methods keep their names so
-// Command.kt / InstallCommandTest / DoctorInstallProbes / Main.kt do not change.
-package splice.app.cli.install
-
-import splice.app.cli.Command
-import splice.core.util.EnvReader
-import splice.topology.TopologyLoader
-import java.nio.file.Files
-
-/** The `install` / `uninstall` / `init` verbs as one cohesive unit of behavior (Kotlin style law,
- *  2026-08-15: main sources carry no top-level functions) — they share the wrapper-symlink and
- *  launch-shim path resolution below. Every member keeps the old function's name, so each call
- *  site's diff is a receiver insertion. */
-internal class InstallCommand {
-
-    private val linker = InstallLinker()
-    private val uninstaller = UninstallCommand()
-    private val shim = InstallShim()
-
-    internal fun init(env: EnvReader = EnvReader(System::getenv)) {
-        val path = TopologyLoader.configPath(env)
-        val existed = Files.exists(path)
-        TopologyLoader.loadOrMaterialize(path)
-        println(if (existed) "splice: topology already at $path" else "splice: wrote starter topology to $path")
-    }
-
-    internal fun install(headArg: String?, env: EnvReader = EnvReader(System::getenv)): Boolean =
-        linker.install(headArg, env)
-
-    internal fun installSelf(env: EnvReader = EnvReader(System::getenv)): Boolean =
-        linker.installSelf(env)
-
-    internal fun uninstall(headArg: String?, env: EnvReader = EnvReader(System::getenv)): Boolean =
-        uninstaller.uninstall(headArg, env)
-
-    internal fun installedShimVersion(env: EnvReader = EnvReader(System::getenv)): String? =
-        shim.installedShimVersion(env)
-
-    internal fun shimStalenessWarning(env: EnvReader = EnvReader(System::getenv)): String? =
-        shim.shimStalenessWarning(env)
-}
+// NEW: argv -> Command, split out of install/InstallCommand.kt when the install verbs moved to
+// features/launch (LAYOUT-01). The parse table is dispatch, which is app composition; it only ever
+// sat beside Install because that verb owned the argv-shaped cases.
+package splice.app.cli
 
 /**
  * Builds one [Command] from the full argv — the value half of the verb table.
@@ -102,8 +63,7 @@ private val verbs: Map<String, CommandFactory> = mapOf(
 
 /** argv -> Command. Was `Command.parse` on the type's own static block — the shape the same
  *  2026-08-15 style law bans — so the parse seam becomes its own tiny collaborator and the table it
- *  reads stays a file-scope val. Lives next to Install because that verb already owns the
- *  argv-shaped cases (Install/Uninstall targets). */
+ *  reads stays a file-scope val. */
 internal class CommandParser {
 
     /** argv -> Command, or null for an unknown/empty verb (caller prints usage). */

@@ -7,9 +7,9 @@
 // is for, and UpgradeWrapper decides what happens to such an edit.
 package splice.app.cli.upgrade
 
-import splice.app.cli.install.InstallLayout
 import splice.core.GATEWAY_VERSION
 import splice.core.util.EnvReader
+import splice.launch.install.InstallLayout
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

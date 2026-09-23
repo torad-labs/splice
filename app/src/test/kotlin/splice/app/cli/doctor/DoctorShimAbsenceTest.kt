@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.install.InstallShim
 import splice.app.cli.status.StatusCommand
 import splice.core.util.EnvReader
+import splice.launch.install.InstallShim
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path

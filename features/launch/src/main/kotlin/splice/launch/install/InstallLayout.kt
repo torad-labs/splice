@@ -2,19 +2,20 @@
 // named methods (not inlined into install()) so install.sh and `splice install`
 // always agree on where wrappers and the shim land. Split from InstallCommand.kt
 // (concentration HIGH, 2026-08-19).
-package splice.app.cli.install
+package splice.launch.install
 
 import splice.core.config.InstallPaths
 import splice.core.util.EnvReader
 import java.nio.file.Path
 
-internal class InstallLayout {
+/** Where install puts wrappers and finds the launch shim; upgrade and setup read the same paths. */
+public class InstallLayout {
     // SPLICE_BIN_DIR / SPLICE_SHARE_DIR honored via core/config (System.getenv is walled there).
-    fun localBin(env: EnvReader): Path = InstallPaths(envReader = env).binDir
+    public fun localBin(env: EnvReader): Path = InstallPaths(envReader = env).binDir
 
-    fun shareDir(env: EnvReader): Path = InstallPaths(envReader = env).shareDir
+    public fun shareDir(env: EnvReader): Path = InstallPaths(envReader = env).shareDir
 
-    fun launchShimPath(env: EnvReader): Path = shareDir(env).resolve("splice-launch")
+    public fun launchShimPath(env: EnvReader): Path = shareDir(env).resolve("splice-launch")
 
     /** DR-169: the containment law for a wrapper command name, or null when [command] would not
      *  land directly inside [bin].
@@ -32,7 +33,7 @@ internal class InstallLayout {
      *  continue; install turns the null into its usual loud failure. Both verbs go through this one
      *  predicate deliberately — a rule enforced only on install would leave uninstall deleting paths
      *  install now refuses to create. */
-    fun wrapperLinkOrNull(bin: Path, command: String): Path? =
+    internal fun wrapperLinkOrNull(bin: Path, command: String): Path? =
         bin.resolve(command).takeIf { link ->
             command.isNotEmpty() && link.normalize().parent == bin.normalize()
         }

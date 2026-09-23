@@ -1,6 +1,7 @@
-// NEW: v0.4.0 key split — the turn key's own contract. It shares MgmtKey's mint semantics through
-// StateKey (MgmtKeyTest pins those), so these arms pin only what is NEW: it is a different secret in a
-// different file, and the header file the statusline command names always carries the CURRENT key.
+// NEW: v0.4.0 key split — the turn key's own contract. It is DERIVED from the management key
+// (MgmtKeyTest pins the mint), so these arms pin what the derivation must hold: a different secret,
+// stable across daemon restarts, rotated with the management key, and a header file that always
+// carries the CURRENT key.
 package splice.core.config
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -19,43 +20,45 @@ class TurnKeyTest {
 
     @Test
     fun `the turn key is its own secret, never the management key`(@TempDir tmp: Path) {
-        val sp = paths(tmp)
-        val turn = TurnKey(sp, log = {})
-        val mgmt = MgmtKey(sp, log = {})
-        assertEquals(64, turn.get().length, "32 random bytes hex")
+        val mgmt = MgmtKey(paths(tmp), log = {})
+        val turn = TurnKey(mgmt)
+        assertEquals(64, turn.get().length, "HMAC-SHA256 hex")
         assertNotEquals(mgmt.get(), turn.get(), "the split is the security property")
         assertFalse(turn.matchesBearer("Bearer ${mgmt.get()}"), "the management key is not a turn key")
+        assertFalse(mgmt.matchesBearer("Bearer ${turn.get()}"), "the turn key is not the management key")
         assertTrue(turn.matchesBearer("Bearer ${turn.get()}"))
     }
 
     @Test
-    fun `the header file is owner-only and carries the current key as one header line`(@TempDir tmp: Path) {
-        val turn = TurnKey(paths(tmp), log = {})
+    fun `a restarted daemon derives the same turn key - launched sessions survive it`(@TempDir tmp: Path) {
+        val first = TurnKey(MgmtKey(paths(tmp), log = {})).get()
+        assertEquals(first, TurnKey(MgmtKey(paths(tmp), log = {})).get())
+    }
+
+    @Test
+    fun `rotating the management key rotates the turn key with it`(@TempDir tmp: Path) {
+        val sp = paths(tmp)
+        val before = TurnKey(MgmtKey(sp, log = {})).get()
+        Files.delete(sp.mgmtKeyFile)
+        assertNotEquals(before, TurnKey(MgmtKey(sp, log = {})).get())
+    }
+
+    @Test
+    fun `the header file is owner-only, beside the management key, one header line`(@TempDir tmp: Path) {
+        val sp = paths(tmp)
+        val turn = TurnKey(MgmtKey(sp, log = {}))
         val file = turn.headerFile()
+        assertEquals(sp.mgmtKeyFile.parent, file.parent)
         assertEquals("Authorization: Bearer ${turn.get()}\n", Files.readString(file))
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
     }
 
     @Test
     fun `a stale header file is rewritten to the current key, not trusted`(@TempDir tmp: Path) {
-        // A key rotated while the header file kept the old bearer would 401 every statusline tick
-        // with nothing on disk saying why. The file is re-derived from the key at every use.
-        val sp = paths(tmp)
-        val turn = TurnKey(sp, log = {})
+        val turn = TurnKey(MgmtKey(paths(tmp), log = {}))
         val file = turn.headerFile()
         Files.writeString(file, "Authorization: Bearer stale-key\n")
         turn.headerFile()
         assertEquals("Authorization: Bearer ${turn.get()}\n", Files.readString(file))
-    }
-
-    @Test
-    fun `a second daemon instance serves the same turn key - minted once per key lifetime`(@TempDir tmp: Path) {
-        val sp = paths(tmp)
-        val first = TurnKey(sp, log = {}).get()
-        val logs = mutableListOf<String>()
-        val second = TurnKey(sp, log = logs::add)
-        assertEquals(first, second.get(), "a restart must not strand every launched session")
-        assertEquals(null, second.mintedAtMs)
-        assertTrue(logs.isEmpty(), logs.toString())
     }
 }

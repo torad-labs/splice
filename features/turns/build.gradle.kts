@@ -14,7 +14,7 @@ tasks.withType<Test>().configureEach {
 dependencies {
     implementation(project(":core"))
     api(project(":features-sessions"))
-    implementation(project(":upstream"))
+    implementation(project(":integrations-upstream"))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.sse)

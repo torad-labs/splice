@@ -36,8 +36,8 @@
     "daemon/control/src/test/kotlin/splice/control/api/diagnostics/McpRoutesTest.kt",
     "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt",
     "features/turns/src/test/kotlin/splice/head/ActivityLabelTest.kt",
-    "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
-    "upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailurePolicyRefusalTest.kt",
+    "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
+    "integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailurePolicyRefusalTest.kt",
     "quality/rules/kotlin/kt-tests-no-wall-clock.yml",
     "console/.impeccable/review/material-spec.md"
   ],

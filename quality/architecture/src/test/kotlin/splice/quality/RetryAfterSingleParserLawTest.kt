@@ -69,7 +69,7 @@ class RetryAfterSingleParserLawTest {
         val sources = KotlinText.kotlinFiles(map).associate { file ->
             KotlinText.rel(map, file) to KotlinText.stripComments(file.readText())
         }
-        val parserFile = File(map.mainSources(":upstream"), RetryAfterSingleParser.PARSER_IN_UPSTREAM)
+        val parserFile = File(map.mainSources(":integrations-upstream"), RetryAfterSingleParser.PARSER_IN_UPSTREAM)
         val parserRel = KotlinText.rel(map, parserFile)
         val problems = RetryAfterSingleParser.audit(sources, parserRel)
         assertTrue(problems.isEmpty()) {
@@ -119,7 +119,7 @@ class RetryAfterSingleParserLawTest {
     }
 
     private companion object {
-        const val PARSER = "upstream/src/main/kotlin/splice/upstream/retry/RetryAfter.kt"
+        const val PARSER = "integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryAfter.kt"
         val COMPLIANT: Map<String, String> = mapOf(
             PARSER to """
                 class RetryAfter {

@@ -42,7 +42,7 @@ files:
   - "**/src/main/**/*.kt"
 ignores:
   # The process runtime edge — the single main-source file allowed to name the global dispatchers.
-  - upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt
+  - integrations/upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt
 rule:
   any:
     - pattern: Dispatchers.IO

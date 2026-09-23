@@ -12,7 +12,7 @@
       "app/src/main/kotlin/splice/app/probe/UpstreamPlaygroundProbe.kt",
       "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeInflight.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsUpstream.kt",
-      "upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt"
     ],
     "COLLISION CRITICAL_PCT": [
       "daemon/control/src/main/kotlin/splice/control/StatuslineBars.kt",
@@ -64,7 +64,7 @@
     ],
     "COLLISION LIVE_MAX_TOKENS": [
       "app/src/main/kotlin/splice/app/cli/add/AddChecks.kt",
-      "upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
     ],
     "COLLISION LOCK_WAIT_MS": [
       "core/src/main/kotlin/splice/core/config/KeyStore.kt",
@@ -343,8 +343,8 @@
       "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeInflight.kt",
       "app/src/main/kotlin/splice/app/quota/QuotaProbes.kt",
       "integrations/mcp/src/main/kotlin/splice/control/mcp/McpHost.kt",
-      "upstream/src/main/kotlin/splice/upstream/local/LocalLiveReading.kt",
-      "upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalLiveReading.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
     ],
     "COPY INACTIVE_PAD": [
       "app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
@@ -443,8 +443,8 @@
       "features/turns/src/main/kotlin/splice/head/turn/TurnProgressLine.kt",
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
       "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
-      "upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
     ],
     "COPY NAME": [
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
@@ -452,7 +452,7 @@
     ],
     "COPY NANOS_PER_MS": [
       "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeDaemon.kt",
-      "upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt"
     ],
     "COPY NEWLINE_BYTE": [
       "app/src/main/kotlin/splice/app/sources/LogFileSource.kt",
@@ -525,17 +525,17 @@
     ],
     "COPY SECONDS_PER_DAY": [
       "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
-      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SECONDS_PER_HOUR": [
       "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
-      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SECONDS_PER_MINUTE": [
       "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
       "app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt",
-      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SEND_MESSAGE": [
       "integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptReader.kt",

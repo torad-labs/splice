@@ -14,7 +14,7 @@ private val DIALECTS = setOf(
 )
 
 /** The domain plus the provider contract: what every adapter (dialect, provider, transport) starts from. */
-private val ADAPTER_BASE = setOf(":core", ":upstream")
+private val ADAPTER_BASE = setOf(":core", ":integrations-upstream")
 
 /** Ports-and-adapters dependency direction (HD-11): module -> the internal modules it may depend on
  *  in a TEST configuration.
@@ -49,7 +49,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
     ":integrations-http" to emptySet(),
     // the provider contract. Speaks the domain and nothing else.
-    ":upstream" to setOf(":core"),
+    ":integrations-upstream" to setOf(":core"),
     // a dialect adapts the contract to one wire format.
     ":integrations-dialects-anthropic" to ADAPTER_BASE,
     ":integrations-dialects-openai-responses" to ADAPTER_BASE,

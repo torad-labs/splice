@@ -53,7 +53,7 @@
 #                                                       constants + `putJsonObject("error")`
 #   upstream/spi/RateLimitCooldown.kt:192-198  inline in the cooldown refusal — THE
 #       FOURTH SITE, NOT IN THE ROW'S CENSUS, and the one with an architectural consequence:
-#       :upstream is a DEPENDENCY of features/turns, so it cannot import
+#       :integrations-upstream is a DEPENDENCY of features/turns, so it cannot import
 #       `splice.head.wire.ErrorEnvelope`. Either the builder lands lower (core) or this site
 #       earns a written exemption. That is the fix row's design call; this wall's job is to make
 #       the site impossible to miss, so it is RED BY NAME rather than scoped away.

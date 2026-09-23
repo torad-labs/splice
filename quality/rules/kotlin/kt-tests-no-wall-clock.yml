@@ -132,7 +132,7 @@
 #     integrations/providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt   (1)
 #     core/src/test/kotlin/splice/core/util/AsyncFileIoTest.kt                             (1)
 #     app/src/test/kotlin/splice/app/codemode/CodeModeWorkerReclamation.kt                    (2)
-#     upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt                  (1)
+#     integrations/upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt                  (1)
 #
 #   2026-09-17 · A DELIBERATELY SLOW TEST DOUBLE. The mock upstream's whole job is to be slow on the
 #   wire — that is what a watchdog test exercises. The fix is for the mock to take an injected
@@ -146,7 +146,7 @@
 #   injected clock — `ElapsedClock`/`RemainingTurnWait` already exist as seams — not a shorter
 #   sleep. HeadServerStopDrainTest.kt:155's `delay(6_500)` is the audit's named site and the
 #   single most expensive one in the suite.
-#     upstream/src/test/kotlin/splice/upstream/retry/WatchdogTest.kt                       (11)
+#     integrations/upstream/src/test/kotlin/splice/upstream/retry/WatchdogTest.kt                       (11)
 #     features/turns/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt          (9)
 #     features/turns/src/test/kotlin/splice/head/HeadServerStopDrainTest.kt             (3)
 #     app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt                       (4)

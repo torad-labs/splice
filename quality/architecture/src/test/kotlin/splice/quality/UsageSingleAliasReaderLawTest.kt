@@ -174,7 +174,7 @@ class UsageSingleAliasReaderLawTest {
         const val CHAIN = "core/src/main/kotlin/splice/core/util/JsonScalars.kt"
         const val CHAT = "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt"
         const val HUD = "features/turns/src/main/kotlin/splice/head/usage/UsageJson.kt"
-        const val FAR = "upstream/src/main/kotlin/splice/upstream/retry/RetryAfter.kt"
+        const val FAR = "integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryAfter.kt"
 
         const val CHAIN_SOURCE = """
             public object JsonScalars {

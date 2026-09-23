@@ -29,15 +29,15 @@
 # THE CENSUS (measured 2026-09-17, `ast-grep scan`). The audit row named ONE and predicted the
 # declaration-side matcher would find it; the matcher finds NINE, all in :upstream, all expected
 # refusals, and the eight extra are recorded here because that list IS the fix row's work:
-#   upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt:144  AllAccountsExhausted : IllegalStateException
-#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:13     UpstreamAuthMissing : RuntimeException
-#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:16     UpstreamTurnWaitExhausted : RuntimeException
-#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:23     StreamTornBeforeClient : RuntimeException
-#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:26     UpstreamFailed : RuntimeException
-#   upstream/src/main/kotlin/splice/upstream/retry/InflightGate.kt:192      GatewayAtCapacityException : RuntimeException
-#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamResponse.kt:72   UpstreamBodyLimitException : RuntimeException
-#   upstream/src/main/kotlin/splice/upstream/failure/SseExceptions.kt:8       SseFrameTooLargeException : RuntimeException
-#   upstream/src/main/kotlin/splice/upstream/WsRoundRunner.kt:111     WsRoundNeedsSse : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt:144  AllAccountsExhausted : IllegalStateException
+#   integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:13     UpstreamAuthMissing : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:16     UpstreamTurnWaitExhausted : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:23     StreamTornBeforeClient : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:26     UpstreamFailed : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/retry/InflightGate.kt:192      GatewayAtCapacityException : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamResponse.kt:72   UpstreamBodyLimitException : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/failure/SseExceptions.kt:8       SseFrameTooLargeException : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/WsRoundRunner.kt:111     WsRoundNeedsSse : RuntimeException
 # core/src/main: ZERO — and that zero is a real reading, not an unrun check: the same
 # matcher over the same glob reports the nine above, so :core's emptiness is measured against a
 # denominator that demonstrably produces findings ("empty" and "empty in X" are different
@@ -132,7 +132,7 @@ files:
   - features/sessions/src/main/**/*.kt
   - features/models/src/main/**/*.kt
   - features/usage/src/main/**/*.kt
-  - upstream/src/main/**/*.kt
+  - integrations/upstream/src/main/**/*.kt
   - core/src/main/**/*.kt
   # LAYOUT-01: preserve declaration-side enforcement on the relocated Claude Code adapter.
   - integrations/claude-code/src/main/**/*.kt

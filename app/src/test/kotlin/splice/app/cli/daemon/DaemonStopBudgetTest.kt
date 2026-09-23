@@ -13,7 +13,9 @@
 // The drain figure itself lives in :daemon-head (HeadServer.STOP_DRAIN_NS), which this module cannot
 // import, so it appears here as the documented bound the head budget must clear and is pinned at
 // its source by HeadServerStopDrainTest. Two tests, one ladder, each half checked where it is
-// visible — and if either number moves wrongly, ONE of the two reds.
+// visible — and if either number moves wrongly, ONE of the two reds. The CLI's three rungs took the
+// same shape when they moved to features/lifecycle (LAYOUT-01): documented bounds here, each pinned
+// at its declaration by lifecycle's StopRungBudgetTest.
 package splice.app.cli.daemon
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -37,16 +39,17 @@ class DaemonStopBudgetTest {
 
     private val haltFloorMs = STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS
 
-    /** ONE interval, taken from the constant this module exposes (DaemonLockWait), because all
-     *  three pollers step at it: DaemonStop's and DaemonLaunch's own constants are private and stay
-     *  that way — an internal interval in splice.app.cli clashes with the other one of the same
-     *  name. Pinned to 250ms below so a change there reds here rather than silently rescaling three
-     *  budgets. */
+    /** The lock poll's interval (DaemonLockWait), the one this module declares. Pinned to 250ms below
+     *  so a change there reds here rather than silently rescaling the lock wait. */
     private val pollMs = LOCK_POLL_INTERVAL_MS
-    private val gracefulRungMs = GRACEFUL_POLLS * pollMs
     private val lockWaitMs = LOCK_WAIT_POLLS * pollMs
-    private val spawnerMs = STARTUP_POLLS * pollMs
-    private val sigtermRungMs = SIGTERM_POLLS * pollMs
+
+    /** The CLI's rungs, owned by features/lifecycle since LAYOUT-01 (DaemonStop's graceful and SIGTERM
+     *  polls, DaemonLaunch's startup budget), which this module cannot import. Kept in step with those
+     *  constants by lifecycle's StopRungBudgetTest, which asserts each where it is declared. */
+    private val gracefulRungMs = 60_000L
+    private val spawnerMs = 62_000L
+    private val sigtermRungMs = 62_000L
 
     /** The whole ladder in ONE assertion chain, so a reader sees the shape before the failures. */
     @Test

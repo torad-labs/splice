@@ -1,12 +1,15 @@
 // DR-68 absence-class arms for the boot log, split from LogSurfaceAbsenceTest when the log display
-// surfaces moved to features/diagnostics (LAYOUT-01): an unreadable boot log used to read as a silent
-// cold-start. Degrading to quiet is allowed only for PROVEN absence; access-indeterminate is said.
-package splice.app.cli.daemon
+// surfaces moved to features/diagnostics, and moved here with the cold start (LAYOUT-01): an unreadable
+// boot log used to read as a silent cold-start. Degrading to quiet is allowed only for PROVEN absence;
+// access-indeterminate is said.
+package splice.lifecycle.start
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.RunningJar
+import splice.core.terminal.TerminalOutput
 import splice.daemonclient.DaemonHealth
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -27,16 +30,18 @@ class BootLogAbsenceTest {
     fun `an unreadable boot log is said, not swallowed - DR-68`(@TempDir tmp: Path) {
         Files.createDirectories(tmp.resolve(".splice"))
         Files.writeString(tmp.resolve(".splice").resolve("logs"), "not a directory")
-        val printed = withHomeCapturingStdout(tmp) { DaemonSpawn(DaemonHealth()).printBootLogTail() }
+        val printed = withHomeCapturingStdout(tmp) { spawn().printBootLogTail() }
         assertTrue(printed.contains("boot log"), printed)
         assertTrue(printed.contains("unreadable"), printed)
     }
 
     @Test
     fun `a genuinely absent boot log stays quiet - DR-68 control`(@TempDir tmp: Path) {
-        val printed = withHomeCapturingStdout(tmp) { DaemonSpawn(DaemonHealth()).printBootLogTail() }
+        val printed = withHomeCapturingStdout(tmp) { spawn().printBootLogTail() }
         assertEquals("", printed)
     }
+
+    private fun spawn() = DaemonSpawn(TerminalOutput(::println), DaemonHealth(), RunningJar { null })
 
     private fun withHomeCapturingStdout(home: Path, block: () -> Unit): String {
         val savedHome = System.getProperty("user.home")

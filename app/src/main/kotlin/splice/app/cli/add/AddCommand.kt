@@ -7,10 +7,10 @@
 package splice.app.cli.add
 
 import splice.app.InstallWiring
+import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
+import splice.app.cli.DaemonRestart
 import splice.app.cli.auth.LoginCommand
-import splice.app.cli.daemon.DaemonRestart
-import splice.app.cli.daemon.RestartCommand
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
@@ -32,7 +32,7 @@ internal class AddCommand(
         LoginCommand().runLoginFlow(key, provider, topology)
     },
     private val install: WrapperInstall = WrapperInstall { key, env -> InstallWiring.command().install(key, env) },
-    private val restart: DaemonRestart = DaemonRestart { RestartCommand().restart() },
+    private val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
     private val daemonUp: DaemonUpProbe = DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
     private val prompt: AddPrompter = ConsolePrompter(),
 ) {

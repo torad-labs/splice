@@ -9,11 +9,11 @@
 // The route is decided here so DaemonLaunch stays the composer: the unit when it exists on the box
 // and no HARNESS SELECTOR points this shell at a daemon of its own; the raw spawn otherwise. The
 // selector list is the shim's `unitDefaults()` byte for byte (SupervisedStartTest pins the two).
-package splice.app.cli.daemon
+package splice.lifecycle.start
 
-import splice.app.cli.AdminSupport
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.daemonclient.DaemonSettings
 import java.util.concurrent.TimeUnit
 
 /** The environment selectors that make a shell's daemon its own (a harness, a second install) —
@@ -63,12 +63,13 @@ internal class JdkSystemctl(private val timeoutMs: Long = SYSTEMCTL_TIMEOUT_MS) 
 }
 
 internal class SupervisedStart(
-    private val systemctl: Systemctl = JdkSystemctl(),
-    private val envReader: EnvReader = EnvReader(System::getenv),
+    private val systemctl: Systemctl,
+    private val envReader: EnvReader,
+    private val settings: DaemonSettings,
 ) {
     /** [unit] is the operator's SPLICE_SUPERVISOR_UNIT (default splice.service), resolved at the
      *  call so a diagnostic that never cold-starts never loads the topology for it. */
-    fun route(unit: String = AdminSupport.supervisorUnit(envReader)): ColdStartRoute {
+    fun route(unit: String = settings.supervisorUnit(envReader)): ColdStartRoute {
         val selector = harnessSelectors.firstOrNull { !envReader(it).isNullOrEmpty() }
         if (selector != null) {
             return ColdStartRoute.Raw("$selector is set, so this shell's daemon is its own, not $unit's")

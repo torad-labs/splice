@@ -1,22 +1,46 @@
 // NEW: cold-start argv + the ensureDaemon composer. Health probes live in
 // DaemonHealth.kt; spawn/jar/boot-tail live in DaemonSpawn.kt; the unit-first ROUTE (V4-190)
-// lives in SupervisedStart.kt. AdminSupport
-// keeps one-line public delegates so the Dashboard and Restart call sites (the
-// only ones that cold-start; status and doctor only probe) do not change. daemon-boot.log is named HERE so JW-01 stays
-// path-anchored on this file. DEFAULT_JVM_OPTS still lives on AdminSupport
-// because spawnDaemon and the launch shim must agree on the flag set.
-package splice.app.cli.daemon
+// lives in SupervisedStart.kt. In features/lifecycle since LAYOUT-01: [DaemonColdStart] is the one
+// public entry, shared by `splice dashboard` and `splice restart` (the only verbs that cold-start;
+// status and doctor only probe). daemon-boot.log is named HERE so JW-01 stays anchored on this
+// file, and DEFAULT_JVM_OPTS moved here from AdminSupport with the argv that is its one reader —
+// the launch shim carries the same flag set and the two must agree.
+package splice.lifecycle.start
 
-import splice.app.cli.AdminSupport
 import splice.core.GATEWAY_VERSION
+import splice.core.config.RunningJar
+import splice.core.terminal.TerminalOutput
+import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
+import splice.daemonclient.DaemonSettings
 import java.nio.file.Path
 import java.time.Duration
 
+/** The daemon cold start `splice dashboard` and `splice restart` share: the supervisor unit when this
+ *  box has one, the raw spawn otherwise, then the wait for the expected version. [errors] carries the
+ *  corrupt-TOML diagnostic the supervisor-unit read can raise; stdout belongs to the verb. */
+public class DaemonColdStart(output: TerminalOutput, errors: TerminalOutput, env: EnvReader, jar: RunningJar) {
+
+    private val launch = DaemonHealth().let { health ->
+        DaemonLaunch(
+            output,
+            health,
+            DaemonSpawn(output, health, jar),
+            SupervisedStart(JdkSystemctl(), env, DaemonSettings(errors)),
+        )
+    }
+
+    /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers with
+     *  [expectedVersion] (this CLI's own, or the one an upgrade just activated). */
+    public fun ensureDaemon(port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean =
+        launch.ensureDaemon(port, expectedVersion)
+}
+
 internal class DaemonLaunch(
-    private val health: DaemonHealth = DaemonHealth(),
-    private val spawn: DaemonSpawn = DaemonSpawn(health),
-    private val supervised: SupervisedStart = SupervisedStart(),
+    private val output: TerminalOutput,
+    private val health: DaemonHealth,
+    private val spawn: DaemonSpawn,
+    private val supervised: SupervisedStart,
     private val startupPolls: Int = STARTUP_POLLS,
 ) {
 
@@ -25,7 +49,7 @@ internal class DaemonLaunch(
      *  broke out of the old single-quoted literal and the cold start died on a shell parse error
      *  (review #94, F149). SPLICE_JVM_OPTS stays a shell expansion by design (see spawnDaemon). */
     internal fun daemonLaunchArgv(jar: Path, logsDir: Path): List<String> {
-        val opts = AdminSupport.DEFAULT_JVM_OPTS
+        val opts = DEFAULT_JVM_OPTS
         return listOf(
             "sh",
             "-c",
@@ -49,13 +73,6 @@ internal class DaemonLaunch(
     /** JW-01: shown when the daemon never answers after a cold start. Reads only the filesystem. */
     internal fun printBootLogTail() = spawn.printBootLogTail()
 
-    /** True only when the listener answers splice's versioned HTTP health contract. */
-    internal fun daemonUp(port: Int): Boolean = health.daemonUp(port)
-
-    /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
-     *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. */
-    internal fun controlPortBound(port: Int): Boolean = health.controlPortBound(port)
-
     /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers with
      *  [expectedVersion] (this CLI's own, or the one an upgrade just activated). */
     internal fun ensureDaemon(port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean {
@@ -70,11 +87,11 @@ internal class DaemonLaunch(
      *  thing that may start a daemon here. A unit that never answers is reported with its journal;
      *  a second daemon is never spawned beside it (that is how every squatter of 2026-09-21 was born). */
     private fun startUnit(unit: String, port: Int, expectedVersion: String): Boolean {
-        println("splice: starting $unit…")
+        output.line("splice: starting $unit…")
         val up = supervised.start(unit) && waitUntilUp(port, expectedVersion)
         if (!up) {
             val budget = Duration.ofMillis(startupPolls * POLL_INTERVAL_MS).toSeconds()
-            println(
+            output.line(
                 "splice: $unit did not answer /health with $expectedVersion within ${budget}s — never starting " +
                     "a second daemon beside it. See: systemctl --user status $unit; journalctl --user -u $unit -n 50",
             )
@@ -85,7 +102,7 @@ internal class DaemonLaunch(
     /** The raw spawn: a box with no unit, or a shell a selector points at a daemon of its own. */
     private fun spawnHere(reason: String, port: Int, expectedVersion: String): Boolean {
         val jar = spawn.startableJar(port) ?: return false
-        println("splice: starting the daemon here ($reason)…")
+        output.line("splice: starting the daemon here ($reason)…")
         val up = spawn.spawnDaemon(daemonLaunchArgv(jar, spawn.logsDir())) && waitUntilUp(port, expectedVersion)
         // JW-01: when the daemon never answers, the reason is in the boot log — print it here
         // instead of leaving "starting the daemon…" as the last line the operator ever sees.
@@ -109,3 +126,9 @@ internal class DaemonLaunch(
 // the floor: a spawner that gave up first would report a failure for a restart that was working.
 internal const val STARTUP_POLLS = 248
 private const val POLL_INTERVAL_MS = 250L
+
+// Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
+// The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
+// G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed
+// pages to the OS instead of holding them until the next GC is triggered by allocation.
+internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"

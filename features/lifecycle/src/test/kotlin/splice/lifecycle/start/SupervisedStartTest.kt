@@ -2,14 +2,17 @@
 // box and no selector set, ensureDaemon raw-spawned (the "starting the daemon" line) and never asked
 // systemctl. The selector list is pinned to the launch shim's unitDefaults() so the shim and the
 // CLI cannot disagree about which shells own their daemon.
-package splice.app.cli.daemon
+package splice.lifecycle.start
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.config.RunningJar
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
+import splice.daemonclient.DaemonSettings
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.ServerSocket
@@ -43,10 +46,16 @@ class SupervisedStartTest {
 
     private fun env(vararg pairs: Pair<String, String>): EnvReader = EnvReader { pairs.toMap()[it] }
 
+    /** The launch's lines reach System.out, which [captured] reads. */
+    private val out = TerminalOutput(::println)
+
+    /** The supervisor-unit read's corrupt-TOML diagnostic, if a test ever reached one. */
+    private val settings = DaemonSettings(TerminalOutput(System.err::println))
+
     @Test
     fun `no selector and a unit on the box routes to the unit, by the configured name`() {
         val ctl = FakeSystemctl()
-        assertEquals(ColdStartRoute.Unit(CANARY_UNIT), SupervisedStart(ctl, env()).route(CANARY_UNIT))
+        assertEquals(ColdStartRoute.Unit(CANARY_UNIT), SupervisedStart(ctl, env(), settings).route(CANARY_UNIT))
         assertEquals(listOf(listOf("cat", CANARY_UNIT)), ctl.calls)
     }
 
@@ -55,19 +64,19 @@ class SupervisedStartTest {
         for (selector in harnessSelectors) {
             for (value in listOf("/x", " ")) {
                 val ctl = FakeSystemctl()
-                val route = SupervisedStart(ctl, env(selector to value)).route(UNIT)
+                val route = SupervisedStart(ctl, env(selector to value), settings).route(UNIT)
                 assertTrue(route is ColdStartRoute.Raw && selector in route.reason, "$selector=$value -> $route")
                 assertTrue(ctl.calls.isEmpty(), "$selector set must never touch systemctl")
             }
         }
         // An EMPTY selector is unset, as the shim's ${X:-} reads it.
-        val emptySelector = SupervisedStart(FakeSystemctl(), env("SPLICE_CONFIG" to "")).route(UNIT)
+        val emptySelector = SupervisedStart(FakeSystemctl(), env("SPLICE_CONFIG" to ""), settings).route(UNIT)
         assertEquals(ColdStartRoute.Unit(UNIT), emptySelector)
     }
 
     @Test
     fun `no unit on the box routes to the raw spawn`() {
-        val route = SupervisedStart(FakeSystemctl(unitPresent = false), env()).route(UNIT)
+        val route = SupervisedStart(FakeSystemctl(unitPresent = false), env(), settings).route(UNIT)
         assertTrue(route is ColdStartRoute.Raw && UNIT in route.reason, route.toString())
     }
 
@@ -85,7 +94,8 @@ class SupervisedStartTest {
     // ── DaemonLaunch, the composer ────────────────────────────────────────────────────────────
 
     /** A spawn that must never happen: records the attempt, starts nothing. */
-    private class RecordingSpawn(health: DaemonHealth) : DaemonSpawn(health) {
+    private class RecordingSpawn(health: DaemonHealth) :
+        DaemonSpawn(TerminalOutput(::println), health, RunningJar { null }) {
         var spawns = 0
         override fun startableJar(port: Int): Path? = Path.of("/nonexistent/splice.jar")
         override fun spawnDaemon(argv: List<String>): Boolean {
@@ -115,7 +125,7 @@ class SupervisedStartTest {
         val ctl = FakeSystemctl()
         val health = DaemonHealth()
         val spawn = RecordingSpawn(health)
-        val launch = DaemonLaunch(health, spawn, SupervisedStart(ctl, env()), startupPolls = 2)
+        val launch = DaemonLaunch(out, health, spawn, SupervisedStart(ctl, env(), settings), startupPolls = 2)
         var up = true
         val out = captured { up = launch.ensureDaemon(freePort()) }
         assertFalse(up, "nothing answers on a free port, so the start is reported failed")
@@ -135,7 +145,7 @@ class SupervisedStartTest {
         for ((ctl, reader) in arms) {
             val health = DaemonHealth()
             val spawn = RecordingSpawn(health)
-            val launch = DaemonLaunch(health, spawn, SupervisedStart(ctl, reader), startupPolls = 1)
+            val launch = DaemonLaunch(out, health, spawn, SupervisedStart(ctl, reader, settings), startupPolls = 1)
             val out = captured { assertFalse(launch.ensureDaemon(freePort())) }
             assertEquals(1, spawn.spawns, "the raw spawn is still the cold start here:\n$out")
             assertTrue(ctl.calls.none { it[0] == "start" }, "the unit must not be started: ${ctl.calls}")

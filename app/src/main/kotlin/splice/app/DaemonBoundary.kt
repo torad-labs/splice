@@ -155,27 +155,6 @@ internal class DaemonBoundary {
      *  carry a deep or recursive trace, and this writes synchronously into a rotating log. */
     private fun bootFrames(failure: Throwable): String =
         failure.stackTrace.take(BOOT_TRACE_FRAMES).joinToString("") { frame -> "    at $frame\n" }
-
-    // Port→pid lookup that used to live on DaemonStop. The stop ladder still decides
-    // WHEN to signal; this type already owns process-boundary isolation, so the ss
-    // scoped lookup sits here rather than adding a third file.
-    internal fun daemonOnPort(port: Int): ProcessHandle? = pidsOnPort(port)
-        .firstNotNullOfOrNull { pid ->
-            ProcessHandle.of(pid).orElse(null)?.takeIf { ph ->
-                val cmd = ph.info().commandLine().orElse("")
-                cmd.contains("daemon") && (cmd.contains("splice.jar") || cmd.contains("app-all.jar"))
-            }
-        }
-
-    internal fun pidsOnPort(port: Int): List<Long> = Cancellables.runCatchingCancellable {
-        ProcessBuilder("ss", "-ltnpH", "( sport = :$port )").redirectErrorStream(true).start()
-            .inputStream.bufferedReader().use { it.readText() }
-            .let { Regex("pid=(\\d+)").findAll(it).map { m -> m.groupValues[1].toLong() }.toList() }
-    }.onFailure {
-        // An empty list and "ss is missing / refused" read identically to the stop ladder, which is
-        // the 2026-07-18 shape exactly: say which one happened.
-        System.err.print("[daemon] port->pid lookup via ss failed (${SafeFailureText.render(it)})\n")
-    }.getOrDefault(emptyList())
 }
 
 // A log line has to date itself. daemon.log rotates by SIZE, never by day, so one file spans

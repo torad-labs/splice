@@ -2,6 +2,7 @@
 // browser. Prints the mgmt-key so the (unmodified) webui can authenticate if it asks. :app: println.
 package splice.app.cli.status
 
+import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
 import splice.daemonclient.MgmtKeyRead
 
@@ -12,7 +13,7 @@ internal class DashboardCommand {
 
     internal fun dashboard(): Boolean {
         val port = AdminSupport.controlPort()
-        if (!AdminSupport.ensureDaemon(port)) {
+        if (!LifecycleWiring.ensureDaemon(port)) {
             println("splice: the daemon isn't running and couldn't be started.")
             return false
         }

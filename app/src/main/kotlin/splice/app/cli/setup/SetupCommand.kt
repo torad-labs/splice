@@ -5,13 +5,13 @@
 package splice.app.cli.setup
 
 import splice.app.InstallWiring
+import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
+import splice.app.cli.DaemonRestart
 import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddProfiles
 import splice.app.cli.add.DaemonUpProbe
 import splice.app.cli.auth.LoginCommand
-import splice.app.cli.daemon.DaemonRestart
-import splice.app.cli.daemon.RestartCommand
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -41,7 +41,7 @@ internal class SetupCommand(
     private val addProfile: ProfileAdd = ProfileAdd { name ->
         AddCommand(restart = DaemonRestart { true }).add(listOf(name, "--yes"))
     },
-    private val restart: DaemonRestart = DaemonRestart { RestartCommand().restart() },
+    private val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
     /** V4-175: the wrap call. Not a prompt — it CHANGES THE MACHINE, which is the line SetupPrompts
      *  draws, so it stays here beside install, add and restart. */
     /** V4-177 review: `env` and not a fresh `EnvReader(System::getenv)`. DaemonClaudeWrap reads

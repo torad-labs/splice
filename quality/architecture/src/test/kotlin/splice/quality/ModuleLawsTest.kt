@@ -94,7 +94,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts", ":integrations-topology"),
     // the daemon's own lifecycle: the draining restart, the upgrade surface, and `splice upgrade`, which
     // asks the local daemon through its client and repoints the files launch's install layout names.
-    ":features-lifecycle" to setOf(":core", ":integrations-daemon-client", ":features-launch"),
+    ":features-lifecycle" to setOf(":core", ":integrations-daemon-client", ":integrations-topology", ":features-launch"),
     // the doctor report, the one-prompt playground, and the operator's reads of a running head
     // (`splice wire`, `splice logs`) through the daemon client. `splice doctor` reads every surface it
     // diagnoses: the account pools, the local runtimes, the Claude head's wrap, the installed shim.

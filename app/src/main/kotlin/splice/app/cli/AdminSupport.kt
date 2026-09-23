@@ -1,16 +1,15 @@
 // NEW: shared helpers for the operator-facing CLI (status/dashboard/setup) — daemon liveness,
-// detached cold-start, browser open, self-jar discovery, mgmt-key read. Kept together so the
-// commands read like a story. :app is wall-exempt for println (a terminal tool writes to stdout).
-// Daemon up/spawn/wait bodies live in DaemonLaunch.kt (concentration HIGH, 2026-08-19).
+// browser open, self-jar discovery, mgmt-key read. Kept together so the commands read like a story.
+// :app is wall-exempt for println (a terminal tool writes to stdout). The cold start and restart
+// moved to features/lifecycle (LAYOUT-01); app composes them in LifecycleWiring.
 package splice.app.cli
 
-import splice.app.cli.daemon.DaemonLaunch
-import splice.core.GATEWAY_VERSION
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonSettings
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
@@ -22,8 +21,7 @@ import java.nio.file.Paths
 
 internal object AdminSupport {
 
-    // The cold-start argv, boot-log tail, and daemon up/spawn/wait cluster live in DaemonLaunch.kt.
-    private val launch = DaemonLaunch()
+    private val health = DaemonHealth()
 
     /** The control port and supervisor unit, by the daemon's own TOML < state < env precedence —
      *  [DaemonSettings]'s, in integrations/daemon-client since LAYOUT-01. Its corrupt-TOML diagnostic
@@ -38,7 +36,7 @@ internal object AdminSupport {
         settings.controlPort(topology, envReader)
 
     /** True only when the listener answers splice's versioned HTTP health contract. */
-    fun daemonUp(port: Int = controlPort()): Boolean = launch.daemonUp(port)
+    fun daemonUp(port: Int = controlPort()): Boolean = health.daemonUp(port)
 
     /** The running jar, so a spawned daemon reuses the exact same build.
      *
@@ -94,16 +92,6 @@ internal object AdminSupport {
     fun jarAccessFailure(jar: Path): Throwable? =
         Cancellables.runCatchingCancellable { Files.getLastModifiedTime(jar) }.exceptionOrNull()
 
-    /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers. */
-    fun ensureDaemon(port: Int = controlPort(), expectedVersion: String = GATEWAY_VERSION): Boolean =
-        launch.ensureDaemon(port, expectedVersion)
-
-    /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
-     *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. Both
-     *  the restart cold-start gate and the stop confirmation (DaemonStop.stopDaemon) read this,
-     *  because "/health stopped answering" is NOT proof the old JVM freed its ports. */
-    fun controlPortBound(port: Int): Boolean = launch.controlPortBound(port)
-
     fun openUrl(url: String): Boolean = SystemBrowserOpener(TerminalOutput { println(it) }).open(url)
 
     /** DR-174: the mgmt-key read, absence and denied access kept apart — [MgmtKeyFile]'s, in
@@ -130,12 +118,6 @@ internal object AdminSupport {
                 !genuinelyAbsent
             }
     }
-
-    // Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
-    // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
-    // G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed
-    // pages to the OS instead of holding them until the next GC is triggered by allocation.
-    internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
 }
 
 /** [AdminSupport]'s own class file, the resource selfJar() locates this build by. */

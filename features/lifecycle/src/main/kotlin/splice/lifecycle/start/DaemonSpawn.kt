@@ -1,18 +1,24 @@
-// NEW: jar pick, ProcessBuilder spawn, and boot-log tail for CLI cold-start.
+// NEW: jar pick, ProcessBuilder spawn, and boot-log tail for CLI cold-start. In features/lifecycle since
+// LAYOUT-01: the jar arrives through core's RunningJar port and every line through TerminalOutput.
 // Split from DaemonLaunch.kt (concentration HIGH, 2026-08-19). The argv
 // string that names daemon-boot.log stays on DaemonLaunch so JW-01 keeps
 // its path-anchored token.
-package splice.app.cli.daemon
+package splice.lifecycle.start
 
-import splice.app.cli.AdminSupport
+import splice.core.config.RunningJar
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.daemonclient.DaemonHealth
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal open class DaemonSpawn(private val health: DaemonHealth) {
+internal open class DaemonSpawn(
+    private val output: TerminalOutput,
+    private val health: DaemonHealth,
+    private val runningJar: RunningJar,
+) {
 
     internal open fun logsDir(): Path = StatePaths().logsDir
 
@@ -24,11 +30,13 @@ internal open class DaemonSpawn(private val health: DaemonHealth) {
         var polls = PORT_FREE_POLLS
         while (health.controlPortBound(port) && polls-- > 0) Thread.sleep(POLL_INTERVAL_MS)
         if (health.controlPortBound(port)) {
-            println("splice: control port $port is still bound (a daemon is still shutting down) — retry in a moment")
+            output.line(
+                "splice: control port $port is still bound (a daemon is still shutting down) — retry in a moment",
+            )
             return null
         }
-        val jar = AdminSupport.selfJar()
-        if (jar == null) println("splice: can't find the splice jar to start the daemon (run: splice install).")
+        val jar = runningJar.path()
+        if (jar == null) output.line("splice: can't find the splice jar to start the daemon (run: splice install).")
         return jar
     }
 
@@ -45,7 +53,7 @@ internal open class DaemonSpawn(private val health: DaemonHealth) {
             onSuccess = { true },
             onFailure = { e ->
                 // SAFE-RENDER-EXEMPT[2026-08-31]: ProcessBuilder.start quotes the argv we built, never file bytes; render would withhold the missing-executable text this line exists to show
-                println("splice: failed to start the daemon: ${e.message}")
+                output.line("splice: failed to start the daemon: ${e.message}")
                 false
             },
         )
@@ -58,13 +66,13 @@ internal open class DaemonSpawn(private val health: DaemonHealth) {
         Cancellables.runCatchingCancellable {
             Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES)
         }.onSuccess { tail ->
-            println("splice: daemon did not come up — last boot output ($bootLog):")
-            tail.forEach(::println)
+            output.line("splice: daemon did not come up — last boot output ($bootLog):")
+            tail.forEach(output::line)
         }.onFailure { failure ->
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(bootLog, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
-                println(
+                output.line(
                     "splice: daemon did not come up — boot log $bootLog is unreadable " +
                         "(${SafeFailureText.render(failure)})",
                 )

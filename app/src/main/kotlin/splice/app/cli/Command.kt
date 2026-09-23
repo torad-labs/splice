@@ -6,6 +6,7 @@ package splice.app.cli
 import kotlinx.coroutines.runBlocking
 import splice.app.DoctorWiring
 import splice.app.InstallWiring
+import splice.app.LifecycleWiring
 import splice.app.ModelsWiring
 import splice.app.PerfWiring
 import splice.app.TraceWiring
@@ -13,7 +14,6 @@ import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddModelVerb
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
-import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.StatusCommand
@@ -86,14 +86,14 @@ public sealed class Command {
                 TerminalOutput(::println),
                 TerminalOutput(System.err::println),
                 EnvReader(System::getenv),
-                VersionedRestart { RestartCommand().restart(expectedVersion = it) },
+                VersionedRestart { LifecycleWiring.restart(it) },
             )
             return outcomeExitCode(verb.upgrade(args))
         }
     }
 
     public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
-    public data object Restart : Command() { override fun run(): Int = outcomeExitCode(RestartCommand().restart()) }
+    public data object Restart : Command() { override fun run(): Int = outcomeExitCode(LifecycleWiring.restart()) }
     public data object Dashboard : Command() {
         override fun run(): Int = outcomeExitCode(DashboardCommand().dashboard())
     }

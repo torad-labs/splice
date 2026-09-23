@@ -338,7 +338,7 @@
       "integrations/oauth/src/main/kotlin/splice/oauth/OAuthCallbackPage.kt",
       "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPools.kt",
       "app/src/main/kotlin/splice/app/cli/add/AddChecks.kt",
-      "app/src/main/kotlin/splice/app/cli/daemon/DaemonStop.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
       "app/src/main/kotlin/splice/app/quota/QuotaProbes.kt",
@@ -471,9 +471,9 @@
       "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
     ],
     "COPY POLL_INTERVAL_MS": [
-      "app/src/main/kotlin/splice/app/cli/daemon/DaemonLaunch.kt",
-      "app/src/main/kotlin/splice/app/cli/daemon/DaemonSpawn.kt",
-      "app/src/main/kotlin/splice/app/cli/daemon/DaemonStop.kt"
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt"
     ],
     "COPY PROACTIVE_WINDOW_MS": [
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",

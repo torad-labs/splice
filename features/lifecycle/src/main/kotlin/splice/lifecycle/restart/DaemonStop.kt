@@ -3,23 +3,24 @@
 // every signal aimed at the process holding the TARGET control port. Split from ControlPlaneClient,
 // which is HTTP transport and nothing else: this file shells out to `ss`, matches process cmdlines,
 // signals through ProcessHandle and polls TCP ports — none of which is HTTP. Symmetric with
-// DaemonLaunch, which exists on the cold-start side for exactly the same reason.
-// :app is wall-exempt for println (a terminal tool writes to stdout).
-package splice.app.cli.daemon
+// DaemonLaunch, which exists on the cold-start side for exactly the same reason. In features/lifecycle
+// since LAYOUT-01: its lines go through TerminalOutput, and the port->process lookup it signals
+// through (DaemonSignals.kt) came with it from app's DaemonBoundary.
+package splice.lifecycle.restart
 
-import splice.app.DaemonBoundary
-import splice.app.cli.AdminSupport
-import splice.app.cli.SignalSend
+import splice.core.terminal.TerminalOutput
 import splice.core.wire.HttpStatus
 import splice.daemonclient.ControlPlaneClient
+import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonProbe
 
 /** Stopping the daemon: ask over the control plane, then escalate through OS signals until every
  *  port it owned is free. Constructed by the `restart` verb (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions); every member keeps the old function's name. */
-internal class DaemonStop {
+internal class DaemonStop(private val output: TerminalOutput, errors: TerminalOutput) {
 
-    private val boundary = DaemonBoundary()
+    private val owner = DaemonPortOwner(errors)
+    private val health = DaemonHealth()
 
     /** Ask the daemon to shut down (bearer-guarded) and wait until the LISTENER is actually gone.
      *  The POST is fire-and-observe: a graceful teardown can drop the connection mid-response
@@ -30,7 +31,7 @@ internal class DaemonStop {
         // the old fire-and-forget silently swallowed, then escalated as if the daemon were merely
         // slow (observed twice on 2026-08-11). statusOf does not gate on 2xx the way request() does.
         when (val status = ControlPlaneClient.statusOf("http://127.0.0.1:$port/api/daemon/shutdown", "POST", key)) {
-            HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN -> println(
+            HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN -> output.line(
                 "splice: shutdown request REJECTED — the mgmt key on disk does not match the " +
                     "running daemon's. Escalating to OS signals (scoped to the daemon on :$port).",
             )
@@ -39,7 +40,7 @@ internal class DaemonStop {
             // Everything else — 404 from a daemon predating the endpoint, 500, 503 — used to fall
             // into the same `else` as 202 and be read as a cooperative stop, so the CLI sat out the
             // whole graceful rung waiting on a request the daemon never honoured.
-            else -> println("splice: shutdown returned HTTP $status — not an accepted stop; escalating.")
+            else -> output.line("splice: shutdown returned HTTP $status — not an accepted stop; escalating.")
         }
 
         // Escalation ladder. Each rung advances only while a port is still bound (release is the
@@ -52,7 +53,7 @@ internal class DaemonStop {
         // stops, so a restart can sit here for the better part of a minute by design — and a silent
         // minute is exactly what reads as a hang and invites the operator's SIGKILL. Printed BEFORE
         // the first rung, once, so the wait is never unexplained.
-        println(
+        output.line(
             "splice: waiting up to ${GRACEFUL_POLLS * POLL_INTERVAL_MS / 1000}s for in-flight turns " +
                 "to finish before the daemon stops (a held turn is the feature, not a hang).",
         )
@@ -74,17 +75,17 @@ internal class DaemonStop {
      *  delivered, and both returns were discarded while the preceding println already claimed it
      *  had been sent. */
     private fun escalate(port: Int, signal: String, why: String, send: SignalSend) {
-        val handle = boundary.daemonOnPort(port)
+        val handle = owner.daemonOnPort(port)
         if (handle == null) {
-            println(
+            output.line(
                 "splice: could not identify the process holding :$port — cannot send $signal " +
                     "(is `ss` on PATH? was the daemon started from a non-standard jar?)",
             )
             return
         }
-        println("splice: daemon pid ${handle.pid()} on :$port $why — $signal")
+        output.line("splice: daemon pid ${handle.pid()} on :$port $why — $signal")
         if (!send(handle)) {
-            println("splice: $signal to pid ${handle.pid()} was REFUSED (not permitted / already gone)")
+            output.line("splice: $signal to pid ${handle.pid()} was REFUSED (not permitted / already gone)")
         }
     }
 
@@ -102,8 +103,8 @@ internal class DaemonStop {
      *  permanently failed. A daemon whose control server quit answering can still hold its ports. */
     private fun stopped(port: Int, headPorts: List<Int>): Boolean =
         DaemonProbe.healthVersion(port) == null &&
-            !AdminSupport.controlPortBound(port) &&
-            headPorts.none { AdminSupport.controlPortBound(it) }
+            !health.controlPortBound(port) &&
+            headPorts.none { health.controlPortBound(it) }
 }
 
 // 60s: the daemon's cooperative cap is STOP_DEADLINE_MS (55s) and its halt(0) floor sits at

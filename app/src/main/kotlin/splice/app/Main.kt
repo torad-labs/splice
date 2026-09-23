@@ -275,10 +275,10 @@ internal class DaemonProcess {
 }
 
 // The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 57s — must stay BELOW the CLI's
-// graceful stop rung (GRACEFUL_POLLS in cli/DaemonStop.kt, 60s), so a bounded stop is never mistaken
-// for a hung one and SIGTERM cannot land mid-tail. The two constants are a pair: change one, check
-// the other. (The comment here previously cited a 15s CLI budget that the escalation ladder
-// replaced, while the real rung had shrunk to exactly 8s — equal to this cap, zero margin.)
+// graceful stop rung (GRACEFUL_POLLS in features/lifecycle's DaemonStop.kt, 60s), so a bounded stop
+// is never mistaken for a hung one and SIGTERM cannot land mid-tail. The two constants are a pair:
+// change one, check the other. (The comment here previously cited a 15s CLI budget that the
+// escalation ladder replaced, while the real rung had shrunk to exactly 8s — equal to this cap, zero margin.)
 // Also above the head-stop phase's HEAD_STOP_BUDGET_MS so the graceful path wins the common case.
 //
 // V4-74 — THE WHOLE LADDER, innermost first, because raising one link alone is DEAD CODE:

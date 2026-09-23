@@ -5,9 +5,9 @@
 // this keeps the head list.
 package splice.app.cli.setup
 
+import splice.app.cli.DaemonRestart
 import splice.app.cli.add.AddProfile
 import splice.app.cli.add.AddProfiles
-import splice.app.cli.daemon.DaemonRestart
 import splice.core.topology.API_KEY_WIRE
 import splice.core.util.EnvReader
 import splice.terminal.ConsolePresence

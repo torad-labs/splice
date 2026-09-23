@@ -35,7 +35,7 @@ export function ratesFor(
   headKey: string,
 ): CostRates | null {
   if (catalog === null || 'pending' in catalog) return null;
-  const head = catalog.heads.find((entry) => entry.key === headKey);
+  const head = catalog.heads.find((entry) => entry.head === headKey);
   if (head === undefined) return null;
   const pinned = head.models.find((model) => model.pinned) ?? head.models[0];
   return pinned?.rates ?? null;

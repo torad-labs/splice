@@ -23,10 +23,6 @@ import { S } from './strings';
 import './logs.css';
 
 const TAIL_SIZES = [50, 200, 500, 1000];
-const FALLBACK_HEADS = [{ key: 'codex', label: 'claudex' }];
-/** The tag whose drawer the page opens: the first head in the tail, so the drawer asks about a
- *  head the operator is actually looking at. */
-const DEFAULT_DRAWER_TAG = 'claudex';
 
 export interface LogsBoardProps {
   payload: LogsPayload | null;
@@ -165,7 +161,11 @@ export default function LogsPage() {
   const registry = useControlStatus((s) => s.data?.registry);
   const store = useLogs((s) => s);
   const capture = useCapture((s) => s);
-  const [head, setHead] = useState(DEFAULT_DRAWER_TAG);
+  // The head the operator picked, else the FIRST head the daemon's registry reports: never a name
+  // written into the console, which 404ed on every install that did not carry it (2026-09-22).
+  const [chosen, setChosen] = useState<string | null>(null);
+  const heads = registry ?? [];
+  const head = chosen ?? heads[0]?.key ?? null;
   const [tail, setTail] = useState(200);
   const [filter, setFilter] = useState<LogFilter>({ head: null, level: null, substring: '' });
   const [follow, setFollow] = useState(true);
@@ -183,14 +183,14 @@ export default function LogsPage() {
   // The slice polls a head of its own until this page names one, and an unknown head 404s: the
   // page's head is set here, on mount as well as on every change.
   useEffect(() => {
-    setLogHead(head);
+    if (head !== null) setLogHead(head);
   }, [head]);
 
   // The drawer asks about the head this page is tailing. There is no turn to ask about here: a log
   // line names its head and its outcome, not a turn id, and the address scheme that would link the
   // two is an open decision the builders must not invent (surface brief section 7).
   useEffect(() => {
-    void fetchCapture(head);
+    if (head !== null) void fetchCapture(head);
   }, [head]);
 
   useEffect(() => {
@@ -233,7 +233,6 @@ export default function LogsPage() {
     [payload, filter],
   );
 
-  const heads = registry !== undefined && registry.length > 0 ? registry : FALLBACK_HEADS;
 
   return (
     <LogsBoard
@@ -244,7 +243,7 @@ export default function LogsPage() {
       reset={cursor.reset}
       tags={tags}
       levels={levels}
-      head={head}
+      head={head ?? ''}
       tail={tail}
       heads={heads}
       capture={capture.data}
@@ -253,7 +252,7 @@ export default function LogsPage() {
       sample={sample?.name}
       onFilter={setFilter}
       onFollow={setFollow}
-      onHead={setHead}
+      onHead={setChosen}
       onTail={(next) => {
         setTail(next);
         setLogTail(next);

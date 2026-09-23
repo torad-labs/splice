@@ -35,6 +35,8 @@ export const S = {
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
    *  replacing `unknown` in the upgrade strip's three cells. */
   absent: 'n/r',
+  /** A measured nothing: the rollback read looked and found no previous release. */
+  none: 'none',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

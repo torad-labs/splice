@@ -68,7 +68,7 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
       struck={state.struck}
       selected={selected ?? false}
       {...(onOpen === undefined ? {} : { onOpen })}
-      ariaLabel={`${account.kind} ${account.label}`}
+      ariaLabel={`${account.kind} ${account.label ?? S.singleLogin}`}
     >
       {/* THE TRACK RENDERS EMPTY (M1-107). This hid the CELL when the view did not list the
           column, which for the FIRST field is the one position where hiding it moves field 1 to
@@ -78,7 +78,7 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
           34px of it surviving after the four per-ROW sites were converted at the other end. The
           view still decides what it SHOWS; it no longer decides how many cells the row has. */}
       <StripField w={COLUMN_WIDTH} label={S.provider} value={wanted.has('provider') ? account.kind : ''} mono={false} />
-      <StripField w={COLUMN_WIDTH} label={S.account} value={wanted.has('account') ? account.label : ''} mono={false} />
+      <StripField w={COLUMN_WIDTH} label={S.account} value={wanted.has('account') ? (account.label ?? S.singleLogin) : ''} mono={false} />
       <StripField w={COLUMN_WIDTH} label={S.plan} value={wanted.has('plan') ? (account.plan ?? S.none) : ''} mono={false} />
 
       {account.windows.map((window) => (

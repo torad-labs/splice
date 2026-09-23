@@ -27,12 +27,15 @@ export type {
   SelectorRule,
 } from './model/derive';
 export { PENDING_ACCOUNTS } from './model/types';
+export { accountsFromWire } from './model/wire';
 export type {
   AccountRow,
   AccountsPayload,
   AccountsState,
   AccountSwitch,
   AccountWindow,
+  AccountWire,
+  AccountsWire,
 } from './model/types';
 export { LIVE_KINDS } from './model/live';
 export const useAccounts = accountsStore.use;

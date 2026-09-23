@@ -239,7 +239,7 @@ describe('turn views', () => {
 
 describe('turns board', () => {
   const board = (over: Partial<React.ComponentProps<typeof TurnsBoard>> = {}) =>
-    render(h(TurnsBoard, { inflight: [inflight()], landed: { inflight: [], landed: [turn()] }, summary: null, capture: null, ...over }));
+    render(h(TurnsBoard, { inflight: [inflight()], landed: { inflight: [], landed: [turn()], unread: [] }, summary: null, capture: null, ...over }));
 
   test('a route that does not exist renders the empty that names its row', () => {
     const out = board({ landed: { pending: 'V4-127' } });

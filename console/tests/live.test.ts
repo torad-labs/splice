@@ -43,9 +43,12 @@ beforeEach(() => {
   urls = [];
   vi.stubGlobal('fetch', (url: unknown) => {
     urls.push(String(url).split('?')[0]);
-    // The stream itself answers with the open stream; every refetch answers with an empty 200.
+    // The stream itself answers with the open stream; every refetch answers with an empty 200,
+    // except the heads read, which names one head: /api/perf/turns answers one head per request,
+    // so a fleet with no heads would ask it nothing.
     if (String(url) === '/api/events') return Promise.resolve(new Response(open.body, { status: 200 }));
-    return Promise.resolve(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const body = String(url) === '/api/heads' ? JSON.stringify({ heads: [{ key: 'claudex', gate: null }] }) : '{}';
+    return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }));
   });
 });
 

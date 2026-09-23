@@ -30,6 +30,7 @@ fun Exec.consoleInputs(vararg trees: String) {
         layout.projectDirectory.file("vite.config.ts"),
         layout.projectDirectory.file("tsconfig.json"),
         layout.projectDirectory.file("eslint.config.mjs"),
+        layout.projectDirectory.file("playwright.config.ts"),
         layout.projectDirectory.file("package.json"),
         rootProject.layout.projectDirectory.file("bun.lock"),
     ).withPropertyName("consoleConfig").withPathSensitivity(PathSensitivity.RELATIVE)
@@ -52,8 +53,8 @@ fun Exec.consoleInputs(vararg trees: String) {
 // halves (astra's PR 5 audit, webui/package.json:8): the bundle depends on the typecheck.
 val consoleTypecheck = tasks.register<Exec>("typecheck") {
     group = "verification"
-    description = "tsc --noEmit over the console's sources and tests."
-    consoleInputs("src", "tests")
+    description = "tsc --noEmit over the console's sources, tests and end-to-end suite."
+    consoleInputs("src", "tests", "e2e")
     outputs.upToDateWhen { true }
     commandLine("bunx", "tsc", "--noEmit")
 }
@@ -67,16 +68,17 @@ val consoleBundle = tasks.register<Exec>("bundle") {
     commandLine("bunx", "--bun", "vite", "build")
 }
 
-// The lint and the vitest suite as tasks too (`:console:lint`, `:console:test`), each with both
-// directories as inputs. `gateOfRecord` (build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts)
+// The lint and the vitest suite as tasks too (`:console:lint`, `:console:test`), each with the
+// directories it reads as inputs. `gateOfRecord` (build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts)
 // depends on them directly, so they are NOT wired into `check` — the gradle tier would otherwise
 // run each twice per gate.
 tasks.register<Exec>("lint") {
     group = "verification"
-    description = "eslint over src and tests — the FSD boundaries are lint-enforced."
-    consoleInputs("src", "tests")
+    description = "eslint over src, tests and the end-to-end suite — the FSD boundaries are lint-enforced."
+    consoleInputs("src", "tests", "e2e")
     outputs.upToDateWhen { true }
-    commandLine("bunx", "eslint", "src", "tests")
+    // The same targets as package.json's `lint` script, so the gate and a local `bun run lint` agree.
+    commandLine("bunx", "eslint", "src", "tests", "e2e", "playwright.config.ts")
 }
 tasks.register<Exec>("test") {
     group = "verification"

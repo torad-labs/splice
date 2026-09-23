@@ -46,6 +46,12 @@ jobs:
           bun-version: 1.4.2
       - name: install workspaces
         run: bun install --frozen-lockfile
+      # The console's end-to-end leg (consoleE2e, tools/gate/config/ladder.json) drives a real browser.
+      # The binary is the lockfile's @playwright/test, so the browser is the revision that version
+      # was built against; --with-deps adds the shared libraries the runner image lacks, and
+      # --only-shell fetches the headless shell alone, the only chromium a headless run launches.
+      - name: install the console e2e browser
+        run: ./node_modules/.bin/playwright install --with-deps --only-shell chromium
       - name: complete repository gate
         run: npm run gate
 

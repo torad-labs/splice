@@ -45,7 +45,7 @@ function byExhaustion(left: AccountRow, right: AccountRow): number {
   if (delta !== 0) return delta;
   // A stable, meaningful tiebreak: the label, so two equally-spent accounts do not swap places
   // between polls and make the rack flicker.
-  return left.label.localeCompare(right.label);
+  return (left.label ?? '').localeCompare(right.label ?? '');
 }
 
 function keysFor(account: AccountRow, group: string | null): string[] {

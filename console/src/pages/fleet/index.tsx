@@ -204,7 +204,7 @@ export function FleetPage() {
                     window={headWindow(usageResource.data, head.key)}
                     account={auth?.[head.key]?.account_id_masked ?? auth?.[head.key]?.login ?? null}
                     dialect={dialectOf(topologyTable, head.key)}
-                    model={catalogs?.find((entry) => entry.key === head.key)?.pinned_model ?? null}
+                    model={catalogs?.find((entry) => entry.head === head.key)?.pinned_model ?? null}
                     columns={columns}
                     selected={openKey === head.key}
                     onOpen={() => toggle(head.key)}

@@ -48,7 +48,7 @@
  *  The exit code and the last line always agree.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
@@ -599,12 +599,16 @@ async function boot(jar: string): Promise<Daemon> {
   // the shared Gradle TEST task, and a daemon spawned here is a different JVM that inherits none of
   // it, so it is set again here. The rebuilt environment also carries no DISPLAY, WAYLAND_DISPLAY or
   // DBUS address, so an opener that slipped the property would still have no desktop to reach.
+  // A private copy of the jar: the build path is shared, and a JVM loads its classes lazily, so a
+  // build that rewrites the jar mid-read would fail every route not yet loaded (console/e2e/stack.ts).
+  const runJar = join(home, "splice.jar");
+  copyFileSync(jar, runJar);
   const child: ChildProcess = spawn("java", [
     "-Xmx512m",
     "-Dsplice.noSystemBrowser=1",
     `-Duser.home=${home}`,
     "-jar",
-    jar,
+    runJar,
     "daemon",
   ], {
     env,

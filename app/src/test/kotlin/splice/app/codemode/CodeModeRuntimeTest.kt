@@ -211,11 +211,15 @@ class CodeModeRuntimeTest {
     @Test
     fun `active worker cap rejects a second live cell`() = runBlocking {
         JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+            val reclamation = CodeModeWorkerReclamation(this)
             val first = runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
             assertThrows(IOException::class.java) {
                 runBlocking { runtime.start("return \"second\";", emptySet()) }
             }
             first.close()
+            // close() destroys the worker; its permit returns only once the exit is observed
+            // (WorkerPermit), so a replacement started at once raced that observer under load.
+            reclamation.assertReclaimed(runtime)
             val replacement = runtime.start("return \"replacement\";", emptySet())
             assertEquals("replacement", completed(replacement.advance()).output)
         }

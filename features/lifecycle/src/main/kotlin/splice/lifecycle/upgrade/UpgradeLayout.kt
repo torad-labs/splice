@@ -5,7 +5,7 @@
 // `previous` links. The live jar becomes a symlink into the current release; the live shim stays a
 // real file so a local edit survives — a host that patches the shim after install is the case this
 // is for, and UpgradeWrapper decides what happens to such an edit.
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import splice.core.GATEWAY_VERSION
 import splice.core.util.EnvReader

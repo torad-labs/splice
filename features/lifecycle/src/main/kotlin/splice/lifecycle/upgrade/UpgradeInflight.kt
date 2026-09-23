@@ -1,17 +1,17 @@
 // NEW: v0.4.0 FEATURES.md §5 — the daemon's in-flight count as `splice upgrade` reads it — the sum
 // of every head's gate.inflight on /api/heads, with the mgmt key. Split from UpgradeDaemon.kt
 // (concentration, 2026-09-13).
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import splice.app.cli.AdminSupport
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import java.io.IOException
 import java.net.ConnectException
@@ -42,7 +42,7 @@ internal fun interface UpgradeInflight {
 
 internal class JdkUpgradeInflight(
     private val env: EnvReader,
-    private val port: Int = AdminSupport.controlPort(env),
+    private val port: Int,
     private val connectTimeoutMs: Int = CONNECT_TIMEOUT_MS,
 ) : UpgradeInflight {
     private val json = Json { ignoreUnknownKeys = true }
@@ -50,7 +50,7 @@ internal class JdkUpgradeInflight(
 
     override fun invoke(): InflightRead {
         absent()?.let { return it }
-        val key = (AdminSupport.readMgmtKey(env) as? MgmtKeyRead.Present)?.key
+        val key = (MgmtKeyFile().read(env) as? MgmtKeyRead.Present)?.key
             ?: return InflightRead.Unknown("the mgmt key is not readable")
         return Cancellables.runCatchingCancellable {
             val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/heads"))

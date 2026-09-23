@@ -1,6 +1,6 @@
 // UpgradeLayout.versionDir (v0.4.0, FEATURES.md §5) admits exactly normalized SemVer 2.0.0 — the one
 // grammar that keeps a release directory name a single, canonical path segment.
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

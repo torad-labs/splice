@@ -8,7 +8,7 @@
 // Nothing here pins a filesystem: the release layout is read from the real one, so the installed
 // version and the presence of a previous release differ between hosts, and asserting their values
 // would pin this machine. What is host-independent is the SHAPE and the honesty.
-package splice.app.console
+package splice.lifecycle.upgrade
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -17,12 +17,13 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.util.EnvReader
 
 class UpgradeBodyTest {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun payload() = json.parseToJsonElement(ConsoleUpgradeStatus().json()).jsonObject
+    private fun payload() = json.parseToJsonElement(ConsoleUpgradeStatus(EnvReader(System::getenv)).json()).jsonObject
 
     @Test
     fun `latest is never filled in from installed`() {

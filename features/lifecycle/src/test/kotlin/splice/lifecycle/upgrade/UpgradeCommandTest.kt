@@ -2,13 +2,14 @@
 // verified release lands in its own directory and the live jar repoints to it; a failed
 // verification activates nothing; an edited wrapper is refreshed, saved and its diff printed; rollback
 // repoints at the previous release; config and credentials are never touched.
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -28,6 +29,9 @@ class UpgradeCommandTest {
     private val calls = mutableListOf<List<String>>()
     private var unitRestarts = 0
     private var verbRestarts = 0
+
+    // Each line through println, so `captured` reads the verb's output off System.out as before.
+    private val out = TerminalOutput(::println)
     private var inflightAnswers = ArrayDeque<InflightRead>()
     private var inflightAfter: InflightRead = InflightRead.NoDaemon
     private var reportedVersion = "9.9.9"
@@ -80,6 +84,7 @@ class UpgradeCommandTest {
         val env = env(home, base)
         val unitJar = home.resolve("share/splice.jar").takeIf { supervised }
         val daemon = UpgradeDaemon(
+            out,
             process(unitJar = unitJar),
             { inflightAnswers.removeFirstOrNull() ?: inflightAfter },
             restartVerb = {
@@ -90,12 +95,14 @@ class UpgradeCommandTest {
             pollMs = 1,
             maxWaitMs = maxWaitMs,
             confirmPollMs = 1,
+            userUnit = "splice.service",
         )
         return UpgradeCommand(
+            output = out,
             env = env,
             java = "java",
-            release = UpgradeRelease(fetch, process(gh), "java"),
-            wrapper = UpgradeWrapper(process()),
+            release = UpgradeRelease(out, fetch, process(gh), "java"),
+            wrapper = UpgradeWrapper(out, process()),
             daemon = daemon,
             layout = UpgradeLayout(env),
         )
@@ -298,7 +305,7 @@ class UpgradeCommandTest {
         assertTrue(out.contains("predates doctor --json"), out)
         assertTrue(calls.none { it.contains("--json") }, "no doctor --json for a jar that ignores the flag: $calls")
         assertEquals("0.3.9", link(home, "current"))
-        val release = UpgradeRelease(JdkUpgradeFetch(), process(), "java")
+        val release = UpgradeRelease(out, JdkUpgradeFetch(), process(), "java")
         assertEquals(release.base("v0.4.0", null), release.base("0.4.0", null), "one tag, two spellings")
         assertTrue(release.base("0.4.0", null).endsWith("/download/v0.4.0"), release.base("0.4.0", null))
     }

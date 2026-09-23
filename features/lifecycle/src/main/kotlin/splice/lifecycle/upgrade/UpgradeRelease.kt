@@ -4,10 +4,11 @@
 // the candidate must answer `version` like a splice jar and run its own doctor. Everything lands in
 // a staging directory; a refusal at any step leaves nothing activated. Network and processes go
 // through two seams so the command is tested without a socket or a gh.
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
+import splice.core.terminal.TerminalOutput
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -31,6 +32,7 @@ private const val JSON_DOCTOR_MINOR = 4
 internal class UpgradeRefused(val reason: String) : RuntimeException(reason)
 
 internal class UpgradeRelease(
+    private val output: TerminalOutput,
     private val fetch: UpgradeFetch,
     private val process: UpgradeProcess,
     private val java: String,
@@ -53,7 +55,7 @@ internal class UpgradeRelease(
             val file = Files.write(staging.resolve(asset), bytes)
             if (remote) attest(file, asset)
             val how = if (remote) "sha256 ok, attestation ok" else "sha256 ok (local release base, no attestation)"
-            println("  $GREEN✓$RESET ${asset.padEnd(UPGRADE_PAD)} $how")
+            output.line("  $GREEN✓$RESET ${asset.padEnd(UPGRADE_PAD)} $how")
         }
         Files.setPosixFilePermissions(staging.resolve(SHIM_ASSET), PosixFilePermissions.fromString(SHIM_MODE))
         return validate(staging.resolve(JAR_ASSET))
@@ -101,7 +103,7 @@ internal class UpgradeRelease(
         }
         val candidate = line.removePrefix("splice ").trim()
         if (predatesJsonDoctor(candidate)) {
-            println("  ${"doctor".padEnd(UPGRADE_PAD)} $candidate predates doctor --json; preflight skipped")
+            output.line("  ${"doctor".padEnd(UPGRADE_PAD)} $candidate predates doctor --json; preflight skipped")
             return candidate
         }
         val doctor = process(listOf(java, "-jar", jar.toString(), "doctor", "--json"), false)

@@ -91,8 +91,9 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":features-accounts" to setOf(":core", ":integrations-http"),
     // usage and perf, and `splice perf`, which lists splice.toml's heads.
     ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts", ":integrations-topology"),
-    // the daemon's own lifecycle: the draining restart and the upgrade surface.
-    ":features-lifecycle" to emptySet(),
+    // the daemon's own lifecycle: the draining restart, the upgrade surface, and `splice upgrade`, which
+    // asks the local daemon through its client and repoints the files launch's install layout names.
+    ":features-lifecycle" to setOf(":core", ":integrations-daemon-client", ":features-launch"),
     // the doctor report, the one-prompt playground, and the operator's reads of a running head
     // (`splice wire`) through the daemon client.
     ":features-diagnostics" to setOf(

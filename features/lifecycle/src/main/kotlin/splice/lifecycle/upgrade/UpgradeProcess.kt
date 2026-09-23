@@ -1,7 +1,7 @@
 // NEW: v0.4.0 FEATURES.md §5 — the process seam `splice upgrade` runs gh, the candidate jar,
 // diff and systemctl through, and its JDK implementation. Split from UpgradeRelease.kt
 // (concentration, 2026-09-13).
-package splice.app.cli.upgrade
+package splice.lifecycle.upgrade
 
 import splice.core.util.SafeFailureText
 import java.io.IOException

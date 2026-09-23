@@ -10,7 +10,7 @@
     ],
     "COLLISION CONNECT_TIMEOUT_MS": [
       "app/src/main/kotlin/splice/app/probe/UpstreamPlaygroundProbe.kt",
-      "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeInflight.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsUpstream.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt"
     ],
@@ -107,7 +107,7 @@
     ],
     "COLLISION PROBE_TIMEOUT_S": [
       "app/src/main/kotlin/splice/app/cli/add/AddHttp.kt",
-      "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeInflight.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
       "app/src/main/kotlin/splice/app/provider/JdkLocalHttp.kt"
     ],
     "COLLISION REDIRECT_PORT": [
@@ -339,8 +339,8 @@
       "app/src/main/kotlin/splice/app/cli/status/AccountPools.kt",
       "app/src/main/kotlin/splice/app/cli/add/AddChecks.kt",
       "app/src/main/kotlin/splice/app/cli/daemon/DaemonStop.kt",
-      "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeFetch.kt",
-      "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeInflight.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
       "app/src/main/kotlin/splice/app/quota/QuotaProbes.kt",
       "integrations/mcp/src/main/kotlin/splice/control/mcp/McpHost.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalLiveReading.kt",
@@ -409,7 +409,7 @@
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt"
     ],
     "COPY MILLIS_PER_SECOND": [
-      "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeProcess.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeProcess.kt",
       "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServer.kt",
       "features/turns/src/main/kotlin/splice/head/admission/HeadAdmission.kt"
     ],
@@ -451,7 +451,7 @@
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
     ],
     "COPY NANOS_PER_MS": [
-      "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeDaemon.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeDaemon.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt"
     ],
     "COPY NEWLINE_BYTE": [

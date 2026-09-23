@@ -18,12 +18,13 @@ import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.LogsCommand
 import splice.app.cli.status.StatusCommand
-import splice.app.cli.upgrade.UpgradeCommand
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.diagnostics.wire.WireCommand
+import splice.lifecycle.upgrade.UpgradeVerb
+import splice.lifecycle.upgrade.VersionedRestart
 import splice.sessions.list.SessionsCommand
 import splice.topology.TopologyLoader
 
@@ -80,7 +81,15 @@ public sealed class Command {
 
     /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */
     public data class Upgrade(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(UpgradeCommand().upgrade(args))
+        override fun run(): Int {
+            val verb = UpgradeVerb(
+                TerminalOutput(::println),
+                TerminalOutput(System.err::println),
+                EnvReader(System::getenv),
+                VersionedRestart { RestartCommand().restart(expectedVersion = it) },
+            )
+            return outcomeExitCode(verb.upgrade(args))
+        }
     }
 
     public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }

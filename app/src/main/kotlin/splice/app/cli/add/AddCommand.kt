@@ -9,8 +9,8 @@ package splice.app.cli.add
 import splice.app.InstallWiring
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
+import splice.app.cli.daemon.DaemonRestart
 import splice.app.cli.daemon.RestartCommand
-import splice.app.cli.upgrade.DaemonRestart
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM

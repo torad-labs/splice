@@ -13,4 +13,6 @@ export const S = {
   state: 'state',
   archived: 'archived',
   live: 'live',
+  newTeam: 'new team',
+  edit: 'edit',
 } as const;

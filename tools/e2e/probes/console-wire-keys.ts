@@ -31,7 +31,8 @@
  *  THE DAEMON:
  *    --boot <jar>       boot THAT jar isolated (its own user.home, config and free ports, no
  *                       provider credential in its environment), read it, stop it. The tree's
- *                       build is app/build/libs/app-all.jar.
+ *                       build is app/build/libs/app-all.jar. One team is created in its throwaway
+ *                       home first, so the per-team reads have an id to be read with.
  *    --control <url>    read an already-running daemon instead (default http://127.0.0.1:3096,
  *                       bearer from the state root's mgmt-key or --key-file). Read-only GETs.
  *    --capture <dir>    also write each payload read, as <call-site id>.json.
@@ -85,6 +86,8 @@ const ID_SOURCES: Record<string, IdSource> = {
 const QUERY_FILL: Record<string, string> = {
   "entities/perf|query.toString()": "head={head}&n=20",
   "entities/perf|query": "",
+  // fetchTeamPanels reads today unless a day is asked for.
+  "entities/team|query": "",
 };
 
 /** A path expression that is a call to a local helper rather than a literal. Keyed by file and the
@@ -594,7 +597,31 @@ async function boot(jar: string): Promise<Daemon> {
   // V4-177: a daemon booted into a fresh HOME writes the current layout; there is no pre-0.4
   // root in a throwaway home for it to adopt.
   const keyFile = join(home, ".splice/state/mgmt-key");
-  return { base, key: readFileSync(keyFile, "utf8").trim(), pid: child.pid ?? null, stop };
+  const key = readFileSync(keyFile, "utf8").trim();
+  try {
+    await seedTeam(base, key);
+  } catch (err) {
+    await stop();
+    throw err;
+  }
+  return { base, key, pid: child.pid ?? null, stop };
+}
+
+/** A fresh daemon has no team, so every per-team read would have no id and stay UNEXERCISED. One
+ *  team is created in the THROWAWAY home through the create route the console itself uses; the
+ *  --control path never writes. */
+async function seedTeam(base: string, key: string): Promise<void> {
+  const res = await fetch(`${base}/api/teams`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": "console-wire-keys-seed" },
+    body: JSON.stringify({
+      name: "wire keys",
+      goal: "give the per-team reads an id",
+      repo: "/tmp/console-wire-keys",
+      slots: [{ id: "lead", role: "lead", head: "openrouter", lead: true, instructions: "seeded by the wire probe" }],
+    }),
+  });
+  if (res.status !== 201) throw new Error(`--boot: seeding a team answered ${res.status}: ${await res.text()}`);
 }
 
 async function attach(base: string, keyFile: string): Promise<Daemon> {

@@ -2,6 +2,9 @@
 // this file). Validation messages and honest empties are sentences and live beside their rules.
 export const S = {
   compose: 'compose team',
+  edit: 'edit',
+  create: 'create team',
+  save: 'save team',
   name: 'name',
   goal: 'goal',
   features: 'features',

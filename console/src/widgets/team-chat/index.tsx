@@ -1,5 +1,5 @@
 // The team's group chat: every hand-off between its sessions, oldest first, as GET
-// /api/teams/{id}/chat serves it (FEATURES 4.13, PENDING V4-131).
+// /api/teams/{id}/chat serves it (FEATURES 4.13, served since V4-131).
 //
 // THE TEXT IS BEHIND A REVEAL. A hand-off's text is read from the sender's transcript on demand
 // and never stored by the daemon, so the panel prints who wrote to whom and when, and shows the
@@ -15,8 +15,9 @@ export interface TeamChatPayload {
   messages: TeamMessage[];
 }
 
-/** What the panel was handed: the chat, the honest empty naming its row, or nothing yet. */
-export type TeamChatState = TeamChatPayload | PendingRoute | null;
+/** What the panel was handed: the chat, the honest empty naming its row, the daemon's refusal, or
+ *  nothing yet. */
+export type TeamChatState = TeamChatPayload | PendingRoute | { error: string } | null;
 
 const stampOf = (time: string): number => {
   const [h = '0', m = '0', s = '0'] = time.split(':');
@@ -36,6 +37,7 @@ export function TeamChat({ state }: { state: TeamChatState }) {
   let body;
   if (state === null) body = <Empty text="reading the chat" source="GET /api/teams/{id}/chat" />;
   else if ('pending' in state) body = <Empty text="no chat route" source={`${state.pending} pending`} />;
+  else if ('error' in state) body = <Empty text="chat unreadable" source={state.error} />;
   else if (state.messages.length === 0) body = <Empty text="no messages yet" source="GET /api/teams/{id}/chat" />;
   else {
     body = (

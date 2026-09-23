@@ -88,18 +88,22 @@ class SetupCommandTest {
     }
 
     @Test
-    fun `next-steps block keeps Launch Dashboard Status Checkup and the Checkup tail`(@TempDir home: Path) {
+    fun `the closing block still names every affordance, by command`(@TempDir home: Path) {
         val log = captureStdout {
             withHome(home) {
                 seedShim(home)
                 runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
             }
         }
-        assertTrue("Launch" in log)
-        assertTrue("Dashboard" in log)
-        assertTrue("Status" in log)
-        assertTrue("Checkup" in log)
+        // Pinned by COMMAND, not by label. The 2026-09-22 redesign dropped the Launch/Dashboard/
+        // Status/Checkup labels — the operator reads the command itself now — and the old arm failed
+        // on the wording while the real regression it should catch is an AFFORDANCE going missing.
+        // It nearly did: that cut lost the dashboard entirely and this arm is what found it.
+        assertTrue("splice status" in log, log)
+        assertTrue("splice doctor" in log, log)
+        assertTrue("splice dashboard" in log, log)
         assertTrue("anything wrong prints its fix" in log)
+        assertTrue("Setup complete." in log, "the close must still announce itself: $log")
     }
 
     @Test

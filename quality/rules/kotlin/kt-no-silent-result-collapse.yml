@@ -89,6 +89,10 @@ files:
   - features/heads/src/main/**/*.kt
   - integrations/topology/src/main/**/*.kt
   - features/accounts/src/main/**/*.kt
+  - features/diagnostics/src/main/**/*.kt
+  - features/lifecycle/src/main/**/*.kt
+  - features/launch/src/main/**/*.kt
+  - features/configuration/src/main/**/*.kt
 rule:
   any:
     # A. direct chain — the original wall, unchanged

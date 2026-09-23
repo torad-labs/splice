@@ -27,7 +27,8 @@ private val PORT_SCOPE_MODULES = listOf(
     ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat",
     ":integrations-dialects-anthropic", ":integrations-providers-codex", ":integrations-providers-grok", ":integrations-providers-openai",
     ":integrations-providers-kimi", ":integrations-providers-muse", ":features-turns", ":daemon-control",
-    ":features-heads", ":features-models", ":features-sessions", ":features-usage", ":features-accounts", ":app",
+    ":features-heads", ":features-models", ":features-sessions", ":features-usage", ":features-accounts",
+    ":features-lifecycle", ":features-diagnostics", ":features-launch", ":features-configuration", ":app",
     ":quality-compiler-plugin",
 )
 

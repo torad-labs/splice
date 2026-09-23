@@ -11,6 +11,8 @@ import splice.core.head.Head
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.head.compact.HeadCompactSource
+import splice.launch.KeyPresenceProbe
+import splice.launch.LaunchSpec
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.PerfRowsSource
@@ -67,8 +69,3 @@ public data class ManagedHead(
     /** Per-account masked descriptions; never passed to the unauthenticated statusline. */
     val accountAuth: HeadAccountAuthSource? = null,
 )
-
-/** The launch-time key-presence read [ManagedHead.keyPresence] carries (role-named ctor seam). */
-public fun interface KeyPresenceProbe {
-    public fun keyPresentNow(): Boolean
-}

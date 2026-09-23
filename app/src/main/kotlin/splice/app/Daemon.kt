@@ -28,10 +28,7 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.control.ControlServer
 import splice.control.DashboardPage
-import splice.control.DeclaredHead
-import splice.control.DeclaredHeads
 import splice.control.ManagedHead
-import splice.control.ShutdownDaemon
 import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
@@ -42,6 +39,9 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.head.compaction.CompactionTail
+import splice.lifecycle.restart.ShutdownDaemon
+import splice.models.roster.DeclaredHead
+import splice.models.roster.DeclaredHeads
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 

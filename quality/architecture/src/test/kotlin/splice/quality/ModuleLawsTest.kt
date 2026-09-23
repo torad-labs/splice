@@ -46,7 +46,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // the Claude Code side: isolated client state plus the concrete reader implementing the
     // sessions-owned transcript port. The sessions feature never points back into this adapter.
     ":integrations-claude-code" to setOf(":core", ":features-sessions"),
-    ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
+    ":integrations-mcp" to setOf(":core", ":integrations-claude-code", ":integrations-http"),
     ":integrations-http" to setOf(":core"),
     // the splice.toml file on disk: load, first-run starter, structural preflight and digest.
     ":integrations-topology" to setOf(":core"),
@@ -72,11 +72,21 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // operator surface renders.
     ":features-accounts" to setOf(":core", ":integrations-http"),
     ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts"),
+    // the daemon's own lifecycle: the draining restart and the upgrade surface.
+    ":features-lifecycle" to emptySet(),
+    // the doctor report and the one-prompt playground.
+    ":features-diagnostics" to setOf(":core", ":integrations-http"),
+    // launching Claude Code against a head: the exec recipe, the Claude head's wrap, the resume hook.
+    ":features-launch" to setOf(":core", ":integrations-claude-code", ":integrations-http"),
+    // the daemon's knobs and splice.toml, read and written as data.
+    ":features-configuration" to setOf(":core", ":integrations-http"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
     ":daemon-control" to setOf(
         ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
         ":features-heads", ":features-sessions", ":features-usage", ":features-accounts", ":features-turns",
+        ":features-lifecycle", ":features-diagnostics", ":features-models", ":features-launch",
+        ":features-configuration",
     ),
     // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
     ":console" to emptySet(),

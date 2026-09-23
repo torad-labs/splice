@@ -81,6 +81,11 @@ files:
   - features/turns/src/main/kotlin/splice/head/compact/HeadCompactSource.kt
   - features/turns/src/main/kotlin/splice/head/compaction/CompactionInstructionsRoute.kt
   - features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt
+  - features/diagnostics/src/main/**/*.kt
+  - features/lifecycle/src/main/**/*.kt
+  - features/models/src/main/kotlin/splice/models/roster/ModelsRoute.kt
+  - features/launch/src/main/**/*.kt
+  - features/configuration/src/main/**/*.kt
 rule:
   all:
     - any:

@@ -89,7 +89,7 @@ internal class ManagedHeadFactory(
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.
-        val keyPresence = splice.control.KeyPresenceProbe {
+        val keyPresence = splice.launch.KeyPresenceProbe {
             (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
         }
         return ManagedHead(

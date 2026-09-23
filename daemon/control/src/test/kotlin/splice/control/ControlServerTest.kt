@@ -36,6 +36,9 @@ import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.launch.HeadTrees
+import splice.launch.LaunchSpec
+import splice.launch.recipe.LaunchService
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
@@ -159,7 +162,7 @@ class ControlServerTest {
     }
 
     private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
-        trees = splice.control.HeadTrees(tmp.resolve(".claude-codex-test")),
+        trees = HeadTrees(tmp.resolve(".claude-codex-test")),
         pinnedModel = "gpt-5.6-sol",
         availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
         modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),

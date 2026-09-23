@@ -25,12 +25,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudePolicy
-import splice.control.HeadTrees
-import splice.control.LaunchSpec
+import splice.configuration.topology.TopologyRoutes
+import splice.configuration.topology.TopologyStale
 import splice.control.TopologyDigest
-import splice.control.TopologyStale
 import splice.control.api.ControlPayloads
-import splice.control.api.fleet.TopologyRoutes
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -42,6 +40,8 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.topology.TopologyWriterSource
+import splice.launch.HeadTrees
+import splice.launch.LaunchSpec
 import java.nio.file.Files
 import java.nio.file.Path
 

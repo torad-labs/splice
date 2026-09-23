@@ -23,7 +23,7 @@
 // lambda over what was declared, which is the same contract the three fields had.
 package splice.app.daemon
 
-import splice.control.DeclaredHeads
+import splice.models.roster.DeclaredHeads
 import java.nio.file.Path
 
 /** The booted config's identity plus what it declared. Defaults are the same "not supplied" values

@@ -9,12 +9,12 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
-import splice.control.HeadTrees
-import splice.control.LaunchSpec
-import splice.control.ModelTiers
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
+import splice.launch.HeadTrees
+import splice.launch.LaunchSpec
+import splice.launch.ModelTiers
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths

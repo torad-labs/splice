@@ -42,6 +42,10 @@ include(
     ":features-heads",
     ":features-accounts",
     ":features-usage",
+    ":features-lifecycle",
+    ":features-diagnostics",
+    ":features-launch",
+    ":features-configuration",
     ":app",
     ":quality-architecture",
     ":quality-compiler-plugin",
@@ -70,6 +74,10 @@ project(":daemon-control").projectDir = file("daemon/control")
 project(":features-heads").projectDir = file("features/heads")
 project(":features-accounts").projectDir = file("features/accounts")
 project(":features-usage").projectDir = file("features/usage")
+project(":features-lifecycle").projectDir = file("features/lifecycle")
+project(":features-diagnostics").projectDir = file("features/diagnostics")
+project(":features-launch").projectDir = file("features/launch")
+project(":features-configuration").projectDir = file("features/configuration")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
 project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")

@@ -127,7 +127,7 @@
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION SESSION_HEADER": [
-      "daemon/control/src/main/kotlin/splice/control/api/diagnostics/McpRoutes.kt",
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/McpRoutes.kt",
       "features/turns/src/main/kotlin/splice/head/turn/TurnPreparation.kt"
     ],
     "COLLISION STOP_GRACE_MS": [

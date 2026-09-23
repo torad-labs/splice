@@ -5,10 +5,13 @@ package splice.control
 
 import splice.accounts.signin.ConsoleAccounts
 import splice.control.api.EventBus
-import splice.control.api.fleet.DaemonSupervised
-import splice.control.api.turns.PlaygroundProbe
 import splice.core.compaction.CompactionInstructions
 import splice.core.topology.TopologyWriter
+import splice.diagnostics.doctor.DoctorReport
+import splice.diagnostics.playground.PlaygroundProbe
+import splice.lifecycle.restart.DaemonSupervised
+import splice.lifecycle.upgrade.UpgradeStatus
+import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
 import splice.sessions.teams.TeamStore
 import splice.usage.alerts.AlertStore

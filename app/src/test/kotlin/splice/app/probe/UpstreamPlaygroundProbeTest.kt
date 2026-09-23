@@ -21,21 +21,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.control.HeadLogSource
-import splice.control.ManagedHead
-import splice.control.api.turns.PlaygroundFailure
-import splice.control.api.turns.PlaygroundResult
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
-import splice.core.head.Head
-import splice.core.head.HeadHealth
-import splice.head.compact.CompactView
-import splice.head.compact.HeadCompactSource
+import splice.diagnostics.playground.PlaygroundFailure
+import splice.diagnostics.playground.PlaygroundHead
+import splice.diagnostics.playground.PlaygroundResult
 import splice.upstream.transport.HeaderRedaction
-import splice.usage.quota.HeadUsageSource
-import splice.usage.quota.RateLimitView
-import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -85,29 +77,12 @@ private val defaultCreds: Credentials = Credentials.ApiKey("secret-key", "x-api-
 
 class UpstreamPlaygroundProbeTest {
 
-    private fun head(key: String, creds: Credentials? = defaultCreds): ManagedHead = ManagedHead(
-        head = object : Head {
-            override val key: String = key
-            override val label: String = key
-            override val port: Int = 0
-            override suspend fun start() = Unit
-            override suspend fun stop() = Unit
-            override fun healthSnapshot(): HeadHealth = HeadHealth(true, true, 0, "test")
-        },
+    private fun head(key: String, creds: Credentials? = defaultCreds): PlaygroundHead = PlaygroundHead(
+        key = key,
         auth = object : AuthProvider {
             override suspend fun credentials(): Credentials? = creds
             override suspend fun describe() = AuthDescription(creds != null, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
     )
 
     private fun configFile(tmp: Path): Path = tmp.resolve("splice.toml").also { Files.writeString(it, TOML) }

@@ -52,7 +52,9 @@ note: >
 files:
   # LAYOUT-01: the Claude Code launch seam moved as one module; its enforcement moved with it.
   - integrations/claude-code/src/main/kotlin/splice/client/**/*.kt
-  - daemon/control/src/main/kotlin/splice/control/Launch*.kt
+  # 2026-09-23 LAYOUT-01: control's Launch*.kt became features/launch, and the wall takes the whole
+  # module — the recipe, the Claude head's wrap and the resume hook all point at a head's config dir.
+  - features/launch/src/main/**/*.kt
   - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
 ignores:
   # the ONE dated entry: the single source of the vanilla dir's NAME (Keys.CLAUDE / Keys.CLAUDE_DIR)

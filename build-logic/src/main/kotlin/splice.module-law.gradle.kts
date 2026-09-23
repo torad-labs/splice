@@ -16,7 +16,7 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     // the Claude Code side: isolated client state plus the concrete transcript reader. It speaks core
     // and implements the sessions-owned transcript port; no feature implementation points back here.
     ":integrations-claude-code" to setOf(":core", ":features-sessions"),
-    ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
+    ":integrations-mcp" to setOf(":core", ":integrations-claude-code", ":integrations-http"),
     ":integrations-http" to setOf(":core"),
     // the splice.toml file on disk: load, first-run starter, structural preflight and digest.
     ":integrations-topology" to setOf(":core"),
@@ -35,12 +35,22 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":daemon-control" to setOf(
         ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
         ":features-heads", ":features-sessions", ":features-usage", ":features-accounts", ":features-turns",
+        ":features-lifecycle", ":features-diagnostics", ":features-models", ":features-launch",
+        ":features-configuration",
     ),
     ":features-heads" to setOf(":core"),
     // sign-in, refresh, the account pool and their console routes; the pool is a read model every
     // operator surface renders.
     ":features-accounts" to setOf(":core", ":integrations-http"),
     ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts"),
+    // the daemon's own lifecycle: the draining restart and the upgrade surface.
+    ":features-lifecycle" to emptySet(),
+    // the doctor report and the one-prompt playground.
+    ":features-diagnostics" to setOf(":core", ":integrations-http"),
+    // launching Claude Code against a head: the exec recipe, the Claude head's wrap, the resume hook.
+    ":features-launch" to setOf(":core", ":integrations-claude-code", ":integrations-http"),
+    // the daemon's knobs and splice.toml, read and written as data.
+    ":features-configuration" to setOf(":core", ":integrations-http"),
     ":quality-architecture" to emptySet(),
     // :console is the Bun/Vite operator console — no Kotlin, no edges; graded here so the map
     // covers every module the build declares.

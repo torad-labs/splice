@@ -38,11 +38,8 @@ import splice.app.console.ConsoleUpgradeStatus
 import splice.app.console.DrainingRestartAdapter
 import splice.app.daemon.BootedTopology
 import splice.control.ControlServer
-import splice.control.DoctorReport
-import splice.control.UpgradeStatus
 import splice.control.api.ConsoleEvent
 import splice.control.api.EventBus
-import splice.control.api.turns.PlaygroundProbe
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
@@ -51,8 +48,11 @@ import splice.core.storage.ACTIVITY_DIRECTORY
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.util.WallClock
+import splice.diagnostics.doctor.DoctorReport
+import splice.diagnostics.playground.PlaygroundProbe
 import splice.head.HeadEvents
 import splice.head.HeadLifecycle
+import splice.lifecycle.upgrade.UpgradeStatus
 import splice.sessions.activity.ALL_HEADS
 import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge

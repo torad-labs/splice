@@ -4,14 +4,14 @@
 // data shapes separate from the class that acts on them). Same-package FQCNs are unchanged.
 package splice.client.wrap
 
-/** [splice.control.LaunchService]'s read seam: the real absolute claude binary when the default
+/** [splice.launch.recipe.LaunchService]'s read seam: the real absolute claude binary when the default
  *  `claude` command is wrapped, else null — bare `"claude"` (today's byte-identical behaviour,
  *  resolved through PATH) is correct exactly when this returns null. */
 public fun interface WrapStateRead {
     public fun realBinaryPath(): String?
 }
 
-/** The one fact [splice.control.LaunchService] must read on every launch (see WrappedHead.kt's
+/** The one fact [splice.launch.recipe.LaunchService] must read on every launch (see WrappedHead.kt's
  *  header) — written to and read from a file by [WrapStateStore], never held in memory. */
 public data class WrapState(
     val realBinaryPath: String,

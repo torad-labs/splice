@@ -15,6 +15,7 @@ import splice.core.topology.Topology
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SecureFile
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -117,6 +118,10 @@ internal class DaemonProcess {
         // that ordering is stated rather than left to be discovered: an overriding daemon moves its
         // state but not the crash log, which the net already captured against the default.
         val statePaths = statePathsFor(topology, bootstrapPaths)
+        // v0.4.0: the state root is owner-only BEFORE the first write into it (the lock), and
+        // re-asserted on every start: a root an older splice or the umask left 775 exposed every
+        // non-secret store in it (perf, client windows) to other local users.
+        SecureFile.ownerOnlyDirectory(statePaths.stateDir)
         val lock = DaemonLock(statePaths.daemonLockFile)
         val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
         val lockWait = DaemonLockWait()

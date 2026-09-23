@@ -5,10 +5,11 @@
 //   - `a missing window is not an empty one`. A provider that reports no usage for a window has
 //     said nothing; reading that as 0 puts the account nobody can trust at the top of a headroom
 //     sort and hides the one that is nearly spent.
-//   - `the next-target mark follows the daemon's real order`. Primary, then the session's sticky
-//     account, then lowest seven-day used (AccountPool.kt:101-112). A mark computed from a
+//   - `the next-target mark is the daemon's own`. The pin, then primary, then the session's sticky
+//     account, then lowest seven-day used (AccountPool.kt:179-186). A mark computed from a
 //     plausible-looking sort instead lands on a strip the daemon will not actually take, which is
-//     worse than no mark at all: it is a confident wrong answer about what happens next.
+//     worse than no mark at all: it is a confident wrong answer about what happens next. So the
+//     daemon's `next_target` flag picks the strip and the console only names the rule (M4-08).
 //
 // The pending-route cases are asserted through the REAL fetch path with a stubbed transport, not
 // through the predicate alone: a predicate that returns the right value while the store writes
@@ -24,7 +25,7 @@ import {
   fetchAccounts,
   nearestOverall,
   nearestWindow,
-  nextTarget,
+  nextRuleOf,
   sevenDayUsed,
   windowLengthText,
   windowUsedText,
@@ -174,7 +175,7 @@ describe('the accounts wire becomes the page model', () => {
   test('a single-login head keeps its nulls and is never a selector candidate', () => {
     const rows = accountsFromWire({ accounts: [SINGLE_LOGIN] }).accounts;
     expect(rows[0]).toMatchObject({ label: null, single_login: true, available: null, selected: null });
-    expect(nextTarget(rows)).toBeNull();
+    expect(rows.map((row) => nextRuleOf(row, rows))).toEqual([null]);
   });
 });
 
@@ -184,47 +185,59 @@ function windowUsedTextOf(row: AccountRow): string {
 }
 
 describe('the selector order', () => {
-  test('is printed as the sentence the daemon implements', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('primary then sticky then lowest 7-day used');
+  test('is printed as the sentence the daemon implements, the pin first', () => {
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned then primary then sticky then lowest 7-day used');
   });
 
-  test('primary if available wins over a lower-used account', () => {
-    const primary = account({ label: 'primary', primary: true, windows: [window7d(90)] });
+  /** Every row's rule in one pool, in order: null for each strip the daemon did not flag. */
+  const rules = (pool: AccountRow[]) => pool.map((row) => nextRuleOf(row, pool));
+
+  test('the flag picks the strip: an available primary the daemon did not flag is not marked', () => {
+    const primary = account({ label: 'primary', primary: true, windows: [window7d(5)] });
+    const pinned = account({ label: 'pinned', pinned: true, next_target: true, windows: [window7d(90)] });
+    expect(rules([primary, pinned])).toEqual([null, 'pinned']);
+  });
+
+  test('a flagged primary is named primary', () => {
+    const primary = account({ label: 'primary', primary: true, next_target: true, windows: [window7d(90)] });
     const roomy = account({ label: 'roomy', windows: [window7d(5)] });
-    expect(nextTarget([primary, roomy])).toEqual({ label: 'primary', rule: 'primary' });
+    expect(rules([primary, roomy])).toEqual(['primary', null]);
   });
 
-  test('an unavailable primary does not win', () => {
+  test('a flagged account that is the pool\'s lowest seven-day used is named for that rule', () => {
     const primary = account({ label: 'primary', primary: true, available: false });
-    const other = account({ label: 'other', windows: [window7d(5)] });
-    expect(nextTarget([primary, other])?.label).toBe('other');
-  });
-
-  test('sticky is the second rule, and only when the primary is out', () => {
-    const sticky = account({ label: 'sticky', windows: [window7d(80)] });
-    const roomy = account({ label: 'roomy', windows: [window7d(5)] });
-    expect(nextTarget([sticky, roomy], 'sticky')).toEqual({ label: 'sticky', rule: 'sticky' });
-  });
-
-  test('otherwise the lowest seven-day used', () => {
     const heavy = account({ label: 'heavy', windows: [window7d(80)] });
+    const roomy = account({ label: 'roomy', next_target: true, windows: [window7d(5)] });
+    expect(rules([primary, heavy, roomy])).toEqual([null, null, 'lowest 7-day used']);
+  });
+
+  test('a flagged account that is neither can only be the previous one, the sticky rule', () => {
+    const primary = account({ label: 'primary', primary: true, available: false });
+    const sticky = account({ label: 'sticky', next_target: true, windows: [window7d(80)] });
     const roomy = account({ label: 'roomy', windows: [window7d(5)] });
-    expect(nextTarget([heavy, roomy])).toEqual({ label: 'roomy', rule: 'lowest 7-day used' });
+    expect(rules([primary, sticky, roomy])).toEqual([null, 'sticky', null]);
+  });
+
+  test('the lowest is found inside the flagged account\'s own pool, never across pools', () => {
+    // `other` rides another head with more room; the flagged account is still its own pool's lowest.
+    const flagged = account({ label: 'mine', next_target: true, heads: ['codex-a'], windows: [window7d(40)] });
+    const other = account({ label: 'other', heads: ['codex-b'], windows: [window7d(1)] });
+    expect(nextRuleOf(flagged, [flagged, other])).toBe('lowest 7-day used');
   });
 
   test('an account with no seven-day snapshot sorts as zero used, as the daemon does', () => {
-    const fresh = account({ label: 'fresh', windows: [] });
+    const fresh = account({ label: 'fresh', next_target: true, windows: [] });
     expect(sevenDayUsed(fresh)).toBe(0);
     const used = account({ label: 'used', windows: [window7d(40)] });
-    expect(nextTarget([used, fresh])?.label).toBe('fresh');
+    expect(rules([used, fresh])).toEqual([null, 'lowest 7-day used']);
   });
 
   test('a window present but unreported also sorts as zero, never as unavailable', () => {
     expect(sevenDayUsed(account({ windows: [window7d(null)] }))).toBe(0);
   });
 
-  test('an entirely unavailable pool has no next target, and says so with null', () => {
-    expect(nextTarget([account({ available: false })])).toBeNull();
+  test('a pool the daemon flagged nothing in has no next target, and says so with null', () => {
+    expect(rules([account({ available: false }), account({ label: 'b' })])).toEqual([null, null]);
   });
 });
 

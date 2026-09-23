@@ -27,7 +27,8 @@ const DEMO_ACCOUNTS: readonly AccountRow[] = [
     single_login: false,
     credential_path: null,
     pinned: false,
-    next_target: false,
+    // The mark is the daemon's flag (M4-08): one per pool, here the available primary.
+    next_target: true,
     windows: [
       { seconds: HOUR_5, used_percent: 74, reset_epoch_seconds: 1_800_000_460 },
       { seconds: DAY_7, used_percent: 31, reset_epoch_seconds: 1_800_200_000 },
@@ -63,7 +64,7 @@ const DEMO_ACCOUNTS: readonly AccountRow[] = [
     single_login: false,
     credential_path: null,
     pinned: false,
-    next_target: false,
+    next_target: true,
     // Grok reports a 30-day period and no plan: the page labels the window from the number it was
     // given and prints no plan rather than an empty one.
     windows: [{ seconds: DAY_30, used_percent: 100, reset_epoch_seconds: 1_802_000_000 }],
@@ -96,7 +97,7 @@ const DEMO_ACCOUNTS: readonly AccountRow[] = [
     single_login: false,
     credential_path: null,
     pinned: false,
-    next_target: false,
+    next_target: true,
     // The provider reported no window at all: the strip prints the honest empty, never a zero.
     windows: [],
     heads: ['musehead'],

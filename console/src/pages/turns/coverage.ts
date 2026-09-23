@@ -14,6 +14,6 @@ import type { Disposition } from '@shared/coverage';
 export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/perf', disposition: 'read-only' },
   { kind: 'route', name: '/api/perf/summary', disposition: 'read-only' },
-  { kind: 'route', name: '/api/perf/turns', disposition: 'pending', where: 'V4-127' },
+  { kind: 'route', name: '/api/perf/turns', disposition: 'read-only' },
   { kind: 'route', name: '/api/heads/{head}/capture', disposition: 'editable' },
 ];

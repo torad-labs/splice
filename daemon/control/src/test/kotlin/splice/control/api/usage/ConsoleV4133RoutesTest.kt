@@ -43,9 +43,6 @@ import org.junit.jupiter.api.TestInstance
 import splice.control.ControlServer
 import splice.control.HeadLogSource
 import splice.control.ManagedHead
-import splice.control.api.turns.PlaygroundFailure
-import splice.control.api.turns.PlaygroundProbe
-import splice.control.api.turns.PlaygroundResult
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
@@ -61,6 +58,9 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
+import splice.diagnostics.playground.PlaygroundFailure
+import splice.diagnostics.playground.PlaygroundProbe
+import splice.diagnostics.playground.PlaygroundResult
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.usage.alerts.AlertStore

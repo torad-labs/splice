@@ -1,0 +1,119 @@
+// NEW: the launch request bag and the exec recipe it produces. Split from
+// LaunchService.kt so the assembler is not billed for the DTOs
+// (concentration, 2026-08-19). LAYOUT-01: the launch feature's shared read model — the recipe, the
+// Claude head's wrap and the resume hook all read a head's spec.
+package splice.launch
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import splice.client.ClaudePolicy
+import splice.client.login.TokenCaptureSpec
+import splice.core.model.ModelCatalog
+import splice.core.util.JsonScalars
+import java.nio.file.Path
+
+/** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every
+ *  OTHER head's. They are ONE fact — which trees this head can adopt a named session out of — so they
+ *  travel as one value, which also keeps [LaunchSpec] inside the constructor-width ratchet
+ *  (checks/constructor-width.ts) instead of widening it one field at a time. */
+public data class HeadTrees(
+    val own: Path,
+    val siblings: List<Path> = emptyList(),
+)
+
+/** How a head's models map onto Claude Code's tier slots ("opus"/"sonnet"/"haiku"/"fable"). One
+ *  value, because both halves answer the same question and [LaunchSpec] sits at the constructor-width
+ *  ratchet. */
+public data class ModelTiers(
+    /** id -> tier slot, declared per row in the head's catalog. Empty = fall back to
+     *  [splice.launch.recipe.LaunchService]'s positional heuristic, which is what every catalog used before slots existed
+     *  and is the reason splice.toml carries an "ORDER IS LOAD-BEARING" banner. Non-empty = ONLY the
+     *  declared tiers are emitted — positional order is fully retired for that head, and an
+     *  undeclared tier stays un-set rather than pointing a second alias at an already-claimed model
+     *  (the 2-model duplication this exists to remove). */
+    val slots: Map<String, String> = emptyMap(),
+    /** The ids the positional heuristic may place, in catalog order (ModelCatalog.tierModelIds), or
+     *  null for every offered id. 2026-09-22: a model the endpoint lists but no row declares joins
+     *  the picker and never a slot — slot order is a decision splice.toml makes, and a vendor's list
+     *  order is not one (OpenRouter's would put an arbitrary model behind `opus`). */
+    val candidates: List<String>? = null,
+)
+
+/** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
+public data class LaunchSpec(
+    val trees: HeadTrees,
+    val pinnedModel: String,
+    val availableModelIds: List<String>,
+    val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
+    /** Which models may stand behind Claude Code's tier slots — see [ModelTiers]. */
+    val tiers: ModelTiers = ModelTiers(),
+    /** The head's discovery prefix ("claude-codex--"): a tier that repeats an earlier tier's model
+     *  is planted under this wrapped spelling so the picker's allowlist hides its row (see
+     *  LaunchService.buildEnv). Blank keeps the duplicate row. */
+    val discoveryPrefix: String = "",
+    /** The client window planted as CLAUDE_CODE_MAX_CONTEXT_TOKENS: ModelCatalog.clientLaunchWindow,
+     *  a constant. Per-row windows never ride the env — usage scaling applies them on the wire. */
+    val contextWindow: Long,
+    /** Claude Code's per-request timeout (API_TIMEOUT_MS) for THIS head: the daemon's whole-turn
+     *  cap plus a grace, so the client always outlives the proxy's own wall and receives its honest
+     *  verdict instead of aborting first. 2026-09-01: the daemon allowed a compaction 900s while
+     *  Claude Code's 600s default gave up — every compaction over ten minutes ended as client_abort
+     *  with the summary still streaming, and the ones that survived had 20-100s to spare. */
+    val apiTimeoutMs: Long,
+    val modelOptionsCache: JsonElement, // the /model picker option list
+    val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
+    val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
+    val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
+    /** False for api-key heads: the /login block reason points at a masked terminal prompt. */
+    val signInViaBrowser: Boolean = true,
+    /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
+    val tokenCapture: TokenCaptureSpec? = null,
+    /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
+    val advertiseKeySetup: Boolean = false,
+    /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
+     *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
+    val loginOutcomeFile: String = "",
+    /** The head's topology key ("codex"): `splice login <key>` and `<wrapper> login` name the same
+     *  sign-in, and the /login hook must find it under either spelling (review 2026-09-14). */
+    val headKey: String = "",
+    val policy: ClaudePolicy,
+    val port: Int,
+    /** Per-install local gateway credential; shared with the head's inbound verifier. */
+    val inferenceToken: String,
+    /**
+     * TRUE for a client-auth head: the client keeps its OWN Anthropic credentials and its own
+     * /login (campaign claude-head). Every other head serves a FOREIGN vendor, so the recipe must
+     * strip the client's Anthropic session and plant the gateway bearer instead — here that would
+     * replace exactly the credential the head forwards upstream, and disabling /login would nail
+     * shut the only door that can heal a 401.
+     */
+    val forwardClientAuth: Boolean = false,
+) {
+    /** V4-162: this boot-assembled spec with the windows splice.toml declares NOW, read per launch
+     *  (the DR-81 shape: the spec is frozen at boot, a live fact is not). The env plants the pinned
+     *  row's window, so a session launched after an edit starts on the edited window and rides raw;
+     *  each picker row in the model-options cache takes its row's window, so .claude.json never
+     *  disagrees with the env (Claude Code 2.1.276 drops that field, so there it is informational). */
+    public fun withWindows(catalog: ModelCatalog): LaunchSpec {
+        val windows = catalog.live().models.associate { it.id to it.contextWindow }
+        val options = (modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map { withWindow(it, windows) }) }
+        return copy(contextWindow = catalog.clientLaunchWindow, modelOptionsCache = options ?: modelOptionsCache)
+    }
+
+    private fun withWindow(row: JsonElement, windows: Map<String, Long>): JsonElement {
+        val option = row as? JsonObject ?: return row
+        val window = JsonScalars.str(option, "value")?.let(windows::get) ?: return row
+        return JsonObject(option + ("context_window" to JsonPrimitive(window)))
+    }
+}
+
+public data class LaunchRecipe(
+    val env: Map<String, String>,
+    val unset: List<String>,
+    val argv: List<String>,
+    // Non-null only when dangerouslySkipPermissions was engaged — surfaced to the operator via the
+    // control log and the /launch response so the danger is never silent.
+    val warning: String? = null,
+)

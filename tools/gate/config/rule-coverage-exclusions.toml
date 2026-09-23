@@ -380,17 +380,25 @@ reason = "System.getenv is allowed only inside core/config, which is the layered
 
 [[exclusion]]
 rule = "kt-no-vanilla-config-dir"
-files = [
-  "daemon/control/src/main/kotlin/**/*.kt",
-  "app/src/main/kotlin/**/*.kt",
-]
-date = "2026-09-20"
+files = ["app/src/main/kotlin/**/*.kt"]
+date = "2026-09-23"
 reason = """
-Inside the two gateway modules it covers, the wall binds only the launch seam — control/Launch*.kt
-and app head/LaunchSpecFactory.kt. The rest of those two modules never spells a config dir. :client
-needs no row: the wall binds its whole main source set, minus its one dated ignore,
-client/**/ClaudeConfigKeys.kt, the single source of the vanilla dir's NAME. Losing a whole module
-still fails: a files-row can never excuse a wholly lost source root.
+Inside :app the wall binds only the launch seam's CLAUDE_CONFIG_DIR producer, head/LaunchSpecFactory.kt;
+the rest of :app never spells a config dir. The launch seam that was control/Launch*.kt is
+features/launch now (LAYOUT-01), bound whole. :integrations-claude-code needs no row: the wall binds
+its whole main source set, minus its one dated ignore, ClaudeConfigKeys.kt, the single source of the
+vanilla dir's NAME. Losing a whole module still fails: a files-row can never excuse a wholly lost root.
+"""
+
+[[exclusion]]
+rule = "kt-no-vanilla-config-dir"
+modules = ["daemon-control"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The wall bound control only through its launch seam, control/Launch*.kt. LAYOUT-01 moved that seam,
+with the Claude head's wrap and the resume hook, into features/launch, and the wall moved with it and
+binds that module whole. Nothing left in daemon/control assembles or points a head's config dir.
 """
 
 [[exclusion]]
@@ -577,7 +585,6 @@ DID select one of those sources was widened to features/sessions instead of bein
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-outcome-tag-single-source",
   "kt-no-vanilla-config-dir", "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
   "kt-wire-catch-ioexception-alone",
 ]
@@ -585,11 +592,57 @@ modules = ["features-models"]
 sourceSets = ["main"]
 date = "2026-09-22"
 reason = """
-The model-listing slice came from app/cli/models and core/model/UpstreamRoster. None of these seven
-scopes covered either source: they grade control-plane routes, route logging, outcome tags,
-client-home launching, quota selection, turn cleanup, and streaming wire catches. The rules that
-DID select those sources were widened to features/models, except the CLI bridge rule, whose
-stricter companion kt-no-runblocking-in-daemon now bans runBlocking there outright.
+The model-listing slice came from app/cli/models and core/model/UpstreamRoster. None of these four
+scopes covered either source: they grade client-home launching, quota selection, turn cleanup, and
+streaming wire catches. The rules that DID select those sources were widened to features/models,
+except the CLI bridge rule, whose stricter companion kt-no-runblocking-in-daemon now bans runBlocking
+there outright.
+"""
+
+[[exclusion]]
+rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
+modules = ["features-models"]
+sourceSets = ["main"]
+files = ["features/models/src/main/**/*.kt"]
+date = "2026-09-23"
+reason = """
+LAYOUT-01 moved /api/models (roster/ModelsRoute) from daemon/control. These three control-plane walls
+selected it there, so each now selects its exact destination. The model-listing and discovery slices
+keep the 2026-09-22 disposition: they declare no control route, log no caller input, and emit no
+outcome tag. The proof credits file rows only from each rule's lost-file set, so this row cannot
+suppress a finding in the selected ModelsRoute.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-quota-tracker-single-resolution",
+  "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-launch"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The launch recipe, the Claude head's wrap and the resume hook came from daemon/control. None of these
+five scopes selected them there: they grade exceptions as outcomes at refusal-type declaration sites,
+the CLI's runBlocking bridge, quota selection, turn cleanup, and streaming wire catches. Every rule
+that DID select them was widened to features/launch instead, and kt-no-vanilla-config-dir, which bound
+only Launch*.kt, now binds the whole module.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-lifecycle", "features-diagnostics", "features-configuration"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The draining restart, the upgrade surface, the doctor route, the playground, and the knob and topology
+routes came from daemon/control. None of these six scopes selected them there: they grade exceptions as
+outcomes in the turn path, the CLI's runBlocking bridge, the head launch seam (features/launch),
+quota selection, turn cleanup, and streaming wire catches. Every rule that DID select them was widened
+to all three roots instead of being excluded.
 """
 
 [[exclusion]]

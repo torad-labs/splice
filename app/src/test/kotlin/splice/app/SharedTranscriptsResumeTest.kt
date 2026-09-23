@@ -38,11 +38,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
-import splice.control.HeadTrees
-import splice.control.LaunchService
-import splice.control.LaunchSpec
 import splice.core.compaction.SessionProject
 import splice.core.util.JsonScalars
+import splice.launch.HeadTrees
+import splice.launch.LaunchSpec
+import splice.launch.recipe.LaunchService
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path

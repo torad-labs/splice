@@ -19,7 +19,7 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
 import kotlinx.serialization.json.Json
-import splice.control.api.diagnostics.SseWrite
+import splice.http.SseWrite
 
 /** A comment frame on this cadence keeps the connection honest while nothing is happening: a
  *  console that hears nothing cannot tell a quiet daemon from a dead socket. */

@@ -19,3 +19,7 @@ NEW	:features-models	NEW	features/models
 :upstream	:integrations-upstream	upstream	integrations/upstream
 NEW	:integrations-topology	NEW	integrations/topology
 NEW	:features-accounts	NEW	features/accounts
+NEW	:features-lifecycle	NEW	features/lifecycle
+NEW	:features-diagnostics	NEW	features/diagnostics
+NEW	:features-launch	NEW	features/launch
+NEW	:features-configuration	NEW	features/configuration

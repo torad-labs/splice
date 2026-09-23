@@ -7,8 +7,8 @@
 // unmodified dashboard runs against this daemon (the P4-WEBUI contract).
 //
 // HD-24: split into splice.control.api (the HTTP surface — payload projections and by-name
-// routes) + splice.control (this file: ctor/routing/lifecycle, plus ManagedHead/LaunchService/
-// LaunchResponse/StatuslineRenderer/ControlPorts). Same-package siblings were arithmetically
+// routes) + splice.control (this file: ctor/routing/lifecycle, plus ManagedHead/ControlPorts and the
+// adapters that project ManagedHead into each feature's contract). Same-package siblings were arithmetically
 // insufficient (a floor well above what this file's remaining budget allows), so the split is one
 // level deeper. One direction of real dependency: api -> domain.
 package splice.control
@@ -39,35 +39,38 @@ import splice.accounts.signin.LoginRoutes
 import splice.accounts.status.AuthStatusRoutes
 import splice.client.mcp.McpAccessKey
 import splice.client.transcript.TranscriptReader
+import splice.configuration.knobs.ConfigRoutes
+import splice.configuration.topology.TopologyRoutes
+import splice.configuration.topology.TopologyStale
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.EventsRoute
 import splice.control.api.HeadResolver
-import splice.control.api.diagnostics.DoctorRoute
-import splice.control.api.diagnostics.McpRoutes
-import splice.control.api.diagnostics.ModelsRoute
-import splice.control.api.fleet.ClaudeHeadRoutes
-import splice.control.api.fleet.ConfigRoutes
-import splice.control.api.fleet.DaemonRoutes
 import splice.control.api.fleet.HeadRoutes
-import splice.control.api.fleet.LaunchRoutes
-import splice.control.api.fleet.TopologyRoutes
-import splice.control.api.fleet.UpgradeRoute
-import splice.control.api.turns.PlaygroundRoute
-import splice.control.api.turns.PlaygroundSource
-import splice.control.api.turns.ResumeHookRoute
 import splice.control.mcp.McpHost
+import splice.control.mcp.McpRoutes
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.topology.TopologyWriterSource
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.diagnostics.doctor.DoctorRoute
+import splice.diagnostics.playground.PlaygroundRoute
+import splice.diagnostics.playground.PlaygroundSource
 import splice.head.compact.CompactPayloads
 import splice.head.compaction.CompactionInstructionsRoute
 import splice.head.wire.CaptureRoutes
 import splice.heads.HeadStatusListing
 import splice.heads.ListHeads
 import splice.http.JsonBody
+import splice.launch.recipe.LaunchRoutes
+import splice.launch.recipe.LaunchService
+import splice.launch.resume.ResumeHookRoute
+import splice.launch.wrap.ClaudeHeadRoutes
+import splice.lifecycle.restart.DaemonRoutes
+import splice.lifecycle.restart.ShutdownDaemon
+import splice.lifecycle.upgrade.UpgradeRoute
+import splice.models.roster.ModelsRoute
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ProjectsRoutes
 import splice.sessions.http.RepoOf
@@ -184,10 +187,11 @@ public class ControlServer(
     private val captureRoutes = CaptureRoutes(turnsLookup, config, topologyWriter)
     private val budgetRoutes = BudgetRoutes(BudgetSource { ports.budgets }, config)
     private val alertRoutes = AlertRoutes(AlertSource { ports.alerts })
-    private val playgroundRoute = PlaygroundRoute(resolver, PlaygroundSource { ports.playground })
+    private val playgroundRoute =
+        PlaygroundRoute(PlaygroundHeadAdapter.lookup(resolver), PlaygroundSource { ports.playground })
 
     private val daemonRoutes = DaemonRoutes()
-    private val modelsRoute = ModelsRoute(heads)
+    private val modelsRoute = ModelsRoute(RosterHeadAdapter.heads(heads))
     private val usageHeads = UsageHeadAdapter.heads(heads)
     private val usageLookup = UsageHeadAdapter.lookup(resolver)
     private val perfRoutes = PerfRoutes(usageLookup)
@@ -195,7 +199,7 @@ public class ControlServer(
     private val upgradeRoute = UpgradeRoute()
     private val jsonBody = JsonBody()
     private val audit = ControlAudit(log)
-    private val configRoutes = ConfigRoutes(config, jsonBody, payloads)
+    private val configRoutes = ConfigRoutes(config, jsonBody)
     private val usagePayloads = UsagePayloads(usageHeads, config)
     private val perfPayloads = PerfPayloads(usageHeads)
     private val economicsPayloads = EconomicsPayloads(usageHeads)
@@ -206,16 +210,17 @@ public class ControlServer(
     private val loginRoutes = LoginRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val switchRoute = SwitchRoute(accountResolver)
     private val accountEditRoutes = AccountEditRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
-    private val claudeHeadRoutes = ClaudeHeadRoutes(heads)
+    private val launchHeads = LaunchHeadAdapter.heads(heads, resolver)
+    private val claudeHeadRoutes = ClaudeHeadRoutes(launchHeads)
     private val accountsRoute = AccountsRoute(accountHeads)
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val listHeads = ListHeads(HeadStatusListing(resolver::headStatuses))
-    private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
+    private val launchRoutes = LaunchRoutes(launchHeads, launchService, LaunchHeadAdapter.audit(audit), jsonBody)
     private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
 
     // V4-169: the SessionStart resume hook's receiving end — mgmt-guarded like the statusline, and
     // reachable only from loopback, because the daemon binds there.
-    private val resumeHookRoute = ResumeHookRoute(heads, log)
+    private val resumeHookRoute = ResumeHookRoute(launchHeads, log)
 
     private val mcpRoutes = mcpHost?.let(::McpRoutes)
 

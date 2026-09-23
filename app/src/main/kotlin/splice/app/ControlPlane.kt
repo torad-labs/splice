@@ -19,14 +19,12 @@ import splice.app.provider.ProviderAssembly
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpSharing
+import splice.configuration.topology.TopologyStale
 import splice.control.ControlServer
 import splice.control.DashboardPage
 import splice.control.FailedHeads
-import splice.control.LaunchService
 import splice.control.ManagedHead
-import splice.control.ShutdownDaemon
 import splice.control.TopologyDigest
-import splice.control.TopologyStale
 import splice.control.TurnPathStalled
 import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.McpHost
@@ -38,6 +36,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.launch.recipe.LaunchService
+import splice.lifecycle.restart.ShutdownDaemon
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.HeadOfPid
 import splice.sessions.registry.ProcessEnvironment

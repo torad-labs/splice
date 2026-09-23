@@ -24,8 +24,8 @@
 // ships a copy of one.
 package splice.app.console
 
-import splice.control.api.fleet.DaemonSupervised
 import splice.core.util.EnvReader
+import splice.lifecycle.restart.DaemonSupervised
 
 /** The environment variable systemd sets on every process it starts. */
 internal const val INVOCATION_ID = "INVOCATION_ID"

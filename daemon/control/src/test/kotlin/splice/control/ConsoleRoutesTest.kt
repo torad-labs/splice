@@ -46,8 +46,12 @@ import splice.core.head.HeadHealth
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.HeadModel
+import splice.diagnostics.doctor.DoctorReport
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.lifecycle.upgrade.UpgradeStatus
+import splice.models.roster.DeclaredHead
+import splice.models.roster.DeclaredHeads
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow

@@ -49,7 +49,7 @@ private const val CLAUDE_COMMAND = "claude"
 private const val SHIM_NAME = "splice-launch"
 private const val WRAP_STATE_FILE = "claude-head-wrap.json"
 
-/** The one fact [splice.control.LaunchService] must read on every launch (see file header). A file,
+/** The one fact [splice.launch.recipe.LaunchService] must read on every launch (see file header). A file,
  *  not in-memory state: the daemon's LaunchService is constructed once at boot while wrap/unwrap are
  *  per-request actions, possibly from a different process (`splice` CLI) — only a file both can
  *  reach keeps them from disagreeing. */

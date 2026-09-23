@@ -11,10 +11,10 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.configuration.topology.TopologyStale
 import splice.control.FailedHeads
 import splice.control.ManagedHead
 import splice.control.TopologyDigest
-import splice.control.TopologyStale
 import splice.control.TurnPathStalled
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION

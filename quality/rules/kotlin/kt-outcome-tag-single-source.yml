@@ -88,6 +88,11 @@ files:
   - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - features/heads/src/main/**/*.kt
   - features/accounts/src/main/**/*.kt
+  - features/diagnostics/src/main/**/*.kt
+  - features/lifecycle/src/main/**/*.kt
+  - features/models/src/main/kotlin/splice/models/roster/ModelsRoute.kt
+  - features/launch/src/main/**/*.kt
+  - features/configuration/src/main/**/*.kt
 rule:
   kind: string_literal
   any:

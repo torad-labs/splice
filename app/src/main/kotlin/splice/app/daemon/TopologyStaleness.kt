@@ -1,9 +1,9 @@
 // PORT-OF: TopologyLoader.staleProbe (app/daemon, before the loader moved to integrations/topology) — the
 // control plane's staleness question answered from the loader's digest. It stays with the daemon that
-// wires it, because TopologyStale is the control plane's role and the loader no longer sees that plane.
+// wires it, because TopologyStale is the configuration feature's port and the loader never sees features.
 package splice.app.daemon
 
-import splice.control.TopologyStale
+import splice.configuration.topology.TopologyStale
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 

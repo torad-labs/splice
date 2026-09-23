@@ -6,7 +6,7 @@
   "offenders": {
     "app/src/main/kotlin/splice/app/ControlPlane.kt ControlPlane": {
       "params": 11,
-      "subsystems": 7
+      "subsystems": 8
     },
     "app/src/main/kotlin/splice/app/cli/setup/SetupCommand.kt SetupCommand": {
       "params": 9,
@@ -26,19 +26,19 @@
     },
     "daemon/control/src/main/kotlin/splice/control/ControlServer.kt ControlServer": {
       "params": 17,
-      "subsystems": 5
+      "subsystems": 8
     },
     "features/accounts/src/main/kotlin/splice/accounts/pool/HeadAccountPool.kt HeadAccountView": {
       "params": 14,
       "subsystems": 0
     },
-    "daemon/control/src/main/kotlin/splice/control/LaunchTypes.kt LaunchSpec": {
+    "features/launch/src/main/kotlin/splice/launch/LaunchTypes.kt LaunchSpec": {
       "params": 21,
       "subsystems": 2
     },
     "daemon/control/src/main/kotlin/splice/control/ManagedHead.kt ManagedHead": {
       "params": 17,
-      "subsystems": 8
+      "subsystems": 9
     },
     "features/turns/src/main/kotlin/splice/head/HeadDeps.kt HeadSeams": {
       "params": 8,

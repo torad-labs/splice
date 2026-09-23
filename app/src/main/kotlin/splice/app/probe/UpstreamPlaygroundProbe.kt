@@ -9,9 +9,9 @@
 // the whole turn pipeline, not only the console). This bypasses :daemon-head's TurnDriver and every
 // dialect module and builds the smallest legal request per dialect directly: no tools, no system
 // prompt, no streaming, no retry loop, no perf/trace/economics write. The credential and topology
-// are read exactly as the daemon's own turn path resolves them (ManagedHead.auth, a fresh parse of
-// the booted config file) so a playground failure means what it says about that head's real config,
-// never an artifact of a second, drifted resolution path.
+// are read exactly as the daemon's own turn path resolves them (PlaygroundHead.auth, which is the
+// head's own ManagedHead.auth, and a fresh parse of the booted config file) so a playground failure
+// means what it says about that head's real config, never an artifact of a second, drifted resolution path.
 //
 // A FRESH TOPOLOGY READ, NOT THE BOOTED OBJECT: playground runs are rare and interactive, so a
 // per-call re-parse is simpler than threading a cached Topology through ControlPlane for one route
@@ -34,17 +34,17 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import splice.control.ManagedHead
-import splice.control.api.turns.PlaygroundFailure
-import splice.control.api.turns.PlaygroundOutcome
-import splice.control.api.turns.PlaygroundProbe
-import splice.control.api.turns.PlaygroundResult
 import splice.core.auth.Credentials
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.diagnostics.playground.PlaygroundFailure
+import splice.diagnostics.playground.PlaygroundHead
+import splice.diagnostics.playground.PlaygroundOutcome
+import splice.diagnostics.playground.PlaygroundProbe
+import splice.diagnostics.playground.PlaygroundResult
 import splice.topology.TopologyLoader
 import splice.upstream.transport.HeaderRedaction
 import java.nio.file.Files
@@ -78,16 +78,16 @@ internal class UpstreamPlaygroundProbe(
 
     // Each step below is its own function (ReturnCount: max 3 per function) rather than one long
     // chain of guards — the same split CaptureRoutes.write/PlaygroundRoute.run use for the same wall.
-    override suspend fun run(head: ManagedHead, prompt: String): PlaygroundOutcome {
+    override suspend fun run(head: PlaygroundHead, prompt: String): PlaygroundOutcome {
         val path = configPath
             ?: return PlaygroundFailure("no topology file; this daemon has no configured provider")
         val topology = readTopology(path).getOrElse { return PlaygroundFailure(SafeFailureText.render(it)) }
         return resolveProvider(topology, head, prompt)
     }
 
-    private suspend fun resolveProvider(topology: Topology, head: ManagedHead, prompt: String): PlaygroundOutcome {
-        val headConfig = topology.heads[head.head.key]
-            ?: return PlaygroundFailure("head '${head.head.key}' is not in the current topology")
+    private suspend fun resolveProvider(topology: Topology, head: PlaygroundHead, prompt: String): PlaygroundOutcome {
+        val headConfig = topology.heads[head.key]
+            ?: return PlaygroundFailure("head '${head.key}' is not in the current topology")
         val provider = topology.providers[headConfig.provider]
             ?: return PlaygroundFailure("provider '${headConfig.provider}' is not declared")
         return resolveCredentials(provider, headConfig.pinnedModel, head, prompt)
@@ -96,15 +96,15 @@ internal class UpstreamPlaygroundProbe(
     private suspend fun resolveCredentials(
         provider: ProviderConfig,
         model: String,
-        head: ManagedHead,
+        head: PlaygroundHead,
         prompt: String,
     ): PlaygroundOutcome {
         val creds = Cancellables.runCatchingCancellable { head.auth.credentials() }
             .getOrElse { return PlaygroundFailure("reading credentials failed: ${SafeFailureText.render(it)}") }
         return when {
-            creds == null -> PlaygroundFailure("head '${head.head.key}' has no credential configured")
+            creds == null -> PlaygroundFailure("head '${head.key}' has no credential configured")
             creds is Credentials.ClientForwarded -> {
-                val why = "head '${head.head.key}' forwards the caller's own auth; playground has none to send"
+                val why = "head '${head.key}' forwards the caller's own auth; playground has none to send"
                 PlaygroundFailure(why)
             }
             else -> call(provider, model, creds, prompt)

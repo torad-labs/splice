@@ -244,10 +244,20 @@ describe('models page', () => {
     expect(headWindows({ heads: {}, providers: {} }, head)).toBeNull();
   });
 
-  test('the opened model is found anywhere in the catalog, and a pending payload finds nothing', () => {
-    expect(findModel(fixtureCatalog, 'kimi-k2.5')?.head.head).toBe('claude-kimi');
-    expect(findModel(fixtureCatalog, 'nope')).toBeNull();
-    expect(findModel({ pending: 'V4-127' }, 'kimi-k2.5')).toBeNull();
+  test('the opened model is found under the head it was opened on, and a pending payload finds nothing', () => {
+    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
+    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'nope' })).toBeNull();
+    expect(findModel(fixtureCatalog, { head: 'no-such-head', id: 'kimi-k2.5' })).toBeNull();
+    expect(findModel({ pending: 'V4-127' }, { head: 'claude-kimi', id: 'kimi-k2.5' })).toBeNull();
+  });
+
+  test('two heads serving one model id each open their own, so the detail reads the right head windows', () => {
+    const kimi = fixtureCatalog.heads.find((head) => head.head === 'claude-kimi');
+    if (kimi === undefined) throw new Error('the fixture catalog lost claude-kimi');
+    const twin = { ...kimi, head: 'claude-kimi-twin' };
+    const catalog = { heads: [kimi, twin] };
+    expect(findModel(catalog, { head: 'claude-kimi-twin', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi-twin');
+    expect(findModel(catalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
   });
 });
 

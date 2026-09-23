@@ -13,6 +13,7 @@ import kotlinx.serialization.json.put
 import splice.app.auth.SignInPlanner
 import splice.core.config.ConfigService
 import splice.core.config.SpliceConfig
+import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -30,6 +31,8 @@ import kotlin.time.Duration.Companion.milliseconds
 internal class HeadBuildInputs(
     private val config: ConfigService,
     private val signInPlanner: SignInPlanner,
+    /** 2026-09-22: what each head's endpoint serves beyond its declared rows (ModelRosters). */
+    private val discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
 ) {
 
     internal fun resolveHeadConfig(
@@ -114,9 +117,18 @@ internal class HeadBuildInputs(
     ): ModelCatalog {
         val headCfg = config.getConfig(key)
         val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
-        val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
-        return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride)
+        val resolvedProvider = effectiveProvider(key, providerCfg, legacyKnobsGovern)
+        return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride, discovered.forHead(key))
     }
+
+    /** The provider head [key]'s turns dial — the legacy knob remap applied exactly as
+     *  [providerContext] applies it — so discovery asks the endpoint the head will actually use. */
+    internal fun effectiveProvider(
+        key: String,
+        providerCfg: ProviderConfig,
+        legacyKnobsGovern: Boolean = true,
+    ): ProviderConfig =
+        if (legacyKnobsGovern) resolveProviderConfig(providerCfg, config.getConfig(key)) else providerCfg
 
     /** V4-116: is the MID-OUTPUT STALL RE-ANCHOR tier armed for THIS head?
      *

@@ -195,7 +195,7 @@ class LaunchSpecClientAuthTest {
 
         assertEquals(listOf(shown.id), spec.availableModelIds)
         assertEquals(mapOf(shown.id to shown.label), spec.modelLabels)
-        assertEquals(mapOf(shown.id to "opus"), spec.modelSlots)
+        assertEquals(mapOf(shown.id to "opus"), spec.tiers.slots)
         assertEquals(
             listOf(shown.id),
             spec.modelOptionsCache.jsonArray.map { it.jsonObject.getValue("value").jsonPrimitive.content },

@@ -62,6 +62,41 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
         }
     }
 
+    /** A name in [binDir] that resolves to OUR launch shim but that no head (nor `splice`) claims.
+     *  `install --all` links the topology's commands and never prunes one whose name left it — a
+     *  renamed or removed head's command survives, launching a head the daemon cannot route. Only a
+     *  symlink resolving to [shim] is judged: a user's file of the same name is never ours to name.
+     *  A bin dir that cannot be listed is its own row: the scan did not run, which is not "none". */
+    internal fun orphanWrappers(binDir: Path, shim: Path, commands: Set<String>): List<DoctorCheck> {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- a shim that does not resolve is the shim row's own diagnosis (missing, dangling or unreadable, each with its remedy), and no link can resolve to it
+        val target = Cancellables.runCatchingCancellable { shim.toRealPath() }.getOrNull() ?: return emptyList()
+        val entries = Cancellables.runCatchingCancellable { Files.list(binDir).use { it.toList() } }
+            .getOrElse { failure ->
+                return listOf(
+                    DoctorCheck(
+                        CHECK_WRAPPER,
+                        CheckStatus.WARN,
+                        "$binDir could not be listed (${SafeFailureText.render(failure)}) — " +
+                            "commands left behind by a renamed or removed head were not checked",
+                        "fix access to $binDir, then re-run doctor",
+                    ),
+                )
+            }
+        return entries
+            .filter { Files.isSymbolicLink(it) && it.fileName.toString() !in commands }
+            // ast-grep-ignore: kt-no-silent-result-collapse -- a link that does not resolve cannot resolve to our shim, the one fact this filter asks
+            .filter { link -> Cancellables.runCatchingCancellable { link.toRealPath() }.getOrNull() == target }
+            .sortedBy { it.fileName.toString() }
+            .map { link ->
+                DoctorCheck(
+                    CHECK_WRAPPER,
+                    CheckStatus.WARN,
+                    "'${link.fileName}' → $shim names no head in the topology — a renamed or removed head's command",
+                    "rm $link   (or give a head that command again in the topology)",
+                )
+            }
+    }
+
     internal fun binaryOnPath(name: String, envReader: EnvReader): Path? =
         envReader("PATH").orEmpty().split(':').asSequence()
             .filter { it.isNotEmpty() }

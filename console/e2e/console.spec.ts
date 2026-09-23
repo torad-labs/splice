@@ -9,7 +9,7 @@
 // a read the daemon refused (turns, 400 on every poll), and a value the console never received
 // printed as `undefined` (doctor's rollback). Soft assertions, so one run names every fault class on
 // every page instead of stopping at the first.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,6 +106,14 @@ test('turns lists the turn the stack drove through a real head', async ({ page }
   await expect(page.locator('main')).toContainText(STACK.oauthHead);
 });
 
+/** An account strip's `next` cell: the rule the daemon's next target was chosen by, empty on every
+ *  strip the daemon did not flag (widgets/account-strip). */
+function nextCell(strip: Locator): Locator {
+  return strip
+    .locator('.myx-sfield', { has: strip.page().locator('.myx-sfield-label', { hasText: /^next$/ }) })
+    .locator('.myx-sfield-text');
+}
+
 test('accounts shows the OAuth account with the windows its provider reported', async ({ page }) => {
   await open(page, 'accounts');
   const main = page.locator('main');
@@ -113,6 +121,14 @@ test('accounts shows the OAuth account with the windows its provider reported', 
   await expect(main).toContainText(`${STACK.fiveHourUsedPercent}%`);
   await expect(main).toContainText(`${STACK.sevenDayUsedPercent}%`);
   await expect(main).toContainText(STACK.plan);
+
+  // The daemon's own next target in the pooled head's pool: next_target on the primary, marked with
+  // the rule that chose it, and on no other strip of the pool or of the page (M4-08).
+  await expect(nextCell(main.getByRole('button', { name: 'chatgpt-oauth primary', exact: true }))).toHaveText('primary');
+  await expect(nextCell(main.getByRole('button', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true }))).toHaveText('');
+  await expect(nextCell(main.getByRole('button', { name: 'chatgpt-oauth single login', exact: true }))).toHaveText('');
+  // The order the daemon walks, the pin first.
+  await expect(main).toContainText('pinned then primary then sticky then lowest 7-day used');
 });
 
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {

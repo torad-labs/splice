@@ -81,11 +81,10 @@ const ID_SOURCES: Record<string, IdSource> = {
 };
 /** Query suffixes the console builds at runtime, filled as the console fills them by default:
  *  fetchPerfTurns asks ONE head per request (the route refuses an absent head, PerfRoutes.turns)
- *  and always sets n, and fetchCapture sends no query unless the operator scrubs. A `{name}` token
- *  is an ID_SOURCES key, filled with a live value exactly as a path placeholder is. */
+ *  and always sets n. A `{name}` token is an ID_SOURCES key, filled with a live value exactly as a
+ *  path placeholder is. */
 const QUERY_FILL: Record<string, string> = {
   "entities/perf|query.toString()": "head={head}&n=20",
-  "entities/perf|query": "",
   // fetchTeamPanels reads today unless a day is asked for.
   "entities/team|query": "",
 };

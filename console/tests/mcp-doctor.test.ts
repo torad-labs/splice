@@ -379,13 +379,13 @@ describe('the coverage manifests', () => {
     // disposed by nothing at all, which M1-37's wire-check found by comparing the fetch sites
     // against the manifests instead of the manifests against each other. This list is the page's
     // route INVENTORY and stays exact on purpose — a new fetch site with no disposition should
-    // fail here by name.
+    // fail here by name. Seven again since M4-04: /api/heads/{head}/capture moved to the turns
+    // page, whose request drawer carries the switch that reads and writes it.
     expect([...names].sort()).toEqual([
       '/api/alerts',
       '/api/alerts/test',
       '/api/budgets',
       '/api/doctor',
-      '/api/heads/{head}/capture',
       '/api/mcp',
       '/api/playground',
       '/api/upgrade',

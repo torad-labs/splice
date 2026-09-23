@@ -17,14 +17,14 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.app.cli.AdminSupport
-import splice.app.cli.BOLD
-import splice.app.cli.DIM
-import splice.app.cli.RESET
 import splice.app.cli.add.AddHttp
 import splice.app.cli.add.AddHttpReply
 import splice.app.cli.add.JdkAddHttp
 import splice.app.cli.doctor.MgmtKeyRead
 import splice.app.daemon.TopologyLoader
+import splice.core.terminal.BOLD
+import splice.core.terminal.DIM
+import splice.core.terminal.RESET
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars

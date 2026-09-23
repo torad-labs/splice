@@ -15,7 +15,7 @@
 # per-site comment is what a single resolver replaces.
 #
 # THE REMEDY, and the ONE file this wall points at. Fix row V4-104 creates
-#   daemon/head/src/main/kotlin/splice/head/admission/TurnQuota.kt  (`TurnQuota.forSession(...)`)
+#   features/turns/src/main/kotlin/splice/head/admission/TurnQuota.kt  (`TurnQuota.forSession(...)`)
 # as the sole resolver: it owns the selected-then-primary precedence, the `accountQuotas` lookup,
 # and the null semantics, and every caller asks it instead of re-spelling the chain. That path is
 # this rule's only `ignores:` entry. It does NOT exist yet — the exemption is inert today and goes
@@ -48,7 +48,7 @@
 #     still be declarable in the one place that declares it.
 #
 # SCOPE IS THE HEAD PLANE, and that is a decision with a reason. `files:` is
-# `daemon/head/src/main/**/*.kt`: all seven sites live in `splice.head.*`, and the
+# `features/turns/src/main/**/*.kt`: all seven sites live in `splice.head.*`, and the
 # resolver the fix row creates lives there too. Two control-plane sites read a `.quota` through an
 # elvis — `control/api/UsagePayloads.kt:41` (`pool?.selectedQuota() ?: usage.quota`) and
 # `control/StatuslineRenderer.kt:109` (`selectedQuota ?: snapshot?.quota`) — but those resolve a
@@ -70,10 +70,10 @@ severity: error
 message: "One resolver answers which QuotaTracker a turn reads: call deps.turnQuota.forSession(sessionId, account) instead of re-deriving the selected-then-primary elvis chain here. The resolver is a constructed collaborator held on HeadDeps (HeadDeps.kt:57), not a file-local function — classes that do not hold deps take it as a constructor parameter, the way CollectTurn.kt:39 does."
 note: "`?:` is invisible precedence — nothing types the left operand as the SELECTED account's tracker, so a site that reaches for deps.quota first answers the client with the wrong account's anthropic-ratelimit-* headers and still compiles. Seven sites spell this decision three different ways today, and HeadAdmission.kt:213's V4-84 comment records the same bug being fixed by hand at one of them. Passing an already-resolved tracker as an argument is wiring, not resolution, and stays silent."
 files:
-  - daemon/head/src/main/**/*.kt
+  - features/turns/src/main/**/*.kt
 ignores:
   # The sole resolver, created by fix row V4-104. Inert until the file exists; live with no edit here.
-  - daemon/head/src/main/kotlin/splice/head/admission/TurnQuota.kt
+  - features/turns/src/main/kotlin/splice/head/admission/TurnQuota.kt
 rule:
   any:
     # THE DECISION. `elvis_expression`'s named children are exactly its two operands (the `?:` token

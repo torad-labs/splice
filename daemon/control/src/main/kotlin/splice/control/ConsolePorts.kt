@@ -6,12 +6,12 @@ package splice.control
 import splice.control.api.EventBus
 import splice.control.api.fleet.DaemonSupervised
 import splice.control.api.turns.PlaygroundProbe
-import splice.core.activity.ActivityStores
-import splice.core.alert.AlertStore
-import splice.core.budget.BudgetStore
 import splice.core.compaction.CompactionInstructions
-import splice.core.teams.TeamStore
 import splice.core.topology.TopologyWriter
+import splice.sessions.activity.ActivityStores
+import splice.sessions.teams.TeamStore
+import splice.usage.alerts.AlertStore
+import splice.usage.budgets.BudgetStore
 
 /** The console's injected ports: everything the daemon wires into [ControlServer] AFTER it is
  *  constructed, held in one place because they are one idea repeated nine times.

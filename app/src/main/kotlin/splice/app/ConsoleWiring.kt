@@ -44,28 +44,28 @@ import splice.control.UpgradeStatus
 import splice.control.api.ConsoleEvent
 import splice.control.api.EventBus
 import splice.control.api.turns.PlaygroundProbe
-import splice.core.activity.ACTIVITY_DIRECTORY
-import splice.core.activity.ALL_HEADS
-import splice.core.activity.ActivityStores
-import splice.core.activity.MessageEdge
-import splice.core.alert.ALERTS_FILE
-import splice.core.alert.AlertStore
-import splice.core.budget.BUDGETS_FILE
-import splice.core.budget.BudgetStore
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
-import splice.core.prompt.SessionAddress
-import splice.core.prompt.SlotInstructions
-import splice.core.sessions.HeadOfPid
-import splice.core.sessions.SessionRegistry
-import splice.core.teams.TEAMS_FILE
-import splice.core.teams.TeamStore
+import splice.core.storage.ACTIVITY_DIRECTORY
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.util.WallClock
 import splice.head.HeadEvents
 import splice.head.HeadLifecycle
+import splice.sessions.activity.ALL_HEADS
+import splice.sessions.activity.ActivityStores
+import splice.sessions.activity.MessageEdge
+import splice.sessions.prompt.SessionAddress
+import splice.sessions.prompt.SlotInstructions
+import splice.sessions.registry.HeadOfPid
+import splice.sessions.registry.SessionRegistry
+import splice.sessions.teams.TEAMS_FILE
+import splice.sessions.teams.TeamStore
+import splice.usage.alerts.ALERTS_FILE
+import splice.usage.alerts.AlertStore
+import splice.usage.budgets.BUDGETS_FILE
+import splice.usage.budgets.BudgetStore
 
 internal object ConsoleWiring {
     internal fun wire(srv: ControlServer, topology: BootedTopology) {

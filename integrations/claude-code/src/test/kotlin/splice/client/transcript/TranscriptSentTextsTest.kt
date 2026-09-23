@@ -6,6 +6,7 @@ package splice.client.transcript
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -32,23 +33,24 @@ class TranscriptSentTextsTest {
         val file = home.resolve(".claude/projects/-w/$ID.jsonl")
         Files.createDirectories(file.parent)
         Files.writeString(file, LINES.joinToString("\n", postfix = "\n"))
-        val reader = TranscriptReader { listOf(home.resolve(".claude")) }
+        val reader = TranscriptReader()
         assertEquals(
             SentTexts(
                 path = file.toString(),
                 texts = mapOf("toolu_a" to "done, token=[redacted]", "toolu_b" to """{"type":"shutdown_request"}"""),
                 missing = setOf("toolu_c", "toolu_z"),
             ),
-            reader.sentTexts(ID, null, setOf("toolu_a", "toolu_b", "toolu_c", "toolu_z")),
+            reader.sentTexts(ID, listOf(home.resolve(".claude")), setOf("toolu_a", "toolu_b", "toolu_c", "toolu_z")),
         )
     }
 
     @Test
     fun `a session no tree holds, or a malformed id, reports every id missing`() {
-        val reader = TranscriptReader { listOf(home.resolve(".claude"), home.resolve(".claude-x")) }
+        val reader = TranscriptReader()
+        val roots = listOf(home.resolve(".claude"), home.resolve(".claude-x"))
         val searched = listOf(".claude", ".claude-x").map { home.resolve(it).resolve("projects").toString() }
         val none = SentTexts(null, emptyMap(), setOf("toolu_a"), searched)
-        assertEquals(none, reader.sentTexts(ID, null, setOf("toolu_a")))
-        assertEquals(none, reader.sentTexts("../etc", null, setOf("toolu_a")))
+        assertEquals(none, reader.sentTexts(ID, roots, setOf("toolu_a")))
+        assertEquals(none, reader.sentTexts("../etc", roots, setOf("toolu_a")))
     }
 }

@@ -17,8 +17,8 @@ import splice.control.TurnPathStalled
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.teams.Team
-import splice.core.teams.TeamSlot
+import splice.sessions.teams.Team
+import splice.sessions.teams.TeamSlot
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path

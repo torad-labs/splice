@@ -202,11 +202,11 @@ dated = "2026-09-17"
 names = [
     "LogSink",
     "MalformedLine",
+    "ModelReportOutput",
     "RawSseWrite",
     "RetryNotice",
-    "StartHeadAudit",
 ]
-reason = """Four destinations for one string, and the split that must not compile is diagnostic plane versus client wire. LogSink writes a DIAGNOSTIC to the daemon log and stderr, head-scoped so every line carries its `[<headKey>]` prefix. MalformedLine reports one unparseable upstream SSE line, and its contract is that it is "a REPORT and not a throw" — a malformed frame must never crash the stream. RawSseWrite puts BYTES ON THE CLIENT SOCKET (the bottom rung of the write-port ladder). RetryNotice is client- and operator-facing text about a retry already decided — "a NOTICE, not a decision", and the only account an operator gets of a 429 cooldown or a stream re-issue. A LogSink wired where RawSseWrite was meant sends the client nothing and the turn hangs; the inverse writes daemon diagnostics into a transcript. StartHeadAudit (2026-09-21, the features/heads extraction) is a THIRD plane again: it records that an operator successfully started a head, keyed by the name the caller supplied, and it is neither diagnostic nor client-facing — it is the control plane's account of an action someone took. A LogSink wired in its place loses the audit trail while every log line still looks healthy, which is the failure that is invisible until someone asks who started this head; RawSseWrite in its place puts a head name on a client socket."""
+reason = """Five destinations for one string, and the split that must not compile is diagnostic plane versus client wire. ModelReportOutput (2026-09-22) writes model-listing lines to the operator's terminal, not daemon diagnostics or client protocol frames. LogSink writes a DIAGNOSTIC to the daemon log and stderr, head-scoped so every line carries its `[<headKey>]` prefix. MalformedLine reports one unparseable upstream SSE line, and its contract is that it is "a REPORT and not a throw" — a malformed frame must never crash the stream. RawSseWrite puts BYTES ON THE CLIENT SOCKET (the bottom rung of the write-port ladder). RetryNotice is client- and operator-facing text about a retry already decided — "a NOTICE, not a decision", and the only account an operator gets of a 429 cooldown or a stream re-issue. A LogSink wired where RawSseWrite was meant sends the client nothing and the turn hangs; the inverse writes daemon diagnostics into a transcript."""
 
 # ── 4 names, suspend () -> T ──────────────────────────────────────────────────────────────────────
 [[groups]]

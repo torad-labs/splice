@@ -14,6 +14,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.sessions.transcript.TranscriptLookup
+import splice.sessions.transcript.TranscriptMessage
+import splice.sessions.transcript.TranscriptPage
+import splice.sessions.transcript.TranscriptRole
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -58,7 +62,7 @@ class TranscriptReaderTest {
     @Test
     fun `records fold into the conversation and everything else is counted by kind`() {
         val file = transcript(home.resolve(".claude"))
-        val page = found(TranscriptReader { listOf(home.resolve(".claude")) }.page(ID, null, null, 100))
+        val page = found(TranscriptReader().page(ID, listOf(home.resolve(".claude")), null, 100))
         assertEquals(file.toString(), page.path)
         assertEquals(
             listOf(
@@ -89,13 +93,14 @@ class TranscriptReaderTest {
     @Test
     fun `pages continue where the last one stopped and never split a message`() {
         transcript(home.resolve(".claude"))
-        val reader = TranscriptReader { listOf(home.resolve(".claude")) }
-        val first = found(reader.page(ID, null, null, 2))
+        val reader = TranscriptReader()
+        val roots = listOf(home.resolve(".claude"))
+        val first = found(reader.page(ID, roots, null, 2))
         // msg_1's three lines are one message group: its text AND its tool call land on this page.
         assertEquals(listOf(0L, 1L, 2L), first.messages.map { it.index })
-        val second = found(reader.page(ID, null, first.next, 2))
+        val second = found(reader.page(ID, roots, first.next, 2))
         assertEquals(listOf(3L, 4L), second.messages.map { it.index })
-        val rest = generateSequence(second) { page -> page.next?.let { found(reader.page(ID, null, it, 2)) } }.toList()
+        val rest = generateSequence(second) { page -> page.next?.let { found(reader.page(ID, roots, it, 2)) } }.toList()
         assertEquals((0L..6L).toList(), (first.messages + rest.flatMap { it.messages }).map { it.index })
         assertEquals(4, rest.sumOf { it.skipped.values.sum() } + first.skipped.values.sum(), "each skip counted once")
     }
@@ -105,14 +110,17 @@ class TranscriptReaderTest {
         val own = home.resolve(".claude-own")
         val vanilla = home.resolve(".claude")
         val other = home.resolve(".claude-other")
-        val trees = TranscriptTrees { head -> listOfNotNull(own.takeIf { head == "own" }, vanilla, other) }
-        val reader = TranscriptReader(trees)
+        // The caller's order: a headless session searches vanilla then the other heads; a headed one
+        // puts its own tree first.
+        val headless = listOf(vanilla, other)
+        val headed = listOf(own, vanilla, other)
+        val reader = TranscriptReader()
         val otherFile = transcript(other)
-        assertEquals(otherFile.toString(), found(reader.page(ID, null, null, 1)).path, "the other-heads fallback")
+        assertEquals(otherFile.toString(), found(reader.page(ID, headless, null, 1)).path, "the other-heads fallback")
         val vanillaFile = transcript(vanilla)
-        assertEquals(vanillaFile.toString(), found(reader.page(ID, null, null, 1)).path)
+        assertEquals(vanillaFile.toString(), found(reader.page(ID, headless, null, 1)).path)
         val ownFile = transcript(own)
-        assertEquals(ownFile.toString(), found(reader.page(ID, "own", null, 1)).path, "the live client's copy wins")
+        assertEquals(ownFile.toString(), found(reader.page(ID, headed, null, 1)).path, "the live client's copy wins")
     }
 
     @Test
@@ -121,22 +129,23 @@ class TranscriptReaderTest {
         val file = transcript(vanilla)
         val linked = Files.createDirectories(home.resolve(".claude-linked"))
         Files.createSymbolicLink(linked.resolve("projects"), vanilla.resolve("projects"))
-        val page = found(TranscriptReader { listOf(linked, vanilla) }.page(ID, null, null, 1))
+        val page = found(TranscriptReader().page(ID, listOf(linked, vanilla), null, 1))
         val named = linked.resolve("projects").resolve(file.parent.fileName).resolve(file.fileName)
         assertEquals(named.toString(), page.path)
     }
 
     @Test
     fun `a miss names every projects dir searched, and a bad id or cursor is refused`() {
-        val reader = TranscriptReader { listOf(home.resolve(".claude"), home.resolve(".claude-x")) }
+        val reader = TranscriptReader()
+        val roots = listOf(home.resolve(".claude"), home.resolve(".claude-x"))
         assertEquals(
             TranscriptLookup.Missing(
                 listOf(home.resolve(".claude/projects").toString(), home.resolve(".claude-x/projects").toString()),
             ),
-            reader.page(ID, null, null, 1),
+            reader.page(ID, roots, null, 1),
         )
-        assertTrue(reader.page("../etc", null, null, 1) is TranscriptLookup.Refused)
-        assertTrue(reader.page(ID, null, "1.2.3", 1) is TranscriptLookup.Refused)
-        assertTrue(reader.page(ID, null, "-1.0", 1) is TranscriptLookup.Refused)
+        assertTrue(reader.page("../etc", roots, null, 1) is TranscriptLookup.Refused)
+        assertTrue(reader.page(ID, roots, "1.2.3", 1) is TranscriptLookup.Refused)
+        assertTrue(reader.page(ID, roots, "-1.0", 1) is TranscriptLookup.Refused)
     }
 }

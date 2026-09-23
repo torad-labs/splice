@@ -26,7 +26,7 @@
 # api/StatuslineRoute 94.
 # The return-position gap named below is UNCHANGED by the widening and still open.
 #
-# WIDENED 2026-09-18 (V4-151): :daemon-head was a coverage hole, not an exclusion. 7 NEW RED, all
+# WIDENED 2026-09-18 (V4-151): :features-turns was a coverage hole, not an exclusion. 7 NEW RED, all
 # dispositioned in the same unit. SURFACED (the degrade kept, a log added): usage/EconomicsStore
 # (an exists() pre-gate and no log; the next persist overwrote a corrupt history silently),
 # usage/QuotaTracker readFile, compact/Compact bad rows. EXEMPT, each ignore naming the file:line
@@ -71,14 +71,21 @@ note: >
 # return-position gap is therefore left OPEN and named here rather than closed with a rule that
 # cries wolf; closing it properly needs failure-consumption tracking the pattern layer lacks.
 files:
+  - features/sessions/src/main/**/*.kt
+  - features/models/src/main/**/*.kt
+  - core/src/main/kotlin/splice/core/terminal/CliStyle.kt
+  - features/usage/src/main/**/*.kt
+  - integrations/http/src/main/**/*.kt
   - upstream/src/main/**/*.kt
   - integrations/providers/grok/src/main/**/*.kt
   - integrations/providers/kimi/src/main/**/*.kt
   - integrations/providers/codex/src/main/**/*.kt
   - integrations/providers/openai/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
+  - integrations/mcp/src/main/**/*.kt
+  - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - app/src/main/**/*.kt
-  - daemon/head/src/main/**/*.kt
+  - features/turns/src/main/**/*.kt
   - features/heads/src/main/**/*.kt
 rule:
   any:

@@ -13,9 +13,11 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 /** project path -> allowed project-dependency paths. Absent key = unrestricted (:app). */
 val moduleLaw: Map<String, Set<String>> = mapOf(
     ":core" to emptySet(),
-    // the Claude Code side: an isolated client home, sign-in state, MCP discovery, wrapping and
-    // resume. It speaks the domain and nothing else — :daemon-head must never gain this edge.
-    ":client" to setOf(":core"),
+    // the Claude Code side: isolated client state plus the concrete transcript reader. It speaks core
+    // and implements the sessions-owned transcript port; no feature implementation points back here.
+    ":integrations-claude-code" to setOf(":core", ":features-sessions"),
+    ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
+    ":integrations-http" to emptySet(),
     ":upstream" to setOf(":core"),
     ":integrations-dialects-anthropic" to setOf(":core", ":upstream"),
     ":integrations-dialects-openai-responses" to setOf(":core", ":upstream"),
@@ -25,9 +27,15 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-providers-kimi" to setOf(":core", ":upstream", ":integrations-dialects-anthropic"),
     ":integrations-providers-muse" to setOf(":core", ":upstream"),
     ":integrations-providers-openai" to setOf(":core", ":upstream", ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
-    ":daemon-head" to setOf(":core", ":upstream"),
-    ":daemon-control" to setOf(":core", ":client", ":features-heads"),
-    ":features-heads" to emptySet(),
+    ":features-turns" to setOf(":core", ":upstream", ":features-sessions"),
+    ":features-sessions" to setOf(":core", ":integrations-http"),
+    ":features-models" to setOf(":core"),
+    ":daemon-control" to setOf(
+        ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
+        ":features-heads", ":features-sessions", ":features-usage",
+    ),
+    ":features-heads" to setOf(":core"),
+    ":features-usage" to setOf(":core", ":integrations-http"),
     ":quality-architecture" to emptySet(),
     // :console is the Bun/Vite operator console — no Kotlin, no edges; graded here so the map
     // covers every module the build declares.

@@ -9,14 +9,14 @@
 id: kt-l2-single-mirror-definition
 language: kotlin
 severity: error
-message: "L2: mirrorInto is defined once, in daemon/head/src/main/kotlin/**/reasoning/Mirror.kt."
+message: "L2: mirrorInto is defined once, in features/turns/src/main/kotlin/**/reasoning/Mirror.kt."
 files:
   # Every source set of every module, wherever the module lives (restructure PR 3 moves them one by
   # one): a single-definition wall that stops seeing a module is a wall that cannot find a second
   # definition there, so the reach is the source-set shape, never a module directory.
   - "**/src/*/kotlin/**/*.kt"
 ignores:
-  - daemon/head/src/main/kotlin/**/reasoning/Mirror.kt
+  - features/turns/src/main/kotlin/**/reasoning/Mirror.kt
 rule:
   kind: function_declaration
   has:

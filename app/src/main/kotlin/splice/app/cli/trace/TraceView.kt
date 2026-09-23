@@ -6,11 +6,11 @@ package splice.app.cli.trace
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.app.cli.BOLD
-import splice.app.cli.DIM
-import splice.app.cli.RESET
-import splice.app.cli.YELLOW
 import splice.core.perf.PerfKeys
+import splice.core.terminal.BOLD
+import splice.core.terminal.DIM
+import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import splice.core.util.JsonScalars
 import java.nio.file.Path
 import java.time.Instant

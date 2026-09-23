@@ -12,11 +12,11 @@
       "params": 9,
       "subsystems": 7
     },
-    "client/src/main/kotlin/splice/client/ClaudeMaterializeTypes.kt MaterializeSpec": {
+    "integrations/claude-code/src/main/kotlin/splice/client/ClaudeMaterializeTypes.kt MaterializeSpec": {
       "params": 13,
       "subsystems": 1
     },
-    "core/src/main/kotlin/splice/core/sessions/SessionRegistry.kt SessionRecord": {
+    "features/sessions/src/main/kotlin/splice/sessions/registry/SessionRegistry.kt SessionRecord": {
       "params": 13,
       "subsystems": 0
     },
@@ -40,11 +40,11 @@
       "params": 17,
       "subsystems": 3
     },
-    "daemon/head/src/main/kotlin/splice/head/HeadDeps.kt HeadSeams": {
+    "features/turns/src/main/kotlin/splice/head/HeadDeps.kt HeadSeams": {
       "params": 8,
       "subsystems": 7
     },
-    "daemon/head/src/main/kotlin/splice/head/turn/TurnDrive.kt TurnDrive": {
+    "features/turns/src/main/kotlin/splice/head/turn/TurnDrive.kt TurnDrive": {
       "params": 17,
       "subsystems": 10
     },

@@ -38,7 +38,7 @@ ignores:
   # per-head CLAUDE_CONFIG_DIR for the wrapped Claude Code — a separate contract, see header
   - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
   # `.claude-plugin` is a plugin manifest dirname, not a state/config dir — see header
-  - client/src/main/kotlin/splice/client/mcp/McpSources.kt
+  - integrations/claude-code/src/main/kotlin/splice/client/mcp/McpSources.kt
 rule:
   any:
     - kind: string_content

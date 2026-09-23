@@ -1,8 +1,8 @@
 // NEW: titled bordered note for the CLI prompt toolkit (cli-wizard CW-2).
 package splice.app.cli.prompt
 
-import splice.app.cli.CYAN
-import splice.app.cli.RESET
+import splice.core.terminal.CYAN
+import splice.core.terminal.RESET
 
 internal class NoteBox(
     private val out: Appendable = System.out,

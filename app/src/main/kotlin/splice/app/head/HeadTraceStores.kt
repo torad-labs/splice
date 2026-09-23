@@ -4,9 +4,9 @@
 // ManagedHeadFactory is already the app's densest assembly and the concentration ratchet said so.
 package splice.app.head
 
-import splice.core.activity.ActivityDays
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
+import splice.core.storage.ActivityDays
 import splice.head.wire.TraceStore
 
 internal class HeadTraceStores(private val statePaths: StatePaths) {

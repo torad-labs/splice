@@ -61,7 +61,12 @@ note: >
   every tool in this repo. Compliant form: `post("/api/x") { guarded(call) { handler(call) } }`, or
   `guarded(call, mcp = true) { … }` for the MCP access key.
 files:
+  - features/sessions/src/main/**/*.kt
+  - features/usage/src/main/**/*.kt
+  - integrations/http/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
+  - integrations/mcp/src/main/**/*.kt
+  - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - features/heads/src/main/**/*.kt
 rule:
   all:

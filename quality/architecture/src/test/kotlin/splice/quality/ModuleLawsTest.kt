@@ -43,9 +43,11 @@ private val ADAPTER_BASE = setOf(":core", ":upstream")
 private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // the domain. Depends on nothing internal, forever.
     ":core" to emptySet(),
-    // the Claude Code side (restructure §2.3): an isolated client home, sign-in state, MCP
-    // discovery and sharing, wrapping the plain `claude`, resuming across heads. Domain only.
-    ":client" to setOf(":core"),
+    // the Claude Code side: isolated client state plus the concrete reader implementing the
+    // sessions-owned transcript port. The sessions feature never points back into this adapter.
+    ":integrations-claude-code" to setOf(":core", ":features-sessions"),
+    ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
+    ":integrations-http" to emptySet(),
     // the provider contract. Speaks the domain and nothing else.
     ":upstream" to setOf(":core"),
     // a dialect adapts the contract to one wire format.
@@ -59,12 +61,18 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-providers-muse" to ADAPTER_BASE,
     ":integrations-providers-openai" to ADAPTER_BASE + setOf(":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
-    ":daemon-head" to ADAPTER_BASE + DIALECTS,
-    // a feature slice: the head-start extraction, owning its own start path. Domain-free so far.
-    ":features-heads" to emptySet(),
+    ":features-turns" to ADAPTER_BASE + DIALECTS + ":features-sessions",
+    ":features-sessions" to setOf(":core", ":integrations-http"),
+    ":features-models" to setOf(":core"),
+    // Head lifecycle, logs, and status own their sequences and use the shared head contract.
+    ":features-heads" to setOf(":core"),
+    ":features-usage" to setOf(":core", ":integrations-http"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
-    ":daemon-control" to setOf(":core", ":client", ":features-heads"),
+    ":daemon-control" to setOf(
+        ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
+        ":features-heads", ":features-sessions", ":features-usage",
+    ),
     // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
     ":console" to emptySet(),
 )
@@ -405,13 +413,13 @@ private fun staleAllowanceViolations(
  *  inversion fails immediately, and this map is the visible worklist. Delete a line when the edge goes
  *  — a listed edge that no longer exists FAILS the law, so the list cannot rot into blanket permission. */
 private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
-    (":integrations-providers-grok" to ":daemon-head") to
+    (":integrations-providers-grok" to ":features-turns") to
         "pre-existing, 2026-08-16, tracked for removal — grok's tests drive a real gateway server " +
         "(testImplementation + testFixtures); the harness belongs somewhere both can depend on.",
-    (":integrations-providers-openai" to ":daemon-head") to
+    (":integrations-providers-openai" to ":features-turns") to
         "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as :providers-grok.",
-    (":daemon-head" to ":integrations-providers-codex") to
-        "pre-existing, 2026-08-16, tracked for removal — two :daemon-head tests still compile " +
+    (":features-turns" to ":integrations-providers-codex") to
+        "pre-existing, 2026-08-16, tracked for removal — two turn-serving tests still compile " +
         "against :providers-codex (AccountTurnSelectionTest ChatGPT-Account-ID, " +
         "CodexCodeModeReanchorTest CodexCodeModeBridge); other gateway tests now use " +
         "TestResponsesProvider.",

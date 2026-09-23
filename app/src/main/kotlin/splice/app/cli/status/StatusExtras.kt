@@ -4,9 +4,9 @@
 package splice.app.cli.status
 
 import splice.app.cli.AdminSupport
-import splice.app.cli.BOLD
-import splice.app.cli.RESET
-import splice.app.cli.YELLOW
+import splice.core.terminal.BOLD
+import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 

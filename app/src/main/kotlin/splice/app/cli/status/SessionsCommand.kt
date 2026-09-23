@@ -8,23 +8,23 @@
 // syntax — name or socket — is backslash/quote-escaped so the printed command stays valid.
 package splice.app.cli.status
 
-import splice.app.cli.BOLD
-import splice.app.cli.CYAN
-import splice.app.cli.DIM
-import splice.app.cli.GREEN
-import splice.app.cli.RED
-import splice.app.cli.RESET
-import splice.app.cli.YELLOW
 import splice.app.daemon.TopologyLoader
-import splice.core.sessions.HeadOfPid
-import splice.core.sessions.ProcessEnvironment
-import splice.core.sessions.SessionAvailability
-import splice.core.sessions.SessionRecord
-import splice.core.sessions.SessionRegistry
+import splice.core.terminal.BOLD
+import splice.core.terminal.CYAN
+import splice.core.terminal.DIM
+import splice.core.terminal.GREEN
+import splice.core.terminal.RED
+import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import splice.core.topology.HeadConfig
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.sessions.registry.HeadOfPid
+import splice.sessions.registry.ProcessEnvironment
+import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionRecord
+import splice.sessions.registry.SessionRegistry
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Paths

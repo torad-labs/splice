@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
+import splice.app.ModelsWiring
 import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddModelVerb
 import splice.app.cli.auth.KeyCommand
@@ -11,7 +12,6 @@ import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.doctor.DoctorCommand
 import splice.app.cli.install.InstallCommand
-import splice.app.cli.models.ModelsCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.LogsCommand
@@ -71,7 +71,7 @@ public sealed class Command {
     /** 2026-09-22: `splice models [provider]` — what each provider publishes, against splice.toml.
      *  Nonzero when a declared row is over a published ceiling or is no longer served. */
     public data class Models(val args: List<String> = emptyList()) : Command() {
-        override fun run(): Int = outcomeExitCode(ModelsCommand().models(args))
+        override fun run(): Int = outcomeExitCode(ModelsWiring.run(args))
     }
 
     /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */

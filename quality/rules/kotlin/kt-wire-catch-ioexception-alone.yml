@@ -28,17 +28,17 @@
 #     example). There is no `catch_block` in that form, so it satisfies this rule by construction
 #     rather than by exemption; the compliant-twin case in the rule-test pins that.
 #
-# THE CENSUS (measured 2026-09-17, daemon/head/src/main/**/wire/**): 2 catch blocks total in
+# THE CENSUS (measured 2026-09-17, features/turns/src/main/**/wire/**): 2 catch blocks total in
 # scope, 2 RED:
-#   daemon/head/src/main/kotlin/splice/head/wire/ClientChannel.kt:112  per-frame write
-#   daemon/head/src/main/kotlin/splice/head/wire/ClientChannel.kt:214  keepalive ping
+#   features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt:112  per-frame write
+#   features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt:214  keepalive ping
 # The denominator is every IOException catch the parser finds in `wire/` — not a file list — and it
 # is 2, so this census is complete BY CONSTRUCTION rather than by inspection: every catch in scope
 # is accounted for and both are red.
 #
 # SCOPE IS `wire/`, DELIBERATELY. The law is about the CLIENT socket, and `wire/` is the package
 # that owns it. An IOException catch elsewhere (a file read, an upstream POST) has a different
-# second shape or none, and widening this rule to all of :daemon-head would flag correct code — the
+# second shape or none, and widening this rule to all of :features-turns would flag correct code — the
 # failure mode kt-no-silent-result-collapse's header records as the reason a wall gets suppressed
 # instead of obeyed. `head/` is covered for the same hazard by kt-turn-finally-flush-quietly.
 #
@@ -55,7 +55,7 @@ note: >
   sibling `catch (e: IllegalStateException)` arm doing the same thing, or — for discardable cleanup —
   `Cancellables.discard(Cancellables.runCatchingCleanup { … }, "<why>")`.
 files:
-  - daemon/head/src/main/**/wire/**/*.kt
+  - features/turns/src/main/**/wire/**/*.kt
 rule:
   all:
     - kind: catch_block

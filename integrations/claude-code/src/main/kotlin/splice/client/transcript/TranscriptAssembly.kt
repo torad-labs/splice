@@ -10,6 +10,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.sessions.transcript.SKIPPED_SIDECHAIN
+import splice.sessions.transcript.SKIPPED_UNPARSEABLE
+import splice.sessions.transcript.TranscriptMessage
+import splice.sessions.transcript.TranscriptRole
 
 private const val UNTYPED = "untyped"
 

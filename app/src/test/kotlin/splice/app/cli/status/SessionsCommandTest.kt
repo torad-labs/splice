@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.sessions.SessionRegistry
 import splice.core.util.EnvReader
+import splice.sessions.registry.SessionRegistry
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files

@@ -6,11 +6,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.BG_CYAN
-import splice.app.cli.BLACK
-import splice.app.cli.DIM
-import splice.app.cli.GREEN
-import splice.app.cli.RESET
+import splice.core.terminal.BG_CYAN
+import splice.core.terminal.BLACK
+import splice.core.terminal.DIM
+import splice.core.terminal.GREEN
+import splice.core.terminal.RESET
 
 class WizardFrameTest {
 

@@ -23,9 +23,6 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.provider.HeadBuildInputs
 import splice.control.DashboardPage
 import splice.control.TurnPathStalled
-import splice.core.activity.ActivityRow
-import splice.core.activity.ActivityStores
-import splice.core.activity.MessageEdge
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -34,6 +31,9 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
+import splice.sessions.activity.ActivityRow
+import splice.sessions.activity.ActivityStores
+import splice.sessions.activity.MessageEdge
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path

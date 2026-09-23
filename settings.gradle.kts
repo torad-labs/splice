@@ -22,7 +22,9 @@ rootProject.name = "splice"
 
 include(
     ":core",
-    ":client",
+    ":integrations-claude-code",
+    ":integrations-mcp",
+    ":integrations-http",
     ":upstream",
     ":integrations-dialects-anthropic",
     ":integrations-dialects-openai-responses",
@@ -32,9 +34,12 @@ include(
     ":integrations-providers-kimi",
     ":integrations-providers-muse",
     ":integrations-providers-openai",
-    ":daemon-head",
+    ":features-turns",
+    ":features-sessions",
+    ":features-models",
     ":daemon-control",
     ":features-heads",
+    ":features-usage",
     ":app",
     ":quality-architecture",
     ":quality-compiler-plugin",
@@ -42,8 +47,10 @@ include(
 )
 
 project(":core").projectDir = file("core")
-// The FIRST module to leave gateway/ (restructure plan §2.3): :client is the Claude Code side.
-project(":client").projectDir = file("client")
+// Reusable client and MCP adapters retain their own compile and visibility boundaries.
+project(":integrations-claude-code").projectDir = file("integrations/claude-code")
+project(":integrations-mcp").projectDir = file("integrations/mcp")
+project(":integrations-http").projectDir = file("integrations/http")
 project(":upstream").projectDir = file("upstream")
 project(":integrations-dialects-anthropic").projectDir = file("integrations/dialects/anthropic")
 project(":integrations-dialects-openai-responses").projectDir = file("integrations/dialects/openai-responses")
@@ -53,9 +60,12 @@ project(":integrations-providers-grok").projectDir = file("integrations/provider
 project(":integrations-providers-kimi").projectDir = file("integrations/providers/kimi")
 project(":integrations-providers-muse").projectDir = file("integrations/providers/muse")
 project(":integrations-providers-openai").projectDir = file("integrations/providers/openai")
-project(":daemon-head").projectDir = file("daemon/head")
+project(":features-turns").projectDir = file("features/turns")
+project(":features-sessions").projectDir = file("features/sessions")
+project(":features-models").projectDir = file("features/models")
 project(":daemon-control").projectDir = file("daemon/control")
 project(":features-heads").projectDir = file("features/heads")
+project(":features-usage").projectDir = file("features/usage")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
 project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")

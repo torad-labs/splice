@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.daemon.TopologyLoader
-import splice.core.activity.ActivityDays
 import splice.core.config.StatePaths
 import splice.core.perf.PerfSnapshot
+import splice.core.storage.ActivityDays
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.AsyncFileIo

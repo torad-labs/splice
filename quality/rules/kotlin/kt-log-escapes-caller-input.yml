@@ -69,7 +69,12 @@ note: >
   it needs to escape CR/LF and control bytes, quote collection elements, and bound the length. A
   value the repo composes itself gets a DATED entry in this rule's header, never an inline ignore.
 files:
+  - features/sessions/src/main/**/*.kt
+  - features/usage/src/main/**/*.kt
+  - integrations/http/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
+  - integrations/mcp/src/main/**/*.kt
+  - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - features/heads/src/main/**/*.kt
 rule:
   all:

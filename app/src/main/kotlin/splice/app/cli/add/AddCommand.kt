@@ -7,17 +7,17 @@
 package splice.app.cli.add
 
 import splice.app.cli.AdminSupport
-import splice.app.cli.BOLD
-import splice.app.cli.CYAN
-import splice.app.cli.DIM
-import splice.app.cli.GREEN
-import splice.app.cli.RED
-import splice.app.cli.RESET
-import splice.app.cli.YELLOW
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.install.InstallCommand
 import splice.app.cli.upgrade.DaemonRestart
+import splice.core.terminal.BOLD
+import splice.core.terminal.CYAN
+import splice.core.terminal.DIM
+import splice.core.terminal.GREEN
+import splice.core.terminal.RED
+import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader

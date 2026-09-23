@@ -4,8 +4,8 @@ package splice.app.cli.prompt
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.CYAN
-import splice.app.cli.RESET
+import splice.core.terminal.CYAN
+import splice.core.terminal.RESET
 
 class NoteBoxTest {
 

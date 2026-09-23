@@ -2,11 +2,11 @@
 // and redraw; Space toggles, Enter below minimum repaints a dim reason and keeps reading.
 package splice.app.cli.prompt
 
-import splice.app.cli.BOLD
-import splice.app.cli.CYAN
-import splice.app.cli.DIM
-import splice.app.cli.GREEN
-import splice.app.cli.RESET
+import splice.core.terminal.BOLD
+import splice.core.terminal.CYAN
+import splice.core.terminal.DIM
+import splice.core.terminal.GREEN
+import splice.core.terminal.RESET
 
 internal sealed class MultiSelectOutcome<out T> {
     internal data class Chosen<T>(val values: List<T>) : MultiSelectOutcome<T>()

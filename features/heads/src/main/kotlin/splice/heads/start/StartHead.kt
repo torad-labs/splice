@@ -7,35 +7,19 @@ package splice.heads.start
 import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
-import kotlinx.serialization.json.JsonObject
-
-/** Resolves the existing head or completes the call with the lookup refusal. */
-public fun interface StartHeadResolver {
-    public suspend fun resolveOrRespond(call: ApplicationCall, name: String): StartHeadTarget?
-}
-
-/** The resolved head and its live status projection refer to the same runtime instance. */
-public interface StartHeadTarget {
-    public suspend fun start(): Unit
-
-    public fun status(): JsonObject
-}
-
-/** Records a successful start request using the name supplied by the caller. */
-public fun interface StartHeadAudit {
-    public fun record(name: String): Unit
-}
+import splice.heads.HeadAudit
+import splice.heads.HeadResolver
 
 /** Start a head, then audit the successful operation and return its current status. */
-public class StartHead(
-    private val resolver: StartHeadResolver,
-    private val audit: StartHeadAudit,
+internal class StartHead(
+    private val resolver: HeadResolver,
+    private val audit: HeadAudit,
 ) {
     public suspend fun handle(call: ApplicationCall) {
         val name = call.parameters["head"].orEmpty()
         val target = resolver.resolveOrRespond(call, name) ?: return
         target.start()
-        audit.record(name)
+        audit.record(name, "start")
         call.respondText(target.status().toString(), ContentType.Application.Json)
     }
 }

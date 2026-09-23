@@ -31,7 +31,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.control.api.HeadResolver
 import splice.control.api.fleet.TopologySource
-import splice.control.api.sessions.JsonReply
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.topology.Topology
@@ -39,6 +38,7 @@ import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.http.JsonReply
 
 internal const val CAPTURE_UNWIRED =
     "the topology writer is not wired into this control plane; /api/heads/{head}/capture cannot write it"

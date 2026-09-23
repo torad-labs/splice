@@ -5,8 +5,12 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":client"))
+    implementation(project(":integrations-claude-code"))
+    api(project(":integrations-mcp"))
+    implementation(project(":integrations-http"))
     implementation(project(":features-heads"))
+    api(project(":features-sessions"))
+    api(project(":features-usage"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.server.core)

@@ -22,7 +22,7 @@ __pycache__/
 .kotlin/
 build/
 # the look tooling's committed runtime inputs are not a build output
-!webui/.impeccable/build/
+!console/.impeccable/build/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/

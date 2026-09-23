@@ -62,6 +62,30 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
         }
     }
 
+    /** A name in [binDir] that resolves to OUR launch shim but that no head (nor `splice`) claims.
+     *  `install --all` links the topology's commands and never prunes one whose name left it — a
+     *  renamed or removed head's command survives, launching a head the daemon cannot route. Only a
+     *  symlink resolving to [shim] is judged: a user's file of the same name is never ours to name.
+     *  An unlistable bin or an unresolvable shim reports nothing here — the per-command wrapper rows
+     *  and the shim row already diagnose that access, each with its own remedy. */
+    internal fun orphanWrappers(binDir: Path, shim: Path, commands: Set<String>): List<DoctorCheck> {
+        val target = Cancellables.runCatchingCancellable { shim.toRealPath() }.getOrNull() ?: return emptyList()
+        val entries = Cancellables.runCatchingCancellable { Files.list(binDir).use { it.toList() } }.getOrNull()
+            ?: return emptyList()
+        return entries
+            .filter { Files.isSymbolicLink(it) && it.fileName.toString() !in commands }
+            .filter { link -> Cancellables.runCatchingCancellable { link.toRealPath() }.getOrNull() == target }
+            .sortedBy { it.fileName.toString() }
+            .map { link ->
+                DoctorCheck(
+                    CHECK_WRAPPER,
+                    CheckStatus.WARN,
+                    "'${link.fileName}' → $shim names no head in the topology — a renamed or removed head's command",
+                    "rm $link   (or give a head that command again in the topology)",
+                )
+            }
+    }
+
     internal fun binaryOnPath(name: String, envReader: EnvReader): Path? =
         envReader("PATH").orEmpty().split(':').asSequence()
             .filter { it.isNotEmpty() }

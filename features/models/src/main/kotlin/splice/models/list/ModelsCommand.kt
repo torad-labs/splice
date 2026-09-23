@@ -49,7 +49,7 @@ public class ModelsCommand(
         output.line("${BOLD}splice models$RESET $DIM— what each provider serves, against splice.toml$RESET")
         output.line(
             "  $DIM$GREEN✓$RESET$DIM declared and served   $CYAN·$RESET$DIM this row caps a larger ceiling   " +
-                "$RED✗$RESET$DIM needs a decision   $YELLOW+$RESET$DIM discovered into the picker   " +
+                "$RED✗$RESET$DIM needs a decision   $YELLOW+$RESET$DIM joins heads with no models list   " +
                 "$DIM– served, kept out$RESET",
         )
         val all = args.contains(ALL_FLAG)

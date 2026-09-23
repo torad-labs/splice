@@ -12,6 +12,7 @@ import splice.app.control.ManagedHead
 import splice.app.head.HeadBoot
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
+import splice.core.util.LogSink
 import splice.oauth.OAuthAccountFiles
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -34,7 +35,7 @@ class AccountRestartTest {
         )
         Files.writeString(store.poolDir(AuthKind.ChatgptOAuth, primary).resolve("ignored-quota.json"), "{}")
 
-        val restarted = OAuthAccountFiles().discover(AuthKind.ChatgptOAuth, primary)
+        val restarted = OAuthAccountFiles().discover(AuthKind.ChatgptOAuth, primary, LogSink {})
 
         assertEquals(listOf("primary", "plus-12345678"), restarted.map { it.label })
         assertEquals(primary, restarted.single { it.primary }.credentialFile)
@@ -54,7 +55,7 @@ class AccountRestartTest {
         )
 
         val failure = assertThrows<IllegalArgumentException> {
-            store.discover(AuthKind.ChatgptOAuth, primary)
+            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
         }
 
         assertEquals("pooled OAuth account file has the wrong auth kind", failure.message)
@@ -75,7 +76,7 @@ class AccountRestartTest {
             )
 
             val failure = assertThrows<IllegalArgumentException> {
-                store.discover(AuthKind.ChatgptOAuth, primary)
+                store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
             }
 
             assertTrue(failure.message.orEmpty().contains("reserved"))
@@ -94,7 +95,7 @@ class AccountRestartTest {
             JsonObject(mapOf("tokens" to JsonObject(mapOf("access_token" to JsonPrimitive("backup"))))),
         )
 
-        val restarted = store.discover(AuthKind.ChatgptOAuth, primary)
+        val restarted = store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
         val failure = assertThrows<IllegalArgumentException> {
             store.loginAccount(AuthKind.ChatgptOAuth, primary, "other")
         }
@@ -107,7 +108,7 @@ class AccountRestartTest {
     @Test
     fun `a malformed pool file is skipped with one safe diagnostic and valid accounts survive`() {
         val logs = mutableListOf<String>()
-        val store = OAuthAccountFiles(log = logs::add)
+        val store = OAuthAccountFiles()
         val primary = dir.resolve("codex.json")
         Files.writeString(primary, "{}")
         store.writeLabeled(AuthKind.ChatgptOAuth, primary, "work", JsonObject(emptyMap()))
@@ -116,7 +117,7 @@ class AccountRestartTest {
         Files.writeString(stray, "{private-secret")
         Files.createSymbolicLink(pool.resolve("linked.json"), stray)
 
-        val accounts = store.discover(AuthKind.ChatgptOAuth, primary)
+        val accounts = store.discover(AuthKind.ChatgptOAuth, primary, logs::add)
 
         assertEquals(listOf("primary", "work"), accounts.map { it.label })
         assertEquals(listOf("splice: skipped OAuth pool file notes.json (not a credential)\n"), logs)
@@ -129,7 +130,7 @@ class AccountRestartTest {
     @Test
     fun `JSON without a declared kind is skipped without printing its contents`() {
         val logs = mutableListOf<String>()
-        val store = OAuthAccountFiles(log = logs::add)
+        val store = OAuthAccountFiles()
         val primary = dir.resolve("codex.json")
         val pool = Files.createDirectories(store.poolDir(AuthKind.ChatgptOAuth, primary))
         val documents = mapOf(
@@ -140,7 +141,7 @@ class AccountRestartTest {
         )
         documents.forEach { (name, content) -> Files.writeString(pool.resolve(name), content) }
 
-        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, primary).map { it.label })
+        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, primary, logs::add).map { it.label })
 
         val expected = documents.keys.sorted().map { "splice: skipped OAuth pool file $it (not a credential)\n" }
         assertEquals(expected, logs)
@@ -150,12 +151,12 @@ class AccountRestartTest {
     @Test
     fun `a stray file with an unsafe name is skipped without exposing the name`() {
         val logs = mutableListOf<String>()
-        val store = OAuthAccountFiles(log = logs::add)
+        val store = OAuthAccountFiles()
         val primary = dir.resolve("codex.json")
         val pool = Files.createDirectories(store.poolDir(AuthKind.ChatgptOAuth, primary))
         Files.writeString(pool.resolve("private@example.com.json"), "{}")
 
-        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, primary).map { it.label })
+        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, primary, logs::add).map { it.label })
 
         assertEquals(listOf("splice: skipped OAuth pool file <unsafe filename> (not a credential)\n"), logs)
         assertFalse(logs.joinToString("").contains("private@example.com"))
@@ -164,7 +165,7 @@ class AccountRestartTest {
     @Test
     fun `a declared credential with mismatched filename remains refused`() {
         val logs = mutableListOf<String>()
-        val store = OAuthAccountFiles(log = logs::add)
+        val store = OAuthAccountFiles()
         val primary = dir.resolve("codex.json")
         val pool = Files.createDirectories(store.poolDir(AuthKind.ChatgptOAuth, primary))
         Files.writeString(
@@ -172,7 +173,9 @@ class AccountRestartTest {
             """{"splice_auth_kind":"chatgpt-oauth","splice_account_label":"personal"}""",
         )
 
-        val failure = assertThrows<IllegalArgumentException> { store.discover(AuthKind.ChatgptOAuth, primary) }
+        val failure = assertThrows<IllegalArgumentException> {
+            store.discover(AuthKind.ChatgptOAuth, primary, logs::add)
+        }
 
         assertEquals("pooled OAuth account file does not match its filename", failure.message)
         assertTrue(logs.isEmpty())
@@ -190,7 +193,7 @@ class AccountRestartTest {
         )
 
         val failure = assertThrows<IllegalArgumentException> {
-            store.discover(AuthKind.ChatgptOAuth, primary)
+            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
         }
 
         assertEquals("invalid OAuth account label", failure.message)
@@ -216,7 +219,7 @@ class AccountRestartTest {
             mutableMapOf<String, ManagedHead>(),
             logs::add,
             HeadAssembly { _, _, _ ->
-                store.discover(AuthKind.ChatgptOAuth, primary)
+                store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
                 error("unsafe account unexpectedly discovered")
             },
         )

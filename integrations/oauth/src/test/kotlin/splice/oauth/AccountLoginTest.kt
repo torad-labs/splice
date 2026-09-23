@@ -147,12 +147,15 @@ class AccountLoginTest {
         Files.writeString(work, "{}")
         val store = OAuthAccountFiles()
         store.writeLabeled(AuthKind.ChatgptOAuth, codex, "backup", JsonObject(emptyMap()))
-        assertEquals(listOf("primary", "backup"), store.discover(AuthKind.ChatgptOAuth, codex).map { it.label })
-        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, work).map { it.label })
+        assertEquals(
+            listOf("primary", "backup"),
+            store.discover(AuthKind.ChatgptOAuth, codex, LogSink {}).map { it.label },
+        )
+        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, work, LogSink {}).map { it.label })
         assertTrue(Files.exists(dir.resolve("chatgpt-oauth/codex.json/backup.json")))
         val bare = dir.resolve("codex")
         Files.writeString(bare, "{}")
-        val bareLabels = store.discover(AuthKind.ChatgptOAuth, bare).map { it.label }
+        val bareLabels = store.discover(AuthKind.ChatgptOAuth, bare, LogSink {}).map { it.label }
         assertEquals(listOf("primary"), bareLabels, "codex and codex.json are different primaries")
     }
 

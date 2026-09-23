@@ -25,7 +25,11 @@ internal class GrokAccountWiring(
     /** Every Grok account of [primaryPath]'s pool, the primary first, each with its own refresher. */
     fun accounts(ctx: ProviderBuild, primaryPath: Path): List<WiredAccount> {
         val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
-        return accountFiles.discover(AuthKind.GrokOAuth, primaryPath).map { file ->
+        return accountFiles.discover(
+            AuthKind.GrokOAuth,
+            primaryPath,
+            HeadScopedLogs.headScopedLog(ctx.key, log),
+        ).map { file ->
             WiredAccount(
                 label = file.label,
                 primary = file.primary,

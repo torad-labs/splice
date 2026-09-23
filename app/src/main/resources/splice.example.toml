@@ -195,8 +195,9 @@ quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = tr
 # At start the daemon also asks the endpoint what it serves (here <base_url>/models) and adds every
 # model no row declares to the picker, windowed as the endpoint publishes it — so a model xAI ships
 # is offered at the next restart with no edit here, and a provider may declare no rows at all. A
-# discovered model is never placed behind a tier slot; name it in a head's `models` for that. The
-# daemon keeps the last answer, so a start while the vendor is down still offers it. `splice models`
+# discovered model is never placed behind a tier slot; name it in a head's `models` for that, and
+# that head then needs the endpoint to have answered once — the daemon keeps the last answer, so a
+# start while the vendor is down still offers it. `splice models`
 # shows both halves. A model the endpoint says cannot run a turn (no text output, no tools, hidden)
 # stays out by itself; xAI lists its image and video models with nothing to tell them apart, so they
 # are named out here — `include` narrows the same way, and `exclude = ["*"]` turns discovery off.

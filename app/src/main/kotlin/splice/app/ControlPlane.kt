@@ -194,7 +194,7 @@ internal class ControlPlane(
      *  playground probe. */
     private fun wireConsolePorts(srv: ControlServer) {
         srv.ports.compaction = compactionInstructions
-        ConsoleWiring.wire(srv, topology)
+        ConsoleWiring.wire(srv, topology, modelRosters)
         srv.ports.events = console.bus
         srv.ports.activity = console.stores
         srv.ports.teams = teams

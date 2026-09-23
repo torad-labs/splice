@@ -16,3 +16,10 @@ public data class DiscoveredModel(
     /** [id] and every alias. */
     public val spellings: List<String> get() = listOf(id) + aliases
 }
+
+/** What each head's provider published at daemon start, by head key — the daemon's ModelRosters.
+ *  Every reader that builds a head's catalog takes this one port, so the catalog a head boots with
+ *  and the one the console validates an edit against see the same models. */
+public fun interface HeadDiscoveredModels {
+    public fun forHead(key: String): List<DiscoveredModel>
+}

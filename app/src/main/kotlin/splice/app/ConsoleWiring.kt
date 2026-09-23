@@ -47,6 +47,7 @@ import splice.control.api.turns.PlaygroundProbe
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
+import splice.core.model.HeadDiscoveredModels
 import splice.core.storage.ACTIVITY_DIRECTORY
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
@@ -68,7 +69,7 @@ import splice.usage.budgets.BUDGETS_FILE
 import splice.usage.budgets.BudgetStore
 
 internal object ConsoleWiring {
-    internal fun wire(srv: ControlServer, topology: BootedTopology) {
+    internal fun wire(srv: ControlServer, topology: BootedTopology, discovered: HeadDiscoveredModels) {
         // V4-127: the console's three read ports, assigned after construction because a constructor
         // parameter would widen ControlServer past the width ratchet — so the compiler cannot check
         // any of these lines, and deleting one does not break the build. Each route then answers its
@@ -90,7 +91,9 @@ internal object ConsoleWiring {
         // V4-128: the writer is the ONLY seam that edits splice.toml, and it is built here because
         // this is the one place that knows the booted file's path. A null path is a daemon booted
         // without a config file: the route declines rather than writing a file nobody asked for.
-        srv.ports.topology = topology.path?.let { TopologyWriter(it, TopologyParse(TopologyLoader::parse)) }
+        srv.ports.topology = topology.path?.let {
+            TopologyWriter(it, TopologyParse(TopologyLoader::parse), discovered = discovered)
+        }
 
         // V4-132: the login/remove/relabel machinery — :daemon-control depends on :core only, so this is
         // the port's :app-side implementation, assigned here like every port above it. Unassigned,

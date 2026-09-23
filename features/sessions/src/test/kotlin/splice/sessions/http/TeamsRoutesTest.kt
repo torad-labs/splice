@@ -201,7 +201,9 @@ class TeamsRoutesTest {
         val codex = rig.head(
             "codex",
             listOf(
-                rig.row(AT - 5 * DAY, OLD_BUILDER, input = 1_000_000, cached = 400_000),
+                // Before the team existed (rig.team() is created at AT): no team's turn, even a member's.
+                rig.row(AT - 5 * DAY, BUILDER, input = 9),
+                rig.row(AT, OLD_BUILDER, input = 1_000_000, cached = 400_000),
                 rig.row(AT, BUILDER, input = 1_000_000, out = 1_000_000),
                 rig.row(AT, null, input = 5),
                 rig.row(AT, OUTSIDER, input = 7),
@@ -210,7 +212,11 @@ class TeamsRoutesTest {
         val claude = rig.head("claude", listOf(rig.row(AT, LEAD, input = 3)), rates = null)
         val body = rig.json(routes(heads = mapOf("codex" to codex, "claude" to claude)).economics(id).body)
         assertEquals("1", body.getValue("unattributed_turns").jsonPrimitive.content)
-        assertEquals((AT - 5 * DAY).toString(), body.getValue("oldest_turn_epoch_millis").jsonPrimitive.content)
+        assertEquals(
+            (AT - 5 * DAY).toString(),
+            body.getValue("oldest_turn_epoch_millis").jsonPrimitive.content,
+            "the files still reach back before the team, so its lifetime is whole; the row itself is not tallied",
+        )
         assertEquals(listOf("claude", "codex"), body.getValue("heads_read").jsonArray.map { it.jsonPrimitive.content })
         val builder = rig.find(body, "roles", "role", "builder")
         assertEquals(

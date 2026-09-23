@@ -4,6 +4,7 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
@@ -13,6 +14,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.compaction.CompactionConfig
+import splice.core.compaction.CompactionInstructions
+import splice.core.compaction.CompactionProjectConfig
+import splice.core.config.ConfigService
+import splice.core.config.StatePaths
+import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.sessions.query.SessionHead
 import splice.sessions.transcript.SentTexts
@@ -62,7 +69,7 @@ class ProjectsRoutesTest {
                 """{"id":"${rig.repo}","root":"${rig.repo}","live_sessions":2,"teams":1,"turns_today":2,""" +
                     """"day_start":$DAY_START,"last_activity":${AT + 2}}""",
             ),
-            JsonObject(repo - "cost_today_usd"),
+            JsonObject(repo - "cost_today_usd" - "compaction" - "statusline_roots"),
             "yesterday's row and the outsider's are not this repo's today; the archived team is not counted",
         )
         // 2M input at 1.0 and 10 output at 2.0, per million.
@@ -71,6 +78,66 @@ class ProjectsRoutesTest {
         val row = rig.json(routes(mapOf("codex" to unpriced)).project(rig.repo.toString()).body)
         assertEquals("null", row.getValue("cost_today_usd").toString(), "no rate card is no dollar figure, never zero")
         assertEquals(HttpStatusCode.NotFound, routes(emptyMap()).project("/nowhere").status)
+    }
+
+    // FEATURES.md 4.14's "compaction scope and effective instructions, the statusline roots entry":
+    // the rules core says a compaction in this repo resolves to (a project rule shadows the global
+    // one), and per head the trusted root its statusline probes the repo under, through the SAME
+    // SessionsRoutes resolver ControlServer wires, so a head that overrides statuslineGitRoots
+    // answers with its own root.
+    @Test
+    fun `the row names the compaction rules for its repo and each head's statusline root`() {
+        rig.team()
+        val heads = mapOf("codex" to rig.head("codex", emptyList()), "grok" to rig.head("grok", emptyList()))
+        val config = ConfigService(
+            StatePaths(baseOverride = tmp.resolve("state")),
+            headOverrides = mapOf("statuslineGitRoots" to tmp.toString()),
+            perHeadOverrides = mapOf("grok" to mapOf("statuslineGitRoots" to rig.repo.toString())),
+            envReader = EnvReader { null },
+            log = { },
+        )
+        val sessions = SessionsRoutes(rig.registry, TestTranscripts(), heads, config, vanilla = tmp.resolve("vanilla"))
+        val table = CompactionInstructions(
+            CompactionConfig(
+                instructions = "global text",
+                project = listOf(CompactionProjectConfig(rig.repo.toString(), instructions = "repo text")),
+            ),
+            tmp,
+            log = { },
+        )
+        fun routes(wired: CompactionInstructions?) = ProjectsRoutes(
+            rig.registry,
+            heads,
+            RepoOf { sessions.repoOf(it) },
+            TeamSource { rig.store },
+            WallClock { AT },
+            StatuslineRootOf(sessions::statuslineRootOf),
+            CompactionSource { wired },
+        )
+        val repo = rig.repo.toRealPath().toString()
+        val row = rig.json(routes(table).project(rig.repo.toString()).body)
+        assertEquals(
+            Json.parseToJsonElement("""[{"scope":"project","source":"project:$repo","chars":9}]"""),
+            row.getValue("compaction"),
+            "the repo's project rule shadows the global one, and its length is live",
+        )
+        val base = tmp.toRealPath().toString()
+        assertEquals(
+            Json.parseToJsonElement(
+                """[{"head":"codex","root":"$base","entry":"statuslineGitRoots"},""" +
+                    """{"head":"grok","root":"$repo","entry":"statuslineGitRoots"}]""",
+            ),
+            row.getValue("statusline_roots"),
+            "grok's own statuslineGitRoots override is its answer; codex has the global one",
+        )
+        val elsewhere = rig.json(routes(table).project(tmp.resolve("elsewhere").toString()).body)
+        assertEquals(
+            Json.parseToJsonElement("""[{"scope":"global","source":"global","chars":11}]"""),
+            elsewhere.getValue("compaction"),
+            "outside every project rule the global one is what a compaction resolves to",
+        )
+        val unwired = rig.json(routes(null).project(rig.repo.toString()).body)
+        assertEquals("null", unwired.getValue("compaction").toString(), "a table never wired is null, never []")
     }
 
     @Test

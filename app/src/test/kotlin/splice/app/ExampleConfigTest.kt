@@ -520,9 +520,7 @@ class ExampleConfigTest {
         // usageScale is a ModelCatalog METHOD, not a knob: the example's k3[1m] note has to name it
         // to explain why that row must declare exactly 1000000 (Claude Code hardcodes 1e6 for a
         // "[1m]" id, so any other declared value becomes a scale factor on a pinned row).
-        // archiveDir (V4-133) is a PerfStats CONSTRUCTOR PARAMETER, not a knob: perfArchiveRetentionDays
-        // is inert until a head's PerfStats is built with one, and the comment says so.
-        val prose = setOf("xAI", "usageScale", "vLLM", "archiveDir")
+        val prose = setOf("xAI", "usageScale", "vLLM")
         prose.forEach {
             assertTrue(
                 !knobsByKey.containsKey(it),

@@ -48,6 +48,7 @@ import splice.core.model.ModelEntry
 import splice.core.topology.HeadModel
 import java.net.ServerSocket
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 25L
@@ -72,6 +73,7 @@ class ConsoleRoutesTest {
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var control: ControlServer
     private lateinit var key: String
+    private val logged = CopyOnWriteArrayList<String>()
 
     private val rows = listOf(
         PerfRow(
@@ -100,7 +102,7 @@ class ConsoleRoutesTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html>" },
-            log = { },
+            log = { logged.add(it) },
         )
         runBlocking { control.start() }
     }
@@ -306,6 +308,27 @@ class ConsoleRoutesTest {
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
         assertEquals(report, response.bodyAsText(), "the route serves the port's own bytes")
     }
+
+    // A route that throws: Ktor's own 500 is an empty body logged through SLF4J, which the daemon has
+    // no provider for, so the failure is answered and logged by the control plane itself, by kind,
+    // with the message withheld the way SafeFailureText withholds it everywhere else.
+    @Test
+    fun `a route that throws answers a 500 naming the failure's kind, and the daemon log names the route`() =
+        runBlocking {
+            awaitPort()
+            control.ports.doctor = DoctorReport { error("quotes /home/someone/.config/splice/secret") }
+            val response = get("/api/doctor")
+            val body = response.bodyAsText()
+            assertEquals(HttpStatusCode.InternalServerError, response.status, body)
+            assertTrue(body.contains("IllegalStateException"), body)
+            assertFalse(body.contains("secret"), "the message is withheld: $body")
+            assertErrorOnly(body)
+            assertTrue(
+                logged.any { it.startsWith("[control] GET /api/doctor failed: IllegalStateException") },
+                "the daemon log names the route and the kind: $logged",
+            )
+            control.ports.doctor = null
+        }
 
     @Test
     fun `an unwired upgrade port answers a named failure, never a current-looking status`() = runBlocking {

@@ -14,6 +14,17 @@
 // dollars are null when any counted turn had no rate card (TeamsRoutes' PerfTally), never a partial
 // sum and never zero for "unknown".
 //
+// WHAT GOVERNS THE REPO (FEATURES.md 4.14, "its compaction scope and the effective instructions, the
+// statusline roots entry"). `compaction` is core's own answer for this root —
+// CompactionInstructions.rulesFor, the rules a compaction here can resolve to in resolve's precedence,
+// shadowed ones left out — as {scope, source, chars}, the shape GET /api/compaction/instructions
+// uses; no instruction text crosses the wire, for that route's reason. An empty list means no rule
+// applies and the client's own instructions stand; null means the daemon never wired the table,
+// which is not the same fact. `statusline_roots` is one entry per head, because statuslineGitRoots
+// is per-head overridable: the trusted root that head's statusline probes this repo under (home, tmp
+// or statuslineGitRoots) and the root itself, both null when the repo is outside every one, where
+// that head's statusline shows no branch.
+//
 // FILES ARE READ ONLY FROM A KNOWN PROJECT. {id} must be one of the roots the list reports, or the
 // route is a 404: a path from the URL is never read on its own say-so. The repo's own instruction
 // files (CLAUDE.md, AGENTS.md at the root), then each head's client memory at
@@ -34,6 +45,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.compaction.CompactionInstructions
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import splice.http.JsonReply
@@ -43,6 +55,7 @@ import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
+import splice.sessions.registry.TrustedRoot
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -62,12 +75,25 @@ public fun interface RepoOf {
     public operator fun invoke(record: SessionRecord): RepoRoot?
 }
 
+/** The trusted root a head's statusline probes a path under, as the sessions rows' resolver sees it. */
+public fun interface StatuslineRootOf {
+    public operator fun invoke(path: String, head: String): TrustedRoot?
+}
+
+/** The daemon's compaction table, read at CALL time: the control plane assigns it after the routes are
+ *  built, so a value captured at construction would be null forever. Null is "never wired". */
+public fun interface CompactionSource {
+    public operator fun invoke(): CompactionInstructions?
+}
+
 public class ProjectsRoutes(
     private val registry: SessionSource?,
     private val heads: Map<String, SessionHead>,
     private val repoOf: RepoOf,
     private val teams: TeamSource,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val statuslineRoot: StatuslineRootOf = StatuslineRootOf { _, _ -> null },
+    private val compaction: CompactionSource = CompactionSource { null },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val slugChars = Regex("[^A-Za-z0-9]")
@@ -150,6 +176,7 @@ public class ProjectsRoutes(
         private val today: List<Pair<SessionHead, SessionPerfWindow>> by lazy {
             heads.values.mapNotNull { head -> head.perfRows?.window(dayStart)?.let { head to it } }
         }
+        private val table = compaction()
         val roots: List<String> =
             (byRoot.keys + allTeams.map { it.repo }.filter { it.isNotBlank() }).distinct().sorted()
 
@@ -173,6 +200,37 @@ public class ProjectsRoutes(
                 put("cost_today_usd", tally.costUsd)
                 put("day_start", dayStart)
                 put("last_activity", last?.let(::JsonPrimitive) ?: JsonNull)
+                put("compaction", compactionOf(root))
+                put("statusline_roots", statuslineRootsOf(root))
+            }
+        }
+
+        private fun compactionOf(root: String) = table?.let { rules ->
+            buildJsonArray {
+                rules.rulesFor(Paths.get(root)).forEach { rule ->
+                    add(
+                        buildJsonObject {
+                            put("scope", rule.scope.wire)
+                            put("source", rule.source)
+                            // live length: 0 for an explicit opt-out, null when the file is unreadable
+                            // (the source label says so too) — CompactionInstructionsRoute's rule.
+                            put("chars", rule.text?.length)
+                        },
+                    )
+                }
+            }
+        } ?: JsonNull
+
+        private fun statuslineRootsOf(root: String) = buildJsonArray {
+            heads.keys.sorted().forEach { head ->
+                val covering = statuslineRoot(root, head)
+                add(
+                    buildJsonObject {
+                        put("head", head)
+                        put("root", covering?.path)
+                        put("entry", covering?.origin?.wire)
+                    },
+                )
             }
         }
     }

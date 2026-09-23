@@ -38,6 +38,7 @@ import splice.control.api.ControlPayloads
 import splice.control.api.EventsRoute
 import splice.control.api.HeadResolver
 import splice.control.api.JsonBody
+import splice.control.api.RouteFailure
 import splice.control.api.auth.AccountsRoute
 import splice.control.api.auth.AuthRoutes
 import splice.control.api.diagnostics.DoctorRoute
@@ -65,15 +66,18 @@ import splice.control.api.usage.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.heads.HeadStatusListing
 import splice.heads.ListHeads
 import splice.sessions.http.ActivitySource
+import splice.sessions.http.CompactionSource
 import splice.sessions.http.ProjectsRoutes
 import splice.sessions.http.RepoOf
 import splice.sessions.http.SentTextSource
 import splice.sessions.http.SessionsRoutes
+import splice.sessions.http.StatuslineRootOf
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamsRoutes
 import splice.sessions.registry.SessionSource
@@ -152,7 +156,14 @@ public class ControlServer(
         )
     }
     private val projectsRoutes = sessionsRoutes?.let { routes ->
-        ProjectsRoutes(sessions, sessionHeads, RepoOf(routes::repoOf), TeamSource { ports.teams })
+        ProjectsRoutes(
+            sessions,
+            sessionHeads,
+            RepoOf(routes::repoOf),
+            TeamSource { ports.teams },
+            statuslineRoot = StatuslineRootOf(routes::statuslineRootOf),
+            compaction = CompactionSource { ports.compaction },
+        )
     }
     private val payloads =
         ControlPayloads(
@@ -187,6 +198,7 @@ public class ControlServer(
     private val upgradeRoute = UpgradeRoute()
     private val jsonBody = JsonBody()
     private val audit = ControlAudit(log)
+    private val routeFailure = RouteFailure(audit)
     private val configRoutes = ConfigRoutes(config, jsonBody, payloads)
     private val usagePayloads = UsagePayloads(heads, config)
     private val perfPayloads = PerfPayloads(heads)
@@ -436,7 +448,7 @@ public class ControlServer(
             )
             return
         }
-        block()
+        Cancellables.runCatchingBestEffort { block() }.onFailure { routeFailure.answer(call, it) }
     }
 
     private suspend fun respond(call: ApplicationCall, body: String) =

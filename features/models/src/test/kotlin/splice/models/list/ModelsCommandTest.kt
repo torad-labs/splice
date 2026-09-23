@@ -23,7 +23,7 @@ class ModelsCommandTest {
         assertEquals(
             listOf(
                 "splice: no provider 'missing' in /fixture/splice.toml",
-                "  \u001B[2mdeclared:\u001B[0m known",
+                "  declared: known",
             ),
             lines,
         )
@@ -55,9 +55,33 @@ class ModelsCommandTest {
         assertTrue(lines.any { it.contains("your own Claude login") })
     }
 
+    @Test
+    fun `NO_COLOR in the caller's env reaches the report, which is then its plain text`() {
+        // The report used to paint with raw SGR constants whatever the env said, so NO_COLOR, a dumb
+        // TERM and a pipe all received escape bytes. Both runs render the same no-network provider.
+        val painted = render(mapOf("TERM" to "xterm-256color"))
+        val plain = render(mapOf("TERM" to "xterm-256color", "NO_COLOR" to ""))
+        assertTrue(painted.any { ESC in it }, "the control run carried no colour, so the arm below proves nothing")
+        assertFalse(plain.any { ESC in it }, "an SGR sequence reached a NO_COLOR report: $plain")
+        assertEquals(painted.map { it.replace(SGR, "") }, plain, "colour is never the only carrier")
+    }
+
+    private fun render(env: Map<String, String>): List<String> {
+        val lines = mutableListOf<String>()
+        ModelsCommand(
+            ModelConfigurationSource { ModelConfiguration("/fixture/splice.toml", mapOf("mine" to clientProvider())) },
+            ModelCredentialSource { _, _, _ -> null },
+            ModelReportOutput { lines.add(it) },
+        ).models(emptyList(), EnvReader { env[it] })
+        return lines
+    }
+
     private fun clientProvider() = ProviderConfig(
         dialect = Dialect.ANTHROPIC_PASSTHROUGH,
         baseUrl = "https://example.invalid",
         auth = AuthConfig(kind = "client"),
     )
 }
+
+private const val ESC = "\u001B"
+private val SGR = Regex("\u001B\\[[0-9;]*m")

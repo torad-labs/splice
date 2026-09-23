@@ -41,7 +41,7 @@ private class CollectDisconnectAuth : RefreshableAuthProvider {
 class HeadServerCollectDisconnectTest {
 
     private val mock = MockChatGptUpstream()
-    private val port = freshPort()
+    private val port: Int get() = head.port
     private lateinit var head: HeadServer
     private val gate = InflightGate({ 0 })
     private lateinit var tmp: java.nio.file.Path
@@ -71,7 +71,7 @@ class HeadServerCollectDisconnectTest {
                 configEffort = "high",
                 configSummary = "detailed",
             ),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(

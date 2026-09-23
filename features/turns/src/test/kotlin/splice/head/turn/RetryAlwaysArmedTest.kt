@@ -72,7 +72,6 @@ import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.net.ServerSocket
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
 
@@ -146,7 +145,9 @@ class RetryAlwaysArmedTest {
 
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
-    private val port = ServerSocket(0).use { it.localPort }
+
+    // The head binds port 0 and reports what it got, so no leased port can be taken before the bind.
+    private val port: Int get() = head.port
 
     private lateinit var head: HeadServer
 
@@ -183,7 +184,7 @@ class RetryAlwaysArmedTest {
         )
         head = HeadServer(
             provider = provider,
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = upstreamClient,

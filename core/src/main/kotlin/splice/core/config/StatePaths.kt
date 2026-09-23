@@ -209,6 +209,11 @@ public class StatePaths(
     /** Per-turn perf telemetry JSONL (bottleneck instrument) — additive, not a frozen HUD name. */
     public fun perfStatsFile(headKey: String): Path = stateDir.resolve("$headKey-perf.jsonl")
 
+    /** Where every head's retired perf generations are archived (PerfStats' rotation archive, named
+     *  per head by PerfArchiveName), so history past the live file and its `.1` is kept rather than
+     *  discarded on the next rotation. One directory: the names already carry the head. */
+    public val perfArchiveDir: Path = stateDir.resolve("perf-archive")
+
     /** Hourly token-economics rollup (quota instrument) — additive, not a frozen HUD name. */
     public fun economicsFile(headKey: String): Path = stateDir.resolve("$headKey-economics.json")
 

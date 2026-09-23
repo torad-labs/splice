@@ -586,6 +586,11 @@ async function boot(jar: string): Promise<Daemon> {
     'pinned_model = "wire/keys-model"',
     'models = [{ id = "wire/keys-model", slot = "sonnet" }]',
     "",
+    // One rule, so the compaction rows the console declares carry a live element to read: the
+    // instructions route lists it, and the seeded project resolves to it (M4-09).
+    "[compaction]",
+    'instructions = "wire keys compaction rule"',
+    "",
   ].join("\n"));
   seedProject(home);
   const env = {

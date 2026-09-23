@@ -56,6 +56,32 @@ class RepoResolverTest {
         assertEquals(RepoRoot(plain, reason = REASON_NO_REPO), resolver.resolve(plain))
     }
 
+    // The project row's statusline entry: which trusted root covers a repo, and from which entry of
+    // the set it came. The innermost wins, the same boundary the walk stops at, so a configured root
+    // nested under $HOME names the knob and not the home directory.
+    @Test
+    fun `the covering trusted root is the innermost one, named by the entry it came from`() {
+        val base = tmp.toRealPath()
+        val home = Files.createDirectories(base.resolve("home"))
+        val configured = Files.createDirectories(home.resolve("work"))
+        val resolver = RepoResolver(extraRoots = listOf(configured.toString()), home = home.toString())
+        val inHome = Files.createDirectories(home.resolve("notes")).toString()
+        val inConfigured = Files.createDirectories(configured.resolve("repo")).toString()
+        assertEquals(TrustedRoot(home.toString(), TrustedRootOrigin.HOME), resolver.trustedRootOf(inHome))
+        assertEquals(
+            TrustedRoot(configured.toString(), TrustedRootOrigin.CONFIGURED),
+            resolver.trustedRootOf(inConfigured),
+        )
+        assertEquals(null, resolver.trustedRootOf("/usr"), "outside every trusted root")
+        assertEquals(null, resolver.trustedRootOf(base.resolve("gone").toString()), "a path that is not there")
+        assertEquals(null, resolver.trustedRootOf("relative/dir"))
+        val tmpRoot = Path.of("/tmp").toRealPath()
+        if (base.startsWith(tmpRoot)) {
+            val other = Files.createDirectories(base.resolve("scratch")).toString()
+            assertEquals(TrustedRoot(tmpRoot.toString(), TrustedRootOrigin.TMP), resolver.trustedRootOf(other))
+        }
+    }
+
     @Test
     fun `the walk never reads a git dir above the trusted root that holds the cwd`() {
         val base = tmp.toRealPath()

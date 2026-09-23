@@ -59,7 +59,7 @@ public class HeadServer(
     private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()
     private val admissionGate = AdmissionGate(provider, deps, window, responses)
-    private val diagnostics = HeadDiagnostics(provider, listenPort, deps.gate, driver, deps.stores.wireTap)
+    private val diagnostics = HeadDiagnostics(provider, deps.gate, driver, deps.stores.wireTap)
     private val admission = HeadAdmission(
         deps,
         clientAuth,
@@ -84,7 +84,11 @@ public class HeadServer(
 
     override val key: String get() = provider.key
     override val label: String get() = provider.label
-    override val port: Int get() = listenPort
+
+    /** The port this head listens on: the one its connector BOUND while running (the OS-assigned
+     *  port when [listenPort] is 0, which is how a test gets a port with no lease-then-bind window),
+     *  and the configured [listenPort] while stopped. */
+    override val port: Int get() = engine.port
 
     override suspend fun start(): Unit = lifecycle.withLock { startLocked() }
 
@@ -95,9 +99,9 @@ public class HeadServer(
         startLocked()
     }
 
-    override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning)
+    override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)
 
-    private fun startLocked() {
+    private suspend fun startLocked() {
         if (engine.isRunning) return
         // G20 contract: a control-plane restart promises a fresh diagnostic baseline; the counters
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).

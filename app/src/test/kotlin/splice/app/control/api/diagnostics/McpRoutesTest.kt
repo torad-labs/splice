@@ -43,7 +43,6 @@ import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import java.net.ServerSocket
 import java.nio.file.Files
 import kotlin.io.path.writeText
 
@@ -53,7 +52,8 @@ import kotlin.io.path.writeText
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class McpRoutesTest {
 
-    private val port = freshMcpPort()
+    // The server binds port 0 and reports what it got: no leased port can be taken before the bind.
+    private val port: Int get() = control.listeningPort
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var control: ControlServer
@@ -70,10 +70,13 @@ class McpRoutesTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         val global = json.parseToJsonElement("""{"fake":{"command":"python3","args":["$script"]}}""").jsonObject
+        // The endpoint prefix is only the URL a generated client config would dial, and nothing in
+        // this file dials it (the tests reach the routes on the bound port directly). It is built
+        // before the server exists, so it cannot name the port the server has not bound yet.
         val sharing = McpSharing(
             true,
             emptySet(),
-            "http://127.0.0.1:$port/mcp/",
+            "http://127.0.0.1:0/mcp/",
             McpAccessKey(mgmt::get),
             DirectoryProbe { false },
         )
@@ -97,7 +100,7 @@ class McpRoutesTest {
         )
         host = McpHost(sharing, { global }, log = { }, inventory = inventory)
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -105,7 +108,8 @@ class McpRoutesTest {
             log = { },
             mcpHost = host,
         )
-        control.start() // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
+        // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
+        runBlocking { control.start() }
     }
 
     @AfterAll
@@ -248,5 +252,3 @@ for line in sys.stdin:
             send({"jsonrpc":"2.0","method":"notifications/tools/list_changed"})
         send({"jsonrpc":"2.0","id":rid,"result":{"content":[{"type":"text","text":"pid=%d" % os.getpid()}]}})
 """
-
-private fun freshMcpPort(): Int = ServerSocket(0).use { it.localPort }

@@ -42,7 +42,6 @@ import splice.core.turn.WatchdogBudget
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.net.ServerSocket
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -63,13 +62,14 @@ private class DrainFakeAuth : RefreshableAuthProvider {
 
 class HeadServerStopDrainTest {
 
-    /** A real HeadServer over the mock upstream, on an ephemeral port. maxRetries = 1 so the turn
-     *  reaches the hold scenario and STAYS there rather than backing off through it. */
+    /** A real HeadServer over the mock upstream, on an OS-assigned port it binds itself (0) and
+     *  reports after start. maxRetries = 1 so the turn reaches the hold scenario and STAYS there
+     *  rather than backing off through it. */
     private class Rig(tmp: Path) {
         val mock = MockChatGptUpstream()
         val gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 })
         val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
-        val port = ServerSocket(0).use { it.localPort }
+        val port: Int get() = head.port
         val head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
@@ -91,7 +91,7 @@ class HeadServerStopDrainTest {
                 configEffort = "high",
                 configSummary = "detailed",
             ),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 60_000, maxRetries = 1),

@@ -37,7 +37,6 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Files
 
 private class GateFakeHead(
@@ -76,14 +75,33 @@ class ControlServerGateTest {
     @AfterAll
     fun tearDown() = client.close()
 
+    /** 2026-09-23: every control-plane test binds port 0 and reads the port back, so no test leases
+     *  one with ServerSocket(0) and races to bind it later (the BindException of CI run
+     *  35881955038). Red if listeningPort reports the configured 0 instead of what the connector
+     *  bound, or keeps a stale bound port after stop. */
+    @Test
+    fun `a control plane started on port 0 reports the port it bound and serves on it`() = runTest {
+        val paths = StatePaths(baseOverride = Files.createTempDirectory("control-port-zero").resolve("state"))
+        val server = ControlServer(0, emptyMap(), ConfigService(paths), MgmtKey(paths), { "" }, {})
+        server.start()
+        try {
+            val bound = server.listeningPort
+            assertTrue(bound > 0, "a control plane built on port 0 must report the OS-assigned port, got $bound")
+            assertEquals(HttpStatusCode.OK, client.get("http://127.0.0.1:$bound/health").status)
+        } finally {
+            server.stop()
+        }
+        assertEquals(0, server.listeningPort, "a stopped control plane reports the port it was configured with")
+    }
+
     @Test
     fun `lowercase bearer scheme is accepted on a guarded control route`() = runTest {
         val tmp = Files.createTempDirectory("control-bearer")
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val port = freshPort()
-        val server = ControlServer(port, emptyMap(), ConfigService(paths), mgmt, { "" }, {})
+        val server = ControlServer(0, emptyMap(), ConfigService(paths), mgmt, { "" }, {})
         server.start()
+        val port = server.listeningPort
         try {
             val ok = client.get("http://127.0.0.1:$port/api/status") {
                 header("Authorization", "bearer ${mgmt.get()}")
@@ -102,9 +120,8 @@ class ControlServerGateTest {
     fun `an unauthorized start never reaches the extracted feature`() = runTest {
         val paths = StatePaths(baseOverride = Files.createTempDirectory("control-start-guard").resolve("state"))
         val mgmt = MgmtKey(paths)
-        val port = freshPort()
         val server = ControlServer(
-            port = port,
+            port = 0,
             heads = mapOf("codex" to gateHead("codex", 3099, inflight = 0, queued = 0, limit = 0)),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -112,6 +129,7 @@ class ControlServerGateTest {
             log = {},
         )
         server.start()
+        val port = server.listeningPort
         try {
             val stopped = client.post("http://127.0.0.1:$port/api/heads/codex/stop") {
                 header("Authorization", "Bearer ${mgmt.get()}")
@@ -144,9 +162,8 @@ class ControlServerGateTest {
         val tmp = Files.createTempDirectory("control-gate")
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val port = freshPort()
         val server = ControlServer(
-            port = port,
+            port = 0,
             heads = mapOf(
                 "bounded" to gateHead("bounded", 4101, inflight = 3, queued = 2, limit = 100),
                 "unlimited" to gateHead("unlimited", 4102, inflight = 5, queued = 0, limit = 0),
@@ -157,6 +174,7 @@ class ControlServerGateTest {
             log = {},
         )
         server.start()
+        val port = server.listeningPort
         try {
             val heads = json.parseToJsonElement(
                 client.get("http://127.0.0.1:$port/api/heads") {
@@ -197,7 +215,3 @@ class ControlServerGateTest {
         warnTokens5h = 0,
     )
 }
-
-// No readiness poll: ControlServer.start returns routed and bound (Ktor's default SEQUENTIAL startup
-// runs the modules before NettyApplicationEngine's bind(...).sync(); V4-139).
-private fun freshPort(): Int = ServerSocket(0).use { it.localPort }

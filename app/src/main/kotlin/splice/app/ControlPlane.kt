@@ -118,8 +118,13 @@ internal class ControlPlane(
      *  restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike a per-head start, an uncaught
      *  EADDRINUSE here (a prior daemon that freed the lock but not yet the control port) would
      *  crash the new daemon to /dev/null, leaving zero serving. Exit cleanly instead — Main's
-     *  finally stops the heads we started and releases the lock. */
-    internal fun start(
+     *  finally stops the heads we started and releases the lock.
+     *
+     *  A [controlPort] of 0 binds an OS-assigned port, read back from the returned server's
+     *  [ControlServer.listeningPort]. The MCP endpoint prefix and the resume hook's port are built
+     *  from the ARGUMENT before the bind, so 0 serves only callers that exercise neither — the
+     *  wiring tests; the daemon always passes its configured port. */
+    internal suspend fun start(
         controlPort: Int,
         heads: Map<String, ManagedHead>,
         failedHeads: FailedHeads,

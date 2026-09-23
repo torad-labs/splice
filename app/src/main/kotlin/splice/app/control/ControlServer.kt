@@ -99,8 +99,8 @@ public class ControlServer(
             clientVersions,
         )
     private val resolver = HeadResolver(heads, payloads)
-    private val guard = ControlGuard(mgmtKey)
     private val audit = ControlAudit(log)
+    private val guard = ControlGuard(mgmtKey, audit)
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
@@ -120,10 +120,26 @@ public class ControlServer(
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
 
-    public fun start() {
+    /** What the connector actually bound in the current [start]; null while stopped. */
+    @Volatile
+    private var boundPort: Int? = null
+
+    /** The port this control plane listens on: the one its connector BOUND while running — the
+     *  OS-assigned one when it was constructed with port 0 — and the configured [port] otherwise.
+     *  A caller that wants a free port passes 0 and reads this after [start]: leasing a number with
+     *  ServerSocket(0) and handing it here to bind later leaves a window in which anything else may
+     *  take it (the BindException class of CI run 35881955038). */
+    public val listeningPort: Int get() = boundPort ?: port
+
+    /** Suspend since 2026-09-23, for the one read below: Ktor 3 publishes the bound port only
+     *  through the engine's suspend resolvedConnectors(). */
+    public suspend fun start() {
         mgmtKey.get() // mint eagerly BEFORE the port opens — a dashboard load must not race it
         val engine = controlEngine()
         engine.start(wait = false)
+        // Netty's start binds with bind(...).sync() and completes the resolved connectors before it
+        // returns (read from the 3.5.2 bytecode), so this never actually waits.
+        boundPort = engine.engine.resolvedConnectors().single().port
         server = engine
         mcpHost?.start()
     }
@@ -155,5 +171,6 @@ public class ControlServer(
         mcpHost?.stop()
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
+        boundPort = null
     }
 }

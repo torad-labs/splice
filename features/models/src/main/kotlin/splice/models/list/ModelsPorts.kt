@@ -18,4 +18,9 @@ public fun interface ModelConfigurationSource {
 /** Reads a provider's credential without exposing its storage format to model discovery. */
 public fun interface ModelCredentialSource {
     public fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String?
+
+    /** When the stored OAuth token this provider presents expires, in epoch milliseconds; null when
+     *  there is none or it carries no expiry (an api-key). A refusal of an expired token is the head's
+     *  refresh not yet run, never a login to redo, and the probe's sentence has to say which. */
+    public fun expiresAtMs(provider: ProviderConfig): Long? = null
 }

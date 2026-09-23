@@ -19,8 +19,3 @@ public fun interface ModelConfigurationSource {
 public fun interface ModelCredentialSource {
     public fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String?
 }
-
-/** Writes an operator-facing model-report line, not a daemon log or a client-wire frame. */
-public fun interface ModelReportOutput {
-    public fun line(text: String): Unit
-}

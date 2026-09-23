@@ -7,6 +7,7 @@ import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RED
 import splice.core.terminal.RESET
+import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import splice.core.topology.DialectWires
 import splice.core.util.EnvReader
@@ -31,7 +32,7 @@ private val UNDECLARED = setOf(RosterVerdict.NEW, RosterVerdict.EXCLUDED)
 public class ModelsCommand(
     private val configuration: ModelConfigurationSource,
     credentials: ModelCredentialSource,
-    private val output: ModelReportOutput,
+    private val output: TerminalOutput,
 ) {
     private val probe = ModelsProbe(credentials = credentials)
     private val diff = RosterDiff()

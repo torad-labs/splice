@@ -4,7 +4,6 @@
 // Daemon up/spawn/wait bodies live in DaemonLaunch.kt (concentration HIGH, 2026-08-19).
 package splice.app.cli
 
-import splice.app.auth.LoginOutput
 import splice.app.auth.SystemBrowserOpener
 import splice.app.cli.daemon.DaemonLaunch
 import splice.app.cli.doctor.MgmtKeyRead
@@ -12,6 +11,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.Cancellables
@@ -145,7 +145,7 @@ internal object AdminSupport {
      *  because "/health stopped answering" is NOT proof the old JVM freed its ports. */
     fun controlPortBound(port: Int): Boolean = launch.controlPortBound(port)
 
-    fun openUrl(url: String): Boolean = SystemBrowserOpener(LoginOutput { println(it) }).open(url)
+    fun openUrl(url: String): Boolean = SystemBrowserOpener(TerminalOutput { println(it) }).open(url)
 
     /** DR-174: the mgmt-key read, with absence and denied access kept apart.
      *

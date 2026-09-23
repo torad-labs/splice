@@ -5,7 +5,7 @@
 // slow_down bumps the interval PERMANENTLY (+5s); expired_token restarts the WHOLE flow (bounded
 // to 2 restarts); access_denied / >=500 abort; the device_authorization expires_in is the overall
 // deadline. Credentials persist through the shared atomic-0600 writeCredentialFile. Its lines go
-// out through the caller's LoginOutput; the bounded runBlocking bridge lives in the CLI.
+// out through the caller's TerminalOutput; the bounded runBlocking bridge lives in the CLI.
 package splice.app.auth
 
 import io.ktor.client.HttpClient
@@ -15,6 +15,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import splice.core.auth.CredentialExpiry
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
@@ -38,7 +39,7 @@ private const val MAX_POLL_INTERVAL_S = 3600L
  *  hands in its own — the CLI a terminal, a test a recorder — and [browser] rides with it, which is
  *  what keeps a test off the real browser. */
 public class DeviceLoginFlow(
-    private val output: LoginOutput,
+    private val output: TerminalOutput,
     browser: BrowserOpener = SystemBrowserOpener(output),
 ) {
 

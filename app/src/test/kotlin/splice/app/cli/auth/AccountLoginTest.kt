@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.LoginIo
-import splice.app.auth.LoginOutput
 import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.OAuthAccountLabels
 import splice.app.auth.OAuthAccountRefused
@@ -25,6 +24,7 @@ import splice.client.login.LoginOutcomeFile
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
 import splice.provider.codex.CodexAuthProvider
@@ -39,9 +39,10 @@ import java.util.Base64
 
 class AccountLoginTest {
 
-    private val loginIo = LoginIo(LoginOutput {})
     @TempDir
     lateinit var dir: Path
+
+    private val loginIo = LoginIo(TerminalOutput {})
 
     @Test
     fun `pooled OAuth providers expose conservative credential file evidence`() {

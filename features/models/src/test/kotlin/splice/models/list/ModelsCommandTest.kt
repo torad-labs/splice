@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -16,7 +17,7 @@ class ModelsCommandTest {
         val command = ModelsCommand(
             ModelConfigurationSource { ModelConfiguration("/fixture/splice.toml", mapOf("known" to clientProvider())) },
             ModelCredentialSource { _, _, _ -> error("an unknown provider must not read a credential") },
-            ModelReportOutput { lines.add(it) },
+            TerminalOutput { lines.add(it) },
         )
 
         assertFalse(command.models(listOf("missing"), EnvReader { null }))
@@ -46,7 +47,7 @@ class ModelsCommandTest {
                 )
             },
             ModelCredentialSource { _, _, _ -> null },
-            ModelReportOutput { lines.add(it) },
+            TerminalOutput { lines.add(it) },
         )
 
         assertFalse(command.models(emptyList(), EnvReader { null }))

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.auth.LoginMuse
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,7 +28,9 @@ class AccountLoginMuseTest {
         val original = """{"access_token":"primary-secret"}"""
         Files.writeString(primary, original)
         val account = OAuthAccountFiles().loginAccount(AuthKind.MuseOAuth, primary, "work")
-        assertTrue(LoginIo(LoginOutput {}).persistIfSignedIn(primary, """{"access_token":"backup-secret"}""", account))
+        assertTrue(
+            LoginIo(TerminalOutput {}).persistIfSignedIn(primary, """{"access_token":"backup-secret"}""", account),
+        )
         assertEquals(original, Files.readString(primary))
         val target = dir.resolve("muse-oauth/muse.json/work.json")
         val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(Files.readString(target)).jsonObject
@@ -72,7 +75,7 @@ class AccountLoginMuseTest {
             }
             assertEquals("OAuth account label already has a login in progress", refused.reason)
             assertTrue(
-                LoginIo(LoginOutput {}).persistIfSignedIn(
+                LoginIo(TerminalOutput {}).persistIfSignedIn(
                     primary,
                     """{"access_token":"replacement-secret"}""",
                     requireNotNull(first.account),

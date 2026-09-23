@@ -1,7 +1,7 @@
 // NEW: the OAuth login orchestration the Node had in codex-login.mjs (never ported until now) —
 // generalized to serve BOTH codex and grok (identical shape: PKCE authorize URL → loopback
 // callback server → code exchange → write auth.json). Admin one-shot: its lines go out through the
-// caller's LoginOutput and a bounded runBlocking bridge lives in the CLI. The loopback bind is
+// caller's TerminalOutput and a bounded runBlocking bridge lives in the CLI. The loopback bind is
 // 127.0.0.1 only.
 package splice.app.auth
 
@@ -13,6 +13,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.io.IOException
@@ -39,7 +40,7 @@ private const val MIN_BARE_CODE = 8
 /** A class, not an `object` (LAYOUT-01): every line the flow speaks goes to [output], so each caller
  *  hands in its own — the CLI a terminal, a test a recorder — and [browser] rides with it. */
 public class OAuthLoginFlow(
-    private val output: LoginOutput,
+    private val output: TerminalOutput,
     browser: BrowserOpener = SystemBrowserOpener(output),
 ) {
 

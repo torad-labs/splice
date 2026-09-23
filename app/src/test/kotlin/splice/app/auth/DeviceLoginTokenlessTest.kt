@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.auth.LoginKimi
+import splice.core.terminal.TerminalOutput
 import splice.provider.kimi.KimiOAuth
 import splice.upstream.Waiter
 import java.net.InetSocketAddress
@@ -109,7 +110,7 @@ class DeviceLoginTokenlessTest {
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
             val ok = runBlocking {
-                DeviceLoginFlow(LoginOutput { out.appendLine(it) }, browser)
+                DeviceLoginFlow(TerminalOutput { out.appendLine(it) }, browser)
                     .run(specFor(server, authPath, account, afterPersist), waiter)
             }
             assertEquals(listOf("http://127.0.0.1:${server.address.port}/verify"), browser.urls)
@@ -140,7 +141,7 @@ class DeviceLoginTokenlessTest {
         val waiterEntered = CompletableDeferred<Unit>()
         val releaseWaiter = CompletableDeferred<Unit>()
         val running = async(Dispatchers.Default) {
-            DeviceLoginFlow(LoginOutput {}, browser).run(
+            DeviceLoginFlow(TerminalOutput {}, browser).run(
                 specFor(server, primary, firstAccount),
                 waiter = Waiter {
                     waiterEntered.complete(Unit)

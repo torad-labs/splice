@@ -14,9 +14,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.LoginIo
-import splice.app.auth.LoginOutput
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -31,7 +31,7 @@ import java.nio.file.Paths
 
 class LoginCommandTest {
 
-    private val loginIo = LoginIo(LoginOutput {})
+    private val loginIo = LoginIo(TerminalOutput {})
 
     @Test
     fun `oauth login writes to the provider configured auth file`() {

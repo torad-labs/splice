@@ -2,11 +2,11 @@
 package splice.app
 
 import splice.app.auth.StoredCredential
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.models.list.ModelConfiguration
 import splice.models.list.ModelConfigurationSource
 import splice.models.list.ModelCredentialSource
-import splice.models.list.ModelReportOutput
 import splice.models.list.ModelsCommand
 import splice.topology.TopologyLoader
 
@@ -18,7 +18,7 @@ internal object ModelsWiring {
                 ModelConfiguration(path.toString(), TopologyLoader.loadOrMaterialize(path).providers)
             },
             credentials = ModelCredentialSource(StoredCredential()::bearer),
-            output = ModelReportOutput(::println),
+            output = TerminalOutput(::println),
         )
         return command.models(args, EnvReader(System::getenv))
     }

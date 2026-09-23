@@ -2,7 +2,7 @@
 // openBrowser (best-effort, loopback-safe) and writeCredentialFile (atomic 0600 write, no
 // world-readable window). Extracted verbatim from OAuthLoginFlow so DeviceLoginFlow reuses the
 // exact same secure-write pattern instead of re-deriving it. Every operator-facing line goes out
-// through [LoginOutput] (LAYOUT-01); the terminal-and-install half lives in cli/auth/CliSignIn.kt.
+// through [TerminalOutput] (LAYOUT-01); the terminal-and-install half lives in cli/auth/CliSignIn.kt.
 package splice.app.auth
 
 import io.ktor.client.request.HttpRequestBuilder
@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -29,13 +30,6 @@ private const val UNKNOWN_HOST = "unknown"
 /** Opens a login URL; tests record the request without starting an operating-system process. */
 public fun interface BrowserOpener {
     public fun open(url: String): Boolean
-}
-
-/** Where a sign-in's operator-facing lines go (LAYOUT-01). The flows used to `println` them, which
- *  only an executable may do; the CLI passes a terminal writer and a test passes a recorder, so the
- *  same flow runs under both without either mutating `System.out`. */
-public fun interface LoginOutput {
-    public fun line(text: String)
 }
 
 /** V4-132: the console's login-id/poll seam over [DeviceLoginFlow] and [OAuthLoginFlow] — what
@@ -59,7 +53,7 @@ public data class LoginAnnouncement(
 )
 
 /** The operator's desktop browser. Public: `splice console` opens its page through it as well. */
-public class SystemBrowserOpener(private val output: LoginOutput) : BrowserOpener {
+public class SystemBrowserOpener(private val output: TerminalOutput) : BrowserOpener {
 
     /** WALL (2026-09-16). A TEST must never launch the operator's browser. SetupCommandTest
      *  constructed SetupCommand without overriding its loginHead seam, so the wizard ran a REAL
@@ -103,7 +97,7 @@ public class SystemBrowserOpener(private val output: LoginOutput) : BrowserOpene
  *  2026-08-15): a helper used by several types is a small named class they construct, not a pair
  *  of free functions. */
 internal class LoginIo(
-    private val output: LoginOutput,
+    private val output: TerminalOutput,
     private val browser: BrowserOpener = SystemBrowserOpener(output),
 ) {
 
@@ -177,7 +171,9 @@ internal class LoginIo(
         } else {
             val written = files.writeTokenDerived(account.kind, path, label, parsed, account.identity)
             written.retainedQuota?.let { quota ->
-                output.line("splice: retained quota in ${quota.fileName} — saved credentials as ${written.file.fileName}")
+                output.line(
+                    "splice: retained quota in ${quota.fileName} — saved credentials as ${written.file.fileName}",
+                )
             }
             written.file
         }

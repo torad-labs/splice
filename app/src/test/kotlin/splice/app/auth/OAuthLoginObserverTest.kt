@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.nio.file.Files
@@ -70,7 +71,7 @@ class OAuthLoginObserverTest {
 
         val ok = try {
             runBlocking {
-                val running = async(Dispatchers.IO) { OAuthLoginFlow(LoginOutput {}).run(spec, observer) }
+                val running = async(Dispatchers.IO) { OAuthLoginFlow(TerminalOutput {}).run(spec, observer) }
                 awaitAnnouncement(observer)
                 assertEquals(authorizeUrl, observer.detail.get()?.browserUrl)
                 withTimeout(TIMEOUT_MS) {

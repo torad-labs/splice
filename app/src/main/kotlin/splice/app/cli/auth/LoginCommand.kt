@@ -7,11 +7,11 @@ package splice.app.cli.auth
 
 import splice.app.auth.DeviceLoginFlow
 import splice.app.auth.LoginObserver
-import splice.app.auth.LoginOutput
 import splice.app.auth.LoginSpec
 import splice.app.auth.OAuthAccountRefused
 import splice.app.auth.OAuthLoginAccount
 import splice.app.auth.OAuthLoginFlow
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
@@ -26,7 +26,7 @@ import java.nio.file.Paths
  *  call site is a receiver insertion. */
 internal class LoginCommand(
     // The flows' lines, which this verb prints to the terminal (LAYOUT-01: the flows no longer do).
-    private val output: LoginOutput = LoginOutput { println(it) },
+    private val output: TerminalOutput = TerminalOutput { println(it) },
 ) {
 
     private val codex = LoginCodex()
@@ -94,7 +94,11 @@ internal class LoginCommand(
             }
             else -> {
                 val spec = specFor(headKey, topology, label)
-                if (spec == null) LoginResult(false) else LoginResult(OAuthLoginFlow(output).run(spec, observer), spec.account)
+                if (spec == null) {
+                    LoginResult(false)
+                } else {
+                    LoginResult(OAuthLoginFlow(output).run(spec, observer), spec.account)
+                }
             }
         }
     } catch (e: OAuthAccountRefused) {

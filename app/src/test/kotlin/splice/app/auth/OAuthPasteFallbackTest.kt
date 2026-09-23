@@ -8,11 +8,12 @@ package splice.app.auth
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.core.terminal.TerminalOutput
 import splice.core.util.FormEncoding
 
 class OAuthPasteFallbackTest {
 
-    private val flow = OAuthLoginFlow(LoginOutput {})
+    private val flow = OAuthLoginFlow(TerminalOutput {})
 
     /** The realistic paste: the whole redirect URL straight out of the browser bar. */
     @Test

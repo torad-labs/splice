@@ -103,8 +103,8 @@ write
                                     one dated note each (the milestone gate, not a per-row rerun)
   note <ID> "text"                  append a dated note to ONE ROW (never rewrites history)
   add-note "text"                   append a dated note to the CAMPAIGN (header) — a lesson or a
-                                    measurement with no row. Not a law: laws are injected into every
-                                    seat's SessionStart, so file a rule with add-law and nothing else
+                                    measurement with no row. Not a law: laws print in every packet of
+                                    the campaign, so file a rule with add-law and nothing else
   depends <ID> <dep[,…]>
   require <ID> <done|verified> <slug[,…]>
   require-set <ID> <done|verified> <slug[,…]>
@@ -389,8 +389,9 @@ function pickNext(blocks: readonly ItemBlock[]): ItemBlock | null {
 /**
  * VENDORING DELTA 4 (splice V4-143, 2026-09-18): a law line is `# LAW:` OR `# LAW [date]:`. The
  * splice ledger was written by manifest.py, whose add-law dates the law in the prefix; 58 of its 59
- * laws carry that form. With the `# LAW:` test alone, `laws` printed ONE of them — and `laws` is
- * what SessionStart injects into every seat, so a cutover would have silently dropped 58 laws.
+ * laws carry that form. With the `# LAW:` test alone, `laws` printed ONE of them — and `laws` was
+ * what SessionStart injected into every seat (until 2026-09-22), so a cutover would have silently
+ * dropped 58 laws.
  * One predicate for both readers, so the two can never disagree about what a law is.
  */
 const LAW_LINE = /^#\s*LAW(\s*\[[^\]]*\])?:/;
@@ -1615,13 +1616,13 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       // wholesale and a short replacement eats the law sheet. `add-law` was in the usage text the
       // whole time and a careful seat still did not land on it (2026-09-18). That is a
       // discoverability defect in the tool, so the dead end now names both safe exits — and they
-      // are two, not one: `add-law` writes a BINDING rule that is injected into every seat's
-      // SessionStart, so filing a lesson there would cost every seat context on every start.
+      // are two, not one: `add-law` writes a BINDING rule that prints in every packet of the
+      // campaign, so filing a lesson there would cost every seat context on every row.
       if (rest.length === 1) {
         throw new LedgerError(
           `note needs an item id: \`note <ID> "text"\`. For something that belongs to the CAMPAIGN rather than a row:\n` +
             `  add-note "text"   a dated line in the header — a lesson, a measurement, a decision with no row\n` +
-            `  add-law  "text"   a BINDING rule; it is injected into every seat's SessionStart, so it costs every seat context\n` +
+            `  add-law  "text"   a BINDING rule; it prints in every packet of the campaign, so it costs every seat context\n` +
             `Never amend-header for this: it replaces a line in place and a short replacement destroys the one it lands on.`,
         );
       }
@@ -2209,8 +2210,8 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       // The campaign-level counterpart to `note <ID>`: a dated header line that is NOT a law. The
       // gap it fills is real — a lesson with no row had only two surfaces, one that demands an id
       // and one that overwrites — and keeping it out of `# LAW:` is the point rather than a detail:
-      // the law lines are injected verbatim into every seat's SessionStart, so a lesson filed as a
-      // law is a permanent tax on every context in the campaign.
+      // the law lines print verbatim in every packet of the campaign, so a lesson filed as a law is
+      // a permanent tax on every context that works a row.
       const text = oneLine("note text", positional(rest, 0, "note text"));
       noExtraPositionals(rest, 1);
       await mutate(ledgerPath, (current) => {

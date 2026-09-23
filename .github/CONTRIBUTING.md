@@ -4,7 +4,6 @@
 
 - Node 24
 - Java 21 (JDK, e.g. Temurin)
-- Python 3 (hook tests)
 - Bun 1.4.2 (the `packageManager` pin in package.json; the gate's Bun legs and the arch tests spawn it)
 
 ## The gates
@@ -15,7 +14,7 @@ Run before opening a PR — these are the same checks CI runs:
 bun install --frozen-lockfile
 npm run gate              # the complete local/CI gate
 npm run gate:rules        # ast-grep walls, rule routing, config guard, coverage proof
-npm run test:hooks        # orchestrator hook test suite
+npm run test:hooks        # the write-time wall hook's red-green arms
 bun test tools/gate           # the gate CLI's own red-green arms
 ./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
 npm run lint -w console && npm test -w console && ./gradlew :console:build

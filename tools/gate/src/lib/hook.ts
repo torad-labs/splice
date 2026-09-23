@@ -1,5 +1,5 @@
-// The write-time and stop-time wall — `bun tools/gate rules --stdin <pretooluse|stop>`, the command
-// .claude/settings.json routes PreToolUse (Write|Edit|MultiEdit), Stop and SubagentStop to.
+// The write-time wall — `bun tools/gate rules --stdin pretooluse`, the command .claude/settings.json
+// routes PreToolUse (Write|Edit|MultiEdit) to.
 // (.claude/hooks/orchestrator.ts until PR 5; the rule set and the mirror mechanics are unchanged.)
 //
 // ONE router, ZERO per-rule hooks (operator design constraint, 2026-07-13): policy lives only in
@@ -14,20 +14,17 @@
 //          path as scanned; verified 2026-07-13 on ast-grep 0.44.0).
 //       3. severity:error matches block the call; anything lower goes to stderr.
 //
-//   stop (Stop / SubagentStop)
-//       `ast-grep scan` over the working tree; error findings block the stop.
-//
 // The SAME rules run at the gate (`bun tools/gate rules`, = npm run gate:rules) and in CI, through
 // the same ast-grep resolution (src/lib/astgrep.ts: the tree's pinned node_modules/.bin/ast-grep,
 // else PATH) — a weakened hook still fails the build (same-checker-twice).
 //
-// FAILURE POLICY, STATED PER LIFECYCLE BECAUSE THE TWO HALVES DIFFER ON PURPOSE:
-//   pretooluse fails CLOSED — a broken wall must not silently wave writes through; the block names
-//   this file and the error log.
-//   stop fails OPEN with a loud stderr warning — session end must never wedge on scan
-//   infrastructure; the write-time wall and the gate are the backstops.
-// The asymmetry is the design, not an oversight: pretooluse is the only enforcement of the walls
-// at write time, while stop is the third of three.
+// FAILURE POLICY: fails CLOSED — a broken wall must not silently wave writes through; the block
+// names this file and the error log.
+//
+// NO STOP-TIME SCAN (removed 2026-09-22, hook audit). A whole-tree `ast-grep scan` ran at every Stop
+// and SubagentStop: 2.1-3.7 s per turn end, and in a checkout shared by several seats its 12 blocks
+// in 14 days were findings in files the blocked seat had not touched (another seat's move in
+// progress). It was the third of three instruments; this wall and the gate + CI are the two left.
 //
 // Deliberate rule exceptions go inline: `// ast-grep-ignore: <rule-id>` plus a justification;
 // ast-grep honors these in both the hook and the gate.
@@ -42,7 +39,7 @@ import { dirname, join, resolve as pathResolve } from "node:path";
 import { astGrepBin } from "./astgrep.ts";
 import { findRepoRoot } from "./repo.ts";
 
-export const LIFECYCLES = ["pretooluse", "stop"] as const;
+export const LIFECYCLES = ["pretooluse"] as const;
 export type Lifecycle = (typeof LIFECYCLES)[number];
 export const isLifecycle = (s: string | undefined): s is Lifecycle => (LIFECYCLES as readonly string[]).includes(s ?? "");
 
@@ -161,11 +158,6 @@ function scanMirrored(r: Roots, rel: string, content: string): Match[] {
   }
 }
 
-function scanTree(r: Roots): Match[] {
-  if (!existsSync(r.sgconfig)) throw new Error(`missing ${r.sgconfig}`);
-  return scanAstGrep(r, [], r.root);
-}
-
 function formatFindings(header: string, matches: Match[], cap = 15): string {
   const lines = [`${header}: ${matches.length} finding(s)`, ""];
   for (const match of matches.slice(0, cap)) {
@@ -235,29 +227,9 @@ function pretooluse(r: Roots, data: Record<string, unknown>): number {
   return 0;
 }
 
-function stop(r: Roots, data: Record<string, unknown>): number {
-  if (data.stop_hook_active) return 0;
-  let matches: Match[];
-  try {
-    matches = scanTree(r);
-  } catch (exc) {
-    logError(r, String(exc));
-    process.stderr.write(`splice walls: stop scan unavailable, relying on gate (see ${r.errorLog})\n`);
-    return 0;
-  }
-  const errors = matches.filter((m) => m.severity === "error");
-  if (errors.length > 0) {
-    emitBlock(
-      formatFindings("SPLICE WALLS: the tree has rule violations — not done yet", errors) +
-        "\n\nFix them before stopping (same rules as bun tools/gate rules).",
-    );
-  }
-  return 0;
-}
-
-/** Run one lifecycle over the hook event on `stdin`. Always exits 0: the decision travels on
+/** Run the wall over the PreToolUse event on `stdin`. Always exits 0: the decision travels on
  *  stdout, and a non-zero exit would be a SECOND, unstructured channel Claude Code also reads. */
-export function hook(lifecycle: Lifecycle, stdin: string, env: Record<string, string | undefined> = Bun.env): number {
+export function hook(stdin: string, env: Record<string, string | undefined> = Bun.env): number {
   let data: unknown;
   try {
     data = JSON.parse(stdin || "");
@@ -267,20 +239,15 @@ export function hook(lifecycle: Lifecycle, stdin: string, env: Record<string, st
   if (data === null || typeof data !== "object" || Array.isArray(data)) return 0;
   const r = roots(env);
   try {
-    if (lifecycle === "pretooluse") return pretooluse(r, data as Record<string, unknown>);
-    return stop(r, data as Record<string, unknown>);
+    return pretooluse(r, data as Record<string, unknown>);
   } catch (exc) {
     logError(r, exc instanceof Error ? (exc.stack ?? String(exc)) : String(exc));
-    if (lifecycle === "pretooluse") {
-      emitBlock(
-        "HOOK POLICY INCOMPLETE: the splice walls hook failed on a blocking lifecycle.\n\n" +
-          `log: ${r.errorLog}\n\n` +
-          "Failing closed — silently skipping write-time policy is unsafe. Fix the hook\n" +
-          "(tools/gate/src/lib/hook.ts) or the scan toolchain (is ast-grep installed?); never route around it.",
-      );
-    } else {
-      process.stderr.write(`splice walls: stop lifecycle degraded, see ${r.errorLog}\n`);
-    }
+    emitBlock(
+      "HOOK POLICY INCOMPLETE: the splice walls hook failed on a blocking lifecycle.\n\n" +
+        `log: ${r.errorLog}\n\n` +
+        "Failing closed — silently skipping write-time policy is unsafe. Fix the hook\n" +
+        "(tools/gate/src/lib/hook.ts) or the scan toolchain (is ast-grep installed?); never route around it.",
+    );
   }
   return 0;
 }

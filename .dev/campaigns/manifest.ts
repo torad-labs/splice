@@ -12,7 +12,8 @@
 //
 //   laws                every campaign's laws — each .dev/campaigns/*.toml's own `laws`, in code-point
 //                       order of the file names, identical lines kept once, first occurrence wins.
-//                       manifest.py's aggregate byte for byte, and what SessionStart injects.
+//                       manifest.py's aggregate byte for byte (SessionStart injected it into every
+//                       seat until the 2026-09-22 hook audit; a row's `packet` carries its laws).
 //   help / -h / --help  the usage text at exit 0: the caller asked for usage, and got it.
 //   anything else       REFUSED, exit 1, with the ledgers that exist. A ledger with no command is
 //                       refused the same way.

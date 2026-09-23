@@ -12,8 +12,8 @@
  *    2. Lifecycle-aware block emit (§2.5 Fact 4). PreToolUse blocks emit exit-2 +
  *       stderr (the reliable deny per the Claude Code docs — JSON is only parsed on
  *       exit 0, so the legacy {"decision":"block"} would be ignored under exit 2).
- *       Stop / SubagentStop emit the {"decision":"block"} JSON (exit 0) which forces
- *       the agent to continue. PostToolUse cannot block; inject becomes additionalContext.
+ *       Any other blocking lifecycle gets the {"decision":"block"} JSON on exit 0.
+ *       Wired today (.claude/settings.json): PreToolUse and SessionStart only.
  *
  *  Each lifecycle entry script calls dispatch("<lifecycle>"). The dispatcher globs
  *  modules/<lifecycle>/*.ts (skipping `_`-prefixed = disabled, and index.ts),
@@ -160,7 +160,7 @@ export async function dispatch(lifecycle: string): Promise<void> {
     }
   }
 
-  if (injectPayloads.length > 0) emitInject(lifecycle, injectPayloads.join("\n\n---\n\n"));
+  if (injectPayloads.length > 0) emitInject(injectPayloads.join("\n\n---\n\n"));
 }
 
 function emitBlock(lifecycle: string, reason: string): never | void {
@@ -169,19 +169,13 @@ function emitBlock(lifecycle: string, reason: string): never | void {
     process.stderr.write(reason.replace(/\s+$/, "") + "\n");
     process.exit(2);
   }
-  // Stop / SubagentStop (forces continue) / PostToolUse (surfaces feedback).
+  // Any other lifecycle that can block reads the {"decision":"block"} JSON on exit 0.
   process.stdout.write(pyJsonDumps({ decision: "block", reason }));
 }
 
-function emitInject(lifecycle: string, text: string): void {
-  if (lifecycle === "posttooluse") {
-    process.stdout.write(
-      pyJsonDumps({
-        hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text },
-      }),
-    );
-    return;
-  }
+/** SessionStart is the only injecting lifecycle wired (.claude/settings.json); its plain stdout is
+ *  the added context. */
+function emitInject(text: string): void {
   process.stdout.write(text);
 }
 

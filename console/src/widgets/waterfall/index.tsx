@@ -14,7 +14,7 @@ import './waterfall.css';
 
 // The drawer rides with the waterfall: both are a turn's detail, and the logs page opens the same
 // drawer for a line that names a turn (FEATURES.md 4.9).
-export { CAPTURE_OFF, RequestDrawer } from './request-drawer';
+export { CAPTURE_AT_RESTART, CAPTURE_OFF, CAPTURE_ON, RequestDrawer } from './request-drawer';
 
 const ROW_H = 18;
 const AXIS = 1000;

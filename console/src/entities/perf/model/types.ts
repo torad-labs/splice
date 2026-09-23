@@ -221,23 +221,40 @@ export interface UnreadHead {
  *  callers that already address this slice. */
 export type { PendingRoute };
 
-/** One head's opt-in body capture: the toggle and, when it is on, the bodies of one turn.
+/**
+ * GET and PUT /api/heads/{head}/capture, exactly as CaptureRoutes.captureJson writes BOTH answers
+ * (daemon/control/src/main/kotlin/splice/control/api/turns/CaptureRoutes.kt:131-140): one head's
+ * trace SETTINGS, never a body. No route serves a captured body; the daemon's own pointer for
+ * reading one is the CLI, `splice trace <head>` (DoctorTraceChecks.kt:47).
  *
- *  PENDING V4-133 (`GET/PUT /api/heads/{head}/capture`, FEATURES.md 6 and 4.9). Capture is OFF by
- *  default and the console says so rather than showing an empty drawer that could be mistaken for
- *  a turn with no body. */
-export interface CaptureState {
+ * GET reports the head's EFFECTIVE settings, what the daemon records right now. PUT writes
+ * `[heads.<key>.overrides]` in splice.toml and answers with what it WROTE. The two differ after a
+ * write because `restart_required` is true on every answer today: the head's trace store is built
+ * once, at head assembly (HeadTraceStores.forHead), from the config the daemon booted with.
+ */
+export interface CaptureWire {
+  /** The head's key, as the daemon resolved the name in the path. */
   head: string;
   enabled: boolean;
-  /** The turn the bodies belong to (its `ts`), present only when a turn was asked for. */
-  at?: number;
-  /** The request body, redacted daemon-side, present only when capture is on and the turn was
-   *  recorded. Never a partial body: an absent field means the daemon has none. */
-  request?: string;
-  response?: string;
+  retention_days: number;
+  /** The per-record body cap, in characters. */
+  max_body_chars: number;
+  restart_required: boolean;
 }
 
-export type CaptureSlice = CaptureState | PendingRoute;
+/** One head's capture as the console holds it: what runs, what this console last wrote, and the
+ *  daemon's own words when it refused a write. Built by model/capture.ts, never by hand. */
+export interface CaptureState {
+  /** The GET, re-read after every write: what the daemon records now. */
+  running: CaptureWire;
+  /** The last PUT's answer for this head in this console session, or null before one: what
+   *  splice.toml says, which runs only after the restart the answer asks for. */
+  written: CaptureWire | null;
+  /** The daemon's sentence refusing the last write, verbatim, or null. */
+  refused: string | null;
+  /** A write is in flight; the switch ignores a second press until it lands. */
+  writing: boolean;
+}
 
 /** One in-flight turn, read off a head's gate snapshot (GateLive on GET /api/heads, FEATURES 2.4).
  *  camelCase because it is NOT a wire row: the derivation builds it from the payload. */

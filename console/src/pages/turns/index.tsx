@@ -19,6 +19,7 @@ import type { View } from '@features/views';
 import {
   fetchCapture,
   inflightFrom,
+  putCapture,
   startPerfSummaryPolling,
   startPerfTurnsPolling,
   useCapture,
@@ -26,7 +27,7 @@ import {
   usePerfTurns,
 } from '@entities/perf';
 import type {
-  CaptureSlice,
+  CaptureState,
   InflightTurn,
   PendingRoute,
   PerfSummaryHead,
@@ -228,7 +229,10 @@ export interface TurnsBoardProps {
   inflight: InflightTurn[];
   landed: TurnsState | PendingRoute | null;
   summary: PerfSummaryPayload | null;
-  capture: CaptureSlice | null;
+  /** The capture of whichever head was last read; the drawer shows it only for the open turn's. */
+  capture: CaptureState | null;
+  /** A capture read that failed, in the daemon's words. */
+  captureError?: string | null;
   locked?: boolean;
   error?: string | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
@@ -236,7 +240,7 @@ export interface TurnsBoardProps {
   sample?: string | undefined;
 }
 
-export function TurnsBoard({ inflight, landed, summary, capture, locked = false, error = null, sample }: TurnsBoardProps) {
+export function TurnsBoard({ inflight, landed, summary, capture, captureError = null, locked = false, error = null, sample }: TurnsBoardProps) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -258,9 +262,11 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
     overscan: 10,
   });
 
+  // Re-read on every opened turn, not only on a new head: the settings the daemon runs change at a
+  // restart, and the turn the operator just opened is the moment they are asking about.
   useEffect(() => {
     if (open?.kind !== 'row') return;
-    void fetchCapture(open.row.head, open.row.ts);
+    void fetchCapture(open.row.head);
   }, [open?.kind === 'row' ? open.row.head : null, open?.kind === 'row' ? open.row.ts : null]);
 
   const idleBuckets = selection.kind === 'timeline'
@@ -407,7 +413,13 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
                 <Waterfall row={open.row} />
               </Bay>
               <Bay label={S.detail}>
-                <RequestDrawer capture={capture} />
+                {/* Another head's capture never stands in for this one while its read is in
+                    flight: the drawer waits for a read of the head this turn ran on. */}
+                <RequestDrawer
+                  capture={capture !== null && capture.running.head === open.row.head ? capture : null}
+                  error={captureError}
+                  onSwitch={(enabled) => void putCapture(open.row.head, enabled)}
+                />
               </Bay>
             </>
           )}
@@ -488,6 +500,7 @@ export default function TurnsPage() {
       landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed, unread: [] } : turns.data}
       summary={fixture !== null ? fixture.summary : summary.data}
       capture={capture.data}
+      captureError={capture.error}
       locked={locked}
       error={turns.error}
       sample={sample?.name}

@@ -5,7 +5,7 @@
 //     zero-length segment that would read as "this phase took no time";
 //   - a turn that lost telemetry says so in words instead of showing smaller numbers;
 //   - a pending route renders the honest empty NAMING the row that will serve it, and a head with
-//     capture off says exactly that.
+//     capture off says exactly that (the capture switch itself is tests/capture.test.ts).
 //
 // The boards take their payloads as props rather than reading the stores here, because a static
 // render sees a zustand store's INITIAL state and never its current one; the store-reading default
@@ -325,16 +325,16 @@ describe('logs board', () => {
     expect(out).toContain('/home/user/.splice/logs/daemon.log');
   });
 
-  test('capture off is a sentence, and the pending capture route names its row', () => {
-    expect(render(h(RequestDrawer, { capture: { head: 'claudex', enabled: false } }))).toContain(CAPTURE_OFF);
-    expect(render(h(RequestDrawer, { capture: { pending: 'V4-133' } }))).toContain('row V4-133');
-    expect(board({ capture: { head: 'claudex', enabled: false } })).toContain(CAPTURE_OFF);
-  });
-
-  test('capture on with no body for the turn is an honest empty, not a frame', () => {
-    const out = render(h(RequestDrawer, { capture: { head: 'claudex', enabled: true } }));
-    expect(out).toContain('nothing captured for this turn');
-    expect(out).toContain('/api/heads/{head}/capture');
+  test('the drawer prints the tailed head\'s capture, and never another head\'s', () => {
+    const capture = (head: string) => ({
+      running: { head, enabled: false, retention_days: 7, max_body_chars: 4_194_304, restart_required: true },
+      written: null,
+      refused: null,
+      writing: false,
+    });
+    expect(render(h(RequestDrawer, { capture: capture('claudex') }))).toContain(CAPTURE_OFF);
+    expect(board({ capture: capture('claudex') })).toContain(CAPTURE_OFF);
+    expect(board({ capture: capture('other-head') })).not.toContain(CAPTURE_OFF);
   });
 
   test('a rotated tail says it restarted', () => {

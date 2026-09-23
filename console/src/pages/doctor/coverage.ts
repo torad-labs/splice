@@ -7,14 +7,13 @@ export const dispositions: readonly Disposition[] = [
   // The report and the upgrade status. Read-only, and both pending V4-127.
   { kind: 'route', name: '/api/doctor', disposition: 'read-only' },
   { kind: 'route', name: '/api/upgrade', disposition: 'read-only' },
-  // Still a row. Its title names GET/PUT /api/heads/{head}/capture, but this row builds no control
-  // for it, so it stays pending and the page prints the honest empty that names V4-133.
-  { kind: 'route', name: '/api/heads/{head}/capture', disposition: 'pending', where: 'V4-133' },
+  // /api/heads/{head}/capture moved to pages/turns/coverage.ts (M4-04): the turns page's request
+  // drawer carries the switch that reads and writes it, and a name has exactly one page owner.
   // Budgets and alerts are read AND written from the features this row ships — once they exist.
   // Both said `editable`, which claims a live route the page writes to, and gateway control serves
   // neither (grepped 2026-09-18: /api/budgets 0, /api/alerts 0, /api/alerts/test 0 literal
   // occurrences in daemon/control/src/main/kotlin). They are the same V4-133 the capture route
-  // above already names: one row, one vocabulary. And the test send is its own path that had no
+  // named when this file owned it: one row, one vocabulary. And the test send is its own path that had no
   // disposition AT ALL, which is worse than a wrong one — absence is not a disposition, and a
   // route nothing disposes is the case the coverage plane cannot even be wrong about (M1-37, M1-41).
   //

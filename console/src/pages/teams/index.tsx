@@ -210,9 +210,9 @@ export function TeamsPage() {
   const registry = useSessionRegistry((state) => state);
   const turns = usePerfTurns((state) => state);
 
-  useEffect(() => {
-    if (fixture === null) void fetchTeams();
-  }, [fixture]);
+  // The list is re-read on the panels' cadence, with or without a team open: a team or a binding
+  // made elsewhere (the CLI, another console) reaches an open page rather than waiting for a reload.
+  useEffect(() => (fixture === null ? poll(fetchTeams, READ_EVERY_MS) : undefined), [fixture]);
 
   // The opened team: the one the operator picked, else the first live one, else the first.
   const list = teams.data !== null && !isPending(teams.data) ? teams.data.teams : [];

@@ -91,10 +91,18 @@ internal class ModelRosters(
         return when (answer) {
             is Discovery.Found -> answer.models.also {
                 keep(key, answer)
-                log("[$key] models: ${it.size} discovered at ${answer.url}\n")
+                log("[$key] models: ${listed(answer, provider)}\n")
             }
             is Discovery.Unavailable -> fallback(key, provider, answer.reason)
         }
+    }
+
+    /** What the endpoint listed, and how many of those the provider's discovery filter keeps out, so the
+     *  line never reads as more models than can join the picker. */
+    private fun listed(found: Discovery.Found, provider: ProviderConfig): String {
+        val keptOut = found.models.count { !provider.discovery.admits(it.id) }
+        val filtered = if (keptOut == 0) "" else ", $keptOut kept out by its discovery filter"
+        return "${found.models.size} listed at ${found.url}$filtered"
     }
 
     /** A failure reading the credential or the answer is this head's no-answer, never the daemon's

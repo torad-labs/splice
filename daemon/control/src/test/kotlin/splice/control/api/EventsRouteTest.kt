@@ -44,8 +44,9 @@ private const val OPEN_FRAME = ": open"
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EventsRouteTest {
 
-    private val port = ServerSocket(0).use { it.localPort }
-    private val url = "http://127.0.0.1:$port"
+    // The server binds port 0 and reports what it got: no leased port can be taken before the bind.
+    private val port: Int get() = control.listeningPort
+    private val url: String get() = "http://127.0.0.1:$port"
     private val client = HttpClient(CIO) { expectSuccess = false }
     private lateinit var control: ControlServer
     private lateinit var key: String
@@ -60,7 +61,7 @@ class EventsRouteTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -68,7 +69,7 @@ class EventsRouteTest {
             log = { },
         )
         control.ports.events = bus
-        control.start()
+        runBlocking { control.start() }
     }
 
     @AfterAll

@@ -48,7 +48,9 @@ private class CompactionReplayAuth : RefreshableAuthProvider {
 class HeadServerCompactionReplayTest {
 
     private val mock = MockChatGptUpstream()
-    private val port = freshPort()
+
+    // A getter: the head binds port 0, and a stop/start rebinds a fresh one the tests must follow.
+    private val port: Int get() = head.port
     private val gate = InflightGate({ 0 })
     private val lines = CopyOnWriteArrayList<String>()
     private lateinit var head: HeadServer
@@ -80,7 +82,7 @@ class HeadServerCompactionReplayTest {
                 configEffort = "high",
                 configSummary = "detailed",
             ),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 2),

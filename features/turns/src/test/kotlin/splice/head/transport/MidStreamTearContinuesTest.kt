@@ -52,7 +52,6 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.HeadServer
-import splice.head.freshPort
 import splice.head.headDeps
 import splice.head.headStores
 import splice.upstream.ProviderTuning
@@ -306,8 +305,12 @@ class MidStreamTearContinuesTest {
         upstream.stop()
     }
 
+    /** Each head's perf file, by the port it bound: the file is named before the head starts, and
+     *  the port (0, so the OS assigns one with no lease-then-bind window) is known only after. */
+    private val perfFiles = mutableMapOf<Int, java.nio.file.Path>()
+
     private suspend fun startHead(prefill: Boolean, stallMs: Long? = null): Int {
-        val port = freshPort()
+        val id = heads.size
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
                 key = if (prefill) "deepseek-like" else "muse-like",
@@ -339,22 +342,23 @@ class MidStreamTearContinuesTest {
         )
         val head = HeadServer(
             provider = provider,
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 10_000, totalTimeoutMs = 60_000, maxRetries = 4),
                 gate = InflightGate({ 4 }),
                 log = { line -> journal.add(line) },
             ).copy(
-                // This rig carries its OWN bearer and keys its store files by port, so both come from
+                // This rig carries its OWN bearer and keys its store files per head, so both come from
                 // the site rather than the fixture's defaults.
                 inferenceToken = INFERENCE_TOKEN,
-                stores = headStores(tmp, suffix = "-$port"),
+                stores = headStores(tmp, suffix = "-$id"),
             ),
         )
         head.start()
         heads.add(head)
-        return port
+        perfFiles[head.port] = tmp.resolve("perf-$id.jsonl")
+        return head.port
     }
 
     /** A raw client socket, exactly the shape HeadServerCollectDisconnectTest uses: a real FIN on
@@ -408,7 +412,7 @@ class MidStreamTearContinuesTest {
     private fun perfRowsBefore(port: Int): Int = perfRows(port).size
 
     private fun perfRows(port: Int): List<String> {
-        val file = tmp.resolve("perf-$port.jsonl")
+        val file = perfFiles.getValue(port)
         if (!Files.exists(file)) return emptyList()
         return Files.readString(file).lines().filter { it.isNotBlank() }
     }

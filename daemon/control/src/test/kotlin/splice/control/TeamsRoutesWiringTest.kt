@@ -23,7 +23,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLEncoder
 import java.nio.file.Path
@@ -46,9 +45,8 @@ class TeamsRoutesWiringTest {
     private fun serve(wired: Boolean, test: suspend (TeamsCall) -> Unit) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val port = ServerSocket(0).use { it.localPort }
         val control = ControlServer(
-            port = port,
+            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -60,7 +58,8 @@ class TeamsRoutesWiringTest {
             control.ports.teams = rig.store
             control.ports.activity = rig.stores
         }
-        control.start()
+        runBlocking { control.start() }
+        val port = control.listeningPort
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
             runBlocking {

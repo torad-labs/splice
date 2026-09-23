@@ -62,7 +62,7 @@ class HeadServerIntegrationTest {
         engine { requestTimeout = 0 }
         defaultRequest { bearerAuth("test-inference-token") }
     }
-    private val port = freshPort()
+    private val port: Int get() = head.port
     private lateinit var head: HeadServer
     private val logs = mutableListOf<String>()
     private lateinit var tmp: java.nio.file.Path
@@ -98,7 +98,7 @@ class HeadServerIntegrationTest {
         )
         head = HeadServer(
             provider = provider,
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),

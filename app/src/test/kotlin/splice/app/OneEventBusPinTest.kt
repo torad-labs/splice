@@ -39,7 +39,6 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.head.HeadLifecycle
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -61,16 +60,16 @@ class OneEventBusPinTest {
             { },
             { },
         )
-        val port = ServerSocket(0).use { it.localPort }
         val srv = checkNotNull(
             plane.start(
-                controlPort = port,
+                controlPort = 0, // OS-assigned at bind: no leased port to lose before the bind
                 heads = emptyMap(),
                 failedHeads = { 0 },
                 headCount = 0,
                 turnPathStalled = TurnPathStalled { emptyList() },
             ),
-        ) { "the control plane did not bind :$port" }
+        ) { "the control plane did not bind" }
+        val port = srv.listeningPort
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
             assertSame(plane.console.bus, srv.ports.events, "the route must stream the producers' bus, not its own")

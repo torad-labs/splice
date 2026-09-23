@@ -77,6 +77,15 @@ A test-determinism law: a test may not wait on the wall clock. Production waitin
 kt-no-delay-in-production, which binds src/main.
 """
 
+[[exclusion]]
+rule = "kt-tests-bind-port-zero"
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+A test-determinism law: a test server binds port 0 instead of a port leased and bound later.
+Production binds the port its topology configures, and had 0 lease sites when the rule was written.
+"""
+
 # ─── module scope ────────────────────────────────────────────────────────────────────────────────
 
 [[exclusion]]
@@ -457,6 +466,34 @@ reason = """
 The rule's own dated census, reason by reason: a proof of absence has no event to await
 (LoginHookScriptSafetyTest, DaemonStopDeadlineTest); a readiness poll in blocking code has none
 either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double.
+"""
+
+[[exclusion]]
+rule = "kt-tests-bind-port-zero"
+files = [
+  "features/turns/src/testFixtures/kotlin/splice/head/TestNet.kt",
+  "app/src/test/kotlin/splice/app/AuthDialectCompatibilityBootTest.kt",
+  "app/src/test/kotlin/splice/app/ClaudeHeadLiveProbeTest.kt",
+  "app/src/test/kotlin/splice/app/DaemonTest.kt",
+  "app/src/test/kotlin/splice/app/LiveWindowsDaemonTest.kt",
+  "app/src/test/kotlin/splice/app/MultiProviderDaemonTest.kt",
+  "app/src/test/kotlin/splice/app/e2e/ClaudeHeadDaemonE2ETest.kt",
+  "app/src/test/kotlin/splice/app/cli/daemon/SupervisedStartTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorHeadChecksTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorHeadKeyTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorRuntimeSectionTest.kt",
+  "app/src/test/kotlin/splice/app/cli/upgrade/UpgradeInflightTest.kt",
+  "app/src/test/kotlin/splice/app/probe/TurnPathProbeLoopTest.kt",
+  "app/src/test/kotlin/splice/app/auth/OAuthLoginObserverTest.kt",
+]
+date = "2026-09-23"
+reason = """
+The rule's own dated census, reason by reason: TestNet is the lease's one definition; the six
+full-daemon boots render their ports into the topology before the daemon binds, and a head on port 0
+is rejected by design (CTL-005); seven files lease a port nobody may listen on for a
+connection-refused probe, so there is no bind to race; OAuthLoginObserverTest's login flow renders
+redirect_uri from the port before it binds the redirect listener.
 """
 
 [[exclusion]]

@@ -11,6 +11,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { NOT_REPORTED } from '../src/entities/account';
+import type { AccountRow } from '../src/entities/account';
 import {
   ATTENTION_CAUSES,
   headAttention,
@@ -24,7 +25,7 @@ import {
 import type { HeadSignals } from '../src/entities/heads';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
 import { HeadStrip } from '../src/widgets/head-strip';
-import { EMPTIES, arrangeHeads, columnsOf, dialectOf } from '../src/pages/fleet/model';
+import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
 import { Empty } from '../src/shared/ui';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
@@ -350,13 +351,140 @@ describe('pending routes render an empty naming their row', () => {
     expect(out).toContain('V4-128');
   });
 
-  test('the daemon restart empty names its own row, which is not a head restart', () => {
-    const out = render(h(Empty, EMPTIES.daemonRestart));
-    expect(out).toContain('V4-74');
+  test('the pool empty names V4-132, for the one state that still reaches it: a 404 on the route', () => {
+    expect(render(h(Empty, EMPTIES.pool))).toContain('V4-132');
   });
 
-  test('the pool empty names V4-132', () => {
-    expect(render(h(Empty, EMPTIES.pool))).toContain('V4-132');
+  // M4-02: POST /api/daemon/restart is served (ControlServer.kt:368), so the empty that said it was
+  // not built is gone rather than left printing beside the control that replaced it.
+  test('the daemon restart is a control now, not an empty', () => {
+    expect(Object.keys(EMPTIES)).not.toContain('daemonRestart');
+  });
+});
+
+/** One account row, as accountsFromWire builds it from GET /api/accounts. */
+function account(over: Partial<AccountRow> = {}): AccountRow {
+  return {
+    kind: 'chatgpt-oauth',
+    label: 'a',
+    single_login: false,
+    credential_path: null,
+    plan: null,
+    primary: false,
+    selected: false,
+    available: true,
+    pinned: false,
+    next_target: false,
+    credential_present: true,
+    auth_excluded_until_epoch_millis: null,
+    auth_exclusion_reason: null,
+    windows: [],
+    heads: ['claudex'],
+    ...over,
+  };
+}
+
+const NOW_MS = 1_790_000_000_000;
+
+/** A seven-day window at `used` percent, the one the daemon's third rule sorts by. */
+function sevenDay(used: number | null) {
+  return { seconds: 604800, used_percent: used, reset_epoch_seconds: null };
+}
+
+describe('the opened head\'s account pool', () => {
+  test('is every row whose heads name the head, and a login shared by two heads rides both', () => {
+    const shared = account({ label: 'shared', heads: ['claudex', 'codex'] });
+    const own = account({ label: 'own', heads: ['claudex'] });
+    const other = account({ label: 'other', heads: ['codex'] });
+    expect(poolOf([shared, own, other], 'claudex')).toEqual([shared, own]);
+    expect(poolOf([shared, own, other], 'codex')).toEqual([shared, other]);
+  });
+
+  test('a head no row names has an empty pool, never another head\'s', () => {
+    expect(poolOf([account({ heads: ['codex'] })], 'openrouter')).toEqual([]);
+  });
+
+  test('an api-key head has no oauth pool and says so', () => {
+    const empty = poolEmpty('api-key');
+    expect(empty.text).toBe('no oauth pool');
+    expect(empty.source).toBe('api-key head');
+  });
+
+  test('a claude head is launch-time selected and never a pool', () => {
+    expect(poolEmpty('client').text).toBe('launch-time selected, never a pool');
+  });
+
+  test('an oauth head the route reported nothing for names the route, not a missing pool', () => {
+    for (const kind of ['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']) {
+      expect(poolEmpty(kind)).toEqual({ text: 'no accounts reported', source: 'GET /api/accounts' });
+    }
+  });
+});
+
+describe('the next target is the daemon\'s own answer', () => {
+  // AccountsRoute writes next_target = (label == the pool's nextTargetLabel), and the pool walks the
+  // pin, then primary, then the caller's previous account, then lowest seven-day used with ties by
+  // label (AccountPool.kt:163-186). The mark is the daemon's flag; the rule only explains it.
+  test('a pinned target is marked pinned, even over an available primary', () => {
+    const pool = [
+      account({ label: 'main', primary: true }),
+      account({ label: 'work', pinned: true, next_target: true }),
+    ];
+    expect(poolNext(pool)).toEqual({ label: 'work', rule: 'pinned' });
+  });
+
+  test('an unpinned primary target is explained by primary', () => {
+    expect(poolNext([account({ label: 'main', primary: true, next_target: true }), account({ label: 'work' })]))
+      .toEqual({ label: 'main', rule: 'primary' });
+  });
+
+  test('the lowest seven-day account is explained by that rule, ties broken by label as the daemon sorts', () => {
+    const pool = [
+      account({ label: 'main', primary: true, available: false }),
+      account({ label: 'zeta', windows: [sevenDay(0)] }),
+      account({ label: 'beta', windows: [], next_target: true }),
+    ];
+    expect(poolNext(pool)).toEqual({ label: 'beta', rule: 'lowest 7-day used' });
+  });
+
+  test('a target that is neither pinned, primary nor lowest was the sticky account', () => {
+    const pool = [
+      account({ label: 'main', primary: true, available: false }),
+      account({ label: 'low', windows: [sevenDay(5)] }),
+      account({ label: 'held', windows: [sevenDay(60)], next_target: true }),
+    ];
+    expect(poolNext(pool)).toEqual({ label: 'held', rule: 'sticky' });
+  });
+
+  test('no flagged row has no next target, and neither does a single login', () => {
+    expect(poolNext([account({ label: 'work' })])).toBeNull();
+    expect(poolNext([account({ label: null, single_login: true, next_target: null, selected: null, available: null })]))
+      .toBeNull();
+  });
+});
+
+describe('account excluded on the rack', () => {
+  // HeadSignals.accountExcluded's own contract: the head rides a pool whose SELECTED account is
+  // excluded. It was left false while GET /api/accounts was V4-132; the route is served now.
+  test('a pool whose selected account is excluded cocks the head with that cause', () => {
+    const pool = [account({ label: 'main', selected: true, available: false }), account({ label: 'work' })];
+    expect(selectedExcluded(pool, NOW_MS)).toBe(true);
+    expect(headAttention(head(), signals({ accountExcluded: selectedExcluded(pool, NOW_MS) })).cause).toBe('account excluded');
+  });
+
+  test('an excluded account the pool has not selected does not', () => {
+    const pool = [account({ label: 'main', selected: true }), account({ label: 'work', available: false })];
+    expect(selectedExcluded(pool, NOW_MS)).toBe(false);
+  });
+
+  test('an exclusion that has not lapsed yet counts even while the flag still says available', () => {
+    const until = NOW_MS + 60_000;
+    expect(selectedExcluded([account({ selected: true, auth_excluded_until_epoch_millis: until })], NOW_MS)).toBe(true);
+    expect(selectedExcluded([account({ selected: true, auth_excluded_until_epoch_millis: NOW_MS - 1 })], NOW_MS)).toBe(false);
+  });
+
+  test('a single login is judged by no pool, so it never excludes', () => {
+    expect(selectedExcluded([account({ label: null, single_login: true, selected: null, available: null })], NOW_MS)).toBe(false);
   });
 });
 
@@ -374,17 +502,22 @@ describe('the coverage manifest', () => {
     ]);
   });
 
-  test('the only pending entry is the one route that is still a row', () => {
-    const pending = dispositions.filter((entry) => entry.disposition === 'pending');
-    expect(pending.map((entry) => entry.name)).toEqual(['/api/daemon/restart']);
-    expect(pending[0]?.where).toBe('V4-74');
+  // Was `the only pending entry is the one route that is still a row`, pinning /api/daemon/restart as
+  // pending V4-74. The route is served (ControlServer.kt:368, DaemonRoutes.restartJson) and the head
+  // detail writes through it (M4-02), so what stays pinned is the property: a pending entry names
+  // the row that lands it.
+  test('every pending entry names the row that will land it', () => {
+    for (const entry of dispositions.filter((e) => e.disposition === 'pending')) {
+      expect(entry.where, `${entry.name} is pending and names no row`).toMatch(/^V4-\d+$/);
+    }
   });
 
-  test('the three lifecycle actions are editable and the reads are not', () => {
+  test('the three lifecycle actions and the daemon restart are editable, and the reads are not', () => {
     const byName = new Map(dispositions.map((entry) => [entry.name, entry.disposition]));
     expect(byName.get('/api/heads/{head}/start')).toBe('editable');
     expect(byName.get('/api/heads/{head}/stop')).toBe('editable');
     expect(byName.get('/api/heads/{head}/restart')).toBe('editable');
+    expect(byName.get('/api/daemon/restart')).toBe('editable');
     expect(byName.get('/api/heads')).toBe('read-only');
   });
 });

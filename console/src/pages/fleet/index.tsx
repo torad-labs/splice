@@ -1,10 +1,14 @@
 // The fleet page: one rack of head strips. ARRIVE is "which head needs me", so the holder edge
 // carries one printed cause and the `attention first` view puts the worst head at the top.
 //
-// Three of this page's fields come from routes that are still rows (the model catalog, the topology
-// file, the account pool). They read `not built` in the field and the page prints one honest empty
-// naming the rows, rather than inventing a value for a source nobody can read yet.
+// Two of this page's fields come from routes that were rows (the model catalog, the topology file).
+// While either is unread the page prints one honest empty naming the rows, rather than inventing a
+// value for a source nobody can read yet. The account pool is read (GET /api/accounts, M4-02): an
+// opened head shows the accounts it rides, and a head whose selected account is excluded says so on
+// the rack.
 import { useEffect, useState } from 'react';
+import { startAccountsPolling, useAccounts } from '@entities/account';
+import type { AccountRow, AccountsState } from '@entities/account';
 import { headAttention } from '@entities/heads';
 import { restartHead, startHead, startHeadsPolling, stopHead, useHeads } from '@entities/heads';
 import type { HeadSignals } from '@entities/heads';
@@ -14,14 +18,16 @@ import type { KnobDisposition } from '@entities/config';
 import { startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import { headWindow, startUsagePolling, useUsage } from '@entities/usage';
+import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { poll } from '@shared/lib';
 import type { HeadStatus } from '@shared/api';
 import { Bay, Empty, FieldBox, HolderEdge } from '@shared/ui';
 import { Blank, Fault, Key } from '@shared/controls';
+import { ACCOUNT_COLUMNS, AccountStrip } from '@widgets/account-strip';
 import { HeadStrip, HEAD_COLUMNS } from '@widgets/head-strip';
-import { EMPTIES, arrangeHeads, columnsOf, dialectOf } from './model';
+import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from './model';
 import { dispositions } from './coverage';
 import { S } from './strings';
 import './fleet.css';
@@ -31,6 +37,8 @@ export { dispositions };
 const PAGE_ID = 'fleet';
 const HEADS_MS = 2000;
 const USAGE_MS = 5000;
+/** The accounts page's own cadence: windows move per turn, not per second. */
+const POOL_MS = 15000;
 const SLOW_MS = 30000;
 
 /** The three views this page ships with. `by head` is first because it is the default. */
@@ -113,6 +121,53 @@ function Lifecycle({ head }: { head: HeadStatus }) {
   );
 }
 
+/** The key one account strip holds in the pool rack: the label within a pool, else the credential
+ *  file a single login is joined on. */
+function poolKey(account: AccountRow): string {
+  return `${account.kind}:${account.label ?? account.credential_path ?? account.heads.join(',')}`;
+}
+
+/** The opened head's account pool: the accounts entity filtered to this head, printed as the same
+ *  strips the accounts page prints (so an exclusion is struck and its reason printed the same way),
+ *  with the daemon's own next target named above the rack, where a 24rem column can show it. */
+function Pool({ head, payload, nowMs }: { head: HeadStatus; payload: AccountsState | null; nowMs: number }) {
+  if (payload === null) return <Blank strips={1} />;
+  if ('pending' in payload) return <Empty text={EMPTIES.pool.text} source={EMPTIES.pool.source} />;
+  const pool = poolOf(payload.accounts, head.key);
+  if (pool.length === 0) {
+    const empty = poolEmpty(head.authKind);
+    return <Empty text={empty.text} source={empty.source} />;
+  }
+  const next = poolNext(pool);
+  // A single login has no pool to select from, so "no next target" is a fact about it only when the
+  // rack holds a labeled pool account.
+  const pooled = pool.some((account) => account.label !== null);
+  return (
+    <>
+      {next !== null ? (
+        <p className="myx-fleet-note">{`${S.nextTarget} ${next.label}, ${next.rule}`}</p>
+      ) : pooled ? (
+        <Empty text={EMPTIES.noneAvailable.text} source={EMPTIES.noneAvailable.source} />
+      ) : null}
+      <Bay label={S.accounts} count={pool.length}>
+        {pool.map((account) => {
+          const isNext = next !== null && next.label === account.label;
+          return (
+            <AccountStrip
+              key={poolKey(account)}
+              account={account}
+              isNext={isNext}
+              nextRule={isNext ? next.rule : ''}
+              columns={ACCOUNT_COLUMNS}
+              nowMs={nowMs}
+            />
+          );
+        })}
+      </Bay>
+    </>
+  );
+}
+
 export function FleetPage() {
   const views = useViews(PAGE_ID, DEFAULT_VIEWS);
   const active = views.active;
@@ -122,11 +177,13 @@ export function FleetPage() {
   const configResource = useConfig((state) => state);
   const topologyResource = useTopology((state) => state);
   const modelsResource = useModels((state) => state);
+  const accountsResource = useAccounts((state) => state);
 
   useEffect(() => {
     const stops = [
       startHeadsPolling(HEADS_MS),
       startUsagePolling(USAGE_MS),
+      startAccountsPolling(POOL_MS),
       startAuthPolling(SLOW_MS),
       startTopologyPolling(SLOW_MS),
       startModelsPolling(SLOW_MS),
@@ -159,12 +216,19 @@ export function FleetPage() {
     return poll(() => { void fetchConfig(openKey); }, SLOW_MS);
   }, [openKey]);
 
+  // Read once per render: the heads poll re-renders this page every two seconds, which is finer than
+  // any exclusion expiry or reset line it is compared against.
+  const nowMs = Date.now();
+  const accounts: readonly AccountRow[] = accountsResource.data !== null && 'accounts' in accountsResource.data
+    ? accountsResource.data.accounts
+    : [];
+
   const signalsFor = (head: HeadStatus): HeadSignals => ({
     credentialPresent: auth?.[head.key]?.present ?? null,
     refreshLatched: auth?.[head.key]?.refresh_latched ?? null,
-    // The pool route is V4-132, so nothing can report an excluded account yet. Left false rather
-    // than guessed: a head must not read as excluded on a route nobody has read.
-    accountExcluded: false,
+    // GET /api/accounts is served (V4-132 landed). Until it answers, `accounts` is empty and this is
+    // false: a head must not read as excluded on a route nobody has read yet.
+    accountExcluded: selectedExcluded(poolOf(accounts, head.key), nowMs),
     topologyStale,
   });
 
@@ -258,7 +322,10 @@ export function FleetPage() {
               <section className="myx-fleet-section">
                 <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>
                 <Lifecycle head={opened} />
-                <Empty text={EMPTIES.daemonRestart.text} source={EMPTIES.daemonRestart.source} />
+                {/* The daemon-level restart (POST /api/daemon/restart), distinct from the head
+                    restart above: it drains every head's turns and the daemon's supervisor brings
+                    it back. The same control the doctor's upgrade section mounts. */}
+                <DaemonRestart />
               </section>
 
               <section className="myx-fleet-section">
@@ -277,7 +344,8 @@ export function FleetPage() {
 
               <section className="myx-fleet-section">
                 <h2 className="myx-fleet-section-title">{S.pool}</h2>
-                <Empty text={EMPTIES.pool.text} source={EMPTIES.pool.source} />
+                {accountsResource.error === null ? null : <Fault message={accountsResource.error} />}
+                <Pool head={opened} payload={accountsResource.data} nowMs={nowMs} />
               </section>
             </>
           )}

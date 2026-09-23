@@ -420,10 +420,12 @@ describe('the coverage manifest', () => {
 
   test('reading and writing are told apart', () => {
     const byName = new Map(dispositions.map((entry) => [entry.name, entry.disposition]));
-    // /api/accounts is `pending V4-132`, not `read-only`: the route does not exist yet. The two
-    // auth routes below DO exist and are the point of the test — that the manifest distinguishes
-    // a route the page reads from one it writes through.
-    expect(byName.get('/api/accounts')).toBe('pending');
+    // /api/accounts was `pending V4-132` while the route did not exist. It is served now
+    // (ControlServer.kt:333, AccountsRoute) and read by this page and by the fleet's head detail
+    // (M4-02), so it earns the `read-only` the note above said it would. The two auth routes below
+    // are the other half of the point: the manifest tells a route the page reads from one it
+    // writes through.
+    expect(byName.get('/api/accounts')).toBe('read-only');
     expect(byName.get('/api/auth')).toBe('read-only');
     expect(byName.get('/api/auth/{head}/switch')).toBe('editable');
   });

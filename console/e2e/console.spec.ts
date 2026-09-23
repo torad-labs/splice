@@ -122,6 +122,80 @@ test('fleet shows each head\'s pinned model from the catalog', async ({ page }) 
   await expect(main).toContainText(STACK.soloModel);
 });
 
+/** The daemon's refusal on a daemon nothing restarts, verbatim (DaemonRoutes.kt:64-65). The stack's
+ *  daemon is unsupervised by construction: stack.ts spawns it with an explicit environment that
+ *  carries no INVOCATION_ID, which is the one thing DrainingRestartAdapter reads. */
+const RESTART_UNSUPERVISED =
+  'nothing will restart this daemon: it was not started by systemd, so a drain would leave it down';
+
+/** A head strip's accessible name: its label and its auth kind (widgets/head-strip). */
+function headStrip(page: Page, head: string, authKind: string) {
+  return page.getByRole('button', { name: `${head} ${authKind}`, exact: true });
+}
+
+test('fleet opens a head with its account pool and the next target marked', async ({ page }) => {
+  const faults = await open(page, 'fleet');
+  await headStrip(page, STACK.oauthHead, 'chatgpt-oauth').click();
+  const detail = page.getByRole('complementary', { name: 'head detail' });
+  // Both accounts of the pool, as account strips; the primary carries the windows the turn reported.
+  await expect(detail.getByRole('button', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true })).toBeVisible({ timeout: 15_000 });
+  const primary = detail.getByRole('button', { name: 'chatgpt-oauth primary', exact: true });
+  await expect(primary).toContainText(`${STACK.fiveHourUsedPercent}%`);
+  await expect(primary).toContainText(STACK.plan);
+  // The daemon's own next target (next_target on the primary), printed where the column shows it.
+  await expect(detail).toContainText('next target primary');
+  // The solo head's single login rides another head, so it is not in this pool.
+  await expect(detail.getByRole('button', { name: 'chatgpt-oauth single login', exact: true })).toHaveCount(0);
+
+  // An api-key head has no OAuth pool and says so, rather than printing an empty rack.
+  await headStrip(page, STACK.keyHead, 'api-key').click();
+  await expect(detail).toContainText('no oauth pool');
+  expect(faults.pageErrors, 'opening a head threw').toEqual([]);
+});
+
+test('the draining restart confirms inline and prints the daemon\'s refusal verbatim', async ({ page }) => {
+  const posts: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/daemon/restart') posts.push(request.url());
+  });
+  await open(page, 'fleet');
+  await headStrip(page, STACK.oauthHead, 'chatgpt-oauth').click();
+  const detail = page.getByRole('complementary', { name: 'head detail' });
+
+  await detail.getByRole('button', { name: 'restart daemon', exact: true }).click();
+  // Armed, in place: the confirm key is on the strip and nothing has been sent.
+  const confirm = detail.getByRole('button', { name: 'drain and restart', exact: true });
+  await expect(confirm).toBeVisible();
+  expect(posts, 'arming the key sent the restart').toEqual([]);
+  await confirm.click();
+  await expect(detail).toContainText(RESTART_UNSUPERVISED);
+  expect(posts).toHaveLength(1);
+
+  // The doctor's upgrade section mounts the same control, and the daemon answers it the same way.
+  await page.goto(`${env('CONSOLE_E2E_BASE')}/#/doctor`);
+  const doctor = page.getByRole('complementary', { name: 'check detail' });
+  await doctor.getByRole('button', { name: 'restart daemon', exact: true }).click();
+  await doctor.getByRole('button', { name: 'drain and restart', exact: true }).click();
+  await expect(doctor).toContainText(RESTART_UNSUPERVISED);
+  expect(posts).toHaveLength(2);
+});
+
+test('doctor\'s playground sends one prompt through a head to the upstream and shows both sides', async ({ page }) => {
+  const faults = await open(page, 'doctor');
+  const detail = page.getByRole('complementary', { name: 'check detail' });
+  await detail.getByRole('button', { name: 'playground', exact: true }).click();
+  await detail.getByRole('textbox', { name: /^head/ }).fill(STACK.oauthHead);
+  await detail.getByRole('textbox', { name: /^prompt/ }).fill('one prompt from the console e2e');
+  await detail.getByRole('button', { name: 'send', exact: true }).click();
+  // The mock upstream's own answer text, inside the raw response the daemon relayed.
+  await expect(detail).toContainText('console e2e answer', { timeout: 30_000 });
+  // The raw request: the upstream URL the head's provider resolves to, and the prompt it carried.
+  await expect(detail).toContainText('/responses');
+  await expect(detail).toContainText('one prompt from the console e2e');
+  expect(faults.pageErrors, 'the playground threw').toEqual([]);
+  expect([...new Set(faults.failedReads)], 'the playground send was refused').toEqual([]);
+});
+
 test('models opens a model with the head windows its topology declares', async ({ page }) => {
   const faults = await open(page, 'models');
   await page.getByRole('button', { name: `open model ${STACK.model}` }).first().click();

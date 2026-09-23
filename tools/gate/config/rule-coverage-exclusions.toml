@@ -31,7 +31,8 @@ rules = [
   "kt-cancellation-handler-total", "kt-catch-swallows-cancellation", "kt-control-route-guarded",
   "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
   "kt-flow-over-suspend", "kt-force-strict-false-is-literal", "kt-form-encoding-single-source",
-  "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-http-status-single-source",
+  "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-head-sse-drains-on-exit",
+  "kt-http-status-single-source",
   "kt-json-scalars-single-source", "kt-jsonl-sink-single-source", "kt-l3-end-turn-literal",
   "kt-l3-sole-wire-terminals", "kt-log-escapes-caller-input", "kt-no-atomic-in-data-class",
   "kt-no-blocking-io-under-monitor", "kt-no-companion-objects", "kt-no-coroutine-scope-factory",
@@ -262,6 +263,25 @@ the app process entry, Claude Code launch setup, features-turns quota selection,
 cleanup, and features-turns wire sockets. :integrations-mcp owns none of those structures.
 """
 
+[[exclusion]]
+rule = "kt-head-sse-drains-on-exit"
+modules = [
+  "core", "upstream", "integrations-http", "integrations-claude-code", "integrations-mcp",
+  "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat",
+  "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi",
+  "integrations-providers-muse", "integrations-providers-openai", "features-sessions", "features-models",
+  "features-heads", "features-usage", "daemon-control", "app", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+A head-local law: the head is the one server whose streams end on a frame written after a throw (the
+cancellation seal's error frame, SealedDrive rethrowing after it), and every head stream is served from
+:features-turns. The control plane's two streams (daemon-control EventsRoute and McpRoutes) end only
+when their client or the daemon goes, with no terminal frame to lose; no other module answers an HTTP
+stream.
+"""
+
 # ─── file scope: the single declaration site each single-source wall exempts ──────────────────────
 
 [[exclusion]]
@@ -436,6 +456,15 @@ reason = """
 The rule's own dated census, reason by reason: a proof of absence has no event to await
 (LoginHookScriptSafetyTest, DaemonStopDeadlineTest); a readiness poll in blocking code has none
 either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double.
+"""
+
+[[exclusion]]
+rule = "kt-head-sse-drains-on-exit"
+files = ["features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt"]
+date = "2026-09-23"
+reason = """
+SseResponse is the wrapper the wall routes every head stream through, so it is the one file that must
+name Ktor's WriterContent: it delegates to it and adds the clean close in a finally.
 """
 
 # ─── file scope: the console surface ─────────────────────────────────────────────────────────────

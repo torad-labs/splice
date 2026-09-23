@@ -23,13 +23,7 @@ function shown(value: ConfigValue): string {
   return value === null ? '' : String(value);
 }
 
-/** Two digits, so the rack reads as a numbered list at any length. */
-function ordinal(index: number): string {
-  return String(index).padStart(2, '0');
-}
-
-export function KnobForm({ index, disposition, pending, busy, onSave }: {
-  index: number;
+export function KnobForm({ disposition, pending, busy, onSave }: {
   disposition: KnobDisposition;
   /** Saved in this console session and not read by the running daemon yet. */
   pending: boolean;
@@ -43,7 +37,6 @@ export function KnobForm({ index, disposition, pending, busy, onSave }: {
 
   return (
     <div className="myx-knob" data-knob={disposition.key}>
-      <span className="myx-knob-num" aria-hidden="true">{ordinal(index)}</span>
       <FieldBox
         label={disposition.key}
         value={shownValue}
@@ -75,10 +68,9 @@ export function KnobRack({ dispositions, pending, busyKey, onSave }: {
 }) {
   return (
     <div className="myx-knobs">
-      {dispositions.map((disposition, offset) => (
+      {dispositions.map((disposition) => (
         <KnobForm
           key={disposition.key}
-          index={offset + 1}
           disposition={disposition}
           pending={pending.includes(disposition.key)}
           busy={busyKey === disposition.key}

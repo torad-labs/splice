@@ -66,9 +66,7 @@
 
    ROW FLOW, so the plates fill left to right and the last row is the only ragged one — column
    flow would leave every column's floor at a different height and the rack's closing rule would
-   sit at four different y positions. The ordinals still ascend left to right and then down, which
-   is what a numbered grid reads as; they no longer read DOWN a single column because there is no
-   longer a single column.
+   sit at four different y positions. The keys read left to right and then down.
 
    NO ROW GAP, deliberately: `.myx-knob` carries its own padding and its own bottom rule, so a row
    gap would space the rack twice and the closing rule would float away from the row it closes.

@@ -283,8 +283,10 @@ export function HeadAuthStrip({ head, kind, present, masked, note, selected, onO
       {/* THE TRACK RENDERS EMPTY (M1-107), the fourth of four sites that made the FIELD vanish
           where twenty-two render it and fall back the value. An optional note is an empty cell in
           a track, not a row with one fewer column -- the grid's whole affordance is that field N
-          is at the same x on every strip. */}
-      <StripField w={24} fixed label={S.note} value={note ?? ''} mono={false} />
+          is at the same x on every strip. The LAST track alone takes the slack: every edge before it
+          stays at its declared x, which is all M1-107 fixed, and the strip no longer ends in a
+          slab of bare paper once its rack fills the bay. */}
+      <StripField w={24} label={S.note} value={note ?? ''} mono={false} />
     </Strip>
   );
 }

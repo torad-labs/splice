@@ -264,11 +264,23 @@ export function TeamsPage() {
       className="myx-teams"
       {...(import.meta.env.DEV && sample !== null ? { 'data-sample': sample.name } : {})}
     >
+      {/* With no board to draw there is no comp to be faithful to, and the page printed a bare empty
+          with no title over tabs stranded at the end of the flow. It then heads itself like every
+          other page: title and tabs first, the empty under them. */}
+      {board === null ? (
+        <header className="myx-page-head">
+          <h1 className="myx-page-title">{S.teams}</h1>
+          <ViewTabs pageId={PAGE_ID} defaults={VIEWS} />
+        </header>
+      ) : null}
       {body}
-      <ViewTabs pageId={PAGE_ID} defaults={VIEWS} />
-      {isPending(teams.data) && fixture === null
-        ? <Empty text="no teams route" source={`${teams.data.pending} pending`} />
-        : <TeamList teams={listed} opened={board?.team.id ?? null} onOpen={(id) => { setOpened(id); setComposing(false); }} />}
+      {board === null ? null : <ViewTabs pageId={PAGE_ID} defaults={VIEWS} />}
+      {/* The list is drawn when there is a team to list: with none, the board above already says
+          "no teams yet" in the same words, and a second empty rack saying it again under the view
+          tabs read as the page repeating itself. A pending route is said once, by the board. */}
+      {isPending(teams.data) && fixture === null ? null : listed.length === 0 ? null : (
+        <TeamList teams={listed} opened={board?.team.id ?? null} onOpen={(id) => { setOpened(id); setComposing(false); }} />
+      )}
       {fixture === null && open !== null ? (
         <div className="myx-teams-compose-switch">
           <Key onClick={() => setComposing(!composing)}>{composing ? `${S.edit} ${open.name}` : S.newTeam}</Key>

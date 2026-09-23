@@ -31,7 +31,7 @@ import {
   windowUsedText,
 } from '../src/entities/account';
 import type { AccountRow, AccountWindow, AccountWire } from '../src/entities/account';
-import { dispositionText, knobDispositions, provenanceOf } from '../src/entities/config';
+import { knobDispositions, provenanceOf } from '../src/entities/config';
 import { validateTopology } from '../src/entities/topology';
 
 const HOUR_5 = 18000;
@@ -428,8 +428,6 @@ describe('knob provenance and the restart verdict', () => {
   test('hot comes from restart_required_keys, never from a hand list', () => {
     expect(disposition('maxInflight').hot).toBe(true);
     expect(disposition('effort').hot).toBe(false);
-    expect(dispositionText(disposition('maxInflight').hot)).toBe('applies live');
-    expect(dispositionText(disposition('effort').hot)).toBe('restart to apply');
   });
 
   test('every effective knob is dispositioned, not just the ones a page happens to list', () => {

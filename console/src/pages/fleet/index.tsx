@@ -13,7 +13,7 @@ import { headAttention } from '@entities/heads';
 import { restartHead, startHead, startHeadsPolling, stopHead, useHeads } from '@entities/heads';
 import type { HeadSignals } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { dispositionText, fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
+import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
 import type { KnobDisposition } from '@entities/config';
 import { startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
@@ -337,12 +337,7 @@ export function FleetPage() {
                 {overrides.length === 0 ? (
                   <p className="myx-fleet-note">{S.noOverrides}</p>
                 ) : (
-                  overrides.map((knob) => (
-                    <div key={knob.key}>
-                      <KnobRow knob={knob} />
-                      <p className="myx-fleet-note">{dispositionText(knob.hot)}</p>
-                    </div>
-                  ))
+                  overrides.map((knob) => <KnobRow key={knob.key} knob={knob} />)
                 )}
               </section>
 

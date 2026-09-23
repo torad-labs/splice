@@ -10,6 +10,7 @@ export const S = {
     green: 'daemon ok',
     amber: 'daemon degraded',
     red: 'daemon unreachable',
+    grey: 'key required',
   },
   nearest: 'nearest window',
   /** Saved knobs the running daemon has not read yet (a restart-only knob was patched). */

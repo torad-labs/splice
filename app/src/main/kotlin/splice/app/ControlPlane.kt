@@ -6,7 +6,6 @@
 package splice.app
 
 import kotlinx.coroutines.cancel
-import splice.app.auth.CodexRefresh
 import splice.app.auth.SignInPlanner
 import splice.app.control.ControlServer
 import splice.app.control.DashboardPage
@@ -38,6 +37,7 @@ import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.ShutdownDaemon
+import splice.oauth.codex.CodexRefresh
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.HeadOfPid
 import splice.sessions.registry.ProcessEnvironment

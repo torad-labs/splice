@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
-import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.SignInPlanner
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
@@ -33,6 +32,7 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.LogSink
 import splice.head.usage.QuotaTracker
+import splice.oauth.OAuthAccountFiles
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 

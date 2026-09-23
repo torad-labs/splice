@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
-import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.SignInPlanner
 import splice.core.GATEWAY_VERSION
 import splice.core.auth.Credentials
@@ -35,6 +34,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
+import splice.oauth.OAuthAccountFiles
 import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
 import splice.provider.openai.ApiKeyAuthProvider

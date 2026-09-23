@@ -24,6 +24,7 @@ dependencies {
     implementation(project(":integrations-mcp"))
     implementation(project(":integrations-topology"))
     implementation(project(":integrations-codemode"))
+    implementation(project(":integrations-oauth"))
     implementation(project(":integrations-upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
     implementation(project(":integrations-dialects-openai-chat"))
@@ -55,6 +56,7 @@ dependencies {
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":features-turns")))
     testImplementation(testFixtures(project(":integrations-codemode")))
+    testImplementation(testFixtures(project(":integrations-oauth")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     testImplementation(testFixtures(project(":integrations-dialects-anthropic")))
 }

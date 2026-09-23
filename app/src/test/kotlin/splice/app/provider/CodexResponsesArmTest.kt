@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
-import splice.app.auth.OAuthAccountFiles
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
@@ -28,6 +27,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
+import splice.oauth.OAuthAccountFiles
 import splice.upstream.BuiltTurn
 import java.nio.file.Files
 import java.nio.file.Path

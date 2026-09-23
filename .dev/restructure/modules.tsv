@@ -26,3 +26,4 @@ NEW	:features-configuration	NEW	features/configuration
 :daemon-control	:app	daemon/control	app
 NEW	:features-events	NEW	features/events
 NEW	:integrations-codemode	NEW	integrations/codemode
+NEW	:integrations-oauth	NEW	integrations/oauth

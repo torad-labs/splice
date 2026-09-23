@@ -4,7 +4,6 @@
 // Daemon up/spawn/wait bodies live in DaemonLaunch.kt (concentration HIGH, 2026-08-19).
 package splice.app.cli
 
-import splice.app.auth.SystemBrowserOpener
 import splice.app.cli.daemon.DaemonLaunch
 import splice.app.cli.doctor.MgmtKeyRead
 import splice.core.GATEWAY_VERSION
@@ -17,6 +16,7 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.oauth.SystemBrowserOpener
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path

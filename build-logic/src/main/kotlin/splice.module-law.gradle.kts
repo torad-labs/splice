@@ -22,6 +22,12 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-topology" to setOf(":core"),
     // code mode's GraalJS worker pool: the child-JVM runtime behind the upstream-owned CodeModeRuntime port.
     ":integrations-codemode" to setOf(":core", ":integrations-upstream"),
+    // the OAuth sign-in flows, account files and each vendor's refresh hop: the HTTP half of provider
+    // auth, beside the HTTP-client-agnostic providers whose token shapes it speaks.
+    ":integrations-oauth" to setOf(
+        ":core", ":integrations-upstream", ":integrations-providers-codex", ":integrations-providers-grok",
+        ":integrations-providers-kimi", ":integrations-providers-muse",
+    ),
     ":integrations-upstream" to setOf(":core"),
     ":integrations-dialects-anthropic" to setOf(":core", ":integrations-upstream"),
     ":integrations-dialects-openai-responses" to setOf(":core", ":integrations-upstream"),

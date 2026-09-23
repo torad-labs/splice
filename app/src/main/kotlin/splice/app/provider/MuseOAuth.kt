@@ -3,11 +3,11 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.auth.OAuthAccountFiles
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.oauth.OAuthAccountFiles
 import splice.provider.muse.MuseAuthProvider
 import splice.provider.muse.MuseKeyMintCall
 import splice.topology.TopologyLoader

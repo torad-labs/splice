@@ -16,7 +16,7 @@
 // went camelCase with the visibility, which is a detekt requirement rather than a preference —
 // TopLevelPropertyNaming's SCREAMING_SNAKE `constantPattern` covers `const val` only, and a
 // non-private top-level val is graded by `propertyPattern` ([a-z][A-Za-z0-9]*), the same reason
-// app/RefreshRetry.kt spells its `internal val refreshRetryableStatus` that way.
+// integrations/oauth's RefreshRetry.kt spells its `internal val refreshRetryableStatus` that way.
 package splice.core.topology
 
 private const val MIN_TCP_PORT = 1

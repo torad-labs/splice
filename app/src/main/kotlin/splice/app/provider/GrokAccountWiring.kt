@@ -4,13 +4,13 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.auth.GrokRefresh
-import splice.app.auth.OAuthAccountFiles
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.dialect.chat.ChatQuirks
+import splice.oauth.OAuthAccountFiles
+import splice.oauth.grok.GrokRefresh
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokQuirks

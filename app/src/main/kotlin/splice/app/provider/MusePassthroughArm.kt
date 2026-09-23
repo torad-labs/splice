@@ -3,10 +3,10 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.auth.MuseRefresh
 import splice.core.GATEWAY_VERSION
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.oauth.muse.MuseRefresh
 import splice.provider.muse.MuseKeyMintCall
 import splice.upstream.CredentialHeaders
 

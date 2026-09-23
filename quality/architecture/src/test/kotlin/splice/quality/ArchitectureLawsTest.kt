@@ -23,7 +23,7 @@ import java.io.File
  *  directory. */
 private val PORT_SCOPE_MODULES = listOf(
     ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http", ":integrations-topology",
-    ":integrations-codemode", ":integrations-upstream",
+    ":integrations-codemode", ":integrations-oauth", ":integrations-upstream",
     ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat",
     ":integrations-dialects-anthropic", ":integrations-providers-codex", ":integrations-providers-grok", ":integrations-providers-openai",
     ":integrations-providers-kimi", ":integrations-providers-muse", ":features-turns",

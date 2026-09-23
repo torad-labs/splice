@@ -29,11 +29,11 @@ class NoBrowserOnTurnFailureTest {
         // SystemBrowserOpener, which AdminSupport builds directly and each flow defaults to.
         assertEquals(
             listOf(
-                "app/src/main/kotlin/splice/app/auth/OAuthLoginFlow.kt",
+                "integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginFlow.kt",
                 "app/src/main/kotlin/splice/app/cli/AdminSupport.kt",
-                "app/src/main/kotlin/splice/app/auth/DeviceLoginFlow.kt",
+                "integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt",
             ).sorted(),
-            browserPrimitive().filterNot { it.endsWith("splice/app/auth/LoginIo.kt") }.sorted(),
+            browserPrimitive().filterNot { it.endsWith("splice/oauth/LoginIo.kt") }.sorted(),
             "a new browser call site is a new way to open the operator's browser — sanction it here " +
                 "deliberately, or do not ship it",
         )

@@ -5,18 +5,22 @@
 // (concentration HIGH, 2026-08-19). :app is wall-exempt for println.
 package splice.app.cli.auth
 
-import splice.app.auth.DeviceLoginFlow
-import splice.app.auth.LoginObserver
-import splice.app.auth.LoginSpec
-import splice.app.auth.OAuthAccountRefused
-import splice.app.auth.OAuthLoginAccount
-import splice.app.auth.OAuthLoginFlow
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import splice.core.util.SafeFailureText
+import splice.oauth.DeviceLoginFlow
+import splice.oauth.LoginObserver
+import splice.oauth.LoginSpec
+import splice.oauth.OAuthAccountRefused
+import splice.oauth.OAuthLoginAccount
+import splice.oauth.OAuthLoginFlow
+import splice.oauth.codex.LoginCodex
+import splice.oauth.grok.LoginGrok
+import splice.oauth.kimi.LoginKimi
+import splice.oauth.muse.LoginMuse
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -32,7 +36,7 @@ internal class LoginCommand(
     private val codex = LoginCodex()
     private val grok = LoginGrok()
     private val kimi = LoginKimi()
-    private val muse = LoginMuse()
+    private val muse = LoginMuse(output)
     private val cliSignIn = CliSignIn()
 
     internal suspend fun login(headArg: String?, label: String? = null): Boolean {

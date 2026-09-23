@@ -127,13 +127,13 @@ class WireCommandTest {
 
     @Test
     fun `argument parsing`() {
-        val command = wireCommand(RecordingHttp(null))
-        assertEquals(WireOpts("kimi", 0, false), command.parseWireArgs(listOf("kimi")))
-        assertEquals(WireOpts("kimi", 3, true), command.parseWireArgs(listOf("--json", "kimi", "--last", "3")))
-        assertNull(command.parseWireArgs(emptyList()), "the head is required")
-        assertNull(command.parseWireArgs(listOf("kimi", "--last")), "--last needs a count")
-        assertNull(command.parseWireArgs(listOf("kimi", "--last", "0")), "a count is positive")
-        assertNull(command.parseWireArgs(listOf("kimi", "extra")), "one head only")
-        assertNull(command.parseWireArgs(listOf("kimi", "--follow")), "no unknown flags")
+        val command = WireArgs()
+        assertEquals(WireOpts("kimi", 0, false), command.parse(listOf("kimi")))
+        assertEquals(WireOpts("kimi", 3, true), command.parse(listOf("--json", "kimi", "--last", "3")))
+        assertNull(command.parse(emptyList()), "the head is required")
+        assertNull(command.parse(listOf("kimi", "--last")), "--last needs a count")
+        assertNull(command.parse(listOf("kimi", "--last", "0")), "a count is positive")
+        assertNull(command.parse(listOf("kimi", "extra")), "one head only")
+        assertNull(command.parse(listOf("kimi", "--follow")), "no unknown flags")
     }
 }

@@ -22,6 +22,7 @@ import splice.app.DaemonBoundary
 import splice.app.auth.StoredCredential
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
+import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -42,11 +43,6 @@ import kotlin.time.Duration.Companion.seconds
 // providers cost one wait, not ten.
 private val DISCOVERY_DEADLINE: Duration = 10.seconds
 
-/** What a head's catalog adds to its declared rows — [ModelRosters] in the daemon. */
-internal fun interface DiscoveredModels {
-    fun forHead(key: String): List<DiscoveredModel>
-}
-
 /** One head's provider asked what it serves. [EndpointModels] in production. */
 internal fun interface HeadModelsSource {
     fun discover(key: String, provider: ProviderConfig): Discovery
@@ -65,7 +61,7 @@ internal class ModelRosters(
     private val cache: RosterCache,
     private val log: LogSink,
     private val deadline: Duration = DISCOVERY_DEADLINE,
-) : DiscoveredModels {
+) : HeadDiscoveredModels {
 
     /** The daemon's: each head's own endpoint, cached under [statePaths]. */
     constructor(statePaths: StatePaths, log: LogSink) : this(EndpointModels(), RosterCache(statePaths), log)

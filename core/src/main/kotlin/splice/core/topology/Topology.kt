@@ -304,10 +304,12 @@ public data class ProviderConfig(
         require(slots.all { it in headModelSlots }) { "unknown Claude model slot" }
         require(slots.distinct().size == slots.size) { "head model slots contain duplicates" }
         val byId = roster.associateBy(ModelEntry::id)
+        // A row the head's allowlist names is the operator's decision, whichever list supplied it, so
+        // it is DECLARED for this head: it keeps the allowlist's order and may stand behind a tier.
         val selected = requested.map { model ->
             requireNotNull(byId[model.id]) {
                 "head model '${model.id}' is not declared by provider '${head.provider}' nor listed by its endpoint"
-            }
+            }.copy(discovered = false)
         }
         // The failing id can come from OUTSIDE the TOML: resolveHeadConfig swaps pinned_model with
         // the pinnedModel/grokModel knob for oauth heads, and env/config.json/PATCH override that

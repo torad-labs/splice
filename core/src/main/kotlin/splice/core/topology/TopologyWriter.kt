@@ -34,6 +34,7 @@ package splice.core.topology
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.model.HeadDiscoveredModels
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
@@ -74,6 +75,9 @@ public class TopologyWriter(
     public val path: Path,
     private val parse: TopologyParse,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    /** 2026-09-22: what each head's endpoint served at start, so an allowlist naming a discovered
+     *  model validates here exactly as it resolves at boot. */
+    private val discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
 ) {
     private val json = Json { encodeDefaults = false }
     private val keys = TomlKeys()
@@ -88,7 +92,7 @@ public class TopologyWriter(
         keys.canonical(json.encodeToJsonElement(Topology.serializer(), topology)).jsonObject
 
     public fun write(requested: Topology): TopologyWriteResult {
-        val findings = TopologyChecks(requested).findings()
+        val findings = TopologyChecks(requested, discovered).findings()
         if (findings.isNotEmpty()) return TopologyWriteResult.Refused(findings)
         val existing = Files.readString(path)
         val held = Cancellables.runCatchingCancellable { tree(parse(existing)) }.getOrElse { failure ->
@@ -132,7 +136,7 @@ public class TopologyWriter(
 }
 
 /** The checks the loader does not make at decode time but the daemon would trip on at boot. */
-private class TopologyChecks(private val topology: Topology) {
+private class TopologyChecks(private val topology: Topology, private val discovered: HeadDiscoveredModels) {
 
     fun findings(): List<TopologyFinding> = references() + ports() + rosters()
 
@@ -157,7 +161,7 @@ private class TopologyChecks(private val topology: Topology) {
 
     private fun rosters(): List<TopologyFinding> = topology.heads.mapNotNull { (key, head) ->
         topology.providers[head.provider]?.let { provider ->
-            Cancellables.runCatchingCancellable { provider.catalogFor(head) }.exceptionOrNull()?.let { failure ->
+            Cancellables.runCatchingCancellable { provider.catalogFor(head, discovered = discovered.forHead(key)) }.exceptionOrNull()?.let { failure ->
                 // SAFE-RENDER-EXEMPT[2026-09-18]: catalogFor reads no file; its failures are its own require() texts, composed from model ids and slot names of the requested topology, never file bytes.
                 TopologyFinding("heads.$key.models", failure.message ?: "the head's model list is invalid")
             }

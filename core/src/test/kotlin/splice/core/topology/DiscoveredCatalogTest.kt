@@ -106,10 +106,11 @@ class DiscoveredCatalogTest {
     @Test
     fun `an allowlist may name a discovered model, and an id neither declared nor listed still fails`() {
         val allowlisted = head.copy(models = listOf(HeadModel("grok-4.6", "opus"), HeadModel("grok-4.7", "sonnet")))
-        assertEquals(
-            listOf("grok-4.6", "grok-4.7"),
-            provider.catalogFor(allowlisted, discovered = listOf(DiscoveredModel("grok-4.7"))).availableModelIds(),
-        )
+        val catalog = provider.catalogFor(allowlisted, discovered = listOf(DiscoveredModel("grok-4.7")))
+        assertEquals(listOf("grok-4.6", "grok-4.7"), catalog.availableModelIds())
+        // Named by the head, so it is the head's decision: a tier candidate, or its sonnet slot would
+        // be dropped as naming a model the launch cannot place.
+        assertEquals(listOf("grok-4.6", "grok-4.7"), catalog.tierModelIds())
         val failure = assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(allowlisted) }
         assertTrue(failure.message.orEmpty().contains("nor listed by its endpoint"), failure.message)
     }

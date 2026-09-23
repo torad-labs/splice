@@ -85,8 +85,8 @@ class ConsoleWiringPinTest {
     @Test
     fun `the control plane runs the console wiring on the server it constructs`() {
         assertTrue(
-            controlPlaneSource().contains("ConsoleWiring.wire(srv, topology)"),
-            "ControlPlane must call `ConsoleWiring.wire(srv, topology)` after constructing the " +
+            controlPlaneSource().contains("ConsoleWiring.wire(srv, topology, modelRosters)"),
+            "ControlPlane must call `ConsoleWiring.wire(srv, topology, modelRosters)` after constructing the " +
                 "ControlServer, or every console port is unwired while the build stays green",
         )
     }

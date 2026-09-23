@@ -13,6 +13,7 @@ import kotlinx.serialization.json.put
 import splice.app.auth.SignInPlanner
 import splice.core.config.ConfigService
 import splice.core.config.SpliceConfig
+import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -31,7 +32,7 @@ internal class HeadBuildInputs(
     private val config: ConfigService,
     private val signInPlanner: SignInPlanner,
     /** 2026-09-22: what each head's endpoint serves beyond its declared rows (ModelRosters). */
-    private val discovered: DiscoveredModels = DiscoveredModels { emptyList() },
+    private val discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
 ) {
 
     internal fun resolveHeadConfig(

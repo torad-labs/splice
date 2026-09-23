@@ -13,12 +13,13 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
-import type { ModelsPayload, PendingRoute } from '@entities/model';
+import type { HeadCatalog, ModelsPayload, PendingRoute } from '@entities/model';
 import { useViews, ViewTabs } from '@features/views';
 import { Bay, Empty, HolderEdge } from '@shared/ui';
 import { Blank, Fault, Key } from '@shared/controls';
 import { HeadCatalogBay, ModelDetail } from './components';
 import { DEFAULT_VIEWS, EMPTIES, byProvider, findModel, headWindows } from './model';
+import type { OpenedModel } from './model';
 import { S } from './strings';
 import './models.css';
 
@@ -46,11 +47,19 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
   sample?: string | undefined;
 }) {
   const views = useViews(PAGE_ID, DEFAULT_VIEWS);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<OpenedModel | null>(null);
 
   const pending = catalog === null || 'pending' in catalog;
   const heads = catalog === null || 'pending' in catalog ? [] : catalog.heads;
   const opened = catalog === null ? null : findModel(catalog, open);
+  const bay = (head: HeadCatalog) => (
+    <HeadCatalogBay
+      key={head.head}
+      head={head}
+      selected={open?.head === head.head ? open.id : null}
+      onSelect={(id) => setOpen({ head: head.head, id })}
+    />
+  );
 
   return (
     <div
@@ -74,15 +83,11 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
             {views.active.id === 'by-provider' ? (
               byProvider(heads).map((group) => (
                 <Bay key={group.provider} label={group.provider} count={group.heads.length}>
-                  {group.heads.map((head) => (
-                    <HeadCatalogBay key={head.head} head={head} selected={open} onSelect={setOpen} />
-                  ))}
+                  {group.heads.map(bay)}
                 </Bay>
               ))
             ) : (
-              heads.map((head) => (
-                <HeadCatalogBay key={head.head} head={head} selected={open} onSelect={setOpen} />
-              ))
+              heads.map(bay)
             )}
           </div>
 

@@ -29,7 +29,9 @@ export type SelectorRule = (typeof SELECTOR_RULES)[number];
 export const SELECTOR_ORDER_TEXT = SELECTOR_RULES.join(' then ');
 
 /** The window length the daemon calls the seven-day window, for the selector's third rule. */
-const SEVEN_DAY_SECONDS = 604800;
+/** The daemon's slot boundary (Quota.kt FIVE_HOUR_SLOT_MAX_SECONDS): a provider window up to six
+ *  hours long is the five-hour slot, anything longer the seven-day slot, whatever its length. */
+const FIVE_HOUR_SLOT_MAX_SECONDS = 6 * 3600;
 
 /** A window's used figure as printed text. */
 export function windowUsedText(window: AccountWindow): string {
@@ -81,12 +83,14 @@ export function nearestOverall(accounts: readonly AccountRow[]): NearestOverall 
 }
 
 /**
- * An account's seven-day used figure for the selector's third rule. An account with NO snapshot
- * sorts as zero used — that is the daemon's own rule (AccountPool.kt:101-112), not a convenience:
+ * An account's seven-day SLOT used figure for the selector's third rule, read the way the daemon
+ * reads it (AccountPool.kt:258 sevenDayUsed over QuotaSlots' seven-day slot): the first window
+ * longer than six hours, so Grok's 30-day window counts, where matching 604800 exactly read it as 0.
+ * An account with NO snapshot sorts as zero used, which is the daemon's own rule, not a convenience:
  * a freshly added account has no poller reading yet and must still be selectable.
  */
 export function sevenDayUsed(account: AccountRow): number {
-  const window = account.windows.find((w) => w.seconds === SEVEN_DAY_SECONDS);
+  const window = account.windows.find((w) => w.seconds > FIVE_HOUR_SLOT_MAX_SECONDS);
   if (window === undefined || window.used_percent === null) return 0;
   return window.used_percent;
 }

@@ -1,7 +1,7 @@
 // The fleet page's pure half: how a saved view turns the head list into bays, how severe a head's
 // attention state is, how the two pending field sources are read when they exist, and which
 // accounts an opened head rides.
-import { isExcluded, sevenDayUsed } from '@entities/account';
+import { isExcluded, nextRuleOf } from '@entities/account';
 import type { AccountRow, SelectorRule } from '@entities/account';
 import { headAttention, providerFamily } from '@entities/heads';
 import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
@@ -133,12 +133,6 @@ export interface PoolNext {
   rule: PoolRule;
 }
 
-/** The daemon's tie-break inside its seven-day rule: the label, in Kotlin's String order (UTF-16 code
- *  units), which is `<` on JS strings and not localeCompare. */
-function byLabel(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
 /**
  * The pool's next target AS THE DAEMON ANSWERED IT, and the rule that explains it.
  *
@@ -149,17 +143,13 @@ function byLabel(left: string, right: string): number {
  * order, would mark a strip the daemon will not take — a confident wrong answer about what happens
  * next. So the flag picks the account and the order only NAMES why: pinned, then primary, then the
  * lowest seven-day account; a target that is none of those can only have been the previous one,
- * which is the selector's sticky rule.
+ * which is the selector's sticky rule. The naming is the account entity's nextRuleOf, the same rule
+ * the accounts page prints.
  */
 export function poolNext(pool: readonly AccountRow[]): PoolNext | null {
   const target = pool.find((account) => account.next_target === true);
-  if (target === undefined || target.label === null) return null;
-  if (target.pinned === true) return { label: target.label, rule: 'pinned' };
-  if (target.primary) return { label: target.label, rule: 'primary' };
-  const lowest = pool
-    .filter((account): account is AccountRow & { label: string } => account.available === true && account.label !== null)
-    .sort((left, right) => sevenDayUsed(left) - sevenDayUsed(right) || byLabel(left.label, right.label))[0];
-  return { label: target.label, rule: lowest === target ? 'lowest 7-day used' : 'sticky' };
+  const rule = target === undefined ? null : nextRuleOf(target, pool);
+  return target === undefined || target.label === null || rule === null ? null : { label: target.label, rule };
 }
 
 /** The families whose heads ride OAuth logins, so GET /api/accounts reports them (AuthKindRegistry

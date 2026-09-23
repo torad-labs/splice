@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import splice.provider.kimi.KimiOAuth
 import splice.upstream.Waiter
 import java.net.InetSocketAddress
@@ -94,7 +95,7 @@ class DeviceLoginObserverTest {
         val browser = RecordingBrowserOpener()
         val observer = RecordingObserver()
         val out = StringBuilder()
-        val flow = DeviceLoginFlow(LoginOutput { out.appendLine(it) }, browser)
+        val flow = DeviceLoginFlow(TerminalOutput { out.appendLine(it) }, browser)
         val ok = try {
             runBlocking { flow.run(specFor(server, authPath), Waiter {}, observer) }
         } finally {

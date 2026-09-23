@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,7 +44,7 @@ class LoginExchangeDiagnosticsTest {
             toAuthJson = { body -> Json.parseToJsonElement(body).toString() },
         )
         val out = StringBuilder()
-        val flow = OAuthLoginFlow(LoginOutput { out.appendLine(it) })
+        val flow = OAuthLoginFlow(TerminalOutput { out.appendLine(it) })
         val ok = try {
             runBlocking { flow.exchangeAndPersist(spec, "the-code") }
         } finally {
@@ -95,7 +96,7 @@ class LoginTokenlessSuccessTest {
 
     private fun exchange(server: HttpServer, authPath: Path): Pair<Boolean, String> {
         val out = StringBuilder()
-        val flow = OAuthLoginFlow(LoginOutput { out.appendLine(it) })
+        val flow = OAuthLoginFlow(TerminalOutput { out.appendLine(it) })
         return try {
             runBlocking { flow.exchangeAndPersist(specFor(server, authPath), "the-code") } to out.toString()
         } finally {

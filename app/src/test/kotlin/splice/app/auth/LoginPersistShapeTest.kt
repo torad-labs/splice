@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.auth.LoginCodex
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.provider.codex.CodexOAuth
 import splice.provider.grok.GrokOAuth
@@ -34,7 +35,7 @@ class LoginPersistShapeTest {
 
     private fun persist(path: Path, authJson: String): Pair<Boolean, String> {
         val out = StringBuilder()
-        return LoginIo(LoginOutput { out.appendLine(it) }).persistIfSignedIn(path, authJson) to out.toString()
+        return LoginIo(TerminalOutput { out.appendLine(it) }).persistIfSignedIn(path, authJson) to out.toString()
     }
 
     @Test
@@ -276,7 +277,7 @@ class LoginCollisionTest {
         }
         server.start()
         val out = StringBuilder()
-        val flow = OAuthLoginFlow(LoginOutput { out.appendLine(it) })
+        val flow = OAuthLoginFlow(TerminalOutput { out.appendLine(it) })
         return try {
             val local = spec.copy(tokenUrl = "http://127.0.0.1:${server.address.port}/token")
             runBlocking { flow.exchangeAndPersist(local, "test-code") } to out.toString()

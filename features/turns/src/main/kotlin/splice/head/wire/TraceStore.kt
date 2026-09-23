@@ -25,9 +25,9 @@ import splice.core.util.WallClock
 import java.util.UUID
 
 /** The record kinds a trace file holds, spelled once for the writer and the `splice trace` reader. */
-public object TraceKinds {
-    public const val ATTEMPT: String = "attempt"
-    public const val TURN: String = "turn"
+internal object TraceKinds {
+    const val ATTEMPT: String = "attempt"
+    const val TURN: String = "turn"
 }
 
 /** The client's request as the head received it. Headers arrive already redacted

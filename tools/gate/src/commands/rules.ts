@@ -1,7 +1,7 @@
 // `gate rules [--prove-coverage]` — the ast-grep walls, the proof that they are all routed, and the
-// rules that guard the rules. `gate rules --stdin <pretooluse|stop>` is the SAME walls at write time
-// and at session end: the hook event arrives on stdin and the decision leaves on stdout
-// (src/lib/hook.ts; .claude/settings.json routes the three lifecycles to it).
+// rules that guard the rules. `gate rules --stdin pretooluse` is the SAME walls at write time: the
+// hook event arrives on stdin and the decision leaves on stdout (src/lib/hook.ts;
+// .claude/settings.json routes PreToolUse to it).
 //
 // Four legs, in order, with `&&` semantics:
 //   1. `ast-grep scan` over the tree and 2. `ast-grep test --skip-snapshot-tests` — the two
@@ -26,7 +26,7 @@ import { routingProblems } from "../lib/routing.ts";
 
 export const usage =
   "rules [--prove-coverage]             ast-grep walls + rule routing + config guard (+ P1 coverage)\n" +
-  "  rules --stdin <pretooluse|stop>      the same walls over a hook event on stdin (the Claude Code hook)";
+  "  rules --stdin pretooluse             the same walls over a hook event on stdin (the Claude Code hook)";
 
 /** The ast-grep config the walls run against — implicit, because `ast-grep scan` with no --config
  *  walks up to it. It stays at the repository root: ruleDirs and every files:/ignores: glob
@@ -46,7 +46,7 @@ export async function rules(argv: readonly string[]): Promise<number> {
       console.error(`gate rules --stdin: expected exactly one lifecycle, one of ${LIFECYCLES.join(", ")}`);
       return 2;
     }
-    return hook(lifecycle, readFileSync(0, "utf8"));
+    return hook(readFileSync(0, "utf8"));
   }
 
   let prove = false;

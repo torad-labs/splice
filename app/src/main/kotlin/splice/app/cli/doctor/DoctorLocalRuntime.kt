@@ -60,7 +60,7 @@ internal class DoctorLocalRuntime(
     private fun effectiveRows(topology: Topology, key: String): Map<String, Long> = topology.heads
         .filterValues { it.provider == key }
         .flatMap { (headKey, head) ->
-            inputs.effectiveRows(topology.providers.getValue(key).catalogFor(head, override(topology, headKey))).entries
+            topology.providers.getValue(key).catalogFor(head, override(topology, headKey)).effectiveWindows().entries
         }
         .groupBy({ it.key }, { it.value })
         .mapValues { (_, windows) -> windows.max() }

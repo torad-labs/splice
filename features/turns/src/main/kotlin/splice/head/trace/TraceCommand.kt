@@ -1,16 +1,14 @@
 // NEW: V4-174 — `splice trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]`: the
 // operator's read of a head's full request/response trace, from the day files and with no daemon
 // (the perf/logs idiom). The head is checked against the topology first so a typo names the heads
-// that exist instead of printing an empty trace. In splice.app.cli.trace, beside cli.wire, because
-// splice.app.cli sits at the concentration ceiling (V4-173's own gate said so).
-package splice.app.cli.trace
+// that exist instead of printing an empty trace. A turns slice beside the TraceStore that writes
+// these files (LAYOUT-01): app supplies the topology read and the two terminal streams.
+package splice.head.trace
 
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
-import splice.topology.TopologyLoader
-import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.Path
 
 internal const val TRACE_USAGE =
@@ -28,9 +26,16 @@ internal data class TraceOpts(
     val purge: Boolean = false,
 )
 
-internal class TraceCommand(private val rows: TraceRows = TraceRows(), private val view: TraceView = TraceView()) {
+/** `splice trace`. [output] is stdout, [errors] stderr: `--json | jq` must never read a refusal. */
+public class TraceCommand(
+    private val output: TerminalOutput,
+    private val errors: TerminalOutput,
+    private val heads: TraceHeadSource,
+) {
+    private val rows = TraceRows()
+    private val view = TraceView(output)
 
-    internal fun trace(args: List<String>, envReader: EnvReader = EnvReader(System::getenv)): Boolean {
+    public fun trace(args: List<String>, envReader: EnvReader): Boolean {
         val opts = parseTraceArgs(args)
             ?: return fail("unknown or malformed arguments ${args.joinToString(" ")}\n$TRACE_USAGE")
         if (!headExists(opts.head, envReader)) return false
@@ -55,28 +60,27 @@ internal class TraceCommand(private val rows: TraceRows = TraceRows(), private v
     private fun purge(head: String, traceDir: Path): Boolean {
         val gone = rows.days(traceDir, head).purge()
         if (gone.isEmpty()) {
-            println("splice trace: nothing to purge — no trace files for $head under $traceDir")
+            output.line("splice trace: nothing to purge — no trace files for $head under $traceDir")
         } else {
-            println("splice trace: purged ${gone.size} day file(s) of $head:")
-            gone.forEach { println("  $it") }
+            output.line("splice trace: purged ${gone.size} day file(s) of $head:")
+            gone.forEach { output.line("  $it") }
         }
         return true
     }
 
     /** The head must be configured; a misspelt one is refused with the heads that exist. */
-    private fun headExists(head: String, envReader: EnvReader): Boolean {
-        val path = TopologyLoader.configPath(envReader)
-        val topology = try {
-            TopologyLoader.parse(Files.readString(path))
-        } catch (unreadable: IOException) {
-            return fail("cannot read $path: ${SafeFailureText.render(unreadable)}")
+    private fun headExists(head: String, envReader: EnvReader): Boolean =
+        when (val configured = heads.load(envReader)) {
+            is TraceHeads.Unreadable ->
+                fail("cannot read ${configured.path}: ${SafeFailureText.render(configured.failure)}")
+            is TraceHeads.Configured -> {
+                val names = configured.names.joinToString(", ")
+                head in configured.names || fail("no head named '$head' in ${configured.path} — heads: $names")
+            }
         }
-        if (head in topology.heads) return true
-        return fail("no head named '$head' in $path — heads: ${topology.heads.keys.joinToString(", ")}")
-    }
 
     private fun fail(message: String): Boolean {
-        System.err.println("splice trace: $message")
+        errors.line("splice trace: $message")
         return false
     }
 

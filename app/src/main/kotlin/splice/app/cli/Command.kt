@@ -5,6 +5,7 @@ package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
 import splice.app.ModelsWiring
+import splice.app.TraceWiring
 import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddModelVerb
 import splice.app.cli.auth.KeyCommand
@@ -18,7 +19,6 @@ import splice.app.cli.status.LogsCommand
 import splice.app.cli.status.PerfCommand
 import splice.app.cli.status.SessionsCommand
 import splice.app.cli.status.StatusCommand
-import splice.app.cli.trace.TraceCommand
 import splice.app.cli.upgrade.UpgradeCommand
 import splice.app.cli.wire.WireCommand
 import splice.core.GATEWAY_VERSION
@@ -104,7 +104,7 @@ public sealed class Command {
 
     /** V4-174: a head's full request/response trace, from its day files, when its operator opted in. */
     public data class Trace(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(TraceCommand().trace(args))
+        override fun run(): Int = outcomeExitCode(TraceWiring.run(args))
     }
 
     /** Verb outcome -> process exit code. Inherited by every case above, which is why each `run()`

@@ -4,7 +4,7 @@
 // so the CLI needs no daemon — the perf/logs idiom — and can never disagree with the writer about
 // where a head's trace lives. A line this reader cannot place is counted, not fatal: a torn
 // append heals on the next write (JsonlSink) and the operator is told how many were skipped.
-package splice.app.cli.trace
+package splice.head.trace
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

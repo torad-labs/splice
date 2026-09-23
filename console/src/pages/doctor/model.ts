@@ -108,7 +108,7 @@ export function reportFacts(payload: DoctorPayload): { field: string; value: str
 
 // ── the playground ───────────────────────────────────────────────────────────
 
-export type PlaygroundStep = 'idle' | 'sending' | 'answered' | 'failed' | 'pending';
+export type PlaygroundStep = 'idle' | 'sending' | 'answered' | 'failed';
 
 /**
  * One playground run. The request and the response live HERE and nowhere else: no store, no
@@ -121,6 +121,11 @@ export interface PlaygroundState {
   request: unknown | null;
   response: unknown | null;
   note: string | null;
+  /** Which send the in-flight request belongs to. Every send takes the next number, and an answer
+   *  lands only on the run that asked for it, while it is still waiting: the send is a real request
+   *  (POST /api/playground), so its answer can arrive after a `clear` or a second send, and landing
+   *  it then would put back on screen a body the operator had already dropped. */
+  run: number;
 }
 
 export const IDLE_PLAYGROUND: PlaygroundState = {
@@ -130,16 +135,21 @@ export const IDLE_PLAYGROUND: PlaygroundState = {
   request: null,
   response: null,
   note: null,
+  run: 0,
 };
 
 export type PlaygroundEvent =
   | { kind: 'head'; value: string }
   | { kind: 'prompt'; value: string }
   | { kind: 'send' }
-  | { kind: 'answered'; request: unknown; response: unknown }
-  | { kind: 'pending'; row: string }
-  | { kind: 'failed'; note: string }
+  | { kind: 'answered'; run: number; request: unknown; response: unknown }
+  | { kind: 'failed'; run: number; note: string }
   | { kind: 'reset' };
+
+/** Whether an answer belongs to the run on screen: the same run, still waiting for it. */
+function awaited(state: PlaygroundState, run: number): boolean {
+  return state.step === 'sending' && state.run === run;
+}
 
 /** Whether a run can start: it needs a head and something to say. */
 export function canSend(state: PlaygroundState): boolean {
@@ -156,15 +166,17 @@ export function playgroundNext(state: PlaygroundState, event: PlaygroundEvent): 
       if (!canSend(state)) return state;
       // The previous run's bodies are dropped HERE, at the only moment a new one begins: a console
       // that kept them would be a body store the operator never asked for.
-      return { ...state, step: 'sending', request: null, response: null, note: null };
+      return { ...state, step: 'sending', request: null, response: null, note: null, run: state.run + 1 };
     case 'answered':
+      if (!awaited(state, event.run)) return state;
       return { ...state, step: 'answered', request: event.request, response: event.response, note: null };
-    case 'pending':
-      return { ...state, step: 'pending', note: event.row, request: null, response: null };
     case 'failed':
+      if (!awaited(state, event.run)) return state;
       return { ...state, step: 'failed', note: event.note, request: null, response: null };
     case 'reset':
-      return IDLE_PLAYGROUND;
+      // The run number survives the reset and nothing else does: it is what makes the answer to a
+      // request the operator walked away from arrive to a run that is no longer waiting for it.
+      return { ...IDLE_PLAYGROUND, run: state.run };
     default:
       return state;
   }
@@ -193,8 +205,6 @@ export function fixtureName(search: string, dev: boolean): string | null {
 export const EMPTIES = {
   noReport: { text: 'doctor report not built', source: 'row V4-127' },
   upgrade: { text: 'upgrade status not built', source: 'row V4-127' },
-  restart: { text: 'daemon restart not built', source: 'row V4-74' },
   capture: { text: 'body capture not built', source: 'row V4-133' },
-  playground: { text: 'playground not built', source: 'row V4-133' },
   noChecks: { text: 'no checks reported', source: 'GET /api/doctor' },
 } as const;

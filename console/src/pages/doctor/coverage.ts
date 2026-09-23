@@ -26,6 +26,8 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/budgets', disposition: 'pending', where: 'V4-133' },
   { kind: 'route', name: '/api/alerts', disposition: 'pending', where: 'V4-133' },
   { kind: 'route', name: '/api/alerts/test', disposition: 'pending', where: 'V4-133' },
-  // One prompt through one head. Editable, and never recorded.
+  // One prompt through one head. Editable, and never recorded. The disposition was written before
+  // anything called the route; the playground's send has been one POST since M4-03
+  // (entities/playground), so the claim now has a caller.
   { kind: 'route', name: '/api/playground', disposition: 'editable' },
 ];

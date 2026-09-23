@@ -24,7 +24,7 @@
       "params": 19,
       "subsystems": 0
     },
-    "daemon/control/src/main/kotlin/splice/control/ControlServer.kt ControlServer": {
+    "app/src/main/kotlin/splice/app/control/ControlServer.kt ControlServer": {
       "params": 17,
       "subsystems": 8
     },
@@ -36,7 +36,7 @@
       "params": 21,
       "subsystems": 2
     },
-    "daemon/control/src/main/kotlin/splice/control/ManagedHead.kt ManagedHead": {
+    "app/src/main/kotlin/splice/app/control/ManagedHead.kt ManagedHead": {
       "params": 17,
       "subsystems": 9
     },

@@ -81,7 +81,7 @@ public class StatuslineRoute(
 
     /** V4-37: the per-session cost, when this head can price one at all.
      *
-     *  `perf` is typed [splice.control.HeadPerfSource] and the session-aware reader is its SIBLING
+     *  `perf` is typed [splice.usage.perf.HeadPerfSource] and the session-aware reader is its SIBLING
      *  interface, so this bridge is a checked cast. A head whose perf source cannot answer per
      *  session — every test double, and any future sink that keeps no session column — renders the
      *  client's own number, exactly as today. The head-level rate override is null here because the

@@ -33,8 +33,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.control.DashboardPage
-import splice.control.TurnPathStalled
+import splice.app.control.DashboardPage
+import splice.app.control.TurnPathStalled
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths

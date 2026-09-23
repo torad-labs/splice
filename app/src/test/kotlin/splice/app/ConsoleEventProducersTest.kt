@@ -38,12 +38,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import splice.control.ControlServer
-import splice.control.api.ConsoleEvent
+import splice.app.control.ControlServer
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.util.WallClock
+import splice.events.bus.ConsoleEvent
 import splice.head.HeadLifecycle
 import java.net.ServerSocket
 import java.nio.file.Files

@@ -10,8 +10,8 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.OAuthAccountLabels
+import splice.app.control.ManagedHead
 import splice.app.head.HeadBoot
-import splice.control.ManagedHead
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
 import splice.topology.TopologyLoader

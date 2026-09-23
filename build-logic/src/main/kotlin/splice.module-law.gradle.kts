@@ -32,12 +32,6 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":features-turns" to setOf(":core", ":integrations-upstream", ":integrations-http", ":features-sessions"),
     ":features-sessions" to setOf(":core", ":integrations-http"),
     ":features-models" to setOf(":core"),
-    ":daemon-control" to setOf(
-        ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
-        ":features-heads", ":features-sessions", ":features-usage", ":features-accounts", ":features-turns",
-        ":features-lifecycle", ":features-diagnostics", ":features-models", ":features-launch",
-        ":features-configuration",
-    ),
     ":features-heads" to setOf(":core"),
     // sign-in, refresh, the account pool and their console routes; the pool is a read model every
     // operator surface renders.
@@ -51,6 +45,8 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":features-launch" to setOf(":core", ":integrations-claude-code", ":integrations-http"),
     // the daemon's knobs and splice.toml, read and written as data.
     ":features-configuration" to setOf(":core", ":integrations-http"),
+    // the console's live event stream: the bus, its event shapes, and GET /api/events.
+    ":features-events" to setOf(":integrations-http"),
     ":quality-architecture" to emptySet(),
     // :console is the Bun/Vite operator console — no Kotlin, no edges; graded here so the map
     // covers every module the build declares.

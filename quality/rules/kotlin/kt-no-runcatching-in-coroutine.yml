@@ -47,7 +47,6 @@ files:
   - integrations/dialects/openai-chat/src/main/**/*.kt
   - integrations/dialects/anthropic/src/main/**/*.kt
   - features/turns/src/main/**/*.kt
-  - daemon/control/src/main/**/*.kt
   - integrations/mcp/src/main/**/*.kt
   - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - app/src/main/**/*.kt
@@ -58,6 +57,7 @@ files:
   - features/lifecycle/src/main/**/*.kt
   - features/launch/src/main/**/*.kt
   - features/configuration/src/main/**/*.kt
+  - features/events/src/main/**/*.kt
 rule:
   any:
     - pattern: runCatching { $$$BODY }

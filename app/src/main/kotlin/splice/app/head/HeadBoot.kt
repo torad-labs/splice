@@ -6,7 +6,7 @@ package splice.app.head
 
 import splice.app.DaemonBoundary
 import splice.app.HeadAssembly
-import splice.control.ManagedHead
+import splice.app.control.ManagedHead
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages

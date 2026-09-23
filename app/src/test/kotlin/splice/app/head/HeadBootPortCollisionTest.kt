@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.HeadAssembly
-import splice.control.ManagedHead
+import splice.app.control.ManagedHead
 import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig

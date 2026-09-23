@@ -36,10 +36,8 @@ import splice.app.auth.ConsoleAccountsImpl
 import splice.app.cli.doctor.DoctorCommand
 import splice.app.console.ConsoleUpgradeStatus
 import splice.app.console.DrainingRestartAdapter
+import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
-import splice.control.ControlServer
-import splice.control.api.ConsoleEvent
-import splice.control.api.EventBus
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
@@ -50,6 +48,8 @@ import splice.core.topology.TopologyWriter
 import splice.core.util.WallClock
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
+import splice.events.bus.ConsoleEvent
+import splice.events.bus.EventBus
 import splice.head.HeadEvents
 import splice.head.HeadLifecycle
 import splice.lifecycle.upgrade.UpgradeStatus

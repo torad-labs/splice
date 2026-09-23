@@ -38,7 +38,6 @@ include(
     ":features-turns",
     ":features-sessions",
     ":features-models",
-    ":daemon-control",
     ":features-heads",
     ":features-accounts",
     ":features-usage",
@@ -46,6 +45,7 @@ include(
     ":features-diagnostics",
     ":features-launch",
     ":features-configuration",
+    ":features-events",
     ":app",
     ":quality-architecture",
     ":quality-compiler-plugin",
@@ -70,7 +70,6 @@ project(":integrations-providers-openai").projectDir = file("integrations/provid
 project(":features-turns").projectDir = file("features/turns")
 project(":features-sessions").projectDir = file("features/sessions")
 project(":features-models").projectDir = file("features/models")
-project(":daemon-control").projectDir = file("daemon/control")
 project(":features-heads").projectDir = file("features/heads")
 project(":features-accounts").projectDir = file("features/accounts")
 project(":features-usage").projectDir = file("features/usage")
@@ -78,6 +77,7 @@ project(":features-lifecycle").projectDir = file("features/lifecycle")
 project(":features-diagnostics").projectDir = file("features/diagnostics")
 project(":features-launch").projectDir = file("features/launch")
 project(":features-configuration").projectDir = file("features/configuration")
+project(":features-events").projectDir = file("features/events")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
 project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")

@@ -38,7 +38,6 @@ files:
   - integrations/http/src/main/**/*.kt
   - integrations/upstream/src/main/**/*.kt
   - integrations/providers/*/src/main/**/*.kt
-  - daemon/control/src/main/**/*.kt
   - integrations/mcp/src/main/**/*.kt
   - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - app/src/main/**/*.kt
@@ -53,6 +52,7 @@ files:
   - features/lifecycle/src/main/**/*.kt
   - features/launch/src/main/**/*.kt
   - features/configuration/src/main/**/*.kt
+  - features/events/src/main/**/*.kt
 rule:
   any:
     - pattern: $X?.jsonPrimitive?.content

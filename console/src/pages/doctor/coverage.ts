@@ -13,7 +13,7 @@ export const dispositions: readonly Disposition[] = [
   // Budgets and alerts are read AND written from the features this row ships — once they exist.
   // Both said `editable`, which claims a live route the page writes to, and gateway control serves
   // neither (grepped 2026-09-18: /api/budgets 0, /api/alerts 0, /api/alerts/test 0 literal
-  // occurrences in daemon/control/src/main/kotlin). They are the same V4-133 the capture route
+  // occurrences in the control plane's Kotlin sources). They are the same V4-133 the capture route
   // above already names: one row, one vocabulary. And the test send is its own path that had no
   // disposition AT ALL, which is worse than a wrong one — absence is not a disposition, and a
   // route nothing disposes is the case the coverage plane cannot even be wrong about (M1-37, M1-41).

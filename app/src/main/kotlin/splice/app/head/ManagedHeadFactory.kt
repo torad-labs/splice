@@ -6,6 +6,7 @@ package splice.app.head
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.auth.AuthHttpClientFactory
+import splice.app.control.ManagedHead
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
@@ -20,7 +21,6 @@ import splice.app.sources.LogFileSource
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfStatsSource
 import splice.app.sources.UsageStoreSource
-import splice.control.ManagedHead
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.Knob

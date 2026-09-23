@@ -3,7 +3,7 @@
 // the byte-offset contract the follow loop advances by.
 package splice.app.sources
 
-import splice.control.HeadLogSource
+import splice.app.control.HeadLogSource
 import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
 import splice.core.util.SafeFailureText

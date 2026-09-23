@@ -8,6 +8,12 @@ package splice.app
 import kotlinx.coroutines.cancel
 import splice.app.auth.CodexRefresh
 import splice.app.auth.SignInPlanner
+import splice.app.control.ControlServer
+import splice.app.control.DashboardPage
+import splice.app.control.FailedHeads
+import splice.app.control.ManagedHead
+import splice.app.control.TopologyDigest
+import splice.app.control.TurnPathStalled
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
 import splice.app.daemon.TopologyStaleness
@@ -20,12 +26,6 @@ import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpSharing
 import splice.configuration.topology.TopologyStale
-import splice.control.ControlServer
-import splice.control.DashboardPage
-import splice.control.FailedHeads
-import splice.control.ManagedHead
-import splice.control.TopologyDigest
-import splice.control.TurnPathStalled
 import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig

@@ -66,7 +66,7 @@
     "app/src/main/kotlin/splice/app/quota/MuseQuota.kt": 3,
     "app/src/main/kotlin/splice/app/quota/QuotaPoller.kt": 4,
     "app/src/main/kotlin/splice/app/quota/QuotaProbes.kt": 1,
-    "daemon/control/src/main/kotlin/splice/control/ControlServer.kt": 4,
+    "app/src/main/kotlin/splice/app/control/ControlServer.kt": 4,
     "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt": 4,
     "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt": 11,
     "features/turns/src/main/kotlin/splice/head/compact/CompactPayloads.kt": 1,

@@ -64,7 +64,6 @@ files:
   - features/sessions/src/main/**/*.kt
   - features/usage/src/main/**/*.kt
   - integrations/http/src/main/**/*.kt
-  - daemon/control/src/main/**/*.kt
   - integrations/mcp/src/main/**/*.kt
   - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - features/heads/src/main/**/*.kt
@@ -78,6 +77,8 @@ files:
   - features/models/src/main/kotlin/splice/models/roster/ModelsRoute.kt
   - features/launch/src/main/**/*.kt
   - features/configuration/src/main/**/*.kt
+  - app/src/main/kotlin/splice/app/control/**/*.kt
+  - features/events/src/main/**/*.kt
 rule:
   all:
     # A route registration: an HTTP verb, a PATH string literal, and a handler lambda. The path

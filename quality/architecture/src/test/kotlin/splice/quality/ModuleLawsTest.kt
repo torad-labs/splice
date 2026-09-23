@@ -47,7 +47,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // sessions-owned transcript port. The sessions feature never points back into this adapter.
     ":integrations-claude-code" to setOf(":core", ":features-sessions"),
     ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
-    ":integrations-http" to emptySet(),
+    ":integrations-http" to setOf(":core"),
     // the provider contract. Speaks the domain and nothing else.
     ":integrations-upstream" to setOf(":core"),
     // a dialect adapts the contract to one wire format.

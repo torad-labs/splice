@@ -10,11 +10,11 @@ import splice.control.HeadPerfSkipSource
 import splice.control.HeadPerfSource
 import splice.control.HeadSessionPerfSource
 import splice.control.HeadUsageSource
-import splice.control.QuotaView
-import splice.control.QuotaWindowView
 import splice.control.RateLimitView
 import splice.control.UsageView
 import splice.core.usage.QuotaSnapshot
+import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindowView
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore

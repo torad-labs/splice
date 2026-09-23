@@ -9,10 +9,10 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.control.ManagedHead
-import splice.control.QuotaView
-import splice.control.QuotaWindowView
 import splice.control.api.auth.AccountPoolJson
 import splice.core.config.ConfigService
+import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindowView
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
 

@@ -13,9 +13,9 @@ import splice.control.ManagedHead
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.HeadResolver
-import splice.control.api.JsonBody
 import splice.core.topology.TopologyMessages
 import splice.core.util.JsonScalars
+import splice.http.JsonBody
 
 /** [cwd]: V4-183, the shim's working directory, absent from a shim older than shim-4. */
 private data class LaunchRequest(val extraArgs: List<String>, val dangerouslySkipPermissions: Boolean, val cwd: String?)

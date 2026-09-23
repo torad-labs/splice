@@ -17,7 +17,7 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     // and implements the sessions-owned transcript port; no feature implementation points back here.
     ":integrations-claude-code" to setOf(":core", ":features-sessions"),
     ":integrations-mcp" to setOf(":core", ":integrations-claude-code"),
-    ":integrations-http" to emptySet(),
+    ":integrations-http" to setOf(":core"),
     ":integrations-upstream" to setOf(":core"),
     ":integrations-dialects-anthropic" to setOf(":core", ":integrations-upstream"),
     ":integrations-dialects-openai-responses" to setOf(":core", ":integrations-upstream"),

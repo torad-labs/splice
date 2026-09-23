@@ -37,7 +37,6 @@ import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.EventsRoute
 import splice.control.api.HeadResolver
-import splice.control.api.JsonBody
 import splice.control.api.auth.AccountsRoute
 import splice.control.api.auth.AuthRoutes
 import splice.control.api.diagnostics.DoctorRoute
@@ -69,6 +68,7 @@ import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.heads.HeadStatusListing
 import splice.heads.ListHeads
+import splice.http.JsonBody
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ProjectsRoutes
 import splice.sessions.http.RepoOf

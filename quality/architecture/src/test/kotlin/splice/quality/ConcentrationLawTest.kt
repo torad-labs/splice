@@ -107,9 +107,27 @@ internal object Concentration {
      *  :features-sessions, splice.client.transcript's median fell 74.75 -> 54.75, and the median
      *  neighbour became splice.client.resume (56.5). ProjectsLink.kt 2.97 -> 3.04: the heads
      *  extraction thinned splice.control.api.fleet (median 52.0 -> 49.75). The remedy is decomposing
-     *  those two files, not reversing the splits. */
-    const val RATCHET_RECORDED = "2026-09-22"
-    const val RATCHET_MAX_HIGH = 15
+     *  those two files, not reversing the splits.
+     *
+     *  2026-09-23, 15 -> 19, LAYOUT-01 Phase 1 (daemon/control dissolved into features/ and app/control),
+     *  measured with a port of this census that reproduces 15 at 2d740991f exactly and this law's own
+     *  list on the layout tree. The measured tree was 23. The two `own` entrants were then DECOMPOSED rather
+     *  than recorded. ControlServer.kt 4.02 -> 7.97 -> 2.20, C 273.5 -> 439.0 -> 128.5: its 68-row route
+     *  table imported 37 slice packages, and it now registers one mount per capability
+     *  (splice.app.control.mount). StatuslineRoute.kt 3.02 -> 1.22: its body read is StatuslineBodyRead.kt.
+     *  ProjectsLink.kt and ClaudeConfigMaterializer.kt left the band (3.04 and 3.03 -> 2.80).
+     *  Seven entrants remain, none of them new code:
+     *   · `neighbourhood`, C unchanged: McpHost.kt 2.51 -> 3.33 (den 51.8 -> 39.0), HostedServer.kt
+     *     2.32 -> 3.02 (58.5 -> 45.0), Knob.kt 2.62 -> 3.24 (72.8 -> 58.8), ManagedHeadFactory.kt
+     *     2.83 -> 3.10 (69.5 -> 63.6). Their neighbours are now thin use-case slice packages.
+     *   · `neighbourhood` plus RELOCATED names: the types these files already used moved into their
+     *     capability's package, so one splice.control import became several. StatuslineRenderer.kt
+     *     2.18 -> 3.49 (C 153.5 -> 177.5, den 70.5 -> 50.8). TopologyWindows.kt 2.52 -> 3.21
+     *     (C 172.0 -> 180.0, den 68.2 -> 56.0). Daemon.kt 2.27 -> 3.19 (C 141.5 -> 168.5, den
+     *     62.4 -> 52.8: ShutdownDaemon, DeclaredHead(s) and TopologyLoader).
+     *  The remedy is decomposing these seven, not re-merging the slices. */
+    const val RATCHET_RECORDED = "2026-09-23"
+    const val RATCHET_MAX_HIGH = 19
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

@@ -29,6 +29,35 @@ export interface ProjectRow {
   /** Epoch ms of the newest activity on any session in this repo, or null when the repo has none
    *  registered. Null is a real answer ("no session has touched it"), never a zero timestamp. */
   last_activity: number | null;
+  /** The compaction rules a compaction in this repo resolves to, in the daemon's precedence (core's
+   *  CompactionInstructions.rulesFor: shadowed rules left out), as GET /api/compaction/instructions
+   *  writes a rule. `[]` means no rule applies here and the client's own instructions stand; `null`
+   *  means the daemon never wired its compaction table, which is a different fact and never `[]`. */
+  compaction: ProjectCompactionRule[] | null;
+  /** One entry per head, because statuslineGitRoots is per-head overridable: the trusted root that
+   *  head's statusline probes this repo under. */
+  statusline_roots: ProjectStatuslineRoot[];
+}
+
+/** A compaction rule as ProjectsRoutes writes it: the {scope, source, chars} of the instructions
+ *  route, typed here because an entity reads only its own wire. */
+export interface ProjectCompactionRule {
+  scope: 'global' | 'model' | 'project' | 'project-model';
+  /** Core's composed label (`global`, `model:<id>`, `project:/abs/path`, ...). Printed, never parsed. */
+  source: string;
+  /** Live length: 0 for an explicit opt-out, null when the rule's file cannot be read. */
+  chars: number | null;
+}
+
+/** Which entry of the trusted set covers the repo (RepoResolver's TrustedRootOrigin.wire). */
+export type TrustedRootEntry = 'home' | 'tmp' | 'statuslineGitRoots';
+
+export interface ProjectStatuslineRoot {
+  head: string;
+  /** The realpath of the covering trusted root; null when the repo lies outside every one, where
+   *  that head's statusline shows no branch for it. */
+  root: string | null;
+  entry: TrustedRootEntry | null;
 }
 
 export interface ProjectsPayload {

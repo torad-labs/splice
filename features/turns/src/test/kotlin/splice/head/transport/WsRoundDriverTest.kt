@@ -88,7 +88,6 @@ import splice.upstream.retry.TurnWatchdog
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamClient
 import java.io.IOException
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -265,7 +264,9 @@ class WsRoundDriverTest {
         mock.stop()
     }
 
-    private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
+    /** Heads built so far: each one's store files are keyed by it, since the port it binds (0, so
+     *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
+    private var built = 0
 
     private fun provider(runner: WsRoundRunner): Provider = ScriptedWsProvider(
         TestResponsesProvider(
@@ -291,15 +292,15 @@ class WsRoundDriverTest {
         runner,
     )
 
-    private fun head(port: Int, runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
+    private fun head(runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = provider(runner),
-        listenPort = port,
+        listenPort = 0,
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
             log = log,
             seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(2)),
-        ).copy(stores = headStores(tmp, suffix = "-$port")),
+        ).copy(stores = headStores(tmp, suffix = "-${++built}")),
     )
 
     private suspend fun coldFlowInputs(
@@ -400,9 +401,9 @@ class WsRoundDriverTest {
             listOf("""{"type":"response.created","response":{"id":"r1"}}"""),
             throwAfter = 1,
         )
-        val port = freshPort()
-        val h = head(port, runner)
+        val h = head(runner)
         runBlocking { h.start() }
+        val port = h.port
         try {
             turn(port)
             assertEquals(1, runner.attempts, "the overlay served the round")
@@ -447,9 +448,9 @@ class WsRoundDriverTest {
     @Test
     fun `a failure terminal before any client frame falls back to the SSE path`() {
         val runner = ScriptedRunner(listOf("""{"type":"response.failed","response":{"id":"r1"}}"""))
-        val port = freshPort()
-        val h = head(port, runner)
+        val h = head(runner)
         runBlocking { h.start() }
+        val port = h.port
         try {
             val before = mock.upstreamBodies.size
             val sse = turn(port)
@@ -479,9 +480,9 @@ class WsRoundDriverTest {
                 """{"type":"response.failed","response":{"id":"r1"}}""",
             ),
         )
-        val port = freshPort()
-        val h = head(port, runner)
+        val h = head(runner)
         runBlocking { h.start() }
+        val port = h.port
         try {
             val before = mock.upstreamBodies.size
             val sse = turn(port)
@@ -565,9 +566,9 @@ class WsRoundDriverTest {
     private fun assertFallbackLineCarries(event: String, expected: String) {
         val runner = ScriptedRunner(listOf(event))
         val lines = mutableListOf<String>()
-        val port = freshPort()
-        val h = head(port, runner, log = { synchronized(lines) { lines += it } })
+        val h = head(runner, log = { synchronized(lines) { lines += it } })
         runBlocking { h.start() }
+        val port = h.port
         try {
             val sse = turn(port)
             assertTrue(sse.contains("event: message_stop"), "the SSE path served the turn")

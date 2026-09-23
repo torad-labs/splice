@@ -42,7 +42,6 @@ import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
@@ -120,7 +119,6 @@ class HeadServerClientAuthTest {
         forwardClientAuth: Boolean,
         auth: RefreshableAuthProvider = defaultAuthFor(forwardClientAuth),
     ): Int {
-        val port = ServerSocket(0).use { it.localPort }
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
                 key = "anthropic",
@@ -136,7 +134,9 @@ class HeadServerClientAuthTest {
         )
         val head = HeadServer(
             provider = provider,
-            listenPort = port,
+            // 0: the head binds an OS-assigned port and reports it after start, so no leased port
+            // can be taken between a lease and the bind.
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
@@ -144,17 +144,18 @@ class HeadServerClientAuthTest {
                 log = {},
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
-                // This rig carries its OWN bearers and its own store files, keyed by port so two
-                // heads in one test never share a usage file. Two keys, as production wires them:
-                // the turn key a launched client holds, and the management key.
+                // This rig carries its OWN bearers and its own store files, keyed by the head's index
+                // (the port is not known until the bind) so two heads in one test never share a
+                // usage file. Two keys, as production wires them: the turn key a launched client
+                // holds, and the management key.
                 inferenceToken = TURN_KEY,
                 operatorToken = MGMT_KEY,
-                stores = headStores(tmp, suffix = "-$port"),
+                stores = headStores(tmp, suffix = "-${heads.size}"),
             ),
         )
         runBlocking { head.start() }
         heads += head
-        return port
+        return head.port
     }
 
     @BeforeAll

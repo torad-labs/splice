@@ -40,7 +40,7 @@ private class LocalAnswerAuth : RefreshableAuthProvider {
 class HeadServerLocalAnswerTest {
 
     private val mock = MockChatGptUpstream()
-    private val port = freshPort()
+    private val port: Int get() = head.port
     private val lines = CopyOnWriteArrayList<String>()
     private lateinit var head: HeadServer
     private val client = HttpClient(CIO) {
@@ -70,7 +70,7 @@ class HeadServerLocalAnswerTest {
                 configEffort = "high",
                 configSummary = "detailed",
             ),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 30_000, maxRetries = 1),

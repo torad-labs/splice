@@ -126,8 +126,11 @@ class HeadServerFailureBranchTest {
         mock.stop()
     }
 
+    /** Heads built so far: each one's store files are keyed by it, since the port it binds (0, so
+     *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
+    private var built = 0
+
     private fun buildHead(
-        headPort: Int,
         auth: RefreshableAuthProvider,
         wrap: (Provider) -> Provider = { it },
         readTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
@@ -150,16 +153,17 @@ class HeadServerFailureBranchTest {
         )
         return HeadServer(
             provider = wrap(provider),
-            listenPort = headPort,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
                 log = { logs.add(it) },
                 policy = HeadDeps.HeadPolicy(requestReadTimeoutMs = readTimeoutMs),
             ).copy(
-                // This rig keys its store files by port AND captures the shadow classifier's own log
+                // This rig keys its store files per head AND captures the shadow classifier's own log
                 // into the same sink the assertions read, so neither can come from the default.
-                stores = headStores(tmp, suffix = "-$headPort").copy(shadow = ShadowClassifier(log = { logs.add(it) })),
+                stores = headStores(tmp, suffix = "-${++built}")
+                    .copy(shadow = ShadowClassifier(log = { logs.add(it) })),
             ),
         )
     }
@@ -176,9 +180,9 @@ class HeadServerFailureBranchTest {
 
     @Test
     fun `a head with no credential emits an authentication error carrying the login hint`() = runBlocking {
-        val headPort = freshPort()
-        val head = buildHead(headPort, CredentiallessAuth())
+        val head = buildHead(CredentiallessAuth())
         head.start()
+        val headPort = head.port
         awaitListening(headPort)
         val before = logs.size
         try {
@@ -202,9 +206,9 @@ class HeadServerFailureBranchTest {
 
     @Test
     fun `an internal gateway bug emits one honest error, not a truncated 200`() = runBlocking {
-        val headPort = freshPort()
-        val head = buildHead(headPort, BranchFakeAuth(), wrap = { ThrowingProvider(it) })
+        val head = buildHead(BranchFakeAuth(), wrap = { ThrowingProvider(it) })
         head.start()
+        val headPort = head.port
         awaitListening(headPort)
         val before = logs.size
         try {
@@ -249,9 +253,9 @@ class HeadServerFailureBranchTest {
     // OPERATOR (fix the config), not to the client.
     @Test
     fun `an unparseable base_url is permanent and keeps its api_error - V4-81`() = runBlocking {
-        val headPort = freshPort()
-        val head = buildHead(headPort, BranchFakeAuth(), wrap = { ConfigParseThrowingProvider(it) })
+        val head = buildHead(BranchFakeAuth(), wrap = { ConfigParseThrowingProvider(it) })
         head.start()
+        val headPort = head.port
         awaitListening(headPort)
         val before = logs.size
         try {
@@ -288,9 +292,9 @@ class HeadServerFailureBranchTest {
     // the throwable renders itself.
     @Test
     fun `the unexpected turn line names the throwing class, not the base the boundary converts`() = runBlocking {
-        val headPort = freshPort()
-        val head = buildHead(headPort, BranchFakeAuth(), wrap = { SubclassThrowingProvider(it) })
+        val head = buildHead(BranchFakeAuth(), wrap = { SubclassThrowingProvider(it) })
         head.start()
+        val headPort = head.port
         awaitListening(headPort)
         val before = logs.size
         try {
@@ -316,9 +320,9 @@ class HeadServerFailureBranchTest {
     // would skip straight past it.
     @Test
     fun `a request body that never finishes is answered with 408, not held open`() = runBlocking {
-        val headPort = freshPort()
-        val head = buildHead(headPort, BranchFakeAuth(), readTimeoutMs = 300)
+        val head = buildHead(BranchFakeAuth(), readTimeoutMs = 300)
         head.start()
+        val headPort = head.port
         awaitListening(headPort)
         val stalled = CompletableDeferred<Unit>()
         try {

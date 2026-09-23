@@ -36,7 +36,6 @@ import splice.head.HeadServer
 import splice.head.awaitListening
 import splice.head.compact.CompactStats
 import splice.head.compact.ShadowClassifier
-import splice.head.freshPort
 import splice.head.perf.PerfStats
 import splice.head.usage.UsageStore
 import splice.upstream.ProviderTuning
@@ -95,7 +94,7 @@ class OpenAiChatTest {
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }
     }
-    private val port = freshPort()
+    private val port: Int get() = head.port
     private lateinit var head: HeadServer
 
     @BeforeAll
@@ -119,7 +118,7 @@ class OpenAiChatTest {
         )
         head = HeadServer(
             provider = provider,
-            listenPort = port,
+            listenPort = 0,
             deps = testDeps(tmp),
         )
         head.start()

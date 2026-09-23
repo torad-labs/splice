@@ -10,4 +10,10 @@ import type { Disposition } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/economics', disposition: 'read-only' },
+  // The two panels this page mounts (features/budgets, features/alerts) read and write these, and
+  // the alerts panel sends its test through the third. Moved here from the doctor's file, which
+  // declared them for a page that never rendered either panel (M4-06).
+  { kind: 'route', name: '/api/budgets', disposition: 'editable' },
+  { kind: 'route', name: '/api/alerts', disposition: 'editable' },
+  { kind: 'route', name: '/api/alerts/test', disposition: 'editable' },
 ];

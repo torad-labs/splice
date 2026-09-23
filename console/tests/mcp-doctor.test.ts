@@ -373,18 +373,15 @@ describe('the upgrade verdict', () => {
 });
 
 describe('the coverage manifests', () => {
-  test('the seven routes of this row are disposed exactly once, across the two files', () => {
+  test('the routes of this row are disposed exactly once, across the two files', () => {
     const names = [...mcpDispositions, ...doctorDispositions].map((entry) => entry.name);
-    // Eight since 2026-09-18: /api/alerts/test was fetched by entities/alert/api/index.ts:53 and
-    // disposed by nothing at all, which M1-37's wire-check found by comparing the fetch sites
-    // against the manifests instead of the manifests against each other. This list is the page's
-    // route INVENTORY and stays exact on purpose — a new fetch site with no disposition should
-    // fail here by name. Seven again since M4-04: /api/heads/{head}/capture moved to the turns
-    // page, whose request drawer carries the switch that reads and writes it.
+    // This list is the pages' route INVENTORY and stays exact on purpose: a new fetch site with no
+    // disposition should fail here by name. Four since M4-06. /api/heads/{head}/capture moved to the
+    // turns page (M4-04: its request drawer's switch reads and writes it), and budgets, alerts and
+    // the alerts test to the usage page (M4-06: it mounts those two panels); the coverage wall fails
+    // if nothing declares them. (/api/alerts/test was added 2026-09-18, when M1-37's wire-check
+    // found it fetched and disposed by nothing.)
     expect([...names].sort()).toEqual([
-      '/api/alerts',
-      '/api/alerts/test',
-      '/api/budgets',
       '/api/doctor',
       '/api/mcp',
       '/api/playground',
@@ -398,12 +395,13 @@ describe('the coverage manifests', () => {
   // so the count was one only because two entries were lying. Pinning the pending SET would make
   // this wall go red every time the daemon ships a route, which teaches the next reader to edit
   // the wall rather than read it — so the assertion is the property instead: a pending entry with
-  // no row to point at is the defect, and the count is not.
+  // no row to point at is the defect, and the count is not. Since M4-06 the count is zero (every
+  // route the two pages name is served, which the coverage wall's served check holds), so the
+  // guard against a vacuous pass is a planted entry the same check must catch, not a count.
   test('every pending entry names the row that will replace it', () => {
-    const pending = [...mcpDispositions, ...doctorDispositions].filter((entry) => entry.disposition === 'pending');
-    expect(pending.length).toBeGreaterThan(0);
-    for (const entry of pending) {
-      expect(entry.where, `${entry.name} is pending and names no row`).toMatch(/^V4-\d+$/);
-    }
+    const rowless = (entries: readonly (typeof doctorDispositions)[number][]) =>
+      entries.filter((entry) => entry.disposition === 'pending' && !/^V4-\d+$/.test(entry.where ?? ''));
+    expect(rowless([...mcpDispositions, ...doctorDispositions])).toEqual([]);
+    expect(rowless([{ kind: 'route', name: '/api/planted', disposition: 'pending' }])).toHaveLength(1);
   });
 });

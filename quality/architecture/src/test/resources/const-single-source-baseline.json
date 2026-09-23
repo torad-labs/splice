@@ -15,7 +15,7 @@
       "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt"
     ],
     "COLLISION CRITICAL_PCT": [
-      "daemon/control/src/main/kotlin/splice/control/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
       "core/src/main/kotlin/splice/core/usage/UsageWarn.kt"
     ],
     "COLLISION DEFAULT_CAPACITY": [
@@ -91,8 +91,8 @@
       "app/src/main/kotlin/splice/app/cli/status/PerfCommand.kt",
       "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
       "app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineBars.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt",
       "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt"
     ],
     "COLLISION PKCE_VERIFIER_BYTES": [
@@ -152,7 +152,7 @@
     ],
     "COPY BOLD": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ],
     "COPY BUDGET_HIGH": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
@@ -188,7 +188,7 @@
     ],
     "COPY CYAN": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ],
     "COPY DATA_URL_PREFIX": [
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
@@ -208,8 +208,8 @@
     ],
     "COPY DIM": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineBars.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ],
     "COPY EXECUTION_CLIENT": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsIdentity.kt",
@@ -313,8 +313,8 @@
     ],
     "COPY GREEN": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineBars.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ],
     "COPY HEADER_THREAD_ID": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRunner.kt",
@@ -322,9 +322,9 @@
     ],
     "COPY HEADS": [
       "daemon/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/EconomicsPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/PerfPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/UsagePayloads.kt"
+      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
     ],
     "COPY HEX_RADIX": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSchemaDefPrune.kt",
@@ -352,16 +352,16 @@
     ],
     "COPY KEY": [
       "daemon/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/EconomicsPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
       "features/heads/src/main/kotlin/splice/heads/HeadOperations.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/PerfPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/UsagePayloads.kt"
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
     ],
     "COPY LABEL": [
       "daemon/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/EconomicsPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/PerfPayloads.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/UsagePayloads.kt"
+      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
     ],
     "COPY LOCK_POLL_MS": [
       "core/src/main/kotlin/splice/core/config/KeyStore.kt",
@@ -432,7 +432,7 @@
     "COPY MS_PER_MINUTE": [
       "app/src/main/kotlin/splice/app/cli/doctor/DoctorProbeWrite.kt",
       "app/src/main/kotlin/splice/app/cli/status/SessionsCommand.kt",
-      "daemon/control/src/main/kotlin/splice/control/api/usage/PerfSummary.kt"
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfSummary.kt"
     ],
     "COPY MS_PER_S": [
       "app/src/main/kotlin/splice/app/auth/DeviceLoginFlow.kt",
@@ -491,7 +491,7 @@
     ],
     "COPY RED": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ],
     "COPY REFRESH_ERROR_SNIPPET": [
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
@@ -504,8 +504,8 @@
     ],
     "COPY RESET": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineBars.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ],
     "COPY RESTART_WINDOW_MS": [
       "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt",
@@ -606,8 +606,8 @@
     ],
     "COPY YELLOW": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineBars.kt",
-      "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ]
   }
 }

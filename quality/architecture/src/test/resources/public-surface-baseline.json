@@ -4,11 +4,6 @@
   "offenders": [
     ":integrations-claude-code splice.client.portKeys",
     ":integrations-claude-code splice.client.sharedLinkItems",
-    ":daemon-control splice.control.GitBranchReader",
-    ":daemon-control splice.control.SessionCost",
-    ":daemon-control splice.control.SessionCostSource",
-    ":daemon-control splice.control.StatuslineRenderer",
-    ":daemon-control splice.control.api.usage.UNATTRIBUTED_OUTCOME",
     ":integrations-mcp splice.control.mcp.McpHostException",
     ":core splice.core.config.knobsByKey",
     ":core splice.core.media.ImageHeaderProbe",

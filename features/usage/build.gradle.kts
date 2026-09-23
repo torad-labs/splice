@@ -6,7 +6,12 @@ plugins {
 dependencies {
     api(project(":core"))
     api(project(":integrations-http"))
+    api(project(":features-accounts"))
     api(libs.ktor.client.core)
     implementation(libs.ktor.client.java)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.core)
+    testImplementation(libs.ktor.server.test.host) {
+        exclude(group = "io.ktor", module = "ktor-client-apache5")
+    }
 }

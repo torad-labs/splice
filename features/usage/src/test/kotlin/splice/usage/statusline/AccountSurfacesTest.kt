@@ -1,4 +1,4 @@
-package splice.control
+package splice.usage.statusline
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject

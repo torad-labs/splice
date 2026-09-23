@@ -1,12 +1,11 @@
 // DR-22a: StatuslineRenderer captures the head label at construction, and the route's cache used
 // to invalidate on git roots only — a head renamed at runtime rendered its stale label for the
 // daemon's lifetime. The cache contract pinned here: same inputs reuse, a label change rebuilds.
-package splice.control.api
+package splice.usage.statusline
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
-import splice.control.StatuslineRenderer
 
 class RendererCacheTest {
 

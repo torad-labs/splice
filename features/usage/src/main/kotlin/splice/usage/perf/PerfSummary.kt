@@ -10,15 +10,12 @@
 // so a restart is only visible as a decrease, and a new process whose count catches the old one
 // up hides its drops. A dropped perf row is absent from the file, so this is the evidence that
 // something is missing, not a count of missing rows.
-package splice.control.api.usage
+package splice.usage.perf
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.control.PerfRow
-import splice.control.PerfRowsSource
-import splice.control.PerfRowsWindow
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
@@ -38,7 +35,7 @@ private const val DAYS_PER_WEEK = 7L
 private val OK = OutcomeTag.OK.wire
 
 /** A row whose outcome could not be parsed: shown under this tag, never counted as a failure. */
-public const val UNATTRIBUTED_OUTCOME: String = "?"
+internal const val UNATTRIBUTED_OUTCOME: String = "?"
 
 public enum class PerfWindow(public val label: String, public val ms: Long) {
     H1("1h", MS_PER_HOUR),

@@ -1,7 +1,7 @@
 // PORT-OF: ControlServer.kt (ControlPayloads.perfJson) @ a77531a — invariants unchanged: the
 // per-head stage aggregation (NEW bottleneck instrument), split out as the sole importer of
 // splice.core.perf in the file.
-package splice.control.api.usage
+package splice.usage.perf
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -12,21 +12,21 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import splice.control.ManagedHead
 import splice.core.perf.PerfKeys
+import splice.usage.UsageHeads
 
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
 
-internal class PerfPayloads(private val heads: Map<String, ManagedHead>) {
+public class PerfPayloads(private val heads: UsageHeads) {
 
     private val summary = PerfSummary()
 
     /** `/api/perf/summary?window=1h|24h|7d` (v0.4.0, FEATURES.md §3): one summary per head. An absent
      *  window is 24h; an unknown one is refused with 400, never answered with a different window
      *  (the CLI refuses the same input). */
-    suspend fun summary(call: ApplicationCall) {
+    public suspend fun summary(call: ApplicationCall) {
         val label = call.request.queryParameters["window"]
         val window = if (label == null) PerfWindow.H24 else summary.window(label)
         if (window == null) {
@@ -40,13 +40,13 @@ internal class PerfPayloads(private val heads: Map<String, ManagedHead>) {
         }
     }
 
-    fun summaryJson(window: PerfWindow): String = buildJsonObject {
+    internal fun summaryJson(window: PerfWindow): String = buildJsonObject {
         put("window", window.label)
         putJsonArray(HEADS) {
-            heads.values.forEach { m ->
+            heads.all().forEach { m ->
                 addJsonObject {
-                    put(KEY, m.head.key)
-                    put(LABEL, m.head.label)
+                    put(KEY, m.key)
+                    put(LABEL, m.label)
                     summary.summarize(m.perfRows, window).forEach { (k, v) -> put(k, v) }
                 }
             }
@@ -55,14 +55,14 @@ internal class PerfPayloads(private val heads: Map<String, ManagedHead>) {
 
     // {heads:[{key,label,count,stages:{<field>:{count,p50,p95,max}}}]} — fields are the TurnPerf
     // marks/counters (PerfKeys names), marks first in pipeline order, counters after.
-    fun perfJson(tailN: Int): String = buildJsonObject {
+    public fun perfJson(tailN: Int): String = buildJsonObject {
         put("window", tailN)
         putJsonArray(HEADS) {
-            heads.values.forEach { m ->
+            heads.all().forEach { m ->
                 val rows = m.perf?.tailNumeric(tailN).orEmpty()
                 addJsonObject {
-                    put(KEY, m.head.key)
-                    put(LABEL, m.head.label)
+                    put(KEY, m.key)
+                    put(LABEL, m.label)
                     put("count", rows.size)
                     putJsonObject("stages") {
                         orderedPerfFields(rows).forEach { field ->

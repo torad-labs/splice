@@ -20,7 +20,7 @@
 // BOTH LOOKUPS ARE THE SUMMARY'S, NOT COPIES. The default window is `PerfWindow.H24.ms` — the same
 // 24h `/api/perf/summary` answers an absent window with — and the default/clamp bounds match the tail
 // this family already clamps, so the two routes cannot disagree about what "the last 24 hours" means.
-package splice.control.api.usage
+package splice.usage.perf
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -31,11 +31,9 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.control.ManagedHead
-import splice.control.PerfRow
-import splice.control.PerfRowsSource
-import splice.control.api.HeadResolver
 import splice.core.util.WallClock
+import splice.usage.UsageHead
+import splice.usage.UsageHeadLookup
 
 /** The durable row key — the one field the writer puts in BOTH the header and the numeric bag. */
 private const val TS = "ts"
@@ -60,16 +58,16 @@ private const val MAX_TURNS = 2_000
  *  defect the row's own named-argument rule exists for. */
 private data class AskedWindow(val since: Long, val n: Int)
 
-internal class PerfRoutes(
-    private val resolver: HeadResolver,
+public class PerfRoutes(
+    private val heads: UsageHeadLookup,
     /** Read per request rather than captured: an absent `since` is resolved against NOW, and a
      *  console that has been polling for hours must not keep asking about the hour it started in. */
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
 
-    suspend fun turns(call: ApplicationCall) {
+    public suspend fun turns(call: ApplicationCall) {
         val name = call.request.queryParameters["head"].orEmpty()
-        val matches = if (name.isBlank()) emptyList() else resolver.headByName(name)
+        val matches = if (name.isBlank()) emptyList() else heads.byName(name)
         if (matches.isEmpty()) {
             // 400 naming the head, never 404 — the console reads 404 on this path as route-not-built,
             // which is the same rule /api/compaction/instructions answers to, for the same console.
@@ -98,8 +96,8 @@ internal class PerfRoutes(
                         // so that the multi-match case never conflates two heads' traffic.
                         if (source == null) {
                             addJsonObject {
-                                put("key", head.head.key)
-                                put("label", head.head.label)
+                                put("key", head.key)
+                                put("label", head.label)
                                 put("error", UNWIRED_TURNS)
                             }
                         } else {
@@ -141,12 +139,12 @@ internal class PerfRoutes(
         return AskedWindow(since, requested.coerceIn(1, MAX_TURNS))
     }
 
-    private fun turnsFor(head: ManagedHead, source: PerfRowsSource, asked: AskedWindow): JsonObject {
+    private fun turnsFor(head: UsageHead, source: PerfRowsSource, asked: AskedWindow): JsonObject {
         val read = source.window(asked.since)
         val rows = read.rows.takeLast(asked.n)
         return buildJsonObject {
-            put("key", head.head.key)
-            put("label", head.head.label)
+            put("key", head.key)
+            put("label", head.label)
             put("count", read.rows.size)
             put("returned", rows.size)
             put("truncated", read.rows.size > rows.size)

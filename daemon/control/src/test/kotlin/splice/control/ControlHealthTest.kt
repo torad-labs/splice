@@ -14,6 +14,9 @@ import org.junit.jupiter.api.Test
 import splice.control.api.ControlPayloads
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 
 private class FakeHead(override val key: String, private val up: Boolean) : Head {
     override val label = key

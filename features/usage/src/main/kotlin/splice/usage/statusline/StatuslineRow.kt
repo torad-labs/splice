@@ -6,7 +6,7 @@
 // "…/256k" with counts x 0.512 however the operator switched (operator report, 2026-09-02). This
 // lens undoes that scaling for the picked row and names it by its catalog label; with no catalog,
 // or a row that already agrees with the client, every number passes through untouched.
-package splice.control
+package splice.usage.statusline
 
 import splice.core.model.ModelCatalog
 

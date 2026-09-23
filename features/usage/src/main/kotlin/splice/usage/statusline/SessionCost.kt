@@ -7,7 +7,7 @@
 // falls back to the client's own number; it is NEVER another session's, and never a head-wide sum.
 // This row exists because a confidently displayed cost was wrong by 20x, so a differently-wrong
 // confident number would defeat the whole exercise.
-package splice.control
+package splice.usage.statusline
 
 import splice.core.model.HeadRates
 import splice.core.model.ModelCatalog
@@ -15,11 +15,12 @@ import splice.core.model.ModelRates
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.perf.PerfKeys
+import splice.usage.perf.HeadSessionPerfSource
 
 /** What the statusline's cost segment asks for: this session's spend, or null to render the
  *  client's own number exactly as before. */
-public fun interface SessionCostSource {
-    public fun usdFor(sessionId: String?, modelId: String?): Double?
+internal fun interface SessionCostSource {
+    fun usdFor(sessionId: String?, modelId: String?): Double?
 }
 
 /** USD for ONE client session, from the tokens its turns already recorded against the rate card
@@ -30,7 +31,7 @@ public fun interface SessionCostSource {
  *  and it is INJECTED DATA here: the TOML field that populates it lives on HeadConfig, which stage
  *  two adds once V4-36 releases Topology.kt. The order is real and pinned today; only the
  *  declaration waits. */
-public class SessionCost(
+internal class SessionCost(
     private val tokens: HeadSessionPerfSource,
     private val catalog: ModelCatalog? = null,
     private val headRates: HeadRates? = null,

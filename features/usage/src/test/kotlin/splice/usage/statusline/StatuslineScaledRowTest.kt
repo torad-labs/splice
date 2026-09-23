@@ -5,7 +5,7 @@
 // (operator report, 2026-09-02). With the head's catalog the renderer shows the picked row's label,
 // its declared window and the real counts — the pinned row included, now that it scales too; a
 // head with no catalog renders the blob exactly as sent.
-package splice.control
+package splice.usage.statusline
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

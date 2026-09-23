@@ -1,4 +1,4 @@
-package splice.control.api.usage
+package splice.usage.perf
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -7,9 +7,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.control.PerfRow
-import splice.control.PerfRowsSource
-import splice.control.PerfRowsWindow
 
 class PerfSummaryTest {
 

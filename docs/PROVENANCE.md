@@ -120,7 +120,7 @@ modules at revision `pre-public-port-baseline`. Regenerate with:
 | 1 | app/src/main/kotlin/splice/app/daemon/DaemonLock.kt |
 | 2 | daemon/control/src/main/kotlin/splice/control/ControlServer.kt |
 | 3 | daemon/control/src/main/kotlin/splice/control/LaunchService.kt |
-| 4 | daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt |
+| 4 | features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt |
 | 5 | daemon/control/src/test/kotlin/splice/control/ControlServerTest.kt |
 | 6 | core/src/main/kotlin/splice/core/config/ConfigService.kt |
 | 7 | core/src/main/kotlin/splice/core/config/Knob.kt |

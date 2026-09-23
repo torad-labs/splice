@@ -1,6 +1,6 @@
 // PORT-OF: ControlServer.kt (ControlPayloads.usageJson) @ a77531a — invariants unchanged: the
 // per-head usage/warn projection, split out as the sole importer of splice.core.usage in the file.
-package splice.control.api.usage
+package splice.usage.quota
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
@@ -9,34 +9,34 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.pool.AccountPoolJson
-import splice.control.ManagedHead
 import splice.core.config.ConfigService
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
+import splice.usage.UsageHeads
 
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
 private const val USAGE_WINDOW_HOURS = 5
 
-internal class UsagePayloads(
-    private val heads: Map<String, ManagedHead>,
+public class UsagePayloads(
+    private val heads: UsageHeads,
     private val config: ConfigService,
 ) {
     private val accountJson = AccountPoolJson()
 
     // PORT-OF server/src/control/api.mjs usage payload @ pre-public-port-baseline: top-level window/warn knobs +
     // per-head {key,label,usage:{output_tokens_5h,entries,ratelimit,warn}} (webui UsagePayload).
-    fun usageJson(): String {
+    public fun usageJson(): String {
         val cfg = config.getConfig()
         return buildJsonObject {
             put("window_hours", USAGE_WINDOW_HOURS)
             put("warn_pct", cfg.usageWarnPct)
             put("warn_tokens_5h", cfg.usageWarnTokens5h)
             putJsonArray(HEADS) {
-                heads.values.forEach { m ->
+                heads.all().forEach { m ->
                     val usage = m.usage.snapshot()
                     val pool = m.accountPool?.view(null)
                     val selectedQuota = pool?.selectedQuota() ?: usage.quota
@@ -44,8 +44,8 @@ internal class UsagePayloads(
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
                     val warn = UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h)
                     addJsonObject {
-                        put(KEY, m.head.key)
-                        put(LABEL, m.head.label)
+                        put(KEY, m.key)
+                        put(LABEL, m.label)
                         pool?.let { accountJson.write(this, it) }
                         putJsonObject("usage") {
                             put("output_tokens_5h", usage.outputTokens5h)

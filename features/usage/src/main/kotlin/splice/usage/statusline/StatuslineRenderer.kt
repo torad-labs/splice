@@ -5,7 +5,7 @@
 // (`total_input_tokens` is the pre-2.1.132 fallback). Segments: model dot + name, context
 // used/window · pct (colored by proximity to compaction), cache-hit %, the soft-warn glyph, and
 // the repo · branch. A parse failure falls back to a bare dim marker (never crashes the bar).
-package splice.control
+package splice.usage.statusline
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -19,9 +19,12 @@ import splice.core.usage.UsageWarnPolicy
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
+import splice.usage.perf.HeadPerfSkipSource
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 import java.util.concurrent.TimeUnit
 
-public class StatuslineRenderer(
+internal class StatuslineRenderer(
     private val label: String,
     extraGitRoots: List<String> = emptyList(),
     /** Clock seam: the branch-cache TTL test was a wall-clock race (two real git round-trips inside
@@ -98,7 +101,7 @@ public class StatuslineRenderer(
         true,
     )
 
-    public fun render(
+    fun render(
         stdinJson: String,
         usage: HeadUsageSource?,
         warnPct: Int,
@@ -284,8 +287,8 @@ private data class CachedBranch(val branch: String, val expiresAtMs: Long)
 /** Reads the current git branch for a resolved working directory — the real git subprocess in
  *  production, a latched stand-in in the late-publish race test (DR-22 redo). Named for the ROLE,
  *  not the shape (kt-no-lambda-seam); `operator fun invoke` keeps call sites byte-identical. */
-public fun interface GitBranchReader {
-    public operator fun invoke(cwd: String): String
+internal fun interface GitBranchReader {
+    operator fun invoke(cwd: String): String
 }
 
 // The stdin-blob JSON adapter, split out so StatuslineRenderer stays inside detekt's per-class

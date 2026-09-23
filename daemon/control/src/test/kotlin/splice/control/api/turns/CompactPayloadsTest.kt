@@ -10,14 +10,14 @@ import org.junit.jupiter.api.Test
 import splice.control.CompactView
 import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
-import splice.control.HeadUsageSource
 import splice.control.ManagedHead
-import splice.control.RateLimitView
-import splice.control.UsageView
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 
 class CompactPayloadsTest {
 

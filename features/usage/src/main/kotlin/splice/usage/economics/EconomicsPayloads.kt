@@ -11,16 +11,16 @@
 // A SIBLING of PerfPayloads rather than a method on it: perf answers "where did the latency go"
 // from a bounded tail, economics answers "what has this cost against the plan" from week-wide sums,
 // and the two share no input, no reader and no window.
-package splice.control.api.usage
+package splice.usage.economics
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.control.ManagedHead
 import splice.core.perf.ECONOMICS_RETENTION_HOURS
 import splice.core.util.WallClock
+import splice.usage.UsageHeads
 
 private const val KEY = "key"
 private const val LABEL = "label"
@@ -31,19 +31,19 @@ private const val HEADS = "heads"
 // wanted to, having no dependency edge to :daemon-head. Both spellings of the window now come from
 // splice.core.perf, which is the lowest module both reach.
 
-internal class EconomicsPayloads(
-    private val heads: Map<String, ManagedHead>,
+public class EconomicsPayloads(
+    private val heads: UsageHeads,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
 
-    fun economicsJson(): String = buildJsonObject {
+    public fun economicsJson(): String = buildJsonObject {
         put("retention_hours", ECONOMICS_RETENTION_HOURS)
         put("generated_at", clock())
         putJsonArray(HEADS) {
-            heads.values.forEach { m ->
+            heads.all().forEach { m ->
                 addJsonObject {
-                    put(KEY, m.head.key)
-                    put(LABEL, m.head.label)
+                    put(KEY, m.key)
+                    put(LABEL, m.label)
                     val ceiling = m.usage.snapshot().ratelimit?.limitTokens
                     if (ceiling == null) put("ceiling_tokens", JsonNull) else put("ceiling_tokens", ceiling)
                     putJsonArray("buckets") {

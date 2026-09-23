@@ -16,7 +16,7 @@
 // session's whole compaction point the way losing [ClientWindows] did. Bounded (LRU eviction) by
 // both session and account for the same reason [ClientWindows] is — sessions and accounts come and
 // go for the daemon's whole life.
-package splice.control
+package splice.usage.statusline
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement

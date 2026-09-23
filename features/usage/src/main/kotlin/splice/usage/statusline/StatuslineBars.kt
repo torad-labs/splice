@@ -4,7 +4,7 @@
 // Sources, in order: Claude Code's own `rate_limits` (it read them off the unified headers the head
 // sent, so they are already this head's windows), else the head's tracked quota straight from the
 // daemon (the first tick of a session, before any response carried headers).
-package splice.control
+package splice.usage.statusline
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

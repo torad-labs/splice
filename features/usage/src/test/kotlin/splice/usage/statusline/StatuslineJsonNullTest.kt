@@ -4,7 +4,7 @@
 // survived the emptiness filter and broke both of the renderer's fallback chains — the exact class
 // JsonScalars.kt was written for, reintroduced in :daemon-control as a second copy rather than a reuse.
 // Both cases below are Claude Code shapes: an unnamed model and a workspace with no current_dir.
-package splice.control
+package splice.usage.statusline
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue

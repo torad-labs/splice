@@ -16,7 +16,7 @@
 // against a true 1.420652 — 32.7x — which is the defect. The three rows kept here reproduce it in
 // miniature at 2.66x, and the rest of this file's synthetic rows were rewritten into the inclusive
 // shape so none of them can encode the disjoint fiction again.
-package splice.control
+package splice.usage.statusline
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -32,6 +32,8 @@ import splice.core.model.HeadRates
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
+import splice.usage.perf.HeadPerfSource
+import splice.usage.perf.HeadSessionPerfSource
 
 class SessionCostTest {
 

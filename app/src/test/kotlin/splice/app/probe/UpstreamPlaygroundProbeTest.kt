@@ -24,10 +24,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.control.CompactView
 import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
-import splice.control.HeadUsageSource
 import splice.control.ManagedHead
-import splice.control.RateLimitView
-import splice.control.UsageView
 import splice.control.api.turns.PlaygroundFailure
 import splice.control.api.turns.PlaygroundResult
 import splice.core.auth.AuthDescription
@@ -36,6 +33,9 @@ import splice.core.auth.Credentials
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.upstream.transport.HeaderRedaction
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
 

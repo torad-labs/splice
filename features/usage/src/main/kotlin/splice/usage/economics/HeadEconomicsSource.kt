@@ -1,6 +1,6 @@
 // PORT-OF: ManagedHead.kt — the head's hourly token-economics read (file truth), split out so the record
 // that composes a head names each capability's source from its own file.
-package splice.control
+package splice.usage.economics
 
 /** Reads the head's hourly token-economics rollup (file truth, oldest first). Separate from
  *  [HeadPerfSource] on purpose: perf answers "where did the latency go" from a bounded TAIL,

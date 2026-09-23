@@ -16,7 +16,9 @@ import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
+import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
+import java.time.Instant
 
 /** The Anthropic wire requires a version header on every request; a provider that declares its own
  *  in `extra_headers` overrides this default. */
@@ -35,6 +37,7 @@ internal class ModelsProbe(
     private val http: ModelsHttp = JdkModelsHttp(),
     private val credentials: ModelCredentialSource,
     private val parser: UpstreamRosterParser = UpstreamRosterParser(),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
 
     fun probe(key: String, provider: ProviderConfig, env: EnvReader): ProbedProvider {
@@ -92,12 +95,19 @@ internal class ModelsProbe(
         )
     }
 
-    private fun fix(provider: ProviderConfig, key: String): String =
-        if (provider.auth.isApiKey) {
-            "set ${provider.auth.effectiveApiKeyEnv(key)} with `splice key set`"
-        } else {
-            "run `splice login $key`"
+    /** The remedy for a refused stored credential. An OAuth token past its expiry is refreshed by the
+     *  head on its first turn, so its refusal is not a login to redo; only a token that had not
+     *  expired sends the operator to `splice login`. */
+    private fun fix(provider: ProviderConfig, key: String): String {
+        val expired = credentials.expiresAtMs(provider)?.takeIf { it <= clock() }
+        return when {
+            provider.auth.isApiKey -> "set ${provider.auth.effectiveApiKeyEnv(key)} with `splice key set`"
+            expired != null ->
+                "the stored token expired at ${Instant.ofEpochMilli(expired)}; the head refreshes it on its " +
+                    "first turn, with no login needed"
+            else -> "run `splice login $key`"
         }
+    }
 
     private fun headers(provider: ProviderConfig, bearer: String?): Map<String, String> = buildMap {
         put("Accept", "application/json")

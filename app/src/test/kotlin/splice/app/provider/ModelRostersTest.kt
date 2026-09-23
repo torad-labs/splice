@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
+import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ModelDiscoveryConfig
@@ -53,22 +54,45 @@ class ModelRostersTest {
 
     // The operator reads this line to learn what joined the picker. It once said "385 discovered" for
     // an OpenRouter head whose filter let 294 join (2026-09-23), so the filter's share is named on it.
+    // A model a declared row covers is in the picker whatever the filter says, so it is not counted as
+    // kept out; the rows the endpoint itself rules out are counted, or they vanish from the line.
     @Test
-    fun `the line counts what the endpoint listed and what the provider's filter keeps out`(@TempDir tmp: Path) =
+    fun `the line counts what the endpoint listed and what stays out of the picker`(@TempDir tmp: Path) =
         runBlocking {
-            val rosters = rosters(tmp, HeadModelsSource { _, _ -> Discovery.Found(LIST_URL, chat) })
+            val rosters = rosters(
+                tmp,
+                HeadModelsSource { key, _ -> Discovery.Found(LIST_URL, chat, ruledOut = if (key == "cx") 2 else 0) },
+            )
             val filtered = provider.copy(discovery = ModelDiscoveryConfig(exclude = listOf("m-2")))
-            rosters.resolve(mapOf("xai" to provider, "or" to filtered))
+            val declared = filtered.copy(models = listOf(ModelEntry("m-2", contextWindow = 128_000)))
+            rosters.resolve(mapOf("xai" to provider, "or" to filtered, "dec" to declared, "cx" to provider))
             assertTrue("[xai] models: 2 listed at $LIST_URL\n" in lines, "$lines")
             assertTrue("[or] models: 2 listed at $LIST_URL, 1 kept out by its discovery filter\n" in lines, "$lines")
+            assertTrue("[dec] models: 2 listed at $LIST_URL\n" in lines, "$lines")
+            assertTrue("[cx] models: 4 listed at $LIST_URL, 2 it marks unusable for a turn\n" in lines, "$lines")
         }
 
     @Test
-    fun `no answer and nothing kept is the declared rows, said once`(@TempDir tmp: Path) = runBlocking {
-        val rosters = rosters(tmp, HeadModelsSource { _, _ -> Discovery.Unavailable(LIST_URL, "HTTP 401") })
-        rosters.resolve(mapOf("xai" to provider))
-        assertEquals(emptyList<DiscoveredModel>(), rosters.forHead("xai"))
-        assertEquals(1, lines.count { it.startsWith("[xai] models:") && "splice.toml's rows" in it }, "$lines")
+    fun `no answer and nothing kept is the declared rows, said once with where it asked`(@TempDir tmp: Path) =
+        runBlocking {
+            val rosters = rosters(tmp, HeadModelsSource { _, _ -> Discovery.Unavailable(LIST_URL, "HTTP 401") })
+            rosters.resolve(mapOf("xai" to provider))
+            assertEquals(emptyList<DiscoveredModel>(), rosters.forHead("xai"))
+            val said = "[xai] models: HTTP 401 (asked at $LIST_URL); " +
+                "no list was kept, so the picker is splice.toml's rows\n"
+            assertEquals(listOf(said), lines.filter { it.startsWith("[xai] models:") })
+        }
+
+    // 2026-09-23 (review): a moved endpoint, a corrupt file and an absent one all read "the picker is
+    // splice.toml's rows", which left the operator to guess which of three fixes applied.
+    @Test
+    fun `a kept list from another endpoint is named, not used`(@TempDir tmp: Path) = runBlocking {
+        rosters(tmp, HeadModelsSource { _, _ -> Discovery.Found(LIST_URL, chat) }).resolve(mapOf("xai" to provider))
+        val moved = provider.copy(modelsUrl = "https://moved.example.test/models")
+        val next = rosters(tmp, HeadModelsSource { _, _ -> Discovery.Unavailable(null, "HTTP 503") })
+        next.resolve(mapOf("xai" to moved))
+        assertEquals(emptyList<DiscoveredModel>(), next.forHead("xai"))
+        assertTrue(lines.any { "the list kept was published at $LIST_URL" in it }, "$lines")
     }
 
     @Test
@@ -85,7 +109,8 @@ class ModelRostersTest {
             rosters.resolve(mapOf("stuck" to provider, "xai" to provider))
             assertEquals(emptyList<DiscoveredModel>(), rosters.forHead("stuck"))
             assertEquals(chat, rosters.forHead("xai"))
-            assertTrue(lines.any { it.startsWith("[stuck] models: no answer within") }, "$lines")
+            val stuck = lines.single { it.startsWith("[stuck] models:") }
+            assertTrue(stuck.startsWith("[stuck] models: no answer within") && "(asked at $LIST_URL)" in stuck, stuck)
         }
 
     @Test

@@ -21,10 +21,14 @@ import java.io.IOException
 internal class RouteFailure(private val audit: ControlAudit) {
 
     suspend fun answer(call: ApplicationCall, failure: Throwable) {
+        val committed = call.response.isCommitted
+        // The client leaving a body already on the wire is how every /api/events stream ends (a tab
+        // closed), not a route failure: measured, the console e2e logged one per page before this.
+        if (committed && failure is IOException) return
         val why = "${kind(failure)}: ${SafeFailureText.render(failure)}"
         audit.routeFailed(call.request.httpMethod.value, call.request.path(), why)
         // A body already on the wire (a stream that failed part-way) cannot take a status line.
-        if (call.response.isCommitted) return
+        if (committed) return
         call.respondText(
             buildJsonObject { put("error", why) }.toString(),
             ContentType.Application.Json,

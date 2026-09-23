@@ -1,13 +1,13 @@
-// Red/green proof for the write-time and stop-time wall (walls-first, §17). Every case drives the
-// REAL entry — `bun tools/gate rules --stdin <lifecycle>`, the command .claude/settings.json routes
-// the lifecycles to — as a subprocess with a synthetic hook event against a hermetic copy of the
-// repo's sgconfig + rules (SPLICE_HOOK_ROOT). The rules themselves are proven by `ast-grep test`;
-// this suite proves the ROUTING: proposed-content computation, glob binding via the temp mirror,
-// severity → decision mapping, and the fail-closed / fail-open split.
+// Red/green proof for the write-time wall (walls-first, §17). Every case drives the REAL entry —
+// `bun tools/gate rules --stdin pretooluse`, the command .claude/settings.json routes PreToolUse
+// to — as a subprocess with a synthetic hook event against a hermetic copy of the repo's sgconfig +
+// rules (SPLICE_HOOK_ROOT). The rules themselves are proven by `ast-grep test`; this suite proves
+// the ROUTING: proposed-content computation, glob binding via the temp mirror, severity → decision
+// mapping, and the fail-closed branch.
 //
-// THE INTERPRETER IS ADDRESSED ABSOLUTELY (process.execPath): two arms poison PATH to prove the
-// fail-closed and fail-open branches, so a bare `bun` would not be found and those arms would error
-// out instead of testing what they name.
+// THE INTERPRETER IS ADDRESSED ABSOLUTELY (process.execPath): one arm poisons PATH to prove the
+// fail-closed branch, so a bare `bun` would not be found and that arm would error out instead of
+// testing what it names.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -152,41 +152,21 @@ describe("gate rules --stdin: the write-time wall", () => {
   });
 });
 
-describe("gate rules --stdin: the stop-time wall", () => {
-  test("stop blocks on a dirty tree and respects stop_hook_active", () => {
-    const isolated = hermetic();
-    try {
-      expect(runHook("stop", {}, {}, isolated).decision, "clean tree must not block stop").toBeNull();
-      const bad = join(isolated, L3_TARGET);
-      mkdirSync(dirname(bad), { recursive: true });
-      writeFileSync(bad, VIOLATION, "utf8");
-      expect(expectBlock(runHook("stop", {}, {}, isolated), "dirty tree must block stop")).toContain(L3_RULE);
-      expect(runHook("stop", { stop_hook_active: true }, {}, isolated).decision, "stop_hook_active must not re-block").toBeNull();
-    } finally {
-      rmSync(isolated, { recursive: true, force: true });
-    }
-  });
-
-  test("stop fails OPEN when the scanner is missing", () => {
-    const result = runHook("stop", {}, { PATH: "/nonexistent" });
-    expect(result.decision, "stop must fail open on infra failure").toBeNull();
-    expect(result.stderr).toContain("stop scan unavailable");
-  });
-});
-
 describe("gate rules --stdin: the contract", () => {
-  test(".claude/settings.json routes PreToolUse, Stop and SubagentStop to this verb", () => {
+  test(".claude/settings.json routes PreToolUse, and only PreToolUse, to this verb", () => {
     const settings = JSON.parse(readFileSync(join(repoRoot, ".claude", "settings.json"), "utf8")) as {
       hooks: Record<string, { hooks: { command: string }[] }[]>;
     };
-    const commands = (event: string) => settings.hooks[event]!.flatMap((h) => h.hooks.map((x) => x.command));
+    const commands = (event: string) => (settings.hooks[event] ?? []).flatMap((h) => h.hooks.map((x) => x.command));
     expect(commands("PreToolUse")).toContain("bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin pretooluse");
-    expect(commands("Stop")).toContain("bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin stop");
-    expect(commands("SubagentStop")).toContain("bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin stop");
+    const elsewhere = Object.keys(settings.hooks)
+      .filter((event) => event !== "PreToolUse")
+      .filter((event) => commands(event).some((c) => c.includes("tools/gate rules")));
+    expect(elsewhere, "the stop-time scan was removed on 2026-09-22; the wall runs at write time").toEqual([]);
   });
 
   test("an unknown lifecycle, a missing one, or --stdin mixed with another flag is refused with exit 2", () => {
-    for (const argv of [["--stdin", "posttooluse"], ["--stdin"], ["--stdin", "stop", "--prove-coverage"], ["--prove-coverage", "--stdin", "stop"]]) {
+    for (const argv of [["--stdin", "posttooluse"], ["--stdin", "stop"], ["--stdin"], ["--stdin", "pretooluse", "--prove-coverage"], ["--prove-coverage", "--stdin", "pretooluse"]]) {
       const proc = Bun.spawnSync([BUN, GATE, "rules", ...argv], { stdin: Buffer.from("{}"), stdout: "pipe", stderr: "pipe" });
       expect(proc.exitCode, `argv ${argv.join(" ")}`).toBe(2);
       expect(proc.stdout.toString()).toBe("");

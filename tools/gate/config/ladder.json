@@ -8,7 +8,7 @@
     },
     {
       "task": "hookTests",
-      "why": "The Claude Code hooks' red-green arms: the write-time wall (tools/gate/test/hook.test.ts) and the one-committer guard.",
+      "why": "The Claude Code hook's red-green arms: the write-time wall (tools/gate/test/hook.test.ts).",
       "command": ["npm", "run", "--silent", "test:hooks"]
     },
     {

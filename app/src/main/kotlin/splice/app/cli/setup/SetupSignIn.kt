@@ -13,23 +13,27 @@
 // the shape is the tree's own.
 package splice.app.cli.setup
 
+import splice.app.auth.LoginIo
 import splice.app.cli.AdminSupport
-import splice.core.terminal.CYAN
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
-import splice.core.terminal.DIM
-import splice.core.terminal.GREEN
-import splice.core.terminal.RESET
+import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
+import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 
 /** [loginHead] is SetupCommand's own sign-in seam, passed through so tests keep constructing one
- *  SetupCommand and the wizard keeps one login path. */
+ *  SetupCommand and the wizard keeps one login path. [env] is SetupCommand's threaded environment
+ *  (the V4-177 rule beside that constructor): it decides both which heads hold a credential and
+ *  how much colour the terminal gets, so neither answer can come from a different process env. */
 internal class SetupSignIn(
     private val loginHead: HeadSignIn,
-    private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
+    private val env: EnvReader,
+    private val palette: CliPalette = CliPalette(ColorDepthProbe(env).depth()),
 ) {
+
+    private val loginIo = LoginIo()
 
     private fun pendingOAuthHeads(topology: Topology): List<PendingOAuthHead> =
         topology.heads.entries.mapNotNull { (key, head) ->
@@ -46,20 +50,27 @@ internal class SetupSignIn(
     internal suspend fun signInPendingHeads(topology: Topology): Boolean {
         val pending = pendingOAuthHeads(topology)
         if (pending.isEmpty()) {
-            println("$GREEN✓$RESET wrapper installed. Set OPENROUTER_API_KEY before launching.")
+            // Confirmation only. This line used to add "Set OPENROUTER_API_KEY before launching."
+            // unconditionally — on machines where the key was set, and on topologies with no
+            // openrouter head at all. The close below names every head still missing a credential
+            // and the command that fixes it, so an instruction here could only repeat or contradict it.
+            println(palette.paint(palette.live, "\u2713") + " wrapper installed.")
             return true
         }
         println(
-            "$DIM  Subscription heads reuse each vendor CLI's public OAuth client identity, signed in " +
-                "separately for splice (its own credential file, any account) — " +
-                "unofficial; use at your own risk.$RESET",
+            palette.paint(
+                palette.quiet,
+                "  Subscription heads reuse each vendor CLI's public OAuth client identity, signed in " +
+                    "separately for splice (its own credential file, any account) — " +
+                    "unofficial; use at your own risk.",
+            ),
         )
         var ok = true
         for ((key, command) in pending) {
-            if (AdminSupport.confirm("Sign in to $CYAN$command$RESET now?", default = true)) {
+            if (AdminSupport.confirm("Sign in to ${palette.paint(palette.signal, command)} now?", default = true)) {
                 if (!loginHead(key)) ok = false
             } else {
-                println("  ${DIM}skipped — sign in later with: $command login$RESET")
+                println("  " + palette.paint(palette.quiet, "skipped — sign in later with: $command login"))
             }
         }
         return ok
@@ -75,21 +86,29 @@ internal class SetupSignIn(
      * stage. An operator who has just finished setup wants ONE thing — what to type — and the
      * previous four-row key/value block gave that answer the same weight as the dashboard URL.
      *
-     * So: the first launchable command alone, in splice's own tone, surrounded by space. Everything
-     * else is a quiet line under it. Heads still waiting on a credential are listed as the command
-     * that would finish them, never as a status, because "needs login" is not actionable and
-     * `claude-kimi login` is.
+     * So: the next thing to type, alone, in splice's own tone, surrounded by space. That is the
+     * first head that can launch, or — when none can yet — the login that makes one launchable.
+     * Everything else is a quiet line under it. A head still missing a credential is listed as the
+     * command that finishes it, never as a status, because "needs a key" is not actionable and
+     * `claude-or login` is.
+     *
+     * The block does NOT announce completion. SetupCommand ends on the frame's outro, and the
+     * first cut of this method opened with its own "Setup complete." — so the screen said done
+     * twice, the way the old "You're set." heading had against "Toolkit ready!".
      */
     internal fun printNextSteps(topology: Topology) {
-        val commands = topology.heads.map { (k, h) -> h.claude.command ?: k }
-        val pending = pendingOAuthHeads(topology).map { it.command }.toSet()
-        val ready = commands.filterNot { it in pending }
+        // READINESS IS THE PREDICATE `splice status` USES. The first cut asked only whether an
+        // OAuth head had its token file, so an api-key head with no key counted as ready — and on a
+        // topology that listed it first, the wizard's largest word was a command that fails on
+        // launch. A head whose provider is missing is skipped, exactly as status skips it.
+        val heads = topology.heads.entries.mapNotNull { (key, head) ->
+            val provider = topology.providers[head.provider] ?: return@mapNotNull null
+            (head.claude.command ?: key) to credentialed(key, provider)
+        }
+        val ready = heads.filter { it.second }.map { it.first }
+        val pending = heads.filterNot { it.second }.map { "${it.first} login" }
+        val hero = ready.firstOrNull() ?: pending.firstOrNull()
         println()
-        println("  " + palette.paint(palette.strong, "Setup complete."))
-        println()
-        // The hero is a READY head where there is one: sending the operator to a command that will
-        // only ask them to sign in is a dead end dressed as a next step.
-        val hero = ready.firstOrNull() ?: commands.firstOrNull()
         if (hero != null) {
             println()
             println("      " + palette.strong + palette.signal + hero + palette.off)
@@ -100,9 +119,8 @@ internal class SetupSignIn(
         if (alsoReady.isNotEmpty()) {
             println("  " + palette.paint(palette.quiet, "also ready    ") + alsoReady.joinToString("   "))
         }
-        for (command in pending) {
-            val label = palette.paint(palette.quiet, "needs login   ")
-            println("  " + label + palette.paint(palette.signal, "$command login"))
+        for (login in pending.filterNot { it == hero }) {
+            println("  " + palette.paint(palette.quiet, "needs login   ") + palette.paint(palette.signal, login))
         }
         println()
         // All four affordances the old block named are still named. The redesign moved the launch
@@ -111,7 +129,15 @@ internal class SetupSignIn(
         verb("splice status", "see what's running")
         verb("splice doctor", "anything wrong prints its fix")
         verb("splice dashboard", "the panel, in a browser")
+        // Room before the frame's outro, which renders at column 0 and would otherwise read as one
+        // more row of this list.
+        println()
     }
+
+    /** A head that can launch as-is: the client's own login, or a credential splice can find. */
+    private fun credentialed(key: String, provider: ProviderConfig): Boolean =
+        AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client ||
+            loginIo.credentialConfigured(key, provider, env)
 
     /** One command and what it is for, the command padded so the descriptions form a column. */
     private fun verb(command: String, purpose: String) {

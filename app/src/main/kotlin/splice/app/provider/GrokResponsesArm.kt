@@ -4,8 +4,8 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.auth.GrokRefresh
 import splice.core.util.LogSink
+import splice.oauth.grok.GrokRefresh
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
 import splice.topology.TopologyLoader

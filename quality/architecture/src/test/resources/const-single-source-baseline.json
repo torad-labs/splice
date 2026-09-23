@@ -335,7 +335,7 @@
       "app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
     ],
     "COPY HTTP_OK": [
-      "app/src/main/kotlin/splice/app/auth/OAuthCallbackPage.kt",
+      "integrations/oauth/src/main/kotlin/splice/oauth/OAuthCallbackPage.kt",
       "app/src/main/kotlin/splice/app/cli/status/AccountPools.kt",
       "app/src/main/kotlin/splice/app/cli/add/AddChecks.kt",
       "app/src/main/kotlin/splice/app/cli/daemon/DaemonStop.kt",
@@ -435,7 +435,7 @@
       "features/usage/src/main/kotlin/splice/usage/perf/PerfSummary.kt"
     ],
     "COPY MS_PER_S": [
-      "app/src/main/kotlin/splice/app/auth/DeviceLoginFlow.kt",
+      "integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt",
       "app/src/main/kotlin/splice/app/cli/status/AccountPoolText.kt",
       "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt",
@@ -562,8 +562,8 @@
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
     ],
     "COPY TOKEN_BYTES": [
-      "app/src/main/kotlin/splice/app/cli/auth/LoginCodex.kt",
-      "app/src/main/kotlin/splice/app/cli/auth/LoginGrok.kt"
+      "integrations/oauth/src/main/kotlin/splice/oauth/codex/LoginCodex.kt",
+      "integrations/oauth/src/main/kotlin/splice/oauth/grok/LoginGrok.kt"
     ],
     "COPY TTL_MS": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ReasoningCache.kt",

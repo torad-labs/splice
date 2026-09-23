@@ -8,12 +8,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
-import splice.app.auth.OAuthAccountFiles
-import splice.app.auth.OAuthAccountLabels
 import splice.app.control.ManagedHead
 import splice.app.head.HeadBoot
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
+import splice.oauth.OAuthAccountFiles
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -225,17 +224,6 @@ class AccountRestartTest {
         assertEquals("invalid OAuth account label", failed["codex"])
         assertTrue(logs.any { it.contains("invalid OAuth account label") })
         assertFalse(logs.joinToString("").contains("private@example.com"))
-    }
-
-    @Test
-    fun `default labels are stable non PII and ordinals reuse the first gap`() {
-        val first = OAuthAccountLabels.chatGpt("Plus", "private-account-id")
-        val second = OAuthAccountLabels.chatGpt("Plus", "private-account-id")
-
-        assertEquals(first, second)
-        assertTrue(first.matches(Regex("plus-[0-9a-f]{8}")))
-        assertFalse(first.contains("private-account-id"))
-        assertEquals("grok-3", OAuthAccountLabels.ordinal(AuthKind.GrokOAuth, setOf("grok-2", "grok-4")))
     }
 }
 

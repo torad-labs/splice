@@ -2,10 +2,10 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.auth.KimiRefresh
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.dialect.anthropic.IdentityHeaders
+import splice.oauth.kimi.KimiRefresh
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiQuirks
 import splice.provider.openai.ApiKeyAuthProvider

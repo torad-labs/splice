@@ -3,7 +3,6 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
-import splice.app.auth.OAuthAccountFiles
 import splice.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
@@ -13,6 +12,7 @@ import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge

@@ -14,7 +14,6 @@ package splice.app
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import splice.app.auth.CodexRefresh
 import splice.app.control.ControlServer
 import splice.app.control.DashboardPage
 import splice.app.control.ManagedHead
@@ -42,6 +41,7 @@ import splice.head.compaction.CompactionTail
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
+import splice.oauth.codex.CodexRefresh
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 

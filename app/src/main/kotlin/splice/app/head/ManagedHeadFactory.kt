@@ -5,7 +5,6 @@
 package splice.app.head
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.auth.AuthHttpClientFactory
 import splice.app.control.ManagedHead
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -32,6 +31,7 @@ import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
+import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider

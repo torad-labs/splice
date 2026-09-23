@@ -7,13 +7,13 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
-import splice.app.auth.GrokRefresh
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
 import splice.core.topology.DialectWires
 import splice.core.util.LogSink
+import splice.oauth.grok.GrokRefresh
 
 /**
  * The dialect/auth/provider-ID dispatch: everything that turns one head's resolved [ProviderBuild]

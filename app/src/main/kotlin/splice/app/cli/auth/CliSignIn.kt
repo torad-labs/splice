@@ -5,7 +5,6 @@
 // credential and wrapper presence that status, doctor, setup and add report.
 package splice.app.cli.auth
 
-import splice.app.auth.OAuthLoginAccount
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.InstallPaths
 import splice.core.config.KeyStore
@@ -16,6 +15,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.oauth.OAuthLoginAccount
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Paths

@@ -7,11 +7,11 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
-import splice.app.auth.GrokRefresh
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
 import splice.dialect.chat.SlotAffinity
+import splice.oauth.grok.GrokRefresh
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.topology.TopologyLoader

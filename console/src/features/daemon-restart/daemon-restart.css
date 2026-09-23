@@ -1,0 +1,21 @@
+/* The draining restart: the inline two-step key and the daemon's answer under it. The key and the
+   fault are the world's controls (shared/controls); nothing here re-colours them. Radius 0, tokens
+   only. */
+
+/* The column STRETCHES its children, and that is load-bearing: the refusal is a sentence of about a
+   hundred characters and the fault wraps only inside a box narrower than it. Sized to its own
+   content (flex-start) it took its 72ch measure and ran past the fleet's 24rem detail column,
+   measured on the live e2e stack before this rule. The key keeps its own width inside its hold. */
+.myx-drestart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.myx-drestart-note {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}

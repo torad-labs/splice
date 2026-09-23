@@ -16,7 +16,7 @@
 import { cx } from '@shared/lib';
 import { HolderEdge } from '@shared/ui';
 
-export function Flag({ on, onLabel, offLabel, onChange, disabled, className }: {
+export function Flag({ on, onLabel, offLabel, onChange, disabled, ariaLabel, className }: {
   on: boolean;
   /** The word printed while the flag is on. */
   onLabel: string;
@@ -24,7 +24,10 @@ export function Flag({ on, onLabel, offLabel, onChange, disabled, className }: {
    *  print the same word has no state a reader can see. */
   offLabel: string;
   onChange: (next: boolean) => void;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
+  /** What the switch controls, when the printed state word alone does not say it ("on" names no
+   *  thing). The state still reaches a screen reader through aria-checked. */
+  ariaLabel?: string | undefined;
   className?: string;
 }) {
   return (
@@ -33,6 +36,7 @@ export function Flag({ on, onLabel, offLabel, onChange, disabled, className }: {
       className={cx('myx-key', 'myx-flag', className)}
       role="switch"
       aria-checked={on}
+      aria-label={ariaLabel}
       disabled={disabled === true}
       onClick={() => onChange(!on)}
     >

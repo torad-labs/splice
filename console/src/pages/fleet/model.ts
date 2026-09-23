@@ -1,7 +1,10 @@
 // The fleet page's pure half: how a saved view turns the head list into bays, how severe a head's
-// attention state is, and how the two pending field sources are read when they exist.
+// attention state is, how the two pending field sources are read when they exist, and which
+// accounts an opened head rides.
+import { isExcluded, nextRuleOf } from '@entities/account';
+import type { AccountRow, SelectorRule } from '@entities/account';
 import { headAttention, providerFamily } from '@entities/heads';
-import type { HeadSignals, HeadState } from '@entities/heads';
+import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
 import type { HeadStatus } from '@shared/api';
 import type { View } from '@features/views';
 
@@ -99,6 +102,74 @@ function asTable(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+// ── the opened head's account pool (M4-02) ──────────────────────────────────────────────────────
+
+/**
+ * The accounts one head rides, out of GET /api/accounts: every row whose `heads` names it.
+ *
+ * Read off the row rather than joined on anything the console knows, because the daemon already did
+ * the join: a login two heads share is ONE row carrying both keys (AccountsRoute.merge, joined on the
+ * credential path), so it belongs to both pools and appears in both.
+ */
+export function poolOf(accounts: readonly AccountRow[], headKey: string): AccountRow[] {
+  return accounts.filter((account) => account.heads.includes(headKey));
+}
+
+/**
+ * HeadSignals.accountExcluded, exactly as that field's contract states it: the head rides a pool
+ * whose SELECTED account is excluded. `isExcluded` is the predicate that strikes the account's own
+ * strip, so the rack and the pool can never disagree about the same account. A single login's
+ * `selected` is null (no pool selects it), so it never trips this.
+ */
+export function selectedExcluded(pool: readonly AccountRow[], nowMs: number): boolean {
+  return pool.some((account) => account.selected === true && isExcluded(account, nowMs));
+}
+
+/** Why the daemon takes its next target: the selector's rules, with the pin the selector walks first. */
+export type PoolRule = 'pinned' | SelectorRule;
+
+export interface PoolNext {
+  label: string;
+  rule: PoolRule;
+}
+
+/**
+ * The pool's next target AS THE DAEMON ANSWERED IT, and the rule that explains it.
+ *
+ * THE MARK IS THE DAEMON'S FLAG, NOT A RE-DERIVATION. AccountsRoute writes `next_target` from the
+ * pool's own nextTargetLabel (AccountPool.kt:163), and that walks the pin first, then primary, then
+ * the caller's previous account, then lowest seven-day used with ties broken by label
+ * (AccountPool.kt:179-186). A console-side derivation that skipped the pin, or broke a tie by array
+ * order, would mark a strip the daemon will not take — a confident wrong answer about what happens
+ * next. So the flag picks the account and the order only NAMES why: pinned, then primary, then the
+ * lowest seven-day account; a target that is none of those can only have been the previous one,
+ * which is the selector's sticky rule. The naming is the account entity's nextRuleOf, the same rule
+ * the accounts page prints.
+ */
+export function poolNext(pool: readonly AccountRow[]): PoolNext | null {
+  const target = pool.find((account) => account.next_target === true);
+  const rule = target === undefined ? null : nextRuleOf(target, pool);
+  return target === undefined || target.label === null || rule === null ? null : { label: target.label, rule };
+}
+
+/** The families whose heads ride OAuth logins, so GET /api/accounts reports them (AuthKindRegistry
+ *  .isOAuth, AccountsRoute.fold). Every other kind is outside the join by the daemon's own rule. */
+const OAUTH_FAMILIES: ReadonlySet<ProviderFamily> = new Set<ProviderFamily>(['chatgpt', 'grok', 'kimi', 'muse']);
+
+/**
+ * What an opened head's pool section says when GET /api/accounts names no row for it. Three
+ * different facts, never one blank rack:
+ *   - a Claude head is `client`: launch-time selected, one login, never a pool (the accounts page's
+ *     own words for the same fact);
+ *   - an api-key or local head has no OAuth login at all, so it has no pool and says which kind it is;
+ *   - an OAuth head with no row is the route reporting nothing for it, and the empty names the route.
+ */
+export function poolEmpty(authKind: string): { text: string; source: string } {
+  if (authKind === 'client') return EMPTIES.claudeLogin;
+  if (OAUTH_FAMILIES.has(providerFamily(authKind))) return EMPTIES.noAccounts;
+  return { text: 'no oauth pool', source: `${authKind} head` };
+}
+
 /**
  * The page's honest empties, as data rather than inline JSX, so a test can assert each one names
  * its source (CONTRACTS.md section 8).
@@ -106,9 +177,13 @@ function asTable(value: unknown): Record<string, unknown> | null {
 export const EMPTIES = {
   /** The two field sources that are still rows: the catalog and the topology file. */
   fields: { text: 'dialect and model not built', source: 'rows V4-127 V4-128' },
-  /** The pooled accounts, for the detail column's pool section. */
+  /** The pooled accounts while the store holds the route's pending marker: printed only when
+   *  GET /api/accounts answered 404 (entities/account maps that to V4-132), never unconditionally. */
   pool: { text: 'account pool not built', source: 'row V4-132' },
   noHeads: { text: 'no heads configured', source: 'GET /api/heads' },
-  /** The daemon-level restart is its own row, distinct from a head restart. */
-  daemonRestart: { text: 'daemon restart not built', source: 'row V4-74' },
+  claudeLogin: { text: 'launch-time selected, never a pool', source: 'one login per claude head' },
+  noAccounts: { text: 'no accounts reported', source: 'GET /api/accounts' },
+  /** A pool with labeled accounts and no next target: nothing is available, which is the state that
+   *  fails the head's next turn in words naming the earliest reset. */
+  noneAvailable: { text: 'no account available', source: 'next_target on GET /api/accounts' },
 } as const;

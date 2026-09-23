@@ -5,11 +5,11 @@
 // tail and never writes either.
 //
 // FEATURES.md 4.10 also lists "Effective instructions | route": section 6 serves it with
-// GET /api/compaction/instructions (V4-136, decided 2026-09-18), pending until that daemon row
-// lands; the page names the row and claims 4.10 once the route answers.
+// GET /api/compaction/instructions (V4-136, decided 2026-09-18). The page reads it for every head
+// and prints the rules in effect (M4-05), and never writes: the rules live in splice.toml.
 import type { Disposition } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/compact', disposition: 'read-only' },
-  { kind: 'route', name: '/api/compaction/instructions', disposition: 'pending', where: 'V4-136' },
+  { kind: 'route', name: '/api/compaction/instructions', disposition: 'read-only' },
 ];

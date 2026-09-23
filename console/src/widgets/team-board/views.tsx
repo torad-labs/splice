@@ -21,8 +21,8 @@ import { Bay, Empty, Figure, HolderEdge, ScopeInset, Strip, StripField } from '@
 import type { TeamMemberRow, TeamPayload } from '@entities/team';
 import { BoardFooter, BoardHeader, MessageStrip } from './parts';
 import {
-  JOIN_PREFIX, costPerRole, focusMember, groupByRole, lastReceived, roleRows, slotName, timeRule,
-  timelineRows, turnsPerMember,
+  SESSION_TAG_CHARS, costTable, focusMember, groupByRole, lastReceived, roleRows, slotName, timeRule,
+  timelineRows, turnsPerSlot,
 } from './model';
 import type { TeamTurn, TeamViewData } from './model';
 import { S } from './strings';
@@ -34,7 +34,11 @@ import './views.css';
 const ROLE_TRACKS = '23.538fr 25.183fr 15.310fr';
 const tracksFor = (bays: number): string => (bays === 3 ? ROLE_TRACKS : `repeat(${Math.max(bays, 1)}, 1fr)`);
 
-const thousand = (value: number): string => value.toLocaleString('en-US');
+const thousand = (value: number | null): string => (value === null ? 'n/r' : value.toLocaleString('en-US'));
+const money = (value: number | null): string => (value === null ? 'n/r' : `$${value.toFixed(3)}`);
+
+/** HH:MM of an epoch, in UTC like every other stamp on the board (parts.tsx stamp). */
+const clock = (epochMs: number): string => new Date(epochMs).toISOString().slice(11, 16);
 
 /** A strip whose fields keep their own width and wrap. Every field prints its header and its
  *  value whole; the strip is as tall as the bay makes it. */
@@ -68,7 +72,7 @@ function SessionStrip({ member }: { member: TeamMemberRow }) {
 
 /** The right column's member card: who the team is waiting on, field by field. */
 function MemberCard({ board, member }: { board: TeamPayload; member: TeamMemberRow }) {
-  const slot = board.team.slots.find((s) => s.session === member.name);
+  const slot = board.team.slots.find((s) => s.id === member.slot);
   const rows: [string, string][] = [
     [S.name, member.name],
     [S.head, member.head],
@@ -93,13 +97,14 @@ function MemberCard({ board, member }: { board: TeamPayload; member: TeamMemberR
   );
 }
 
-/** Turns in flight over the last hour, as the daemon sampled them. A step line, because the count
- *  holds between samples rather than sliding between them. */
+/** The team's turns in flight over the last hour, minute by minute, worked out from the start and
+ *  end of every landed turn (pages/teams/board.ts). A step line, because the count holds between
+ *  samples rather than sliding between them. */
 function TurnsChart({ data }: { data: TeamViewData | null }) {
   if (data === null || data.lastHour.length === 0) {
     return (
       <ScopeInset title={`${S.turns} over the last hour`} basis="unavailable">
-        <Empty text="no turn history yet" source="V4-131 pending" />
+        <Empty text="reading the turn log" source="GET /api/perf/turns" />
       </ScopeInset>
     );
   }
@@ -205,7 +210,7 @@ export function TeamBoardByRole({ board, data = null, chat, feed }: {
 
         <aside className="myx-board-aside myx-role-aside">
           {focus === null
-            ? <Empty text="no session is racked" source="GET /api/teams/{id}" />
+            ? <Empty text="no session is bound" source="GET /api/teams" />
             : <MemberCard board={board} member={focus} />}
           <TurnsChart data={data} />
           {chat}
@@ -227,7 +232,7 @@ function TurnStrip({ turn }: { turn: TeamTurn }) {
       <StripField w={0} fixed label={S.duration} value={turn.duration} />
       <StripField w={0} fixed label={S.tokensIn} value={thousand(turn.input)} />
       <StripField w={0} fixed label={S.tokensOut} value={thousand(turn.output)} />
-      <StripField w={0} fixed label={S.total} value={thousand(turn.input + turn.output)} />
+      <StripField w={0} fixed label={S.total} value={turn.input === null || turn.output === null ? 'n/r' : thousand(turn.input + turn.output)} />
     </WrapStrip>
   );
 }
@@ -240,7 +245,7 @@ function TeamSlots({ board }: { board: TeamPayload }) {
     <div className="myx-tl-slots">
       <h3 className="myx-board-panel-title">{S.teamSlots}</h3>
       {board.team.slots.map((slot, index) => {
-        const member = board.members.find((m) => m.name === slot.session);
+        const member = board.members.find((m) => m.slot === slot.id);
         const window = member?.window ?? null;
         return (
           <div className="myx-board-card" key={`${slot.role}-${index}`}>
@@ -258,19 +263,24 @@ function TeamSlots({ board }: { board: TeamPayload }) {
   );
 }
 
-/** Tokens per role for the day, with the two things that make the table honest printed under it:
- *  how the turns were joined to the roles, and how far back the day's oldest turn reaches. */
-function CostPerRole({ board, data }: { board: TeamPayload; data: TeamViewData | null }) {
-  if (data === null) {
-    return (
-      <div className="myx-board-panel">
-        <h3 className="myx-board-panel-title">{S.costPerRole}</h3>
-        <Empty text="no economics route" source="V4-131 pending" />
-      </div>
-    );
-  }
-  const table = costPerRole(board, data.economics);
-  const rows = [...table.rows, table.unattributed, table.total];
+/** What an economics panel prints when the daemon gave no tallies: reading, or its reason. */
+function economicsEmpty(title: string, data: TeamViewData | null) {
+  return (
+    <div className="myx-board-panel">
+      <h3 className="myx-board-panel-title">{title}</h3>
+      {data === null
+        ? <Empty text="reading the economics" source="GET /api/teams/{id}/economics" />
+        : <Empty text="economics unreadable" source={'error' in data.economics ? data.economics.error : ''} />}
+    </div>
+  );
+}
+
+/** Tokens and cost per role over the team's life, as the daemon tallies them, with the three things
+ *  that make the table honest printed under it: how the turns were joined to the roles, the turns
+ *  it could not place, and how far back the oldest turn reaches. */
+function CostPerRole({ data }: { data: TeamViewData | null }) {
+  if (data === null || 'error' in data.economics) return economicsEmpty(S.costPerRole, data);
+  const table = costTable(data.economics);
   return (
     <div className="myx-board-panel">
       <h3 className="myx-board-panel-title">{S.costPerRole}</h3>
@@ -280,49 +290,43 @@ function CostPerRole({ board, data }: { board: TeamPayload; data: TeamViewData |
             <th scope="col">{S.role}</th>
             <th scope="col">{S.tokensIn}</th>
             <th scope="col">{S.tokensOut}</th>
-            <th scope="col">{S.total}</th>
+            <th scope="col">{S.costEst}</th>
             <th scope="col">{S.turns}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {[...table.rows, table.total].map((row) => (
             <tr key={row.role} className={row.role === 'total' ? 'myx-board-table-total' : undefined}>
               <th scope="row">{row.role}</th>
               <td><Figure value={thousand(row.input)} basis="measured" /></td>
               <td><Figure value={thousand(row.output)} basis="measured" /></td>
-              <td><Figure value={thousand(row.total)} basis="measured" /></td>
+              <td><Figure value={money(row.cost)} basis={row.cost === null ? 'unavailable' : 'estimated'} /></td>
               <td><Figure value={row.turns} basis="measured" /></td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="myx-board-panel-note">
-        {`joined on the first ${JOIN_PREFIX} characters of the session id`}
-        {table.oldest === null ? '' : `, oldest turn ${table.oldest.id} at ${table.oldest.at}`}
+        {`lifetime, joined by the daemon on the first ${SESSION_TAG_CHARS} characters of the session id`}
+        {`, ${table.unattributed} turns with no session tag`}
+        {table.oldest === null ? ', no turn held yet' : `, oldest turn held ${clock(table.oldest)}`}
       </p>
     </div>
   );
 }
 
-/** Turns per member for the day, on the same join as the cost table. */
+/** Turns per slot over the team's life, on the same tallies as the cost table so the two agree. */
 function TurnsPerMember({ board, data }: { board: TeamPayload; data: TeamViewData | null }) {
-  if (data === null) {
-    return (
-      <div className="myx-board-panel">
-        <h3 className="myx-board-panel-title">{S.turnsPerMember}</h3>
-        <Empty text="no economics route" source="V4-131 pending" />
-      </div>
-    );
-  }
-  const rows = turnsPerMember(board, data.economics);
+  if (data === null || 'error' in data.economics) return economicsEmpty(S.turnsPerMember, data);
+  const rows = turnsPerSlot(board, data.economics);
   const peak = Math.max(1, ...rows.map((row) => row.turns));
   return (
     <div className="myx-board-panel">
       <h3 className="myx-board-panel-title">{S.turnsPerMember}</h3>
       <ul className="myx-board-bars">
         {rows.map((row) => (
-          <li className="myx-board-bar" key={row.member}>
-            <span className="myx-board-bar-name">{row.member}</span>
+          <li className="myx-board-bar" key={row.slot}>
+            <span className="myx-board-bar-name">{row.name}</span>
             <span className="myx-board-bar-figure"><Figure value={row.turns} basis="measured" /></span>
             <span className="myx-board-bar-track">
               <span className="myx-board-bar-fill" style={{ width: `${(row.turns / peak) * 100}%` }} />
@@ -337,8 +341,7 @@ function TurnsPerMember({ board, data }: { board: TeamPayload; data: TeamViewDat
 /** The timeline: one column per member down the day, a time gutter beside them, and the hand-offs
  *  crossing the columns at the minute they were sent. */
 export function TeamTimeline({ board, data = null }: { board: TeamPayload; data?: TeamViewData | null }) {
-  const empty: TeamViewData = { turns: [], economics: [], lastHour: [], now: 'now' };
-  const rows = timelineRows(board, data ?? empty);
+  const rows = timelineRows(board, data ?? { turns: [], economics: { error: '' }, lastHour: [], now: 'now' });
   const columns = board.members;
   // The gutter takes (197-138.24)/1040.76 = 5.646% of comp-c's rack and the three member columns
   // the rest, so the tracks are those shares: the gutter is a fraction of the rack, not a third of
@@ -368,7 +371,7 @@ export function TeamTimeline({ board, data = null }: { board: TeamPayload; data?
             ...row.cells.map((cells, column) => (
               <div className="myx-tl-cell" key={`cell-${index}-${columns[column].name}`} style={{ gridRow: index + 2, gridColumn: column + 2 }}>
                 {cells.map((cell) => (cell.kind === 'turn'
-                  ? <TurnStrip key={cell.turn.id} turn={cell.turn} />
+                  ? <TurnStrip key={`${cell.turn.member}-${cell.turn.id}`} turn={cell.turn} />
                   : (
                     <WrapStrip key={`${cell.member}-${cell.time}`} edge="grey" ariaLabel={`${cell.member} ${cell.activity}`} className="myx-tl-act">
                       <StripField w={0} fixed label={S.activity} value={cell.activity} mono={false} />
@@ -386,7 +389,7 @@ export function TeamTimeline({ board, data = null }: { board: TeamPayload; data?
             >
               <WrapStrip edge={row.message.fromHead === 'claude' ? 'green' : 'grey'} ariaLabel={`${row.message.from} to ${row.message.to}`} className="myx-tl-msg">
                 <StripField w={0} fixed label={S.message} value={row.message.text} mono={false} />
-                <StripField w={0} fixed label={S.arrow} value={`${slotName(board.team.slots, row.message.from)} → ${slotName(board.team.slots, row.message.to)}`} mono={false} />
+                <StripField w={0} fixed label={S.arrow} value={`${slotName(board, row.message.from)} → ${slotName(board, row.message.to)}`} mono={false} />
                 <StripField w={0} fixed label={S.time} value={row.message.time} />
               </WrapStrip>
             </div>,
@@ -395,7 +398,7 @@ export function TeamTimeline({ board, data = null }: { board: TeamPayload; data?
 
         <aside className="myx-board-aside myx-tl-aside">
           <TeamSlots board={board} />
-          <CostPerRole board={board} data={data} />
+          <CostPerRole data={data} />
           <TurnsPerMember board={board} data={data} />
         </aside>
 

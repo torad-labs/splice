@@ -1,32 +1,177 @@
-// The payload contract of the teams entity. Every field is named after what the
-// daemon serves, never after a screen:
-//   GET /api/teams          -> TeamsPayload    (PENDING V4-131)
-//   GET /api/teams/{id}     -> TeamPayload     (PENDING V4-131)
+// The teams entity's contract, in two halves.
 //
-// Typed from FEATURES.md section 6, which is where the daemon-side work is
-// described. A team is a composition the operator owns: slots with roles, and
-// the sessions currently bound to them. A session binds to a slot and unbinds
-// when it ends, so the team survives every terminal restart (FEATURES 4.13).
+// THE WIRE (V4-131, features/sessions/.../http/TeamsRoutes.kt and TeamsReads.kt). The read is SPLIT
+// on purpose: there is no GET /api/teams/{id}. A team's board is composed from
+//   GET /api/teams                       -> TeamsPayload       every team, archived included
+//   GET /api/teams/{id}/chat?day=        -> TeamChatPayload    the day's messages, text read on demand
+//   GET /api/teams/{id}/activity?day=    -> TeamActivityPayload the day's sampled activity labels
+//   GET /api/teams/{id}/economics        -> TeamEconomicsPayload lifetime tallies per role and slot
+// plus /api/sessions, whose rows carry the team they are bound to. The writes answer the saved team:
+//   PUT  /api/teams                      create, under an Idempotency-Key header
+//   PUT  /api/teams/{id}                 replace the composition (keeps a binding the body leaves out)
+//   PUT  /api/teams/{id}/sessions        {bindings: {slot id: session | null}}, the only way to unbind
+// Every field below is the daemon's own name and nullability (the serializer encodes defaults, so a
+// nullable field arrives as null, never absent). tools/e2e/probes/console-wire-keys.ts checks the
+// reads against a booted daemon.
+//
+// THE BOARD. TeamPayload and the rows under it are what the board widgets draw: one team composed
+// from the reads above by pages/teams/board.ts. They are not a daemon payload and no route serves
+// them whole; a figure no route reports is null and the board prints its absence.
 import type { PendingRoute } from '@shared/api';
 
-/** One role slot of a team. `role` is free text; `lead` is the flag that marks
- *  which slot is driving, and it is deliberately not derived from the role name
- *  (an operator may name two slots "lead" and mean only one). */
+// ---- the wire ------------------------------------------------------------------------------
+
+/** One role slot (TeamStore.kt TeamSlot). `lead` is a flag, never derived from the role's name. */
 export interface TeamSlot {
+  id: string;
   role: string;
   head: string;
-  model?: string | null;
-  account?: string | null;
+  model: string | null;
+  account: string | null;
   lead: boolean;
-  /** The session currently bound to this slot, or null when the slot is open. */
+  /** Standing instructions appended to the bound session's system prompt. */
+  instructions: string | null;
+  /** The session bound to this slot, or null when the seat is open. */
   session: string | null;
+  instructions_updated_epoch_millis: number | null;
+  /** Every session ever bound here, oldest first: economics joins all of them. */
+  sessions_history: string[];
 }
 
-/** A session bound to a slot, as the board prints it. Every figure is the
- *  daemon's own; a field its provider does not report arrives as null and is
- *  printed as the honest empty, never as zero. */
+/** One team (TeamStore.kt Team). Archiving is a flag; nothing is ever deleted. */
+export interface TeamRow {
+  id: string;
+  name: string;
+  goal: string;
+  features: string[];
+  /** The git root the team works in (the project id). */
+  repo: string;
+  archived: boolean;
+  created_epoch_millis: number;
+  updated_epoch_millis: number;
+  slots: TeamSlot[];
+  idempotency_key: string | null;
+  create_fingerprint: string | null;
+}
+
+export interface TeamsPayload {
+  teams: TeamRow[];
+}
+
+/** A team as the console writes it. The daemon mints the team id on create and stamps the times;
+ *  every slot carries an id the console mints, because the daemon refuses a slot without one. */
+export interface TeamWrite {
+  name: string;
+  goal: string;
+  features: string[];
+  repo: string;
+  archived: boolean;
+  slots: {
+    id: string;
+    role: string;
+    head: string;
+    /** Carried from the team as read: a replace writes the slot whole, so leaving these out would
+     *  clear them (TeamRules.carried keeps only the binding and the history). */
+    model: string | null;
+    account: string | null;
+    lead: boolean;
+    instructions: string | null;
+    session: string | null;
+  }[];
+}
+
+/** One message of the day (TeamsEdges.kt message()). The text is read from the SENDER's transcript
+ *  when asked for; when it could not be found `text` is null and `missing_reason` names the path
+ *  read. `packet` has no wire source and is always null (`packet_note` says why). */
+export interface TeamChatMessage {
+  at: number;
+  from: string;
+  from_slot: string | null;
+  from_head: string | null;
+  to: string;
+  to_slot: string | null;
+  packet: null;
+  text: string | null;
+  text_source: string | null;
+  missing_reason: string | null;
+}
+
+export interface TeamChatPayload {
+  team_id: string;
+  day_start_epoch_millis: number;
+  packet_note: string;
+  messages: TeamChatMessage[];
+}
+
+/** One sampled activity label (TeamsReads.kt activity()). */
+export interface TeamActivityEntry {
+  at: number;
+  session: string;
+  slot: string | null;
+  head: string;
+  label: string;
+  detail: string | null;
+}
+
+export interface TeamActivityPayload {
+  team_id: string;
+  day_start_epoch_millis: number;
+  /** Says the labels are samples, about one per 30 s while a session works. */
+  sample_interval_note: string;
+  /** How many label queries went upstream: the difference between "nothing sampled" and "the
+   *  client stopped asking" (FEATURES 4.13). */
+  upstream_label_queries: number;
+  entries: TeamActivityEntry[];
+}
+
+/** One lifetime tally (TeamsEconomics.kt PerfTally.json). `cost_usd` is null when any turn in it
+ *  had no rate card: a partial sum would be a confident wrong number. */
+export interface TeamTally {
+  turns: number;
+  tokens: { input: number; cache_read: number; cache_write: number; output: number };
+  cost_usd: number | null;
+  unpriced_turns: number;
+  last_turn_at_epoch_millis: number | null;
+}
+
+export interface TeamRoleTally extends TeamTally {
+  role: string;
+}
+
+export interface TeamSlotTally extends TeamTally {
+  slot: string;
+  /** "pass" or "fail" from the slot's newest tallied outcome; null before its first turn. */
+  checks: string | null;
+  checks_source: string;
+}
+
+export interface TeamEconomicsPayload {
+  team_id: string;
+  heads_read: string[];
+  /** Turns on the team's heads with no session tag: counted, never dropped. */
+  unattributed_turns: number;
+  /** The oldest turn the perf files still hold: a lifetime total reaches only this far back. */
+  oldest_turn_epoch_millis: number | null;
+  roles: TeamRoleTally[];
+  slots: TeamSlotTally[];
+}
+
+/** The three day-scoped and lifetime reads of the opened team, each its own outcome: one panel
+ *  failing does not blank the others. */
+export interface TeamPanels {
+  teamId: string;
+  chat: TeamChatPayload | { error: string };
+  activity: TeamActivityPayload | { error: string };
+  economics: TeamEconomicsPayload | { error: string };
+}
+
+// ---- the board -----------------------------------------------------------------------------
+
+/** A session bound to a slot, as the board prints it. A figure no route reports is null. */
 export interface TeamMemberRow {
-  /** The session's printed name (the client's own label for it). */
+  /** The slot the session is bound to: the key of the daemon's per-slot tallies. */
+  slot: string;
+  /** The session's printed name (the client's own label), or its id when it has none. */
   name: string;
   role: string;
   head: string;
@@ -36,29 +181,29 @@ export interface TeamMemberRow {
   window: string | null;
   /** The time of its last turn, as printed text. */
   lastTurn: string | null;
-  /** The slot's own word for what it is doing: driving, building, idle. */
+  /** The session's own status word, its availability when it is not live, or `unlisted` when the
+   *  registry does not list it. */
   state: string;
   sessionId: string;
-  created: string;
-  uptime: string;
-  turns: number;
-  tokensIn: number;
-  tokensOut: number;
-  /** Estimated cost in USD, or null when no rate is known for the model. */
+  /** HH:MM:SS the session started, when the registry reports it. */
+  created: string | null;
+  uptime: string | null;
+  turns: number | null;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  /** Lifetime cost in USD, or null when a turn had no rate card. */
   costEst: number | null;
   contextLeftPct: number | null;
   scratchpadKb: number | null;
-  workspace: string;
-  branch: string;
-  base: string;
+  workspace: string | null;
+  branch: string | null;
+  base: string | null;
   /** Lines added and removed, as printed text ("+412 -37"). */
-  diff: string;
-  checks: string;
+  diff: string | null;
+  checks: string | null;
 }
 
-/** One message edge of the team: who wrote to whom, when, and under which
- *  packet. The text is read from the transcript on demand and never stored
- *  (FEATURES 4.13 message edges). */
+/** One message of the team as the board prints it. */
 export interface TeamMessage {
   time: string;
   from: string;
@@ -69,8 +214,7 @@ export interface TeamMessage {
   fromHead: string;
 }
 
-/** One sampled activity label. It is a SAMPLE: the client is asked for a label
- *  about every 30 seconds, so the feed says so rather than implying a log. */
+/** One sampled activity label. It is a SAMPLE, and the feed says so rather than implying a log. */
 export interface TeamActivity {
   time: string;
   member: string;
@@ -78,17 +222,7 @@ export interface TeamActivity {
   detail: string;
 }
 
-export interface TeamRow {
-  id: string;
-  name: string;
-  goal: string;
-  repo: string;
-  /** Epoch millis, so a page formats them in its own zone. */
-  created_epoch_millis: number;
-  updated_epoch_millis: number;
-  slots: TeamSlot[];
-}
-
+/** One team composed for the board (pages/teams/board.ts). */
 export interface TeamPayload {
   team: TeamRow;
   members: TeamMemberRow[];
@@ -98,13 +232,8 @@ export interface TeamPayload {
   coldCacheHint?: boolean;
 }
 
-export interface TeamsPayload {
-  teams: TeamRow[];
-}
-
 /** What a store holds: the payload, or the honest empty naming the work item. */
 export type TeamsState = TeamsPayload | PendingRoute;
-export type TeamState = TeamPayload | PendingRoute;
 
-/** The v0.4.0 item that will serve the team routes (FEATURES.md section 6). */
+/** The v0.4.0 item that serves the team routes, for a daemon older than it (FEATURES.md section 6). */
 export const PENDING_TEAMS = 'V4-131';

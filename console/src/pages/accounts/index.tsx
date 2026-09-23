@@ -11,9 +11,9 @@
 // wearing the same route.
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
-import { SELECTOR_ORDER_TEXT, nextTarget } from '@entities/account';
+import { SELECTOR_ORDER_TEXT, nextRuleOf } from '@entities/account';
 import { startAccountsPolling, useAccounts } from '@entities/account';
-import type { AccountRow } from '@entities/account';
+import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { AccountActions, AccountLogin, HeadActions, HeadAuthStrip } from '@features/account-login';
 import { useViews, ViewTabs } from '@features/views';
@@ -124,39 +124,29 @@ function ClaudeBay({ rows, openKey, onOpen }: {
   );
 }
 
-export function AccountsPage() {
-  const { search } = useLocation();
+/** The board, drawn from a payload it is handed rather than from the store, so a test can hand it
+ *  pools (a static render only ever sees a store's initial state). */
+export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sample }: {
+  payload: AccountsState | null;
+  /** Every head as GET /api/auth reports it: the fallback rack and the claude bay. */
+  headRows?: readonly HeadRow[];
+  nowMs: number;
+  error?: string | null;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
+  sample?: string | undefined;
+}) {
   const views = useViews(PAGE_ID, DEFAULT_VIEWS);
   const active = views.active;
-  const accountsResource = useAccounts((state) => state);
-  const authResource = useAuth((state) => state);
-
-  const fixture = fixtureName(search, import.meta.env.DEV);
-  const nowMs = useNow(CLOCK_MS, fixtureNow(fixture));
-
-  useEffect(() => startAccountsPolling(POLL_MS), []);
-  useEffect(() => startAuthPolling(POLL_MS), []);
 
   const [openKey, setOpenKey] = useState<string | null>(null);
   const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
 
-  const rows = fixtureAccounts(fixture);
-  const payload = rows === null ? accountsResource.data : { accounts: rows };
   const pending = payload !== null && 'pending' in payload;
   const accounts: readonly AccountRow[] = payload === null || pending ? [] : payload.accounts;
 
-  const target = nextTarget(accounts);
   const groups = arrangeAccounts(accounts, active);
   const columns = columnsOf(active);
 
-  // The claude head is `client`: it appears in the auth card and never in the pool payload.
-  const headRows: HeadRow[] = Object.entries(authResource.data ?? {}).map(([head, auth]) => ({
-    head,
-    kind: auth.kind,
-    present: auth.present,
-    masked: auth.account_id_masked ?? null,
-    note: auth.refresh_latched ?? null,
-  }));
   const pooledHeads = headRows.filter((row) => row.kind !== 'client');
   const claudeHeads = headRows.filter((row) => row.kind === 'client');
 
@@ -175,18 +165,18 @@ export function AccountsPage() {
   return (
     <div
       className="myx-accounts"
-      {...(import.meta.env.DEV && rows !== null && fixture !== null ? { 'data-sample': fixture } : {})}
+      {...(sample === undefined ? {} : { 'data-sample': sample })}
     >
       <header className="myx-accounts-head">
         <h1 className="myx-accounts-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {accountsResource.error === null ? null : <Fault message={accountsResource.error} />}
+      {error === null ? null : <Fault message={error} />}
 
-      {rows === null ? null : <HolderEdge state="grey" label={S.sample} />}
+      {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
 
-      {accountsResource.data === null && fixture === null ? <Blank strips={4} /> : null}
+      {payload === null ? <Blank strips={4} /> : null}
 
       <div className={closed ? 'myx-accounts-body' : 'myx-accounts-body myx-accounts-body-open'}>
         <div className="myx-accounts-bays">
@@ -210,12 +200,15 @@ export function AccountsPage() {
               >
                 {group.accounts.map((account) => {
                   const key = openAccountKey(account);
+                  // The daemon's own next target, per pool (M4-08): the strip it flagged, and the
+                  // rule inside that strip's own pool that explains it.
+                  const rule = nextRuleOf(account, accounts);
                   return (
                     <AccountStrip
                       key={key}
                       account={account}
-                      isNext={target !== null && target.label === account.label}
-                      nextRule={target !== null && target.label === account.label ? target.rule : ''}
+                      isNext={rule !== null}
+                      nextRule={rule ?? ''}
                       columns={columns}
                       nowMs={nowMs}
                       selected={openKey === key}
@@ -270,6 +263,39 @@ export function AccountsPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+export function AccountsPage() {
+  const { search } = useLocation();
+  const accountsResource = useAccounts((state) => state);
+  const authResource = useAuth((state) => state);
+
+  const fixture = fixtureName(search, import.meta.env.DEV);
+  const nowMs = useNow(CLOCK_MS, fixtureNow(fixture));
+
+  useEffect(() => startAccountsPolling(POLL_MS), []);
+  useEffect(() => startAuthPolling(POLL_MS), []);
+
+  const rows = fixtureAccounts(fixture);
+
+  // The claude head is `client`: it appears in the auth card and never in the pool payload.
+  const headRows: HeadRow[] = Object.entries(authResource.data ?? {}).map(([head, auth]) => ({
+    head,
+    kind: auth.kind,
+    present: auth.present,
+    masked: auth.account_id_masked ?? null,
+    note: auth.refresh_latched ?? null,
+  }));
+
+  return (
+    <AccountsBoard
+      payload={rows === null ? accountsResource.data : { accounts: [...rows] }}
+      headRows={headRows}
+      nowMs={nowMs}
+      error={accountsResource.error}
+      sample={import.meta.env.DEV && rows !== null && fixture !== null ? fixture : undefined}
+    />
   );
 }
 

@@ -30,12 +30,6 @@ import java.nio.file.Path
  *  name so the diff at each call site is a receiver insertion. */
 internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAccountPoolRead()) {
 
-    // The SAME palette the other two surfaces resolve, for the same reason: NO_COLOR is a
-    // contract, and doctor spelling \u001B[1m directly meant an operator who set it got a report
-    // full of escape bytes from the one command they run when things are already wrong. Resolved
-    // once per DoctorCommand — a palette that can change between two rows of one report is not one.
-    private val palette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth())
-
     private val probes = DoctorProbes()
 
     // Install integrity is a separate section with separate inputs; it reads back into [probes] for
@@ -68,36 +62,46 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
             val report = DoctorReport(envReader, claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) })
             return report.emit(run, options)
         }
+        // The SAME palette the other two surfaces resolve, for the same reason: NO_COLOR is a
+        // contract, and an operator who sets it must not get escape bytes from the one command they
+        // run when something is already wrong. Resolved from THIS call's env — the one every check
+        // reads — once per run, because a palette that can change between two rows is not one.
+        val palette = CliPalette(ColorDepthProbe(envReader).depth())
         val sections = run.sections
         val all = sections.flatMap { it.second }
         val failures = all.count { it.status == CheckStatus.FAIL }
         val warnings = all.count { it.status == CheckStatus.WARN }
-        renderReport(sections, all)
+        renderReport(sections, all, palette)
         println()
+        // Indented with the report it closes. At column 0 it read as the shell's next line rather
+        // than the report's last one.
         when {
             failures > 0 ->
                 println(
-                    palette.paint(palette.dead, "$failures issue(s)") + " — fixes listed above. Re-run " +
+                    "  " + palette.paint(palette.dead, "$failures issue(s)") + " — fixes listed above. Re-run " +
                         palette.paint(palette.signal, "splice doctor") + " after.",
                 )
-            warnings > 0 -> println(palette.paint(palette.live, "No blockers") + " ($warnings warning(s) above).")
-            else -> println(palette.paint(palette.live, "Everything checks out."))
+            warnings > 0 ->
+                println("  " + palette.paint(palette.live, "No blockers") + " ($warnings warning(s) above).")
+            else -> println("  " + palette.paint(palette.live, "Everything checks out."))
         }
         return failures == 0
     }
 
     /**
-     * Passing checks COLLAPSE, problems EXPAND.
+     * Passes stay QUIET, problems get ROOM.
      *
      * The previous report printed all twenty-odd checks at equal weight under their section
      * headings, so the one row that needed acting on was camouflaged by the twenty that did not —
-     * on a surface whose entire job is to surface that row. A check that passed has nothing to say
-     * beyond its own name, and the section rosters say it more briefly than one line each.
-     *
-     * INFO is not a pass and not a problem: it keeps a line, quietly, because an operator reading
-     * "no heads configured" needs it and there is no fix to offer.
+     * on a surface whose entire job is to surface that row. Now a pass is one dim line (its detail
+     * kept: that is the evidence), a note with no fix is one dim line, and anything carrying a fix
+     * gets a blank line, a glyph, its name in bold and the fix on its own line.
      */
-    private fun renderReport(sections: List<Pair<String, List<DoctorCheck>>>, all: List<DoctorCheck>) {
+    private fun renderReport(
+        sections: List<Pair<String, List<DoctorCheck>>>,
+        all: List<DoctorCheck>,
+        palette: CliPalette,
+    ) {
         println()
         println(
             "  " + palette.paint(palette.strong, "splice doctor") + "  " +
@@ -130,11 +134,14 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
         // entire job of this surface. A note with no fix is a note.
         val notes = all.filter { it.status == CheckStatus.INFO && it.fix == null }
         val actionable = all.filter { it.status != CheckStatus.OK && (it.fix != null || it.status != CheckStatus.INFO) }
-        // DR-173's other half. The old render gave an empty section a heading and the words
-        // "nothing to report"; dropping section headings took away the only place that could live,
-        // and an empty section silently vanishing is the same silence the scar was written against —
-        // a live daemon with zero heads would show no runtime line at all, which reads as "not
-        // checked" exactly when the operator is asking whether it was. It keeps a note instead.
+        // DR-173. Its first half — the old render took `checks.maxOf { ... }` to size a column and
+        // threw on an empty section, which a running daemon with zero heads produces — cannot
+        // return: nothing here measures a collection. Its second half: the old render gave an empty
+        // section a heading and the words "nothing to report"; dropping section headings took away
+        // the only place that could live, and an empty section silently vanishing is the same
+        // silence the scar was written against: a live daemon with zero heads would show no runtime
+        // line at all, which reads as "not checked" exactly when the operator is asking whether it
+        // was. It keeps a note instead.
         for ((title, _) in sections.filter { it.second.isEmpty() }) {
             println("  " + palette.paint(palette.quiet, "$NOTE_GLYPH  $title  nothing to report"))
         }
@@ -142,12 +149,12 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
             println("  " + palette.paint(palette.quiet, "$NOTE_GLYPH  ${check.name}  ${check.detail}"))
         }
         for (check in actionable) {
-            renderProblem(check)
+            renderProblem(check, palette)
         }
     }
 
     /** One problem, given room: what is wrong, then why it matters, then the command to run. */
-    private fun renderProblem(check: DoctorCheck) {
+    private fun renderProblem(check: DoctorCheck, palette: CliPalette) {
         val glyph = when (check.status) {
             CheckStatus.FAIL -> palette.paint(palette.dead, FAIL_GLYPH)
             CheckStatus.WARN -> palette.paint(palette.strain, WARN_GLYPH)

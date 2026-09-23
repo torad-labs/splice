@@ -12,9 +12,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { applyFilter, advance, headsPresent, levelsPresent, startLogsPolling, setLogHead, setLogTail, useLogs } from '@entities/logs';
 import type { LogFilter, LogLevel, LogTail as Tail, LogsPayload } from '@entities/logs';
-import type { CaptureSlice } from '@entities/perf';
+import type { CaptureState } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
-import { fetchCapture, useCapture } from '@entities/perf';
+import { fetchCapture, putCapture, useCapture } from '@entities/perf';
 import { Bay, Empty, Figure, HolderEdge } from '@shared/ui';
 import { Choice } from '@shared/controls';
 import { LogTail } from '@widgets/log-tail';
@@ -36,7 +36,11 @@ export interface LogsBoardProps {
   tail: number;
   heads: { key: string; label: string }[];
   /** The capture state the drawer prints, read for the head this page is tailing. */
-  capture?: CaptureSlice | null;
+  capture?: CaptureState | null;
+  /** A capture read that failed, in the daemon's words. */
+  captureError?: string | null;
+  /** Writes the tailed head's capture switch. */
+  onCaptureSwitch?: (enabled: boolean) => void;
   locked?: boolean;
   error?: string | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
@@ -49,8 +53,8 @@ export interface LogsBoardProps {
 }
 
 export function LogsBoard({
-  payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture,
-  locked = false, error = null, sample, onFilter, onFollow, onHead, onTail,
+  payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture, captureError = null,
+  onCaptureSwitch, locked = false, error = null, sample, onFilter, onFollow, onHead, onTail,
 }: LogsBoardProps) {
   if (locked) return <Empty text="console locked" source="management key" />;
   // A capture fixture IS the data: a live read that failed behind it must not blank the page.
@@ -125,7 +129,13 @@ export function LogsBoard({
       </Bay>
 
       <Bay label={S.drawer}>
-        <RequestDrawer capture={capture ?? null} />
+        {/* Only the tailed head's capture: another head's read never stands in while this one's is
+            in flight. */}
+        <RequestDrawer
+          capture={capture !== undefined && capture !== null && capture.running.head === head ? capture : null}
+          error={captureError}
+          onSwitch={onCaptureSwitch}
+        />
       </Bay>
     </div>
   );
@@ -247,6 +257,8 @@ export default function LogsPage() {
       tail={tail}
       heads={heads}
       capture={capture.data}
+      captureError={capture.error}
+      {...(head === null ? {} : { onCaptureSwitch: (enabled: boolean) => void putCapture(head, enabled) })}
       locked={false}
       error={store.error}
       sample={sample?.name}

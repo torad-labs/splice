@@ -8,7 +8,7 @@
 // is prefetched: this reads a page when it is asked to and reads the next only
 // when the reader asks again.
 import { useEffect } from 'react';
-import { loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
+import { TRANSCRIPT_MISSING, loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
 import type { TranscriptSlice } from '@entities/transcript';
 import { Fault } from '@shared/controls';
 import { Empty, Reveal, Strip, StripField } from '@shared/ui';
@@ -35,6 +35,10 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
     if (slice === undefined) void loadTranscript(sessionId);
   }, [sessionId, slice]);
 
+  // A session with no transcript on disk is the daemon's answer, not a fault and not a missing route.
+  if (slice === undefined && state.error === TRANSCRIPT_MISSING) {
+    return <Empty text="no transcript on disk" source="GET /api/sessions/{id}/transcript" />;
+  }
   if (slice === undefined && state.error !== null) return <Fault message={state.error} />;
   const data = slice ?? state.data;
   if (data === null) return null;

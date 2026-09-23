@@ -22,14 +22,33 @@ export interface Leak {
   where: string;
 }
 
+/**
+ * What the CLI writes where it removed a bearer token or a key=value value (DoctorRedaction.kt:64-65).
+ *
+ * Its bearer and key=value shapes match their own output (`NAME_KEY=<redacted>` is still a key, a
+ * separator and a value), so a mirror that did not know this mask refused every report the pass had
+ * cleaned. It is matched EXACTLY: case-sensitive, and ending where the CLI's value run ended -- at
+ * whitespace, a quote or the end of the text (the key=value run is `[^\s"']+`, the bearer run `\S+`).
+ * `<REDACTED>` or `<redacted>tail` is not the CLI's mask, and still reads as a leak.
+ */
+const DAEMON_MASK = '<redacted>';
+const MASK_END = /^(?:[\s"']|$)/;
+
+function isDaemonMask(text: string, at: number): boolean {
+  return text.startsWith(DAEMON_MASK, at) && MASK_END.test(text.slice(at + DAEMON_MASK.length));
+}
+
 /** One shape per entry, in the CLI's own order of application: JWT before bearer, the key=value
- *  families before the provider prefixes, key-shaped identifiers before the generic opaque run. */
-const SHAPES: readonly { kind: LeakKind; pattern: RegExp }[] = [
+ *  families before the provider prefixes, key-shaped identifiers before the generic opaque run.
+ *  `masked` marks the two shapes the CLI replaces with [DAEMON_MASK]; their pattern captures the
+ *  value as its last group, so a match can be told apart from the CLI's own work. */
+const SHAPES: readonly { kind: LeakKind; pattern: RegExp; masked?: true }[] = [
   { kind: 'jwt', pattern: /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/ },
-  { kind: 'bearer', pattern: /\bbearer\s+\S+/i },
+  { kind: 'bearer', pattern: /\bbearer\s+(\S+)/gi, masked: true },
   {
     kind: 'key-value',
-    pattern: /\b[a-z0-9_-]*(?:key|token|secret|password|passwd|pwd|cookie|signature|credential|authorization)[a-z0-9_-]*"?\s*[=:]\s*"?\S+/i,
+    pattern: /\b[a-z0-9_-]*(?:key|token|secret|password|passwd|pwd|cookie|signature|credential|authorization)[a-z0-9_-]*"?\s*[=:]\s*"?(\S+)/gi,
+    masked: true,
   },
   { kind: 'provider-key', pattern: /\b(sk|xai|gsk|xoxb|ghp|github_pat)[-_][A-Za-z0-9_-]{8,}/ },
   { kind: 'email', pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/ },
@@ -38,17 +57,37 @@ const SHAPES: readonly { kind: LeakKind; pattern: RegExp }[] = [
 ];
 
 /**
+ * Whether a masked shape matches anything in [text] that is not the CLI's own mask.
+ *
+ * Every match is looked at, not only the first: `A_KEY=<redacted> B_TOKEN=hunter2` carries a real
+ * value beside the mask. After a mask the scan resumes right past it rather than past the whole
+ * match, because a value run is greedy and a second pair written flush against the mask would
+ * otherwise ride inside the match that was excused.
+ */
+function unmasked(pattern: RegExp, text: string): boolean {
+  pattern.lastIndex = 0;
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    const value = match[match.length - 1] ?? '';
+    const at = match.index + match[0].length - value.length;
+    if (!isDaemonMask(text, at)) return true;
+    pattern.lastIndex = at + DAEMON_MASK.length;
+  }
+  return false;
+}
+
+/**
  * Every shape found in [text], in the CLI's order and at most one per shape.
  *
  * The key=value shape needs its key, so a bare secret with no key in front of it is caught by the
  * opaque run instead, exactly as in the CLI. A `key=value` whose value is a number or a short safe
  * token still matches the shape: the CLI masks it too, which is why a check that finds one is
- * evidence the pass did not run rather than a false alarm.
+ * evidence the pass did not run rather than a false alarm. The one value that is not a leak is the
+ * CLI's own [DAEMON_MASK].
  */
 export function leaksInText(text: string): LeakKind[] {
   const found: LeakKind[] = [];
   for (const shape of SHAPES) {
-    if (shape.pattern.test(text)) found.push(shape.kind);
+    if (shape.masked === true ? unmasked(shape.pattern, text) : shape.pattern.test(text)) found.push(shape.kind);
   }
   return found;
 }

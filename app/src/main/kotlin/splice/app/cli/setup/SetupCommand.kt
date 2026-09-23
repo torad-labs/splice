@@ -54,7 +54,7 @@ internal class SetupCommand(
     private val frame = prompts.frame
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
-    private val signIn = SetupSignIn(loginHead)
+    private val signIn = SetupSignIn(loginHead, env)
 
     internal suspend fun setup(): Boolean = try {
         runWizard()
@@ -86,7 +86,9 @@ internal class SetupCommand(
         val topology = TopologyLoader.loadOrMaterialize(path)
         val ok = signIn.signInPendingHeads(topology)
         signIn.printNextSteps(topology)
-        frame.outro("Toolkit ready!")
+        // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're
+        // set." rather than "Toolkit ready!": splice is not called a toolkit anywhere else.
+        frame.outro("You're set.")
         return ok
     }
 

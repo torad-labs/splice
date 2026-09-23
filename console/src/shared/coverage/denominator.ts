@@ -7,6 +7,8 @@
 //   topology  six files' `@SerialName("...")` values                          58 distinct today
 //   routes    .dev/campaigns/web-console/FEATURES.md sections 2.1 and 6, first column,
 //             backticked spans, normalized by the CONTRACTS.md section 4 rule  52 distinct today
+//   served    every tracked src/main/kotlin file's `get("/api/...")` / `route.put("/api/...")`
+//             registrations (M4-06): what the daemon SERVES, whatever the plan says  58 today
 
 /** Knob.kt: every enum entry, i.e. each `NAME(` at entry indentation. */
 export function parseKnobNames(source: string): string[] {
@@ -96,3 +98,27 @@ export const TOPOLOGY_SOURCES: readonly string[] = [
 ];
 
 export const FEATURES_SOURCE = '.dev/campaigns/web-console/FEATURES.md';
+
+/** A main Kotlin source: the only place a route the daemon serves is registered. */
+export const KOTLIN_MAIN = /\/src\/main\/kotlin\/.+\.kt$/;
+
+/**
+ * Every /api route one Kotlin source REGISTERS: `get("/api/...")` inside the routing block and
+ * `route.put("/api/...")` in the feature installers (ControlServer.kt), one entry per path however
+ * many methods it takes. Placeholders stay as Ktor writes them (`{head}`, `{action}`).
+ */
+export function parseServedRoutes(kotlin: string): string[] {
+  const paths = [...kotlin.matchAll(/^\s*(?:route\.)?(?:get|put|post|patch|delete)\("(\/api\/[^"]+)"/gm)].map((match) => match[1]);
+  return [...new Set(paths)].sort();
+}
+
+/** Whether a disposition's name is covered by a registered path: a `{param}` segment of the
+ *  registration stands for any one segment, so `/api/heads/{head}/{action}` serves
+ *  `/api/heads/{head}/restart`. */
+export function servedBy(registration: string, name: string): boolean {
+  const pattern = registration
+    .split('/')
+    .map((segment) => (/^\{[^}]+\}$/.test(segment) ? '[^/]+' : segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    .join('/');
+  return new RegExp(`^${pattern}$`).test(name);
+}

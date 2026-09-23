@@ -10,7 +10,7 @@
 // The bays are the rack; the strips are the rows. Nothing here is invented:
 // a field the comp does not show does not exist, and a figure the daemon does
 // not report prints its absence rather than a zero.
-import { Bay, Strip, StripField } from '@shared/ui';
+import { Bay, Empty, Strip, StripField } from '@shared/ui';
 import type { TeamMemberRow, TeamPayload } from '@entities/team';
 import { BoardFooter, BoardHeader, MSG_COLS, MessageStrip } from './parts';
 import { S } from './strings';
@@ -20,10 +20,11 @@ import './board.css';
 // slice's one entry point (the boundaries rule in eslint.config.mjs).
 export { TeamBoardByRole, TeamTimeline } from './views';
 export {
-  costPerRole, focusMember, groupByRole, roleRows, slotName, timeRule, timelineRows, turnsPerMember,
+  SESSION_TAG_CHARS, costTable, focusMember, groupByRole, roleName, roleRows, slotName, timeRule, timelineRows,
+  tokensIn, turnsPerSlot,
 } from './model';
 export type {
-  RoleBay, RoleEvent, TeamEconomicsSession, TeamHourPoint, TeamTurn, TeamViewData, TimelineRow,
+  CostTable, RoleBay, RoleCost, RoleEvent, TeamHourPoint, TeamTurn, TeamViewData, TimelineRow,
 } from './model';
 
 /** The comp's two head bays, in the order it draws them. */
@@ -95,7 +96,9 @@ const actRow = (index: number) => {
 };
 
 const money = (value: number | null): string => (value === null ? 'n/r' : `$${value.toFixed(3)}`);
-const thousand = (value: number): string => value.toLocaleString('en-US');
+const thousand = (value: number | null): string => (value === null ? 'n/r' : value.toLocaleString('en-US'));
+/** A figure no route reports prints its absence, never a zero. */
+const text = (value: string | number | null): string | number => value ?? 'n/r';
 const pct = (value: number | null): string => (value === null ? 'n/r' : `${value}%`);
 const kb = (value: number | null): string => (value === null ? 'n/r' : `${value} k`);
 
@@ -132,9 +135,9 @@ function MemberStrips({ member, line, cols }: {
       <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} second line`}>
         <StripField w={cols.l2[0]} label={N.head} value={member.head} mono={false} />
         <StripField w={cols.l2[1]} label={N.sessionId} value={member.sessionId} />
-        <StripField w={cols.l2[2]} label={N.created} value={member.created} />
-        <StripField w={cols.l2[3]} label={N.uptime} value={member.uptime} />
-        <StripField w={cols.l2[4]} label={N.turns} value={member.turns} />
+        <StripField w={cols.l2[2]} label={N.created} value={text(member.created)} />
+        <StripField w={cols.l2[3]} label={N.uptime} value={text(member.uptime)} />
+        <StripField w={cols.l2[4]} label={N.turns} value={text(member.turns)} />
         <StripField w={cols.l2[5]} label={N.tokensIn} value={thousand(member.tokensIn)} />
         <StripField w={cols.l2[6]} label={N.tokensOut} value={thousand(member.tokensOut)} />
         <StripField w={cols.l2[7]} label={N.costEst} value={money(member.costEst)} />
@@ -145,18 +148,28 @@ function MemberStrips({ member, line, cols }: {
     <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} third line`}>
       <StripField w={cols.l3[0]} label={N.contextLeft} value={pct(member.contextLeftPct)} />
       <StripField w={cols.l3[1]} label={N.scratchpad} value={kb(member.scratchpadKb)} />
-      <StripField w={cols.l3[2]} label={N.workspace} value={member.workspace} mono={false} />
-      <StripField w={cols.l3[3]} label={N.branch} value={member.branch} mono={false} />
-      <StripField w={cols.l3[4]} label={N.base} value={member.base} mono={false} />
-      <StripField w={cols.l3[5]} label={N.diff} value={member.diff} />
-      <StripField w={cols.l3[6]} label={N.checks} value={member.checks} mono={false} />
+      <StripField w={cols.l3[2]} label={N.workspace} value={text(member.workspace)} mono={false} />
+      <StripField w={cols.l3[3]} label={N.branch} value={text(member.branch)} mono={false} />
+      <StripField w={cols.l3[4]} label={N.base} value={text(member.base)} mono={false} />
+      <StripField w={cols.l3[5]} label={N.diff} value={text(member.diff)} />
+      <StripField w={cols.l3[6]} label={N.checks} value={text(member.checks)} mono={false} />
     </Strip>
   );
 }
 
-export function TeamBoard({ board }: { board: TeamPayload }) {
+/** The heads the members run on, in the order the members run, folded into the comp's bays: the
+ *  poster measured two, so every head after the first shares the second bay rather than a session
+ *  being left off the board. */
+export function headBays(members: readonly TeamMemberRow[]): string[][] {
   const heads: string[] = [];
-  for (const member of board.members) if (!heads.includes(member.head)) heads.push(member.head);
+  for (const member of members) if (!heads.includes(member.head)) heads.push(member.head);
+  return heads.length <= HEAD_BAY.length ? heads.map((head) => [head]) : [[heads[0]], heads.slice(1)];
+}
+
+/** `unread` names why the chat or the activity could not be read, so an empty bay says which of
+ *  the two silences it is: nothing today, or a read that failed. */
+export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?: { chat?: string; activity?: string } }) {
+  const bays = headBays(board.members);
 
   const handoff = board.messages[board.messages.length - 1] ?? null;
 
@@ -171,14 +184,14 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
         <BoardHeader board={board} />
 
         {/* one bay per head, in the order the members run */}
-        {heads.slice(0, HEAD_BAY.length).map((head, index) => (
+        {bays.map((heads, index) => (
           <Bay
-            key={head}
+            key={heads.join(' ')}
             className={`myx-board-bay ${HEAD_BAY[index]}`}
-            label={`${S.headLabel} ${head}`}
+            label={`${S.headLabel} ${heads.join(', ')}`}
           >
             {board.members
-              .filter((member) => member.head === head)
+              .filter((member) => heads.includes(member.head))
               .flatMap((member) => [0, 1, 2].map((line) => (
                 <MemberStrips key={`${member.name}-${line}`} member={member} line={line} cols={BAY_COLS[index]} />
               )))}
@@ -213,6 +226,12 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
         {/* the team's group chat, newest at the bottom */}
         <Bay className="myx-board-bay myx-board-bay-chat" label={`${S.chatLabel} (newest at bottom)`}>
           <div className="myx-board-msgs">
+            {board.messages.length === 0 ? (
+              <Empty
+                text={unread.chat === undefined ? 'no messages today' : 'chat unreadable'}
+                source={unread.chat ?? 'GET /api/teams/{id}/chat'}
+              />
+            ) : null}
             {board.messages.map((message, index) => (
               <MessageStrip
                 key={`${message.time}-${message.from}`}
@@ -247,6 +266,12 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
               carry none. The bisect put -0.071 on activity-label at the commit that added the band
               (c173d7b9, M1-38). */}
           <div className="myx-board-acts">
+            {board.activity.length === 0 ? (
+              <Empty
+                text={unread.activity === undefined ? 'nothing sampled today' : 'activity unreadable'}
+                source={unread.activity ?? 'GET /api/teams/{id}/activity'}
+              />
+            ) : null}
             {board.activity.map((entry, index) => (
               <Strip
                 key={`${entry.time}-${entry.member}-${entry.activity}`}

@@ -31,7 +31,8 @@
  *  THE DAEMON:
  *    --boot <jar>       boot THAT jar isolated (its own user.home, config and free ports, no
  *                       provider credential in its environment), read it, stop it. The tree's
- *                       build is app/build/libs/app-all.jar.
+ *                       build is app/build/libs/app-all.jar. One team is created in its throwaway
+ *                       home first, so the per-team reads have an id to be read with.
  *    --control <url>    read an already-running daemon instead (default http://127.0.0.1:3096,
  *                       bearer from the state root's mgmt-key or --key-file). Read-only GETs.
  *    --capture <dir>    also write each payload read, as <call-site id>.json.
@@ -47,7 +48,7 @@
  *  The exit code and the last line always agree.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
@@ -80,11 +81,12 @@ const ID_SOURCES: Record<string, IdSource> = {
 };
 /** Query suffixes the console builds at runtime, filled as the console fills them by default:
  *  fetchPerfTurns asks ONE head per request (the route refuses an absent head, PerfRoutes.turns)
- *  and always sets n, and fetchCapture sends no query unless the operator scrubs. A `{name}` token
- *  is an ID_SOURCES key, filled with a live value exactly as a path placeholder is. */
+ *  and always sets n. A `{name}` token is an ID_SOURCES key, filled with a live value exactly as a
+ *  path placeholder is. */
 const QUERY_FILL: Record<string, string> = {
   "entities/perf|query.toString()": "head={head}&n=20",
-  "entities/perf|query": "",
+  // fetchTeamPanels reads today unless a day is asked for.
+  "entities/team|query": "",
 };
 
 /** A path expression that is a call to a local helper rather than a literal. Keyed by file and the
@@ -522,6 +524,40 @@ function liveMgmtKeyFile(): string {
   return join(liveStateDir(), "mgmt-key");
 }
 
+/** One live Claude Code session in a git repo, so the routes keyed by a project or a session id
+ *  have an id to be read with (M4-05): without it /api/projects is empty and GET /api/projects/{id}
+ *  is never read. The daemon's session registry reads ~/.claude/sessions/*.json and keeps a row
+ *  whose pid is alive (this process), and its repo resolver takes a directory holding `.git` under
+ *  the daemon's own HOME as a project root. The session also gets a two-message transcript where
+ *  TranscriptReader looks (`~/.claude/projects/<dir>/<session id>.jsonl`), so its transcript read is
+ *  checked rather than answered with the 404 of a session that has none. */
+function seedProject(home: string): void {
+  const repo = join(home, "wire-keys-repo");
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  writeFileSync(join(repo, "CLAUDE.md"), "# wire keys\n");
+  const sessionId = "3c0e5a1d-0000-4000-8000-00000000c0de";
+  const transcripts = join(home, ".claude/projects/wire-keys");
+  mkdirSync(transcripts, { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(join(transcripts, `${sessionId}.jsonl`), [
+    { type: "user", timestamp: at, message: { role: "user", content: [{ type: "text", text: "wire keys" }] } },
+    { type: "assistant", timestamp: at, message: { id: "msg_wire_keys", role: "assistant", content: [{ type: "text", text: "read" }] } },
+  ].map((record) => `${JSON.stringify(record)}\n`).join(""));
+  const sessions = join(home, ".claude/sessions");
+  mkdirSync(sessions, { recursive: true });
+  const now = Date.now();
+  writeFileSync(join(sessions, "wire-keys.json"), JSON.stringify({
+    pid: process.pid,
+    sessionId,
+    cwd: realpathSync(repo),
+    name: "wire-keys",
+    kind: "interactive",
+    status: "idle",
+    startedAt: now,
+    updatedAt: now,
+  }));
+}
+
 async function boot(jar: string): Promise<Daemon> {
   if (!existsSync(jar)) throw new Error(`--boot: no jar at ${jar}; build it with :app:shadowJar`);
   const home = mkdtempSync(join(tmpdir(), "console-wire-keys-"));
@@ -551,6 +587,7 @@ async function boot(jar: string): Promise<Daemon> {
     'models = [{ id = "wire/keys-model", slot = "sonnet" }]',
     "",
   ].join("\n"));
+  seedProject(home);
   const env = {
     PATH: process.env.PATH ?? "/usr/bin:/bin",
     HOME: home,
@@ -562,12 +599,16 @@ async function boot(jar: string): Promise<Daemon> {
   // the shared Gradle TEST task, and a daemon spawned here is a different JVM that inherits none of
   // it, so it is set again here. The rebuilt environment also carries no DISPLAY, WAYLAND_DISPLAY or
   // DBUS address, so an opener that slipped the property would still have no desktop to reach.
+  // A private copy of the jar: the build path is shared, and a JVM loads its classes lazily, so a
+  // build that rewrites the jar mid-read would fail every route not yet loaded (console/e2e/stack.ts).
+  const runJar = join(home, "splice.jar");
+  copyFileSync(jar, runJar);
   const child: ChildProcess = spawn("java", [
     "-Xmx512m",
     "-Dsplice.noSystemBrowser=1",
     `-Duser.home=${home}`,
     "-jar",
-    jar,
+    runJar,
     "daemon",
   ], {
     env,
@@ -594,7 +635,31 @@ async function boot(jar: string): Promise<Daemon> {
   // V4-177: a daemon booted into a fresh HOME writes the current layout; there is no pre-0.4
   // root in a throwaway home for it to adopt.
   const keyFile = join(home, ".splice/state/mgmt-key");
-  return { base, key: readFileSync(keyFile, "utf8").trim(), pid: child.pid ?? null, stop };
+  const key = readFileSync(keyFile, "utf8").trim();
+  try {
+    await seedTeam(base, key);
+  } catch (err) {
+    await stop();
+    throw err;
+  }
+  return { base, key, pid: child.pid ?? null, stop };
+}
+
+/** A fresh daemon has no team, so every per-team read would have no id and stay UNEXERCISED. One
+ *  team is created in the THROWAWAY home through the create route the console itself uses; the
+ *  --control path never writes. */
+async function seedTeam(base: string, key: string): Promise<void> {
+  const res = await fetch(`${base}/api/teams`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": "console-wire-keys-seed" },
+    body: JSON.stringify({
+      name: "wire keys",
+      goal: "give the per-team reads an id",
+      repo: "/tmp/console-wire-keys",
+      slots: [{ id: "lead", role: "lead", head: "openrouter", lead: true, instructions: "seeded by the wire probe" }],
+    }),
+  });
+  if (res.status !== 201) throw new Error(`--boot: seeding a team answered ${res.status}: ${await res.text()}`);
 }
 
 async function attach(base: string, keyFile: string): Promise<Daemon> {

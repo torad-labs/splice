@@ -45,7 +45,6 @@
     "app/src/main/kotlin/splice/app/cli/status/PerfCommand.kt": 1,
     "app/src/main/kotlin/splice/app/cli/SafeNames.kt": 1,
     "app/src/main/kotlin/splice/app/cli/status/SessionsCommand.kt": 3,
-    "app/src/main/kotlin/splice/app/cli/status/StatusTable.kt": 3,
     "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeDaemon.kt": 5,
     "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeFetch.kt": 2,
     "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeInflight.kt": 3,

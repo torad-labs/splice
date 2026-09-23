@@ -20,10 +20,10 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/auth/{head}/switch', disposition: 'editable' },
   // DELETE and PATCH on one pooled account: remove and relabel.
   { kind: 'route', name: '/api/auth/{kind}/accounts/{label}', disposition: 'editable' },
-  // The pooled view. PENDING, not read-only: this said read-only — that the route is live and the
-  // page reads it — and gateway control serves no /api/accounts of any kind (grepped 2026-09-18,
-  // 0 literal occurrences). The daemon's accounts work is V4-132, handed over from WD-06. Read-only
-  // is the disposition this route EARNS once V4-132 lands; until then the claim was the coverage
-  // plane agreeing with the console's belief about a daemon nobody asked (M1-37, M1-41).
-  { kind: 'route', name: '/api/accounts', disposition: 'pending', where: 'V4-132' },
+  // The pooled view. It was PENDING V4-132 while gateway control served no /api/accounts at all
+  // (grepped 2026-09-18, 0 literal occurrences) — a read-only claim then was the coverage plane
+  // agreeing with the console's belief about a daemon nobody asked (M1-37, M1-41). V4-132 landed: the
+  // route is served (ControlServer.kt:333, AccountsRoute) and this page and the fleet's head detail
+  // read it (M4-02), so it now earns the read-only it was waiting for. Nothing writes through it.
+  { kind: 'route', name: '/api/accounts', disposition: 'read-only' },
 ];

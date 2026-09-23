@@ -10,6 +10,7 @@ import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
+import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.HeadCompactSource
 import splice.launch.KeyPresenceProbe
 import splice.launch.LaunchSpec

@@ -14,6 +14,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.HeadScopedLogs
+import splice.diagnostics.logs.LogFileSource
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -43,7 +44,7 @@ class LogFileSourceTagTest {
         val logFile = tmp.resolve("daemon.log")
         Files.writeString(logFile, captured.joinToString("") + "[other] unrelated head line\n")
 
-        val tail = splice.app.sources.LogFileSource(logFile, "[claudex]").tail(50)
+        val tail = LogFileSource(logFile, "[claudex]").tail(50)
         assertEquals(3, tail.lines().count { it.isNotBlank() }, "expected all three producers:\n$tail")
         assertTrue(tail.contains("[claudex][auth-probe] initial health check: unhealthy"), tail)
         assertTrue(tail.contains("[claudex][codex-auth] refresh failed"), tail)

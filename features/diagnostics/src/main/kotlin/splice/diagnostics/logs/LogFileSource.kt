@@ -1,9 +1,8 @@
 // NEW: the daemon.log reader behind the dashboard, `splice logs`, and `--follow` (moved out of
 // FileSources.kt 2026-09-02, its own responsibility). Bounded tail reads, the head filter, and
 // the byte-offset contract the follow loop advances by.
-package splice.app.sources
+package splice.diagnostics.logs
 
-import splice.app.control.HeadLogSource
 import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
 import splice.core.util.SafeFailureText
@@ -30,7 +29,7 @@ public class LogFileSource(
      *  STAT taken BEFORE it, so a torn final line (which [tail] withholds) was skipped unprinted
      *  and a line appended between the stat and the read was printed twice. Offset 0 on failure
      *  re-baselines again next poll rather than advancing over unread bytes. */
-    public fun tailAt(lines: Int): LogRebase =
+    internal fun tailAt(lines: Int): LogRebase =
         Cancellables.runCatchingCancellable {
             val at = JsonlSink.readTailAt(logFile, LOG_TAIL_BYTES)
             LogRebase(renderLines(at.lines, lines), at.completeEnd)
@@ -65,7 +64,7 @@ public class LogFileSource(
      *  to and including the last newline — a torn final line stays unconsumed so the caller's
      *  baseline never advances past unprinted bytes. Read failures return the quiet zero delta:
      *  the follow loop's own polledSize warning owns the unreadable-episode surface (DR-68). */
-    public fun readFrom(fromOffset: Long): LogDelta =
+    internal fun readFrom(fromOffset: Long): LogDelta =
         Cancellables.runCatchingCancellable { readDelta(fromOffset) }.getOrElse { LogDelta("", 0L) }
 
     private fun readDelta(fromOffset: Long): LogDelta =
@@ -149,11 +148,11 @@ public class LogFileSource(
 
 /** One --follow delta: the filtered complete lines to print (may be empty when every new line was
  *  another head's) and the raw bytes consumed — the caller advances its baseline by [consumed]. */
-public data class LogDelta(val text: String, val consumed: Long)
+internal data class LogDelta(val text: String, val consumed: Long)
 
 /** A --follow re-baseline: the bounded tail to print and the ABSOLUTE offset to adopt (not a
  *  delta — the discontinuity means the old baseline is meaningless). Both from one read. */
-public data class LogRebase(val text: String, val offset: Long)
+internal data class LogRebase(val text: String, val offset: Long)
 
 // LogFileSource's tail bounds. File-scope consts (Kotlin style law, 2026-08-15): a top-level
 // `private const val` is the sanctioned home for constants, never a static namespace on the type.

@@ -31,7 +31,7 @@
       "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COLLISION DEFAULT_TAIL": [
-      "app/src/main/kotlin/splice/app/cli/status/LogsCommand.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogsCommand.kt",
       "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"
     ],
     "COLLISION DIGEST_BYTES": [
@@ -76,7 +76,7 @@
       "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
     ],
     "COLLISION LOG_TAIL_BYTES": [
-      "app/src/main/kotlin/splice/app/sources/LogFileSource.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogFileSource.kt",
       "app/src/main/kotlin/splice/app/cli/doctor/DoctorReportTail.kt"
     ],
     "COLLISION MAX_CONVERSATIONS": [
@@ -455,7 +455,7 @@
       "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt"
     ],
     "COPY NEWLINE_BYTE": [
-      "app/src/main/kotlin/splice/app/sources/LogFileSource.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogFileSource.kt",
       "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
     ],
     "COPY OMITTED": [

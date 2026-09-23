@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import splice.app.control.api.ControlPayloads
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource

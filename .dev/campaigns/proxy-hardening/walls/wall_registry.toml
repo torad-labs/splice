@@ -209,7 +209,7 @@ retired_to = [
     "app/src/test/kotlin/splice/app/cli/CommandParserTest.kt",
     "quality/architecture/src/test/kotlin/splice/quality/RemediationNamesTheLogVerbLawTest.kt",
     "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
-    "app/src/test/kotlin/splice/app/cli/status/LogsCommandTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/logs/LogsCommandTest.kt",
 ]
 proof = "2026-09-21: three mutations, each red on both sides. (a) the `logs` CommandFactory row deleted from InstallCommand's parse table -> wall RED (no `logs` verb in the parse table) and the new CommandParserTest JW-08 arm RED (2 tests, 1 failure); (b) a `check daemon.log for the reason` literal planted in daemon/control/.../api/auth/AuthRoutes.kt -> wall RED and RemediationNamesTheLogVerbLawTest RED (3 tests, 1 failure), the law catching it in a module the wall does not read; (c) statePaths.logsDir -> stateDir in DoctorDaemonChecks (2 refs) -> wall RED and the DoctorCommandTest JW-08 arm RED (14 tests, 1 failure). Restored, wall GREEN and every home green. Leg (a) is the one the pre-existing LogsCommandTest could never cover: it builds Command.Logs directly and never crosses the parse table, so deleting the verb left it green"
 

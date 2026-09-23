@@ -26,7 +26,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.control.ControlServer
-import splice.app.control.HeadLogSource
 import splice.app.control.ManagedHead
 import splice.client.ClaudePolicy
 import splice.core.auth.AuthDescription
@@ -36,6 +35,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.launch.HeadTrees

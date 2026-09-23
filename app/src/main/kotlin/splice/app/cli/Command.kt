@@ -16,12 +16,12 @@ import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.doctor.DoctorCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
-import splice.app.cli.status.LogsCommand
 import splice.app.cli.status.StatusCommand
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.diagnostics.logs.LogsCommand
 import splice.diagnostics.wire.WireCommand
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
@@ -101,7 +101,10 @@ public sealed class Command {
         override fun run(): Int = outcomeExitCode(KeyCommand().key(args))
     }
     public data class Logs(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(LogsCommand().logs(args))
+        override fun run(): Int {
+            val verb = LogsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+            return outcomeExitCode(verb.logs(args, EnvReader(System::getenv)))
+        }
     }
     public data object Sessions : Command() {
         override fun run(): Int {

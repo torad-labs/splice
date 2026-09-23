@@ -16,7 +16,6 @@ import splice.app.quota.QuotaProbes
 import splice.app.quota.UsageFields
 import splice.app.sources.CompactStatsSource
 import splice.app.sources.EconomicsStoreSource
-import splice.app.sources.LogFileSource
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfStatsSource
 import splice.app.sources.UsageStoreSource
@@ -26,6 +25,7 @@ import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
 import splice.core.util.LogSink
+import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore

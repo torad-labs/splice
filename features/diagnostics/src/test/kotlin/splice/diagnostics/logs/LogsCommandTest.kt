@@ -1,12 +1,13 @@
 // NEW (JW-08): the `splice logs` verb — daemon-independent (pure LogFileSource read), head
 // filtering, tail bounding, missing-file tolerance. Every remediation path ends at daemon.log;
 // before this there was no CLI verb to reach it.
-package splice.app.cli.status
+package splice.diagnostics.logs
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -14,12 +15,16 @@ import java.nio.file.Path
 
 class LogsCommandTest {
 
+    // println writers, so `capture` still reads the verb off System.out.
+    private val out = TerminalOutput(::println)
+    private val err = TerminalOutput(System.err::println)
+
     private fun capture(env: Map<String, String?>, args: List<String>): Pair<Boolean, String> {
         val buf = ByteArrayOutputStream()
         val original = System.out
         System.setOut(PrintStream(buf, true))
         return try {
-            LogsCommand().logs(args) { env[it] } to buf.toString()
+            LogsCommand(out, err).logs(args) { env[it] } to buf.toString()
         } finally {
             System.setOut(original)
         }
@@ -94,7 +99,7 @@ class LogsFollowDeltaTest {
         val baseline = Files.size(log)
         Files.writeString(log, "new 1\nnew 2\n", java.nio.file.StandardOpenOption.APPEND)
         val (next, out) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), baseline, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), baseline, warned())
         }
         assertEquals(listOf("new 1", "new 2"), out.trim().lines(), "already-shown lines must not repeat")
         assertEquals(Files.size(log), next)
@@ -108,7 +113,7 @@ class LogsFollowDeltaTest {
         val burst = (1..25).joinToString("") { "storm $it\n" }
         Files.writeString(log, burst, java.nio.file.StandardOpenOption.APPEND)
         val (_, out) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), baseline, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), baseline, warned())
         }
         assertEquals((1..25).map { "storm $it" }, out.trim().lines(), "no line of the burst may drop")
     }
@@ -119,15 +124,15 @@ class LogsFollowDeltaTest {
         Files.writeString(log, "seed\n")
         val baseline = Files.size(log)
         Files.writeString(log, "torn-half", java.nio.file.StandardOpenOption.APPEND)
-        val cmd = LogsCommand()
+        val cmd = LogsCommand(out, err)
         val (afterTorn, tornOut) = pollCapture {
-            cmd.followPoll(log, splice.app.sources.LogFileSource(log), baseline, warned())
+            cmd.followPoll(log, LogFileSource(log), baseline, warned())
         }
         assertEquals("", tornOut.trim(), "an incomplete line must not print")
         assertEquals(baseline, afterTorn, "the baseline must not advance past unprinted bytes")
         Files.writeString(log, "-done\n", java.nio.file.StandardOpenOption.APPEND)
         val (_, doneOut) = pollCapture {
-            cmd.followPoll(log, splice.app.sources.LogFileSource(log), afterTorn, warned())
+            cmd.followPoll(log, LogFileSource(log), afterTorn, warned())
         }
         assertEquals(listOf("torn-half-done"), doneOut.trim().lines())
     }
@@ -143,7 +148,7 @@ class LogsFollowDeltaTest {
             java.nio.file.StandardOpenOption.APPEND,
         )
         val (next, out) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log, "[claudex]"), baseline, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log, "[claudex]"), baseline, warned())
         }
         assertEquals(listOf("[claudex] mine", "[claudex] mine too"), out.trim().lines())
         assertEquals(Files.size(log), next, "filtered-out bytes still advance the baseline")
@@ -156,7 +161,7 @@ class LogsFollowDeltaTest {
         val bigBaseline = Files.size(log)
         Files.writeString(log, "gen2 a\ngen2 b\n") // truncating rewrite = the rotation roll shape
         val (next, out) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), bigBaseline, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), bigBaseline, warned())
         }
         assertEquals(listOf("gen2 a", "gen2 b"), out.trim().lines(), "a roll resets to the bounded tail")
         assertEquals(Files.size(log), next)
@@ -175,7 +180,7 @@ class LogsFollowDeltaTest {
         val bigBaseline = Files.size(log)
         Files.writeString(log, "gen2 a\ngen2 b\ngen2 c-par") // roll, writer caught mid-line
         val (next, out) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), bigBaseline, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), bigBaseline, warned())
         }
         assertEquals(
             listOf("gen2 a", "gen2 b"),
@@ -190,7 +195,7 @@ class LogsFollowDeltaTest {
 
         Files.writeString(log, "tial\n", java.nio.file.StandardOpenOption.APPEND)
         val (_, completed) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), next, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), next, warned())
         }
         assertEquals(
             listOf("gen2 c-partial"),
@@ -212,13 +217,13 @@ class LogsFollowDeltaTest {
         Files.writeString(log, giant + "\nafter the giant\n", java.nio.file.StandardOpenOption.APPEND)
 
         val (next, out) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), baseline, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), baseline, warned())
         }
         assertTrue(next > baseline, "the poll must advance past an over-long line instead of freezing")
         assertTrue(out.contains("exceeds"), "the skip is announced in-band rather than leaving a silent gap: $out")
 
         val (after, rest) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), next, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), next, warned())
         }
         // Exact, not `contains`: the first fix consumed only the window, so the next poll started
         // MID-LINE and emitted the giant's remaining bytes as a fake standalone line before this
@@ -240,14 +245,14 @@ class LogsFollowDeltaTest {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "shown\ntorn-head") // writer caught mid-line, codex's repro shape
         val (baseline, shown) = pollCapture {
-            LogsCommand().followStart(splice.app.sources.LogFileSource(log), 50)
+            LogsCommand(out, err).followStart(LogFileSource(log), 50)
         }
         assertEquals(listOf("shown"), shown.trim().lines(), "the torn line is withheld at the start too")
         assertEquals(6L, baseline, "the start baseline is the end of 'shown\\n', not the ${Files.size(log)}-byte stat")
 
         Files.writeString(log, "-done\n", java.nio.file.StandardOpenOption.APPEND)
         val (_, completed) = pollCapture {
-            LogsCommand().followPoll(log, splice.app.sources.LogFileSource(log), baseline, warned())
+            LogsCommand(out, err).followPoll(log, LogFileSource(log), baseline, warned())
         }
         assertEquals(
             listOf("torn-head-done"),

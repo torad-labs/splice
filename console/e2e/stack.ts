@@ -30,7 +30,7 @@
 // that never answers, a turn that fails or a row that never lands each throws with the daemon log's
 // tail, and Playwright reports the setup as the failure.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -371,7 +371,13 @@ export async function startStack(): Promise<Stack> {
   // bundle it can serve is the jar's own.
   const cwd = mode === 'dist' ? join(REPO, 'app') : join(home, 'run');
   mkdirSync(cwd, { recursive: true });
-  const child: ChildProcess = spawn('java', ['-Xmx512m', '-Dsplice.noSystemBrowser=1', `-Duser.home=${home}`, '-jar', jar, 'daemon'], {
+  // The daemon runs a PRIVATE COPY of the jar. app/build/libs/app-all.jar is a shared path any build
+  // in this worktree rewrites, and a JVM loads classes from its jar lazily: on 2026-09-23 another
+  // session's shadowJar replaced it at 10:53:18 mid-run, and every route not yet loaded answered
+  // 500 from then on (12 journeys red; the same tree was 28/28 on the rerun).
+  const runJar = join(home, 'splice.jar');
+  copyFileSync(jar, runJar);
+  const child: ChildProcess = spawn('java', ['-Xmx512m', '-Dsplice.noSystemBrowser=1', `-Duser.home=${home}`, '-jar', runJar, 'daemon'], {
     cwd,
     env: {
       PATH: process.env.PATH ?? '/usr/bin:/bin',

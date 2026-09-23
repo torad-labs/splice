@@ -13,6 +13,10 @@ export const S = {
   lifecycle: 'lifecycle',
   knobs: 'knobs',
   pool: 'account pool',
+  /** The pool's rack of account strips, under the section title above. */
+  accounts: 'accounts',
+  /** Printed before the account the daemon's selector takes next, and the rule that explains it. */
+  nextTarget: 'next target',
   start: 'start',
   stop: 'stop',
   restart: 'restart',

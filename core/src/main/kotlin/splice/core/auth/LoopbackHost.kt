@@ -17,6 +17,9 @@ private val HOST = Regex("^(\\[[^\\]]*\\]|[^:\\[\\]]*)(?::\\d*)?$")
 
 public object LoopbackHost {
 
+    /** The one refusal text both listeners send, each in its own wire shape. */
+    public const val FOREIGN_HOST_REFUSAL: String = "splice serves loopback names only (127.0.0.1, localhost, [::1])"
+
     /**
      * True when a request's Host header names this machine's loopback, on any port (an SSH tunnel
      * may forward a different local port; rebinding never changes the NAME). An ABSENT Host is

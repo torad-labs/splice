@@ -90,11 +90,20 @@ class TopologyWriterTest {
         assertEquals(listOf("heads.ex.port", "daemon.control_port"), findings.map { it.path })
     }
 
+    // 2026-09-23: only a provider that lists nothing can call an unknown id a misspelling. One whose
+    // endpoint could list it drops the row at boot instead (Topology.modelsFor), so the edit passes here.
     @Test
-    fun `a head roster the provider does not declare is refused by name`() {
-        val roster = head(PORT).copy(models = listOf(HeadModel("m9", "opus")))
-        val findings = untouched(writer(mapOf(FILE to topology())).write(topology(head = roster)))
+    fun `a head roster naming a model its provider cannot list is refused by name`() {
+        val roster = head(PORT).copy(models = listOf(HeadModel("m1", "opus"), HeadModel("m9", "sonnet")))
+        val off = ModelDiscoveryConfig(exclude = listOf("*"))
+        val unlisting = topology(head = roster).let { t ->
+            t.copy(providers = t.providers.mapValues { (_, p) -> p.copy(discovery = off) })
+        }
+        val findings = untouched(writer(mapOf(FILE to topology())).write(unlisting))
         assertEquals(listOf("heads.ex.models"), findings.map { it.path })
+        assertTrue(findings.single().message.contains("'m9'"), findings.toString())
+        val listing = untouched(writer(mapOf(FILE to topology())).write(topology(head = roster)))
+        assertTrue(listing.none { it.path == "heads.ex.models" }, listing.toString())
     }
 
     // 2026-09-22: a model the head's endpoint served at start may be named by its allowlist, and the

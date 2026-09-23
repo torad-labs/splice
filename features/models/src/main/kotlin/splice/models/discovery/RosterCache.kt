@@ -15,6 +15,7 @@ import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.models.list.UpstreamRosterUrl
 import java.nio.file.Files
@@ -32,15 +33,22 @@ public class RosterCache(
         SecureFile.writeAtomic0600(statePaths.modelRosterFile(headKey), text)
     }
 
-    /** What [headKey]'s endpoint last published, or null when nothing was kept for the URL [provider]
-     *  is asked at now. */
-    public fun read(headKey: String, provider: ProviderConfig): List<DiscoveredModel>? {
+    /** What [headKey]'s endpoint last published for the URL [provider] is asked at now, or which of
+     *  the three reasons there is none — each has a different fix, so the caller's line names it. */
+    public fun read(headKey: String, provider: ProviderConfig): KeptRoster {
         val url = UpstreamRosterUrl.of(provider)
         val file = statePaths.modelRosterFile(headKey)
-        if (!Files.isRegularFile(file)) return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-22: a cache that cannot be read is a cache that is not there; the caller logs that it fell back to declared rows, which is the whole observable difference.
-        val cached = Cancellables.runCatchingCancellable { decode(file) }.getOrNull()
-        return cached?.takeIf { it.url == url }?.models?.map(CachedModel::model)
+        if (!Files.isRegularFile(file)) return KeptRoster.None
+        return Cancellables.runCatchingCancellable { decode(file) }.fold(
+            onSuccess = { cached ->
+                if (cached.url == url) {
+                    KeptRoster.Kept(cached.models.map(CachedModel::model))
+                } else {
+                    KeptRoster.OtherUrl(cached.url)
+                }
+            },
+            onFailure = { KeptRoster.Unreadable("$file could not be read (${SafeFailureText.render(it)})") },
+        )
     }
 
     private fun decode(file: Path): CachedRoster =
@@ -48,6 +56,21 @@ public class RosterCache(
 
     private fun cached(model: DiscoveredModel): CachedModel =
         CachedModel(model.id, model.label, model.contextWindow, model.aliases)
+}
+
+/** A head's kept list, or why there is none to stand in for its endpoint. */
+public sealed class KeptRoster {
+    /** The list the endpoint published last, at the URL it is asked at now. */
+    public data class Kept(val models: List<DiscoveredModel>) : KeptRoster()
+
+    /** No list was ever kept for this head. */
+    public data object None : KeptRoster()
+
+    /** The list kept was published at [url], a different endpoint, and says nothing about this one. */
+    public data class OtherUrl(val url: String) : KeptRoster()
+
+    /** The kept file is there and could not be read: [reason]. */
+    public data class Unreadable(val reason: String) : KeptRoster()
 }
 
 @Serializable

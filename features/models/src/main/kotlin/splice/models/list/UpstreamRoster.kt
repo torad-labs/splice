@@ -32,7 +32,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import splice.core.model.ModelEntry
 import splice.core.model.ModelTierSuffix
 import splice.core.topology.AuthKind
@@ -50,6 +49,9 @@ internal data class UpstreamModel(
     public val id: String,
     public val label: String = "",
     public val contextWindow: Long? = null,
+    /** The largest window the endpoint accepts as an override, above its default [contextWindow]
+     *  (the Codex backend's `max_context_window`: 872000 for gpt-6-astra against a 272000 default). */
+    public val maxContextWindow: Long? = null,
     public val aliases: List<String> = emptyList(),
     /** Why the ENDPOINT says this model cannot serve a Claude Code turn, or null when it says
      *  nothing against it. Only an affirmative statement counts (see [UpstreamRosterParser]): a row
@@ -76,7 +78,7 @@ internal sealed class UpstreamRoster {
 /** Where a provider publishes its model list. The dialect decides the default; an operator whose
  *  vendor puts it somewhere else says so with `models_url`, which is why there is no per-vendor
  *  table here — a hardcoded vendor list is the thing this whole file exists to retire. */
-internal object UpstreamRosterUrl {
+public object UpstreamRosterUrl {
 
     /** The Codex backend lists `GET {base}/models?client_version=<v>` and answers with the models
      *  whose `minimal_client_version` is at or below <v> — measured 2026-09-22 against
@@ -108,13 +110,15 @@ internal object UpstreamRosterUrl {
         }
     }
 
-    /** The list URL [provider] is asked at — one derivation for the probe and the cache it fills. */
+    /** The list URL [provider] is asked at — one derivation for the probe, the cache it fills, and
+     *  the daemon's line when the endpoint gives no answer in time. */
     public fun of(provider: ProviderConfig): String =
         of(provider.dialect, provider.baseUrl, provider.modelsUrl, provider.auth.kind)
 }
 
 /** A model-list body to [UpstreamRoster]. Accepts the two envelopes in the wild — `{"data": [...]}`
- *  (OpenAI's shape, which Moonshot and DeepSeek also serve) and `{"models": [...]}` — and reads each
+ *  (OpenAI's shape, which Moonshot and DeepSeek also serve) and `{"models": [...]}` — plus a bare
+ *  array, which a `models_url` pointing at a vendor's own shape can answer with — and reads each
  *  row through an alias chain, because `id`/`slug`, `display_name`/`name` and
  *  `context_length`/`context_window`/`max_context_length` are all the same field under four vendors. */
 internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknownKeys = true }) {
@@ -123,22 +127,37 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
     public fun parse(body: String, url: String): UpstreamRoster =
         // The failure is not collapsed: it is rendered into the Unreadable detail below, which is the
         // operator-facing sentence this whole branch exists to produce.
-        Cancellables.runCatchingCancellable { rows(json.parseToJsonElement(body).jsonObject) }.fold(
+        Cancellables.runCatchingCancellable { rows(json.parseToJsonElement(body)) }.fold(
             onSuccess = { rows ->
-                rows?.let { UpstreamRoster.Published(it.map(::model)) }
-                    ?: UpstreamRoster.Unreadable("$url answered without a model list")
+                rows?.let { listed(it, url) } ?: UpstreamRoster.Unreadable("$url answered without a model list")
             },
             onFailure = { UpstreamRoster.Unreadable("$url did not answer with JSON (${SafeFailureText.render(it)})") },
         )
 
-    /** The rows array under either envelope key, or null when the body carries neither. */
-    private fun rows(root: JsonObject): List<JsonObject>? =
-        (root["data"] ?: root["models"]).let { it as? JsonArray }?.map { it.jsonObject }
+    /** The rows array under either envelope key, or the body itself when it is a bare array; null when
+     *  it is neither. An element that is not an object stays in, as a row with no id. */
+    private fun rows(root: JsonElement): List<JsonObject>? {
+        val array = root as? JsonArray ?: (root as? JsonObject)?.let { it["data"] ?: it["models"] } as? JsonArray
+        return array?.map { it as? JsonObject ?: JsonObject(emptyMap()) }
+    }
+
+    /** A row with no id cannot be picked, so it is left out. A list with rows and NO id among them is a
+     *  schema this parser does not read, never an endpoint that serves nothing: read as empty, it would
+     *  replace the list the head last kept and shrink its picker to splice.toml's rows. */
+    private fun listed(rows: List<JsonObject>, url: String): UpstreamRoster {
+        val models = rows.map(::model).filter { it.id.isNotBlank() }
+        return if (rows.isNotEmpty() && models.isEmpty()) {
+            UpstreamRoster.Unreadable("$url listed ${rows.size} rows, none with an id or slug this parser reads")
+        } else {
+            UpstreamRoster.Published(models)
+        }
+    }
 
     private fun model(row: JsonObject): UpstreamModel = UpstreamModel(
         id = JsonScalars.str(row, "id") ?: JsonScalars.str(row, "slug").orEmpty(),
         label = JsonScalars.str(row, "display_name") ?: JsonScalars.str(row, "name").orEmpty(),
         contextWindow = JsonScalars.firstLong(row, "context_length", "context_window", "max_context_length"),
+        maxContextWindow = JsonScalars.firstLong(row, "max_context_window"),
         aliases = strings(row["aliases"]),
         unusable = unusable(row),
     )
@@ -242,7 +261,9 @@ internal class RosterDiff {
             id = model.id,
             verdict = if (keptOut == null) RosterVerdict.NEW else RosterVerdict.EXCLUDED,
             upstreamWindow = model.contextWindow,
-            note = keptOut ?: "discovered: in the picker with no row",
+            // A head with a `models` list offers only what it names, so a discovered model joins the
+            // pickers of the heads that have none (Topology.modelsFor).
+            note = keptOut ?: "discovered: joins the picker of every head with no models list",
         )
     }
 
@@ -279,13 +300,23 @@ internal class RosterDiff {
                 note = "served; the endpoint publishes no window, so this row's number is unchecked",
             )
         val aliased = aliasNote(entry.id, upstream)
+        // A window between the default and the override ceiling is the vendor's sanctioned opt-in
+        // (gpt-6-astra at 872000, measured served at 637k tokens on 2026-09-21), not an overrun.
+        val accepted = maxOf(ceiling, upstream.maxContextWindow ?: ceiling)
         return when {
-            entry.contextWindow > ceiling -> RosterRow(
+            entry.contextWindow > accepted -> RosterRow(
                 id = entry.id,
                 verdict = RosterVerdict.OVER_CEILING,
                 declaredWindow = entry.contextWindow,
+                upstreamWindow = accepted,
+                note = "the endpoint serves $accepted$aliased — compaction runs past what it accepts",
+            )
+            entry.contextWindow > ceiling -> RosterRow(
+                id = entry.id,
+                verdict = RosterVerdict.SERVED,
+                declaredWindow = entry.contextWindow,
                 upstreamWindow = ceiling,
-                note = "the endpoint serves $ceiling$aliased — compaction runs past what it accepts",
+                note = "the endpoint serves $ceiling by default and accepts up to $accepted$aliased — this row opts in",
             )
             entry.contextWindow < ceiling -> RosterRow(
                 id = entry.id,

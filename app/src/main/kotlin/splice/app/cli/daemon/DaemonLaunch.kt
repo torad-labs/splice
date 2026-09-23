@@ -9,6 +9,7 @@ package splice.app.cli.daemon
 
 import splice.app.cli.AdminSupport
 import splice.core.GATEWAY_VERSION
+import splice.daemonclient.DaemonHealth
 import java.nio.file.Path
 import java.time.Duration
 

@@ -23,12 +23,12 @@ package splice.app.cli.setup
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import splice.app.cli.AdminSupport
-import splice.app.cli.ControlPlaneClient
-import splice.app.cli.ControlReply
-import splice.app.cli.doctor.MgmtKeyRead
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.daemonclient.ControlPlaneClient
+import splice.daemonclient.ControlReply
+import splice.daemonclient.MgmtKeyRead
 import splice.terminal.SelectOption
 import splice.terminal.SelectOutcome
 

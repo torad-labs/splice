@@ -6,9 +6,10 @@
 package splice.app.cli.doctor
 
 import splice.app.cli.AdminSupport
-import splice.app.daemon.DaemonProbe
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
+import splice.daemonclient.DaemonProbe
+import splice.daemonclient.MgmtKeyRead
 
 /** The doctor runtime section as a constructed collaborator (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions). Stateless — DoctorCommand builds one and asks it; every

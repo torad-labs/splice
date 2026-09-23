@@ -15,6 +15,8 @@
 // way the CLI's own port polls do.
 package splice.app.daemon
 
+import splice.daemonclient.DaemonProbe
+
 /** Answers whether a daemon is serving on [port]; injected so the wait is testable without a socket. */
 internal fun interface PeerProbe {
     fun serving(port: Int): Boolean

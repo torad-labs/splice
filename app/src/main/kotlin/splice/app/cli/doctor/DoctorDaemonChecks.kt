@@ -5,11 +5,11 @@
 // live (V4-177).
 package splice.app.cli.doctor
 
-import splice.app.cli.daemon.DaemonHealth
 import splice.core.config.StateDirOrigin
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.daemonclient.DaemonHealth
 import java.nio.file.Path
 
 /** The doctor daemon section as a constructed collaborator (Kotlin style law, 2026-08-15: main

@@ -9,10 +9,10 @@ package splice.app.cli.daemon
 
 import splice.app.DaemonBoundary
 import splice.app.cli.AdminSupport
-import splice.app.cli.ControlPlaneClient
 import splice.app.cli.SignalSend
-import splice.app.daemon.DaemonProbe
 import splice.core.wire.HttpStatus
+import splice.daemonclient.ControlPlaneClient
+import splice.daemonclient.DaemonProbe
 
 /** Stopping the daemon: ask over the control plane, then escalate through OS signals until every
  *  port it owned is free. Constructed by the `restart` verb (Kotlin style law, 2026-08-15: main

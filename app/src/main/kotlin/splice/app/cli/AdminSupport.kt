@@ -5,17 +5,15 @@
 package splice.app.cli
 
 import splice.app.cli.daemon.DaemonLaunch
-import splice.app.cli.doctor.MgmtKeyRead
 import splice.core.GATEWAY_VERSION
-import splice.core.config.ConfigService
-import splice.core.config.Knob
-import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
-import splice.core.topology.TopologyKnobLayer
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.daemonclient.DaemonSettings
+import splice.daemonclient.MgmtKeyFile
+import splice.daemonclient.MgmtKeyRead
 import splice.oauth.SystemBrowserOpener
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -27,56 +25,17 @@ internal object AdminSupport {
     // The cold-start argv, boot-log tail, and daemon up/spawn/wait cluster live in DaemonLaunch.kt.
     private val launch = DaemonLaunch()
 
-    /** The effective control port using the daemon's exact TOML < state < env precedence. */
-    fun controlPort(envReader: EnvReader = EnvReader(System::getenv)): Int {
-        val configPath = TopologyLoader.configPath(envReader)
-        // DR-41b, same F3 lesson RestartCommand already carries: a corrupt TOML silently
-        // degrading to default ports makes a RUNNING daemon look stopped. Say it (stderr —
-        // stdout belongs to the verb's own output).
-        val topology = Cancellables.runCatchingCancellable {
-            TopologyLoader.loadOrMaterialize(configPath)
-        }.onFailure {
-            System.err.println(
-                "splice: could not read $configPath (${SafeFailureText.render(it)}) — " +
-                    "using default ports; a running daemon may appear stopped",
-            )
-        }.getOrNull()
-        return controlPort(topology, envReader)
-    }
+    /** The control port and supervisor unit, by the daemon's own TOML < state < env precedence —
+     *  [DaemonSettings]'s, in integrations/daemon-client since LAYOUT-01. Its corrupt-TOML diagnostic
+     *  goes to stderr: stdout belongs to the verb's own output. */
+    private val settings = DaemonSettings(TerminalOutput(System.err::println))
 
-    /** V4-176: the systemd user unit that supervises this install, by name, through the same
-     *  TOML < state < env precedence as [controlPort]. splice does not own the unit; it reads the
-     *  name so a box whose packager called it something else is not permanently "unsupervised".
-     *  A blank value falls back to the knob's declared default rather than asking systemctl about
-     *  an empty unit name. */
-    fun supervisorUnit(envReader: EnvReader = EnvReader(System::getenv)): String {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-176): an unreadable TOML means "no TOML layer" here, which is the answer the state and env layers below are then decided by; [controlPort] above already PRINTS the diagnostic for the very same file on the very same upgrade path, and a second copy would report one corrupt config twice.
-        val topology = Cancellables.runCatchingCancellable {
-            TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(envReader))
-        }.getOrNull()
-        val unit = ConfigService(
-            StatePaths(envReader = envReader),
-            headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
-            envReader = envReader,
-        ).getConfig().supervisorUnit
-        return unit.ifBlank { Knob.SUPERVISOR_UNIT.default as String }
-    }
+    fun controlPort(envReader: EnvReader = EnvReader(System::getenv)): Int = settings.controlPort(envReader)
 
-    /** Same, from an already-loaded (or absent) topology — doctor uses this so a diagnostic
-     *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the
-     *  whole port resolution (StatePaths + ConfigService env layer) so a hermetic caller never
-     *  reads the real process environment or state dir. */
+    fun supervisorUnit(envReader: EnvReader = EnvReader(System::getenv)): String = settings.supervisorUnit(envReader)
+
     fun controlPort(topology: Topology?, envReader: EnvReader = EnvReader(System::getenv)): Int =
-        ConfigService(
-            StatePaths(envReader = envReader),
-            // No topology (fresh machine / broken TOML) still resolves through the layered config:
-            // the old null-branch returned the hardcoded default, silently IGNORING the state
-            // config.json and SPLICE_CONTROL_PORT layers — which both broke hermetic test rigs
-            // (an ambient real daemon answered instead) and diverged from the launch shim's own
-            // resolution (JW-05 discovery, 2026-08-07).
-            headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
-            envReader = envReader,
-        ).getConfig().controlPort
+        settings.controlPort(topology, envReader)
 
     /** True only when the listener answers splice's versioned HTTP health contract. */
     fun daemonUp(port: Int = controlPort()): Boolean = launch.daemonUp(port)
@@ -147,35 +106,9 @@ internal object AdminSupport {
 
     fun openUrl(url: String): Boolean = SystemBrowserOpener(TerminalOutput { println(it) }).open(url)
 
-    /** DR-174: the mgmt-key read, with absence and denied access kept apart.
-     *
-     *  This replaced `mgmtKey(): String?`, which collapsed both into null — every caller then had to
-     *  invent a sentence for a state it could not distinguish, and all three invented the wrong one.
-     *  Returning the distinction rather than a nullable is what stops the next caller re-deriving it;
-     *  the old accessor is gone rather than kept beside this one, so there is no longer a shape that
-     *  can silently lose the difference.
-     *
-     *  Mirrors DoctorHeadChecks.mgmtKeyCheck (DR-41a): a definitive NoSuchFileException is the only
-     *  positive evidence of absence, and an empty file is treated as absent because MgmtKey.ensure
-     *  writes the key and the path exists only once minted — a zero-byte file is a half-written
-     *  mint, not a permissions problem. */
-    fun readMgmtKey(envReader: EnvReader = EnvReader(System::getenv)): MgmtKeyRead {
-        val path = StatePaths(envReader = envReader).mgmtKeyFile
-        val attempt = Cancellables.runCatchingCancellable { Files.readString(path).trim() }
-        val failure = attempt.exceptionOrNull()
-        if (failure != null) {
-            return if (failure is java.nio.file.NoSuchFileException &&
-                !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            ) {
-                MgmtKeyRead.Absent
-            } else {
-                MgmtKeyRead.Unreadable(SafeFailureText.render(failure))
-            }
-        }
-        // Every failure returned above, so this is a success — no default to invent.
-        val key = attempt.getOrThrow()
-        return if (key.isEmpty()) MgmtKeyRead.Absent else MgmtKeyRead.Present(key)
-    }
+    /** DR-174: the mgmt-key read, absence and denied access kept apart — [MgmtKeyFile]'s, in
+     *  integrations/daemon-client since LAYOUT-01; this delegate keeps app's call sites unchanged. */
+    fun readMgmtKey(envReader: EnvReader = EnvReader(System::getenv)): MgmtKeyRead = MgmtKeyFile().read(envReader)
 
     fun home(): Path = Paths.get(System.getProperty("user.home"))
 

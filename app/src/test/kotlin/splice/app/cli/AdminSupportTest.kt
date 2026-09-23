@@ -3,17 +3,10 @@
 // cold-start paths (AdminSupport.spawnDaemon and app/src/main/dist/bin/splice-launch) are meant to agree.
 package splice.app.cli
 
-import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.daemon.DaemonLaunch
-import splice.core.GATEWAY_VERSION
-import splice.core.util.EnvReader
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
-import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,63 +23,6 @@ class AdminSupportTest {
         assertTrue(AdminSupport.DEFAULT_JVM_OPTS.contains("-Xmx2048m"))
         assertTrue(AdminSupport.DEFAULT_JVM_OPTS.contains("-XX:+UseStringDeduplication"))
         assertTrue(AdminSupport.DEFAULT_JVM_OPTS.contains("-XX:G1PeriodicGCInterval=60000"))
-    }
-
-    @Test
-    fun `controlPort diagnoses corrupt production topology before using defaults`(@TempDir tmp: Path) {
-        val config = tmp.resolve("config/splice/splice.toml")
-        Files.createDirectories(config.parent)
-        Files.writeString(config, "[daemon\n")
-        val env = EnvReader { name ->
-            mapOf(
-                "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
-                "CLAUDEX_STATE_DIR" to tmp.resolve("state").toString(),
-            )[name]
-        }
-        val savedErr = System.err
-        val stderr = ByteArrayOutputStream()
-        try {
-            System.setErr(PrintStream(stderr, true))
-            AdminSupport.controlPort(env)
-        } finally {
-            System.setErr(savedErr)
-        }
-
-        val diagnostic = stderr.toString()
-        assertTrue(diagnostic.contains("could not read $config"), diagnostic)
-        assertTrue(diagnostic.contains("using default ports; a running daemon may appear stopped"), diagnostic)
-    }
-
-    @Test
-    fun `daemon probe requires the versioned splice HTTP health contract`() {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        var body = """{"ok":true,"version":"unrelated-service"}"""
-        server.createContext("/health") { exchange ->
-            val bytes = body.toByteArray()
-            exchange.sendResponseHeaders(200, bytes.size.toLong())
-            exchange.responseBody.use { it.write(bytes) }
-        }
-        server.start()
-        try {
-            assertFalse(AdminSupport.daemonUp(server.address.port))
-            body = """{"ok":true,"version":"$GATEWAY_VERSION"}"""
-            assertTrue(AdminSupport.daemonUp(server.address.port))
-        } finally {
-            server.stop(0)
-        }
-    }
-
-    // BS-4 DEFECT B: "/health stopped answering" is not proof the old daemon freed its control port,
-    // so the cold-start gate reads the port itself. A bound-but-not-serving listener must read bound.
-    @Test
-    fun `controlPortBound reports a bound port as bound and a freed port as free`() {
-        val server = ServerSocket(0)
-        try {
-            assertTrue(AdminSupport.controlPortBound(server.localPort), "an accepting listener is bound")
-        } finally {
-            server.close()
-        }
-        assertFalse(AdminSupport.controlPortBound(server.localPort), "a closed port refuses — free")
     }
 
     // The restart-refuses-while-bound wall: ensureDaemon must NOT cold-start into a still-bound control

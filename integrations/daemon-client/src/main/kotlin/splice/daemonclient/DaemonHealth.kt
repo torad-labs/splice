@@ -1,31 +1,32 @@
 // NEW: HTTP /health + TCP bind probes for the CLI cold-start path.
 // Split from DaemonLaunch.kt so the launch composer is not billed as a
 // god object (concentration HIGH, 2026-08-19). JW-01 boot-log tokens
-// stay on DaemonLaunch.daemonLaunchArgv.
-package splice.app.cli.daemon
+// stay on DaemonLaunch.daemonLaunchArgv. In integrations/daemon-client since LAYOUT-01, beside the
+// DaemonProbe it reads, so a verb outside app can ask whether the daemon is up.
+package splice.daemonclient
 
-import splice.app.cli.doctor.HealthView
-import splice.app.daemon.DaemonProbe
+import splice.daemonclient.DaemonProbe.HealthView
 import splice.core.GATEWAY_VERSION
 import java.io.IOException
 import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Socket
 
-internal class DaemonHealth {
+/** Whether the local daemon is up (its versioned /health answers) and whether its port is still held. */
+public class DaemonHealth {
 
-    internal fun healthView(port: Int): HealthView? = DaemonProbe.healthView(port)
+    public fun healthView(port: Int): HealthView? = DaemonProbe.healthView(port)
 
     /** True only when the listener answers splice's versioned HTTP health contract with [expected] —
      *  this CLI's own version unless the caller just activated another (`splice upgrade`). */
-    internal fun daemonUp(port: Int, expected: String = GATEWAY_VERSION): Boolean =
+    public fun daemonUp(port: Int, expected: String = GATEWAY_VERSION): Boolean =
         healthView(port)?.version == expected
 
-    internal fun cliVersion(): String = GATEWAY_VERSION
+    public fun cliVersion(): String = GATEWAY_VERSION
 
     /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
      *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. */
-    internal fun controlPortBound(port: Int): Boolean =
+    public fun controlPortBound(port: Int): Boolean =
         try {
             Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), PROBE_TIMEOUT_MS) }
             true

@@ -14,12 +14,12 @@ import splice.app.cli.DoctorProbe
 import splice.app.cli.status.AccountPoolRead
 import splice.app.cli.status.AccountPoolText
 import splice.app.cli.status.JdkAccountPoolRead
-import splice.app.daemon.DaemonProbe
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.daemonclient.DaemonProbe
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path

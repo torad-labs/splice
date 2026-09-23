@@ -9,7 +9,7 @@ package splice.app.cli.upgrade
 
 import splice.app.cli.AdminSupport
 import splice.app.cli.daemon.RestartCommand
-import splice.app.daemon.DaemonProbe
+import splice.daemonclient.DaemonProbe
 import java.nio.file.Path
 
 private const val POLL_MS = 2_000L

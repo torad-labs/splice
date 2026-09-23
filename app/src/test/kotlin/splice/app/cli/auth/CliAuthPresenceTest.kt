@@ -13,11 +13,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.AdminSupport
 import splice.app.cli.daemon.RestartCommand
-import splice.app.cli.doctor.MgmtKeyRead
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
+import splice.daemonclient.MgmtKeyRead
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress

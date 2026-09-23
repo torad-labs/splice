@@ -8,9 +8,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.daemon.DaemonHealth
 import splice.app.cli.daemon.DaemonSpawn
 import splice.app.sources.LogFileSource
+import splice.daemonclient.DaemonHealth
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files

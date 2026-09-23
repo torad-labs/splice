@@ -9,9 +9,9 @@ import splice.app.cli.doctor.DaemonSnapshot
 import splice.app.cli.doctor.DoctorCheck
 import splice.app.cli.doctor.DoctorHeadAuth
 import splice.app.cli.doctor.FIX_RESTART
-import splice.app.cli.doctor.MgmtKeyRead
-import splice.app.daemon.DaemonProbe
 import splice.core.util.EnvReader
+import splice.daemonclient.DaemonProbe
+import splice.daemonclient.MgmtKeyRead
 
 internal class SplitBrainChecks {
 

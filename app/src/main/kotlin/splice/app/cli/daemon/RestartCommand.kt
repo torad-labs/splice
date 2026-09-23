@@ -8,13 +8,13 @@ import splice.app.cli.AdminSupport
 import splice.app.cli.doctor.DaemonSnapshot
 import splice.app.cli.doctor.DoctorCheck
 import splice.app.cli.doctor.DoctorHeadAuth
-import splice.app.cli.doctor.MgmtKeyRead
-import splice.app.daemon.DaemonProbe
 import splice.core.GATEWAY_VERSION
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.daemonclient.DaemonProbe
+import splice.daemonclient.MgmtKeyRead
 import splice.topology.TopologyLoader
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources

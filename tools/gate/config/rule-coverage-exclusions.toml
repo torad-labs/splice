@@ -727,6 +727,28 @@ widened to integrations/terminal, and kt-no-println, which ignored app/cli, now 
 
 [[exclusion]]
 rules = [
+  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-daemon-client"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The daemon client came from app/daemon/DaemonLock.kt (DaemonProbe), app/cli (ControlPlaneClient, and
+AdminSupport's control-port and management-key reads) and app/cli/daemon (DaemonHealth). Eight of these
+scopes never selected those files there (measured against each rule's files/ignores on the old paths):
+control-plane routes, route logging, exceptions as outcomes, client-home launching, outcome tags, quota
+selection, turn cleanup and streaming wire catches. The ninth, kt-no-runblocking-exported-bridge,
+selected the app/cli ones only because app/cli/** is the runBlocking ENTRY exemption; here they sit under
+kt-no-runblocking-in-daemon, which forbids runBlocking outright — the stricter wall. The rules that did
+select them (kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine)
+were widened to integrations/daemon-client, and kt-no-println, which ignored app/cli and app/daemon, now
+reaches them.
+"""
+
+[[exclusion]]
+rules = [
   "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]

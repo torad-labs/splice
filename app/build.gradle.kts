@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":integrations-codemode"))
     implementation(project(":integrations-oauth"))
     implementation(project(":integrations-terminal"))
+    implementation(project(":integrations-daemon-client"))
     implementation(project(":integrations-upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
     implementation(project(":integrations-dialects-openai-chat"))

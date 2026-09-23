@@ -236,6 +236,11 @@ describe('the selector order', () => {
     expect(sevenDayUsed(account({ windows: [window7d(null)] }))).toBe(0);
   });
 
+  test("the seven-day SLOT is any window past six hours, as the daemon files it: Grok's 30 days counts", () => {
+    const grok = account({ windows: [{ seconds: 5 * 3600, used_percent: 90, reset_epoch_seconds: null }, { seconds: 30 * 86400, used_percent: 55, reset_epoch_seconds: null }] });
+    expect(sevenDayUsed(grok)).toBe(55);
+  });
+
   test('a pool the daemon flagged nothing in has no next target, and says so with null', () => {
     expect(rules([account({ available: false }), account({ label: 'b' })])).toEqual([null, null]);
   });

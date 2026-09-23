@@ -11,7 +11,8 @@ import { fetchInstructions } from '../src/entities/compact-stats';
 import type { InstructionsWire } from '../src/entities/compact-stats';
 import { mergeInstructions } from '../src/entities/compact-stats/model/instructions';
 import { instructionsStore } from '../src/entities/compact-stats/model/store';
-import { InstructionsBay, charsText } from '../src/pages/compaction';
+import { InstructionsBay } from '../src/pages/compaction';
+import { charsText } from '../src/widgets/compaction-rule';
 
 const h = React.createElement;
 

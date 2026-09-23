@@ -5,7 +5,7 @@
 // plan is reported only when a provider sends one; exclusion, selection, the operator's pin and
 // the next target follow the REAL selector order (AccountPool.candidates). A head with one login
 // (no pool at all) still appears, read from its /api/auth view, with `single_login: true`.
-package splice.control.api.auth
+package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
@@ -13,33 +13,31 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountView
-import splice.control.ManagedHead
+import splice.accounts.AccountHead
 import splice.core.auth.AuthDescription
 import splice.core.topology.AuthKindRegistry
 
-internal class AccountsRoute(private val heads: Map<String, ManagedHead>) {
-    suspend fun accountsJson(): String {
+public class AccountsRoute(private val heads: Map<String, AccountHead>) {
+    public suspend fun accountsJson(): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
-        heads.values.forEach { managed -> fold(managed, joined) }
+        heads.values.forEach { head -> fold(head, joined) }
         return buildJsonObject {
             putJsonArray("accounts") { joined.values.forEach { row -> addJsonObject { write(this, row) } } }
         }.toString()
     }
 
-    private suspend fun fold(managed: ManagedHead, joined: MutableMap<String, JoinedAccount>) {
-        val description = managed.auth.describe()
+    private suspend fun fold(head: AccountHead, joined: MutableMap<String, JoinedAccount>) {
+        val description = head.auth.describe()
         // Api-key and client-forwarded heads (Claude on the client's own login) are a different
         // feature row (§4.5 "Key providers", "Claude logins") — this join is OAuth accounts only.
         if (!AuthKindRegistry.isOAuth(description.kind)) return
-        val pool = managed.accountPool
+        val pool = head.pool
         if (pool == null) {
-            foldSingleLogin(managed.head.key, description, joined)
+            foldSingleLogin(head.key, description, joined)
             return
         }
-        val authPaths = managed.accountAuth?.descriptions().orEmpty().mapValues { (_, d) -> d.fields["auth_path"] }
-        foldPooled(managed.head.key, description.kind, pool.view(null), authPaths, joined)
+        val authPaths = head.accountAuth?.descriptions().orEmpty().mapValues { (_, d) -> d.fields["auth_path"] }
+        foldPooled(head.key, description.kind, pool.view(null), authPaths, joined)
     }
 
     private fun foldSingleLogin(

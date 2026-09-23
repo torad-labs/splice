@@ -31,14 +31,18 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.accounts.edit.AccountEditRoutes
+import splice.accounts.pool.AccountsRoute
+import splice.accounts.pool.SwitchRoute
+import splice.accounts.signin.ConsoleAccountsSource
+import splice.accounts.signin.LoginRoutes
+import splice.accounts.status.AuthStatusRoutes
 import splice.client.mcp.McpAccessKey
 import splice.client.transcript.TranscriptReader
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.EventsRoute
 import splice.control.api.HeadResolver
-import splice.control.api.auth.AccountsRoute
-import splice.control.api.auth.AuthRoutes
 import splice.control.api.diagnostics.DoctorRoute
 import splice.control.api.diagnostics.McpRoutes
 import splice.control.api.diagnostics.ModelsRoute
@@ -192,9 +196,14 @@ public class ControlServer(
     private val perfPayloads = PerfPayloads(heads)
     private val economicsPayloads = EconomicsPayloads(heads)
     private val compactPayloads = CompactPayloads(heads)
-    private val authRoutes = AuthRoutes(heads, resolver, ports)
+    private val accountHeads = AccountHeadAdapter.adapt(heads)
+    private val accountResolver = AccountHeadAdapter.resolver(resolver)
+    private val authStatusRoutes = AuthStatusRoutes(accountHeads, accountResolver)
+    private val loginRoutes = LoginRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
+    private val switchRoute = SwitchRoute(accountResolver)
+    private val accountEditRoutes = AccountEditRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val claudeHeadRoutes = ClaudeHeadRoutes(heads)
-    private val accountsRoute = AccountsRoute(heads)
+    private val accountsRoute = AccountsRoute(accountHeads)
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val listHeads = ListHeads(HeadStatusListing(resolver::headStatuses))
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
@@ -329,14 +338,14 @@ public class ControlServer(
      *  parameter, so POST .../login wins over POST .../{action} regardless of registration order;
      *  pinned by a test rather than assumed. */
     private fun authAndAccountRoutes(route: Route) {
-        route.get("/api/auth") { guarded(call) { respond(call, authRoutes.authJson()) } }
+        route.get("/api/auth") { guarded(call) { respond(call, authStatusRoutes.authJson()) } }
         route.get("/api/accounts") { guarded(call) { respond(call, accountsRoute.accountsJson()) } }
-        route.post("/api/auth/{head}/login") { guarded(call) { authRoutes.startLogin(call) } }
-        route.get("/api/auth/{head}/login/{id}") { guarded(call) { authRoutes.pollLogin(call) } }
-        route.post("/api/auth/{head}/switch") { guarded(call) { authRoutes.switchAccount(call) } }
-        route.delete("/api/auth/{head}/accounts/{label}") { guarded(call) { authRoutes.removeAccount(call) } }
-        route.patch("/api/auth/{head}/accounts/{label}") { guarded(call) { authRoutes.relabelAccount(call) } }
-        route.post("/api/auth/{head}/{action}") { guarded(call) { authRoutes.authAction(call) } }
+        route.post("/api/auth/{head}/login") { guarded(call) { loginRoutes.startLogin(call) } }
+        route.get("/api/auth/{head}/login/{id}") { guarded(call) { loginRoutes.pollLogin(call) } }
+        route.post("/api/auth/{head}/switch") { guarded(call) { switchRoute.switchAccount(call) } }
+        route.delete("/api/auth/{head}/accounts/{label}") { guarded(call) { accountEditRoutes.removeAccount(call) } }
+        route.patch("/api/auth/{head}/accounts/{label}") { guarded(call) { accountEditRoutes.relabelAccount(call) } }
+        route.post("/api/auth/{head}/{action}") { guarded(call) { authStatusRoutes.authAction(call) } }
     }
 
     /** The console's routes, split out of [controlEngine] for the same reason that function was split

@@ -8,6 +8,9 @@ package splice.control
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
 
 private const val PAYLOAD = """{
     "model":{"id":"model","display_name":"Model"},

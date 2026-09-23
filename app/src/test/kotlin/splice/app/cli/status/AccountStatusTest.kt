@@ -7,10 +7,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountSwitchView
+import splice.accounts.pool.HeadAccountView
 import splice.app.cli.doctor.CheckStatus
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountSwitchView
-import splice.control.HeadAccountView
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider

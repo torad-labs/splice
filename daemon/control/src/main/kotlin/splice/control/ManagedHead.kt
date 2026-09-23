@@ -4,6 +4,8 @@
 // the concrete pieces. Config is one shared in-process service (no PATCH fanout — single JVM).
 package splice.control
 
+import splice.accounts.pool.HeadAccountAuthSource
+import splice.accounts.pool.HeadAccountPoolSource
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.model.ClientWindows

@@ -3,6 +3,7 @@
 // the control plane this serves; the discipline these nine share is stated below.
 package splice.control
 
+import splice.accounts.signin.ConsoleAccounts
 import splice.control.api.EventBus
 import splice.control.api.fleet.DaemonSupervised
 import splice.control.api.turns.PlaygroundProbe

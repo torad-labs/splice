@@ -28,7 +28,7 @@
       "params": 17,
       "subsystems": 5
     },
-    "daemon/control/src/main/kotlin/splice/control/HeadAccountPool.kt HeadAccountView": {
+    "features/accounts/src/main/kotlin/splice/accounts/pool/HeadAccountPool.kt HeadAccountView": {
       "params": 14,
       "subsystems": 0
     },
@@ -38,7 +38,7 @@
     },
     "daemon/control/src/main/kotlin/splice/control/ManagedHead.kt ManagedHead": {
       "params": 17,
-      "subsystems": 3
+      "subsystems": 4
     },
     "features/turns/src/main/kotlin/splice/head/HeadDeps.kt HeadSeams": {
       "params": 8,

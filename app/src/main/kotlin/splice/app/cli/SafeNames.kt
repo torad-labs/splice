@@ -14,8 +14,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.accounts.pool.HeadAccountPoolView
 import splice.app.cli.doctor.DoctorRedaction
-import splice.control.HeadAccountPoolView
 import splice.core.topology.Topology
 
 private val TOKEN = Regex("^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,63}$")

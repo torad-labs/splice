@@ -1,7 +1,8 @@
 // PORT-OF: ControlServer.kt (HeadResolver) @ a77531a — invariants unchanged: head lookup by the
 // name a route carries — the three name->head resolutions the control routes share. Widened
 // private -> internal: it now serves headAction, authAction, logsJson and launch across HeadRoutes,
-// AuthRoutes, LaunchRoutes and StatuslineRoute, not just members of ControlServer.
+// the accounts routes (through AccountHeadAdapter), LaunchRoutes and StatuslineRoute, not just members
+// of ControlServer.
 package splice.control.api
 
 import io.ktor.http.ContentType

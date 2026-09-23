@@ -4,7 +4,7 @@
 // DeviceLoginObserverTest and OAuthLoginObserverTest — running a real LoginCommand attempt here
 // would mean a real device/browser flow against a real provider, which is not a unit boundary.
 // What belongs here is LoginSessions' own contract: an unknown id answers null rather than
-// throwing, so GET .../login/{id} can turn it into a 404 by name (AuthRoutes.pollLogin) rather
+// throwing, so GET .../login/{id} can turn it into a 404 by name (LoginRoutes.pollLogin) rather
 // than a 500 from an unchecked map read.
 package splice.app.auth
 

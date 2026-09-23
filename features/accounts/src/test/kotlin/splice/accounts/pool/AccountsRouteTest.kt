@@ -3,7 +3,7 @@
 // around it: two heads sharing a credential path fold into one row with both head keys, an
 // api-key head contributes nothing (a different feature row), and a head with no pool at all still
 // appears, `single_login: true`, from its /api/auth view alone.
-package splice.control.api.auth
+package splice.accounts.pool
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -14,21 +14,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.control.CompactView
-import splice.control.HeadAccountAuthSource
-import splice.control.HeadAccountPoolSource
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountView
-import splice.control.HeadCompactSource
-import splice.control.HeadLogSource
-import splice.control.HeadUsageSource
-import splice.control.ManagedHead
-import splice.control.RateLimitView
-import splice.control.UsageView
+import splice.accounts.AccountHead
+import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
-import splice.core.head.Head
-import splice.core.head.HeadHealth
 
 class AccountsRouteTest {
     private val json = Json { ignoreUnknownKeys = true }
@@ -88,40 +77,24 @@ class AccountsRouteTest {
         assertEquals(listOf("solo"), row["heads"]!!.jsonArray.map { it.jsonPrimitive.content })
     }
 
-    private fun oauthHead(key: String, pool: HeadAccountPoolView, authPath: String): ManagedHead =
+    private fun oauthHead(key: String, pool: HeadAccountPoolView, authPath: String): AccountHead =
         base(key, "chatgpt-oauth").copy(
-            accountPool = HeadAccountPoolSource { pool },
+            pool = HeadAccountPoolSource { pool },
             accountAuth = HeadAccountAuthSource {
                 mapOf("backup" to AuthDescription(true, "chatgpt-oauth", mapOf("auth_path" to authPath)))
             },
         )
 
-    private fun oauthHeadNoPool(key: String): ManagedHead = base(key, "chatgpt-oauth")
+    private fun oauthHeadNoPool(key: String): AccountHead = base(key, "chatgpt-oauth")
 
-    private fun apiKeyHead(key: String): ManagedHead = base(key, "api-key")
+    private fun apiKeyHead(key: String): AccountHead = base(key, "api-key")
 
-    private fun base(key: String, authKind: String): ManagedHead = ManagedHead(
-        head = object : Head {
-            override val key: String = key
-            override val label: String = key
-            override val port: Int = 0
-            override suspend fun start() = Unit
-            override suspend fun stop() = Unit
-            override fun healthSnapshot(): HeadHealth = HeadHealth(true, true, port, "test")
-        },
+    private fun base(key: String, authKind: String): AccountHead = AccountHead(
+        key = key,
         auth = object : AuthProvider {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(true, authKind, emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        restart = HeadRestart {},
     )
 }

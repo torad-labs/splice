@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
 import splice.core.config.StatePaths
 import splice.topology.TopologyLoader
 import java.io.ByteArrayOutputStream
@@ -331,11 +333,11 @@ class DoctorReportTest {
         assertEquals(expected, detail)
     }
 
-    private fun prosePool() = splice.control.HeadAccountPoolView(
+    private fun prosePool() = HeadAccountPoolView(
         selectedLabel = "ops team PLANTEXT",
         accounts = listOf(
-            splice.control.HeadAccountView("primary", true, false, true, "plus", null, null, null, null),
-            splice.control.HeadAccountView("ops team PLANTEXT", false, true, true, "plus", null, null, null, null),
+            HeadAccountView("primary", true, false, true, "plus", null, null, null, null),
+            HeadAccountView("ops team PLANTEXT", false, true, true, "plus", null, null, null, null),
         ),
         lastSwitch = null,
     )

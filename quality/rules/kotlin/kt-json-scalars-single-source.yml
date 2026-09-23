@@ -44,6 +44,7 @@ files:
   - app/src/main/**/*.kt
   - features/heads/src/main/**/*.kt
   - integrations/topology/src/main/**/*.kt
+  - features/accounts/src/main/**/*.kt
 rule:
   any:
     - pattern: $X?.jsonPrimitive?.content

@@ -60,11 +60,6 @@ import splice.control.api.turns.CompactionInstructionsRoute
 import splice.control.api.turns.PlaygroundRoute
 import splice.control.api.turns.PlaygroundSource
 import splice.control.api.turns.ResumeHookRoute
-import splice.control.api.usage.EconomicsPayloads
-import splice.control.api.usage.PerfPayloads
-import splice.control.api.usage.PerfRoutes
-import splice.control.api.usage.StatuslineRoute
-import splice.control.api.usage.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -85,6 +80,11 @@ import splice.usage.alerts.AlertRoutes
 import splice.usage.alerts.AlertSource
 import splice.usage.budgets.BudgetRoutes
 import splice.usage.budgets.BudgetSource
+import splice.usage.economics.EconomicsPayloads
+import splice.usage.perf.PerfPayloads
+import splice.usage.perf.PerfRoutes
+import splice.usage.quota.UsagePayloads
+import splice.usage.statusline.StatuslineRoute
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
 private const val STOP_GRACE_MS = 100L
@@ -186,15 +186,17 @@ public class ControlServer(
 
     private val daemonRoutes = DaemonRoutes()
     private val modelsRoute = ModelsRoute(heads)
-    private val perfRoutes = PerfRoutes(resolver)
+    private val usageHeads = UsageHeadAdapter.heads(heads)
+    private val usageLookup = UsageHeadAdapter.lookup(resolver)
+    private val perfRoutes = PerfRoutes(usageLookup)
     private val doctorRoute = DoctorRoute()
     private val upgradeRoute = UpgradeRoute()
     private val jsonBody = JsonBody()
     private val audit = ControlAudit(log)
     private val configRoutes = ConfigRoutes(config, jsonBody, payloads)
-    private val usagePayloads = UsagePayloads(heads, config)
-    private val perfPayloads = PerfPayloads(heads)
-    private val economicsPayloads = EconomicsPayloads(heads)
+    private val usagePayloads = UsagePayloads(usageHeads, config)
+    private val perfPayloads = PerfPayloads(usageHeads)
+    private val economicsPayloads = EconomicsPayloads(usageHeads)
     private val compactPayloads = CompactPayloads(heads)
     private val accountHeads = AccountHeadAdapter.adapt(heads)
     private val accountResolver = AccountHeadAdapter.resolver(resolver)
@@ -207,7 +209,7 @@ public class ControlServer(
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val listHeads = ListHeads(HeadStatusListing(resolver::headStatuses))
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
-    private val statuslineRoute = StatuslineRoute(resolver, config, clientVersions)
+    private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
 
     // V4-169: the SessionStart resume hook's receiving end — mgmt-guarded like the statusline, and
     // reachable only from loopback, because the daemon binds there.

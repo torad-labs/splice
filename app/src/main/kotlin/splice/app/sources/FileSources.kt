@@ -3,15 +3,7 @@
 package splice.app.sources
 
 import splice.control.CompactView
-import splice.control.EconomicsRow
 import splice.control.HeadCompactSource
-import splice.control.HeadEconomicsSource
-import splice.control.HeadPerfSkipSource
-import splice.control.HeadPerfSource
-import splice.control.HeadSessionPerfSource
-import splice.control.HeadUsageSource
-import splice.control.RateLimitView
-import splice.control.UsageView
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
@@ -20,6 +12,14 @@ import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
+import splice.usage.economics.EconomicsRow
+import splice.usage.economics.HeadEconomicsSource
+import splice.usage.perf.HeadPerfSkipSource
+import splice.usage.perf.HeadPerfSource
+import splice.usage.perf.HeadSessionPerfSource
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 
 public class UsageStoreSource(
     private val store: UsageStore,

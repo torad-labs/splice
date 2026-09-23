@@ -1,6 +1,6 @@
 // PORT-OF: ManagedHead.kt — the head's persisted usage and rate-limit read (file truth), split out so
 // the record that composes a head names each capability's source from its own file.
-package splice.control
+package splice.usage.quota
 
 import splice.core.usage.QuotaView
 

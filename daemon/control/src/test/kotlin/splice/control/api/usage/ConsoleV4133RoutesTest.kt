@@ -44,10 +44,7 @@ import splice.control.CompactView
 import splice.control.ControlServer
 import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
-import splice.control.HeadUsageSource
 import splice.control.ManagedHead
-import splice.control.RateLimitView
-import splice.control.UsageView
 import splice.control.api.turns.PlaygroundFailure
 import splice.control.api.turns.PlaygroundProbe
 import splice.control.api.turns.PlaygroundResult
@@ -68,6 +65,9 @@ import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.usage.alerts.AlertStore
 import splice.usage.budgets.BudgetStore
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 import java.net.ServerSocket
 import java.nio.file.Files
 import io.ktor.server.routing.post as serverPost

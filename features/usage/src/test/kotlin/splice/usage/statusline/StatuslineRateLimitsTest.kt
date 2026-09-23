@@ -3,7 +3,7 @@
 // gated on `rate_limits_available` (false for API-key/Bedrock/Vertex sessions, which must never
 // gate a real window behind a stale default). Direct tests of [StatuslineRateLimits] and
 // [StatuslineRenderer.rateLimits], one level below the full statusline render.
-package splice.control
+package splice.usage.statusline
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

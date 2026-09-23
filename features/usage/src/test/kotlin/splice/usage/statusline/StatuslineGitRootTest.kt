@@ -3,7 +3,7 @@
 // lexical startsWith() check let a symlink sitting UNDER a trusted root (e.g. /tmp/link) point git at
 // a target OUTSIDE the roots. safeGitCwd now resolves real paths on both sides, so the escape is
 // rejected while a genuinely-contained symlink still resolves (and git runs in the resolved path).
-package splice.control
+package splice.usage.statusline
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

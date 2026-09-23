@@ -71,7 +71,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // sign-in, refresh, the account pool and their console routes; the pool is a read model every
     // operator surface renders.
     ":features-accounts" to setOf(":core", ":integrations-http"),
-    ":features-usage" to setOf(":core", ":integrations-http"),
+    ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
     ":daemon-control" to setOf(

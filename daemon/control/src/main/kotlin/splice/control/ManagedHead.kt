@@ -10,6 +10,10 @@ import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
+import splice.usage.economics.HeadEconomicsSource
+import splice.usage.perf.HeadPerfSource
+import splice.usage.perf.PerfRowsSource
+import splice.usage.quota.HeadUsageSource
 
 // The per-capability sources this record composes live beside it, one file each: HeadUsageSource.kt,
 // HeadCompactSource.kt, HeadEconomicsSource.kt, HeadLogSource.kt, HeadPerfSource.kt, HeadAccountPool.kt.

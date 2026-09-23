@@ -8,7 +8,7 @@
 // injected clock keys observedAt per thread so "earlier" is a fixed fact, not a scheduling accident.
 // RED on an unconditional publish (the early-but-late writer overwrites the fresher branch and
 // returns its own stale read).
-package splice.control
+package splice.usage.statusline
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue

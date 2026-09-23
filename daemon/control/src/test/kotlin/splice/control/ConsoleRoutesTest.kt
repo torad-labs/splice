@@ -46,6 +46,12 @@ import splice.core.head.HeadHealth
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.HeadModel
+import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.PerfRowsWindow
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 import java.net.ServerSocket
 import java.nio.file.Files
 

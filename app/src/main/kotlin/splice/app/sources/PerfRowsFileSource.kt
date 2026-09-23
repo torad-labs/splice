@@ -15,13 +15,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
-import splice.control.PerfRow
-import splice.control.PerfRowsSource
-import splice.control.PerfRowsWindow
 import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.PerfRowsWindow
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction

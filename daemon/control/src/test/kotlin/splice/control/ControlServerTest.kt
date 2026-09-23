@@ -34,6 +34,13 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.usage.perf.HeadPerfSource
+import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.PerfRowsWindow
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
@@ -84,7 +91,7 @@ class ControlServerTest {
         PerfRowsWindow(perfRows.filter { it.ts >= since }, oldestHeldTs = perfNow - 9 * DAY_MS)
     }
 
-    private val fakePerf = splice.control.HeadPerfSource { n ->
+    private val fakePerf = HeadPerfSource { n ->
         listOf(
             mapOf("ts" to 1L, "headers" to 100L, "total" to 400L),
             mapOf("ts" to 2L, "headers" to 300L, "total" to 800L),

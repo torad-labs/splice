@@ -2,9 +2,7 @@
 // StatuslineRoute.kt, which carried it as two of its five declared types. The route grew into
 // concentration band HIGH (own growth, V4-37/V4-45 session cost and perf skips); the cache is a
 // self-contained unit with its own lock and no reference back to the route, so it stands alone.
-package splice.control.api
-
-import splice.control.StatuslineRenderer
+package splice.usage.statusline
 
 /** Builds the renderer for a head whose cached one no longer matches — the miss branch of
  *  [RendererCache.get], named for that role rather than its `() -> StatuslineRenderer` shape. */

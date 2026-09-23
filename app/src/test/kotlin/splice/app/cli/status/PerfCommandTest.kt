@@ -10,11 +10,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.sources.PerfRowsFileSource
-import splice.control.api.usage.PerfSummary
-import splice.control.api.usage.PerfWindow
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
+import splice.usage.perf.PerfSummary
+import splice.usage.perf.PerfWindow
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files

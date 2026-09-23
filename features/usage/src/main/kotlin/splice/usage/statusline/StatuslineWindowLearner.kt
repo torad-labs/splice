@@ -3,7 +3,7 @@
 // THIS process — for an env-governed id that is the launch env, the number the head must scale
 // this session's counts against (ClientWindows). A "[1m]" row or a "claude-" id is sized from the
 // id (cli 2.1.257 `PL()`), so those posts say nothing about the env and record nothing.
-package splice.control
+package splice.usage.statusline
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

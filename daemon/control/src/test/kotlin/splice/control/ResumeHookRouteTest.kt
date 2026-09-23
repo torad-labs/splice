@@ -20,6 +20,9 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
 

@@ -2,7 +2,7 @@
 // the model, session spend, 5h and 7d bars. Drawn from Claude Code's own rate_limits when the
 // blob carries them, else from the head's tracked quota; the reset time appears only once a bar
 // is worth acting on.
-package splice.control
+package splice.usage.statusline
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -12,6 +12,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
+import splice.usage.perf.HeadPerfSkipSource
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 
 class StatuslineBarsTest {
 

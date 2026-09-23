@@ -45,6 +45,13 @@
 # The allowlist is a PATH regex, so it is anchored per route and cannot be widened by accident; an
 # entry admits exactly the path it spells.
 #
+# WIDENED 2026-09-23 (LAYOUT-01): a registration with a RECEIVER — `route.get("/api/x") { … }`, the
+# plain-function-taking-the-route form kt-no-extension-functions requires — was INVISIBLE. Its
+# call_expression's text starts `route.get(`, so the `^(get|…)\(` regex never matched: the wall read
+# 25 of ControlServer's 68 registrations, and a bare `route.get("/api/x") { respond(call) }` on a
+# scratch tree reported nothing while its receiverless twin was red. The regex, the patterns and the
+# allowlist all admit one optional `name.` receiver now, and the wall reads all 68 (0 unguarded).
+#
 # WHAT THIS RULE DOES NOT CHECK. `guarded(` appearing anywhere in the handler satisfies it — the
 # rule cannot prove the guard WRAPS the privileged work rather than sitting beside it. The remaining
 # hazard is a handler that calls `guarded(call) { }` and then does the real work outside it. That is
@@ -53,7 +60,7 @@
 id: kt-control-route-guarded
 language: kotlin
 severity: error
-message: "Unauthenticated control-plane route: wrap the handler in `guarded(call) { … }` (20 of the 25 routes already do). A route that must stay open needs a dated entry in kt-control-route-guarded's allowlist, not a trailing comment."
+message: "Unauthenticated control-plane route: wrap the handler in `guarded(call) { … }` (every other control route does). A route that must stay open needs a dated entry in kt-control-route-guarded's allowlist, not a trailing comment."
 note: >
   The control port reads every head's config, hands out launch specs, streams logs and can stop the
   daemon; the management key is its only defence and it is applied per route. A bare registration is
@@ -87,7 +94,7 @@ rule:
     # file (measured: both forms report the same 25 today, so the stricter reading costs nothing
     # and the looser one has a blind spot).
     - kind: call_expression
-      regex: '^(get|post|put|patch|delete|head|options|route)\(\s*"/'
+      regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*"/'
     - any:
         - pattern: get($P) { $$$B }
         - pattern: post($P) { $$$B }
@@ -97,10 +104,18 @@ rule:
         - pattern: head($P) { $$$B }
         - pattern: options($P) { $$$B }
         - pattern: route($P) { $$$B }
+        - pattern: $R.get($P) { $$$B }
+        - pattern: $R.post($P) { $$$B }
+        - pattern: $R.put($P) { $$$B }
+        - pattern: $R.patch($P) { $$$B }
+        - pattern: $R.delete($P) { $$$B }
+        - pattern: $R.head($P) { $$$B }
+        - pattern: $R.options($P) { $$$B }
+        - pattern: $R.route($P) { $$$B }
     - not:
         has:
           stopBy: end
           regex: '\bguarded\s*\('
     # ALLOWLIST — see the dated entries in this rule's header. One anchored alternative per route.
     - not:
-        regex: '^(get|post|put|patch|delete|head|options|route)\(\s*"(/health|/|/dashboard)"'
+        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*"(/health|/|/dashboard)"'

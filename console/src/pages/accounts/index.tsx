@@ -77,7 +77,7 @@ function HeadBay({ label, rows, openKey, onOpen }: {
   onOpen: (key: string) => void;
 }) {
   return (
-    <Bay label={label} count={rows.length}>
+    <Bay label={label} count={rows.length} compact>
       {rows.map((row) => (
         <HeadAuthStrip
           key={row.head}
@@ -106,7 +106,7 @@ function ClaudeBay({ rows, openKey, onOpen }: {
   onOpen: (key: string) => void;
 }) {
   return (
-    <Bay label={S.claudeBay} count={rows.length}>
+    <Bay label={S.claudeBay} count={rows.length} compact>
       {rows.map((row) => (
         <HeadAuthStrip
           key={row.head}
@@ -167,8 +167,8 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
       className="myx-accounts"
       {...(sample === undefined ? {} : { 'data-sample': sample })}
     >
-      <header className="myx-accounts-head">
-        <h1 className="myx-accounts-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
@@ -196,6 +196,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
                 key={group.key === '' ? S.bay : group.key}
                 label={group.key === '' ? S.bay : group.key}
                 count={group.accounts.length}
+                compact
                 actions={<span className="myx-accounts-order">{SELECTOR_ORDER_TEXT}</span>}
               >
                 {group.accounts.map((account) => {

@@ -7,19 +7,7 @@
   gap: var(--space-4);
 }
 
-.myx-doc-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-doc-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-6);
-  color: var(--ink-strong);
-}
 
 .myx-doc-body {
   display: grid;

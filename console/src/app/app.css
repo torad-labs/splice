@@ -35,6 +35,13 @@ body {
   color: var(--ink);
   font-family: var(--font-label);
   font-size: var(--text-3);
+  /* THE ROOM'S LETTERING IS CONDENSED (2026-09-23, console design pass). The comp's type is a narrow
+     instrument face, and Archivo's width axis (62-125, declared in shared/fonts.css) reaches toward
+     it; only the team board and the rail used the axis, so every other page set Archivo at full
+     width and read as a default sans, and its model and dialect ids were cut off at the cell edge.
+     80 is as narrow as the 12px labels stay legible; the board and the rail set their own. The code
+     face declares no width range, so this leaves it untouched. */
+  font-stretch: 80%;
   line-height: 1.55;
 }
 
@@ -85,35 +92,11 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: minmax(var(--rail-min), var(--rail-w)) 1fr;
   min-height: 0;
-  /* ---- THE RACK RAILS (M1-53, law 30) ----------------------------------------
-     `--plate-line` is defined in BOTH theme blocks and had exactly ONE reader in the whole tree
-     (ui.css, inside a single box-shadow) against a comp carrying 5.8 percent of ruled ink across
-     52 rule-crossed scanlines. One hairline on one element cannot make that.
-     LAW 30 IS THE DISTINCTION THAT MAKES THIS DRAWABLE AT ALL, and it was written tonight after
-     two rulings read as contradicting each other:
-       SLOT RIBS, ~31-32px pitch, INSIDE a bay's floor, BOUNDED by the bay's uprights -- M1-38/N-5
-         governs, and ours ran full width and were wrong.
-       RACK RAILS, ~62px pitch, CROSSING the frame, running through the rail as well as the bays,
-         with the rail's tabs and the bay plates SITTING ON THEM -- this rule governs, and they
-         are supposed to cross.
-     A rib bounded is correct and a rail bounded is the defect; a rail crossing is correct and a
-     rib crossing is the defect. The two populations are one object apart in the same frame and
-     nothing before tonight told a reader which was which.
-     MEASURED, comp, by scanning the rail column (x 20..120 step 20) for rows brighter than their
-     neighbours three rows either side: rails at y 62, 124, 186, 309, 372, 435, 498, 561, 686,
-     812, 959, 1014 -- a 62 to 63px pitch where a tab is not covering one, doubling to 124-126
-     where one is, at mean L 40-64. That pitch IS the rail's own tab pitch (rail.css spreads 13
-     tabs across 80.76 percent of the column), so the rails are keyed to the same measure the tabs
-     are and cannot drift apart from them.
-     Drawn as a background and NOT as borders: it crosses every grid line including the rail, it
-     must not move a single box, and a background is the one layer that can neither push nor be
-     pushed. background-SIZE carries the pitch rather than a percentage gradient stop, because a
-     percentage stop silently redefines a repeating gradient's period as the element's size (the
-     defect M1-17 shipped) whereas a percentage background-size resolving against the element's
-     height is exactly what a rail keyed to the tab pitch means. */
-  background-image: linear-gradient(to bottom, var(--plate-line) 0 var(--hair), transparent var(--hair));
-  background-size: 100% calc(80.76% / 12);
-  background-repeat: repeat-y;
+  /* THE RACK RAILS ARE GONE FROM THE PAGE (2026-09-23, console design pass). A hairline every
+     sixty pixels ran across the whole frame behind the pages, through page heads, empty floor and
+     the doctor's report alike, so every page read as ruled notebook paper. The comp draws its
+     horizontal members inside the bays (their slot ribs, ui.css) and holds its rail tabs in slots
+     (rail.css); nothing crosses the open room. */
 }
 
 .myx-console-page {
@@ -233,15 +216,12 @@ textarea:focus-visible {
    The rail becomes a strip of addresses along the BOTTOM of the screen, where a thumb is, and the
    page takes the whole width between the rule and that strip. The rule's own height is its
    content's here (rule.css stacks its cells), so the first track is auto rather than the type
-   multiple the desktop band is.
-   The rack rails (the body's background above) are keyed to the vertical rail's tab pitch, which
-   no longer exists: a horizontal strip has no pitch to key them to, so they are not drawn. */
+   multiple the desktop band is. */
 @media (max-width: 720px) {
   .myx-console { grid-template-rows: auto minmax(0, 1fr); }
   .myx-console-body {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
-    background-image: none;
   }
   .myx-console-body > .myx-rail { order: 2; }
   .myx-console-page { padding: var(--space-3); }

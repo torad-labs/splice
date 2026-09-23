@@ -185,8 +185,8 @@ export function SettingsPage() {
       className="myx-settings"
       {...(import.meta.env.DEV && sample !== null ? { 'data-sample': sample.name } : {})}
     >
-      <header className="myx-settings-head">
-        <h1 className="myx-settings-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {sample === null ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>

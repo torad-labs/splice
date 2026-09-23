@@ -63,7 +63,7 @@ class HeadServerFoldTest {
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }
     }
-    private val port = freshPort()
+    private val port: Int get() = head.port
     private lateinit var head: HeadServer
     private lateinit var tmp: java.nio.file.Path
 
@@ -99,7 +99,7 @@ class HeadServerFoldTest {
         )
         head = HeadServer(
             provider = provider,
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
@@ -210,7 +210,7 @@ class HeadServerFoldTest {
      *  CancellationSeal branches that write zero bytes — clientGone → abandon, emitError IOException
      *  → abandon, and already-sealed → nothing — are indistinguishable from the wire alone, and a CI
      *  failure with log = {} costs a whole diagnostic round trip to tell them apart (2026-09-06). */
-    private fun tightCapHead(gate: InflightGate, capPort: Int, log: (String) -> Unit = {}): HeadServer = HeadServer(
+    private fun tightCapHead(gate: InflightGate, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -227,7 +227,7 @@ class HeadServerFoldTest {
             configEffort = "high",
             configSummary = "detailed",
         ),
-        listenPort = capPort,
+        listenPort = 0,
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 20_000, maxRetries = 1),
@@ -239,7 +239,7 @@ class HeadServerFoldTest {
     /** DR-7's acceptance rig: a SHORT streamIdle (1s) with generous firstByte and totalCap, so the
      *  only thing that can fire is the mid-stream idle watchdog. The fold head above cannot express
      *  this — its 3s idle is longer than the stall is useful for. */
-    private fun stallHead(stallPort: Int): HeadServer = HeadServer(
+    private fun stallHead(): HeadServer = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -257,7 +257,7 @@ class HeadServerFoldTest {
             configSummary = "detailed",
             foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
         ),
-        listenPort = stallPort,
+        listenPort = 0,
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 60_000, maxRetries = 2),
@@ -276,9 +276,9 @@ class HeadServerFoldTest {
     // survive: it proved the controller would continue if asked, while nothing ever asked it.
     @Test
     fun `a round stalled mid-reasoning salvages its partial and continues - DR-7`() = runTest {
-        val stallPort = freshPort()
-        val stallServer = stallHead(stallPort)
+        val stallServer = stallHead()
         stallServer.start()
+        val stallPort = stallServer.port
         awaitListening(stallPort)
         try {
             val before = mock.upstreamBodies.size
@@ -319,12 +319,12 @@ class HeadServerFoldTest {
         // whole-turn elapsed mid-stream, so that case was green BEFORE the fix; this one is the
         // honest red→green.
         val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 0 })
-        val capPort = freshPort()
         // Diagnostics, not a fix: this does not make the reap more likely to win, it makes a loss
         // legible. The head's own lines name which ending fired (error:cancelled vs client_abort).
         val headLog = java.util.Collections.synchronizedList(mutableListOf<String>())
-        val capHead = tightCapHead(gate, capPort, log = { headLog.add(it.trim()) })
+        val capHead = tightCapHead(gate, log = { headLog.add(it.trim()) })
         capHead.start()
+        val capPort = capHead.port
         awaitListening(capPort)
         try {
             val t0 = System.currentTimeMillis()

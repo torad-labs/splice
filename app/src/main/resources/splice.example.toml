@@ -828,7 +828,7 @@ command = "claude-splice"
 # activityRetentionDays = 90                                # days; message edges and activity labels kept, whole days
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
-# perfArchiveRetentionDays = 90                              # days; archived perf generations kept, once archiveDir is set
+# perfArchiveRetentionDays = 90                              # days; retired perf generations kept in <state>/perf-archive; 0 = off
 
 # ── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────────
 # Precedence for every name below is env > TOML > default: an environment variable beats the TOML

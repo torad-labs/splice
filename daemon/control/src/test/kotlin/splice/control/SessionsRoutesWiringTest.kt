@@ -33,7 +33,6 @@ import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRegistry
-import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -61,9 +60,8 @@ class SessionsRoutesWiringTest {
         }
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val port = ServerSocket(0).use { it.localPort }
         val control = ControlServer(
-            port = port,
+            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -77,7 +75,8 @@ class SessionsRoutesWiringTest {
             ),
         )
         control.ports.activity = stores
-        control.start()
+        runBlocking { control.start() }
+        val port = control.listeningPort
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
             runBlocking {

@@ -4,6 +4,13 @@
 // concurrent SSE turns off Netty's default queue, the response-write stall cap, and the
 // once-per-start tcp_nodelay verification log. Split out (HD-24): this is the server shell half of
 // the old file, and the only part of the head that knows Netty exists.
+//
+// The BOUND port is read back from Netty after every start (2026-09-23). A listenPort of 0 binds
+// an OS-assigned port, and a caller that wants one must learn it from the listener that holds it:
+// the old test idiom leased a port with ServerSocket(0), closed it, and handed the number here to
+// bind later, and anything that took the port in between failed the bind (HeadServerLoadTest,
+// CI run 35881955038: BindException in @BeforeAll). A configured non-zero port binds exactly as
+// before and reads back as itself.
 package splice.head
 
 import io.ktor.http.ContentType
@@ -73,9 +80,17 @@ internal class HeadEngine(
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
 
+    /** What the connector actually bound in the current [start]; null while stopped. */
+    @Volatile
+    private var boundPort: Int? = null
+
     val isRunning: Boolean get() = server != null
 
-    fun start() {
+    /** The port a client reaches this head on: the one the connector BOUND while running — the
+     *  OS-assigned one when [listenPort] is 0 — and the configured [listenPort] otherwise. */
+    val port: Int get() = boundPort ?: listenPort
+
+    suspend fun start() {
         // G26: local (not a class field) so a control-plane restart (POST /api/heads/:head/restart)
         // re-arms verification instead of going permanently silent after the first restart.
         val nodelayLogged = AtomicBoolean(false)
@@ -94,7 +109,7 @@ internal class HeadEngine(
                     }
                     routing {
                         get("/health") {
-                            call.respondText(diagnostics.healthJson(), ContentType.Application.Json)
+                            call.respondText(diagnostics.healthJson(this@HeadEngine.port), ContentType.Application.Json)
                         }
                         get("/v1/models") {
                             if (clientAuth.authorize(call)) {
@@ -135,12 +150,17 @@ internal class HeadEngine(
             }
         }
         engine.start(wait = false)
+        // Netty's start binds with bind(...).sync() and completes the resolved connectors before it
+        // returns (read from the 3.5.2 bytecode), so this suspend read never actually waits. There
+        // is exactly one connector, declared above.
+        boundPort = engine.engine.resolvedConnectors().single().port
         server = engine
     }
 
     fun stop() {
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
+        boundPort = null
     }
 
     /** V4-173: the operator's view of what this head sent upstream. Management key only

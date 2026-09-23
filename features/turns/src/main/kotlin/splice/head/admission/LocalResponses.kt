@@ -1,7 +1,7 @@
 // NEW: the two response shapes the proxy serves WITHOUT an upstream turn (2026-09-05): the activity
 // label (ActivityLabel — composed here) and a detached compaction's recorded answer (CompactionReplay
 // — replayed here). Both hold the admission slot for their own duration only, ride the same quota
-// headers and usage payload a driven turn does, and write through Ktor exactly as TurnStreamer does,
+// headers and usage payload a driven turn does, and write through SseResponse exactly as TurnStreamer does,
 // so Claude Code cannot tell them from a model's answer — which is the point.
 package splice.head.admission
 
@@ -9,8 +9,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
+import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
-import io.ktor.server.response.respondTextWriter
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.head.HeadDeps
@@ -20,6 +20,7 @@ import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
 import splice.head.wire.SseEmitterFactory
+import splice.head.wire.SseResponse
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
 import splice.upstream.Provider
@@ -41,17 +42,18 @@ internal class LocalResponses(
         )
         quotaHeaders(call, local.sessionId)
         if (local.stream) {
-            call.respondTextWriter(ContentType.Text.EventStream) {
+            val stream = SseResponse { out ->
                 val emitter = emitters.create(
                     write = { frame ->
-                        write(frame)
-                        flush()
+                        out.write(frame)
+                        out.flush()
                     },
                     model = local.model,
                     usagePayload = usage,
                 )
                 emitText(emitter, local.text)
             }
+            call.respond(stream)
         } else {
             val terminal = CollectingTerminal(local.model, usage)
             emitText(terminal, local.text)
@@ -73,19 +75,20 @@ internal class LocalResponses(
         quotaHeaders(call, replayed.sessionId)
         var frames = 0
         var whole = false
-        call.respondTextWriter(ContentType.Text.EventStream) {
+        val stream = SseResponse { out ->
             whole = replayed.recording.follow { frame ->
-                write(frame)
-                flush()
+                out.write(frame)
+                out.flush()
                 frames += 1
             }
             if (!whole) {
                 sealFollower(replayed) { frame ->
-                    write(frame)
-                    flush()
+                    out.write(frame)
+                    out.flush()
                 }
             }
         }
+        call.respond(stream)
         replay.consumed(replayed.key)
         val who = replayed.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         deps.log(

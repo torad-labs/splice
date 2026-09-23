@@ -8,11 +8,12 @@
 // V4-133, FEATURES.md §6 ("a perf retention design belongs in the same change"): JsonlSink's
 // 64 MB one-generation rotate keeps exactly one rolled `.1` and DISCARDS the generation before it
 // — `claudex-perf.jsonl.1` was already 67 MB of history one rotate away from gone on the operator's
-// own machine. [archiveDir] is OPT-IN (null = today's exact behaviour, the NEVER-BELOW-STATUS-QUO
-// default) and, when set, copies each about-to-be-discarded `.1` into it before JsonlSink
-// overwrites it, timestamped so two rotates in one process never collide, and sweeps archived files
-// past [archiveRetentionDays]. Team and project tracking then reads a directory of whole rolled
-// generations instead of one that is always about to lose its oldest.
+// own machine. [archiveDir] (null = the one-generation rotate) is passed by production
+// (ManagedHeadFactory, unless perfArchiveRetentionDays is 0) and, when set, each about-to-be-discarded
+// `.1` is copied into it before JsonlSink overwrites it, named by PerfArchiveName so two rotates in
+// one process never collide, and archived files past [archiveRetentionDays] are swept. Team and
+// project tracking then reads a directory of whole rolled generations instead of one that is always
+// about to lose its oldest.
 package splice.head.perf
 
 import kotlinx.serialization.json.Json
@@ -23,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.config.Knob
+import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -35,9 +37,6 @@ import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
 /** The string facts a perf row carries beside the numeric snapshot. */
 public data class PerfRowMeta(
@@ -65,10 +64,6 @@ private const val DEFAULT_TAIL = 200
 // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
 private const val READ_TAIL_BYTES = 256 * 1024
 
-// why: one rotate is rare (64 MB of turns) and per-second is unique enough that two rotates of the
-// same file in one process cannot collide on the archived name.
-private val ARCHIVE_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
-
 // why: archiveRetentionDays is a day count; the sweep compares epoch millis against a millis window.
 private const val DAY_MS = 86_400_000L
 
@@ -86,6 +81,8 @@ public class PerfStats(
      *  therefore the archive hook) without writing 64 MB of turns. */
     private val maxBytes: Long = JsonlSink.DEFAULT_MAX_BYTES,
 ) {
+    private val archiveName = PerfArchiveName(file.fileName.toString())
+
     private val archive: RotationArchive =
         if (archiveDir == null) JsonlSink.NO_ARCHIVE else RotationArchive { rolled -> archiveRolled(rolled) }
 
@@ -228,8 +225,7 @@ public class PerfStats(
     private fun archiveRolled(rolled: Path) {
         val dir = archiveDir ?: return
         Files.createDirectories(dir)
-        val stamp = ARCHIVE_STAMP.format(Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC))
-        val target = dir.resolve("${file.fileName}-$stamp")
+        val target = dir.resolve(archiveName.of(clock()))
         Files.copy(rolled, target, StandardCopyOption.REPLACE_EXISTING)
         sweepArchive(dir)
     }
@@ -240,7 +236,7 @@ public class PerfStats(
     private fun sweepArchive(dir: Path) {
         val oldest = clock() - archiveRetentionDays.coerceAtLeast(1) * DAY_MS
         Files.newDirectoryStream(dir).use { entries ->
-            entries.filter { entry -> entry.fileName.toString().startsWith("${file.fileName}-") }
+            entries.filter { entry -> archiveName.rotatedAt(entry.fileName.toString()) != null }
                 .forEach { entry ->
                     if (Files.getLastModifiedTime(entry).toMillis() < oldest) Files.deleteIfExists(entry)
                 }

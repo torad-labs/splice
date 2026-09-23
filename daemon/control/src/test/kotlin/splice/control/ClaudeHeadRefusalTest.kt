@@ -29,14 +29,13 @@ import org.junit.jupiter.api.TestInstance
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import java.net.ServerSocket
 import java.nio.file.Files
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ClaudeHeadRefusalTest {
 
     private val client = HttpClient(CIO)
-    private val port = ServerSocket(0).use { it.localPort }
+    private val port: Int get() = control.listeningPort
     private lateinit var key: String
     private lateinit var control: ControlServer
 
@@ -49,7 +48,7 @@ class ClaudeHeadRefusalTest {
         // NO heads: this is the state a wizard reaches when `splice add claude` refused and the
         // lane answer was still `wrap` — the case the wizard must report rather than retry.
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,

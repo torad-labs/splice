@@ -5,8 +5,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.perf.PerfArchiveName
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 
 class PerfRowsFileSourceTest {
 
@@ -45,6 +47,51 @@ class PerfRowsFileSourceTest {
         assertEquals(emptyList<Long>(), absent.rows.map { it.ts })
         assertNull(absent.oldestHeldTs)
         assertNull(absent.readError, "absence is quiet")
+    }
+
+    // The archive (V4-133, wired 2026-09-23): retired generations are read first, oldest first, and one
+    // that ended a full second before the cutoff is never opened (it is unreadable here, so opening it
+    // would be a read error) while its rotation second still counts as retention evidence.
+    @Test
+    fun `archived generations are read oldest first, and one older than the window is not opened`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("head-perf.jsonl")
+        val archive = Files.createDirectories(dir.resolve("perf-archive"))
+        val names = PerfArchiveName("head-perf.jsonl")
+        val old = Files.writeString(
+            archive.resolve(names.of(10_000)),
+            """{"ts":1000,"outcome":"ok","total":1}""" + "\n" + """{"ts":2000,"outcome":"ok","total":1}""" + "\n",
+        )
+        Files.writeString(archive.resolve(names.of(20_000)), """{"ts":12000,"outcome":"ok","total":1}""" + "\n")
+        val stray = """{"ts":16000,"outcome":"ok"}""" + "\n"
+        Files.writeString(archive.resolve("other-perf.jsonl-19700101T000015Z"), stray)
+        Files.writeString(archive.resolve("head-perf.jsonl-notastamp"), stray)
+        Files.writeString(dir.resolve("head-perf.jsonl.1"), """{"ts":21000,"outcome":"ok","total":1}""" + "\n")
+        Files.writeString(file, """{"ts":30000,"outcome":"ok","total":1}""" + "\n")
+        val source = PerfRowsFileSource(file, archive)
+
+        val all = source.window(0)
+        assertEquals(
+            listOf(1000L, 2000L, 12000L, 21000L, 30000L),
+            all.rows.map { it.ts },
+            "another head's archive and a stray file are not this head's",
+        )
+        assertEquals(1000L, all.oldestHeldTs)
+        assertNull(all.readError)
+
+        Files.setPosixFilePermissions(old, emptySet())
+        val recent = source.window(11_000)
+        assertEquals(listOf(12000L, 21000L, 30000L), recent.rows.map { it.ts })
+        assertNull(recent.readError, "the generation that ended before the cutoff was never opened")
+        assertEquals(10_000L, recent.oldestHeldTs, "its rotation second shows the files reach past the window")
+        val inside = source.window(10_500).readError
+        assertTrue(inside?.contains(old.fileName.toString()) == true, "inside its last second it is opened: $inside")
+        Files.setPosixFilePermissions(old, setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
+
+        val unarchived = PerfRowsFileSource(file).window(0).rows.map { it.ts }
+        assertEquals(listOf(21000L, 30000L), unarchived, "no archive dir, the two live generations")
+        assertNull(PerfRowsFileSource(file, dir.resolve("never-made")).window(0).readError, "no archive yet is quiet")
     }
 
     @Test

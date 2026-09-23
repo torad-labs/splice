@@ -117,16 +117,16 @@ class ClaudeHeadRoutesTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val key = mgmt.get()
-        val port = ServerSocket(0).use { it.localPort }
         val control = ControlServer(
-            port = port,
+            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = mapOf("claude-splice" to managedHead(tmp.resolve(".claude-claude-splice"))),
             config = ConfigService(paths),
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html>" },
             log = { },
         )
-        control.start()
+        runBlocking { control.start() }
+        val port = control.listeningPort
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
             runBlocking {
@@ -201,8 +201,7 @@ class ClaudeHeadRoutesTest {
 
     private fun serveHermetic(home: Path, test: suspend (port: Int, rig: HermeticRig) -> Unit) {
         val rig = HermeticRig(home)
-        val port = ServerSocket(0).use { it.localPort }
-        val server = embeddedServer(Netty, port = port, host = "127.0.0.1") {
+        val server = embeddedServer(Netty, port = 0, host = "127.0.0.1") {
             routing {
                 routeGet("/api/claude-head") { rig.routes.status(call) }
                 routePost("/api/claude-head/wrap") { rig.routes.wrap(call) }
@@ -213,6 +212,9 @@ class ClaudeHeadRoutesTest {
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
             runBlocking {
+                // Port 0: Netty binds an OS-assigned port and publishes it here, so no leased port
+                // can be taken between choosing it and binding it.
+                val port = server.engine.resolvedConnectors().single().port
                 withTimeout(TIMEOUT_MS) {
                     while (runCatching { ServerSocket(port).close() }.isSuccess) delay(POLL_MS)
                     test(port, rig)

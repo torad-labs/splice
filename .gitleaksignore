@@ -31,6 +31,10 @@
 # DoctorRedactionTest builds a fake log line for a redaction test (the "key" is 20 characters, the
 # JWT's payload decodes to {"sub":"1"}); TranscriptSentTextsTest's token is the literal
 # abcdefgh12345678; the web-console ledger line is a git blob sha in a RECEIPT.
+# 2026-09-23: console/tests/doctor-gate.test.ts FIX_SECRET and DETAIL_SECRET (5d5cfd71, M4-07) —
+# the two literals that test PLANTS in a doctor report the redaction check refuses, to prove the
+# page renders nothing of it. Opened at the commit, values not copied here: each names itself as a
+# planted fixture and is used only inside that test. Credential-shaped on purpose, as DR-151's is.
 1574f46b22b2e76837a851d129f4280f82612db5:.dev/campaigns/manifest.py:generic-api-key:116
 2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
 2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
@@ -47,6 +51,8 @@
 5445ad0d8933b2973ccce81185f297d6db397b4b:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:15
 550f2af292c47972c4c55217d0bde36cc0d4b26c:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
 550f2af292c47972c4c55217d0bde36cc0d4b26c:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
+5d5cfd71c3827dc32bee1c0b62709c1d46ba11ed:console/tests/doctor-gate.test.ts:generic-api-key:70
+5d5cfd71c3827dc32bee1c0b62709c1d46ba11ed:console/tests/doctor-gate.test.ts:generic-api-key:71
 5fe76b407c737788ba3185e5165f52978e83c394:.dev/campaigns/web-console.toml:generic-api-key:2361
 680ae60bd6651f46cc8307e5748fc305ac6cc148:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
 89f11e1ff5c6a8c1c15fd87040a3204e122cc0c7:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88

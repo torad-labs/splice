@@ -271,6 +271,9 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   const edit = page.getByRole('form', { name: `edit ${name}` });
   await expect(edit).toBeVisible({ timeout: 15_000 });
   await expect(edit.getByRole('status')).toContainText(`saved ${name} as team-`);
+  // A team's economics run over its own lifetime, so the stack's hand-off turn (driven before this
+  // team existed) is not its cost: the sender drives one tagged turn now, inside it.
+  await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
   await expect(page.locator('.myx-board-header')).toContainText(name);
   await expect(main).toContainText('2 slots, 2 bound');
   // Both sessions are racked under their head by the names the registry gives them.
@@ -283,11 +286,11 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await expect(main).toContainText('nothing sampled today');
 
   // The daemon joined the sender's tagged turn to its slot: the timeline's economics price it under
-  // the lead role, and the peer's seat has none.
+  // the lead role, and the peer's seat has none. The panels are re-read every 10 s.
   await page.getByRole('tab', { name: 'timeline' }).click();
   await expect(main).toContainText('lifetime, joined by the daemon', { timeout: 15_000 });
   const bar = (who: string) => page.locator('.myx-board-bar').filter({ hasText: who }).locator('.myx-board-bar-figure');
-  await expect(bar(STACK.sender.name)).toHaveText('1');
+  await expect(bar(STACK.sender.name)).toHaveText('1', { timeout: 15_000 });
   await expect(bar(STACK.peer.name)).toHaveText('0');
   await expect(page.locator('.myx-board-table')).toContainText('lead');
 
@@ -308,12 +311,17 @@ test('projects opens the stack repository with the detail its own route reports'
   const read = page.waitForResponse((response) =>
     response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/projects/${encodeURIComponent(repo)}`);
   await page.getByRole('button', { name: `projects ${repo}` }).click();
-  expect((await read).status(), 'GET /api/projects/{id}').toBe(200);
+  const response = await read;
+  expect(response.status(), 'GET /api/projects/{id}').toBe(200);
+  const row = (await response.json()) as { turns_today: number };
   const detail = page.getByRole('complementary', { name: 'project detail' });
   await expect(detail).toContainText(repo);
-  // Two registered sessions work in the repository, and the sender's hand-off is today's one turn.
+  // Two registered sessions work in the repository. Today's turns are the sender's: the stack's
+  // hand-off, plus the one the teams journey drives when it runs first, so the count printed is the
+  // one this read returned, and at least the hand-off.
   await expect(detail).toContainText(/live sessions\s*2/);
-  await expect(detail).toContainText(/turns today\s*1/);
+  expect(row.turns_today, 'the sender\'s hand-off is a turn in this repository today').toBeGreaterThanOrEqual(1);
+  await expect(detail).toContainText(new RegExp(`turns today\\s*${row.turns_today}(?!\\d)`));
   await expect(detail).toContainText(/cost today\s*n\/r/);
   await expect(detail).toContainText(`${repo}/CLAUDE.md`);
   // What governs the repo (FEATURES.md 4.14), from the same row: the stack's project rule for this
@@ -323,7 +331,7 @@ test('projects opens the stack repository with the detail its own route reports'
   await expect(rule(`project:${repo}`)).toContainText(String(STACK.compactProject.length));
   await expect(rule('global')).toHaveCount(0);
   await expect(rule(`model:${STACK.model}`)).toHaveCount(0);
-  const statusline = detail.getByRole('button', { name: `statusline roots ${STACK.oauthHead}` });
+  const statusline = detail.getByRole('button', { name: `statusline roots ${STACK.oauthHead}`, exact: true });
   await expect(statusline).toContainText(dirname(repo));
   await expect(statusline).toContainText(/entry\s*home/);
   expect(faults.pageErrors, 'opening a project threw').toEqual([]);

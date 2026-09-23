@@ -12,6 +12,7 @@ dependencies {
     api(project(":features-accounts"))
     api(project(":features-sessions"))
     api(project(":features-usage"))
+    api(project(":features-turns"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.server.core)

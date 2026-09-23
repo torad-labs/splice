@@ -15,6 +15,7 @@ dependencies {
     implementation(project(":core"))
     api(project(":features-sessions"))
     implementation(project(":integrations-upstream"))
+    implementation(project(":integrations-http"))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.sse)

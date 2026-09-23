@@ -2,12 +2,12 @@
 // the dashboard reads the same on-disk truth the head writes (a DOWN head still shows state).
 package splice.app.sources
 
-import splice.control.CompactView
-import splice.control.HeadCompactSource
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.head.compact.CompactStats
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker

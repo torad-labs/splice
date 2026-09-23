@@ -30,7 +30,7 @@ import splice.usage.budgets.BudgetStore
  *  IT ALSO PAID FOR ITSELF ON THE CONCENTRATION BAND, which is what made it urgent rather than
  *  tidy. These nine declarations were the ONLY reason ControlServer named ActivityStores,
  *  CompactionInstructions, TeamStore and TopologyWriter: it never used those types for anything but
- *  handing them to an ActivitySource, a TeamSource or a TopologySource. Four subsystems entered a
+ *  handing them to an ActivitySource, a TeamSource or a TopologyWriterSource. Four subsystems entered a
  *  file that had no use for them, at 8 C each on a file 29 C over the band.
  *
  *  A DEFAULT INSTANCE IS NOT AVAILABLE for any of these, and the EventBus comment below records

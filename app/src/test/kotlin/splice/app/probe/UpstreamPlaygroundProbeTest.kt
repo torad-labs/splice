@@ -21,8 +21,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.control.CompactView
-import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
 import splice.control.ManagedHead
 import splice.control.api.turns.PlaygroundFailure
@@ -32,6 +30,8 @@ import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.upstream.transport.HeaderRedaction
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView

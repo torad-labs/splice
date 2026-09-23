@@ -1,6 +1,6 @@
 // PORT-OF: ManagedHead.kt — the head's compaction stats read (file truth), split out so the record that
 // composes a head names each capability's source from its own file.
-package splice.control
+package splice.head.compact
 
 /** Reads the head's compaction stats (file truth). */
 public interface HeadCompactSource {

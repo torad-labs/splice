@@ -46,6 +46,8 @@ import splice.core.head.HeadHealth
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.HeadModel
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow

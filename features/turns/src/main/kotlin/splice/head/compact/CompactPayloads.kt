@@ -1,13 +1,13 @@
 // PORT-OF: ControlServer.kt (ControlPayloads.compactJson) @ a77531a — invariants unchanged: pure
 // ManagedHead aggregation, which is why it never belonged next to the config/usage/perf readers.
-package splice.control.api.turns
+package splice.head.compact
 
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import splice.control.ManagedHead
+import splice.head.TurnsHeads
 
 private const val COMPACT_TAIL = 50
 
@@ -15,12 +15,12 @@ private const val COMPACT_TAIL = 50
 // rebuilt per CompactPayloads instance.
 private val COMPACT_NUMERIC_FIELDS = setOf("ts", "chars", "ms", "status")
 
-internal class CompactPayloads(private val heads: Map<String, ManagedHead>) {
+public class CompactPayloads(private val heads: TurnsHeads) {
 
     // Aggregate every head while retaining a head tag on each tail row. This is the dashboard's
     // actual CompactPayload contract: totals/outcomes plus a bounded newest-last event tail.
-    fun compactJson(): String {
-        val summaries = heads.values.map { it to it.compact.summary(COMPACT_TAIL) }
+    public fun compactJson(): String {
+        val summaries = heads.all().map { it to it.compact.summary(COMPACT_TAIL) }
         val outcomes = LinkedHashMap<String, Int>()
         summaries.forEach { (_, summary) ->
             summary.byOutcome.forEach { (outcome, count) ->
@@ -28,7 +28,7 @@ internal class CompactPayloads(private val heads: Map<String, ManagedHead>) {
             }
         }
         val tail = summaries.flatMap { (managed, summary) ->
-            summary.tail.map { row -> managed.head.key to row }
+            summary.tail.map { row -> managed.key to row }
         }.sortedBy { (_, row) -> row["ts"]?.toLongOrNull() ?: 0L }
             .takeLast(COMPACT_TAIL)
         return buildJsonObject {

@@ -34,6 +34,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource

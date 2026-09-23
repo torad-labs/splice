@@ -31,7 +31,6 @@ import splice.control.TopologyDigest
 import splice.control.TopologyStale
 import splice.control.api.ControlPayloads
 import splice.control.api.fleet.TopologyRoutes
-import splice.control.api.fleet.TopologySource
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -42,6 +41,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
+import splice.core.topology.TopologyWriterSource
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -151,7 +151,7 @@ class LiveWindowsControlTest {
         val file = tmp.resolve("splice.toml")
         if (!Files.exists(file)) Files.writeString(file, FILE)
         val writer = TopologyWriter(file, parse)
-        val routes = TopologyRoutes(TopologySource { writer }, TopologyStale { false })
+        val routes = TopologyRoutes(TopologyWriterSource { writer }, TopologyStale { false })
         val body = buildJsonObject { put("topology", writer.tree(requested)) }.toString()
         return Json.parseToJsonElement(routes.write(body).body).jsonObject
     }

@@ -63,7 +63,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-providers-muse" to ADAPTER_BASE,
     ":integrations-providers-openai" to ADAPTER_BASE + setOf(":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
-    ":features-turns" to ADAPTER_BASE + DIALECTS + ":features-sessions",
+    ":features-turns" to ADAPTER_BASE + DIALECTS + setOf(":integrations-http", ":features-sessions"),
     ":features-sessions" to setOf(":core", ":integrations-http"),
     ":features-models" to setOf(":core"),
     // Head lifecycle, logs, and status own their sequences and use the shared head contract.
@@ -76,7 +76,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // the head-start slice it delegates starting a head to.
     ":daemon-control" to setOf(
         ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
-        ":features-heads", ":features-sessions", ":features-usage", ":features-accounts",
+        ":features-heads", ":features-sessions", ":features-usage", ":features-accounts", ":features-turns",
     ),
     // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
     ":console" to emptySet(),

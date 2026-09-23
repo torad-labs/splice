@@ -69,10 +69,9 @@ const PORT = 11;
 /** The account cell holds a masked id, which is nine characters plus an ellipsis: 101px, the one
  *  column already sized to its content. Unchanged. */
 const ACCOUNT = 16;
-/** Sized for `not built`, which is all these two cells can hold until V4-127 and V4-128 answer.
- *  Still sized to the placeholder rather than to the longest declared dialect name (21 characters),
- *  which remains a decision to revisit when those routes land -- this row only removed the slack
- *  between the placeholder's 73px and the 106px the column was declaring. */
+/** The dialect and model cells. Sized when both could only print `not built` (73px); V4-127 and
+ *  V4-128 now answer, so a value is a dialect or a model id and the bay scrolls for a longer one.
+ *  An absent value prints `none`: the page asked, and the topology or the catalog had nothing. */
 const PLACEHOLDER = 12;
 const NARROW = 17;
 /** A window prints a percentage or the word `unknown` -- 81px of content, against the 268px this
@@ -148,10 +147,10 @@ export function HeadStrip({ head, attention, window, account, dialect, model, co
         <StripField w={PORT} label={S.port} value={head.port} />
       ) : null}
       {wanted.has('dialect') ? (
-        <StripField w={PLACEHOLDER} label={S.dialect} value={dialect ?? S.notBuilt} mono={false} />
+        <StripField w={PLACEHOLDER} label={S.dialect} value={dialect ?? S.none} mono={false} />
       ) : null}
       {wanted.has('model') ? (
-        <StripField w={PLACEHOLDER} label={S.model} value={model ?? S.notBuilt} mono={false} />
+        <StripField w={PLACEHOLDER} label={S.model} value={model ?? S.none} mono={false} />
       ) : null}
       {wanted.has('account') ? (
         <StripField w={ACCOUNT} label={S.account} value={account ?? S.none} mono={false} />

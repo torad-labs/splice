@@ -253,9 +253,10 @@ describe('what one strip prints', () => {
     expect(strip({ key: 'other' })).toContain(NOT_REPORTED);
   });
 
-  test('a pending field source says not built rather than inventing a value', () => {
+  test('a field no source answered prints none rather than inventing a value or a stale row', () => {
     const out = strip();
-    expect(out).toContain('not built');
+    expect(out).toContain('>none<');
+    expect(out).not.toContain('not built');
   });
 
   test('a struck head renders aria-disabled and its printed cause', () => {

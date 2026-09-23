@@ -201,6 +201,8 @@ export function FleetPage() {
   const catalogs = modelsResource.data !== null && 'heads' in modelsResource.data
     ? modelsResource.data.heads
     : null;
+  const fieldsPending = (topology !== null && 'pending' in topology)
+    || (modelsResource.data !== null && 'pending' in modelsResource.data);
 
   // /health's flag is the one part of the topology contract that EXISTS today, so it is read from
   // the config entity's own pass-through rather than from the pending /api/topology route.
@@ -278,9 +280,10 @@ export function FleetPage() {
             ))
           )}
 
-          {/* The two field sources that are still rows. Named here rather than left as a bare
-              `not built` in nine strips, so the operator learns which work item brings them. */}
-          {topologyTable === null || catalogs === null ? (
+          {/* The two field sources, when a daemon older than them answered 404: named here rather
+              than left as a bare `none` in every strip, so the operator learns which work item brings
+              them. Still loading, or a read that failed, is not that answer (M4-06). */}
+          {fieldsPending ? (
             <Empty text={EMPTIES.fields.text} source={EMPTIES.fields.source} />
           ) : null}
         </div>

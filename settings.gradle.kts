@@ -28,6 +28,7 @@ include(
     ":integrations-topology",
     ":integrations-codemode",
     ":integrations-oauth",
+    ":integrations-terminal",
     ":integrations-upstream",
     ":integrations-dialects-anthropic",
     ":integrations-dialects-openai-responses",
@@ -62,6 +63,7 @@ project(":integrations-http").projectDir = file("integrations/http")
 project(":integrations-topology").projectDir = file("integrations/topology")
 project(":integrations-codemode").projectDir = file("integrations/codemode")
 project(":integrations-oauth").projectDir = file("integrations/oauth")
+project(":integrations-terminal").projectDir = file("integrations/terminal")
 project(":integrations-upstream").projectDir = file("integrations/upstream")
 project(":integrations-dialects-anthropic").projectDir = file("integrations/dialects/anthropic")
 project(":integrations-dialects-openai-responses").projectDir = file("integrations/dialects/openai-responses")

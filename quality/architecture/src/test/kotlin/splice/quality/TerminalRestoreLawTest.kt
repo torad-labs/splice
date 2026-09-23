@@ -6,7 +6,8 @@
 // enter, try/finally restore, shutdown hook. This law closes the class so a widget cannot invoke
 // stty on its own or enter raw outside that bracket.
 //
-// SCOPE. Kotlin sources of splice.app.cli.prompt under :app's src/main/kotlin. Tests are out of
+// SCOPE. Kotlin sources of splice.terminal under :integrations-terminal's src/main/kotlin, where the
+// prompt toolkit moved from :app's splice.app.cli.prompt (2026-09-23, LAYOUT-01). Tests are out of
 // scope — they inject SttyCommand and never talk to a real tty.
 //
 // DENOMINATOR. Every .kt file in that directory on disk. Zero files, or a missing package
@@ -29,7 +30,8 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 internal object TerminalRestore {
-    const val PROMPT_PACKAGE = "splice/app/cli/prompt"
+    const val TERMINAL_MODULE = ":integrations-terminal"
+    const val PROMPT_PACKAGE = "splice/terminal"
     const val TERMINAL_MODE = "TerminalMode.kt"
     private const val STTY = "stty"
     private const val RAW_FLAG = "-icanon"
@@ -254,7 +256,7 @@ class TerminalRestoreLawTest {
 
     @Test
     fun `raw-mode entry is only legal inside TerminalMode raw - CW-9`() {
-        val promptDir = File(map.mainSources(":app"), TerminalRestore.PROMPT_PACKAGE)
+        val promptDir = File(map.mainSources(TerminalRestore.TERMINAL_MODULE), TerminalRestore.PROMPT_PACKAGE)
         val promptRel = promptDir.relativeTo(map.root).invariantSeparatorsPath
         val problems = TerminalRestore.checkTree(promptDir, promptRel, map.root)
         assertTrue(problems.isEmpty()) {
@@ -271,8 +273,8 @@ class TerminalRestoreLawTest {
     // RED naming its file; the compliant TerminalMode alone is GREEN.
     @Test
     fun `the law can actually fail - CW-9`(@TempDir root: File) {
-        val promptDir = File(root, "app/src/main/kotlin/${TerminalRestore.PROMPT_PACKAGE}")
-        val promptRel = "app/src/main/kotlin/${TerminalRestore.PROMPT_PACKAGE}"
+        val promptDir = File(root, "integrations/terminal/src/main/kotlin/${TerminalRestore.PROMPT_PACKAGE}")
+        val promptRel = "integrations/terminal/src/main/kotlin/${TerminalRestore.PROMPT_PACKAGE}"
         val empty = TerminalRestore.checkTree(promptDir, promptRel, root)
         assertTrue(empty.any { it.contains("missing") || it.contains("zero files") }) {
             "empty tree must refuse to pass vacuously, got: ${KotlinText.pyReprList(empty)}"
@@ -297,7 +299,7 @@ class TerminalRestoreLawTest {
         )
         // and a comment is prose, not an invocation
         File(promptDir, "Prose.kt").writeText(
-            "package splice.app.cli.prompt\n// stty -icanon is what TerminalMode.raw does\ninternal object Prose\n",
+            "package splice.terminal\n// stty -icanon is what TerminalMode.raw does\ninternal object Prose\n",
         )
         assertEquals(
             emptyList<String>(),
@@ -308,7 +310,7 @@ class TerminalRestoreLawTest {
 
     private companion object {
         const val COMPLIANT_TERMINAL = """
-package splice.app.cli.prompt
+package splice.terminal
 internal class TerminalMode {
     fun <T> raw(block: () -> T): T {
         stty.run(listOf("stty", "-g"))
@@ -319,7 +321,7 @@ internal class TerminalMode {
 """
 
         const val VIOLATION = """
-package splice.app.cli.prompt
+package splice.terminal
 internal class LooseStty {
     fun go() {
         ProcessBuilder(listOf("stty", "-icanon", "-echo")).start()

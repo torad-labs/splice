@@ -179,12 +179,12 @@
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesSystemPrompt.kt"
     ],
     "COPY CSI_CUU": [
-      "app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
-      "app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
     ],
     "COPY CSI_EL": [
-      "app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
-      "app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
     ],
     "COPY CYAN": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
@@ -331,8 +331,8 @@
       "features/turns/src/main/kotlin/splice/head/wire/JsonStringEscaper.kt"
     ],
     "COPY HINT_GAP": [
-      "app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
-      "app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
     ],
     "COPY HTTP_OK": [
       "integrations/oauth/src/main/kotlin/splice/oauth/OAuthCallbackPage.kt",
@@ -347,8 +347,8 @@
       "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
     ],
     "COPY INACTIVE_PAD": [
-      "app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
-      "app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
     ],
     "COPY KEY": [
       "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
@@ -467,8 +467,8 @@
       "integrations/mcp/src/main/kotlin/splice/control/mcp/McpPending.kt"
     ],
     "COPY POINTER": [
-      "app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
-      "app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
     ],
     "COPY POLL_INTERVAL_MS": [
       "app/src/main/kotlin/splice/app/cli/daemon/DaemonLaunch.kt",

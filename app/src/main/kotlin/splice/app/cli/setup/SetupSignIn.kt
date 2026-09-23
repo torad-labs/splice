@@ -22,6 +22,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.terminal.ConsoleConfirm
 
 /** [loginHead] is SetupCommand's own sign-in seam, passed through so tests keep constructing one
  *  SetupCommand and the wizard keeps one login path. [env] is SetupCommand's threaded environment
@@ -34,6 +35,7 @@ internal class SetupSignIn(
 ) {
 
     private val signIn = CliSignIn()
+    private val confirm = ConsoleConfirm()
 
     private fun pendingOAuthHeads(topology: Topology): List<PendingOAuthHead> =
         topology.heads.entries.mapNotNull { (key, head) ->
@@ -67,7 +69,7 @@ internal class SetupSignIn(
         )
         var ok = true
         for ((key, command) in pending) {
-            if (AdminSupport.confirm("Sign in to ${palette.paint(palette.signal, command)} now?", default = true)) {
+            if (confirm("Sign in to ${palette.paint(palette.signal, command)} now?", default = true)) {
                 if (!loginHead(key)) ok = false
             } else {
                 println("  " + palette.paint(palette.quiet, "skipped — sign in later with: $command login"))

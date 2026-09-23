@@ -1,6 +1,6 @@
 // NEW: CW-1 — decode stdin bytes into Key. CSI arrows, a split sequence, and a lone ESC
 // that must not block forever.
-package splice.app.cli.prompt
+package splice.terminal
 
 import java.io.InputStream
 
@@ -17,8 +17,9 @@ internal sealed class Key {
     internal data class Char(val codepoint: Int) : Key()
 }
 
-internal class KeyReader(private val input: InputStream) {
-    fun read(): Key {
+/** Decodes stdin bytes into [Key]s for the prompt widgets; app hands in `System.in`. */
+public class KeyReader(private val input: InputStream) {
+    internal fun read(): Key {
         val first = input.read()
         if (first < 0) return Key.Escape
         return when (first) {

@@ -1,5 +1,5 @@
 // NEW: WizardFrame badge, outro, cancel-as-single-exit, confirm delegates (cli-wizard CW-5).
-package splice.app.cli.prompt
+package splice.terminal
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

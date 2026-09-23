@@ -1,5 +1,5 @@
 // NEW: CW-4 — MultiSelectPrompt through scripted keys and an injected Appendable.
-package splice.app.cli.prompt
+package splice.terminal
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

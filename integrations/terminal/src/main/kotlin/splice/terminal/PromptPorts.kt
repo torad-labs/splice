@@ -3,7 +3,7 @@
 // `() -> Boolean` that all meant the same thing, which is exactly the shape-versus-role confusion
 // the wall exists to stop. One role, one interface: ConsolePresence is declared ONCE here and the
 // cli package imports it rather than keeping a second copy of the same concept.
-package splice.app.cli.prompt
+package splice.terminal
 
 /**
  * Whether a real terminal is attached.
@@ -12,8 +12,8 @@ package splice.app.cli.prompt
  * of rendering a cursor-driven menu into a log file. The single most-duplicated seam in the
  * toolkit: TerminalMode, SelectPrompt, MultiSelectPrompt and the setup wizard all ask it.
  */
-internal fun interface ConsolePresence {
-    operator fun invoke(): Boolean
+public fun interface ConsolePresence {
+    public operator fun invoke(): Boolean
 }
 
 /**
@@ -23,13 +23,13 @@ internal fun interface ConsolePresence {
  * and share the `(Thread) -> Unit` shape, so an unnamed pair could be wired backwards and still
  * compile — leaving a terminal raw after Ctrl-C, which is the failure CW-9 walls.
  */
-internal fun interface ShutdownHookAdd {
-    operator fun invoke(hook: Thread)
+public fun interface ShutdownHookAdd {
+    public operator fun invoke(hook: Thread)
 }
 
 /** Unregisters a hook registered by [ShutdownHookAdd], once its bracket has restored the mode. */
-internal fun interface ShutdownHookRemove {
-    operator fun invoke(hook: Thread)
+public fun interface ShutdownHookRemove {
+    public operator fun invoke(hook: Thread)
 }
 
 /** The work done while the terminal is in raw mode — run exactly once, raw or not. */
@@ -38,6 +38,6 @@ internal fun interface RawBlock<T> {
 }
 
 /** One spinner tick: redraw the current frame. */
-internal fun interface PulseTick {
-    operator fun invoke()
+public fun interface PulseTick {
+    public operator fun invoke()
 }

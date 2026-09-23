@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.cli.ControlReply
-import splice.app.cli.prompt.SelectOption
-import splice.app.cli.prompt.SelectOutcome
+import splice.terminal.SelectOption
+import splice.terminal.SelectOutcome
 
 private const val CLAUDE = "claude"
 

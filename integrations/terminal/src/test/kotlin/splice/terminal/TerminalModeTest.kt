@@ -1,6 +1,6 @@
 // NEW: CW-1 — TerminalMode through an injected runner. Restore on the exception path;
 // zero stty when there is no console.
-package splice.app.cli.prompt
+package splice.terminal
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows

@@ -11,11 +11,6 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.add.AddProfiles
-import splice.app.cli.prompt.ConfirmPrompt
-import splice.app.cli.prompt.MultiSelectOutcome
-import splice.app.cli.prompt.SelectOutcome
-import splice.app.cli.prompt.Spinner
-import splice.app.cli.prompt.WizardFrame
 import splice.app.cli.upgrade.DaemonRestart
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
@@ -26,6 +21,11 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.terminal.ConfirmPrompt
+import splice.terminal.MultiSelectOutcome
+import splice.terminal.SelectOutcome
+import splice.terminal.Spinner
+import splice.terminal.WizardFrame
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files

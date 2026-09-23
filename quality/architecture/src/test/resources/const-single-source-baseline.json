@@ -88,7 +88,7 @@
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ReasoningCache.kt"
     ],
     "COLLISION PERCENT": [
-      "app/src/main/kotlin/splice/app/cli/status/PerfCommand.kt",
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfCommand.kt",
       "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
       "app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
       "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",

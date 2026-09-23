@@ -54,7 +54,8 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     // sign-in, refresh, the account pool and their console routes; the pool is a read model every
     // operator surface renders.
     ":features-accounts" to setOf(":core", ":integrations-http"),
-    ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts"),
+    // usage and perf, and `splice perf`, which lists splice.toml's heads.
+    ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts", ":integrations-topology"),
     // the daemon's own lifecycle: the draining restart and the upgrade surface.
     ":features-lifecycle" to emptySet(),
     // the doctor report, the one-prompt playground, and the operator's reads of a running head

@@ -42,7 +42,7 @@
     "integrations/oauth/src/main/kotlin/splice/oauth/codex/LoginCodex.kt": 1,
     "integrations/oauth/src/main/kotlin/splice/oauth/grok/LoginGrok.kt": 1,
     "app/src/main/kotlin/splice/app/cli/status/LogsCommand.kt": 3,
-    "app/src/main/kotlin/splice/app/cli/status/PerfCommand.kt": 1,
+    "features/usage/src/main/kotlin/splice/usage/perf/PerfCommand.kt": 1,
     "app/src/main/kotlin/splice/app/cli/SafeNames.kt": 1,
     "features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt": 3,
     "app/src/main/kotlin/splice/app/cli/upgrade/UpgradeDaemon.kt": 5,

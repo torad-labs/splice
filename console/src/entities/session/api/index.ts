@@ -1,12 +1,14 @@
 // Two jobs in one slice: the management-key gate (initSession/unlock, the shell calls these) and
-// the Claude Code session registry (fetchSessions, the Sessions page calls this).
-import { bindUnauthorized, getStoredKey, pendingOf, request, storeKey } from '@shared/api';
+// the Claude Code session registry with the message edges between its sessions (the Sessions page
+// calls those).
+import { bindUnauthorized, getStoredKey, request, storeKey } from '@shared/api';
 import { poll } from '@shared/lib';
-import { sessionEdgesStore, sessionRegistryStore, sessionStore } from '../model/store';
-import type { SessionEdgesPayload, SessionsPayload } from '../model/types';
+import { boardEdgesStore, sessionEdgesStore, sessionRegistryStore, sessionStore } from '../model/store';
+import type { BoardEdgesPayload, SessionEdgesPayload, SessionsPayload } from '../model/types';
 
-/** The v0.4.0 item that will serve the message-edge route. */
-export const PENDING_EDGES = 'V4-130';
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /** Wire the 401 signal from the mgmt client into session state (app mount). */
 export function initSession(): void {
@@ -37,9 +39,8 @@ export function startSessionsPolling(intervalMs = 5000): () => void {
 
 /**
  * One session's message edges. Read when a session is opened, never polled: a hand-off is history
- * once it happened, and the transcript beside it is what a reader actually watches.
- *
- * PENDING V4-130, so the pending state is a real outcome here rather than an error path.
+ * once it happened, and the transcript beside it is what a reader actually watches. The route is
+ * served (V4-130), so a failure is reported as one, never as "not built".
  */
 export async function fetchSessionEdges(sessionId: string): Promise<void> {
   sessionEdgesStore.startLoading();
@@ -48,11 +49,25 @@ export async function fetchSessionEdges(sessionId: string): Promise<void> {
       await request<SessionEdgesPayload>(`/api/sessions/${encodeURIComponent(sessionId)}/edges`),
     );
   } catch (err) {
-    const pending = pendingOf(err, PENDING_EDGES);
-    if (pending !== null) {
-      sessionEdgesStore.setData(pending);
-      return;
-    }
-    sessionEdgesStore.setError(err instanceof Error ? err.message : String(err));
+    sessionEdgesStore.setError(messageOf(err));
   }
+}
+
+/**
+ * Every registry session's edges in one read (GET /api/sessions/edges), so the board's peer column
+ * prints for every row rather than one request per row. An unwired edge store is the daemon's named
+ * 503, which the page prints: unwatched is not the same as no hand-offs.
+ */
+export async function fetchBoardEdges(): Promise<void> {
+  boardEdgesStore.startLoading();
+  try {
+    boardEdgesStore.setData(await request<BoardEdgesPayload>('/api/sessions/edges'));
+  } catch (err) {
+    boardEdgesStore.setError(messageOf(err));
+  }
+}
+
+/** The board's edges at the registry's own cadence, so a row and its peer come from the same tick. */
+export function startBoardEdgesPolling(intervalMs = 5000): () => void {
+  return poll(fetchBoardEdges, intervalMs);
 }

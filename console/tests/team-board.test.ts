@@ -3,7 +3,7 @@
 //
 //   1. the board renders the comp's words — all of them, listed from the spec's
 //      text regions, because the operator approved that comp with those words;
-//   2. against a daemon that has no teams route yet, the page prints the honest
+//   2. against a daemon older than the teams route, the page prints the honest
 //      empty naming the work item rather than an empty board;
 //   3. the fixture cannot reach a production bundle: its bytes are behind the
 //      dev guard, and the built file is grepped for them in the row's note.
@@ -20,8 +20,8 @@ import { describe, expect, test } from 'vitest';
 import { PENDING_TEAMS } from '../src/entities/team';
 import { MgmtError, pendingOf } from '../src/shared/api';
 import {
-  TeamBoard, TeamBoardByRole, TeamTimeline, costPerRole, groupByRole, roleRows, timeRule,
-  timelineRows, turnsPerMember,
+  TeamBoard, TeamBoardByRole, TeamTimeline, costTable, groupByRole, roleRows, timeRule,
+  timelineRows, turnsPerSlot,
 } from '../src/widgets/team-board';
 import { TeamChat, chatOrder } from '../src/widgets/team-chat';
 import { ActivityFeed, feedEmpty, feedOrder } from '../src/widgets/activity-feed';
@@ -117,47 +117,50 @@ describe('the board renders the comp', () => {
   });
 });
 
-describe('against a daemon that has no teams route', () => {
-  test('the page prints the honest empty naming V4-131', () => {
+describe('what the page says when no board answered', () => {
+  test('a daemon older than the teams route gets the honest empty naming V4-131', () => {
     const pending = { pending: 'V4-131' };
-    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ fixture: null, view: 'by-head', teams: pending, team: pending })));
+    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
     expect(html).toContain('no teams route');
     expect(html).toContain('V4-131 pending');
   });
 
   test('before anything has answered, the page claims neither absence nor failure', () => {
-    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ fixture: null, view: 'by-head', teams: null, team: null })));
+    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: null, board: null })));
     expect(html).toContain('reading teams');
     expect(html).not.toContain('V4-131 pending');
     expect(html).not.toContain('unreadable');
   });
 
+  test("a list read that failed says so, in the daemon's words", () => {
+    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: null, board: null, error: 'HTTP 500' })));
+    expect(html).toContain('teams unreadable');
+    expect(html).toContain('HTTP 500');
+  });
+
   test('a 404 is what makes it the honest empty, through the shared mapping', () => {
     const pending = pendingOf(new MgmtError(404, 'unknown route'), PENDING_TEAMS);
     expect(pending).toEqual({ pending: 'V4-131' });
-    const html = unescapeHtml(
-      renderToStaticMarkup(teamsBodyFor({ fixture: null, view: 'by-head', teams: pending, team: pending })),
-    );
+    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
     expect(html).toContain('V4-131 pending');
   });
 
   test('a daemon that answers with no teams is not dressed as a missing route', () => {
-    const empty = { teams: [] };
-    const html = unescapeHtml(
-      renderToStaticMarkup(teamsBodyFor({ fixture: null, view: 'by-head', teams: empty, team: null })),
-    );
+    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: { teams: [] }, board: null })));
     expect(html).toContain('no teams yet');
     expect(html).not.toContain('V4-131 pending');
   });
 
-  test('the other two views read the live team, and their pending panels name V4-131', () => {
+  test('the other two views draw the opened team, and a panel still being read says so', () => {
     for (const view of ['by-role', 'timeline']) {
-      const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ fixture: heroBoard, view, teams: null, team: null })));
-      expect(html, view).not.toContain('view not built');
+      const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view, teams: null, board: heroBoard })));
       expect(html, view).toContain('storefront-api');
-      // No fixture view data: every panel that reads a route still to come says which row serves it.
-      expect(html, view).toContain('V4-131 pending');
+      expect(html, view).not.toContain('V4-131 pending');
     }
+    expect(unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'timeline', teams: null, board: heroBoard }))))
+      .toContain('reading the economics');
+    expect(unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-role', teams: null, board: heroBoard }))))
+      .toContain('reading the chat');
   });
 });
 
@@ -277,30 +280,48 @@ describe('the timeline', () => {
     }
   });
 
-  test('cost per role joins on the session prefix, counts what it cannot place, and names the oldest turn', () => {
-    const table = costPerRole(viewsBoard, viewsData.economics);
-    expect(table.rows.map((row) => [row.role, row.input, row.output, row.turns])).toEqual([
-      ['lead', 132116, 56656, 6],
-      ['builder', 194283, 78231, 13],
-      ['reviewer', 0, 0, 0],
-    ]);
-    expect(table.total.total).toBe(461286);
-    expect(table.oldest).toEqual({ id: 't-1801', at: '09:14' });
+  const economics = viewsData.economics;
+  if ('error' in economics) throw new Error('the views fixture carries the economics payload');
 
-    // A session the join cannot place is a ROW, not a silence: the total stays the route's total.
-    const stray = [...viewsData.economics, { session: 'zz-99999999', input: 10, output: 5, turns: 1, oldestTurnId: 't-1900', oldestTurnAt: '13:59' }];
-    const withStray = costPerRole(viewsBoard, stray);
-    expect(withStray.unattributed.turns).toBe(1);
-    expect(withStray.total.total).toBe(461286 + 15);
-    expect(timelineHtml).toContain('joined on the first 8 characters of the session id');
+  test("cost per role prints the daemon's tallies, their total, and what it could not place", () => {
+    const table = costTable(economics);
+    expect(table.rows.map((row) => [row.role, row.input, row.output, row.cost, row.turns])).toEqual([
+      ['lead', 132116, 56656, 0.412, 6],
+      ['builder', 194283, 78231, 0.324, 13],
+    ]);
+    expect(table.total.input + table.total.output).toBe(461286);
+    expect(table.total.cost).toBeCloseTo(0.736, 6);
+    expect(table.unattributed).toBe(0);
+    expect(timelineHtml).toContain('joined by the daemon on the first 8 characters of the session id');
+    expect(timelineHtml).toContain('0 turns with no session tag');
+    expect(timelineHtml).toContain('oldest turn held 09:14');
   });
 
-  test('turns per member reads the same join as the cost table', () => {
-    expect(turnsPerMember(viewsBoard, viewsData.economics)).toEqual([
-      { member: 'gs-backend-claude', turns: 6 },
-      { member: 'gs-backend-builder', turns: 8 },
-      { member: 'gs-backend-builder2', turns: 5 },
+  test('cache reads and writes count as tokens in, and one unpriced role unprices the total', () => {
+    const cached = {
+      ...economics,
+      roles: [{ ...economics.roles[0], tokens: { input: 10, cache_read: 1000, cache_write: 100, output: 5 } }, { ...economics.roles[1], cost_usd: null }],
+    };
+    const table = costTable(cached);
+    expect(table.rows[0].input).toBe(1110);
+    expect(table.total.cost).toBeNull();
+    expect(unescapeHtml(renderToStaticMarkup(createElement(TeamTimeline, { board: viewsBoard, data: { ...viewsData, economics: cached } }))))
+      .toContain('n/r');
+  });
+
+  test('turns per slot reads the same tallies, and an open seat is a row with its own count', () => {
+    expect(turnsPerSlot(viewsBoard, economics)).toEqual([
+      { slot: 'slot-lead', name: 'gs-backend-claude', turns: 6 },
+      { slot: 'slot-builder-1', name: 'gs-backend-builder', turns: 8 },
+      { slot: 'slot-builder-2', name: 'gs-backend-builder2', turns: 5 },
+      { slot: 'slot-reviewer', name: 'reviewer (open)', turns: 0 },
     ]);
+  });
+
+  test('an economics read that failed prints the reason, not an empty table', () => {
+    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamTimeline, { board: viewsBoard, data: { ...viewsData, economics: { error: 'no such team: t' } } })));
+    expect(html).toContain('economics unreadable');
+    expect(html).toContain('no such team: t');
   });
 });
 
@@ -420,7 +441,7 @@ describe('the activity feed', () => {
 
 describe('the composer', () => {
   test('it says what stops the draft being saved', () => {
-    expect(validateDraft(blankDraft())).toEqual(['the team needs a name', 'the team needs a repo', 'slot 1 needs a role', 'slot 1 needs a head']);
+    expect(validateDraft(blankDraft('slot-a'))).toEqual(['the team needs a name', 'the team needs a repo', 'slot 1 needs a role', 'slot 1 needs a head']);
     const draft = draftOf(viewsBoard.team);
     expect(validateDraft(draft)).toEqual([]);
     expect(validateDraft({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, lead: true })) }))
@@ -447,9 +468,15 @@ describe('the composer', () => {
     expect(free.slots[0].role).toBe('lead');
   });
 
-  test('the form cannot promise a save the daemon has no route for', () => {
-    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, {})));
-    expect(html).toContain('the console cannot save a team yet');
-    expect(html).toContain('V4-131 serves PUT /api/teams');
+  test('a new team is created, an existing one saved, and neither while the draft breaks a rule', () => {
+    const blank = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, {})));
+    expect(blank).toContain('create team');
+    // The blank draft breaks four rules, so its key is disabled: a save the daemon would refuse is
+    // not offered.
+    expect(blank).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*create team/);
+    const existing = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, { team: viewsBoard.team })));
+    expect(existing).toContain('edit storefront-api');
+    expect(existing).toContain('save team');
+    expect(existing).not.toContain('create team');
   });
 });

@@ -1,30 +1,33 @@
 // Teams: the operator's own multi-session setups, as a board of printed strips.
 //
-// This row builds the FIRST VIEWPORT of the board-by-head view, and only that:
-// the other two views the team has (board by role, timeline) are tabs that say
-// which row will build them. Chat and the activity feed are panels of every
-// view, so they are part of this viewport too.
+// THE BOARD IS COMPOSED, NOT FETCHED. The daemon splits a team's read on purpose (there is no
+// GET /api/teams/{id}), so the opened team is its row from GET /api/teams, and board.ts joins it to
+// the session registry, the day's chat and activity, the lifetime economics and the day's perf
+// rows, re-read while the team is open: the panels every 10 s, the turn log every minute.
 //
-// Against the live daemon the team routes do not exist yet (V4-131), so the page
-// prints the honest empty naming that item. The comp's board is available in dev
-// only, from ?fixture=hero, and never ships.
+// The comp's board is available in dev only, from ?fixture=hero, and never ships.
 //
-// The tabs render AFTER the board, not over it. The comp's first viewport holds
-// no tab row, and the hero gate vetoes ink the comp does not have, so the view
-// switcher sits at the end of the page's own flow: the first viewport is the
-// comp, and the tabs are one scroll below it. M2-08, which builds the other two
-// views, decides where they live once there is more than one view to switch to.
+// The tabs render AFTER the board, not over it. The comp's first viewport holds no tab row, and
+// the hero gate vetoes ink the comp does not have, so the view switcher sits at the end of the
+// page's own flow: the first viewport is the comp, and the tabs are one scroll below it.
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
-import { PENDING_TEAMS, fetchTeam, fetchTeams, isPending, useTeam, useTeams } from '@entities/team';
+import { fetchTeamPanels, fetchTeams, isPending, useTeamPanels, useTeams } from '@entities/team';
+import { fetchSessions, useSessionRegistry } from '@entities/session';
+import { fetchPerfTurns, usePerfTurns } from '@entities/perf';
 import { ViewTabs, useViews, type View } from '@features/views';
 import { TeamBoard, TeamBoardByRole, TeamTimeline } from '@widgets/team-board';
 import type { TeamViewData } from '@widgets/team-board';
 import { TeamChat } from '@widgets/team-chat';
+import type { TeamChatState } from '@widgets/team-chat';
 import { ActivityFeed } from '@widgets/activity-feed';
+import type { ActivityFeedState } from '@widgets/activity-feed';
 import { TeamCompose, draftOf } from '@features/team-compose';
+import { Key } from '@shared/controls';
+import { poll } from '@shared/lib';
 import { Bay, Empty, Strip, StripField } from '@shared/ui';
-import type { TeamPayload, TeamRow, TeamState, TeamsState } from '@entities/team';
+import type { TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
+import { boardOf, dayStartOf, viewDataOf } from './board';
 import { S } from './strings';
 import './teams.css';
 
@@ -32,6 +35,18 @@ const PAGE_ID = 'teams';
 
 /** The name this page accepts in the hash query: the fixture's own FILE name. */
 const FIXTURE = 'hero';
+
+/** How often the opened team is re-read: the activity sampler's own pitch (30 s) would leave the
+ *  board a sample behind, so a third of it. */
+const READ_EVERY_MS = 10_000;
+
+/** The perf rows read for the day's turn log: the route's own ceiling per head (PerfRoutes.kt
+ *  MAX_TURNS), so the log is short only on a day busier than the route will serve. */
+const TURN_TAIL = 2_000;
+
+/** How often that log is re-read. A day of rows per head is the heaviest read on the page, and the
+ *  last-hour chart it feeds has a minute's resolution, so a minute is the finest it can show. */
+const TURN_LOG_EVERY_MS = 60_000;
 
 /** Whether the address asks for THIS page's fixture, by that fixture's own FILE name. Exported
  *  because the capture marker's whole value rests on it (law 23): a name this page does not carry
@@ -57,62 +72,66 @@ const VIEWS: View[] = [
 const ROLE_VIEW = 'by-role';
 const TIMELINE_VIEW = 'timeline';
 
-/** What the page shows, as a pure function of what the daemon answered.
- *  Split out so each of the three answers — the board, the honest empty naming
- *  the missing route, and a real emptiness — is testable without a router. */
+/** What the page shows, as a pure function of what the daemon answered. Split out so each answer
+ *  (a board, the honest empty naming a missing route, a real emptiness, a failure) is testable
+ *  without a router. */
 export interface TeamsBodyInput {
-  fixture: TeamPayload | null;
   view: string;
   teams: TeamsState | null;
-  team: TeamState | null;
   error?: string | null;
-  /** The board the by-role and timeline views draw, when the address asked for the fixture. */
+  /** The opened team's board: composed from the daemon's reads, or the dev fixture's. */
+  board: TeamPayload | null;
+  /** The board the by-role and timeline views draw when it is not `board` (the fixture's). */
   views?: TeamPayload | null;
-  /** The turns, economics and hour samples those views read. Null against the live daemon, where
-   *  every panel that needs them prints the honest empty naming V4-131. */
+  /** What those views read beyond the board; null while it is being read. */
   viewData?: TeamViewData | null;
+  chat?: TeamChatState;
+  feed?: ActivityFeedState;
+  /** Why a panel of the opened team could not be read, for the head board's own chat and feed. */
+  unread?: { chat?: string; activity?: string };
 }
 
-export function teamsBodyFor({ fixture, view, teams, team, error = null, views = null, viewData = null }: TeamsBodyInput) {
-  const live = team !== null && !isPending(team) ? team : null;
-  // The by-role board and the timeline read the same team. Against the fixture they read the
-  // payload its own comps draw (team-board-b and team-board-c); against the daemon they read the
-  // live one, and their panels print the honest empty naming V4-131 for every route still to come.
-  const board = views ?? fixture ?? live;
+export function teamsBodyFor({ view, teams, error = null, board, views = null, viewData = null, chat = null, feed = null, unread = {} }: TeamsBodyInput) {
   if (view === ROLE_VIEW || view === TIMELINE_VIEW) {
-    if (board === null) return liveEmpty({ teams, team, error });
-    if (view === TIMELINE_VIEW) return <TeamTimeline board={board} data={viewData} />;
-    return (
-      <TeamBoardByRole
-        board={board}
-        data={viewData}
-        chat={<TeamChat state={viewData === null ? { pending: PENDING_TEAMS } : { messages: board.messages }} />}
-        feed={<ActivityFeed state={viewData === null ? { pending: PENDING_TEAMS } : { activity: board.activity, clientMatching: true }} />}
-      />
-    );
+    const drawn = views ?? board;
+    if (drawn === null) return liveEmpty(teams, error);
+    if (view === TIMELINE_VIEW) return <TeamTimeline board={drawn} data={viewData} />;
+    return <TeamBoardByRole board={drawn} data={viewData} chat={<TeamChat state={chat} />} feed={<ActivityFeed state={feed} />} />;
   }
-  if (fixture !== null) return <TeamBoard board={fixture} />;
-  if (live !== null) return <TeamBoard board={live} />;
-  return liveEmpty({ teams, team, error });
+  if (board !== null) return <TeamBoard board={board} unread={unread} />;
+  return liveEmpty(teams, error);
 }
 
 /** What the page says when no board answered: which of the four silences this is. */
-function liveEmpty({ teams, team, error }: { teams: TeamsState | null; team: TeamState | null; error: string | null }) {
-  // The route itself is missing (V4-131): that is not the same answer as a
+function liveEmpty(teams: TeamsState | null, error: string | null) {
+  // The route itself is missing (a daemon older than V4-131): that is not the same answer as a
   // daemon that answers with no teams, and neither is a failure.
-  if (isPending(teams) || isPending(team)) return <Empty text="no teams route" source="V4-131 pending" />;
-  // Nothing has answered yet: say that, rather than claiming a failure or an
-  // absence the daemon never reported.
-  if (teams === null && team === null) return <Empty text={S.reading} source="GET /api/teams" />;
-  if (teams !== null && !isPending(teams) && teams.teams.length === 0) {
-    return <Empty text={S.noTeams} source="GET /api/teams" />;
-  }
+  if (isPending(teams)) return <Empty text="no teams route" source={`${teams.pending} pending`} />;
+  if (teams === null) return <Empty text={error === null ? S.reading : S.unreadable} source={error ?? 'GET /api/teams'} />;
+  if (teams.teams.length === 0) return <Empty text={S.noTeams} source="GET /api/teams" />;
   return <Empty text={S.unreadable} source={error ?? 'the daemon did not answer'} />;
+}
+
+/** The chat and feed states of the opened team's panels, as the two widgets take them. */
+export function panelStates(board: TeamPayload, panels: TeamPanels | null): { chat: TeamChatState; feed: ActivityFeedState; unread: { chat?: string; activity?: string } } {
+  if (panels === null || panels.teamId !== board.team.id) return { chat: null, feed: null, unread: {} };
+  return {
+    chat: 'error' in panels.chat ? { error: panels.chat.error } : { messages: board.messages },
+    feed: 'error' in panels.activity ? { error: panels.activity.error } : { activity: board.activity, clientMatching: true },
+    unread: {
+      ...('error' in panels.chat ? { chat: panels.chat.error } : {}),
+      ...('error' in panels.activity ? { activity: panels.activity.error } : {}),
+    },
+  };
 }
 
 /** The team list bay: every team the operator owns, archived ones included and marked. Archiving
  *  is a flag and never a deletion (FEATURES 4.13), so this bay filters nothing. */
-export function TeamList({ teams }: { teams: readonly (TeamRow & { archived?: boolean })[] }) {
+export function TeamList({ teams, opened = null, onOpen }: {
+  teams: readonly TeamRow[];
+  opened?: string | null;
+  onOpen?: (id: string) => void;
+}) {
   return (
     <Bay
       className="myx-teams-list"
@@ -121,12 +140,19 @@ export function TeamList({ teams }: { teams: readonly (TeamRow & { archived?: bo
       empty={{ text: S.noTeams, source: 'GET /api/teams' }}
     >
       {teams.map((team) => (
-        <Strip key={team.id} edge={team.archived === true ? 'grey' : 'green'} edgeLabel="" ariaLabel={team.name} struck={team.archived === true}>
+        <Strip
+          key={team.id}
+          edge={team.archived ? 'grey' : 'green'}
+          edgeLabel=""
+          ariaLabel={team.name}
+          selected={team.id === opened}
+          {...(onOpen === undefined ? {} : { onOpen: () => onOpen(team.id) })}
+        >
           <StripField w={LIST_COLS[0]} label={S.name} value={team.name} mono={false} />
           <StripField w={LIST_COLS[1]} label={S.goal} value={team.goal} mono={false} />
           <StripField w={LIST_COLS[2]} label={S.repo} value={team.repo} mono={false} />
           <StripField w={LIST_COLS[3]} label={S.slots} value={`${team.slots.length} slots, ${team.slots.filter((slot) => slot.session !== null).length} bound`} mono={false} />
-          <StripField w={LIST_COLS[4]} label={S.state} value={team.archived === true ? S.archived : S.live} mono={false} />
+          <StripField w={LIST_COLS[4]} label={S.state} value={team.archived ? S.archived : S.live} mono={false} />
         </Strip>
       ))}
     </Bay>
@@ -138,6 +164,12 @@ export function TeamsPage() {
   const { active } = useViews(PAGE_ID, VIEWS);
   const [sample, setSample] = useState<{ name: string; payload: TeamPayload; views: TeamPayload | null; data: TeamViewData | null } | null>(null);
   const fixture = sample === null ? null : sample.payload;
+  const [opened, setOpened] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
+  /** The team the last save answered, and the line printed for it: the list re-read that carries
+   *  a new team lands after the save does, and until it does the page opens this row, not another. */
+  const [saved, setSaved] = useState<{ team: TeamRow; answer: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   // A fixture loads only in dev and only when the address asks for it by name
   // (CONTRACTS.md section 4). It is reached by a dynamic import inside the
@@ -174,34 +206,58 @@ export function TeamsPage() {
   }, [search]);
 
   const teams = useTeams((state) => state);
-  const team = useTeam((state) => state);
+  const panels = useTeamPanels((state) => state);
+  const registry = useSessionRegistry((state) => state);
+  const turns = usePerfTurns((state) => state);
+
+  // The list is re-read on the panels' cadence, with or without a team open: a team or a binding
+  // made elsewhere (the CLI, another console) reaches an open page rather than waiting for a reload.
+  useEffect(() => (fixture === null ? poll(fetchTeams, READ_EVERY_MS) : undefined), [fixture]);
+
+  // The opened team: the one the operator picked, else the first live one, else the first.
+  const list = teams.data !== null && !isPending(teams.data) ? teams.data.teams : [];
+  const open = list.find((team) => team.id === opened)
+    ?? (saved !== null && saved.team.id === opened ? saved.team : undefined)
+    ?? list.find((team) => !team.archived) ?? list[0] ?? null;
+  const openId = open?.id ?? null;
 
   useEffect(() => {
-    if (fixture === null) void fetchTeams();
-  }, [fixture]);
+    if (fixture !== null || openId === null) return undefined;
+    return poll(async () => {
+      setNow(Date.now());
+      await Promise.all([fetchTeamPanels(openId), fetchSessions()]);
+    }, READ_EVERY_MS);
+  }, [fixture, openId]);
 
-  const first = teams.data !== null && !isPending(teams.data) ? teams.data.teams[0] : undefined;
   useEffect(() => {
-    if (fixture === null && first !== undefined) void fetchTeam(first.id);
-  }, [fixture, first]);
+    if (fixture !== null || openId === null) return undefined;
+    return poll(() => fetchPerfTurns(undefined, TURN_TAIL, dayStartOf(Date.now())), TURN_LOG_EVERY_MS);
+  }, [fixture, openId]);
+
+  const sessions = registry.data?.sessions ?? [];
+  const rows = turns.data !== null && !isPending(turns.data) ? turns.data.landed : [];
+  const live = open === null ? null : boardOf(open, sessions, panels.data, now);
+  const board = fixture ?? live;
+  const views = sample?.views ?? null;
+  const states = views !== null
+    ? { chat: { messages: views.messages }, feed: { activity: views.activity, clientMatching: true }, unread: {} }
+    : live === null ? { chat: null, feed: null, unread: {} } : panelStates(live, panels.data);
 
   const body = teamsBodyFor({
-    fixture,
     view: active.id,
     teams: teams.data,
-    team: team.data,
-    error: team.error ?? teams.error,
-    views: sample?.views ?? null,
-    viewData: sample?.data ?? null,
+    error: teams.error,
+    board,
+    views,
+    viewData: sample !== null ? sample.data : live === null ? null : viewDataOf(live, rows, panels.data, now),
+    ...states,
   });
 
   // The list and the composer are the page's own flow, under the board: the comp's first viewport
   // is the board and nothing else (the hero gate vetoes ink the comp does not have), so everything
   // this page adds to it lives one scroll below.
-  const listed = fixture !== null
-    ? [fixture.team]
-    : teams.data !== null && !isPending(teams.data) ? teams.data.teams : [];
-  const draft = fixture === null ? null : draftOf(fixture.team);
+  const listed = fixture !== null ? [fixture.team] : list;
+  const editing = fixture === null && !composing ? open : null;
 
   return (
     <div
@@ -211,12 +267,31 @@ export function TeamsPage() {
       {body}
       <ViewTabs pageId={PAGE_ID} defaults={VIEWS} />
       {isPending(teams.data) && fixture === null
-        ? <Empty text="no teams route" source={`${PENDING_TEAMS} pending`} />
-        : <TeamList teams={listed} />}
-      {/* Keyed by the team it drafts: the fixture arrives after the first render, and a form's
-          state is seeded once, so without the key the composer kept the blank draft it was born
-          with (measured in the first capture of this page). */}
-      {draft === null ? <TeamCompose key="blank" /> : <TeamCompose key={fixture?.team.id ?? 'team'} initial={draft} />}
+        ? <Empty text="no teams route" source={`${teams.data.pending} pending`} />
+        : <TeamList teams={listed} opened={board?.team.id ?? null} onOpen={(id) => { setOpened(id); setComposing(false); }} />}
+      {fixture === null && open !== null ? (
+        <div className="myx-teams-compose-switch">
+          <Key onClick={() => setComposing(!composing)}>{composing ? `${S.edit} ${open.name}` : S.newTeam}</Key>
+        </div>
+      ) : null}
+      {/* Keyed by the team it drafts: a form's state is seeded once, so without the key the
+          composer kept the draft it was born with when the fixture or another team arrived
+          (measured in the first capture of this page). */}
+      {fixture !== null
+        ? <TeamCompose key={fixture.team.id} initial={draftOf(fixture.team)} />
+        : (
+          <TeamCompose
+            key={editing?.id ?? 'new'}
+            team={editing}
+            answer={saved !== null && saved.team.id === editing?.id ? saved.answer : null}
+            onSaved={(team, answer) => {
+              setSaved({ team, answer });
+              setOpened(team.id);
+              setComposing(false);
+              void fetchTeams();
+            }}
+          />
+        )}
     </div>
   );
 }

@@ -149,6 +149,26 @@
   white-space: nowrap;
 }
 
+/* The playground's raw exchange (M4-03). NOT .myx-doc-fix: that box is one command on one line, and
+   its `nowrap` collapsed the pretty-printed JSON's line breaks into a single line the moment the send
+   returned a body. This keeps the JSON's own breaks, wraps a vendor body that is one long string
+   (an event stream arrives as `{"raw": "..."}`) inside the column, and scrolls rather than growing
+   without bound: a reply may run to the daemon's 200k-character cap. */
+.myx-doc-raw {
+  margin: var(--space-0);
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  color: var(--strip-ink);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
 .myx-doc-note {
   margin: var(--space-0);
   font-family: var(--font-label);

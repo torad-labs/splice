@@ -198,7 +198,7 @@ describe('sessions board', () => {
     expect(out).toContain('head: claudex');
   });
 
-  test('the peer is unknown, and prints the absence glyph, while the edges route is pending', () => {
+  test('the peer is unknown, and prints the absence glyph, until the board edges are read', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ session_id: 'a' })]) }));
     expect(out).toContain('>n/r<');
     expect(out).not.toContain('unavailable');
@@ -222,9 +222,10 @@ describe('sessions board', () => {
 });
 
 describe('projects board', () => {
-  test('a pending list names the row that will serve it', () => {
-    const out = render(h(ProjectsBoard, { payload: { pending: 'V4-131' } }));
-    expect(out).toContain('row V4-131');
+  test('a list that failed to read prints the daemon\'s sentence, never a pending row', () => {
+    const out = render(h(ProjectsBoard, { payload: null, error: 'HTTP 404' }));
+    expect(out).toContain('HTTP 404');
+    expect(out).not.toContain('V4-131');
     expect(out).not.toContain('sample data');
   });
 
@@ -301,9 +302,7 @@ describe('conversation', () => {
 });
 
 describe('file view', () => {
-  test('a pending files route names the row, and a memory-less project names its setting', () => {
-    expect(render(h(FileView, { projectId: 'p', files: { pending: 'V4-131' } }))).toContain('row V4-131');
-
+  test('a memory-less project names its setting and the directories it looked in', () => {
     const empty = render(
       h(FileView, {
         projectId: 'p',

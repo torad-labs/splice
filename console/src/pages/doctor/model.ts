@@ -7,9 +7,32 @@
 // console must not either. A pure machine that returns the response inside its own state is a
 // thing a test can prove holds nothing anywhere else; a component that quietly wrote to the store
 // or to localStorage could not be.
-import type { DoctorCheck, DoctorPayload, DoctorStatus } from '@entities/doctor';
-import { checkSection } from '@entities/doctor';
+import type { DoctorCheck, DoctorPayload, DoctorStatus, Leak } from '@entities/doctor';
+import { checkSection, leaksIn } from '@entities/doctor';
 import type { Edge } from '@shared/ui';
+
+/** What the board may print of a report, and why it may print nothing. */
+export interface GatedReport {
+  /** The report, only when it carries no credential shape; null when none was served or it was
+   *  refused. The ONE value a surface on the board may read the report through. */
+  shown: DoctorPayload | null;
+  /** Where each shape survived, by kind and path; empty unless the report was refused. */
+  leaks: Leak[];
+}
+
+/**
+ * THE REDACTION GATE, as one value rather than a flag beside the payload (M4-07).
+ *
+ * It was a boolean the rack checked, while the fix list and the opened check's detail read the
+ * payload itself, so a secret the gate caught still printed in the aside. A gate that hands out the
+ * report only when it passed cannot be walked around by a surface that forgets to ask: a surface
+ * that reads `shown` gets null from a refused report, and there is nothing else to read.
+ */
+export function gateReport(report: DoctorPayload | null): GatedReport {
+  if (report === null) return { shown: null, leaks: [] };
+  const leaks = leaksIn(report);
+  return { shown: leaks.length === 0 ? report : null, leaks };
+}
 
 /** The holder edge for a check's status. `info` is grey rather than green: it is a statement, not a
  *  pass, and a report that painted it green would make "3 checks passed" out of "2 passed, 1 had
@@ -108,7 +131,7 @@ export function reportFacts(payload: DoctorPayload): { field: string; value: str
 
 // ── the playground ───────────────────────────────────────────────────────────
 
-export type PlaygroundStep = 'idle' | 'sending' | 'answered' | 'failed' | 'pending';
+export type PlaygroundStep = 'idle' | 'sending' | 'answered' | 'failed';
 
 /**
  * One playground run. The request and the response live HERE and nowhere else: no store, no
@@ -121,6 +144,11 @@ export interface PlaygroundState {
   request: unknown | null;
   response: unknown | null;
   note: string | null;
+  /** Which send the in-flight request belongs to. Every send takes the next number, and an answer
+   *  lands only on the run that asked for it, while it is still waiting: the send is a real request
+   *  (POST /api/playground), so its answer can arrive after a `clear` or a second send, and landing
+   *  it then would put back on screen a body the operator had already dropped. */
+  run: number;
 }
 
 export const IDLE_PLAYGROUND: PlaygroundState = {
@@ -130,16 +158,21 @@ export const IDLE_PLAYGROUND: PlaygroundState = {
   request: null,
   response: null,
   note: null,
+  run: 0,
 };
 
 export type PlaygroundEvent =
   | { kind: 'head'; value: string }
   | { kind: 'prompt'; value: string }
   | { kind: 'send' }
-  | { kind: 'answered'; request: unknown; response: unknown }
-  | { kind: 'pending'; row: string }
-  | { kind: 'failed'; note: string }
+  | { kind: 'answered'; run: number; request: unknown; response: unknown }
+  | { kind: 'failed'; run: number; note: string }
   | { kind: 'reset' };
+
+/** Whether an answer belongs to the run on screen: the same run, still waiting for it. */
+function awaited(state: PlaygroundState, run: number): boolean {
+  return state.step === 'sending' && state.run === run;
+}
 
 /** Whether a run can start: it needs a head and something to say. */
 export function canSend(state: PlaygroundState): boolean {
@@ -156,15 +189,17 @@ export function playgroundNext(state: PlaygroundState, event: PlaygroundEvent): 
       if (!canSend(state)) return state;
       // The previous run's bodies are dropped HERE, at the only moment a new one begins: a console
       // that kept them would be a body store the operator never asked for.
-      return { ...state, step: 'sending', request: null, response: null, note: null };
+      return { ...state, step: 'sending', request: null, response: null, note: null, run: state.run + 1 };
     case 'answered':
+      if (!awaited(state, event.run)) return state;
       return { ...state, step: 'answered', request: event.request, response: event.response, note: null };
-    case 'pending':
-      return { ...state, step: 'pending', note: event.row, request: null, response: null };
     case 'failed':
+      if (!awaited(state, event.run)) return state;
       return { ...state, step: 'failed', note: event.note, request: null, response: null };
     case 'reset':
-      return IDLE_PLAYGROUND;
+      // The run number survives the reset and nothing else does: it is what makes the answer to a
+      // request the operator walked away from arrive to a run that is no longer waiting for it.
+      return { ...IDLE_PLAYGROUND, run: state.run };
     default:
       return state;
   }
@@ -192,9 +227,6 @@ export function fixtureName(search: string, dev: boolean): string | null {
  */
 export const EMPTIES = {
   noReport: { text: 'doctor report not built', source: 'row V4-127' },
-  upgrade: { text: 'upgrade status not built', source: 'row V4-127' },
-  restart: { text: 'daemon restart not built', source: 'row V4-74' },
   capture: { text: 'body capture not built', source: 'row V4-133' },
-  playground: { text: 'playground not built', source: 'row V4-133' },
   noChecks: { text: 'no checks reported', source: 'GET /api/doctor' },
 } as const;

@@ -10,7 +10,6 @@
 // fields already on the wire (availability) are typed from the daemon's own enum. Because the route
 // itself exists, this store is NOT a PendingRoute union: a 404 here is an error, not "not built
 // yet", and the pending part is the two optional fields.
-import type { PendingRoute } from '@shared/api';
 
 /** What the daemon writes when splice did not launch the session (SessionsRoutes.kt:12). */
 export const UNKNOWN_HEAD = 'unknown head';
@@ -91,24 +90,30 @@ export type EdgeDirection = 'out' | 'in';
  * One message edge: that a session sent a message and to which address, read on the wire from the
  * SendMessage tool call's input (FEATURES.md 4.13). NO TEXT: the message itself is read from the
  * transcripts on demand and never stored, which is why this carries an address and a time and
- * nothing else.
+ * nothing else. Written by ActivityRoutes' EdgeIndex.edgesOf (V4-130) for both edge routes.
  *
- * PENDING V4-130 (route /api/sessions/{id}/edges).
+ * THE TWO ENDS ARE DIFFERENT KINDS OF VALUE, and reading one as the other is a wrong peer.
  */
 export interface SessionEdge {
-  /** The session that sent the message. */
+  /** The SESSION ID of the session that sent the message (MessageEdgeStore: "[from] is the sending
+   *  session id"), never an address. */
   from: string;
-  /** The recipient ADDRESS (`uds:<socket path>`), resolved against the registry by the page:
-   *  SessionRow.address is the same string for the session that owns that socket. */
+  /** What the SendMessage call named: an address (`uds:<socket path>`), or a name the daemon
+   *  resolved to the registry address that answers to it, else the name verbatim. */
   to: string;
   /** Epoch ms of the call. */
   at: number;
   direction: EdgeDirection;
 }
 
+/** GET /api/sessions/{id}/edges: one session's edges, oldest first. */
 export interface SessionEdgesPayload {
   session_id: string;
   edges: SessionEdge[];
 }
 
-export type SessionEdgesSlice = SessionEdgesPayload | PendingRoute;
+/** GET /api/sessions/edges (ActivityRoutes.boardEdges): every registry session's edges in one read,
+ *  keyed by session id, empty arrays included, each in the per-session route's edge shape. */
+export interface BoardEdgesPayload {
+  sessions: Record<string, SessionEdge[]>;
+}

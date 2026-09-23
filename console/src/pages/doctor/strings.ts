@@ -26,6 +26,8 @@ export const S = {
   head: 'head',
   prompt: 'prompt',
   send: 'send',
+  /** The send key while its request is out: a working key prints that it is working. */
+  sending: 'sending',
   request: 'request',
   response: 'response',
   clear: 'clear',

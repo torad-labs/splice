@@ -1,13 +1,17 @@
 // The transcript entity's HTTP segment: two calls, both explicit. There is no poller and nothing
 // runs on import, because FEATURES.md 4.4 reads a conversation from disk on demand and this entity
 // must never prefetch a body the operator did not ask for.
-import { pendingOf, request } from '@shared/api';
+import { MgmtError, pendingOf, request } from '@shared/api';
 import { advanceCursor, openCursor } from '../model/cursor';
 import { transcriptStore } from '../model/store';
 import type { TranscriptPage, TranscriptState } from '../model/types';
 
-/** The v0.4.0 item that will serve the transcript route. */
+/** The v0.4.0 item that serves the transcript route, named for a daemon older than it. */
 export const PENDING_TRANSCRIPT = 'V4-130';
+
+/** The daemon's own answer for a session with no transcript on disk (SessionsRoutes.kt, a 404). The
+ *  route exists and answered: that is not the pending route a 404 from an older daemon means. */
+export const TRANSCRIPT_MISSING = 'no transcript for this session id';
 
 /** The loaded state, or null when nothing is loaded yet or the route is pending. */
 function loadedState(): TranscriptState | null {
@@ -17,6 +21,10 @@ function loadedState(): TranscriptState | null {
 }
 
 function resolveFailure(err: unknown): void {
+  if (err instanceof MgmtError && err.status === 404 && err.message === TRANSCRIPT_MISSING) {
+    transcriptStore.setError(TRANSCRIPT_MISSING);
+    return;
+  }
   const pending = pendingOf(err, PENDING_TRANSCRIPT);
   if (pending !== null) {
     transcriptStore.setData(pending);

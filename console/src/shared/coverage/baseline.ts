@@ -236,9 +236,14 @@ const PENDING: readonly PendingGroup[] = [
       '/api/projects/{id}/files',
     ],
   },
+];
+
+/** Routes the SHELL reads, which no page owns and so no page's coverage.ts can declare. */
+const SHELL: readonly { kind: 'route'; names: readonly string[]; reason: string }[] = [
   {
     kind: 'route',
-    where: 'M3-01',
+    // The live stream the rule widget connects on every page (widgets/rule): read, never written.
+    reason: 'the shell',
     names: ['/api/events'],
   },
 ];
@@ -270,6 +275,7 @@ const EXCLUDED: readonly ExcludedGroup[] = [
 ];
 
 export const dispositions: readonly Disposition[] = [
+  ...SHELL.flatMap((group) => group.names.map((name): Disposition => ({ kind: group.kind, name, disposition: 'read-only' }))),
   ...PENDING.flatMap((group) =>
     group.names.map((name): Disposition => ({ kind: group.kind, name, disposition: 'pending', where: group.where })),
   ),

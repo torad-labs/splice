@@ -1,22 +1,22 @@
 // The projects page: the repos the daemon has seen as strips, and the opened
-// repo's instruction and memory files in the detail column.
+// repo's own row and its instruction and memory files in the detail column.
 //
 // A project here is a repository, not a filter: [[compaction.project]] is
 // already keyed by path in the daemon, and the operator asked for a view per
-// repo (FEATURES.md 4.14). The list is one request; everything else on the page
-// composes from other entities, which is why no project-detail route is asked
-// for beyond the files.
+// repo (FEATURES.md 4.14). Three reads, all ProjectsRoutes: the list, the
+// opened repo's own row (GET /api/projects/{id}, detail.tsx), and its files.
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
 import { startProjectsPolling, useProjects } from '@entities/project';
-import type { ProjectFilesPayload, ProjectRow, ProjectsSlice } from '@entities/project';
+import type { ProjectFilesPayload, ProjectRow, ProjectsPayload } from '@entities/project';
 import { FileView } from '@widgets/file-view';
 import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import type { Basis } from '@shared/ui';
 import { timeAgo } from '@shared/lib';
+import { ProjectDetail } from './detail';
 import { S } from './strings';
 import './projects.css';
 
@@ -169,7 +169,7 @@ function fixtureName(search: string): string | null {
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
 export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
-  payload: ProjectsSlice | null;
+  payload: ProjectsPayload | null;
   /** Sample file payloads, keyed by project id: the capture fixture seam. */
   files?: Record<string, ProjectFilesPayload>;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
@@ -180,8 +180,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const pending = payload !== null && 'pending' in payload;
-  const rows = payload !== null && !pending ? payload.projects : [];
+  const rows = payload?.projects ?? [];
   const open = rows.find((row) => row.id === openId) ?? null;
   const openFiles = open === null ? undefined : files[open.id];
 
@@ -204,9 +203,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
         {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
       >
         <div className="myx-px-bays">
-          {pending ? (
-            <Empty text="project list not routed yet" source="row V4-131" />
-          ) : rows.length === 0 ? (
+          {rows.length === 0 ? (
             <Empty text="no repositories seen" source="/api/projects" />
           ) : (
             <Bay
@@ -259,6 +256,10 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
                   {S.close}
                 </button>
               </div>
+              {/* A capture's sample row IS the detail: nothing is read behind a fixture. */}
+              <Bay label={S.activity}>
+                <ProjectDetail id={open.id} {...(sample === undefined ? {} : { row: open })} />
+              </Bay>
               <Bay label={S.files}>
                 {openFiles === undefined ? (
                   <FileView projectId={open.id} />

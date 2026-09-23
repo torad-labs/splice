@@ -132,6 +132,24 @@ class UpstreamRosterTest {
         assertEquals(emptyList<UpstreamModel>(), published("""{"data":[]}"""))
     }
 
+    // 2026-09-23 (review): a list whose rows carry no id read as an EMPTY list, and an empty answer
+    // replaced the list the head kept, shrinking its picker. A row that is not an object threw, and was
+    // reported as "did not answer with JSON".
+    @Test
+    fun `rows with no id are left out, and a list with no id at all is unreadable rather than empty`() {
+        val mixed = published("""{"data":[{"id":"grok-4.7"},{"name":"x"},"stray"]}""")
+        assertEquals(listOf("grok-4.7"), mixed.map { it.id })
+        val renamed = parser.parse("""{"data":[{"model":"a"},{"model":"b"}]}""", "https://example.test/v1/models")
+        assertTrue(renamed is UpstreamRoster.Unreadable, "$renamed")
+        assertTrue((renamed as UpstreamRoster.Unreadable).detail.contains("2 rows, none with an id"), renamed.detail)
+    }
+
+    @Test
+    fun `a bare array is a model list`() {
+        assertEquals(listOf("m1", "m2"), published("""[{"id":"m1"},{"slug":"m2"}]""").map { it.id })
+        assertTrue(parser.parse("""[]""", "https://example.test/v1/models") is UpstreamRoster.Published)
+    }
+
     // ── the tier-suffix grammar, shared with the wire path ──────────────────────
 
     @Test
@@ -173,6 +191,25 @@ class UpstreamRosterTest {
         assertEquals(RosterVerdict.CAPPED, verdict(rows, "grok-4.3"))
         assertEquals(500_000L, rows.first { it.id == "grok-4.6" }.upstreamWindow)
         assertTrue(rows.first { it.id == "grok-4.6" }.note.contains("500000"))
+    }
+
+    // The Codex backend publishes a default window AND the largest override it accepts. A row between
+    // the two is the vendor's sanctioned opt-in (gpt-6-astra at 872000 was served at 637k tokens on
+    // 2026-09-21); `splice models` called it an overrun until max_context_window was read.
+    @Test
+    fun `a window up to the endpoint's override ceiling is an opt-in, and only above it a fault`() {
+        val upstream = published(
+            """{"models":[{"slug":"gpt-6-astra","context_window":272000,"max_context_window":872000},""" +
+                """{"slug":"gpt-5.5","context_window":272000,"max_context_window":272000}]}""",
+        )
+        assertEquals(872_000L, upstream.first { it.id == "gpt-6-astra" }.maxContextWindow)
+        val rows = diff.of(listOf(entry("gpt-6-astra", 872_000), entry("gpt-5.5", 400_000)), upstream)
+        assertEquals(RosterVerdict.SERVED, verdict(rows, "gpt-6-astra"))
+        assertTrue(rows.first { it.id == "gpt-6-astra" }.note.contains("opts in"))
+        assertEquals(RosterVerdict.OVER_CEILING, verdict(rows, "gpt-5.5"))
+        val over = diff.of(listOf(entry("gpt-6-astra", 1_000_000)), upstream)
+        assertEquals(RosterVerdict.OVER_CEILING, verdict(over, "gpt-6-astra"))
+        assertEquals(872_000L, over.first().upstreamWindow)
     }
 
     @Test

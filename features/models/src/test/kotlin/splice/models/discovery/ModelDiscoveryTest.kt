@@ -4,6 +4,7 @@
 package splice.models.discovery
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -54,6 +55,7 @@ class ModelDiscoveryTest {
         found as Discovery.Found
         assertEquals(LIST_URL, found.url)
         assertEquals(listOf(DiscoveredModel("m-chat", "Chat", 256_000, listOf("m-chat-latest"))), found.models)
+        assertEquals(2, found.ruledOut, "the image and hidden rows are counted, so daemon.log can say so")
     }
 
     @Test
@@ -78,19 +80,26 @@ class ModelDiscoveryTest {
     fun `the kept list round-trips, and only for the url that produced it`(@TempDir tmp: Path) {
         val cache = RosterCache(StatePaths(baseOverride = tmp))
         val models = listOf(DiscoveredModel("m-chat", "Chat", 256_000, listOf("m-chat-latest")), DiscoveredModel("m-2"))
-        assertNull(cache.read("test", remote), "nothing kept yet")
+        assertEquals(KeptRoster.None, cache.read("test", remote), "nothing kept yet")
         cache.write("test", Discovery.Found(LIST_URL, models))
-        assertEquals(models, cache.read("test", remote))
+        assertEquals(KeptRoster.Kept(models), cache.read("test", remote))
         // A moved endpoint is a different endpoint: its old answer says nothing about the new one.
-        assertNull(cache.read("test", remote.copy(modelsUrl = "https://elsewhere.test/models")))
-        assertNull(cache.read("other-head", remote), "each head keeps its own list")
+        val moved = cache.read("test", remote.copy(modelsUrl = "https://elsewhere.test/models"))
+        assertEquals(KeptRoster.OtherUrl(LIST_URL), moved, "and the line names the endpoint the kept list came from")
+        assertEquals(KeptRoster.None, cache.read("other-head", remote), "each head keeps its own list")
     }
 
+    // 2026-09-23 (review): this read as "nothing kept", and daemon.log said the same for a missing file,
+    // a moved endpoint and a corrupt one — three causes with three different fixes.
     @Test
-    fun `a kept list that cannot be read is no list`(@TempDir tmp: Path) {
+    fun `a kept list that cannot be read says so, and names the file`(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp)
         Files.createDirectories(paths.modelRosterFile("test").parent)
         Files.writeString(paths.modelRosterFile("test"), "{not json")
-        assertNull(RosterCache(paths).read("test", remote))
+        val kept = RosterCache(paths).read("test", remote)
+        assertTrue(kept is KeptRoster.Unreadable, "$kept")
+        val reason = (kept as KeptRoster.Unreadable).reason
+        assertTrue(reason.contains(paths.modelRosterFile("test").toString()), reason)
+        assertFalse(reason.contains("not json"), "a parse error's text can quote the file, so it is withheld")
     }
 }

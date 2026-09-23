@@ -7,9 +7,17 @@
 // reaped that round BY CONSTRUCTION — the tier was a verdict on a transport with no way to answer it.
 // The turn now holds, the upstream speaks when it is ready, and the client sees a NORMAL SUCCESS.
 //
-// SCENARIO:prefill is exactly that shape and is used rather than a new mock scenario: 1.5s of silence,
-// then content, then response.completed. The tier is set BELOW that silence so the breach genuinely
-// happens, which is what makes the hold the thing under test rather than an incidental.
+// SCENARIO:holdstart is that shape: the upstream sends its 200 headers, says nothing until the test
+// releases it, then streams content and response.completed. The release is the watchdog's OWN hold
+// line, so the upstream speaks only after the silence was judged past the tier and held — the breach
+// is real by construction, and the hold is the thing under test rather than an incidental.
+//
+// IT USED TO BE SCENARIO:prefill — a fixed 1.5s of silence against a 1s tier — and that made the hold
+// a race rather than a test. The hold is recorded only if a poll (every tier/3, so 333ms) lands inside
+// the 0.5s between the tier and the upstream speaking, AND the reachability probe that poll starts
+// answers before the round ends. A loaded machine promises neither: the gate of record for 1edd1166a
+// (2026-09-23, MemAvailable ~4G, earlyoom killing builds) saw the turn succeed at latency=1817ms with
+// no watchdog clause at all. The latch removes the window rather than widening it.
 //
 // "perf shows the hold" is asserted from the PERF ROW, not from a field reached into the server — the
 // turn line is the artifact an operator actually reads, and its `watchdog=held(...)` clause is the
@@ -60,6 +68,10 @@ class UpstreamKeepaliveTest {
 
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) {
+        // The engine's clock is off so the budget's 30s totalCap is the one wall. At CIO's 15s
+        // default a round reaped instead of held (the V4-125 defect, re-applied as a mutation) made
+        // the client give up first, and the arm failed on a request timeout that named nothing.
+        engine { requestTimeout = 0 }
         defaultRequest { bearerAuth("test-inference-token") }
     }
 
@@ -101,7 +113,12 @@ class UpstreamKeepaliveTest {
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 30_000, maxRetries = 1),
-            log = { logLines += it },
+            log = { line ->
+                logLines += line
+                // TurnWatchdog.hold writes this line once, AFTER it has recorded the hold, so it is
+                // the earliest moment the upstream may speak without racing the verdict.
+                if (HOLD_LINE in line) mock.startHoldRelease.countDown()
+            },
         ),
     )
 
@@ -117,22 +134,33 @@ class UpstreamKeepaliveTest {
     @Test
     fun `a silent-but-alive upstream past the tier completes the turn when it speaks`() = runTest {
         val tmp = Files.createTempDirectory("head-keepalive")
-        // The tier sits BELOW the mock's 1.5s prefill silence, so the breach is real: a 1s
-        // first-output cap is passed at ~1s while the connection stays open and un-errored.
+        // The upstream stays silent until the watchdog has held it, so a 1s first-output cap is
+        // passed while the connection stays open and un-errored, however slowly the machine runs.
         val server = head(tmp, WatchdogBudget(1.seconds, 1.seconds, 30.seconds))
+        mock.resetStartHold()
         server.start()
         val port = server.port
         awaitListening(port)
         val sse = try {
-            turn(port, "You are a test. SCENARIO:prefill")
+            turn(port, "You are a test. SCENARIO:holdstart")
         } finally {
+            // A round that is reaped instead of held never writes the hold line, so nothing released
+            // the upstream; free its handler thread here so the mock can stop.
+            mock.startHoldRelease.countDown()
             server.stop()
         }
+
+        // 0. THE WATCHDOG HELD. Asserted first because it is the release: without it the upstream
+        // never spoke, and every assertion below would fail naming a symptom instead of the cause.
+        assertTrue(
+            logLines.any { HOLD_LINE in it },
+            "the watchdog never logged a hold, so the silent upstream was never released: $logLines",
+        )
 
         // 1. THE TURN SUCCEEDED. This is the whole point: the silence did not become an error, and
         // the content the upstream eventually sent reached the client.
         assertTrue(
-            sse.contains("summary after slow prefill"),
+            sse.contains("\"late\""),
             "the upstream spoke after the stall and the client must have heard it: $sse",
         )
         assertFalse(
@@ -155,3 +183,7 @@ class UpstreamKeepaliveTest {
         )
     }
 }
+
+// The phrase TurnWatchdog.hold logs when it holds a silent round on a live path. It is the latch's
+// trigger and the first assertion, so a rewording of that log line fails here by name.
+private const val HOLD_LINE = "holding the round"

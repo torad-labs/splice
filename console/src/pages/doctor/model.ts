@@ -7,9 +7,32 @@
 // console must not either. A pure machine that returns the response inside its own state is a
 // thing a test can prove holds nothing anywhere else; a component that quietly wrote to the store
 // or to localStorage could not be.
-import type { DoctorCheck, DoctorPayload, DoctorStatus } from '@entities/doctor';
-import { checkSection } from '@entities/doctor';
+import type { DoctorCheck, DoctorPayload, DoctorStatus, Leak } from '@entities/doctor';
+import { checkSection, leaksIn } from '@entities/doctor';
 import type { Edge } from '@shared/ui';
+
+/** What the board may print of a report, and why it may print nothing. */
+export interface GatedReport {
+  /** The report, only when it carries no credential shape; null when none was served or it was
+   *  refused. The ONE value a surface on the board may read the report through. */
+  shown: DoctorPayload | null;
+  /** Where each shape survived, by kind and path; empty unless the report was refused. */
+  leaks: Leak[];
+}
+
+/**
+ * THE REDACTION GATE, as one value rather than a flag beside the payload (M4-07).
+ *
+ * It was a boolean the rack checked, while the fix list and the opened check's detail read the
+ * payload itself, so a secret the gate caught still printed in the aside. A gate that hands out the
+ * report only when it passed cannot be walked around by a surface that forgets to ask: a surface
+ * that reads `shown` gets null from a refused report, and there is nothing else to read.
+ */
+export function gateReport(report: DoctorPayload | null): GatedReport {
+  if (report === null) return { shown: null, leaks: [] };
+  const leaks = leaksIn(report);
+  return { shown: leaks.length === 0 ? report : null, leaks };
+}
 
 /** The holder edge for a check's status. `info` is grey rather than green: it is a statement, not a
  *  pass, and a report that painted it green would make "3 checks passed" out of "2 passed, 1 had
@@ -204,7 +227,6 @@ export function fixtureName(search: string, dev: boolean): string | null {
  */
 export const EMPTIES = {
   noReport: { text: 'doctor report not built', source: 'row V4-127' },
-  upgrade: { text: 'upgrade status not built', source: 'row V4-127' },
   capture: { text: 'body capture not built', source: 'row V4-133' },
   noChecks: { text: 'no checks reported', source: 'GET /api/doctor' },
 } as const;

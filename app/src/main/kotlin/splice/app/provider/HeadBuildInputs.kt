@@ -123,7 +123,11 @@ internal class HeadBuildInputs(
 
     /** The provider head [key]'s turns dial — the legacy knob remap applied exactly as
      *  [providerContext] applies it — so discovery asks the endpoint the head will actually use. */
-    internal fun effectiveProvider(key: String, providerCfg: ProviderConfig, legacyKnobsGovern: Boolean = true): ProviderConfig =
+    internal fun effectiveProvider(
+        key: String,
+        providerCfg: ProviderConfig,
+        legacyKnobsGovern: Boolean = true,
+    ): ProviderConfig =
         if (legacyKnobsGovern) resolveProviderConfig(providerCfg, config.getConfig(key)) else providerCfg
 
     /** V4-116: is the MID-OUTPUT STALL RE-ANCHOR tier armed for THIS head?

@@ -153,12 +153,13 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
      *   - `supported_parameters` without "tools" (OpenRouter) — every Claude Code turn carries tools,
      *     and a model that takes none refuses the request. */
     private fun unusable(row: JsonObject): String? {
-        val outputs = strings(row["output_modalities"] ?: (row["architecture"] as? JsonObject)?.get("output_modalities"))
+        val architecture = row["architecture"] as? JsonObject
+        val outputs = strings(row["output_modalities"] ?: architecture?.get("output_modalities"))
         val parameters = row["supported_parameters"] as? JsonArray
         return when {
             JsonScalars.str(row, "visibility") == "hide" -> "the endpoint hides it from pickers"
             outputs.isNotEmpty() && "text" !in outputs -> "it produces no text (${outputs.joinToString("+")})"
-            parameters != null && "tools" !in strings(parameters) -> "it takes no tools, and every Claude Code turn sends them"
+            parameters != null && "tools" !in strings(parameters) -> NO_TOOLS
             else -> null
         }
     }
@@ -309,3 +310,6 @@ internal class RosterDiff {
     private fun aliasNote(declared: String, upstream: UpstreamModel): String =
         if (upstream.id == ModelTierSuffix.strip(declared)) "" else " (→ ${upstream.id})"
 }
+
+/** The verdict for a model whose `supported_parameters` omit tools. */
+private const val NO_TOOLS = "it takes no tools, and every Claude Code turn sends them"

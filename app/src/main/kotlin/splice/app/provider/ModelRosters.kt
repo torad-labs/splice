@@ -56,15 +56,16 @@ internal class EndpointModels(private val env: EnvReader = EnvReader(System::get
     override fun discover(key: String, provider: ProviderConfig): Discovery = discovery.discover(key, provider, env)
 }
 
+/** Each head's discovered models, kept under [statePaths] between starts. [source] is each head's own
+ *  endpoint in the daemon; a test hands a fake. */
 internal class ModelRosters(
-    private val source: HeadModelsSource,
-    private val cache: RosterCache,
+    statePaths: StatePaths,
     private val log: LogSink,
+    private val source: HeadModelsSource = EndpointModels(),
     private val deadline: Duration = DISCOVERY_DEADLINE,
 ) : HeadDiscoveredModels {
 
-    /** The daemon's: each head's own endpoint, cached under [statePaths]. */
-    constructor(statePaths: StatePaths, log: LogSink) : this(EndpointModels(), RosterCache(statePaths), log)
+    private val cache = RosterCache(statePaths)
 
     private val byHead = ConcurrentHashMap<String, List<DiscoveredModel>>()
     private val boundary = DaemonBoundary()

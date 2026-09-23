@@ -45,7 +45,10 @@ class DiscoveredCatalogTest {
             DiscoveredModel("grok-4.20", contextWindow = 1_000_000),
         )
         val catalog = provider.catalogFor(head, discovered = discovered)
-        assertEquals(listOf("grok-4.6", "grok-4.3[1m]", "grok-build-latest", "grok-4.7", "grok-4.20"), catalog.availableModelIds())
+        assertEquals(
+            listOf("grok-4.6", "grok-4.3[1m]", "grok-build-latest", "grok-4.7", "grok-4.20"),
+            catalog.availableModelIds(),
+        )
         val declared = catalog.models.first { it.id == "grok-4.6" }
         assertEquals(500_000L, declared.contextWindow)
         assertEquals("Grok 4.6", declared.label)
@@ -118,7 +121,8 @@ class DiscoveredCatalogTest {
     @Test
     fun `a provider with no rows serves what its endpoint lists, and its pinned model when nothing answered`() {
         val bare = provider.copy(models = emptyList())
-        assertEquals(listOf("grok-4.7", "grok-4.6"), ids(listOf(DiscoveredModel("grok-4.7"), DiscoveredModel("grok-4.6")), bare))
+        val listed = listOf(DiscoveredModel("grok-4.7"), DiscoveredModel("grok-4.6"))
+        assertEquals(listOf("grok-4.7", "grok-4.6"), ids(listed, bare))
         val unanswered = bare.catalogFor(head)
         assertEquals(listOf("grok-4.6"), unanswered.availableModelIds())
         // The pinned fallback is the operator's own model, so it may stand behind a tier.

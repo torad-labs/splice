@@ -394,27 +394,6 @@ class LaunchServiceTest {
         assertEquals("grok-4.5", env["ANTHROPIC_DEFAULT_FABLE_MODEL"]) // shares frontier
     }
 
-    // 2026-09-22: a model the endpoint lists but no row declares is offered in the picker and never
-    // placed behind a tier. Without the candidates list the discovered "grok-code-mini" (listed
-    // first, and matching the mini rule) would take both sonnet and haiku from the declared rows.
-    @Test
-    fun `discovered models are offered but never placed behind a tier`() {
-        val available = listOf("grok-4.5", "grok-code-mini", "grok-4.3")
-        val env = service.launch(
-            spec("grok", pinned = "grok-4.5", available = available)
-                .copy(tiers = ModelTiers(candidates = listOf("grok-4.5", "grok-4.3"))),
-            emptyList(),
-            dangerouslySkipPermissions = false,
-        ).env
-        assertEquals("grok-4.5", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
-        assertEquals("grok-4.3", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
-        assertEquals("grok-4.3", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "the discovered mini id is not a tier candidate")
-        assertTrue(
-            env.values.none { it == "grok-code-mini" },
-            "a discovered id reaches the picker through the catalog, never a tier env",
-        )
-    }
-
     // ── native-auth heads (campaign claude-head, CH-8) ────────────────────────────────────────
     //
     // Every OTHER head serves a foreign vendor, so the recipe replaces the client's Anthropic

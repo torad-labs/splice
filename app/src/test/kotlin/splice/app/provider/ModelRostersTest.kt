@@ -15,7 +15,6 @@ import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.util.LogSink
 import splice.models.discovery.Discovery
-import splice.models.discovery.RosterCache
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import kotlin.time.Duration.Companion.milliseconds
@@ -34,7 +33,7 @@ class ModelRostersTest {
     private val chat = listOf(DiscoveredModel("m-chat", contextWindow = 256_000), DiscoveredModel("m-2"))
 
     private fun rosters(tmp: Path, source: HeadModelsSource) =
-        ModelRosters(source, RosterCache(StatePaths(baseOverride = tmp)), log, deadline = 200.milliseconds)
+        ModelRosters(StatePaths(baseOverride = tmp), log, source, deadline = 200.milliseconds)
 
     @Test
     fun `a head's answer is its roster, and is kept for the next start`(@TempDir tmp: Path) = runBlocking {

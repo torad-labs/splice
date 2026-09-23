@@ -71,13 +71,14 @@ internal class ControlPlane(
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
 
+    /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
+     *  assembled, and each head's catalog reads its own through [buildInputs]. */
+    internal val modelRosters = ModelRosters(statePaths, log)
+
     // Held here so Daemon can drop the app.provider + spi imports (concentration, 2026-08-19).
     // probeScope is the daemon's OWN scope — ProviderAssembly must receive the SAME instance
     // stop() cancels; constructing a second one would leak prefetch coroutines.
     internal val signInPlanner = SignInPlanner()
-    /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
-     *  assembled, and each head's catalog reads its own through [buildInputs]. */
-    internal val modelRosters = ModelRosters(statePaths, log)
     internal val buildInputs = HeadBuildInputs(config, signInPlanner, modelRosters)
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
     internal val providerAssembly = ProviderAssembly(statePaths, probeScope, log, refreshCall)

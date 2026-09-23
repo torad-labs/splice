@@ -222,8 +222,8 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
       className="myx-doc"
       {...(sample === undefined ? {} : { 'data-sample': sample })}
     >
-      <header className="myx-doc-head">
-        <h1 className="myx-doc-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 

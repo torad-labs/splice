@@ -278,8 +278,8 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
 
   return (
     <div className="myx-tn">
-      <header className="myx-tn-head">
-        <h2 className="myx-tn-title">{S.title}</h2>
+      <header className="myx-page-head">
+        <h2 className="myx-page-title">{S.title}</h2>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {selection.kind === 'timeline' ? (
           <>
@@ -302,6 +302,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
           <Bay
             label={S.inflight}
             count={inflight.length}
+            compact
             empty={{ text: 'nothing in flight', source: '/api/heads' }}
           >
             {inflight.map((turn) => (
@@ -311,6 +312,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
 
           <Bay
             label={S.summary}
+            compact
             {...(summary === null ? {} : { count: summary.heads.length })}
             empty={{ text: 'no summary read yet', source: '/api/perf/summary' }}
           >
@@ -323,6 +325,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
               summary says how long turns took, these say where the time went and what it cost. */}
           <Bay
             label={S.stages}
+            compact
             {...(pending ? {} : { count: stageRows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
           >
             {stageRows.map((stage) => (
@@ -336,6 +339,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
 
           <Bay
             label={S.tokens}
+            compact
             {...(pending ? {} : { count: tokenRows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
           >
             {tokenRows.map((row) => (
@@ -352,6 +356,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
 
           <Bay
             label={S.landed}
+            compact
             {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
           >
             {/* A head whose turns could not be read is NAMED, in the daemon's words: the list below is

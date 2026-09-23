@@ -149,7 +149,7 @@ function Pool({ head, payload, nowMs }: { head: HeadStatus; payload: AccountsSta
       ) : pooled ? (
         <Empty text={EMPTIES.noneAvailable.text} source={EMPTIES.noneAvailable.source} />
       ) : null}
-      <Bay label={S.accounts} count={pool.length}>
+      <Bay label={S.accounts} count={pool.length} compact>
         {pool.map((account) => {
           const isNext = next !== null && next.label === account.label;
           return (
@@ -243,8 +243,8 @@ export function FleetPage() {
 
   return (
     <div className="myx-fleet">
-      <header className="myx-fleet-head">
-        <h1 className="myx-fleet-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
@@ -261,6 +261,7 @@ export function FleetPage() {
                 key={group.key === '' ? S.bay : group.key}
                 label={group.key === '' ? S.bay : group.key}
                 count={group.heads.length}
+                compact
               >
                 {group.heads.map((head) => (
                   <HeadStrip

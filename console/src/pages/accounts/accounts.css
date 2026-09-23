@@ -9,19 +9,7 @@
   gap: var(--space-4);
 }
 
-.myx-accounts-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-accounts-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-6);
-  color: var(--ink-strong);
-}
 
 /* THE RACK TAKES THE WHOLE WIDTH UNTIL SOMETHING IS OPENED (M2-24, the console's last resting
    detail column; the mechanism is M1-116's and M1-119's, copied rather than re-derived). Measured

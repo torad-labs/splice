@@ -138,8 +138,8 @@ export function McpPage() {
 
   return (
     <div className="myx-mcp">
-      <header className="myx-mcp-head">
-        <h1 className="myx-mcp-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 

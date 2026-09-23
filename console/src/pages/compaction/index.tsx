@@ -91,8 +91,8 @@ export function CompactionBoard({ payload, instructions = null, instructionsErro
       className="myx-compaction"
       {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
     >
-      <header className="myx-compaction-head">
-        <h1 className="myx-compaction-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
       </header>
       {/* Behind a Reveal, not inline: the brief allows a paragraph on a page only as an honest
           empty or a Doctor fix, and explanation is on demand (m1 design review B16). The copy is

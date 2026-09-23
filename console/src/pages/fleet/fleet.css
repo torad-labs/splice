@@ -8,19 +8,7 @@
   min-height: 100%;
 }
 
-.myx-fleet-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-fleet-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-6);
-  color: var(--ink-strong);
-}
 
 /* AT REST THE RACK TAKES THE WHOLE FRAME; THE COLUMN ARRIVES WITH ITS CONTENT (M1-102, measured).
    The detail column was 384 of 1536 - 25.0% of the frame - in the state EVERYBODY ARRIVES IN,

@@ -17,21 +17,16 @@
 package splice.core.config
 
 import splice.core.auth.BearerScheme
+import splice.core.auth.ScopedKey
 import splice.core.util.Cancellables
 import splice.core.util.SecureFile
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 public class TurnKey(private val management: MgmtKey) {
-    private val value: String by lazy {
-        val mac = Mac.getInstance(ALGORITHM)
-        mac.init(SecretKeySpec(management.get().toByteArray(UTF_8), ALGORITHM))
-        mac.doFinal(TURN_SCOPE.toByteArray(UTF_8)).joinToString("") { "%02x".format(it) }
-    }
+    private val value: String by lazy { ScopedKey.derive(management.get(), TURN_SCOPE) }
 
     public fun get(): String = value
 
@@ -57,8 +52,6 @@ public class TurnKey(private val management: MgmtKey) {
         return path
     }
 }
-
-private const val ALGORITHM = "HmacSHA256"
 
 // Versioned so a future change of what this key opens can re-derive every session's key at once.
 private const val TURN_SCOPE = "splice:turn-access:v1"

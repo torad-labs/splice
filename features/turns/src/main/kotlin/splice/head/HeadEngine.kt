@@ -16,6 +16,7 @@ package splice.head
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -33,7 +34,9 @@ import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.netty.channel.socket.SocketChannelConfig
 import splice.core.auth.LoopbackHost
+import splice.core.turn.ErrorType
 import splice.core.util.LogSink
+import splice.core.wire.ErrorEnvelope
 import splice.head.admission.HeadAdmission
 import splice.upstream.Provider
 import java.util.concurrent.atomic.AtomicBoolean
@@ -54,11 +57,6 @@ private const val RUNNING_LIMIT = 2048
 // (review 2026-07-22); 60s already carries 6x headroom over the default-10s load-test
 // truncations (52/1000 stream tails).
 private const val WRITE_TIMEOUT_S = 60
-
-// v0.4.0: the DNS-rebinding refusal, Anthropic-shaped so a client that ever reaches it prints why.
-private const val FOREIGN_HOST =
-    "{\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":" +
-        "\"splice serves loopback names only (127.0.0.1, localhost, [::1])\"}}"
 
 /** V4-173: the 404 body of GET /wire on a head whose tap is off. */
 private const val WIRE_TAP_OFF =
@@ -99,14 +97,7 @@ internal class HeadEngine(
             serverConfig {
                 module {
                     install(SSE)
-                    // v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the
-                    // operator's browser (see LoopbackHost). Refused before routing, so no route runs.
-                    intercept(ApplicationCallPipeline.Plugins) {
-                        if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
-                            call.respondText(FOREIGN_HOST, ContentType.Application.Json, HttpStatusCode.Forbidden)
-                            finish()
-                        }
-                    }
+                    refuseForeignHosts()
                     routing {
                         get("/health") {
                             call.respondText(diagnostics.healthJson(this@HeadEngine.port), ContentType.Application.Json)
@@ -161,6 +152,22 @@ internal class HeadEngine(
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         boundPort = null
+    }
+
+    /** v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the operator's browser
+     *  (see LoopbackHost). Refused before routing, so no route runs; Anthropic-shaped, so a client
+     *  that ever reaches it prints why. */
+    private fun Application.refuseForeignHosts() {
+        intercept(ApplicationCallPipeline.Plugins) {
+            if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
+                call.respondText(
+                    ErrorEnvelope.of(ErrorType.PERMISSION.wireName, LoopbackHost.FOREIGN_HOST_REFUSAL).toString(),
+                    ContentType.Application.Json,
+                    HttpStatusCode.Forbidden,
+                )
+                finish()
+            }
+        }
     }
 
     /** V4-173: the operator's view of what this head sent upstream. Management key only

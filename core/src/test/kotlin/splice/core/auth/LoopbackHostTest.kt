@@ -12,8 +12,14 @@ class LoopbackHostTest {
     @Test
     fun `loopback names are served on any port and in any case`() {
         listOf(
-            "127.0.0.1", "127.0.0.1:3096", "localhost", "localhost:3100", "LOCALHOST:3096",
-            "[::1]", "[::1]:3096", " 127.0.0.1:3096 ",
+            "127.0.0.1",
+            "127.0.0.1:3096",
+            "localhost",
+            "localhost:3100",
+            "LOCALHOST:3096",
+            "[::1]",
+            "[::1]:3096",
+            " 127.0.0.1:3096 ",
         ).forEach { assertTrue(LoopbackHost.admits(it), it) }
     }
 
@@ -25,8 +31,14 @@ class LoopbackHostTest {
     @Test
     fun `a rebinding page's name is refused, even one that begins like loopback`() {
         listOf(
-            "attacker.example", "attacker.example:3096", "localhost.attacker.example:3096",
-            "127.0.0.1.nip.io:3096", "[::1].attacker.example", "localhost:1.attacker.example", "0.0.0.0:3096", "",
+            "attacker.example",
+            "attacker.example:3096",
+            "localhost.attacker.example:3096",
+            "127.0.0.1.nip.io:3096",
+            "[::1].attacker.example",
+            "localhost:1.attacker.example",
+            "0.0.0.0:3096",
+            "",
             "192.168.1.5:3096",
         ).forEach { assertFalse(LoopbackHost.admits(it), it) }
     }

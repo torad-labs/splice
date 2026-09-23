@@ -16,6 +16,7 @@ package splice.control
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -98,15 +99,13 @@ private const val DEFAULT_LOG_TAIL = 200
 private const val DEFAULT_PERF_TAIL = 200
 private const val MAX_TAIL = 2_000
 
-/** V4-134: answered on /api/events until ControlPlane assigns [ConsolePorts.events]. NOT an empty
- *  stream: a stream that opens and stays quiet reads as a daemon with nothing happening, which is a
- *  confident false negative about a daemon serving turns right now. The text names what was not done. */
-private const val FOREIGN_HOST = "splice serves loopback names only (127.0.0.1, localhost, [::1])"
-
 /** Which scoped bearer a route admits BESIDE the management key, which opens every route. One door
  *  per route, so no route can be widened to two scoped keys by a flag pair. */
 private enum class Door { MANAGEMENT, MCP, SESSION }
 
+/** V4-134: answered on /api/events until ControlPlane assigns [ConsolePorts.events]. NOT an empty
+ *  stream: a stream that opens and stays quiet reads as a daemon with nothing happening, which is a
+ *  confident false negative about a daemon serving turns right now. The text names what was not done. */
 private const val EVENTS_UNWIRED = "the daemon wired no console event bus; /api/events cannot stream its events"
 
 public class ControlServer(
@@ -265,18 +264,7 @@ public class ControlServer(
      *  in one body. Adding a route should not be a reason to restructure startup, or the reverse. */
     private fun controlEngine(): EmbeddedServer<NettyApplicationEngine, *> =
         embeddedServer(Netty, port = port, host = "127.0.0.1") {
-            // v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the operator's
-            // browser (see LoopbackHost). Refused before routing, so no route — guarded or open — runs.
-            intercept(ApplicationCallPipeline.Plugins) {
-                if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
-                    call.respondText(
-                        buildJsonObject { put("error", FOREIGN_HOST) }.toString(),
-                        ContentType.Application.Json,
-                        HttpStatusCode.Forbidden,
-                    )
-                    finish()
-                }
-            }
+            refuseForeignHosts()
             routing {
                 // Unauthenticated liveness probe: the launch shim polls this to tell a running
                 // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.
@@ -463,6 +451,21 @@ public class ControlServer(
             return
         }
         EventsRoute(bus).stream(call)
+    }
+
+    /** v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the operator's browser
+     *  (see LoopbackHost). Refused before routing, so no route — guarded or open — runs for it. */
+    private fun Application.refuseForeignHosts() {
+        intercept(ApplicationCallPipeline.Plugins) {
+            if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
+                call.respondText(
+                    buildJsonObject { put("error", LoopbackHost.FOREIGN_HOST_REFUSAL) }.toString(),
+                    ContentType.Application.Json,
+                    HttpStatusCode.Forbidden,
+                )
+                finish()
+            }
+        }
     }
 
     private suspend fun guarded(call: ApplicationCall, door: Door = Door.MANAGEMENT, block: MgmtRoute) {

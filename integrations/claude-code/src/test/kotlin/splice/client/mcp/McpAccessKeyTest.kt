@@ -20,6 +20,17 @@ class McpAccessKeyTest {
         assertFalse(key.matchesBearer("Bearer ${scoped.dropLast(1)}x"))
     }
 
+    // The derivation is pinned to a vector computed outside the JVM (Python hmac, 2026-09-23): the
+    // key rides in generated MCP client configs, so a change in scope, encoding or hex case would
+    // strand every configured client while every relative assertion above stayed green.
+    @Test
+    fun `the scoped capability is HMAC-SHA256 of the MCP scope under the management key`() {
+        assertEquals(
+            "185a66cb46afccec43484e34f38a7f1db9727aee3c1105ae17208d7adc36ca0c",
+            McpAccessKey { "synthetic-management-secret" }(),
+        )
+    }
+
     @Test
     fun `management rotation explicitly revokes the old scoped capability`() {
         var management = "synthetic-old"

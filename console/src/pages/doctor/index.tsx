@@ -8,8 +8,8 @@
 // state, are dropped the moment a new run starts, and touch no store and no storage.
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router';
-import { checkFix, fetchUpgrade, isRedacted, leaksIn, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
-import type { DoctorCheck } from '@entities/doctor';
+import { checkFix, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import type { DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
@@ -17,7 +17,7 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Bay, Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
-import { EMPTIES, attentionCount, canSend, groupChecks, playgroundNext, reportFacts, statusEdge, wantsAttention, IDLE_PLAYGROUND } from './model';
+import { EMPTIES, attentionCount, canSend, gateReport, groupChecks, playgroundNext, reportFacts, statusEdge, wantsAttention, IDLE_PLAYGROUND } from './model';
 import type { PlaygroundEvent } from './model';
 import { fixtureDoctor } from './fixtures/doctor';
 import { fixtureName } from './model';
@@ -187,59 +187,54 @@ function Playground({ heads }: { heads: readonly string[] }) {
   );
 }
 
-export function DoctorPage() {
-  const views = useViews(PAGE_ID, DEFAULT_VIEWS);
-  const active = views.active;
-  const doctor = useDoctor((state) => state);
-  const upgrade = useUpgrade((state) => state);
-  const heads = useHeads((state) => state.data);
+/** The board, drawn from a report it is handed rather than from the store, so a test can plant a
+ *  payload in it (a static render only ever sees a store's initial state). Which check is open is
+ *  the page's state, handed in beside the report, so a render can show an opened check too. */
+export function DoctorBoard({ report, pending = null, error = null, upgrade = null, heads = [], openKey = null, onToggle, sample }: {
+  report: DoctorPayload | null;
+  pending?: string | null;
+  error?: string | null;
+  upgrade?: UpgradePayload | null;
+  heads?: readonly string[];
+  openKey?: string | null;
+  onToggle: (key: string) => void;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
+  sample?: string | undefined;
+}) {
+  const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
 
-  useEffect(() => {
-    const stops = [startDoctorPolling(POLL_MS)];
-    void fetchUpgrade();
-    void fetchHeads();
-    return () => stops.forEach((stop) => stop());
-  }, []);
+  // THE GATE, ONCE, AND EVERY SURFACE BELOW READS ITS OUTPUT (M4-07). `shown` is the report only
+  // when it carries no credential shape, and nothing on this board reads `report` for its content:
+  // the rack, the facts, the version strip, the attention count, the fix list and the opened
+  // check's detail all draw from `shown`. The rack used to be the only surface behind the gate while
+  // the fix list and the detail read the payload as served, so a secret the gate caught still
+  // printed in the aside. A leak is reported as a PATH set, never the value: a leak reporter that
+  // echoed the match would be the leak.
+  const { shown, leaks } = useMemo(() => gateReport(report), [report]);
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
-
-  const { search } = useLocation();
-  const fixture = fixtureName(search, import.meta.env.DEV);
-  const report = fixtureDoctor(fixture);
-  const payload = report ?? (doctor.data !== null && 'checks' in doctor.data ? doctor.data : null);
-  const pending = report === null && doctor.data !== null && 'pending' in doctor.data ? doctor.data.pending : null;
-
-  // The redaction gate, computed once per payload. A leak is reported as a COUNT and a PATH set,
-  // never the value: a leak reporter that echoed the match would be the leak.
-  const leaks = useMemo(() => (payload === null ? [] : leaksIn(payload)), [payload]);
-  const clean = payload === null ? true : isRedacted(payload);
-
-  const checks = payload?.checks ?? [];
+  const checks = shown?.checks ?? [];
   const groups = groupChecks(checks, active);
   const opened = checks.find((check) => check.id === openKey) ?? null;
   const fixes = checks.filter((check) => checkFix(check) !== null);
-  const upgradePayload = upgrade.data !== null && 'installed' in upgrade.data ? upgrade.data : null;
-  const headsKeys = (heads ?? []).map((head) => head.key);
 
   return (
     <div
       className="myx-doc"
-      {...(import.meta.env.DEV && report !== null && fixture !== null ? { 'data-sample': fixture } : {})}
+      {...(sample === undefined ? {} : { 'data-sample': sample })}
     >
       <header className="myx-doc-head">
         <h1 className="myx-doc-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {doctor.error === null ? null : <Fault message={doctor.error} />}
+      {error === null ? null : <Fault message={error} />}
 
       {pending !== null ? <Empty text={EMPTIES.noReport.text} source={`row ${pending}`} /> : null}
-      {payload === null && pending === null ? <Blank strips={4} /> : null}
+      {report === null && pending === null ? <Blank strips={4} /> : null}
 
       {/* The gate. A payload that still carries a credential shape is refused, by path, and never
-          rendered: the strips below would be the leak. */}
-      {clean ? null : (
+          rendered: every surface below would be the leak. */}
+      {leaks.length === 0 ? null : (
         <Empty text="report refused, leaks found" source={leaks.map((leak) => `${leak.kind} at ${leak.where}`).join('; ')} />
       )}
 
@@ -261,7 +256,7 @@ export function DoctorPage() {
             THE DETAIL COLUMN IS UNTOUCHED: it carries real content at rest (M1-112) and this row
             says so; nothing below the grid changed. */}
         <div className="myx-doc-bays">
-          {payload === null || !clean ? null : checks.length === 0 ? (
+          {shown === null ? null : checks.length === 0 ? (
             <Empty text={EMPTIES.noChecks.text} source={EMPTIES.noChecks.source} />
           ) : (
             <>
@@ -276,7 +271,7 @@ export function DoctorPage() {
                     key={check.id}
                     check={check}
                     selected={openKey === check.id}
-                    onOpen={() => toggle(check.id)}
+                    onOpen={() => onToggle(check.id)}
                   />
                 ))}
               </Bay>
@@ -284,10 +279,10 @@ export function DoctorPage() {
               <Bay
                 className="myx-doc-report"
                 label={S.report}
-                count={reportFacts(payload).length}
+                count={reportFacts(shown).length}
                 fields={<ColumnNames columns={[{ w: FACT_KEY, label: S.field }, { w: FACT_VALUE, label: S.value }]} />}
               >
-                {reportFacts(payload).map((fact) => (
+                {reportFacts(shown).map((fact) => (
                   <FactStrip key={fact.field} field={fact.field} value={fact.value} />
                 ))}
               </Bay>
@@ -296,31 +291,35 @@ export function DoctorPage() {
         </div>
 
         <aside className="myx-doc-detail" aria-label={S.detail}>
-          {/* Rendered whether or not the report itself has landed: the empties name rows the
-              operator is waiting on, and the restart is an action on the daemon rather than on the
-              report, so hiding either behind the report hid it entirely. */}
+          {/* Rendered whether or not the report itself has landed: the upgrade strip reads its own
+              route (GET /api/upgrade), and the restart is an action on the daemon rather than on
+              the report, so hiding either behind the report hid it entirely. What IS read off the
+              report -- the installed version, claude code's, the attention count, the fixes and the
+              opened check -- reads `shown`, and prints the absence glyph while there is none: a
+              count or a "no fix offered" about a report the page refused would be a claim about
+              something it did not read. The `upgrade status not built` empty that stood here
+              beside the live strip is gone (M4-07): the route it named as a row is served. */}
           <section className="myx-doc-section">
             <h2 className="myx-doc-section-title">{S.version}</h2>
             <div className="myx-doc-row">
               <Strip
-                edge={upgradePayload === null ? 'grey' : upgradeVerdict(upgradePayload) === 'behind' ? 'amber' : 'green'}
-                edgeLabel={upgradePayload === null ? S.absent : upgradeVerdict(upgradePayload)}
+                edge={upgrade === null ? 'grey' : upgradeVerdict(upgrade) === 'behind' ? 'amber' : 'green'}
+                edgeLabel={upgrade === null ? S.absent : upgradeVerdict(upgrade)}
                 ariaLabel={S.upgrade}
               >
-                <StripField w={NARROW} label={S.installed} value={payload?.splice.version ?? S.absent} />
-                <StripField w={NARROW} label={S.latest} value={upgradePayload?.latest ?? S.absent} {...(upgradePayload === null ? {} : { basis: upgradePayload.latest_basis })} />
+                <StripField w={NARROW} label={S.installed} value={shown?.splice.version ?? S.absent} />
+                <StripField w={NARROW} label={S.latest} value={upgrade?.latest ?? S.absent} {...(upgrade === null ? {} : { basis: upgrade.latest_basis })} />
                 <StripField
                   w={NARROW}
                   label={S.rollback}
-                  value={upgradePayload === null || upgradePayload.rollback_basis !== 'measured' ? S.absent : (upgradePayload.rollback_target ?? S.none)}
-                  {...(upgradePayload === null ? {} : { basis: upgradePayload.rollback_basis })}
+                  value={upgrade === null || upgrade.rollback_basis !== 'measured' ? S.absent : (upgrade.rollback_target ?? S.none)}
+                  {...(upgrade === null ? {} : { basis: upgrade.rollback_basis })}
                   mono={false}
                 />
               </Strip>
             </div>
-            <p className="myx-doc-note">{`claude code ${payload?.claude_code.version ?? S.absent}`}</p>
-            <p className="myx-doc-note">{`${attentionCount(checks)} need attention`}</p>
-            <Empty text={EMPTIES.upgrade.text} source={EMPTIES.upgrade.source} />
+            <p className="myx-doc-note">{`claude code ${shown?.claude_code.version ?? S.absent}`}</p>
+            <p className="myx-doc-note">{`${shown === null ? S.absent : attentionCount(checks)} need attention`}</p>
             {/* The draining restart (WC-08), the same control the fleet's head detail mounts. */}
             <DaemonRestart />
             <Empty text={EMPTIES.capture.text} source={EMPTIES.capture.source} />
@@ -328,7 +327,9 @@ export function DoctorPage() {
 
           <section className="myx-doc-section">
             <h2 className="myx-doc-section-title">{S.fix}</h2>
-            {fixes.length === 0 ? (
+            {shown === null ? (
+              <p className="myx-doc-note">{S.absent}</p>
+            ) : fixes.length === 0 ? (
               <p className="myx-doc-note">{S.noFix}</p>
             ) : (
               fixes.map((check) => (
@@ -351,10 +352,43 @@ export function DoctorPage() {
             </section>
           )}
 
-          <Playground heads={headsKeys} />
+          <Playground heads={heads} />
         </aside>
       </div>
     </div>
+  );
+}
+
+export function DoctorPage() {
+  const doctor = useDoctor((state) => state);
+  const upgrade = useUpgrade((state) => state);
+  const heads = useHeads((state) => state.data);
+
+  useEffect(() => {
+    const stops = [startDoctorPolling(POLL_MS)];
+    void fetchUpgrade();
+    void fetchHeads();
+    return () => stops.forEach((stop) => stop());
+  }, []);
+
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
+
+  const { search } = useLocation();
+  const fixture = fixtureName(search, import.meta.env.DEV);
+  const report = fixtureDoctor(fixture);
+
+  return (
+    <DoctorBoard
+      report={report ?? (doctor.data !== null && 'checks' in doctor.data ? doctor.data : null)}
+      pending={report === null && doctor.data !== null && 'pending' in doctor.data ? doctor.data.pending : null}
+      error={doctor.error}
+      upgrade={upgrade.data !== null && 'installed' in upgrade.data ? upgrade.data : null}
+      heads={(heads ?? []).map((head) => head.key)}
+      openKey={openKey}
+      onToggle={toggle}
+      sample={import.meta.env.DEV && report !== null && fixture !== null ? fixture : undefined}
+    />
   );
 }
 

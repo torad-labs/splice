@@ -247,9 +247,10 @@ describe('the playground never persists a body', () => {
 });
 
 describe('pending routes render an empty naming their row', () => {
+  // M4-07: GET /api/upgrade is served and the version strip reads it, so its `not built` empty is
+  // gone (tests/doctor-gate.test.ts pins the absence).
   test('the doctor empties name V4-127 and V4-133', () => {
     expect(render(h(Empty, DOCTOR_EMPTIES.noReport))).toContain('V4-127');
-    expect(render(h(Empty, DOCTOR_EMPTIES.upgrade))).toContain('V4-127');
     expect(render(h(Empty, DOCTOR_EMPTIES.capture))).toContain('V4-133');
   });
 

@@ -17,6 +17,15 @@ import splice.app.cli.prompt.SelectOutcome
 import splice.app.cli.prompt.Spinner
 import splice.app.cli.prompt.WizardFrame
 import splice.app.cli.upgrade.DaemonRestart
+import splice.core.terminal.CliPalette
+import splice.core.terminal.ColorDepth
+import splice.core.topology.AuthConfig
+import splice.core.topology.ClaudeWrapperConfig
+import splice.core.topology.Dialect
+import splice.core.topology.HeadConfig
+import splice.core.topology.ProviderConfig
+import splice.core.topology.Topology
+import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -82,7 +91,7 @@ class SetupCommandTest {
         val text = chrome.toString()
         val intro = text.indexOf("splice setup")
         val summary = text.indexOf("Summary")
-        val outro = text.indexOf("Toolkit ready!")
+        val outro = text.indexOf("You're set.")
         assertTrue(intro >= 0 && summary > intro && outro > summary, text)
         assertFalse(text.contains("Detected"), "fresh machine prints no Detected line")
     }
@@ -103,8 +112,57 @@ class SetupCommandTest {
         assertTrue("splice doctor" in log, log)
         assertTrue("splice dashboard" in log, log)
         assertTrue("anything wrong prints its fix" in log)
-        assertTrue("Setup complete." in log, "the close must still announce itself: $log")
+        // ONCE. The 2026-09-22 redesign gave this block its own "Setup complete." heading while
+        // SetupCommand still ended on the frame's outro, so the last screen announced completion
+        // twice — the old "You're set." heading had the same duplicate against "Toolkit ready!".
+        // The frame owns the announcement; this block owns what to type.
+        assertEquals(1, Regex("You're set\\.").findAll(log).count(), "completion must be announced once: $log")
+        assertFalse("Setup complete." in log, "the block must not announce completion a second time: $log")
     }
+
+    @Test
+    fun `the close never calls a head ready that has no credential`(@TempDir tmp: Path) {
+        // The redesign's hero is "a READY head where there is one", but readiness was OAuth-only:
+        // an api-key head with no key counted as ready, so on a topology that lists it first the
+        // wizard's largest word was a command that fails on launch. Readiness is now the predicate
+        // `splice status` uses, and the fix for any head missing a credential is `<command> login`,
+        // which the launch shim routes to LoginCommand for every kind, the api-key prompt included.
+        val tokens = Files.writeString(tmp.resolve("kimi-auth.json"), "{}")
+        val topology = Topology(
+            providers = mapOf(
+                "or" to ProviderConfig(
+                    Dialect.OPENAI_CHAT,
+                    "https://example.invalid",
+                    AuthConfig("api-key", env = CLOSE_KEY),
+                ),
+                "kimi" to ProviderConfig(
+                    Dialect.ANTHROPIC_PASSTHROUGH,
+                    "https://example.invalid",
+                    AuthConfig("kimi-oauth", file = tokens.toString()),
+                ),
+            ),
+            // The keyless head FIRST, so a readiness check that misses it makes it the hero.
+            heads = linkedMapOf(
+                "openrouter" to closeHead("or", "claude-or"),
+                "kimi" to closeHead("kimi", "claude-kimi"),
+            ),
+        )
+        val log = captureStdout {
+            SetupSignIn(NO_REAL_LOGIN, EnvReader { null }, CliPalette(ColorDepth.NONE)).printNextSteps(topology)
+        }
+        val hero = log.lines().first { it.startsWith("      ") && it.isNotBlank() }.trim()
+        assertEquals("claude-kimi", hero, "the hero must be a head that can launch: $log")
+        assertTrue("claude-or login" in log, "the keyless head must name the command that fixes it: $log")
+        assertFalse(log.lines().any { "also ready" in it && "claude-or" in it }, "a keyless head is not ready: $log")
+    }
+
+    private fun closeHead(provider: String, command: String) = HeadConfig(
+        provider = provider,
+        port = 3099,
+        discoveryPrefix = "test--",
+        pinnedModel = "test-model",
+        claude = ClaudeWrapperConfig(command = command),
+    )
 
     @Test
     fun `starter topology keeps OpenRouter key hygiene`(@TempDir home: Path) {
@@ -541,6 +599,9 @@ class SetupCommandTest {
  *  sign-in. Every construction here passes this instead, and LoginIo's wall now fails any test that
  *  forgets. */
 private val NO_REAL_LOGIN = HeadSignIn { true }
+
+/** An env var no machine sets, so the close's readiness check cannot find a key for it. */
+private const val CLOSE_KEY = "TEST_SETUP_CLOSE_KEY"
 
 private val HEADLESS_ORACLE = """
 [daemon]

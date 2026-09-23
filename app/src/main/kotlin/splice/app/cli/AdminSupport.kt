@@ -7,7 +7,6 @@ package splice.app.cli
 import splice.app.auth.LoginIo
 import splice.app.cli.daemon.DaemonLaunch
 import splice.app.cli.doctor.MgmtKeyRead
-import splice.app.daemon.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.Knob
@@ -17,6 +16,7 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths

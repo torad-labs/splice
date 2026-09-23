@@ -6,7 +6,7 @@
 // requested topology is the loader's own reading of that expected file, so a patch that lands in the
 // wrong table, leaves a removed key behind or reflows a comment fails here by name, even where the
 // result would still parse. Refusals are pinned as byte-identity plus the absence of a backup.
-package splice.app.daemon
+package splice.topology
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

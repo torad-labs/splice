@@ -12,12 +12,12 @@ import splice.app.auth.LoginSpec
 import splice.app.auth.OAuthAccountRefused
 import splice.app.auth.OAuthLoginAccount
 import splice.app.auth.OAuthLoginFlow
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths
 

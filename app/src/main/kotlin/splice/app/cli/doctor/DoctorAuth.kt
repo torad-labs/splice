@@ -7,12 +7,12 @@ package splice.app.cli.doctor
 
 import splice.app.auth.LoginIo
 import splice.app.cli.daemon.RestartCommand
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
 
 /** The doctor auth section as a constructed collaborator (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions). Every member keeps the old function's name so the diff at

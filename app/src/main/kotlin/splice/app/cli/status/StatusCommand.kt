@@ -7,7 +7,6 @@ import splice.app.auth.LoginIo
 import splice.app.cli.AdminSupport
 import splice.app.cli.daemon.DaemonHealth
 import splice.app.cli.doctor.HealthView
-import splice.app.daemon.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
@@ -15,6 +14,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
 
 /** The `status` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Also the home of the two credential-presence predicates doctor

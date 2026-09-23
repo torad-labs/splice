@@ -16,11 +16,11 @@ package splice.app.provider
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
+import splice.topology.TopologyLoader
 
 class LocalUsageFramesTest {
 

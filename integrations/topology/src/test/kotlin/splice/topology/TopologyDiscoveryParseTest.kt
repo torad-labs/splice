@@ -2,7 +2,7 @@
 // parser. The parser refuses keys it does not know, so a discovery key it could not decode would fail
 // every splice CLI call and the daemon's next boot on the operator's own splice.toml; the catalog
 // tests build ModelDiscoveryConfig directly and cannot see that seam.
-package splice.app.daemon
+package splice.topology
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

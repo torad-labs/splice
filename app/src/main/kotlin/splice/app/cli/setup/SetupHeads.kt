@@ -12,9 +12,9 @@ import splice.app.cli.prompt.MultiSelectOutcome
 import splice.app.cli.prompt.SelectOption
 import splice.app.cli.prompt.WizardFrame
 import splice.app.cli.upgrade.DaemonRestart
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.API_KEY_WIRE
 import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 

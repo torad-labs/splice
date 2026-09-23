@@ -8,7 +8,6 @@ import splice.app.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
 import splice.app.codemode.DEFAULT_HEAP_MB
 import splice.app.codemode.DEFAULT_MAX_WORKERS
 import splice.app.codemode.JvmCodeModeRuntime
-import splice.app.daemon.TopologyLoader
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
@@ -20,6 +19,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
+import splice.topology.TopologyLoader
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import java.nio.file.Paths

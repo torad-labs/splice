@@ -4,10 +4,10 @@
 // InstallLayout; they are not inlined into install().
 package splice.app.cli.install
 
-import splice.app.daemon.TopologyLoader
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path

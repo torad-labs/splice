@@ -21,9 +21,9 @@ import splice.app.cli.status.StatusCommand
 import splice.app.cli.trace.TraceCommand
 import splice.app.cli.upgrade.UpgradeCommand
 import splice.app.cli.wire.WireCommand
-import splice.app.daemon.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.topology.TopologyLoader
 
 /** The splice CLI verbs as a closed, exhaustively-dispatched hierarchy: argv is parsed into a typed
  *  case (so args like the install target are data, not positional lookups), and run() is total —

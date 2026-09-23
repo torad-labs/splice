@@ -34,7 +34,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import splice.app.daemon.TopologyLoader
 import splice.control.ManagedHead
 import splice.control.api.turns.PlaygroundFailure
 import splice.control.api.turns.PlaygroundOutcome
@@ -46,6 +45,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import splice.upstream.transport.HeaderRedaction
 import java.nio.file.Files
 import java.nio.file.Path

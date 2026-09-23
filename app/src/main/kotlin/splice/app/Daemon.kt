@@ -17,7 +17,6 @@ import kotlinx.coroutines.sync.withLock
 import splice.app.auth.CodexRefresh
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
-import splice.app.daemon.TopologyLoader
 import splice.app.daemon.TopologyWindows
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
@@ -43,6 +42,7 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.head.compaction.CompactionTail
+import splice.topology.TopologyLoader
 import java.nio.file.Path
 
 public class Daemon(

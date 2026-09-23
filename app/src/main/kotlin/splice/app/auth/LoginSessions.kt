@@ -13,7 +13,6 @@ package splice.app.auth
 
 import kotlinx.coroutines.launch
 import splice.app.cli.auth.LoginCommand
-import splice.app.daemon.TopologyLoader
 import splice.control.AccountMutation
 import splice.control.ConsoleAccounts
 import splice.control.HeadRestart
@@ -27,6 +26,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LruSizing
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path

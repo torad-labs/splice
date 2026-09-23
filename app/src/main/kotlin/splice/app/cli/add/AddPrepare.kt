@@ -5,11 +5,11 @@
 // (concentration, 2026-09-14).
 package splice.app.cli.add
 
-import splice.app.daemon.TopologyLoader
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 

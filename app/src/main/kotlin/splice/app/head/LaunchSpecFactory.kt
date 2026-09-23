@@ -5,7 +5,6 @@
 package splice.app.head
 
 import splice.app.auth.SignInPlanner
-import splice.app.daemon.TopologyLoader
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.client.ClaudePolicy
@@ -16,6 +15,7 @@ import splice.control.ModelTiers
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
+import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths
 

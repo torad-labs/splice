@@ -8,7 +8,7 @@ package splice.app.cli.doctor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.daemon.TopologyLoader
+import splice.topology.TopologyLoader
 import java.nio.file.Paths
 
 class DoctorWireTapCheckTest {

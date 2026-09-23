@@ -5,8 +5,8 @@
 package splice.app.cli.install
 
 import splice.app.cli.Command
-import splice.app.daemon.TopologyLoader
 import splice.core.util.EnvReader
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 
 /** The `install` / `uninstall` / `init` verbs as one cohesive unit of behavior (Kotlin style law,

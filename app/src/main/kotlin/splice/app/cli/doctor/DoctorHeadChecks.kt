@@ -6,11 +6,11 @@
 package splice.app.cli.doctor
 
 import splice.app.cli.AdminSupport
-import splice.app.daemon.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path

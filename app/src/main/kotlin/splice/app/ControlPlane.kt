@@ -10,7 +10,7 @@ import splice.app.auth.CodexRefresh
 import splice.app.auth.SignInPlanner
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
-import splice.app.daemon.TopologyLoader
+import splice.app.daemon.TopologyStaleness
 import splice.app.launch.HookProcessExec
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.HeadBuildInputs
@@ -159,7 +159,7 @@ internal class ControlPlane(
             topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
             configPath = topology.path?.toString().orEmpty(),
             topologyStale = running?.let { TopologyStale(it::stale) }
-                ?: TopologyLoader.staleProbe(topology.path, topology.digest),
+                ?: TopologyStaleness.probe(topology.path, topology.digest),
             turnPathStalled = turnPathStalled,
             mcpHost = mcpHost,
             sessions = SessionRegistry(

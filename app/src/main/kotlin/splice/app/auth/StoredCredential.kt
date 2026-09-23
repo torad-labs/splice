@@ -13,7 +13,6 @@ package splice.app.auth
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import splice.app.daemon.TopologyLoader
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.topology.AuthKind
@@ -25,6 +24,7 @@ import splice.provider.codex.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
 import splice.provider.kimi.KimiCredentialShape
 import splice.provider.muse.MuseCredentialShape
+import splice.topology.TopologyLoader
 import splice.upstream.credentials.CredentialShape
 import java.nio.file.Files
 import java.nio.file.Path

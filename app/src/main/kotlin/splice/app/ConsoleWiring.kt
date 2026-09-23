@@ -37,7 +37,6 @@ import splice.app.cli.doctor.DoctorCommand
 import splice.app.console.ConsoleUpgradeStatus
 import splice.app.console.DrainingRestartAdapter
 import splice.app.daemon.BootedTopology
-import splice.app.daemon.TopologyLoader
 import splice.control.ControlServer
 import splice.control.DoctorReport
 import splice.control.UpgradeStatus
@@ -63,6 +62,7 @@ import splice.sessions.registry.HeadOfPid
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.teams.TEAMS_FILE
 import splice.sessions.teams.TeamStore
+import splice.topology.TopologyLoader
 import splice.usage.alerts.ALERTS_FILE
 import splice.usage.alerts.AlertStore
 import splice.usage.budgets.BUDGETS_FILE

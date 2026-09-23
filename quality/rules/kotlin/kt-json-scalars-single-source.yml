@@ -43,6 +43,7 @@ files:
   - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - app/src/main/**/*.kt
   - features/heads/src/main/**/*.kt
+  - integrations/topology/src/main/**/*.kt
 rule:
   any:
     - pattern: $X?.jsonPrimitive?.content

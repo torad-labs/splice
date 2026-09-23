@@ -16,9 +16,9 @@ class LaunchTierCandidatesTest {
     private val tmp = Files.createTempDirectory("launch-tier-candidates-test")
     private val service = LaunchService(ClaudeConfigMaterializer(tmp))
 
-    private fun spec(available: List<String>, tiers: ModelTiers) = LaunchSpec(
+    private fun spec(available: List<String>, tiers: ModelTiers, pinned: String = available.first()) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-grok")),
-        pinnedModel = available.first(),
+        pinnedModel = pinned,
         availableModelIds = available,
         modelLabels = available.associateWith { it },
         tiers = tiers,
@@ -53,6 +53,41 @@ class LaunchTierCandidatesTest {
             env.values.none { it == "grok-code-mini" },
             "a discovered id reaches the picker through the catalog, never a tier env",
         )
+    }
+
+    // 2026-09-23: the Codex provider declares no rows; its picker is the backend's list, newest family
+    // first, exactly as the endpoint orders it. The tier NAMES still place the pinned model's own family.
+    @Test
+    fun `a provider with no rows takes its tiers from the backend's names, in the pinned model's family`() {
+        val backend = listOf(
+            "gpt-6-astra",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.5",
+        )
+        val env = env(spec(available = backend, tiers = ModelTiers(candidates = emptyList()), pinned = "gpt-5.6-sol"))
+        assertEquals("gpt-5.6-sol", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertEquals("gpt-5.6-terra", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        assertEquals("gpt-5.6-luna", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "not the newer family's gpt-6-luna")
+    }
+
+    // The case tierModelIds() was written against: an OpenRouter head lists hundreds of ids, some of them
+    // ending in a Codex tier name. Outside the pinned model's family a name places nothing.
+    @Test
+    fun `a discovered tier name outside the pinned model's family takes no tier`() {
+        val pinned = "anthropic/claude-haiku-4.5"
+        val env = env(
+            spec(
+                available = listOf(pinned, "openai/gpt-6-sol", "openai/gpt-6-luna", "qwen/qwen3-coder-mini"),
+                tiers = ModelTiers(candidates = listOf(pinned)),
+            ),
+        )
+        listOf("OPUS", "SONNET", "HAIKU").forEach { slot ->
+            assertEquals(pinned, env["ANTHROPIC_DEFAULT_${slot}_MODEL"], slot)
+        }
     }
 
     // No candidates list is every offered id — the positional scheme every head had before discovery.

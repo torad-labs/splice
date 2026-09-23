@@ -163,4 +163,29 @@ class ModelsProbeTest {
             .roster
         assertTrue((none as UpstreamRoster.Unreadable).detail.contains("splice holds none"), none.detail)
     }
+
+    // 2026-09-23 (review): a Codex access token lives ten days (JWT exp - iat, measured that day) and the
+    // head refreshes it on its first turn. A start after it lapsed was told to log in again.
+    @Test
+    fun `a refused token past its expiry is the head's refresh to run, not a login to redo`() {
+        val now = 1_790_000_000_000L
+        fun refusal(expiresAtMs: Long): String {
+            val oauth = object : ModelCredentialSource {
+                override fun bearer(provider: ProviderConfig, key: String, env: EnvReader) = "stale-token"
+                override fun expiresAtMs(provider: ProviderConfig) = expiresAtMs
+            }
+            val probe = ModelsProbe(
+                http = { _, _ -> ModelsAnswer.Answered(401, "") },
+                credentials = oauth,
+                clock = { now },
+            )
+            val roster = probe.probe("test", provider(kind = "chatgpt-oauth"), env).roster
+            return (roster as UpstreamRoster.Unreadable).detail
+        }
+        val expired = refusal(expiresAtMs = now - 1)
+        assertTrue(expired.contains("expired at 2026-09-21T"), expired)
+        assertFalse(expired.contains("splice login"), expired)
+        val live = refusal(expiresAtMs = now + 60_000)
+        assertTrue(live.contains("run `splice login test`"), live)
+    }
 }

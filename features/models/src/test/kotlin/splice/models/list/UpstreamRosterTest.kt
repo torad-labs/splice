@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.ModelEntry
 import splice.core.model.ModelTierSuffix
+import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
+import splice.core.topology.ModelDiscoveryConfig
 
 /** The Codex backend's base, named once: two cases assert against it and a wrapped call would put
  *  the same literal on two lines apiece. */
@@ -62,20 +64,31 @@ class UpstreamRosterTest {
         )
     }
 
+    // Measured 2026-09-22: the Codex backend answers HTTP 400 without a client_version, and lists
+    // every model the account may use at a version at or above each row's minimal_client_version.
     @Test
-    fun `the responses dialect has no list until one is named`() {
+    fun `the codex backend lists with a client version, and an api-key responses provider without`() {
         assertEquals(
-            null,
-            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, null),
+            "$CODEX_BASE/models?client_version=${UpstreamRosterUrl.CODEX_LIST_CLIENT_VERSION}",
+            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, null, AuthKind.ChatgptOAuth.wire),
+        )
+        assertEquals(
+            "https://api.openai.com/v1/models",
+            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, "https://api.openai.com/v1", null, "api-key"),
         )
         assertEquals(
             "$CODEX_BASE/models?client_version=1.2.0",
-            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, "$CODEX_BASE/models?client_version=1.2.0"),
+            UpstreamRosterUrl.of(
+                Dialect.OPENAI_RESPONSES,
+                CODEX_BASE,
+                "$CODEX_BASE/models?client_version=1.2.0",
+                AuthKind.ChatgptOAuth.wire,
+            ),
         )
-        // A blank override is not an answer — it must fall through to the dialect's own verdict.
+        // A blank override is not an answer — it must fall through to the dialect's own URL.
         assertEquals(
-            null,
-            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, "  "),
+            "$CODEX_BASE/models?client_version=${UpstreamRosterUrl.CODEX_LIST_CLIENT_VERSION}",
+            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, "  ", AuthKind.ChatgptOAuth.wire),
         )
     }
 
@@ -191,5 +204,63 @@ class UpstreamRosterTest {
         assertEquals(RosterVerdict.SERVED, verdict(rows, "deepseek-v4-pro"))
         assertEquals(null, rows.single().upstreamWindow)
         assertTrue(rows.single().note.contains("unchecked"))
+    }
+
+    // ── what stays out of the picker ────────────────────────────────────────────
+
+    // Each shape recorded 2026-09-22: the Codex backend's `visibility`, xAI's top-level
+    // `output_modalities`, OpenRouter's `architecture.output_modalities` and `supported_parameters`.
+    @Test
+    fun `a row that says it cannot run a turn is unusable, and says why`() {
+        val models = published(
+            """
+            {"data":[
+              {"slug":"gpt-reserve","visibility":"hide"},
+              {"id":"grok-imagine-image","output_modalities":["image"]},
+              {"id":"openai/gpt-image-2","architecture":{"output_modalities":["image"]}},
+              {"id":"meta/llama-guard","supported_parameters":["temperature","max_tokens"]},
+              {"id":"anthropic/claude-sonnet-5","architecture":{"output_modalities":["text"]},"supported_parameters":["tools","temperature"]},
+              {"slug":"gpt-5.6-sol","visibility":"list"}
+            ]}
+            """.trimIndent(),
+        )
+        val why = models.associate { it.id to it.unusable }
+        assertTrue(why.getValue("gpt-reserve")!!.contains("hides"))
+        assertTrue(why.getValue("grok-imagine-image")!!.contains("no text"))
+        assertTrue(why.getValue("openai/gpt-image-2")!!.contains("no text"))
+        assertTrue(why.getValue("meta/llama-guard")!!.contains("tools"))
+        assertEquals(null, why.getValue("anthropic/claude-sonnet-5"))
+        assertEquals(null, why.getValue("gpt-5.6-sol"))
+    }
+
+    @Test
+    fun `a row that publishes no capabilities is never presumed unusable`() {
+        // DeepSeek and Moonshot publish ids and nothing else; presuming against them would empty
+        // their pickers.
+        val models = published("""{"data":[{"id":"deepseek-v4-pro"},{"id":"kimi-for-coding","display_name":"K2.8"}]}""")
+        assertEquals(listOf(null, null), models.map { it.unusable })
+    }
+
+    @Test
+    fun `an undeclared model is discovered unless the endpoint, the filter or a local runtime keeps it out`() {
+        val upstream = published(
+            """
+            {"data":[
+              {"id":"grok-4.7","context_length":500000},
+              {"id":"grok-imagine-video","output_modalities":["video"]},
+              {"id":"grok-2-legacy"}
+            ]}
+            """.trimIndent(),
+        )
+        val filter = ModelDiscoveryConfig(exclude = listOf("grok-2-*"))
+        val rows = diff.of(emptyList(), upstream, discovery = filter)
+        assertEquals(RosterVerdict.NEW, verdict(rows, "grok-4.7"))
+        assertEquals(RosterVerdict.EXCLUDED, verdict(rows, "grok-imagine-video"))
+        assertTrue(rows.first { it.id == "grok-imagine-video" }.note.contains("no text"))
+        assertEquals(RosterVerdict.EXCLUDED, verdict(rows, "grok-2-legacy"))
+        assertTrue(rows.first { it.id == "grok-2-legacy" }.note.contains("discovery filter"))
+        // The same list from a local runtime discovers nothing: it names the file it loaded.
+        val local = diff.of(emptyList(), upstream, local = true)
+        assertTrue(local.all { it.verdict == RosterVerdict.EXCLUDED }, "a local runtime discovers nothing: $local")
     }
 }

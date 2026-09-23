@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.DiscoveredModel
 import splice.core.model.ModelEntry
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -94,6 +95,23 @@ class TopologyWriterTest {
         val roster = head(PORT).copy(models = listOf(HeadModel("m9", "opus")))
         val findings = untouched(writer(mapOf(FILE to topology())).write(topology(head = roster)))
         assertEquals(listOf("heads.ex.models"), findings.map { it.path })
+    }
+
+    // 2026-09-22: a model the head's endpoint served at start may be named by its allowlist, and the
+    // console validates that edit exactly as boot will resolve it. The edit then stops at the parse
+    // table — this test predicts no composed text — which is the proof the roster check let it by.
+    @Test
+    fun `a head roster naming a model its endpoint served is not refused as undeclared`() {
+        val roster = head(PORT).copy(models = listOf(HeadModel("m1", "opus"), HeadModel("m9", "sonnet")))
+        val served = TopologyWriter(
+            file,
+            TopologyParse { text -> topology().also { require(text == FILE) { "unpredicted" } } },
+            WallClock { NOW },
+            discovered = { key -> if (key == "ex") listOf(DiscoveredModel("m9")) else emptyList() },
+        )
+        val findings = untouched(served.write(topology(head = roster)))
+        assertTrue(findings.none { it.path == "heads.ex.models" }, findings.toString())
+        assertTrue(findings.single().message.startsWith("the edit would not parse"), findings.toString())
     }
 
     @Test

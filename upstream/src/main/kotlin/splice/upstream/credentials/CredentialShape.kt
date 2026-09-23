@@ -25,4 +25,10 @@ public data class CredentialTokens(
 /** Read one kind's token material from a parsed auth file. Null = this shape does not judge that file. */
 public fun interface CredentialShape {
     public fun material(root: JsonObject): CredentialTokens?
+
+    /** The value a request made OUTSIDE a turn (a model-list probe) presents as its bearer: the
+     *  access token for every kind but one. Muse presents an api_key it mints from that token, and
+     *  its endpoints refuse the access token itself (HTTP 401 at api.meta.ai/v1/models, 2026-09-22),
+     *  so a turn and a probe must read the same field or the probe reports a working login broken. */
+    public fun presented(root: JsonObject): String? = material(root)?.access
 }

@@ -24,6 +24,9 @@ private const val ALL_FLAG = "--all"
 /** A new upstream model is news, not a configuration fault. */
 private val FAULTS = setOf(RosterVerdict.OVER_CEILING, RosterVerdict.UNSERVED)
 
+/** The verdicts of a served model no row declares: discovered into the picker, or kept out of it. */
+private val UNDECLARED = setOf(RosterVerdict.NEW, RosterVerdict.EXCLUDED)
+
 /** Compare configured model rows with their providers, reporting every declared row. */
 public class ModelsCommand(
     private val configuration: ModelConfigurationSource,
@@ -46,7 +49,8 @@ public class ModelsCommand(
         output.line("${BOLD}splice models$RESET $DIM— what each provider serves, against splice.toml$RESET")
         output.line(
             "  $DIM$GREEN✓$RESET$DIM declared and served   $CYAN·$RESET$DIM this row caps a larger ceiling   " +
-                "$RED✗$RESET$DIM needs a decision   $YELLOW+$RESET$DIM served, declared by no row$RESET",
+                "$RED✗$RESET$DIM needs a decision   $YELLOW+$RESET$DIM discovered into the picker   " +
+                "$DIM– served, kept out$RESET",
         )
         val all = args.contains(ALL_FLAG)
         return providers.map { (key, provider) -> report(probe.probe(key, provider, env), all) }.all { it }
@@ -55,27 +59,31 @@ public class ModelsCommand(
     private fun report(probed: ProbedProvider, all: Boolean): Boolean {
         val dialect = DialectWires.name(probed.provider.dialect)
         output.line("")
-        output.line("  $BOLD${probed.key}$RESET $DIM$dialect · ${probed.url ?: probed.provider.baseUrl}$RESET")
+        output.line("  $BOLD${probed.key}$RESET $DIM$dialect · ${probed.url}$RESET")
+        val provider = probed.provider
         return when (val roster = probed.roster) {
             is UpstreamRoster.Unpublished -> true.also { output.line("    $DIM–$RESET ${roster.reason}") }
             is UpstreamRoster.Unreadable -> false.also { output.line("    $RED✗$RESET ${roster.detail}") }
             is UpstreamRoster.Published ->
-                rows(diff.of(probed.provider.models, roster.models, probed.provider.isLocal), all)
+                rows(diff.of(provider.models, roster.models, provider.isLocal, provider.discovery), all)
         }
     }
 
-    /** Every declared row, then the displayed undeclared rows and an explicit remainder count. */
+    /** Every declared row, then the displayed undeclared rows — discovered ones first, then those kept
+     *  out — and an explicit remainder count. */
     private fun rows(rows: List<RosterRow>, all: Boolean): Boolean {
-        val (fresh, declared) = rows.partition { it.verdict == RosterVerdict.NEW }
-        val shown = if (all) fresh else fresh.take(NEW_SHOWN)
+        val (undeclared, declared) = rows.partition { it.verdict in UNDECLARED }
+        val ordered = undeclared.sortedBy { it.verdict == RosterVerdict.EXCLUDED }
+        val shown = if (all) ordered else ordered.take(NEW_SHOWN)
         (declared + shown).forEach(::line)
-        if (shown.size < fresh.size) {
-            val more = "… and ${fresh.size - shown.size} more — `splice models <provider> $ALL_FLAG`"
+        if (shown.size < ordered.size) {
+            val more = "… and ${ordered.size - shown.size} more — `splice models <provider> $ALL_FLAG`"
             output.line("    $YELLOW+$RESET $DIM$more$RESET")
         }
+        val discovered = undeclared.count { it.verdict == RosterVerdict.NEW }
         val faults = declared.count { it.verdict in FAULTS }
         output.line(
-            "    $DIM${declared.size} declared · ${fresh.size} served upstream and not declared · " +
+            "    $DIM${declared.size} declared · $discovered discovered · ${undeclared.size - discovered} kept out · " +
                 "$faults need a decision$RESET",
         )
         return faults == 0
@@ -95,5 +103,6 @@ public class ModelsCommand(
         RosterVerdict.OVER_CEILING -> "$RED✗$RESET"
         RosterVerdict.UNSERVED -> "$RED✗$RESET"
         RosterVerdict.NEW -> "$YELLOW+$RESET"
+        RosterVerdict.EXCLUDED -> "$DIM–$RESET"
     }
 }

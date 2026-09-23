@@ -20,15 +20,25 @@
 // spelling that exists upstream only as its bare id, and a window BELOW the real ceiling is a
 // deliberate cap (grok-4.3 is declared 256k against a 1M ceiling). So a declared window under the
 // published one is reported as CAPPED — a fact, not a fault — and only a window OVER it is red.
+//
+// AND THE DAEMON NOW ACTS ON THE ANSWER (later on 2026-09-22). The operator: "make sure that splice
+// probes the head endpoint for available models instead of having to hardcode them on the toml
+// file". At start the daemon asks the same URL (splice.models.discovery.ModelDiscovery) and every
+// NEW model below joins the picker with no row — still never overwriting a declared one, for the
+// reasons above. EXCLUDED is what stays out, and says why.
 package splice.models.list
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.model.ModelEntry
 import splice.core.model.ModelTierSuffix
+import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
+import splice.core.topology.ModelDiscoveryConfig
+import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -41,6 +51,10 @@ internal data class UpstreamModel(
     public val label: String = "",
     public val contextWindow: Long? = null,
     public val aliases: List<String> = emptyList(),
+    /** Why the ENDPOINT says this model cannot serve a Claude Code turn, or null when it says
+     *  nothing against it. Only an affirmative statement counts (see [UpstreamRosterParser]): a row
+     *  that publishes no capabilities at all is not presumed unusable. */
+    public val unusable: String? = null,
 ) {
     /** The id and every spelling the endpoint says resolves to it. */
     public val spellings: List<String> get() = listOf(id) + aliases
@@ -64,23 +78,39 @@ internal sealed class UpstreamRoster {
  *  table here — a hardcoded vendor list is the thing this whole file exists to retire. */
 internal object UpstreamRosterUrl {
 
-    /** The Codex backend does publish a list, behind a `client_version` query whose accepted values
-     *  are the Codex CLI's own releases, and it carries no context windows. Guessing a version is
-     *  a moving hardcode; an operator who wants it points `models_url` straight at it. */
-    public const val RESPONSES_HAS_NO_LIST: String =
-        "the openai-responses dialect publishes no model list splice can ask for without pinning a " +
-            "client version — set models_url on the provider to name one"
+    /** The Codex backend lists `GET {base}/models?client_version=<v>` and answers with the models
+     *  whose `minimal_client_version` is at or below <v> — measured 2026-09-22 against
+     *  chatgpt.com/backend-api/codex: no version is HTTP 400, `0.1.0` an empty list, `0.200.0` and
+     *  above all nine models. The version is a claim about the CLIENT, and here splice is the client:
+     *  it speaks the Responses wire itself rather than running codex-rs, so it claims every model the
+     *  account may use, which is what every other dialect's list already returns. Pinning a codex-rs
+     *  release instead would hide each new model until someone bumped it — the invisible-model
+     *  failure discovery exists to end. A model splice cannot drive is excluded the way it is on any
+     *  provider, with `discovery`. */
+    public const val CODEX_LIST_CLIENT_VERSION: String = "999.0.0"
 
-    /** The list URL for this provider, or null when the dialect has none and none was configured. */
-    public fun of(dialect: Dialect, baseUrl: String, override: String?): String? {
+    /** The list URL for this provider: [override] when one is configured, else its dialect's own.
+     *  [authKind] matters for one shape — `chatgpt-oauth` is the Codex backend, whose list takes the
+     *  client version above; an api-key Responses provider is the OpenAI API, which lists at
+     *  `{base}/models` like every OpenAI-compatible endpoint. */
+    public fun of(dialect: Dialect, baseUrl: String, override: String?, authKind: String = ""): String {
         override?.takeIf { it.isNotBlank() }?.let { return it }
         val base = baseUrl.trimEnd('/')
         return when (dialect) {
             Dialect.OPENAI_CHAT -> "$base/models"
             Dialect.ANTHROPIC_PASSTHROUGH -> "$base/v1/models"
-            Dialect.OPENAI_RESPONSES -> null
+            Dialect.OPENAI_RESPONSES ->
+                if (authKind == AuthKind.ChatgptOAuth.wire) {
+                    "$base/models?client_version=$CODEX_LIST_CLIENT_VERSION"
+                } else {
+                    "$base/models"
+                }
         }
     }
+
+    /** The list URL [provider] is asked at — one derivation for the probe and the cache it fills. */
+    public fun of(provider: ProviderConfig): String =
+        of(provider.dialect, provider.baseUrl, provider.modelsUrl, provider.auth.kind)
 }
 
 /** A model-list body to [UpstreamRoster]. Accepts the two envelopes in the wild — `{"data": [...]}`
@@ -109,8 +139,33 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
         id = JsonScalars.str(row, "id") ?: JsonScalars.str(row, "slug").orEmpty(),
         label = JsonScalars.str(row, "display_name") ?: JsonScalars.str(row, "name").orEmpty(),
         contextWindow = JsonScalars.firstLong(row, "context_length", "context_window", "max_context_length"),
-        aliases = (row["aliases"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.str(it) },
+        aliases = strings(row["aliases"]),
+        unusable = unusable(row),
     )
+
+    /** What the row itself says against serving a Claude Code turn, in the three forms endpoints use
+     *  (all measured 2026-09-22). Absence of a field is never a verdict: xAI, Moonshot and DeepSeek
+     *  publish no capabilities at all, and presuming them unusable would empty their pickers.
+     *   - `visibility = "hide"` — the Codex backend's own "not for a picker" (gpt-reserve,
+     *     codex-auto-review); codex-rs hides the same rows.
+     *   - output modalities without "text", top level (xAI's language-models list) or under
+     *     `architecture` (OpenRouter) — an image or audio model has nothing to say in a transcript.
+     *   - `supported_parameters` without "tools" (OpenRouter) — every Claude Code turn carries tools,
+     *     and a model that takes none refuses the request. */
+    private fun unusable(row: JsonObject): String? {
+        val architecture = row["architecture"] as? JsonObject
+        val outputs = strings(row["output_modalities"] ?: architecture?.get("output_modalities"))
+        val parameters = row["supported_parameters"] as? JsonArray
+        return when {
+            JsonScalars.str(row, "visibility") == "hide" -> "the endpoint hides it from pickers"
+            outputs.isNotEmpty() && "text" !in outputs -> "it produces no text (${outputs.joinToString("+")})"
+            parameters != null && "tools" !in strings(parameters) -> NO_TOOLS
+            else -> null
+        }
+    }
+
+    private fun strings(element: JsonElement?): List<String> =
+        (element as? JsonArray).orEmpty().mapNotNull { JsonScalars.str(it) }
 }
 
 /** How one declared row stands against what the provider publishes. */
@@ -127,8 +182,13 @@ internal enum class RosterVerdict {
     /** The endpoint does not list this id under any spelling: every turn chosen on it is refused. */
     UNSERVED,
 
-    /** The endpoint serves a model no row declares, so it cannot be reached from the picker. */
+    /** The endpoint serves a model no row declares; the daemon discovers it into the picker. */
     NEW,
+
+    /** The endpoint serves a model no row declares, and it stays out of the picker: the endpoint
+     *  says it cannot run a turn, the provider's `discovery` filter excludes it, or the provider is a
+     *  local runtime, whose list names a file rather than a model. */
+    EXCLUDED,
 }
 
 /** One row of the comparison. [declaredWindow] is null for a NEW model, [upstreamWindow] is null
@@ -158,21 +218,32 @@ internal class RosterDiff {
         declared: List<ModelEntry>,
         published: List<UpstreamModel>,
         local: Boolean = false,
+        discovery: ModelDiscoveryConfig = ModelDiscoveryConfig(),
     ): List<RosterRow> {
         val bySpelling = published.flatMap { model -> model.spellings.map { it to model } }.toMap()
         val declaredRows = declared.map { entry -> row(entry, bySpelling[ModelTierSuffix.strip(entry.id)], local) }
         val claimed = declared.mapTo(HashSet()) { ModelTierSuffix.strip(it.id) }
         val newRows = published
             .filterNot { model -> model.spellings.any { it in claimed } }
-            .map { model ->
-                RosterRow(
-                    id = model.id,
-                    verdict = RosterVerdict.NEW,
-                    upstreamWindow = model.contextWindow,
-                    note = "served by the endpoint, declared by no row — add it to reach it from /model",
-                )
-            }
+            .map { model -> undeclared(model, local, discovery) }
         return declaredRows + newRows
+    }
+
+    /** A served model no row declares: discovered into the picker, or kept out and why — the same
+     *  three reasons, in the same order, the daemon's discovery applies (ModelDiscovery). */
+    private fun undeclared(model: UpstreamModel, local: Boolean, discovery: ModelDiscoveryConfig): RosterRow {
+        val keptOut = when {
+            local -> "a local runtime lists the file it loaded — declare a row to name it"
+            model.unusable != null -> "kept out of the picker: ${model.unusable}"
+            !discovery.admits(model.id) -> "kept out of the picker by this provider's discovery filter"
+            else -> null
+        }
+        return RosterRow(
+            id = model.id,
+            verdict = if (keptOut == null) RosterVerdict.NEW else RosterVerdict.EXCLUDED,
+            upstreamWindow = model.contextWindow,
+            note = keptOut ?: "discovered: in the picker with no row",
+        )
     }
 
     /** Split in two on the one question that decides everything below it — did the endpoint list
@@ -239,3 +310,6 @@ internal class RosterDiff {
     private fun aliasNote(declared: String, upstream: UpstreamModel): String =
         if (upstream.id == ModelTierSuffix.strip(declared)) "" else " (→ ${upstream.id})"
 }
+
+/** The verdict for a model whose `supported_parameters` omit tools. */
+private const val NO_TOOLS = "it takes no tools, and every Claude Code turn sends them"

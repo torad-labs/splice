@@ -60,6 +60,14 @@ m.mock.on('request', (req, res) => {
     res.end(USAGE);
     return;
   }
+  // The vendored handler JSON-parses every body, so any other GET (the daemon's model discovery
+  // asks /models at boot) would throw inside it and, under node, kill this process. It serves only
+  // POSTs: answer the rest 404 here, and the codex head keeps its declared rows.
+  if (req.method === 'GET') {
+    res.writeHead(404);
+    res.end();
+    return;
+  }
   vendoredHandler(req, res);
 });
 if (!m.mock.listening) await once(m.mock, 'listening');

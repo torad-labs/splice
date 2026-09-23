@@ -4,8 +4,8 @@
 // approves. State machine per the verified kimi contract: authorization_pending keeps polling;
 // slow_down bumps the interval PERMANENTLY (+5s); expired_token restarts the WHOLE flow (bounded
 // to 2 restarts); access_denied / >=500 abort; the device_authorization expires_in is the overall
-// deadline. Credentials persist through the shared atomic-0600 writeCredentialFile. :app is
-// wall-exempt for println + a bounded runBlocking bridge.
+// deadline. Credentials persist through the shared atomic-0600 writeCredentialFile. Its lines go
+// out through the caller's LoginOutput; the bounded runBlocking bridge lives in the CLI.
 package splice.app.auth
 
 import io.ktor.client.HttpClient
@@ -23,20 +23,27 @@ import splice.upstream.codemode.ProcessWaiter
 
 // DeviceLoginSpec lives in DeviceLoginSpec.kt (concentration, 2026-08-19).
 
-public object DeviceLoginFlow {
+private const val MAX_EXPIRED_RESTARTS = 2
+private const val SLOW_DOWN_INCREMENT_S = 5L
+private const val MS_PER_S = 1000L
+
+// DR-190 (DR-177's unenumerated fifth site): expires_in and interval come off the wire. A value that
+// does not fit in milliseconds wrapped `now + expiresInS * MS_PER_S` negative — EXPIRED before the
+// first poll — and `intervalS * MS_PER_S` negative. The deadline degrades the way DR-177's
+// CredentialExpiry does (unrepresentable → the synthetic 4h ceiling, never an instant expiry) and
+// the interval is capped in seconds before it is multiplied; both are no-ops for RFC 8628 values.
+private const val MAX_POLL_INTERVAL_S = 3600L
+
+/** A class, not an `object` (LAYOUT-01): every line the flow speaks goes to [output], so each caller
+ *  hands in its own — the CLI a terminal, a test a recorder — and [browser] rides with it, which is
+ *  what keeps a test off the real browser. */
+public class DeviceLoginFlow(
+    private val output: LoginOutput,
+    browser: BrowserOpener = SystemBrowserOpener(output),
+) {
 
     private val authClients = AuthHttpClientFactory()
-
-    private const val MAX_EXPIRED_RESTARTS = 2
-    private const val SLOW_DOWN_INCREMENT_S = 5L
-    private const val MS_PER_S = 1000L
-
-    // DR-190 (DR-177's unenumerated fifth site): expires_in and interval come off the wire. A value that
-    // does not fit in milliseconds wrapped `now + expiresInS * MS_PER_S` negative — EXPIRED before the
-    // first poll — and `intervalS * MS_PER_S` negative. The deadline degrades the way DR-177's
-    // CredentialExpiry does (unrepresentable → the synthetic 4h ceiling, never an instant expiry) and
-    // the interval is capped in seconds before it is multiplied; both are no-ops for RFC 8628 values.
-    private const val MAX_POLL_INTERVAL_S = 3600L
+    private val loginIo = LoginIo(output, browser)
 
     private enum class Outcome { SUCCESS, ABORT, EXPIRED }
 
@@ -49,24 +56,16 @@ public object DeviceLoginFlow {
     /** Runs the device flow to completion; returns true on success.
      *
      *  HD-19: [waiter] is the RFC 8628 poll interval, threaded down to [poll] rather than reached
-     *  for as a bare `delay`. This is an `object`, so the seam rides the call instead of a
-     *  constructor; the default is the production behaviour, and LoginCommand passes nothing.
+     *  for as a bare `delay`; the default is the production behaviour, and LoginCommand passes
+     *  nothing.
      *
      *  [observer], V4-132: the console's login-id/poll seam (POST/GET /api/auth/{head}/login[/{id}]),
      *  null for the CLI. Present means this call is being WATCHED off-request, so [announce] skips
-     *  its local println/openBrowser and reports through the observer instead — a daemon process has
-     *  no terminal to print to and no operator desktop to open a browser on. */
+     *  its code banner and browser open and reports through the observer instead — a daemon process
+     *  has no terminal to print to and no operator desktop to open a browser on. */
     public suspend fun run(
         spec: DeviceLoginSpec,
         waiter: Waiter = ProcessWaiter(),
-        observer: LoginObserver? = null,
-    ): Boolean = run(spec, waiter, LoginIo(), observer)
-
-    /** Per-call I/O keeps tests off the real browser without mutating the shared flow object. */
-    internal suspend fun run(
-        spec: DeviceLoginSpec,
-        waiter: Waiter,
-        loginIo: LoginIo,
         observer: LoginObserver? = null,
     ): Boolean = try {
         runAttempts(spec, waiter, loginIo, observer)
@@ -87,10 +86,10 @@ public object DeviceLoginFlow {
                 Outcome.ABORT -> return false
                 Outcome.EXPIRED -> {
                     if (restarts++ >= MAX_EXPIRED_RESTARTS) {
-                        println("splice: login for '${spec.head}' expired too many times — try again.")
+                        output.line("splice: login for '${spec.head}' expired too many times — try again.")
                         return false
                     }
-                    println("splice: the code expired — requesting a fresh one…")
+                    output.line("splice: the code expired — requesting a fresh one…")
                 }
             }
         }
@@ -109,7 +108,7 @@ public object DeviceLoginFlow {
                 announce(spec, auth, loginIo, observer)
                 poll(client, spec, auth, waiter, loginIo)
             }.getOrElse { e ->
-                println("splice: login error: ${SafeFailureText.render(e)}")
+                output.line("splice: login error: ${SafeFailureText.render(e)}")
                 Outcome.ABORT
             }
         } finally {
@@ -128,7 +127,7 @@ public object DeviceLoginFlow {
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
-            println("splice: could not start device login (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
+            output.line("splice: could not start device login (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return null
         }
         return spec.parseDeviceAuth(body)
@@ -142,14 +141,14 @@ public object DeviceLoginFlow {
             observer.announced(LoginAnnouncement(userCode = auth.userCode, verificationUri = url))
             return
         }
-        println("")
-        println("  splice: sign in to ${spec.head} — enter this code in your browser:")
-        println("")
-        println("      ${auth.userCode}")
-        println("")
-        println("  $url")
-        println("")
-        if (!loginIo.openBrowser(url)) println("splice: open the URL above to finish signing in.")
+        output.line("")
+        output.line("  splice: sign in to ${spec.head} — enter this code in your browser:")
+        output.line("")
+        output.line("      ${auth.userCode}")
+        output.line("")
+        output.line("  $url")
+        output.line("")
+        if (!loginIo.openBrowser(url)) output.line("splice: open the URL above to finish signing in.")
     }
 
     private suspend fun poll(
@@ -166,7 +165,7 @@ public object DeviceLoginFlow {
             val resp = Cancellables.runCatchingBestEffort {
                 postToken(client, spec, auth.deviceCode, loginIo)
             }.onFailure {
-                println("splice: login poll did not reach the token endpoint — ${SafeFailureText.render(it)}")
+                output.line("splice: login poll did not reach the token endpoint — ${SafeFailureText.render(it)}")
             }.getOrNull()
             val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS, loginIo)
             when (step) {
@@ -187,7 +186,7 @@ public object DeviceLoginFlow {
         val body = resp.bodyAsText()
         if (resp.status.isSuccess()) return persistPollSuccess(spec, body, loginIo)
         if (resp.status.value >= HttpStatus.INTERNAL_SERVER_ERROR) {
-            println("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
+            output.line("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return PollStep.Stop(Outcome.ABORT)
         }
         return classifyPollError(body, intervalS, loginIo)
@@ -207,11 +206,11 @@ public object DeviceLoginFlow {
             "slow_down" -> PollStep.Wait(intervalS + SLOW_DOWN_INCREMENT_S)
             "expired_token" -> PollStep.Stop(Outcome.EXPIRED)
             "access_denied" -> {
-                println("splice: login was declined.")
+                output.line("splice: login was declined.")
                 PollStep.Stop(Outcome.ABORT)
             }
             else -> {
-                println("splice: login failed: ${loginIo.sanitize(body)}")
+                output.line("splice: login failed: ${loginIo.sanitize(body)}")
                 PollStep.Stop(Outcome.ABORT)
             }
         }
@@ -219,7 +218,7 @@ public object DeviceLoginFlow {
     // One dispatch: a failed finalizer prints and leaves the just-written credential in place.
     private suspend fun runAfterPersist(spec: DeviceLoginSpec) {
         Cancellables.runCatchingBestEffort { spec.afterPersist(spec.authPath, spec.account) }.onFailure { e ->
-            println("splice: post-login step failed: ${SafeFailureText.render(e)}")
+            output.line("splice: post-login step failed: ${SafeFailureText.render(e)}")
         }
     }
 

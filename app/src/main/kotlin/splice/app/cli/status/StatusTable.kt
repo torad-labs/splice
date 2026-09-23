@@ -2,7 +2,7 @@
 // file keeps only the Kimi device-login spec. StatusCommand constructs this.
 package splice.app.cli.status
 
-import splice.app.auth.LoginIo
+import splice.app.cli.auth.CliSignIn
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.topology.AuthKind
@@ -17,7 +17,7 @@ internal class StatusTable(
     private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
 ) {
 
-    private val loginIo = LoginIo()
+    private val signIn = CliSignIn()
 
     // Class member is fine here: doctor no longer builds this type to reach
     // isClientAuth, so the Regex is compiled once per status(), not per doctor predicate.
@@ -56,7 +56,7 @@ internal class StatusTable(
         }
     }
 
-    // Calls LoginIo / AuthKindRegistry directly — constructing StatusCommand
+    // Calls CliSignIn / AuthKindRegistry directly — constructing StatusCommand
     // here would cycle (status() builds this class to print the table).
     private fun row(
         key: String,
@@ -66,8 +66,8 @@ internal class StatusTable(
     ): Row {
         val command = head.claude.command ?: key
         val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
-        val authed = selfManaged || loginIo.credentialConfigured(key, provider, envReader)
-        val wrapped = loginIo.wrapperInstalled(command, envReader)
+        val authed = selfManaged || signIn.credentialConfigured(key, provider, envReader)
+        val wrapped = signIn.wrapperInstalled(command, envReader)
         // ONE actionable column, not two state columns. A row is ready or it names the single
         // command that would make it ready, so the operator never has to work out which of
         // "wrapper missing" and "not signed in" to act on first.

@@ -23,11 +23,13 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.auth.RefreshAttempt
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiRefreshedTokens
 
-public class KimiRefresh {
+// The daemon log (LAYOUT-01): these lines went to bare stderr, which never reaches /mgmt/logs.
+public class KimiRefresh(private val log: LogSink) {
 
     private val retry = RefreshRetry()
     private val kimiOAuth = KimiOAuth()
@@ -52,7 +54,7 @@ public class KimiRefresh {
         val status = resp.status.value
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
-            System.err.println("[kimi] token refresh failed: HTTP $status")
+            log("[kimi] token refresh failed: HTTP $status\n")
         }
         return when {
             resp.status.isSuccess() -> {
@@ -97,7 +99,7 @@ public class KimiRefresh {
             scope = JsonScalars.str(obj, "scope").orEmpty(),
             tokenType = JsonScalars.str(obj, "token_type") ?: "Bearer",
         )
-    }.onFailure { System.err.println("[kimi] refresh body did not parse: ${SafeFailureText.render(it)}") }
+    }.onFailure { log("[kimi] refresh body did not parse: ${SafeFailureText.render(it)}\n") }
         .getOrNull()
 }
 

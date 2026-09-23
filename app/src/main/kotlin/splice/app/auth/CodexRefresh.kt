@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.auth.RefreshAttempt
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.RefreshedTokens
@@ -31,7 +32,8 @@ import splice.provider.codex.RefreshedTokens
 private val refreshClient by lazy { AuthHttpClientFactory().create() }
 private val json = Json { ignoreUnknownKeys = true }
 
-public class CodexRefresh {
+// The daemon log (LAYOUT-01): these lines went to bare stderr, which never reaches /mgmt/logs.
+public class CodexRefresh(private val log: LogSink) {
 
     private val retry = RefreshRetry()
 
@@ -73,7 +75,7 @@ public class CodexRefresh {
         }
         val status = resp.status.value
         val body = resp.bodyAsText()
-        System.err.println("[codex] token refresh failed: HTTP $status")
+        log("[codex] token refresh failed: HTTP $status\n")
         return when {
             retry.isTerminalRefreshFailure(status, body, json) ->
                 RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
@@ -91,6 +93,6 @@ public class CodexRefresh {
             refreshToken = JsonScalars.str(obj, "refresh_token"),
             idToken = JsonScalars.str(obj, "id_token"),
         )
-    }.onFailure { System.err.println("[codex] refresh body did not parse: ${SafeFailureText.render(it)}") }
+    }.onFailure { log("[codex] refresh body did not parse: ${SafeFailureText.render(it)}\n") }
         .getOrNull()
 }

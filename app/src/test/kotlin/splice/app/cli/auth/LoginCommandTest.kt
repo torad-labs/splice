@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.LoginIo
+import splice.app.auth.LoginOutput
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig
@@ -29,6 +30,8 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 class LoginCommandTest {
+
+    private val loginIo = LoginIo(LoginOutput {})
 
     @Test
     fun `oauth login writes to the provider configured auth file`() {
@@ -74,11 +77,11 @@ class LoginCommandTest {
         val primary = tmp.resolve("kimi.json")
         Files.writeString(primary, "{}")
         val account = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
-        assertTrue(LoginIo().persistIfSignedIn(primary, """{"access_token":"kimi-secret"}""", account))
+        assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"kimi-secret"}""", account))
         val savedHome = System.getProperty("user.home")
         System.setProperty("user.home", tmp.toString())
         try {
-            LoginIo().writeLoginOutcome("kimi", ok = true, account = account)
+            CliSignIn().writeLoginOutcome("kimi", ok = true, account = account)
             val receipt = requireNotNull(LoginOutcomeFile.consume(StatePaths().stateDir, "kimi"))
             assertTrue(receipt.contains("signed in as 'kimi-2'"), receipt)
             assertFalse(receipt.contains("'auto'"), receipt)
@@ -202,7 +205,7 @@ class LoginCommandTest {
         )
         assertTrue(written.contains("acct-token-fake"))
         assertTrue(written.contains("\"schema\""))
-        assertTrue(LoginIo().persistIfSignedIn(primary, written, spec.account))
+        assertTrue(loginIo.persistIfSignedIn(primary, written, spec.account))
         kotlinx.coroutines.runBlocking { spec.afterPersist(primary, spec.account) }
         val onDisk = Json.parseToJsonElement(Files.readString(primary)).jsonObject
         assertEquals("acct-token-fake", onDisk.getValue("access_token").jsonPrimitive.content)
@@ -213,7 +216,7 @@ class LoginCommandTest {
     fun `muse failed mint leaves a valid-but-unminted credential`(@TempDir tmp: Path) {
         val path = tmp.resolve("muse-unminted.json")
         val spec = LoginMuse { _, _ -> MuseMintAttempt.Denied("no-key") }.spec("claude-muse", path)
-        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
         kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         val unminted = Json.parseToJsonElement(Files.readString(path)).jsonObject
         assertEquals("acct-token-fake", unminted.getValue("access_token").jsonPrimitive.content)
@@ -291,7 +294,7 @@ class LoginCommandTest {
             modes += mode
             MuseMintAttempt.Denied("held")
         }.spec("claude-muse", path)
-        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
         kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         assertEquals(listOf(MuseMintMode.ONBOARD), modes)
     }
@@ -309,7 +312,7 @@ class LoginCommandTest {
         }.spec("claude-muse", primary, "work")
         try {
             assertTrue(
-                LoginIo().persistIfSignedIn(primary, """{"access_token":"backup-acct"}""", spec.account),
+                loginIo.persistIfSignedIn(primary, """{"access_token":"backup-acct"}""", spec.account),
             )
             kotlinx.coroutines.runBlocking { spec.afterPersist(primary, spec.account) }
             assertEquals("""{"access_token":"primary-secret"}""", Files.readString(primary))
@@ -326,7 +329,7 @@ class LoginCommandTest {
     fun `a throwing muse mint after persist does not fail the login`(@TempDir tmp: Path) {
         val path = tmp.resolve("muse.json")
         val spec = LoginMuse { _, _ -> error("mint exploded") }.spec("claude-muse", path)
-        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
         assertDoesNotThrow {
             kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         }
@@ -385,7 +388,7 @@ class LoginCommandTest {
     fun `an IOException from muse mint after persist does not fail the login`(@TempDir tmp: Path) {
         val path = tmp.resolve("muse.json")
         val spec = LoginMuse { _, _ -> throw java.io.IOException("disk") }.spec("claude-muse", path)
-        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
         assertDoesNotThrow {
             kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         }

@@ -14,8 +14,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.provider.kimi.KimiOAuth
 import splice.upstream.Waiter
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -95,13 +93,11 @@ class DeviceLoginObserverTest {
         val server = serving("""{"access_token":"tok_observed"}""")
         val browser = RecordingBrowserOpener()
         val observer = RecordingObserver()
-        val savedOut = System.out
-        val out = ByteArrayOutputStream()
+        val out = StringBuilder()
+        val flow = DeviceLoginFlow(LoginOutput { out.appendLine(it) }, browser)
         val ok = try {
-            System.setOut(PrintStream(out, true))
-            runBlocking { DeviceLoginFlow.run(specFor(server, authPath), Waiter {}, LoginIo(browser), observer) }
+            runBlocking { flow.run(specFor(server, authPath), Waiter {}, observer) }
         } finally {
-            System.setOut(savedOut)
             server.stop(0)
         }
 

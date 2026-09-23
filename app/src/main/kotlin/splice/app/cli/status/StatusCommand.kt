@@ -3,8 +3,8 @@
 
 package splice.app.cli.status
 
-import splice.app.auth.LoginIo
 import splice.app.cli.AdminSupport
+import splice.app.cli.auth.CliSignIn
 import splice.app.cli.daemon.DaemonHealth
 import splice.app.cli.doctor.HealthView
 import splice.core.GATEWAY_VERSION
@@ -31,7 +31,7 @@ internal class StatusCommand(
     private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
 ) {
 
-    private val loginIo = LoginIo()
+    private val signIn = CliSignIn()
     private val extras = StatusExtras(accountPools)
 
     internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
@@ -93,8 +93,8 @@ internal class StatusCommand(
         // A head that declares client auth has no splice-held credential to configure BY DESIGN, so
         // "is it configured?" is always yes. Without this it falls through to the api-key branch and
         // reads as permanently unconfigured, against a head that serves fine.
-        isClientAuth(provider) || loginIo.credentialConfigured(key, provider, envReader)
+        isClientAuth(provider) || signIn.credentialConfigured(key, provider, envReader)
 
     internal fun wrapperInstalled(command: String, envReader: EnvReader): Boolean =
-        loginIo.wrapperInstalled(command, envReader)
+        signIn.wrapperInstalled(command, envReader)
 }

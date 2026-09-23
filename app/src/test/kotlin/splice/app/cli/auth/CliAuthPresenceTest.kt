@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.auth.LoginIo
 import splice.app.cli.AdminSupport
 import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.doctor.MgmtKeyRead
@@ -76,12 +75,12 @@ class CliAuthPresenceTest {
         val none = EnvReader { null }
         val configured = capturingStdout {
             assertTrue(
-                withDenied(dir) { LoginIo().credentialConfigured("codex", oauthProvider(credential), none) },
+                withDenied(dir) { CliSignIn().credentialConfigured("codex", oauthProvider(credential), none) },
                 "unreadable-but-present must count as configured",
             )
         }
         assertTrue(configured.contains("fix access, not login"), configured)
-        assertFalse(LoginIo().credentialConfigured("codex", oauthProvider(tmp.resolve("absent.json")), none))
+        assertFalse(CliSignIn().credentialConfigured("codex", oauthProvider(tmp.resolve("absent.json")), none))
     }
 
     /** A loopback /health so DaemonProbe.healthVersion answers and stopIfRunning reaches the key

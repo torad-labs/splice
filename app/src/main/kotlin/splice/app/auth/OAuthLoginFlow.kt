@@ -1,7 +1,8 @@
 // NEW: the OAuth login orchestration the Node had in codex-login.mjs (never ported until now) —
 // generalized to serve BOTH codex and grok (identical shape: PKCE authorize URL → loopback
-// callback server → code exchange → write auth.json). Admin one-shot; :app is wall-exempt for
-// println + a bounded runBlocking bridge lives in the CLI. The loopback bind is 127.0.0.1 only.
+// callback server → code exchange → write auth.json). Admin one-shot: its lines go out through the
+// caller's LoginOutput and a bounded runBlocking bridge lives in the CLI. The loopback bind is
+// 127.0.0.1 only.
 package splice.app.auth
 
 import com.sun.net.httpserver.HttpExchange
@@ -25,21 +26,26 @@ import java.util.concurrent.atomic.AtomicReference
 // LoginSpec lives in LoginSpec.kt; the confirmation page lives in OAuthCallbackPage.kt
 // (concentration, 2026-08-19).
 
-public object OAuthLoginFlow {
+private const val CALLBACK_TIMEOUT_S = 300L
 
-    private val loginIo = LoginIo()
+/** `code=` in a pasted redirect URL or query fragment. */
+private val CODE_PARAM = Regex("""[?&#]code=([^&\s]+)""")
+
+/** Shortest thing accepted as a BARE code — below this it is almost certainly a stray key. */
+private const val MIN_BARE_CODE = 8
+// V4-122: ERR_BODY_CAP is LoginIo's declaration now, read from this package — one width for the
+// login flow rather than one per file that renders it.
+
+/** A class, not an `object` (LAYOUT-01): every line the flow speaks goes to [output], so each caller
+ *  hands in its own — the CLI a terminal, a test a recorder — and [browser] rides with it. */
+public class OAuthLoginFlow(
+    private val output: LoginOutput,
+    browser: BrowserOpener = SystemBrowserOpener(output),
+) {
+
+    private val loginIo = LoginIo(output, browser)
     private val authClients = AuthHttpClientFactory()
     private val callbackPage = OAuthCallbackPage()
-
-    private const val CALLBACK_TIMEOUT_S = 300L
-
-    /** `code=` in a pasted redirect URL or query fragment. */
-    private val CODE_PARAM = Regex("""[?&#]code=([^&\s]+)""")
-
-    /** Shortest thing accepted as a BARE code — below this it is almost certainly a stray key. */
-    private const val MIN_BARE_CODE = 8
-    // V4-122: ERR_BODY_CAP is LoginIo's declaration now, read from this package — one width for the
-    // login flow rather than one per file that renders it.
 
     /** Runs the browser OAuth flow to completion; returns true on success.
      *
@@ -70,7 +76,7 @@ public object OAuthLoginFlow {
     private fun createServer(redirectPort: Int): HttpServer? = try {
         HttpServer.create(InetSocketAddress("127.0.0.1", redirectPort), 0)
     } catch (e: IOException) {
-        println(
+        output.line(
             "splice: can't start the login listener on 127.0.0.1:$redirectPort " +
                 // SAFE-RENDER-EXEMPT[2026-08-31]: HttpServer.create bind on loopback — the IOException names a port, never file bytes
                 "(is another login already running?): ${e.message}",
@@ -91,10 +97,10 @@ public object OAuthLoginFlow {
             // daemon's own (nonexistent) desktop.
             observer.announced(LoginAnnouncement(browserUrl = spec.authorizeUrl))
         } else {
-            println("splice: opening your browser to sign in (${spec.head})…")
+            output.line("splice: opening your browser to sign in (${spec.head})…")
             if (!loginIo.openBrowser(spec.authorizeUrl)) {
-                println("splice: open this URL to sign in:")
-                println(spec.authorizeUrl)
+                output.line("splice: open this URL to sign in:")
+                output.line(spec.authorizeUrl)
             }
         }
         // LOOPBACK **OR** STDIN PASTE. A loopback callback can simply never arrive — a browser on
@@ -105,15 +111,15 @@ public object OAuthLoginFlow {
         // value goes through the SAME exchange, so nothing about the token path changes.
         pasteFallback(spec, latch, codeRef)
         if (!latch.await(CALLBACK_TIMEOUT_S, TimeUnit.SECONDS)) {
-            println("splice: login timed out waiting for the callback (${CALLBACK_TIMEOUT_S}s).")
+            output.line("splice: login timed out waiting for the callback (${CALLBACK_TIMEOUT_S}s).")
             return null
         }
         errRef.get()?.let {
-            println("splice: login failed: $it")
+            output.line("splice: login failed: $it")
             return null
         }
         return codeRef.get() ?: run {
-            println("splice: login failed: no authorization code received.")
+            output.line("splice: login failed: no authorization code received.")
             null
         }
     }
@@ -125,7 +131,7 @@ public object OAuthLoginFlow {
      *  a successful login. Silently no-ops without a console, which is also the detached case. */
     private fun pasteFallback(spec: LoginSpec, latch: CountDownLatch, codeRef: AtomicReference<String?>) {
         if (System.console() == null) return
-        println("splice: if the browser cannot reach this machine, paste the redirect URL (or just the code) here:")
+        output.line("splice: if the browser cannot reach this machine, paste the redirect URL (or just the code) here:")
         // A named single-thread executor, the same seam [run] already uses for the loopback server's
         // handler pool — not a raw thread. The reader thread keeps both properties the old one had:
         // it is a daemon (see above) and it carries the per-head name a stack dump needs. shutdown()
@@ -146,7 +152,7 @@ public object OAuthLoginFlow {
                         latch.countDown()
                         return@execute
                     }
-                    if (line.isNotBlank()) println("splice: that is not an authorization code — try again:")
+                    if (line.isNotBlank()) output.line("splice: that is not an authorization code — try again:")
                 }
             }
             Cancellables.discard(pasted, "stdin closed or unreadable; the loopback callback is still live")
@@ -172,7 +178,7 @@ public object OAuthLoginFlow {
     ) {
         val params = Cancellables.runCatchingCancellable { queryParams(ex.requestURI.rawQuery.orEmpty()) }
             .onFailure {
-                println("splice: ignoring a callback whose query does not parse — ${SafeFailureText.render(it)}")
+                output.line("splice: ignoring a callback whose query does not parse — ${SafeFailureText.render(it)}")
             }
             .getOrDefault(emptyMap())
         // Only a callback carrying OUR state ends the login. A drive-by hit on the loopback port (a
@@ -228,7 +234,7 @@ public object OAuthLoginFlow {
                 if (!resp.status.isSuccess()) {
                     // Never print the provider's response body here — a provider that echoes a
                     // secret into error_description must not surface it on the operator's terminal.
-                    println("splice: token exchange failed (HTTP ${resp.status.value})")
+                    output.line("splice: token exchange failed (HTTP ${resp.status.value})")
                     false
                 } else {
                     // DR-172: a 200 alone used to mean "signed in" here. The token check and the
@@ -236,7 +242,7 @@ public object OAuthLoginFlow {
                     loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(bodyText), spec.account)
                 }
             }.getOrElse { e ->
-                println("splice: token exchange error: ${SafeFailureText.render(e)}")
+                output.line("splice: token exchange error: ${SafeFailureText.render(e)}")
                 false
             }
         } finally {
@@ -246,7 +252,7 @@ public object OAuthLoginFlow {
 
     private fun decode(s: String): String =
         Cancellables.runCatchingCancellable { URLDecoder.decode(s, Charsets.UTF_8) }
-            .onFailure { println("splice: a callback value is not valid percent-encoding — using it verbatim") }
+            .onFailure { output.line("splice: a callback value is not valid percent-encoding — using it verbatim") }
             .getOrDefault(s)
 
     private fun queryParams(raw: String): Map<String, String> =

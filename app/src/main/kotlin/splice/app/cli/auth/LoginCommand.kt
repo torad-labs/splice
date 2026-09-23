@@ -6,8 +6,8 @@
 package splice.app.cli.auth
 
 import splice.app.auth.DeviceLoginFlow
-import splice.app.auth.LoginIo
 import splice.app.auth.LoginObserver
+import splice.app.auth.LoginOutput
 import splice.app.auth.LoginSpec
 import splice.app.auth.OAuthAccountRefused
 import splice.app.auth.OAuthLoginAccount
@@ -24,13 +24,16 @@ import java.nio.file.Paths
 /** The `login` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name, so the diff at each
  *  call site is a receiver insertion. */
-internal class LoginCommand {
+internal class LoginCommand(
+    // The flows' lines, which this verb prints to the terminal (LAYOUT-01: the flows no longer do).
+    private val output: LoginOutput = LoginOutput { println(it) },
+) {
 
     private val codex = LoginCodex()
     private val grok = LoginGrok()
     private val kimi = LoginKimi()
     private val muse = LoginMuse()
-    private val loginIo = LoginIo()
+    private val cliSignIn = CliSignIn()
 
     internal suspend fun login(headArg: String?, label: String? = null): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
@@ -43,7 +46,7 @@ internal class LoginCommand {
         }
         val result = runLoginAttempt(headKey, provider, topology, label)
         if (!result.ok) println("splice: login for '$headKey' did not complete.")
-        loginIo.writeLoginOutcome(headKey, result.ok, result.account)
+        cliSignIn.writeLoginOutcome(headKey, result.ok, result.account)
         return result.ok
     }
 
@@ -63,7 +66,7 @@ internal class LoginCommand {
      *  given an [observer] for exactly that call; every existing call site passes null and is
      *  unaffected. api-key heads have no off-request answer (the flow needs an interactive
      *  console), so an observed api-key login degrades to [LoginResult] false through the same
-     *  `System.console() == null` branch [splice.app.auth.LoginIo.apiKeyLogin] already takes headless —
+     *  `System.console() == null` branch [CliSignIn.apiKeyLogin] already takes headless —
      *  never a crash, never a second dispatch table. */
     internal suspend fun runLoginAttempt(
         headKey: String,
@@ -75,23 +78,23 @@ internal class LoginCommand {
         when (provider.auth.kind) {
             "kimi-oauth" -> {
                 val spec = kimi.spec(headKey, oauthAuthPath(provider), label)
-                LoginResult(DeviceLoginFlow.run(spec, observer = observer), spec.account)
+                LoginResult(DeviceLoginFlow(output).run(spec, observer = observer), spec.account)
             }
             "muse-oauth" -> {
                 val spec = muse.spec(headKey, oauthAuthPath(provider), label)
-                LoginResult(DeviceLoginFlow.run(spec, observer = observer), spec.account)
+                LoginResult(DeviceLoginFlow(output).run(spec, observer = observer), spec.account)
             }
             // DR-97: the HEAD key, not the provider key — the daemon reads
             // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
             "api-key" -> if (label == null) {
-                LoginResult(loginIo.apiKeyLogin(headKey, provider))
+                LoginResult(cliSignIn.apiKeyLogin(headKey, provider))
             } else {
                 println("splice: --label is only supported for OAuth heads")
                 LoginResult(false)
             }
             else -> {
                 val spec = specFor(headKey, topology, label)
-                if (spec == null) LoginResult(false) else LoginResult(OAuthLoginFlow.run(spec, observer), spec.account)
+                if (spec == null) LoginResult(false) else LoginResult(OAuthLoginFlow(output).run(spec, observer), spec.account)
             }
         }
     } catch (e: OAuthAccountRefused) {

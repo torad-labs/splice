@@ -20,11 +20,13 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.auth.RefreshAttempt
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokRefreshedTokens
 
-public class GrokRefresh {
+// The daemon log (LAYOUT-01): these lines went to bare stderr, which never reaches /mgmt/logs.
+public class GrokRefresh(private val log: LogSink) {
 
     private val retry = RefreshRetry()
 
@@ -68,7 +70,7 @@ public class GrokRefresh {
         }
         val status = resp.status.value
         val body = resp.bodyAsText()
-        System.err.println("[grok] token refresh failed: HTTP $status")
+        log("[grok] token refresh failed: HTTP $status\n")
         return when {
             retry.isTerminalRefreshFailure(status, body, grokRefreshJson) ->
                 RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
@@ -86,7 +88,7 @@ public class GrokRefresh {
             refreshToken = JsonScalars.str(obj, "refresh_token"),
             expiresIn = JsonScalars.long(obj, "expires_in"),
         )
-    }.onFailure { System.err.println("[grok] refresh body did not parse: ${SafeFailureText.render(it)}") }
+    }.onFailure { log("[grok] refresh body did not parse: ${SafeFailureText.render(it)}\n") }
         .getOrNull()
 }
 

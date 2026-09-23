@@ -20,8 +20,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.auth.LoginKimi
 import splice.provider.kimi.KimiOAuth
 import splice.upstream.Waiter
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -105,21 +103,19 @@ class DeviceLoginTokenlessTest {
         account: OAuthLoginAccount? = null,
         afterPersist: DeviceLoginFinalizer = DeviceLoginFinalizer { _, _ -> },
     ): Pair<Boolean, String> {
-        val savedOut = System.out
-        val out = ByteArrayOutputStream()
+        val out = StringBuilder()
         val browser = RecordingBrowserOpener()
         return try {
-            System.setOut(PrintStream(out, true))
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
             val ok = runBlocking {
-                DeviceLoginFlow.run(specFor(server, authPath, account, afterPersist), waiter, LoginIo(browser))
+                DeviceLoginFlow(LoginOutput { out.appendLine(it) }, browser)
+                    .run(specFor(server, authPath, account, afterPersist), waiter)
             }
             assertEquals(listOf("http://127.0.0.1:${server.address.port}/verify"), browser.urls)
             assertTrue(out.toString().contains("open the URL above to finish signing in"))
             ok to out.toString()
         } finally {
-            System.setOut(savedOut)
             server.stop(0)
         }
     }
@@ -144,13 +140,12 @@ class DeviceLoginTokenlessTest {
         val waiterEntered = CompletableDeferred<Unit>()
         val releaseWaiter = CompletableDeferred<Unit>()
         val running = async(Dispatchers.Default) {
-            DeviceLoginFlow.run(
+            DeviceLoginFlow(LoginOutput {}, browser).run(
                 specFor(server, primary, firstAccount),
                 waiter = Waiter {
                     waiterEntered.complete(Unit)
                     releaseWaiter.await()
                 },
-                loginIo = LoginIo(browser),
             )
         }
         try {

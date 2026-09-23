@@ -57,7 +57,10 @@ internal class ClientAuth(
         // simply forwards no valid upstream credential and gets the upstream's own 401.
         // ONE exception, below: the mgmt key itself is never a credential this head may forward.
         if (deps.policy.forwardClientAuth) return allowUnlessOwnKey(call)
-        if (matchesInferenceToken(presentedCredential(call))) return true
+        // The turn key is what a launched client holds; the management key still runs a turn so a
+        // session launched before the v0.4.0 split keeps working until it is relaunched.
+        val presented = presentedCredential(call)
+        if (matchesInferenceToken(presented) || matchesOperatorToken(presented)) return true
         responses.respondUnauthorized(call)
         return false
     }
@@ -77,7 +80,9 @@ internal class ClientAuth(
      * on every head kind, so what opens it is what `splice` itself holds and nothing a session has.
      */
     suspend fun authorizeOperator(call: ApplicationCall): Boolean {
-        if (matchesInferenceToken(presentedCredential(call))) return true
+        // The OPERATOR key alone (v0.4.0): the turn key is in every launched session's environment,
+        // so accepting it here handed any session every other session's upstream bodies.
+        if (matchesOperatorToken(presentedCredential(call))) return true
         responses.respondUnauthorized(call, "this route takes splice's management key")
         return false
     }
@@ -107,25 +112,31 @@ internal class ClientAuth(
         val forwardable =
             call.request.headers[HttpHeaders.Authorization].orEmpty().split(authDelimiterRe) +
                 listOfNotNull(call.request.headers["x-api-key"])
-        if (forwardable.none { matchesInferenceToken(it) }) return true
+        if (forwardable.none { matchesInferenceToken(it) || matchesOperatorToken(it) }) return true
         deps.log(
-            "[auth] refused a turn on a client-auth head that presented splice's own management key — " +
+            "[auth] refused a turn on a client-auth head that presented one of splice's own keys (the " +
+                "management key or the turn key) — " +
                 "ANTHROPIC_AUTH_TOKEN is set in the launching environment and shadowed the caller's own " +
                 "credential; unset it (or launch from a clean shell) so this head can forward yours\n",
         )
         responses.respondUnauthorized(
             call,
-            "splice's management key is not an upstream credential — this head forwards your own " +
+            "splice's own keys (the management key and the turn key) are not upstream credentials — " +
+                "this head forwards your own " +
                 "Anthropic credential, so unset ANTHROPIC_AUTH_TOKEN in the environment that launched it",
         )
         return false
     }
 
-    /** Constant-time compare against this head's own inference token. Length is checked first
-     *  because [MessageDigest.isEqual] is only constant-time for equal-length inputs. */
-    private fun matchesInferenceToken(presented: String?): Boolean {
+    private fun matchesInferenceToken(presented: String?): Boolean = constantTimeEquals(presented, deps.inferenceToken)
+
+    private fun matchesOperatorToken(presented: String?): Boolean = constantTimeEquals(presented, deps.operatorToken)
+
+    /** Constant-time compare against one of this head's own keys. Length is checked first because
+     *  [MessageDigest.isEqual] is only constant-time for equal-length inputs. */
+    private fun constantTimeEquals(presented: String?, expected: String): Boolean {
         val presentedBytes = presented?.toByteArray(Charsets.UTF_8) ?: return false
-        val expectedBytes = deps.inferenceToken.toByteArray(Charsets.UTF_8)
+        val expectedBytes = expected.toByteArray(Charsets.UTF_8)
         if (presentedBytes.size != expectedBytes.size) return false
         return MessageDigest.isEqual(presentedBytes, expectedBytes)
     }

@@ -52,6 +52,9 @@ import kotlin.time.Duration.Companion.seconds
 
 private const val MGMT_KEY = "mgmt-key-for-the-wire-test"
 
+/** The v0.4.0 turn key: what a launched session holds in its environment. */
+private const val TURN_KEY = "turn-key-for-the-wire-test"
+
 /** An Anthropic-shaped upstream that records every request BODY, append-only. */
 private class BodyRecordingUpstream {
     val bodies = CopyOnWriteArrayList<String>()
@@ -128,7 +131,8 @@ class HeadWireTapTest {
                 log = {},
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
-                inferenceToken = MGMT_KEY,
+                inferenceToken = TURN_KEY,
+                operatorToken = MGMT_KEY,
                 stores = headStores(tmp, suffix = "-$port", wireTap = wireTap),
             ),
         )
@@ -150,7 +154,7 @@ class HeadWireTapTest {
         client.close()
     }
 
-    private fun turn(port: Int, text: String, bearer: String = MGMT_KEY) = runBlocking {
+    private fun turn(port: Int, text: String, bearer: String = TURN_KEY) = runBlocking {
         val response = client.post("http://127.0.0.1:$port/v1/messages") {
             header("Authorization", "Bearer $bearer")
             header("Content-Type", "application/json")
@@ -223,5 +227,17 @@ class HeadWireTapTest {
         assertEquals(HttpStatusCode.Unauthorized, wire(port, bearer = null).first, "no credential")
         assertEquals(HttpStatusCode.Unauthorized, wire(port, bearer = "caller-own-token").first, "a client credential")
         assertEquals(HttpStatusCode.OK, wire(port, bearer = MGMT_KEY).first, "the management key")
+    }
+
+    // THE v0.4.0 SPLIT, at the route it exists for. The wire tap holds the bodies this head sent
+    // upstream for EVERY session — their prompts and turns. Before the split a launched session held
+    // the management key in its environment, so any session's `printenv` opened every other
+    // session's traffic here. The session's credential now runs its turns and opens nothing else.
+    @Test
+    fun `a session's turn key runs its turns but cannot read the wire tap`() {
+        val port = startHead(WireTap(keep = 2))
+        assertEquals(HttpStatusCode.OK, turn(port, "mine", bearer = TURN_KEY), "the turn key runs a turn")
+        assertEquals(HttpStatusCode.Unauthorized, wire(port, bearer = TURN_KEY).first, "the turn key reads no wire")
+        assertEquals(HttpStatusCode.OK, wire(port, bearer = MGMT_KEY).first, "the management key still does")
     }
 }

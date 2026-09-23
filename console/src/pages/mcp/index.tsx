@@ -7,7 +7,7 @@
 // knob, and a knob the running daemon does not carry shows its name with no value rather than a
 // default this page invented.
 import { useEffect, useState } from 'react';
-import { dispositionText, fetchConfig, knobDispositions, useConfig } from '@entities/config';
+import { fetchConfig, knobDispositions, useConfig } from '@entities/config';
 import { MCP_RESTART, startMcpPolling, useMcp } from '@entities/mcp';
 import type { McpRow } from '@entities/mcp';
 import { useViews, ViewTabs } from '@features/views';
@@ -106,9 +106,9 @@ function HostLimits({ heads }: { heads: readonly { key: string; knob: { value: s
             provenance={knob === null ? 'default' : (knob.provenance as never)}
             hot={knob?.hot ?? false}
           />
-          <p className="myx-mcp-note">
-            {knob === null ? 'not carried by this daemon' : dispositionText(knob.hot)}
-          </p>
+          {/* the box prints the knob's own restart verdict; the note speaks only for a knob the
+              daemon does not carry, which has no verdict to print */}
+          {knob === null ? <p className="myx-mcp-note">not carried by this daemon</p> : null}
         </div>
       ))}
     </section>
@@ -167,9 +167,6 @@ export function McpPage() {
             ))
           )}
 
-          {/* There is no restart route. Printed as the honest empty the contract asks for rather
-              than a control that would 404, or worse, speak JSON-RPC at the transport endpoint. */}
-          <Empty text="restart not built" source={MCP_RESTART.pending} />
         </div>
 
         <aside className="myx-mcp-detail" aria-label={S.detail}>
@@ -201,6 +198,11 @@ export function McpPage() {
               <p className="myx-mcp-note">
                 {opened.server.eligible ? (hosted(opened.server)?.last_error ?? S.absent) : opened.server.reason}
               </p>
+              {/* There is no restart route. Printed where a restart control would stand, as the
+                  honest empty the contract asks for, rather than a control that would 404 or speak
+                  JSON-RPC at the transport endpoint. It used to sit under the servers rack on every
+                  visit, a permanent strip about a control nobody had reached for. */}
+              <Empty text="restart not built" source={MCP_RESTART.pending} />
             </section>
           )}
 

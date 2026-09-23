@@ -249,9 +249,14 @@ describe('the playground never persists a body', () => {
 describe('pending routes render an empty naming their row', () => {
   // M4-07: GET /api/upgrade is served and the version strip reads it, so its `not built` empty is
   // gone (tests/doctor-gate.test.ts pins the absence).
-  test('the doctor empties name V4-127 and V4-133', () => {
+  test('the doctor empty names V4-127', () => {
     expect(render(h(Empty, DOCTOR_EMPTIES.noReport))).toContain('V4-127');
-    expect(render(h(Empty, DOCTOR_EMPTIES.capture))).toContain('V4-133');
+  });
+
+  // Body capture is served (/api/heads/{head}/capture, driven from the turns and logs drawers), so
+  // the `body capture not built` empty the doctor still printed beside the restart was stale.
+  test('body capture is a control on turns and logs, not an empty on the doctor', () => {
+    expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('capture');
   });
 
   // M4-03: POST /api/daemon/restart and POST /api/playground are served and the page drives both, so

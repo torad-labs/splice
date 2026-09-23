@@ -65,6 +65,21 @@ textarea:focus-visible {
   outline-offset: 1px;
 }
 
+/* ---------- PRESS (2026-09-23, console design pass) ----------
+   Every button in the room answers a press by settling 3% into the page, so a click is felt the
+   moment it lands rather than when the daemon answers. 0.97 and the strong ease-out at --dur-1:
+   visible, never a bounce. Strips are not buttons for this purpose: a rack-wide slip scaling 3%
+   moves its far edge 40px, which reads as the row lurching, so a strip answers with its outline. */
+button {
+  transition: transform var(--dur-1) var(--ease-out);
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active { transform: none; }
+}
+
 /* ---------- the shell ---------- */
 
 .myx-console {
@@ -148,6 +163,16 @@ textarea:focus-visible {
   color: var(--strip-ink);
 }
 
+/* The gate is shown once per visit, so it can afford an entrance (the palette, opened by keyboard
+   many times a day, has none): the scrim fades and the plate settles from 98% at --dur-2. Reduced
+   motion holds --dur-2 at zero (tokens.css), so it simply appears. */
+.myx-modal-scrim { transition: opacity var(--dur-2) ease; }
+.myx-modal { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
+@starting-style {
+  .myx-modal-scrim { opacity: 0; }
+  .myx-modal { opacity: 0; transform: scale(0.98) translateY(var(--space-2)); }
+}
+
 .myx-modal-actions { display: flex; justify-content: end; gap: var(--space-2); }
 .myx-unlock-form { display: grid; gap: var(--space-3); }
 
@@ -165,19 +190,26 @@ textarea:focus-visible {
   font-family: var(--font-label);
   font-size: var(--text-2);
   cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease-out);
+  transition: border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
 }
 .myx-modal .myx-btn:hover { border-color: var(--strip-ink); }
 .myx-modal .myx-btn[disabled] { color: var(--strip-ink-mute); cursor: not-allowed; }
 
-/* The command to paste: a strip's field box, because that is what a printed value looks like
-   here, and it clips rather than wraps so the plate never grows a second line. */
+/* The command that prints the key: printed on the plate beside its label, NOT in a field box.
+   In the input's own box it read as a field already filled in, one line above the field that
+   is empty. It clips rather than wraps so the plate never grows a second line. */
+.myx-unlock-hint {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
 .myx-modal .myx-well {
-  padding: var(--space-2) var(--space-3);
-  background: var(--strip-field);
+  min-width: 0;
+  padding: 0;
+  background: none;
   color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
+  border: 0;
   /* CODE: the command to paste is code, as its own comment says. */
   font-family: var(--font-code);
   font-size: var(--text-2);

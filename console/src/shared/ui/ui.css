@@ -28,10 +28,13 @@
   background: var(--strip);
   color: var(--strip-ink);
   cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
 }
 .myx-btn:hover { border-color: var(--hairline-strong); color: var(--strip-ink); }
-.myx-btn:active { transform: translateY(var(--hair)); }
+.myx-btn:active { transform: scale(0.97); }
 .myx-btn:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
 /* A primary key is the SAME printed key with the room's bright ink: the world has no second
    accent, and the vermilion this used to reach for is the one pigment the world forbids by name. */
@@ -833,21 +836,25 @@
    to its content like every other strip, its text where a field's value sits and its source under
    it in the mute. It starts at the rack's own field origin - the font on this box is the LABEL
    face at --text-1 on purpose, so the 8ch below resolves to the same width the edge column
-   budgets and the empty lines up with the columns above it. */
+   budgets and the empty lines up with the columns above it. That gutter belongs to the rack: an
+   empty standing alone (a page with nothing to rack, an aside) has no columns to line up with, and
+   with it the text sat at the right of a box that was mostly blank. */
 .myx-empt {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   align-self: flex-start;
   margin: 0;
-  padding: var(--space-3);
-  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2) + var(--space-3));
+  padding: var(--space-3) var(--space-4);
   font-family: var(--font-label);
   font-size: var(--text-1);
   width: max-content;
   background: var(--strip);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
+}
+.myx-bay-rows > .myx-empt {
+  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2) + var(--space-3));
 }
 .myx-empt-text {
   /* FIGURE: an honest empty is printed words, not code, so it takes the display face. */

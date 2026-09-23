@@ -23,6 +23,9 @@
   gap: var(--space-2);
   flex-wrap: wrap;
 }
+/* the head's name is a fixed column, so every head's budget box starts at one x: they started
+   wherever the name before them ended, and "bonsai-second" pushed its box 36px right of "bonsai" */
+.myx-bud-row > .myx-bud-note:first-child { flex: 0 0 16ch; }
 
 .myx-bud-btn {
   font-family: var(--font-label);

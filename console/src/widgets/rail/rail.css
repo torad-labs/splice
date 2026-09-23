@@ -96,6 +96,9 @@
   .myx-rail-tab:hover .myx-edge { background: var(--plate-hover); }
 }
 .myx-rail-tab:active .myx-edge { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .myx-rail-tab:active .myx-edge { transform: none; }
+}
 
 /* THE STANDING MARK: the comp's green bar, inside the slot to the right of the plate. The address
    stays readable with the colour gone (aria-current carries it). */

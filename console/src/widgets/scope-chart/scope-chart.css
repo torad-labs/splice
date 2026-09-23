@@ -4,8 +4,11 @@
 .myx-schart {
   display: block;
   width: 100%;
-  height: calc(var(--space-8) * 2);
-  background: var(--scope);
+  height: calc(var(--space-8) * 3);
+  /* transparent, so the inset's ruled grid reads BEHIND the bars (2026-09-23, console design
+     pass): an opaque plot covered the grid and left it showing only under the legend, where it
+     crossed the legend's own strips and read as the two overlapping */
+  background: transparent;
 }
 
 /* A hairline of the ground between stacked segments, so two adjacent steps of the
@@ -30,7 +33,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  padding-top: var(--space-2);
+  /* the legend is printed on the inset's plain ground, a band under the ruled plot */
+  margin: var(--space-3) calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
+  padding: var(--space-3);
+  background: var(--scope);
+  border-top: var(--hair) solid var(--scope-grid);
 }
 
 .myx-schart-key {

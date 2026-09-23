@@ -91,6 +91,9 @@ const EDITABLE_TOPOLOGY = [
   'stream_usage',
   // V4-165 (slot affinity on a llama-server head): an ordinary boolean quirk, editable like stream_usage.
   'slot_affinity',
+  // d217408d (`splice models`): where a provider publishes its model list when that is not where
+  // its dialect says. A plain provider string, editable like base_url; no turn ever reads it.
+  'models_url',
   'tool_surface', 'mfjs', 'block_allowlist', 'strip_cache_control', 'synthesize_signatures',
   'map_thinking_adaptive', 'strip_sampling_params', 'reanchor_prefill', 'tool_name_cap',
   'defer_prefixes', 'min_deferred', 'search_limit', 'search_rounds',

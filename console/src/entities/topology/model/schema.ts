@@ -99,6 +99,7 @@ const provider: SchemaNode = {
     window_rules: { open: true },
     default_context_window: {},
     local: {},
+    models_url: {},
     rates: ratesTable,
   },
 };

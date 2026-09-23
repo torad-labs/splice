@@ -6,7 +6,8 @@
 // (name, status, cwd, head, socket) goes through ONE terminal-safe renderer that drops control and
 // format characters (C0, C1, DEL, Unicode Cc/Cf/Zl/Zp), and whatever lands inside the SendMessage
 // syntax — name or socket — is backslash/quote-escaped so the printed command stays valid.
-package splice.app.cli.status
+// A sessions slice since LAYOUT-01, beside the registry it reads; the lines leave through TerminalOutput.
+package splice.sessions.list
 
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
@@ -14,6 +15,7 @@ import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RED
 import splice.core.terminal.RESET
+import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import splice.core.topology.HeadConfig
 import splice.core.util.EnvReader
@@ -42,24 +44,25 @@ private val UNPRINTABLE: Set<Int> = setOf(
     Character.SURROGATE.toInt(),
 )
 
-internal class SessionsCommand {
+/** `splice sessions`. [output] is the listing, [errors] the one diagnostic: an unreadable topology. */
+public class SessionsCommand(private val output: TerminalOutput, private val errors: TerminalOutput) {
 
-    internal fun sessions(
-        envReader: EnvReader = EnvReader(System::getenv),
+    public fun sessions(
+        envReader: EnvReader,
         registry: SessionRegistry = defaultRegistry(envReader),
         now: WallClock = WallClock { System.currentTimeMillis() },
     ): Boolean {
         val home = Paths.get(System.getProperty("user.home")).toString()
-        println("${BOLD}splice sessions$RESET $DIM— Claude Code sessions registered in ~/.claude/sessions$RESET")
-        println()
+        output.line("${BOLD}splice sessions$RESET $DIM— Claude Code sessions registered in ~/.claude/sessions$RESET")
+        output.line("")
         val listing = registry.list()
         val rows = listing.sessions
-        listing.error?.let { println("  $RED✗$RESET the registry could not be listed: ${clean(it)}") }
-        if (rows.isEmpty() && listing.error == null) println("  $DIM–  no registered sessions$RESET")
+        listing.error?.let { output.line("  $RED✗$RESET the registry could not be listed: ${clean(it)}") }
+        if (rows.isEmpty() && listing.error == null) output.line("  $DIM–  no registered sessions$RESET")
         rows.forEach { s -> printRow(s, home, now()) }
-        println()
-        println("  ${DIM}gone = the process exited · stale = alive, no registry update for 30 min · $RESET")
-        println("  ${DIM}headless `claude -p` runs never register here$RESET")
+        output.line("")
+        output.line("  ${DIM}gone = the process exited · stale = alive, no registry update for 30 min · $RESET")
+        output.line("  ${DIM}headless `claude -p` runs never register here$RESET")
         return listing.error == null
     }
 
@@ -69,11 +72,11 @@ internal class SessionsCommand {
         val cwd = shortCwd(clean(s.cwd.orEmpty()).replaceFirst(home, "~"))
         val age = s.updatedAt?.let { ago(now - it) } ?: "never"
         val availability = s.availability.name.lowercase()
-        println(
+        output.line(
             "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET  ${clean(s.status ?: "-")}  " +
                 "$availability  $DIM$age · $cwd$RESET",
         )
-        sendLine(s)?.let { println(it) }
+        sendLine(s)?.let { output.line(it) }
     }
 
     private fun glyph(availability: SessionAvailability): String = when (availability) {
@@ -139,7 +142,7 @@ internal class SessionsCommand {
     }
 
     private fun unattributed(why: String): Map<String, HeadConfig> {
-        System.err.println("splice sessions: topology not readable ($why) — heads shown as unknown")
+        errors.line("splice sessions: topology not readable ($why) — heads shown as unknown")
         return emptyMap()
     }
 }

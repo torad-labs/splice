@@ -1,4 +1,4 @@
-package splice.app.cli.status
+package splice.sessions.list
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.sessions.registry.SessionRegistry
 import java.io.ByteArrayOutputStream
@@ -36,7 +37,7 @@ class SessionsCommandTest {
             pidAlive = { it != 13L },
             clock = { now },
         )
-        val out = capture { SessionsCommand().sessions({ null }, registry) { now } }
+        val out = capture { sessionsCommand().sessions({ null }, registry) { now } }
         val lines = out.lines()
         val alpha = lines.first { it.contains("alpha") }
         assertTrue(alpha.contains("claudex") && alpha.contains("live") && alpha.contains("2m ago"), alpha)
@@ -59,7 +60,7 @@ class SessionsCommandTest {
             """{"pid":21,"name":"old","updatedAt":${now - 5_000_000},"messagingSocketPath":"/run/x/21.sock"}""",
         )
         val registry = SessionRegistry(sessionsDir = dir, headOf = { null }, pidAlive = { true }, clock = { now })
-        val out = capture { SessionsCommand().sessions({ null }, registry) { now } }
+        val out = capture { sessionsCommand().sessions({ null }, registry) { now } }
         assertTrue(out.contains("old") && out.contains("stale"), out)
         assertFalse(out.contains("SendMessage("), "only LIVE rows are messageable: $out")
     }
@@ -76,7 +77,7 @@ class SessionsCommandTest {
         val blank = """{"pid":32,"name":"","updatedAt":$now,"messagingSocketPath":${Json.encodeToString(socket)}}"""
         Files.writeString(dir.resolve("32.json"), blank)
         val registry = SessionRegistry(sessionsDir = dir, headOf = { null }, pidAlive = { true }, clock = { now })
-        val out = capture { SessionsCommand().sessions({ null }, registry) { now } }
+        val out = capture { sessionsCommand().sessions({ null }, registry) { now } }
         val injected = listOf("\u001b[31m", "\u0007", "\u001b]0;evil", "\u009b", "\u200e")
         assertTrue(injected.none { it in out }, "no registry control sequence reaches the terminal: $out")
         assertTrue(out.contains("SendMessage(to=\"al[31mpha\\\"x\")"), out)
@@ -96,7 +97,7 @@ class SessionsCommandTest {
         System.setProperty("user.home", home.toString())
         val env = EnvReader { name -> bad.toString().takeIf { name == "SPLICE_CONFIG" } }
         val out = try {
-            capture { SessionsCommand().sessions(env) { now } }
+            capture { sessionsCommand().sessions(env) { now } }
         } finally {
             System.setProperty("user.home", prev)
         }
@@ -111,11 +112,14 @@ class SessionsCommandTest {
         val file = Files.writeString(dir.resolve("sessions"), "not a directory")
         val registry = SessionRegistry(sessionsDir = file, headOf = { null }, clock = { now })
         var ok = true
-        val out = capture { SessionsCommand().sessions({ null }, registry) { now }.also { ok = it } }
+        val out = capture { sessionsCommand().sessions({ null }, registry) { now }.also { ok = it } }
         assertFalse(ok, "an unreadable registry is not a successful listing")
         assertTrue(out.contains("could not be listed"), out)
         assertFalse(out.contains("no registered sessions"), out)
     }
+
+    /** The verb as app wires it — stdout and stderr — so capture() reads what an operator sees. */
+    private fun sessionsCommand() = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
 
     private fun capture(block: () -> Boolean): String {
         val buf = ByteArrayOutputStream()

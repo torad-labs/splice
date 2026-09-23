@@ -17,7 +17,6 @@ import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.LogsCommand
 import splice.app.cli.status.PerfCommand
-import splice.app.cli.status.SessionsCommand
 import splice.app.cli.status.StatusCommand
 import splice.app.cli.upgrade.UpgradeCommand
 import splice.core.GATEWAY_VERSION
@@ -25,6 +24,7 @@ import splice.core.SHIM_VERSION
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.diagnostics.wire.WireCommand
+import splice.sessions.list.SessionsCommand
 import splice.topology.TopologyLoader
 
 /** The splice CLI verbs as a closed, exhaustively-dispatched hierarchy: argv is parsed into a typed
@@ -95,7 +95,10 @@ public sealed class Command {
         override fun run(): Int = outcomeExitCode(LogsCommand().logs(args))
     }
     public data object Sessions : Command() {
-        override fun run(): Int = outcomeExitCode(SessionsCommand().sessions())
+        override fun run(): Int {
+            val verb = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+            return outcomeExitCode(verb.sessions(EnvReader(System::getenv)))
+        }
     }
     public data class Perf(val args: List<String>) : Command() {
         override fun run(): Int = outcomeExitCode(PerfCommand().perf(args))

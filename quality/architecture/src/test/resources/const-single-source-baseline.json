@@ -431,7 +431,7 @@
     ],
     "COPY MS_PER_MINUTE": [
       "app/src/main/kotlin/splice/app/cli/doctor/DoctorProbeWrite.kt",
-      "app/src/main/kotlin/splice/app/cli/status/SessionsCommand.kt",
+      "features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt",
       "features/usage/src/main/kotlin/splice/usage/perf/PerfSummary.kt"
     ],
     "COPY MS_PER_S": [

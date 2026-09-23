@@ -3,7 +3,7 @@
 package splice.app.cli.status
 
 import splice.app.cli.AdminSupport
-import splice.app.cli.doctor.MgmtKeyRead
+import splice.daemonclient.MgmtKeyRead
 
 /** The `dashboard` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). `Command.Dashboard` constructs one per invocation; the member

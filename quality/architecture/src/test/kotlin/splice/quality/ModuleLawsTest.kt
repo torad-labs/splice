@@ -54,6 +54,10 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // adapter, reading keys and drawing on the stream it is handed. Core only, so no daemon module can
     // reach a terminal through it.
     ":integrations-terminal" to setOf(":core"),
+    // a CLI process's client of the local daemon: where it listens (control port, supervisor unit),
+    // how to prove the caller (the management key), whether it is up (/health, the bound port), and
+    // the loopback calls. The daemon side of those routes is app's; this is only ever the asker.
+    ":integrations-daemon-client" to setOf(":core", ":integrations-topology"),
     // code mode's GraalJS worker pool: the child-JVM runtime behind the upstream-owned CodeModeRuntime port.
     ":integrations-codemode" to setOf(":core", ":integrations-upstream"),
     // the OAuth sign-in flows, account files and each vendor's refresh hop: the HTTP half of provider

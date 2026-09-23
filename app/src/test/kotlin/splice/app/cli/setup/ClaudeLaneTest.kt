@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.ControlReply
+import splice.daemonclient.ControlReply
 import splice.terminal.SelectOption
 import splice.terminal.SelectOutcome
 

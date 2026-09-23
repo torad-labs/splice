@@ -46,6 +46,7 @@ files:
   - integrations/codemode/src/main/**/*.kt
   - integrations/oauth/src/main/**/*.kt
   - integrations/terminal/src/main/**/*.kt
+  - integrations/daemon-client/src/main/**/*.kt
   - features/accounts/src/main/**/*.kt
   - features/turns/src/main/kotlin/splice/head/compact/CompactPayloads.kt
   - features/turns/src/main/kotlin/splice/head/compact/HeadCompactSource.kt

@@ -55,6 +55,7 @@ files:
   - integrations/codemode/src/main/**/*.kt
   - integrations/oauth/src/main/**/*.kt
   - integrations/terminal/src/main/**/*.kt
+  - integrations/daemon-client/src/main/**/*.kt
   - features/accounts/src/main/**/*.kt
   - features/diagnostics/src/main/**/*.kt
   - features/lifecycle/src/main/**/*.kt

@@ -8,6 +8,7 @@ import splice.app.cli.AdminSupport
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.daemonclient.DaemonHealth
 import java.nio.file.Files
 import java.nio.file.Path
 

@@ -100,10 +100,10 @@
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokOAuth.kt"
     ],
     "COLLISION PROBE_TIMEOUT_MS": [
-      "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt",
+      "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonProbe.kt",
       "app/src/main/kotlin/splice/app/probe/TurnPathProbeLoop.kt",
-      "app/src/main/kotlin/splice/app/cli/ControlPlaneClient.kt",
-      "app/src/main/kotlin/splice/app/cli/daemon/DaemonHealth.kt"
+      "integrations/daemon-client/src/main/kotlin/splice/daemonclient/ControlPlaneClient.kt",
+      "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonHealth.kt"
     ],
     "COLLISION PROBE_TIMEOUT_S": [
       "app/src/main/kotlin/splice/app/cli/add/AddHttp.kt",

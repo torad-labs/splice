@@ -14,10 +14,10 @@ import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.app.cli.AdminSupport
-import splice.app.cli.doctor.MgmtKeyRead
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.daemonclient.MgmtKeyRead
 import splice.upstream.credentials.AccountLabelPolicy
 import java.net.URI
 import java.net.http.HttpClient

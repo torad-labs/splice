@@ -8,11 +8,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import splice.app.cli.AdminSupport
-import splice.app.cli.doctor.MgmtKeyRead
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.daemonclient.MgmtKeyRead
 import java.io.IOException
 import java.net.ConnectException
 import java.net.InetSocketAddress

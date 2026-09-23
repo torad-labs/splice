@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.EnvReader
+import splice.daemonclient.DaemonHealth
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.ServerSocket

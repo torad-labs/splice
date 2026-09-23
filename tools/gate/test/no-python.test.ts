@@ -160,6 +160,23 @@ describe("the no-python wall", () => {
     commit(r);
   }, (r) => git(r, "ls-files", "checks/x.ts").out === "checks/x.ts");
 
+  // The wall's own config is python-burndown.json, so a record that lists every source path (the
+  // LAYOUT-01 census) was charged for naming it: the narrowing a third time. Same boundary: the red
+  // arm names the config AND shells into python3.
+  arm("a census that only NAMES the burn-down config, unlisted", "green", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "census.tsv", `${ALLOW}\tretain\n`);
+    w(r, ALLOW, list(["a.py"], []));
+    commit(r);
+  }, (r) => git(r, "ls-files", "census.tsv").out === "census.tsv");
+
+  arm("a file that names the burn-down config AND shells into python3, unlisted", "red", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "checks/x.ts", `// ${ALLOW}\nspawnSync("python3", ["-c", "1"]);\n`);
+    w(r, ALLOW, list(["a.py"], []));
+    commit(r);
+  }, (r) => git(r, "ls-files", "checks/x.ts").out === "checks/x.ts");
+
   // ── the third census: Python that is not in git at all ─────────────────────────────────────
   arm("an UNTRACKED scratch .py in the worktree", "red", (r) => {
     w(r, "a.py", "x\n");

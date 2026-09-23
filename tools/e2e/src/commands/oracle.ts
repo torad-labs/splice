@@ -655,15 +655,17 @@ async function replay({ oracleDir, jar, only, keep, jsonOut }: ReplayOptions): P
     upstreamBodies: Array<{ body: unknown }>;
     AUTH_PATH: string;
   };
-  // The daemon's quota poller (QuotaPoller, 2026-09-02) asks this origin for
-  // GET /backend-api/wham/usage; the captured mock predates it and JSON-parses every request body,
-  // so an empty GET body crashed the mock process. Answer 404 BEFORE the vendored handler: the
-  // replay keeps its captured shape (no quota snapshot, no unified headers on head responses, no
-  // extra upstream request recorded) and the pinned mock region is untouched.
+  // The captured mock predates every GET the daemon now sends this origin — the quota poller's
+  // /backend-api/wham/usage (2026-09-02), the model discovery's /models (2026-09-22) — and it
+  // JSON-parses every request body, so an empty GET body threw inside it and the request was never
+  // answered: the discovery GET then held the daemon's boot for its whole timeout, past the 30s
+  // health wait. The vendored handler serves only POSTs, so EVERY GET is answered 404 here, BEFORE
+  // it: the replay keeps its captured shape (no quota snapshot, no discovered models, no extra
+  // upstream request recorded) and the pinned mock region is untouched.
   const vendoredHandler = m.mock.listeners("request")[0] as (req: http.IncomingMessage, res: http.ServerResponse) => void;
   m.mock.removeAllListeners("request");
   m.mock.on("request", (req, res) => {
-    if (req.method === "GET" && req.url === "/backend-api/wham/usage") {
+    if (req.method === "GET") {
       res.writeHead(404);
       res.end();
       return;

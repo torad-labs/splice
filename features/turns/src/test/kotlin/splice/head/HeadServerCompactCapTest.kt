@@ -45,6 +45,7 @@ import splice.core.turn.WatchdogBudget
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.time.Duration.Companion.seconds
 
 private class CapFakeAuth : RefreshableAuthProvider {
@@ -60,6 +61,14 @@ class HeadServerCompactCapTest {
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }
     }
+
+    // The head's own log for the turn under test, printed with every failed assertion. It used to be
+    // discarded (`log = {}`): when CI failed the compact arm on 2026-09-23 (e622436c) the wire held
+    // message_start and pings with no terminal frame, and nothing recorded which path closed it — the
+    // seal writes nothing when it believes the client gone, and only this log says so.
+    private val headLog = ConcurrentLinkedQueue<String>()
+
+    private fun evidence(sse: String) = "$sse\n-- head log --\n${headLog.joinToString("\n")}"
 
     @AfterAll
     fun tearDown() {
@@ -94,13 +103,14 @@ class HeadServerCompactCapTest {
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 30_000, maxRetries = 1),
-                log = {},
+                log = { headLog.add(it.trimEnd()) },
             ),
         )
     }
 
     // Drives one turn through a head built for this arm's budget; the mock stalls 6s per attempt.
     private suspend fun turnOn(watchdog: WatchdogBudget, system: String): String {
+        headLog.clear()
         val port = freshPort()
         val server = head(port, watchdog)
         server.start()
@@ -145,9 +155,9 @@ class HeadServerCompactCapTest {
             val sse = turnOn(WatchdogBudget(1.seconds, 20.seconds, 4.seconds), "You are a test. SCENARIO:idlepre")
             assertFalse(
                 sse.contains("first-output cap"),
-                "the 1s first-output tier is a probe now: a live path is HELD, never reaped by it: $sse",
+                "the 1s first-output tier is a probe now: a live path is HELD, never reaped by it: ${evidence(sse)}",
             )
-            assertTrue(sse.contains("stalled (watchdog)"), "only the whole-turn wall may end it: $sse")
+            assertTrue(sse.contains("stalled (watchdog)"), "only the whole-turn wall may end it: ${evidence(sse)}")
         }
 
     // The system prompt carries Claude Code's verbatim summarizer marker, so the gateway classifies
@@ -159,14 +169,14 @@ class HeadServerCompactCapTest {
                 WatchdogBudget(1.seconds, 20.seconds, 4.seconds),
                 "SCENARIO:idlepre You are tasked with summarizing conversations for another agent.",
             )
-            assertTrue(sse.contains("overloaded_error"), "a stall is an honest, retryable failure: $sse")
+            assertTrue(sse.contains("overloaded_error"), "a stall is an honest, retryable failure: ${evidence(sse)}")
             assertFalse(
                 sse.contains("first-output cap"),
-                "a compaction's pre-output silence must not be judged on the 1s first-output tier: $sse",
+                "a compaction's pre-output silence must not be judged on the 1s first-output tier: ${evidence(sse)}",
             )
             // The whole-turn cap cancels the TURN, so it surfaces through the cancellation seal's
             // generic watchdog wording (as HeadServerFoldTest's NF-03 arm pins), not a tier-named
             // message — which is exactly the discriminator: the 1s tier would have said its name.
-            assertTrue(sse.contains("stalled (watchdog)"), "only the whole-turn wall may end it: $sse")
+            assertTrue(sse.contains("stalled (watchdog)"), "only the whole-turn wall may end it: ${evidence(sse)}")
         }
 }

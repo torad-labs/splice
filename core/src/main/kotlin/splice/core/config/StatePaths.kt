@@ -216,6 +216,12 @@ public class StatePaths(
      *  start across daemon restarts, re-taught by the next post. */
     public fun clientWindowsFile(headKey: String): Path = stateDir.resolve("$headKey-client-windows.json")
 
+    /** 2026-09-22: the models a head's provider endpoint last published (RosterCache), so a start
+     *  where the endpoint does not answer keeps the models discovered before instead of shrinking the
+     *  picker back to splice.toml's rows — and refusing every turn a session was already running on a
+     *  discovered model. */
+    public fun modelRosterFile(headKey: String): Path = stateDir.resolve("$headKey-models.json")
+
     /** Compact-stats JSONL lives in the ROOT dir (not state/) — legacy layout, kept with the names.
      *  The two legacy names are irregular on purpose (claudex-…, claude-grok-…); overridable per head. */
     public fun compactStatsFile(headKey: String, nameOverride: String? = null): Path {

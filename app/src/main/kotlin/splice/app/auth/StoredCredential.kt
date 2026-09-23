@@ -47,9 +47,10 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
         AuthKind.Client, null -> null
     }
 
-    /** The access token stored for this provider, or null when there is no file, no shape for the
-     *  kind, or no token inside. The value is returned, never printed — callers put it on a header. */
-    fun accessToken(provider: ProviderConfig): String? {
+    /** The token stored for this provider that a request presents ([CredentialShape.presented] — the
+     *  access token, or Muse's minted api_key), or null when there is no file, no shape for the kind,
+     *  or no token inside. The value is returned, never printed — callers put it on a header. */
+    fun presentedToken(provider: ProviderConfig): String? {
         // One guard, not two returns: "no file for this kind" and "no reader for this kind" are the
         // same answer to this method's question, and detekt caps a function at three exits.
         val path = pathFor(provider)
@@ -66,11 +67,11 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-22: absence is this method's whole contract; every caller names the absence itself (see above).
         val root = Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
             .getOrNull() ?: return null
-        return shape.material(root)?.access?.takeIf { it.isNotBlank() }
+        return shape.presented(root)?.takeIf { it.isNotBlank() }
     }
 
     /** The api-key this provider authenticates with: the environment first, then splice's own key
-     *  store. Null for every other auth kind — an OAuth provider's token is [accessToken]'s answer. */
+     *  store. Null for every other auth kind — an OAuth provider's token is [presentedToken]'s answer. */
     fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
         if (!provider.auth.isApiKey) return null
         val envVar = provider.auth.effectiveApiKeyEnv(key)
@@ -79,5 +80,5 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
 
     /** The bearer to present for this provider, whichever way it authenticates. */
     fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
-        apiKey(provider, key, env) ?: accessToken(provider)
+        apiKey(provider, key, env) ?: presentedToken(provider)
 }

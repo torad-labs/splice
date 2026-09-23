@@ -22,4 +22,7 @@ internal object DoctorTestPorts {
 
     /** The configuration section with no local runtime answering. */
     fun configChecks() = DoctorConfigChecks(DoctorLocalRuntime(silentLocal))
+
+    /** The probes with no jar: a dev build, as every test JVM is. */
+    fun probes() = DoctorProbes(noJar)
 }

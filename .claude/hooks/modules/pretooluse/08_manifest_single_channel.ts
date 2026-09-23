@@ -21,7 +21,7 @@
 import { existsSync } from "node:fs";
 import { resolve as pathResolve } from "node:path";
 
-import { HookResult, hookResult } from "../../orchestrator/result";
+import { type HookResult, hookResult } from "../../orchestrator/result";
 import { filePathOf, isWriteOrEdit } from "../../lib/tool_input";
 import { findProjectRoot } from "../../lib/project_root";
 

@@ -1,0 +1,16 @@
+// console/tools: the console's dev tooling (bun + CDP), written untyped. It is held to what
+// NON-strict TypeScript can check — names, arities, properties, assignability — rather than the
+// strict standard: under tools/gate's strict config it reports 733 errors, 441 of them implicit
+// `any`. The errors that remain here are real (a name that does not exist, a call with the wrong
+// arity) and sit in tools/gate/config/typecheck.json's baseline, which may only shrink.
+{
+  "extends": "../../tools/gate/tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "strict": false,
+    "noUncheckedIndexedAccess": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["**/*.ts"]
+}

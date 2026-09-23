@@ -44,7 +44,7 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { HookResult, isHookResult } from "./result";
+import { type HookResult, isHookResult } from "./result";
 import { filePathOf, isPathExempt } from "../lib/tool_input";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -193,7 +193,7 @@ function sortedModuleFiles(modulesDir: string): string[] {
 function pyJsonString(value: string): string {
   const parts: string[] = ['"'];
   for (let i = 0; i < value.length; i += 1) {
-    const ch = value[i];
+    const ch = value.charAt(i);
     const code = value.charCodeAt(i);
     if (ch === '"') parts.push('\\"');
     else if (ch === "\\") parts.push("\\\\");

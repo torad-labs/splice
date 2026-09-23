@@ -41,7 +41,6 @@ import splice.usage.economics.HeadEconomicsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Files
 
 private class ContractHead(override val key: String, override val port: Int) : Head {
@@ -55,7 +54,13 @@ private class ContractHead(override val key: String, override val port: Int) : H
 class WebuiContractTest {
 
     private val client = HttpClient(CIO)
-    private val port = freshPort()
+
+    // OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
+    // collide at bind time on busy hosts. The server binds port 0 and reports what it got
+    // (2026-09-23): a port leased with ServerSocket(0) and bound later could be taken in between. No
+    // readiness poll: ControlServer.start returns routed and bound (Ktor's default SEQUENTIAL startup
+    // runs the modules before NettyApplicationEngine's bind(...).sync(); V4-139).
+    private val port: Int get() = control.listeningPort
     private lateinit var key: String
     private lateinit var control: ControlServer
     private val json = Json { ignoreUnknownKeys = true }
@@ -96,7 +101,7 @@ class WebuiContractTest {
             authKind = "chatgpt-oauth",
         )
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = mapOf("codex" to managed),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -351,9 +356,3 @@ private fun economicsWireNames(): List<String> {
 
 private fun snakeCase(name: String): String =
     name.replace(Regex("(?<!^)(?=[A-Z])"), "_").lowercase()
-
-// OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
-// collide at bind time on busy hosts; ports are OS-assigned. No readiness poll: ControlServer.start
-// returns routed and bound (Ktor's default SEQUENTIAL startup runs the modules before
-// NettyApplicationEngine's bind(...).sync(); V4-139).
-private fun freshPort(): Int = ServerSocket(0).use { it.localPort }

@@ -47,7 +47,7 @@ private class HeartbeatAuth : RefreshableAuthProvider {
 class HeadServerHeartbeatTest {
 
     private val mock = MockChatGptUpstream()
-    private val port = freshPort()
+    private val port: Int get() = head.port
     private val gate = InflightGate({ 0 })
     private val lines = CopyOnWriteArrayList<String>()
     private val ticks = Channel<Unit>(Channel.UNLIMITED)
@@ -76,7 +76,7 @@ class HeadServerHeartbeatTest {
                 configEffort = "high",
                 configSummary = "detailed",
             ),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 2),

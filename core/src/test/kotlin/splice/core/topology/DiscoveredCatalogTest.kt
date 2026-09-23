@@ -107,15 +107,54 @@ class DiscoveredCatalogTest {
     }
 
     @Test
-    fun `an allowlist may name a discovered model, and an id neither declared nor listed still fails`() {
+    fun `an allowlist may name a discovered model, which is a tier candidate for that head`() {
         val allowlisted = head.copy(models = listOf(HeadModel("grok-4.6", "opus"), HeadModel("grok-4.7", "sonnet")))
         val catalog = provider.catalogFor(allowlisted, discovered = listOf(DiscoveredModel("grok-4.7")))
         assertEquals(listOf("grok-4.6", "grok-4.7"), catalog.availableModelIds())
         // Named by the head, so it is the head's decision: a tier candidate, or its sonnet slot would
         // be dropped as naming a model the launch cannot place.
         assertEquals(listOf("grok-4.6", "grok-4.7"), catalog.tierModelIds())
-        val failure = assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(allowlisted) }
-        assertTrue(failure.message.orEmpty().contains("nor listed by its endpoint"), failure.message)
+    }
+
+    // 2026-09-23 (review): a retired model, or a start whose discovery timed out, once threw here and
+    // took the whole head down with it. The row is dropped instead and HeadBoot names it.
+    @Test
+    fun `an allowlisted model the endpoint did not list is dropped, and only a provider that lists nothing refuses it`() {
+        val allowlisted = head.copy(models = listOf(HeadModel("grok-4.6", "opus"), HeadModel("grok-4.7", "sonnet")))
+        assertEquals(listOf("grok-4.6"), provider.catalogFor(allowlisted).availableModelIds())
+        val off = provider.copy(discovery = ModelDiscoveryConfig(exclude = listOf("*")))
+        val failure = assertThrows(IllegalArgumentException::class.java) { off.catalogFor(allowlisted) }
+        assertTrue(failure.message.orEmpty().contains("which lists no models"), failure.message)
+    }
+
+    // A provider with no rows is its endpoint's list, which can omit the pinned id: retired, filtered
+    // out, or spelled only as another model's alias. Its row stays, or every default turn is refused.
+    @Test
+    fun `the pinned model is served whatever the endpoint lists`() {
+        val bare = provider.copy(models = emptyList(), discovery = ModelDiscoveryConfig(exclude = listOf("grok-4.6")))
+        val listed = listOf(DiscoveredModel("grok-4.6-0709", aliases = listOf("grok-4.6")), DiscoveredModel("grok-4.7"))
+        val catalog = bare.catalogFor(head, discovered = listed)
+        assertTrue(catalog.contains("grok-4.6"), "${catalog.availableModelIds()}")
+        assertEquals(listOf("grok-4.6-0709", "grok-4.7", "grok-4.6"), catalog.availableModelIds())
+        val allowlisted = head.copy(models = listOf(HeadModel("grok-4.6", "opus"), HeadModel("grok-4.7", "sonnet")))
+        val named = bare.catalogFor(allowlisted, discovered = listed)
+        assertEquals(listOf("grok-4.6", "grok-4.7"), named.availableModelIds())
+    }
+
+    @Test
+    fun `a head-wide window never raises a published ceiling, and still sets the declared and unpublished rows`() {
+        val capped = head.copy(contextWindow = 1_000_000)
+        val catalog = provider.catalogFor(
+            capped,
+            discovered = listOf(
+                DiscoveredModel("small-model", contextWindow = 262_144),
+                DiscoveredModel("unpublished"),
+            ),
+        )
+        val window = catalog.models.associate { it.id to it.contextWindow }
+        assertEquals(262_144L, window["small-model"])
+        assertEquals(1_000_000L, window["unpublished"])
+        assertEquals(1_000_000L, window["grok-4.6"], "a declared row takes the head's window as before")
     }
 
     @Test

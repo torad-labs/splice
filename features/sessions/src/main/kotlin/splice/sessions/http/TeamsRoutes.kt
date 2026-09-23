@@ -20,9 +20,11 @@
 // live registry" rule of 4.13. Rows on the team's heads that carry no session tag cannot belong to
 // anyone and are COUNTED as unattributed_turns rather than dropped; the oldest turn the perf files
 // still hold is named, because the files rotate and a lifetime total reaches only as far back as they
-// do. Dollars use the SessionCost arithmetic per row against the head's own catalog, and are null for
-// any aggregate with a turn no rate card priced: a partial sum would be a differently-wrong confident
-// number.
+// do. The lifetime starts at the team's creation (TeamsEconomics.tally), and an archived generation
+// that ended before it is not opened, so the named oldest can be that generation's rotation second:
+// an upper bound on what the files hold, which is all "reaches back past the team" needs. Dollars use
+// the SessionCost arithmetic per row against the head's own catalog, and are null for any aggregate
+// with a turn no rate card priced: a partial sum would be a differently-wrong confident number.
 //
 // CHECKS (V4-159): a slot's `checks` is "pass"/"fail" from the outcome tag of its most recently
 // tallied turn, null with checks_source naming the absence when the slot has tallied none yet —

@@ -33,7 +33,6 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Files
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -47,14 +46,13 @@ class ClientVersionSurfaceTest {
     @Test
     fun `health stays aggregate while statusline warns once for its session`() = runTest {
         val paths = StatePaths(baseOverride = Files.createTempDirectory("client-version-surface").resolve("state"))
-        val port = availablePort()
         val versions = ClientVersionTracker(testedVersion = "2.1.257")
         versions.observe("session-new", "claude-cli/2.1.258")
         versions.observe("session-equal", "claude-cli/2.1.257")
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         val server = ControlServer(
-            port = port,
+            port = 0, // the OS assigns one at bind time; read back below, so nothing can take it first
             heads = mapOf("test" to managedHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -63,6 +61,7 @@ class ClientVersionSurfaceTest {
             clientVersions = versions,
         )
         server.start() // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
+        val port = server.listeningPort
         try {
             val expected =
                 "Claude Code 2.1.258 is newer than the version splice $GATEWAY_VERSION was tested with (2.1.257)"
@@ -116,6 +115,4 @@ class ClientVersionSurfaceTest {
         warnPct = 80,
         warnTokens5h = 0,
     )
-
-    private fun availablePort(): Int = ServerSocket(0).use { it.localPort }
 }

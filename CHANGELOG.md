@@ -3,6 +3,22 @@
 ## Unreleased
 
 ### Added
+- **The project page says what governs the repo.** `GET /api/projects/{id}` (and each row of the
+  list) now carries `compaction`, the rules a compaction in that repo resolves to in the daemon's own
+  precedence (core's `CompactionInstructions.rulesFor`: a project rule shadows the model and global
+  ones, and a rule a longer path shadows is left out), as the `{scope, source, chars}` the
+  instructions route writes; `[]` when no rule applies (the client's own instructions stand) and
+  `null` when the daemon never wired its table. Beside it, `statusline_roots`: per head, because
+  `statuslineGitRoots` is per-head overridable, the trusted root that head's statusline probes the
+  repo under (`home`, `tmp` or `statuslineGitRoots`), or none, where it shows no branch. The console
+  prints both in the project detail.
+- **Perf history is kept past two generations.** The 64 MB perf rotate used to discard the
+  generation before `.1`; V4-133 built an archive for it and wired it to nothing. Every head now
+  archives each retired generation into `<state>/perf-archive` for `perfArchiveRetentionDays` (90;
+  `0` turns it off), the perf readers (the console's windows, team economics, `splice perf`) read the
+  archive oldest first and skip, unopened, any generation that ended before the window, and a team's
+  lifetime tally starts at the team's creation. A new wall, `kt-perf-history-archived`, refuses a
+  production `PerfStats` or `PerfRowsFileSource` that does not name the archive.
 - **Each head's picker offers what its provider serves, not only what splice.toml lists.** At start
   the daemon asks every head's endpoint for its model list — the URL `splice models` already asked,
   presenting the credential the head's turns present — and adds each model no row declares, windowed

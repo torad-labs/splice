@@ -15,10 +15,9 @@
 // the recording even when a cancellation lands between the check and the start.
 package splice.head.turn
 
-import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
-import io.ktor.server.response.respondTextWriter
+import io.ktor.server.response.respond
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
@@ -35,6 +34,7 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.FrameRecording
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.SseEmitterFactory
+import splice.head.wire.SseResponse
 import splice.head.wire.TurnWiring
 import splice.upstream.LifecycleScope
 import splice.upstream.Provider
@@ -66,8 +66,8 @@ internal class TurnStreamer(
     /** Open the SSE writer, wire the per-turn collaborators, run the single turn.
      *
      *  RETURNS whether a detached compaction took the slot with it (V4-99 item 3). The value is
-     *  produced INSIDE the respondTextWriter lambda, which is why it cannot simply be returned from
-     *  there — the lambda is ktor's, not ours. The port [TurnInputs.markHandedOff] is the durable
+     *  produced INSIDE the SseResponse body, which is why it cannot simply be returned from
+     *  there — Ktor runs the body inside respond, not this function. The port [TurnInputs.markHandedOff] is the durable
      *  channel for the cancellation path; this return is the same answer for the ordinary path. */
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs): Boolean {
         val handedOff = AtomicBoolean(false)
@@ -83,11 +83,11 @@ internal class TurnStreamer(
         deps.turnQuota.forSession(built.meta.sessionId, inputs.account)?.clientHeaders()?.forEach { (name, value) ->
             call.response.header(name, value)
         }
-        call.respondTextWriter(ContentType.Text.EventStream) {
+        val response = SseResponse { out ->
             // Flush-per-frame: a frame buffered across an upstream lull is invisible to the
             // user exactly when responsiveness matters (see ImmediateSseWriter header).
             val channel = ClientChannel(
-                coalesced = ImmediateSseWriter(writeRaw = { frame -> write(frame) }, flushRaw = { flush() }),
+                coalesced = ImmediateSseWriter(writeRaw = { frame -> out.write(frame) }, flushRaw = { out.flush() }),
                 writeMutex = Mutex(),
                 clientGone = AtomicBoolean(false),
                 recording = recording,
@@ -118,7 +118,7 @@ internal class TurnStreamer(
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
             if (replayKey == null || recording == null) {
                 try {
-                    // The 200 + SSE headers are committed once respondTextWriter opens, so any failure
+                    // The 200 + SSE headers are committed once the SseResponse opens, so any failure
                     // must become an honest `event: error` frame — NOT escape and leave the client an
                     // empty/truncated 200 (the "empty or malformed response (HTTP 200)" class).
                     sealedDrive.driveSealingCancellation(drive)
@@ -134,6 +134,7 @@ internal class TurnStreamer(
                 driveDetachable(drive, inputs, replayKey, recording)
             }
         }
+        call.respond(response)
         return handedOff.get()
     }
 

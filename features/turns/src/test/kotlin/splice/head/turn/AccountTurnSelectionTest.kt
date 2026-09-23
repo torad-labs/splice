@@ -29,7 +29,6 @@ import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.head.headDeps
 import splice.head.headStores
 import splice.head.perf.PerfStats
@@ -334,7 +333,9 @@ class AccountTurnSelectionTest {
 private class AccountTurnRig(private val credentialPresent: Boolean = true) {
     private val tmp = Files.createTempDirectory("account-turn")
     private val mock = MockChatGptUpstream()
-    private val port = freshPort()
+
+    // A getter: the head binds port 0, and restart() rebinds a fresh one the rig must follow.
+    private val port: Int get() = head.port
     private val primaryQuota = QuotaTracker(tmp.resolve("primary-quota.json"))
     private val backupQuota = QuotaTracker(tmp.resolve("backup-quota.json"))
     private val perfFile = tmp.resolve("perf.jsonl")
@@ -354,7 +355,7 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
     )
     private val head = HeadServer(
         provider = provider(),
-        listenPort = port,
+        listenPort = 0,
         // V4-99: the primary tracker is LOAD-BEARING and it is primaryQuota, never null. Without it
         // HeadDeps.turnQuota gets primary = null, so `label ?: primary` and `primary ?: label` are
         // the same expression and the two precedence tests below could not fail for the reason their

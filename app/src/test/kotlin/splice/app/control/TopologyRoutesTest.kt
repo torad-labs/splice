@@ -43,7 +43,6 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
-import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -94,9 +93,8 @@ class TopologyRoutesTest {
     private fun serve(wired: Boolean, test: suspend (Call) -> Unit) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val port = ServerSocket(0).use { it.localPort }
         val control = ControlServer(
-            port = port,
+            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -110,7 +108,8 @@ class TopologyRoutesTest {
                 TopologyParse { text -> texts[text] ?: throw IllegalArgumentException("not a text this test predicted") },
             )
         }
-        control.start()
+        runBlocking { control.start() }
+        val port = control.listeningPort
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
             runBlocking {

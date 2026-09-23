@@ -12,13 +12,13 @@ import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.install.InstallCommand
 import splice.app.cli.install.InstallLayout
-import splice.app.cli.prompt.SelectOption
-import splice.app.cli.prompt.SelectOutcome
-import splice.app.cli.prompt.WizardCancelled
 import splice.app.cli.upgrade.DaemonRestart
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.terminal.SelectOption
+import splice.terminal.SelectOutcome
+import splice.terminal.WizardCancelled
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path

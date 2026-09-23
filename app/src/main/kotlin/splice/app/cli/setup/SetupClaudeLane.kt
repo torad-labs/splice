@@ -26,11 +26,11 @@ import splice.app.cli.AdminSupport
 import splice.app.cli.ControlPlaneClient
 import splice.app.cli.ControlReply
 import splice.app.cli.doctor.MgmtKeyRead
-import splice.app.cli.prompt.SelectOption
-import splice.app.cli.prompt.SelectOutcome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.terminal.SelectOption
+import splice.terminal.SelectOutcome
 
 /** The catalogue row this question is about (AddProfileCatalog's `claude`). */
 internal const val CLAUDE_PROFILE: String = "claude"

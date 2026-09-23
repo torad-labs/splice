@@ -1,5 +1,5 @@
 // NEW: Spinner TTY frames and non-TTY plain line (cli-wizard CW-2).
-package splice.app.cli.prompt
+package splice.terminal
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

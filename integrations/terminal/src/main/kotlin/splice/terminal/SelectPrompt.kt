@@ -1,30 +1,33 @@
 // NEW: CW-3 — single-choice menu. Rewinds exactly the lines it drew so scrollback
 // holds one final state, not one copy per keystroke.
-package splice.app.cli.prompt
+package splice.terminal
 
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
 import splice.core.terminal.RESET
 
-internal data class SelectOption<T>(
-    val value: T,
-    val label: String,
-    val hint: String? = null,
+/** One menu row: the [value] a choice returns, the [label] drawn, and an optional dim [hint]. */
+public data class SelectOption<T>(
+    public val value: T,
+    public val label: String,
+    public val hint: String? = null,
 )
 
-internal sealed class SelectOutcome<out T> {
-    internal data class Chosen<T>(val value: T) : SelectOutcome<T>()
-    internal data object Cancelled : SelectOutcome<Nothing>()
+/** What a single-choice menu ended with: a value, or Escape / Ctrl-C. */
+public sealed class SelectOutcome<out T> {
+    public data class Chosen<T>(public val value: T) : SelectOutcome<T>()
+    public data object Cancelled : SelectOutcome<Nothing>()
 }
 
-internal class SelectPrompt(
+/** A single-choice menu; with no console it is the initial option, drawn nowhere. */
+public class SelectPrompt(
     private val keys: KeyReader,
     private val terminal: TerminalMode,
     private val out: Appendable,
     private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
 ) {
-    fun <T> ask(
+    public fun <T> ask(
         question: String,
         options: List<SelectOption<T>>,
         initialIndex: Int,

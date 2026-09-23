@@ -1,13 +1,14 @@
 // NEW: one-line spinner for the CLI prompt toolkit (cli-wizard CW-2).
-package splice.app.cli.prompt
+package splice.terminal
 
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import java.util.Timer
 import java.util.TimerTask
 
-internal fun interface PulseScheduler {
-    fun start(onPulse: PulseTick): AutoCloseable
+/** Starts the spinner's ticks; closing the handle stops them. */
+public fun interface PulseScheduler {
+    public fun start(onPulse: PulseTick): AutoCloseable
 }
 
 internal class TimerPulseScheduler(
@@ -26,7 +27,8 @@ internal class TimerPulseScheduler(
     }
 }
 
-internal class Spinner(
+/** A one-line spinner; with no terminal it prints only the final line. */
+public class Spinner(
     private val out: Appendable = System.out,
     private val tty: Boolean = System.console() != null,
     private val scheduler: PulseScheduler = TimerPulseScheduler(),
@@ -40,7 +42,7 @@ internal class Spinner(
     private var running = false
     private var pulses: AutoCloseable? = null
 
-    fun start(message: String) {
+    public fun start(message: String) {
         this.message = message
         if (!tty) return
         running = true
@@ -49,12 +51,12 @@ internal class Spinner(
         pulses = scheduler.start { pulse() }
     }
 
-    fun update(message: String) {
+    public fun update(message: String) {
         this.message = message
         if (tty && running) redraw()
     }
 
-    fun stop(finalMessage: String) {
+    public fun stop(finalMessage: String) {
         running = false
         pulses?.close()
         pulses = null

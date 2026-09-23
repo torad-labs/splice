@@ -20,6 +20,10 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-http" to setOf(":core"),
     // the splice.toml file on disk: load, first-run starter, structural preflight and digest.
     ":integrations-topology" to setOf(":core"),
+    // the operator-terminal toolkit (menus, spinner, raw mode, the wizard frame): the CLI's terminal
+    // adapter, reading keys and drawing on the stream it is handed. Core only, so no daemon module can
+    // reach a terminal through it.
+    ":integrations-terminal" to setOf(":core"),
     // code mode's GraalJS worker pool: the child-JVM runtime behind the upstream-owned CodeModeRuntime port.
     ":integrations-codemode" to setOf(":core", ":integrations-upstream"),
     // the OAuth sign-in flows, account files and each vendor's refresh hop: the HTTP half of provider

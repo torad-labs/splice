@@ -1,16 +1,16 @@
 // NEW: CW-1 — raw-mode bracket every interactive widget sits on. stty against /dev/tty,
 // restore in finally AND a shutdown hook; no-op when System.console is null.
-package splice.app.cli.prompt
+package splice.terminal
 
 import java.io.File
 import java.util.concurrent.Executors
 
 /** stdout plus the process exit. A mode string and an error must not share a channel. */
-internal data class SttyResult(val exit: Int, val stdout: String)
+public data class SttyResult(public val exit: Int, public val stdout: String)
 
 /** Runs an argv (stty …). Injected so tests never touch a real terminal. */
-internal fun interface SttyCommand {
-    fun run(args: List<String>): SttyResult
+public fun interface SttyCommand {
+    public fun run(args: List<String>): SttyResult
 }
 
 /** Production stty: stdin is /dev/tty so a piped JVM still talks to the real terminal. */
@@ -31,13 +31,13 @@ internal class UnixStty : SttyCommand {
  * and on SIGINT (shutdown hook). Non-TTY ([hasConsole] false) runs the block with zero stty.
  * A failed `stty -g` also runs the block unraw — never enter raw without a mode to restore.
  */
-internal class TerminalMode(
+public class TerminalMode(
     private val stty: SttyCommand = UnixStty(),
     private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
     private val addHook: ShutdownHookAdd = ShutdownHookAdd { Runtime.getRuntime().addShutdownHook(it) },
     private val removeHook: ShutdownHookRemove = ShutdownHookRemove { Runtime.getRuntime().removeShutdownHook(it) },
 ) {
-    fun <T> raw(block: RawBlock<T>): T {
+    internal fun <T> raw(block: RawBlock<T>): T {
         if (!hasConsole()) return block()
         val captured = stty.run(listOf("stty", "-g"))
         val saved = captured.stdout.trim()

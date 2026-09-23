@@ -8,8 +8,8 @@
 // concentration wall is watching it.
 package splice.app.cli.setup
 
-import splice.app.cli.prompt.SelectOption
-import splice.app.cli.prompt.SelectOutcome
+import splice.terminal.SelectOption
+import splice.terminal.SelectOutcome
 
 /**
  * Signs ONE head in, answering whether it ended up authenticated.

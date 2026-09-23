@@ -1,7 +1,8 @@
 // NEW: CW-8 — every prompt widget is silent and defaulting with no console.
-package splice.app.cli.prompt
+package splice.terminal
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
@@ -43,6 +44,7 @@ class NonTtyParityTest {
             "SelectPrompt" -> checkSelect(idle)
             "MultiSelectPrompt" -> checkMulti(idle)
             "WizardFrame" -> checkFrame()
+            "ConsoleConfirm" -> checkConfirm()
             else -> return false
         }
         return true
@@ -110,6 +112,14 @@ class NonTtyParityTest {
         assertNoCursor("WizardFrame", out)
     }
 
+    private fun checkConfirm() {
+        val out = StringBuilder()
+        val confirm = ConsoleConfirm(out = out, hasConsole = { false })
+        assertTrue(confirm("install?", default = true))
+        assertFalse(confirm("install?", default = false))
+        assertEquals("", out.toString())
+    }
+
     private fun capture(block: (StringBuilder) -> Unit): String {
         val buf = StringBuilder()
         block(buf)
@@ -144,9 +154,8 @@ class NonTtyParityTest {
 
     private fun classesOnDisk(): Set<String> {
         val candidates = listOf(
-            Path.of("src/main/kotlin/splice/app/cli/prompt"),
-            Path.of("app/src/main/kotlin/splice/app/cli/prompt"),
-            Path.of("app/src/main/kotlin/splice/app/cli/prompt"),
+            Path.of("src/main/kotlin/splice/terminal"),
+            Path.of("integrations/terminal/src/main/kotlin/splice/terminal"),
         )
         val dir = candidates.firstOrNull { Files.isDirectory(it) }
             ?: error("prompt package missing from disk")

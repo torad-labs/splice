@@ -7,13 +7,13 @@ package splice.app.cli.setup
 
 import splice.app.cli.add.AddProfile
 import splice.app.cli.add.AddProfiles
-import splice.app.cli.prompt.ConsolePresence
-import splice.app.cli.prompt.MultiSelectOutcome
-import splice.app.cli.prompt.SelectOption
-import splice.app.cli.prompt.WizardFrame
 import splice.app.cli.upgrade.DaemonRestart
 import splice.core.topology.API_KEY_WIRE
 import splice.core.util.EnvReader
+import splice.terminal.ConsolePresence
+import splice.terminal.MultiSelectOutcome
+import splice.terminal.SelectOption
+import splice.terminal.WizardFrame
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path

@@ -16,13 +16,13 @@
 // one: a bundle of named values is not a wide function.
 package splice.app.cli.setup
 
-import splice.app.cli.prompt.ConsolePresence
-import splice.app.cli.prompt.KeyReader
-import splice.app.cli.prompt.MultiSelectPrompt
-import splice.app.cli.prompt.SelectPrompt
-import splice.app.cli.prompt.Spinner
-import splice.app.cli.prompt.TerminalMode
-import splice.app.cli.prompt.WizardFrame
+import splice.terminal.ConsolePresence
+import splice.terminal.KeyReader
+import splice.terminal.MultiSelectPrompt
+import splice.terminal.SelectPrompt
+import splice.terminal.Spinner
+import splice.terminal.TerminalMode
+import splice.terminal.WizardFrame
 
 internal data class SetupPrompts(
     val frame: WizardFrame = WizardFrame(),

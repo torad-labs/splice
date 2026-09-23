@@ -1,6 +1,6 @@
 // NEW: CW-1 — KeyReader from an injected InputStream. Split CSI across reads, and a
 // lone ESC that must yield Escape without blocking forever.
-package splice.app.cli.prompt
+package splice.terminal
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTimeout

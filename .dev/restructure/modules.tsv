@@ -27,3 +27,4 @@ NEW	:features-configuration	NEW	features/configuration
 NEW	:features-events	NEW	features/events
 NEW	:integrations-codemode	NEW	integrations/codemode
 NEW	:integrations-oauth	NEW	integrations/oauth
+NEW	:integrations-terminal	NEW	integrations/terminal

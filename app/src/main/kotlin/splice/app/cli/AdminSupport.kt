@@ -198,19 +198,6 @@ internal object AdminSupport {
             }
     }
 
-    /** Read a y/n from the terminal; returns [default] when there's no TTY (piped/CI). */
-    fun confirm(prompt: String, default: Boolean = true): Boolean {
-        if (System.console() == null) return default
-        print("$prompt ${if (default) "[Y/n]" else "[y/N]"} ")
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same as AddSeams' prompter: a failed TTY read and an empty line both mean [default], which the `null, "" -> default` arm below says out loud.
-        val line = Cancellables.runCatchingCancellable { readlnOrNull()?.trim()?.lowercase() }.getOrNull()
-        return when (line) {
-            null, "" -> default
-            "y", "yes" -> true
-            else -> false
-        }
-    }
-
     // Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
     // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
     // G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed

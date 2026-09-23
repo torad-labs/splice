@@ -4,14 +4,14 @@
 // 2026-09-14).
 package splice.app.cli.add
 
-import splice.app.cli.prompt.KeyReader
-import splice.app.cli.prompt.MultiSelectOutcome
-import splice.app.cli.prompt.MultiSelectPrompt
-import splice.app.cli.prompt.SelectOption
-import splice.app.cli.prompt.SelectOutcome
-import splice.app.cli.prompt.SelectPrompt
-import splice.app.cli.prompt.TerminalMode
 import splice.core.topology.Topology
+import splice.terminal.KeyReader
+import splice.terminal.MultiSelectOutcome
+import splice.terminal.MultiSelectPrompt
+import splice.terminal.SelectOption
+import splice.terminal.SelectOutcome
+import splice.terminal.SelectPrompt
+import splice.terminal.TerminalMode
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path

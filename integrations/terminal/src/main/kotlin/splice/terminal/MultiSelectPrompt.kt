@@ -1,6 +1,6 @@
 // NEW: CW-4 — multi-choice picker derived from SelectPrompt. Same layout, navigation
 // and redraw; Space toggles, Enter below minimum repaints a dim reason and keeps reading.
-package splice.app.cli.prompt
+package splice.terminal
 
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
@@ -8,18 +8,20 @@ import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 
-internal sealed class MultiSelectOutcome<out T> {
-    internal data class Chosen<T>(val values: List<T>) : MultiSelectOutcome<T>()
-    internal data object Cancelled : MultiSelectOutcome<Nothing>()
+/** What a multi-choice picker ended with: the values in option order, or Escape / Ctrl-C. */
+public sealed class MultiSelectOutcome<out T> {
+    public data class Chosen<T>(public val values: List<T>) : MultiSelectOutcome<T>()
+    public data object Cancelled : MultiSelectOutcome<Nothing>()
 }
 
-internal class MultiSelectPrompt(
+/** A multi-choice picker; with no console it is the initial selection, drawn nowhere. */
+public class MultiSelectPrompt(
     private val keys: KeyReader,
     private val terminal: TerminalMode,
     private val out: Appendable,
     private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
 ) {
-    fun <T> ask(
+    public fun <T> ask(
         question: String,
         options: List<SelectOption<T>>,
         initiallySelected: Set<T>,

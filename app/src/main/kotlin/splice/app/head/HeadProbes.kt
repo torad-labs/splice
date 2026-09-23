@@ -8,8 +8,8 @@ package splice.app.head
 import kotlinx.coroutines.CoroutineScope
 import splice.app.DaemonBoundary
 import splice.app.auth.AuthProbeLoop
+import splice.app.control.ManagedHead
 import splice.app.probe.TurnPathProbeLoop
-import splice.control.ManagedHead
 import splice.core.auth.AuthProvider
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.LogSink

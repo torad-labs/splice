@@ -20,9 +20,9 @@ splice puts Claude Code in front of the backend you choose.
 
   The bytes are exactly right for every backend.        integrations/        (docs/architecture)
   A turn is never lost.                                 features/turns
-  It never runs away, and never corrupts a credential.  upstream/  core/config
+  It never runs away, and never corrupts a credential.  integrations/upstream  core/config
   Your Claude Code stays yours.                         integrations/claude-code
-  You see what happens and what it costs.               features/usage  daemon/control  console/
+  You see what happens and what it costs.               features/usage  app/control  console/
   Every failure comes with its remedy.                  app/cli/doctor  features/turns
   Heads see each other.                                 features/sessions  integrations/claude-code
 
@@ -470,15 +470,16 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 ## Layout
 
 ```
-core/          :core — the vocabulary: config, topology, auth, sessions, turn, model, usage, and the
+core/          :core — the shared kernel: config, topology, auth, turn, model, usage, and the
                persistence primitives state lives in (framework-free by module law)
-client/        :client — the Claude Code side: login, mcp, wrap, resume, transcript
-upstream/      :upstream — the backend side: contracts, transport, retry, credentials
-integrations/  reusable external adapters: dialects/ (wire contracts) and providers/ (vendor adapters)
-features/      capability projects, with use-case slices inside conventional Kotlin source sets
-daemon/        head/ (:daemon-head, the proxy between client and upstream) and
-               control/ (:daemon-control, the control plane and MCP host)
-app/           :app — assembly, the `splice` CLI, the fat jar, the launch shim and the sample topology
+integrations/  reusable adapters: claude-code/ (login, mcp, wrap, resume, transcript), upstream/
+               (transport, retry, credentials), http/, mcp/ (the MCP host), topology/ (the loader),
+               dialects/ (wire contracts) and providers/ (vendor adapters)
+features/      capability projects — turns, sessions, models, heads, accounts, usage, lifecycle,
+               diagnostics, launch, configuration, events — with use-case slices as packages; one
+               slice reaches another only through its public read models, ports and commands
+app/           :app — composition: the daemon, the control plane (app/control), the `splice` CLI, the
+               fat jar, the launch shim and the sample topology
                (src/main/dist/bin/splice-launch: every head command is an argv[0] symlink to it;
                src/main/resources/splice.example.toml: the sample multi-provider topology, shipped in the jar)
 console/       React 19 + Vite + Zustand operator console, single-file bundle (console/tools: its look gate)

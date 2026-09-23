@@ -70,6 +70,11 @@ const DEAD_ENTRY = "kt-l2-mirror-delegates-to-predicate";
 const prove = (sgconfigPath: string, exclusionsPath: string): Promise<CoverageReport> =>
   proveCoverage({ repoRoot, buildRoot, sgconfigPath, exclusionsPath });
 
+/** The whole-source-root row the exclusion mutants rewrite: kt-no-stream-options-request's own
+ *  exemption of the chat dialect, a module-scoped single-rule row. (It was kt-no-println's :app row
+ *  until LAYOUT-01 moved the control plane into app and :app became partly covered.) */
+const CHAT_ROW = '[[exclusion]]\nrule = "kt-no-stream-options-request"\nmodules = ["integrations-dialects-openai-chat"]';
+
 function edit(path: string, from: string, to: string): void {
   const before = readFileSync(path, "utf8");
   expect(before, `${path} must contain the text the mutant replaces`).toContain(from);
@@ -145,48 +150,44 @@ describe("the P1 coverage proof", () => {
 
   test("mutant (d): an exclusion with no date", async () => {
     const copy = copyOfTheRealRules();
-    edit(copy.exclusions, '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["app"]\nsourceSets = ["main"]\ndate = "2026-09-20"', '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["app"]\nsourceSets = ["main"]');
+    edit(copy.exclusions, `${CHAT_ROW}\nsourceSets = ["main"]\ndate = "2026-09-20"`, `${CHAT_ROW}\nsourceSets = ["main"]`);
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const invalid = report.findings.filter((f) => f.kind === "exclusion-invalid").map((f) => f.message);
     expect(invalid).toHaveLength(1);
-    expect(invalid[0]).toContain("kt-no-println");
+    expect(invalid[0]).toContain("kt-no-stream-options-request");
     expect(invalid[0]).toContain("has NO DATE");
   });
 
   test("a files-row can never excuse a WHOLLY lost source root", async () => {
-    // kt-no-vanilla-config-dir carries a files-row spanning all of :daemon-control's main sources. If its
-    // glob for :daemon-control disappears, that row must not absorb the loss — losing a module is the
-    // failure the proof exists for, and a broad file exemption is the obvious way to hide it.
+    // kt-no-vanilla-config-dir carries a files-row spanning all of :app's main sources, where it binds
+    // only LaunchSpecFactory.kt. If that glob disappears, the row must not absorb the loss — losing a
+    // module is the failure the proof exists for, and a broad file exemption is the obvious way to hide it.
     const copy = copyOfTheRealRules();
-    edit(copy.rule("kt-no-vanilla-config-dir"), "  - daemon/control/src/main/kotlin/splice/control/Launch*.kt\n", "");
+    edit(copy.rule("kt-no-vanilla-config-dir"), "  - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt\n", "");
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-vanilla-config-dir", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("daemon/control/src/main/kotlin");
+    expect(lost[0]).toContain("app/src/main/kotlin");
   });
 
   test("mutant (e): a modules row typed as a scalar cannot waive the source root it names", async () => {
-    // `modules = "app"` instead of `modules = ["app"]`. Valid TOML, one character, and on a reader
-    // that maps a mistyped field to [] the whole report stays GREEN: the row still covers :app's
-    // loss — and every other module's too, for any rule it names.
+    // `modules = "integrations-dialects-openai-chat"` instead of `modules = [...]`. Valid TOML, two
+    // characters, and on a reader that maps a mistyped field to [] the whole report stays GREEN: the row
+    // still covers the chat dialect's loss — and every other module's too, for any rule it names.
     const copy = copyOfTheRealRules();
-    edit(
-      copy.exclusions,
-      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["app"]',
-      '[[exclusion]]\nrule = "kt-no-println"\nmodules = "app"',
-    );
+    edit(copy.exclusions, CHAT_ROW, CHAT_ROW.replace('["integrations-dialects-openai-chat"]', '"integrations-dialects-openai-chat"'));
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const invalid = report.findings.filter((f) => f.kind === "exclusion-invalid").map((f) => f.message);
     expect(invalid).toHaveLength(1);
-    expect(invalid[0]).toContain("kt-no-println");
-    expect(invalid[0]).toContain('has modules = the string "app"');
+    expect(invalid[0]).toContain("kt-no-stream-options-request");
+    expect(invalid[0]).toContain('has modules = the string "integrations-dialects-openai-chat"');
     // and the loss it used to excuse is reported again, by name
-    const lost = messagesFor(report, "kt-no-println", "source-root-lost");
+    const lost = messagesFor(report, "kt-no-stream-options-request", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("app/src/main/kotlin");
+    expect(lost[0]).toContain("integrations/dialects/openai-chat/src/main/kotlin");
   });
 
   test("mutant (f): a files row typed as a scalar cannot become a whole-source-root row", async () => {
@@ -311,14 +312,14 @@ describe("the P1 coverage proof", () => {
 
   test("a stale exclusion is a finding, not a default", async () => {
     const copy = copyOfTheRealRules();
-    edit(
-      copy.exclusions,
-      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["app"]',
-      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["providers-openai"]',
-    );
+    edit(copy.exclusions, CHAT_ROW, CHAT_ROW.replace("integrations-dialects-openai-chat", "integrations-providers-openai"));
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
-    expect(report.findings.some((f) => f.kind === "exclusion-stale" && f.message.includes("kt-no-println"))).toBe(true);
-    expect(report.findings.some((f) => f.kind === "source-root-lost" && f.message.includes("app/src/main/kotlin"))).toBe(true);
+    expect(report.findings.some((f) => f.kind === "exclusion-stale" && f.message.includes("kt-no-stream-options-request"))).toBe(true);
+    expect(
+      report.findings.some(
+        (f) => f.kind === "source-root-lost" && f.message.includes("integrations/dialects/openai-chat/src/main/kotlin"),
+      ),
+    ).toBe(true);
   });
 });

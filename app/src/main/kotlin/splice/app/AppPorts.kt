@@ -1,8 +1,7 @@
 // NEW: the daemon-and-CLI ROLES of :app, named (HD-22, wave 4b).
 //
 // :app is the composition root, so most of what it threads is a role some LOWER module already
-// names — [splice.control.DashboardPage], [splice.control.ShutdownDaemon],
-// [splice.control.TopologyStale], [splice.control.TurnPathStalled],
+// names — [splice.lifecycle.restart.ShutdownDaemon], [splice.configuration.topology.TopologyStale],
 // [splice.dialect.anthropic.IdentityHeaders]. Those are imported, never re-declared: a
 // composition root that mints its own twin of a port it is wiring has stopped being a composition
 // root. What lives HERE is only what :app itself owns — the OAuth login flows, the refresh HTTP
@@ -17,7 +16,7 @@ package splice.app
 
 import io.ktor.client.statement.HttpResponse
 import splice.app.auth.RefreshStep
-import splice.control.ManagedHead
+import splice.app.control.ManagedHead
 import splice.core.auth.RefreshAttempt
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -92,7 +91,7 @@ public fun interface TokenUrlRefreshCall {
  * It is allowed to THROW, and that is the point of the seam: `assembleDaemonHeads` turns a throw
  * into an entry in the `failed` map and a boot log line, so one misconfigured head degrades the
  * daemon instead of aborting the boot. A head that failed here is counted in
- * [splice.control.FailedHeads] and is never in the `heads` map.
+ * [splice.app.control.FailedHeads] and is never in the `heads` map.
  */
 public fun interface HeadAssembly {
     public operator fun invoke(key: String, head: HeadConfig, provider: ProviderConfig): ManagedHead

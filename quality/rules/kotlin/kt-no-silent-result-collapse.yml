@@ -81,7 +81,6 @@ files:
   - integrations/providers/kimi/src/main/**/*.kt
   - integrations/providers/codex/src/main/**/*.kt
   - integrations/providers/openai/src/main/**/*.kt
-  - daemon/control/src/main/**/*.kt
   - integrations/mcp/src/main/**/*.kt
   - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - app/src/main/**/*.kt
@@ -93,6 +92,7 @@ files:
   - features/lifecycle/src/main/**/*.kt
   - features/launch/src/main/**/*.kt
   - features/configuration/src/main/**/*.kt
+  - features/events/src/main/**/*.kt
 rule:
   any:
     # A. direct chain — the original wall, unchanged

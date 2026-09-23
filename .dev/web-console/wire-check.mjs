@@ -43,7 +43,7 @@
 // that omits the key gives `undefined`, and `=== null` is false for it. Only `x?: T` is honest.
 //
 // LAW 23 BINDS THIS HARD, and this is the row where it matters most: a wire check that passes
-// because it read nothing is the exact thing it was built to catch. A missing gateway tree, a
+// because it read nothing is the exact thing it was built to catch. No daemon source root, a
 // types file that parses to zero fields, a parser that will not load, a control tree with no keys
 // or no routes, zero fetch sites — each is DID NOT RUN, each exits non-zero, none is ever clean.
 //
@@ -64,7 +64,7 @@
 //     (exitCode and not exit(), because --json writes more than a pipe buffer holds).
 //   SHAPE TWO, if every tree were unreadable, what would it print? IT REFUSES FIVE TIMES OVER, and
 //     did before this row: :102 no entity directories, :259 no .kt under a main source set, :260 no
-//     control/src/main tree, :452 no entity declares model/types.ts, :465 no fields parsed out of
+//     app/control tree, :452 no entity declares model/types.ts, :465 no fields parsed out of
 //     any types file. Each is a fail() by name, not a zero quietly summarised. This is the file the
 //     rest of the fence should have been written like — it is the only one that guarded EVERY
 //     denominator rather than the one its author happened to think of.
@@ -78,8 +78,12 @@ import process from 'node:process';
 
 const ROOT = process.cwd();
 const ENTITIES = join(ROOT, 'console/src/entities');
-const GATEWAY = join(ROOT, 'gateway');
-const CONTROL = '/control/src/main/';
+// The daemon's production source roots (LAYOUT-01, 2026-09-23). Until PR 2 this read one `gateway/`
+// root; that root has not existed since ccc529d99, so every run since was DID NOT RUN by name.
+const SOURCE_ROOTS = ['app', 'core', 'features', 'integrations'];
+// The composition root that mounts the control API. Feature slices serve most of its routes now, and
+// which slices is DERIVED from what this tree imports (daemon(), below), never from a list here.
+const CONTROL = 'app/src/main/kotlin/splice/app/control/';
 
 function fail(message) {
   console.error(`wire-check: DID NOT RUN — ${message}`);
@@ -241,11 +245,11 @@ function coverageRoutes() {
  * Every path the control server serves, and every JSON key it emits.
  *
  * SCOPE, stated because getting it wrong in either direction breaks this check specifically. The
- * console reads the CONTROL API, so the emitting sites are the control main source set and nothing
- * else — widening to all of gateway made `DoctorReportShape.kt`, a CLI report nobody fetches,
- * offer near spellings for console fields. But the CONSTANTS those sites emit through live
- * elsewhere (`core/perf/PerfKeys.kt`), so the constant table is read from every gateway main source
- * and a holder's vocabulary counts only when a control file names that holder. Test sources are
+ * console reads the CONTROL API, so the emitting sites are the control composition and the packages
+ * it mounts, nothing else — widening to all of gateway made `DoctorReportShape.kt`, a CLI report
+ * nobody fetches, offer near spellings for console fields. But the CONSTANTS those sites emit through
+ * live elsewhere (`core/perf/PerfKeys.kt`), so the constant table is read from every production main
+ * source and a holder's vocabulary counts only when a control file names that holder. Test sources are
  * excluded throughout: a key that exists only in a test fixture is not a key the daemon sends, and
  * including them would be this row's own defect committed by its own instrument.
  *
@@ -266,14 +270,26 @@ function coverageRoutes() {
  * site, not the average one.
  */
 function daemon() {
-  if (!existsSync(GATEWAY)) {
-    fail(`no ${relative(ROOT, GATEWAY)} — the daemon is what this check reads;\n` +
+  const roots = SOURCE_ROOTS.map((r) => join(ROOT, r)).filter((r) => existsSync(r));
+  if (roots.length === 0) {
+    fail(`none of ${SOURCE_ROOTS.join(', ')} exists — the daemon is what this check reads;\n` +
       '       without it every field would compare against nothing and report clean');
   }
-  const all = walk(GATEWAY).filter((p) => p.endsWith('.kt') && p.includes('/src/main/'));
-  const control = all.filter((p) => p.includes(CONTROL));
-  if (all.length === 0) fail(`${relative(ROOT, GATEWAY)} holds no .kt files under a main source set`);
-  if (control.length === 0) fail(`${relative(ROOT, GATEWAY)} has no control/src/main tree — the control API is the console's wire`);
+  const all = roots.flatMap(walk).filter((p) => p.endsWith('.kt') && p.includes('/src/main/') && !p.includes('/build/'));
+  if (all.length === 0) fail(`${SOURCE_ROOTS.join(', ')} hold no .kt files under a main source set`);
+  const composition = all.filter((p) => relative(ROOT, p).startsWith(CONTROL));
+  if (composition.length === 0) fail(`no ${CONTROL} tree — the control API is the console's wire`);
+  // The slices and adapters the control plane mounts: every features/ or integrations/ main file whose
+  // package a composition file imports (/api/mcp's payload is integrations/mcp's McpStatus). A package
+  // nobody imports serves nothing on this wire, and widening past the mounted packages is what made
+  // DoctorReportShape.kt offer near spellings (the scope note above). core/ is the kernel: its
+  // constants are read from `all`, and counting its payload types as control emissions was measured
+  // (2026-09-23): 59 more files, 9 more census entries, and one new MATCH that was FALSE — the team
+  // row's `created` matched ModelCatalog.kt's OpenAI model `created`, a key no teams route sends.
+  const packageOf = (text) => text.match(/^package\s+([\w.]+)/m)?.[1];
+  const mounted = new Set(composition.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/^import\s+([\w.]+)\.\w+\s*$/gm)].map((m) => m[1])));
+  const control = [...composition, ...all.filter((p) => /^(?:features|integrations)\//.test(relative(ROOT, p)) &&
+    mounted.has(packageOf(readFileSync(p, 'utf8'))))];
 
   const constants = new Map();
   for (const file of all) {
@@ -316,7 +332,7 @@ function daemon() {
 
   // PASS-THROUGH ROUTES. A route can hand back a payload this module never builds: `DoctorRoute`
   // writes the CLI's report VERBATIM through `fun interface DoctorReport { operator fun invoke():
-  // String }`, so its keys are authored in gateway/app and the control module names not one of
+  // String }`, so its keys are authored in app/cli and the control plane names not one of
   // them. That is not 27 console defects and it is not a clean pass either — it is a bounded DID
   // NOT CHECK, and the only honest third answer.
   //
@@ -376,7 +392,12 @@ function daemon() {
       while (prefixes.length > 0 && braces <= prefixes[prefixes.length - 1].at) prefixes.pop();
 
       if (buildsJson) {
-        for (const m of line.matchAll(/\b(?:put|putJsonArray|putJsonObject)\s*\(\s*([^,)]+)/g)) {
+        // A call wrapped after its paren (detekt's 120 columns wrap a long value) names its key on
+        // the NEXT line, and a line-at-a-time read never saw it: ClaudeHeadRoutes' `constraint` was
+        // UNDISPOSITIONED against a daemon that sends it. The next line is read as the call's args.
+        const call = /\b(?:put|putJsonArray|putJsonObject)\s*\(\s*$/.test(line) && i + 1 < lines.length
+          ? line + lines[i + 1].replace(/\/\/.*$/, '').trim() : line;
+        for (const m of call.matchAll(/\b(?:put|putJsonArray|putJsonObject)\s*\(\s*([^,)]+)/g)) {
           const arg = m[1].trim();
           const literal = arg.match(/^"([^"]+)"$/);
           if (literal !== null) { note(literal[1], at, omits, 'literal'); continue; }
@@ -776,13 +797,33 @@ async function selftest() {
   put('console/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
   ok('entity types but no api segment is DID NOT RUN, not a pass', exit(bare) !== 0, true);
   put('console/src/entities/probe/api/index.ts', "const x = request<P>('/api/probe');\n");
-  ok('a console side but no gateway tree is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('daemon/control/src/main/kotlin/Empty.kt', '// no keys and no routes here\n');
+  ok('a console side but no daemon source root is DID NOT RUN, not a pass', exit(bare) !== 0, true);
+  put('app/src/main/kotlin/splice/app/Main.kt', 'fun main() { }\n');
+  ok('a daemon tree with no app/control composition is DID NOT RUN, not a pass', exit(bare) !== 0, true);
+  put(`${CONTROL}Empty.kt`, '// no keys and no routes here\n');
   ok('control kotlin that emits no keys at all is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('daemon/control/src/main/kotlin/Empty.kt', 'val x = buildJsonObject { put("a", 1) }\n');
+  put(`${CONTROL}Empty.kt`, 'val x = buildJsonObject { put("a", 1) }\n');
   ok('keys but no served route is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('daemon/control/src/main/kotlin/Empty.kt', 'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { put("a", 1) }\n');
+  put(`${CONTROL}Empty.kt`, 'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { put("a", 1) }\n');
   ok('a console and a daemon that AGREE come back clean', exit(bare), 0);
+  // LAYOUT-01. A key on the line after a wrapped `put(` is read — the line-at-a-time scan missed
+  // ClaudeHeadRoutes' `constraint`, and here it would leave zero keys, which is DID NOT RUN.
+  put(`${CONTROL}Empty.kt`,
+    'fun r() { get("/api/probe") { } }\nval x = buildJsonObject {\n    put(\n        "a",\n        1,\n    )\n}\n');
+  ok('a key named on the line after a wrapped put( is read', exit(bare), 0);
+  // The mounted slices are DERIVED from the composition's imports, so prove both directions: the same
+  // feature file is read when control imports its package and NOT read when control does not.
+  put('features/probe/src/main/kotlin/splice/probe/ProbeRoute.kt',
+    'package splice.probe\nval x = buildJsonObject { put("a", 1) }\n');
+  const other = 'fun r() { get("/api/probe") { } }\nval y = buildJsonObject { put("unrelated_key", 1) }\n';
+  put(`${CONTROL}Empty.kt`, `import splice.probe.ProbeRoute\n${other}`);
+  ok('a key emitted by a feature package the control plane imports is read', exit(bare), 0);
+  put(`${CONTROL}Empty.kt`, other);
+  const unmounted = runIn(bare);
+  ok('the same key in a feature package the control plane does NOT import is not read',
+    unmounted.status !== 0 && unmounted.out.includes('P.a'), true);
+  rmSync(join(bare, 'features'), { recursive: true, force: true });
+  put(`${CONTROL}Empty.kt`, 'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { put("a", 1) }\n');
   put('console/src/entities/probe/model/types.ts', 'export interface P { a_typo: string }\n');
   ok('a planted MISMATCH is red', exit(bare) !== 0, true);
 
@@ -792,7 +833,7 @@ async function selftest() {
   put('console/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
   // `if (` on the put's own line is what marks the key conditional, so `a` is a non-optional
   // declaration against a key the wire may omit: a Level 3a AND 3b entry, and nothing else wrong.
-  put('daemon/control/src/main/kotlin/Empty.kt',
+  put(`${CONTROL}Empty.kt`,
     'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { if (flag) put("a", 1) }\n');
   const census = runIn(bare);
   ok('a tree whose ONLY finding is the 3b census comes back CLEAN', census.status, 0);

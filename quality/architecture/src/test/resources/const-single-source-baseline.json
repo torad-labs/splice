@@ -131,11 +131,11 @@
       "features/turns/src/main/kotlin/splice/head/turn/TurnPreparation.kt"
     ],
     "COLLISION STOP_GRACE_MS": [
-      "daemon/control/src/main/kotlin/splice/control/ControlServer.kt",
+      "app/src/main/kotlin/splice/app/control/ControlServer.kt",
       "features/turns/src/main/kotlin/splice/head/HeadEngine.kt"
     ],
     "COLLISION STOP_TIMEOUT_MS": [
-      "daemon/control/src/main/kotlin/splice/control/ControlServer.kt",
+      "app/src/main/kotlin/splice/app/control/ControlServer.kt",
       "features/turns/src/main/kotlin/splice/head/HeadEngine.kt"
     ],
     "COLLISION VERSION": [
@@ -321,7 +321,7 @@
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexRoutingHeaders.kt"
     ],
     "COPY HEADS": [
-      "daemon/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
+      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
@@ -351,14 +351,14 @@
       "app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
     ],
     "COPY KEY": [
-      "daemon/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
+      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
       "features/heads/src/main/kotlin/splice/heads/HeadOperations.kt",
       "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
     ],
     "COPY LABEL": [
-      "daemon/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
+      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
       "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"

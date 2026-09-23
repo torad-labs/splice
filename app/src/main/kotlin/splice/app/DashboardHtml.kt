@@ -3,7 +3,7 @@
 // so this move needs no import change at either call site.
 package splice.app
 
-import splice.control.DashboardPage
+import splice.app.control.DashboardPage
 import splice.core.util.Cancellables
 import java.nio.file.Files
 import java.nio.file.Path

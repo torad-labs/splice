@@ -1,5 +1,5 @@
 // NEW: V4-133, FEATURES.md §5/§6 — the :app-side implementation of
-// splice.control.api.turns.PlaygroundProbe: POST /api/playground's ONE independent upstream call.
+// splice.diagnostics.playground.PlaygroundProbe: POST /api/playground's ONE independent upstream call.
 //
 // NAMED UpstreamPlaygroundProbe, NOT PlaygroundProbe: the fun interface it implements already owns
 // that name in splice.control.api, and a same-named concrete class one package over is exactly the

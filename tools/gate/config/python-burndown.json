@@ -33,7 +33,7 @@
     "app/src/test/kotlin/splice/app/daemon/DaemonLockCrossProcessTest.kt",
     "integrations/mcp/src/test/kotlin/splice/control/mcp/McpHostFixture.kt",
     "integrations/mcp/src/test/kotlin/splice/control/mcp/McpHostTest.kt",
-    "daemon/control/src/test/kotlin/splice/control/api/diagnostics/McpRoutesTest.kt",
+    "app/src/test/kotlin/splice/app/control/api/diagnostics/McpRoutesTest.kt",
     "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt",
     "features/turns/src/test/kotlin/splice/head/ActivityLabelTest.kt",
     "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",

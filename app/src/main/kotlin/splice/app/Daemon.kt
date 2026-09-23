@@ -15,6 +15,9 @@ package splice.app
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.auth.CodexRefresh
+import splice.app.control.ControlServer
+import splice.app.control.DashboardPage
+import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
@@ -26,9 +29,6 @@ import splice.app.head.HeadServerFactory
 import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
-import splice.control.ControlServer
-import splice.control.DashboardPage
-import splice.control.ManagedHead
 import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService

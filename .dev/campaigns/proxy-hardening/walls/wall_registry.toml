@@ -178,7 +178,7 @@ id = "JW-04"
 phase = "W3-see-the-daemon"
 wall = ""
 retired_to = [
-    "daemon/control/src/test/kotlin/splice/control/ControlServerTest.kt",
+    "app/src/test/kotlin/splice/app/control/ControlServerTest.kt",
     "tools/release/test/launcher.test.ts",
     "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
 ]
@@ -196,7 +196,7 @@ id = "JW-06"
 phase = "W3-see-the-daemon"
 wall = ""
 retired_to = [
-    "daemon/control/src/test/kotlin/splice/control/ControlServerTest.kt",
+    "app/src/test/kotlin/splice/app/control/ControlServerTest.kt",
     "console/tests/api-client.test.ts",
 ]
 proof = "2026-09-21: three mutations, and the wall slept through all three. (a) the head query parameter dropped at the route (configJson(call.request.queryParameters[\"head\"]) -> configJson(null)) -> wall GREEN, ControlServerPerHeadConfigTest RED (1 test, 1 failure). (b) and (c) the console client's head parameter removed and its query string dropped -> wall GREEN both times, the three new api-client arms RED. The wall asserts the token `head?` appears in api-client.ts, and applyConfigPatch(patch, head?: string) contains it, so the selected head could stop reaching the query string entirely with the wall none the wiser. The homes assert the URL the client builds (/api/config?head=kimi, the bare path, and percent-encoding of a head with slashes and question marks) and the layer the server folds in. Restored, wall GREEN, 25/25 + 1/1 + 745 console tests"

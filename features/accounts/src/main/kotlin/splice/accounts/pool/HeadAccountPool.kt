@@ -20,7 +20,7 @@ public fun interface HeadAccountAuthSource {
  *  A SIBLING of [HeadAccountPoolSource], never a second method on it: that one-method fun
  *  interface is implemented by test doubles tree-wide through SAM conversion (a bare lambda), and
  *  widening it would break every one of them for a capability only the real [splice.upstream.credentials.AccountPool]
- *  has. A route discovers this with a checked cast — the same idiom [splice.control.api.usage.StatuslineRoute]
+ *  has. A route discovers this with a checked cast — the same idiom [splice.usage.statusline.StatuslineRoute]
  *  already uses for [HeadPerfSkipSource] (`managed.perf as? HeadPerfSkipSource`). */
 public fun interface HeadAccountPinSource {
     /** False (nothing pinned) when [label] names no account in this head's pool. */

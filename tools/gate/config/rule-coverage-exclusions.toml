@@ -82,7 +82,7 @@ rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
   "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
-  "integrations-providers-openai", "app", "quality-compiler-plugin",
+  "integrations-providers-openai", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-22"
@@ -115,7 +115,7 @@ rule = "kt-no-exception-as-outcome"
 modules = [
   "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat",
   "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai",
-  "features-turns", "daemon-control", "app", "quality-compiler-plugin",
+  "features-turns", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -126,13 +126,27 @@ other module consumes those sealed hierarchies rather than declaring its own exc
 
 [[exclusion]]
 rule = "kt-no-println"
-modules = ["app"]
-sourceSets = ["main"]
-date = "2026-09-20"
+files = ["app/src/main/kotlin/**/*.kt"]
+date = "2026-09-23"
 reason = """
 The rule's own exemption, quoted from quality/rules/kotlin/kt-no-println.yml: ":app is the
 wiring/entry/CLI layer — a terminal tool legitimately writes to stdout (doctor output, usage).
-Daemon LOGGING still flows through the injected log lambda."
+Daemon LOGGING still flows through the injected log lambda." LAYOUT-01 moved the control plane into
+app/control, and the wall kept binding it there, so :app is covered in part: this row names the CLI
+and entry files the rule ignores. The proof credits a files row only from the rule's lost-file set,
+so it cannot excuse a finding in app/control.
+"""
+
+[[exclusion]]
+rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
+files = ["app/src/main/kotlin/**/*.kt"]
+date = "2026-09-23"
+reason = """
+These three walls bound daemon/control whole. LAYOUT-01 moved that control plane into app/control and
+the walls moved with it, binding app/src/main/kotlin/splice/app/control whole. The rest of :app keeps
+the 2026-09-22 disposition: it declares no guarded control route, writes no control audit line from
+caller input, and emits no perf-row outcome tag. The proof credits a files row only from each rule's
+lost-file set, so this row cannot excuse a finding in app/control.
 """
 
 [[exclusion]]
@@ -140,7 +154,7 @@ rule = "kt-no-runblocking-exported-bridge"
 modules = [
   "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
-  "integrations-providers-openai", "features-turns", "daemon-control", "quality-compiler-plugin",
+  "integrations-providers-openai", "features-turns", "quality-compiler-plugin",
   "features-models", "features-sessions",
 ]
 sourceSets = ["main"]
@@ -157,8 +171,8 @@ modules = ["integrations-claude-code", "integrations-providers-codex", "integrat
 sourceSets = ["main"]
 date = "2026-09-22"
 reason = """
-The wall binds turn and stream coroutines in :upstream, the dialects, :features-turns, :daemon-control,
-:integrations-mcp, and :app. :integrations-claude-code is a local filesystem adapter, the provider
+The wall binds turn and stream coroutines in :upstream, the dialects, :features-turns, the feature
+route modules, :integrations-mcp, and :app (the control plane lives in app/control since LAYOUT-01). :integrations-claude-code is a local filesystem adapter, the provider
 modules are auth/quirk adapters outside that path, and :quality-compiler-plugin is a compiler plugin.
 LAYOUT-01 moved LogSafe into :core; the exact relocated file is covered by the file-scope disposition
 below instead of excusing the entire core module.
@@ -221,7 +235,7 @@ rule = "kt-outcome-tag-single-source"
 modules = [
   "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
-  "integrations-providers-openai", "app", "quality-compiler-plugin",
+  "integrations-providers-openai", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-22"
@@ -237,7 +251,7 @@ rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", 
 modules = [
   "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
-  "integrations-providers-openai", "daemon-control", "app", "quality-compiler-plugin",
+  "integrations-providers-openai", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-22"
@@ -388,17 +402,6 @@ the rest of :app never spells a config dir. The launch seam that was control/Lau
 features/launch now (LAYOUT-01), bound whole. :integrations-claude-code needs no row: the wall binds
 its whole main source set, minus its one dated ignore, ClaudeConfigKeys.kt, the single source of the
 vanilla dir's NAME. Losing a whole module still fails: a files-row can never excuse a wholly lost root.
-"""
-
-[[exclusion]]
-rule = "kt-no-vanilla-config-dir"
-modules = ["daemon-control"]
-sourceSets = ["main"]
-date = "2026-09-23"
-reason = """
-The wall bound control only through its launch seam, control/Launch*.kt. LAYOUT-01 moved that seam,
-with the Claude head's wrap and the resume hook, into features/launch, and the wall moved with it and
-binds that module whole. Nothing left in daemon/control assembles or points a head's config dir.
 """
 
 [[exclusion]]
@@ -634,15 +637,15 @@ rules = [
   "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
-modules = ["features-lifecycle", "features-diagnostics", "features-configuration"]
+modules = ["features-lifecycle", "features-diagnostics", "features-configuration", "features-events"]
 sourceSets = ["main"]
 date = "2026-09-23"
 reason = """
-The draining restart, the upgrade surface, the doctor route, the playground, and the knob and topology
-routes came from daemon/control. None of these six scopes selected them there: they grade exceptions as
+The draining restart, the upgrade surface, the doctor route, the playground, the knob and topology
+routes, and the console event bus and stream came from daemon/control. None of these six scopes selected them there: they grade exceptions as
 outcomes in the turn path, the CLI's runBlocking bridge, the head launch seam (features/launch),
 quota selection, turn cleanup, and streaming wire catches. Every rule that DID select them was widened
-to all three roots instead of being excluded.
+to these roots instead of being excluded.
 """
 
 [[exclusion]]

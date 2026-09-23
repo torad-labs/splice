@@ -62,7 +62,7 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 
 > **Wire contract, Kotlin implementation.** The behaviour below is the contract; the `server/`
 > Node tree that first implemented it was **deleted on 2026-08-10** (P8-CUT). The live sources are
-> `daemon/control/.../ControlServer.kt`, `features/turns/.../wire/SseEmitter.kt` and
+> `app/.../control/ControlServer.kt`, `features/turns/.../wire/SseEmitter.kt` and
 > `features/turns/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
@@ -112,7 +112,7 @@ field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 ## Control plane (spliced)
 
 > **Wire contract, Kotlin implementation.** Same caveat as above: the control plane is now
-> `daemon/control/src/main/kotlin/splice/control/ControlServer.kt`. The Node
+> `app/src/main/kotlin/splice/app/control/ControlServer.kt`. The Node
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
 The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback

@@ -1,4 +1,4 @@
-// NEW (2026-09-23): the head's SSE response body — Ktor's own WriterContent, plus the one guarantee
+// NEW: 2026-09-23, the head's SSE response body — Ktor's own WriterContent, plus the one guarantee
 // Ktor's does not give: a frame the body wrote and flushed reaches the client even when the body
 // then ends by throwing.
 //

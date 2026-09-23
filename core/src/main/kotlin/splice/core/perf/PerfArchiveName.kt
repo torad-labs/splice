@@ -1,4 +1,4 @@
-// NEW (2026-09-23): the one spelling of an archived perf generation's file name, shared by the head
+// NEW: 2026-09-23, the one spelling of an archived perf generation's file name, shared by the head
 // that writes it (PerfStats' rotation archive, :features-turns) and the control plane that reads it
 // back (PerfRowsFileSource, :app). Two modules, one format: a name the writer changed and the reader
 // did not would silently turn every archived generation back into lost history.

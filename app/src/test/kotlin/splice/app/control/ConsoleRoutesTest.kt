@@ -47,6 +47,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.HeadModel
 import splice.diagnostics.doctor.DoctorReport
+import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.lifecycle.upgrade.UpgradeStatus

@@ -2,11 +2,11 @@
 // remediation path ends at daemon.log, but until now there was no CLI verb to reach it and the
 // dashboard panel — the only surface — needs the daemon up, a browser, and the mgmt-key, exactly
 // what is broken when you need logs. This reuses LogFileSource (a pure byte-bounded Files read +
-// head-tag filter), so it works with the daemon STOPPED: no HTTP, no key. :app: println is fine.
-package splice.app.cli.status
+// head-tag filter), so it works with the daemon STOPPED: no HTTP, no key.
+package splice.diagnostics.logs
 
-import splice.app.sources.LogFileSource
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -14,9 +14,9 @@ import java.nio.file.Files
 
 /** The `logs` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
-public class LogsCommand {
+public class LogsCommand(private val output: TerminalOutput, private val errors: TerminalOutput) {
 
-    public fun logs(args: List<String>, envReader: EnvReader = EnvReader(System::getenv)): Boolean {
+    public fun logs(args: List<String>, envReader: EnvReader): Boolean {
         val opts = parseLogsArgs(args) ?: return false
         val statePaths = StatePaths(envReader = envReader)
         val logFile = statePaths.logsDir.resolve("daemon.log")
@@ -25,7 +25,7 @@ public class LogsCommand {
         // Missing file is not an error (a fresh install has no turns yet) — empty output, exit 0.
         if (!opts.follow) {
             val head = source.tail(opts.tail)
-            if (head.isNotEmpty()) println(head)
+            if (head.isNotEmpty()) output.line(head)
             return true
         }
         followTail(logFile, source, followStart(source, opts.tail))
@@ -43,7 +43,7 @@ public class LogsCommand {
      *  discontinuity path does. `internal` so the start sequence is testable without the loop. */
     internal fun followStart(source: LogFileSource, tail: Int): Long {
         val head = source.tailAt(tail)
-        if (head.text.isNotEmpty()) println(head.text)
+        if (head.text.isNotEmpty()) output.line(head.text)
         return head.offset
     }
 
@@ -86,14 +86,14 @@ public class LogsCommand {
             // persistentLogger writes through an 8 KB BufferedWriter, so any longer line reaches
             // disk in several write(2) calls.
             val fresh = source.tailAt(FOLLOW_TAIL)
-            if (fresh.text.isNotEmpty()) println(fresh.text)
+            if (fresh.text.isNotEmpty()) output.line(fresh.text)
             return fresh.offset
         }
         // DR-100: ordinary growth prints exactly the NEW bytes' complete lines. The old 20-line
         // snapshot repeated up to 19 already-shown lines per new line and silently dropped any
         // burst over 20 lines inside one poll — exactly the error-storm lines being watched.
         val delta = source.readFrom(lastSize)
-        if (delta.text.isNotEmpty()) println(delta.text)
+        if (delta.text.isNotEmpty()) output.line(delta.text)
         return lastSize + delta.consumed
     }
 
@@ -110,7 +110,7 @@ public class LogsCommand {
                 if (genuinelyAbsent) {
                     warned.set(false)
                 } else if (warned.compareAndSet(false, true)) {
-                    println("splice: $logFile unreadable (${SafeFailureText.render(failure)}) — still polling")
+                    output.line("splice: $logFile unreadable (${SafeFailureText.render(failure)}) — still polling")
                 }
                 0L
             }
@@ -122,7 +122,7 @@ public class LogsCommand {
         val valued = args.filterNot { it == "--follow" || it == "-f" }
         val error = applyValuedLogsArgs(valued, opts)
         if (error != null) {
-            System.err.println("splice logs: $error\nusage: splice logs [--head <key>] [--tail N] [--follow|-f]")
+            errors.line("splice logs: $error\nusage: splice logs [--head <key>] [--tail N] [--follow|-f]")
             return null
         }
         return opts

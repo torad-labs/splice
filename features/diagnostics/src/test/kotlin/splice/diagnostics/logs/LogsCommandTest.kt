@@ -79,6 +79,10 @@ class LogsCommandTest {
 // one poll (exactly the error-storm lines being watched). Drives the extracted followPoll step.
 class LogsFollowDeltaTest {
 
+    // println writers, so `pollCapture` still reads the verb off System.out.
+    private val stdout = TerminalOutput(::println)
+    private val stderr = TerminalOutput(System.err::println)
+
     private fun pollCapture(block: () -> Long): Pair<Long, String> {
         val buf = java.io.ByteArrayOutputStream()
         val original = System.out

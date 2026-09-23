@@ -6,6 +6,7 @@ package splice.app.cli
 import kotlinx.coroutines.runBlocking
 import splice.app.InstallWiring
 import splice.app.ModelsWiring
+import splice.app.PerfWiring
 import splice.app.TraceWiring
 import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddModelVerb
@@ -16,7 +17,6 @@ import splice.app.cli.doctor.DoctorCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.LogsCommand
-import splice.app.cli.status.PerfCommand
 import splice.app.cli.status.StatusCommand
 import splice.app.cli.upgrade.UpgradeCommand
 import splice.core.GATEWAY_VERSION
@@ -101,7 +101,7 @@ public sealed class Command {
         }
     }
     public data class Perf(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(PerfCommand().perf(args))
+        override fun run(): Int = outcomeExitCode(PerfWiring.command().perf(args, EnvReader(System::getenv)))
     }
 
     /** V4-173: the upstream request bodies a head sent, when its operator opted in. */

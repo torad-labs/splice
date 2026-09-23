@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.PerfWiring
 import splice.app.sources.PerfRowsFileSource
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
@@ -70,7 +71,7 @@ class PerfCommandTest {
         val api = PerfSummary().summarize(PerfRowsFileSource(file), PerfWindow.D7)
         val p50 = api.getValue("total_ms").jsonObject.getValue("p50").jsonPrimitive.content
 
-        val (ok, text) = capture { PerfCommand().perf(listOf("--window", "7d"), env) }
+        val (ok, text) = capture { PerfWiring.command().perf(listOf("--window", "7d"), env) }
 
         assertTrue(ok)
         assertTrue(text.contains("last 7d per head"), text)
@@ -80,7 +81,7 @@ class PerfCommandTest {
         assertTrue(text.contains("error:upstream-failed=1 (25.0%)"), "failure share per outcome tag: $text")
         assertTrue(text.contains("failure share 25.0%"), text)
 
-        val (dayOk, day) = capture { PerfCommand().perf(listOf("--window", "1h"), env) }
+        val (dayOk, day) = capture { PerfWiring.command().perf(listOf("--window", "1h"), env) }
         assertTrue(dayOk)
         assertTrue(day.contains("2 turn(s)"), "the 1h window holds two rows: $day")
         assertFalse(day.contains("clamped"), day)
@@ -89,11 +90,11 @@ class PerfCommandTest {
     @Test
     fun `an unknown window, a bare flag and a stray argument are refused and the default is 24h`(@TempDir tmp: Path) {
         val env = env(tmp)
-        assertFalse(capture { PerfCommand().perf(listOf("--window", "2h"), env) }.first)
-        assertFalse(capture { PerfCommand().perf(listOf("--window"), env) }.first, "a missing value is not 24h")
-        assertFalse(capture { PerfCommand().perf(listOf("--window", "7d", "extra"), env) }.first)
-        assertFalse(capture { PerfCommand().perf(listOf("7d"), env) }.first, "the label needs its flag")
-        val (ok, text) = capture { PerfCommand().perf(emptyList(), env) }
+        assertFalse(capture { PerfWiring.command().perf(listOf("--window", "2h"), env) }.first)
+        assertFalse(capture { PerfWiring.command().perf(listOf("--window"), env) }.first, "a missing value is not 24h")
+        assertFalse(capture { PerfWiring.command().perf(listOf("--window", "7d", "extra"), env) }.first)
+        assertFalse(capture { PerfWiring.command().perf(listOf("7d"), env) }.first, "the label needs its flag")
+        val (ok, text) = capture { PerfWiring.command().perf(emptyList(), env) }
         assertTrue(ok)
         assertTrue(text.contains("last 24h per head"), text)
         assertTrue(text.contains("no rows in this window"), text)
@@ -109,7 +110,7 @@ class PerfCommandTest {
                 else -> null
             }
         }
-        assertFalse(capture { PerfCommand().perf(emptyList(), bare) }.first)
+        assertFalse(capture { PerfWiring.command().perf(emptyList(), bare) }.first)
         assertFalse(Files.exists(tmp.resolve("splice.toml")), "a diagnostic materializes nothing")
     }
 }

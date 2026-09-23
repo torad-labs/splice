@@ -43,7 +43,7 @@ files:
   - "**/src/main/**/*.kt"
 ignores:
   # The process runtime edge — the single main-source file allowed to name the global clock.
-  - upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt
+  - integrations/upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt
 rule:
   # `$$$ARGS` matches zero-or-more, so one branch covers delay(ms), delay(duration) and the named
   # spelling delay(timeMillis = 5L) alike. A receiver-qualified `x.delay(...)` is deliberately NOT

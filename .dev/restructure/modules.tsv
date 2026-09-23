@@ -16,3 +16,4 @@ NEW	:integrations-http	NEW	integrations/http
 NEW	:features-usage	NEW	features/usage
 NEW	:features-sessions	NEW	features/sessions
 NEW	:features-models	NEW	features/models
+:upstream	:integrations-upstream	upstream	integrations/upstream

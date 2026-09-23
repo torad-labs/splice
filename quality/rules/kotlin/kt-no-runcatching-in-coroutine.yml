@@ -42,7 +42,7 @@ files:
   - core/src/main/kotlin/splice/core/terminal/CliStyle.kt
   - features/usage/src/main/**/*.kt
   - integrations/http/src/main/**/*.kt
-  - upstream/src/main/**/*.kt
+  - integrations/upstream/src/main/**/*.kt
   - integrations/dialects/openai-responses/src/main/**/*.kt
   - integrations/dialects/openai-chat/src/main/**/*.kt
   - integrations/dialects/anthropic/src/main/**/*.kt

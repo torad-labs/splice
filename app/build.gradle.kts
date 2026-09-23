@@ -22,7 +22,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":integrations-claude-code"))
     implementation(project(":integrations-mcp"))
-    implementation(project(":upstream"))
+    implementation(project(":integrations-upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
     implementation(project(":integrations-dialects-openai-chat"))
     implementation(project(":integrations-dialects-anthropic"))

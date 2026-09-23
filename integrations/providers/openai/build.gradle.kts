@@ -5,7 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":upstream"))
+    implementation(project(":integrations-upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
     implementation(project(":integrations-dialects-openai-chat"))
     testImplementation(libs.kotlinx.coroutines.test)

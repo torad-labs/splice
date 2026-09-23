@@ -6,7 +6,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":upstream"))
+    implementation(project(":integrations-upstream"))
     testImplementation(libs.kotlinx.coroutines.test)
-    testFixturesImplementation(project(":upstream"))
+    testFixturesImplementation(project(":integrations-upstream"))
 }

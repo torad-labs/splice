@@ -80,7 +80,7 @@ kt-no-delay-in-production, which binds src/main.
 [[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
-  "integrations-claude-code", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
   "integrations-providers-openai", "features-turns", "app", "quality-compiler-plugin",
 ]
@@ -138,7 +138,7 @@ Daemon LOGGING still flows through the injected log lambda."
 [[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
 modules = [
-  "core", "integrations-claude-code", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
   "integrations-providers-openai", "features-turns", "daemon-control", "quality-compiler-plugin",
   "features-models", "features-sessions",
@@ -203,7 +203,7 @@ reopen the incident."
 [[exclusion]]
 rule = "kt-no-vanilla-config-dir"
 modules = [
-  "core", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "core", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
   "integrations-providers-openai", "features-turns", "quality-compiler-plugin",
 ]
@@ -219,7 +219,7 @@ LaunchSpecFactory sets CLAUDE_CONFIG_DIR. LAYOUT-01 moved the complete adapter i
 [[exclusion]]
 rule = "kt-outcome-tag-single-source"
 modules = [
-  "integrations-claude-code", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
   "integrations-providers-openai", "app", "quality-compiler-plugin",
 ]
@@ -235,7 +235,7 @@ rather than excusing core wholesale.
 [[exclusion]]
 rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
 modules = [
-  "core", "integrations-claude-code", "upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
   "integrations-providers-openai", "daemon-control", "app", "quality-compiler-plugin",
 ]
@@ -319,7 +319,7 @@ reason = "L3: SseEmitter is the only file allowed to hold the end_turn / message
 
 [[exclusion]]
 rules = ["kt-no-delay-in-production", "kt-no-hardcoded-dispatchers"]
-files = ["upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt"]
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt"]
 date = "2026-09-20"
 reason = "The process runtime edge — the single main-source file allowed to name the global clock and the global dispatchers."
 

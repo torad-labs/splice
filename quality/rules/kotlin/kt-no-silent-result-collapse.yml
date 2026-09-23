@@ -5,7 +5,7 @@
 # `.getOrDefault(...)` on a catching chain MUST either consume the failure first (`.onFailure {…}`)
 # or carry an explicit reviewed exemption (`// ast-grep-ignore: kt-no-silent-result-collapse`
 # with the reason on the same comment). Compiler half: -Xreturn-value-checker flags bare discards;
-# Result.discard(why) is the sanctioned full-drop. Scope is provider-* + :upstream for now —
+# Result.discard(why) is the sanctioned full-drop. Scope is provider-* + :integrations-upstream for now —
 # widening to app/core/control tracked in .dev/research/gateway-gaps-tracker.md.
 #
 # WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :daemon-control and :app sat outside most walls'
@@ -76,7 +76,7 @@ files:
   - core/src/main/kotlin/splice/core/terminal/CliStyle.kt
   - features/usage/src/main/**/*.kt
   - integrations/http/src/main/**/*.kt
-  - upstream/src/main/**/*.kt
+  - integrations/upstream/src/main/**/*.kt
   - integrations/providers/grok/src/main/**/*.kt
   - integrations/providers/kimi/src/main/**/*.kt
   - integrations/providers/codex/src/main/**/*.kt

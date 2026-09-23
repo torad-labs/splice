@@ -7,7 +7,7 @@ gateway:
       - any-glob-to-any-file:
           - 'integrations/claude-code/**'
           - 'core/**'
-          - 'upstream/**'
+          - 'integrations/upstream/**'
           - 'integrations/dialects/**'
           - 'integrations/providers/**'
           - 'integrations/mcp/**'

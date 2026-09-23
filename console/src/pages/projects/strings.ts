@@ -20,6 +20,12 @@ export const S = {
   cost: 'cost',
   last: 'last seen',
   day: 'today',
+  /** The opened project's own row (GET /api/projects/{id}). */
+  activity: 'activity',
+  liveSessions: 'live sessions',
+  turnsToday: 'turns today',
+  costToday: 'cost today',
+  dayStart: 'day start',
   /** The holder edge's state: something is running in this repo right now, or nothing is. The
    *  edge used to print the noun `repo`, which is the first field's own label and no state at
    *  all (m1 design review B10). */

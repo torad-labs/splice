@@ -1,14 +1,17 @@
-// The performance entity's HTTP segment: the three perf routes, no rendering. The client helper
+// The performance entity's HTTP segment: the three perf routes and a head's capture switch, no
+// rendering. The client helper
 // carries the management key, the 401 lockout and the error envelope (CONTRACTS.md 8), so nothing
 // here re-implements any of them.
 import { pendingOf as routePendingOf, request } from '@shared/api';
 import type { HeadsPayload } from '@shared/api';
 import { poll } from '@shared/lib';
+import { afterRead, afterWrite } from '../model/capture';
+import type { CaptureWriteResult } from '../model/capture';
 import { inflightFrom } from '../model/derive';
 import { mergeTurns } from '../model/turns-wire';
 import { captureStore, perfStore, perfSummaryStore, perfTurnsStore } from '../model/store';
 import type {
-  CaptureState,
+  CaptureWire,
   PerfPayload,
   PerfSummaryPayload,
   PerfTurnsWire,
@@ -17,9 +20,6 @@ import type {
 
 /** The v0.4.0 item that will serve GET /api/perf/turns. */
 export const PENDING_TURNS = 'V4-127';
-
-/** The v0.4.0 item that will serve GET/PUT /api/heads/{head}/capture. */
-export const PENDING_CAPTURE = 'V4-133';
 
 const DEFAULT_TAIL = 200;
 
@@ -105,23 +105,47 @@ export function startPerfTurnsPolling(head?: string, intervalMs = 5000): () => v
 }
 
 /**
- * One head's body capture: the toggle and, when it is on, the bodies of one turn (`at`, its `ts`).
- * Read when a turn is opened, never polled: capture is off by default and a timer would ask the
- * daemon the same question forever.
- *
- * PENDING V4-133, so the pending state is a real outcome rather than an error path.
+ * One head's capture settings, as the daemon runs them (GET /api/heads/{head}/capture). Read when a
+ * turn is opened or a page names a head, never polled: nothing changes them but a write and a
+ * restart. The route takes no turn: it serves settings, never a body (CaptureRoutes.read).
  */
-export async function fetchCapture(head: string, at?: number): Promise<void> {
+export async function fetchCapture(head: string): Promise<void> {
   captureStore.startLoading();
-  const query = at === undefined ? '' : `?at=${at}`;
   try {
-    captureStore.setData(await request<CaptureState>(`/api/heads/${encodeURIComponent(head)}/capture${query}`));
+    const read = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`);
+    captureStore.setData(afterRead(captureStore.get().data, read));
   } catch (err) {
-    const pending = routePendingOf(err, PENDING_CAPTURE);
-    if (pending !== null) {
-      captureStore.setData(pending);
-      return;
-    }
+    captureStore.setError(messageOf(err));
+  }
+}
+
+/**
+ * Turn one head's capture on or off: PUT, then GET again. The store takes the RE-READ as what runs
+ * and the PUT's answer as what was written, never the request, because the daemon applies a write
+ * only at its next restart (`restart_required`) and a refused write changes nothing: neither may
+ * read as capture on. A refusal is kept in the daemon's own words.
+ */
+export async function putCapture(head: string, enabled: boolean): Promise<void> {
+  const previous = captureStore.get().data;
+  const mine = previous !== null && previous.running.head === head ? previous : null;
+  if (mine !== null) captureStore.setData({ ...mine, writing: true });
+  let write: CaptureWriteResult;
+  try {
+    const answer = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+    write = { ok: true, answer };
+  } catch (err) {
+    write = { ok: false, reason: messageOf(err) };
+  }
+  try {
+    const reread = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`);
+    captureStore.setData(afterWrite(mine, write, reread));
+  } catch (err) {
+    // The write's outcome is still known when the re-read fails; what runs is the last read, and the
+    // failed read is reported beside it rather than hidden behind a stale switch.
+    if (mine !== null) captureStore.setData(afterWrite(mine, write, mine.running));
     captureStore.setError(messageOf(err));
   }
 }

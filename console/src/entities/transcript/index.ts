@@ -1,6 +1,6 @@
 import { transcriptStore } from './model/store';
 
-export { loadMoreTranscript, loadTranscript, PENDING_TRANSCRIPT } from './api';
+export { loadMoreTranscript, loadTranscript, PENDING_TRANSCRIPT, TRANSCRIPT_MISSING } from './api';
 export { advanceCursor, openCursor } from './model/cursor';
 export type { CursorAdvance } from './model/cursor';
 export type {

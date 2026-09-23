@@ -1,5 +1,5 @@
 // The activity feed: what each session of the team was doing, as a label the daemon asks its
-// client for about every 30 seconds (GET /api/teams/{id}/activity, PENDING V4-131).
+// client for about every 30 seconds (GET /api/teams/{id}/activity, served since V4-131).
 //
 // IT IS A SAMPLE AND SAYS SO. A row is what the client reported at that instant, not a log of
 // everything it did between samples, so the panel is labelled `30 s sample` and prints newest
@@ -21,7 +21,7 @@ export interface ActivityFeedPayload {
   clientMatching: boolean;
 }
 
-export type ActivityFeedState = ActivityFeedPayload | PendingRoute | null;
+export type ActivityFeedState = ActivityFeedPayload | PendingRoute | { error: string } | null;
 
 const secondsOf = (time: string): number => {
   const [h = '0', m = '0', s = '0'] = time.split(':');
@@ -36,10 +36,11 @@ export function feedOrder(activity: readonly TeamActivity[]): TeamActivity[] {
     .map(({ entry }) => entry);
 }
 
-/** The feed's empty, when it has one: the four answers the route can give that are not rows. */
+/** The feed's empty, when it has one: the five answers the route can give that are not rows. */
 export function feedEmpty(state: ActivityFeedState): { text: string; source: string } | null {
   if (state === null) return { text: 'reading activity', source: 'GET /api/teams/{id}/activity' };
   if ('pending' in state) return { text: 'no activity route', source: `${state.pending} pending` };
+  if ('error' in state) return { text: 'activity unreadable', source: state.error };
   if (state.activity.length > 0) return null;
   if (!state.clientMatching) return { text: 'client no longer matching', source: 'the 30 s sampler' };
   return { text: 'nothing sampled yet', source: 'the 30 s sampler' };
@@ -47,7 +48,7 @@ export function feedEmpty(state: ActivityFeedState): { text: string; source: str
 
 export function ActivityFeed({ state }: { state: ActivityFeedState }) {
   const empty = feedEmpty(state);
-  const rows = state !== null && !('pending' in state) ? feedOrder(state.activity) : [];
+  const rows = state !== null && 'activity' in state ? feedOrder(state.activity) : [];
   return (
     <section className="myx-feed" aria-label={S.activity}>
       <h3 className="myx-feed-title">
@@ -68,7 +69,7 @@ export function ActivityFeed({ state }: { state: ActivityFeedState }) {
       )}
       {/* A client that stopped matching while rows are on screen: the rows are still true, and
           the reason no new one will follow is printed under them. */}
-      {empty === null && state !== null && !('pending' in state) && !state.clientMatching
+      {empty === null && state !== null && 'activity' in state && !state.clientMatching
         ? <Empty text="client no longer matching" source="the 30 s sampler" />
         : null}
     </section>

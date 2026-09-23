@@ -19,7 +19,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.DaemonBoundary
-import splice.app.auth.StoredCredential
+import splice.app.auth.StoredModelCredentials
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
@@ -29,9 +29,10 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.models.discovery.Discovery
+import splice.models.discovery.KeptRoster
 import splice.models.discovery.ModelDiscovery
 import splice.models.discovery.RosterCache
-import splice.models.list.ModelCredentialSource
+import splice.models.list.UpstreamRosterUrl
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
@@ -51,7 +52,7 @@ internal fun interface HeadModelsSource {
 /** Production [HeadModelsSource]: the models feature's discovery, presenting the credential a head's
  *  turns present (StoredCredential.bearer — the same one `splice models` uses). */
 internal class EndpointModels(private val env: EnvReader = EnvReader(System::getenv)) : HeadModelsSource {
-    private val discovery = ModelDiscovery(ModelCredentialSource(StoredCredential()::bearer))
+    private val discovery = ModelDiscovery(StoredModelCredentials())
 
     override fun discover(key: String, provider: ProviderConfig): Discovery = discovery.discover(key, provider, env)
 }
@@ -87,22 +88,24 @@ internal class ModelRosters(
     private suspend fun modelsFor(key: String, provider: ProviderConfig): List<DiscoveredModel> {
         val answer = withTimeoutOrNull(deadline) {
             runInterruptible(ProcessDispatchers().io()) { ask(key, provider) }
-        } ?: Discovery.Unavailable(null, "no answer within $deadline")
+        } ?: Discovery.Unavailable(UpstreamRosterUrl.of(provider), "no answer within $deadline")
         return when (answer) {
             is Discovery.Found -> answer.models.also {
                 keep(key, answer)
                 log("[$key] models: ${listed(answer, provider)}\n")
             }
-            is Discovery.Unavailable -> fallback(key, provider, answer.reason)
+            is Discovery.Unavailable -> fallback(key, provider, answer)
         }
     }
 
-    /** What the endpoint listed, and how many of those the provider's discovery filter keeps out, so the
-     *  line never reads as more models than can join the picker. */
+    /** What the endpoint listed, and how many of those stay out of the picker and why, so the line
+     *  never reads as more models than can join it. A model a declared row covers is in the picker
+     *  whatever the filter says, so only the undeclared ones count as kept out. */
     private fun listed(found: Discovery.Found, provider: ProviderConfig): String {
-        val keptOut = found.models.count { !provider.discovery.admits(it.id) }
+        val keptOut = provider.undeclared(found.models).count { !provider.discovery.admits(it.id) }
+        val unusable = if (found.ruledOut == 0) "" else ", ${found.ruledOut} it marks unusable for a turn"
         val filtered = if (keptOut == 0) "" else ", $keptOut kept out by its discovery filter"
-        return "${found.models.size} listed at ${found.url}$filtered"
+        return "${found.models.size + found.ruledOut} listed at ${found.url}$unusable$filtered"
     }
 
     /** A failure reading the credential or the answer is this head's no-answer, never the daemon's
@@ -111,12 +114,20 @@ internal class ModelRosters(
         boundary.runCatchingDaemonBoundary { source.discover(key, provider) }
             .getOrElse { Discovery.Unavailable(null, "could not ask (${SafeFailureText.render(it)})") }
 
-    /** The list [provider] published last, or nothing — said once, either way. */
-    private fun fallback(key: String, provider: ProviderConfig, reason: String): List<DiscoveredModel> {
+    /** The list [provider] published last, or nothing — said once, either way, with where it was asked
+     *  when the reason does not already say, and why no kept list stood in when none did. */
+    private fun fallback(key: String, provider: ProviderConfig, missed: Discovery.Unavailable): List<DiscoveredModel> {
+        val at = missed.url?.takeUnless { it in missed.reason }?.let { " (asked at $it)" }.orEmpty()
         val kept = cache.read(key, provider)
-        val then = if (kept == null) "the picker is splice.toml's rows" else "using the ${kept.size} it published last"
-        log("[$key] models: $reason; $then\n")
-        return kept.orEmpty()
+        log("[$key] models: ${missed.reason}$at; ${instead(kept)}\n")
+        return (kept as? KeptRoster.Kept)?.models.orEmpty()
+    }
+
+    private fun instead(kept: KeptRoster): String = when (kept) {
+        is KeptRoster.Kept -> "using the ${kept.models.size} it published last"
+        KeptRoster.None -> "no list was kept, so the picker is splice.toml's rows"
+        is KeptRoster.OtherUrl -> "the list kept was published at ${kept.url}, so the picker is splice.toml's rows"
+        is KeptRoster.Unreadable -> "${kept.reason}, so the picker is splice.toml's rows"
     }
 
     private fun keep(key: String, found: Discovery.Found) {

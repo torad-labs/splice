@@ -8,6 +8,7 @@
 // before and green after). It fails on `srv.ports.topology` being null.
 package splice.app
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -17,7 +18,6 @@ import splice.app.daemon.BootedTopology
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -42,13 +42,15 @@ class TopologyWiringTest {
             BootedTopology(path = file),
         )
         val srv = checkNotNull(
-            plane.start(
-                controlPort = ServerSocket(0).use { it.localPort },
-                heads = emptyMap(),
-                failedHeads = { 0 },
-                headCount = 0,
-                turnPathStalled = TurnPathStalled { emptyList() },
-            ),
+            runBlocking {
+                plane.start(
+                    controlPort = 0, // OS-assigned at bind: no leased port to lose before the bind
+                    heads = emptyMap(),
+                    failedHeads = { 0 },
+                    headCount = 0,
+                    turnPathStalled = TurnPathStalled { emptyList() },
+                )
+            },
         ) { "the control plane did not bind" }
         try {
             val writer = checkNotNull(srv.ports.topology) { "ConsoleWiring must assign srv.ports.topology" }

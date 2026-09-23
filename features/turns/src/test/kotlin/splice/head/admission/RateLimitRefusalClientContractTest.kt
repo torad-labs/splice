@@ -43,7 +43,6 @@ import splice.head.usage.QuotaTracker
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.net.ServerSocket
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -59,7 +58,10 @@ private class RefusalRig(tmp: Path) {
     val mock = MockChatGptUpstream()
     val upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1)
     val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
-    val port = ServerSocket(0).use { it.localPort } // ephemeral: a fixed port BindExceptions on TIME_WAIT
+
+    // The head binds port 0 and reports what it got: a fixed port BindExceptions on TIME_WAIT, and a
+    // port leased then released can be taken by anything before the head binds it.
+    val port: Int get() = head.port
     val head = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
@@ -81,7 +83,7 @@ private class RefusalRig(tmp: Path) {
             configEffort = "high",
             configSummary = "detailed",
         ),
-        listenPort = port,
+        listenPort = 0,
         deps = headDeps(
             tmp = tmp,
             upstream = upstream,

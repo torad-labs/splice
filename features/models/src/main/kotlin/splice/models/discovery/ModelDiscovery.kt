@@ -28,8 +28,9 @@ import splice.models.list.UpstreamRoster
 
 /** What asking one head's provider for its models yielded. */
 public sealed class Discovery {
-    /** The endpoint at [url] answered; [models] are those it does not itself rule out. May be empty. */
-    public data class Found(val url: String, val models: List<DiscoveredModel>) : Discovery()
+    /** The endpoint at [url] answered; [models] are those it does not itself rule out. May be empty.
+     *  [ruledOut] counts the rest: rows the endpoint says cannot run a turn (hidden, no text, no tools). */
+    public data class Found(val url: String, val models: List<DiscoveredModel>, val ruledOut: Int = 0) : Discovery()
 
     /** No list this time: [reason], in the operator's terms. [url] is where it was asked, or null
      *  when it was not asked at all. */
@@ -48,7 +49,9 @@ public class ModelDiscovery(credentials: ModelCredentialSource) {
 
     /** What one probe's answer means for a catalog — the whole decision, apart from the socket. */
     internal fun answer(probed: ProbedProvider): Discovery = when (val roster = probed.roster) {
-        is UpstreamRoster.Published -> Discovery.Found(probed.url, roster.models.mapNotNull(::usable))
+        is UpstreamRoster.Published -> roster.models.mapNotNull(::usable).let { usable ->
+            Discovery.Found(probed.url, usable, ruledOut = roster.models.size - usable.size)
+        }
         is UpstreamRoster.Unpublished -> Discovery.Unavailable(probed.url, roster.reason)
         is UpstreamRoster.Unreadable -> Discovery.Unavailable(probed.url, roster.detail)
     }

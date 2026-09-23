@@ -223,7 +223,7 @@ private class Rig {
     val events = RecordingEvents()
     private val tmp: Path = Files.createTempDirectory("v4134-head-events")
     private val mock = MockChatGptUpstream()
-    private val port = freshPort()
+    private val port: Int get() = head.port
     private val perfFile = tmp.resolve("perf.jsonl")
     private val primaryQuota = QuotaTracker(tmp.resolve("primary-quota.json"))
     private val backupQuota = QuotaTracker(tmp.resolve("backup-quota.json"))
@@ -237,7 +237,7 @@ private class Rig {
     )
     val head = HeadServer(
         provider = provider(),
-        listenPort = port,
+        listenPort = 0,
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 5_000L, totalTimeoutMs = 30_000L, maxRetries = 2),

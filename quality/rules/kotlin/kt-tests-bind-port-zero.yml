@@ -1,0 +1,90 @@
+# THE LAW. A test that starts a server binds port 0 and reads back the port the kernel gave it
+# (`HeadServer.port`, `ControlServer.listeningPort`, `ControlPlane.listeningPort`). It never LEASES a
+# port — open a socket on 0, read its number, close it, hand the number to a server that binds it
+# later — because between the close and the bind anything on the machine may take that number, and
+# the test fails in @BeforeAll with a BindException that names a port, not a cause.
+#
+# THE SCAR (2026-09-23). CI run 35881955038 (job 107252372494, PR #177) failed HeadServerLoadTest in
+# @BeforeAll: `java.net.BindException: Address already in use`. The head's port was leased with
+# `ServerSocket(0).use { it.localPort }`, and the test's own mock upstream binds `ServerSocket(0)`
+# inside the window. TestNet.freshPort() documented the lease as "fine for tests"; one red in the
+# last 60 runs is the measurement that it is not. HeadEngine and ControlServer now read the bound
+# port from Ktor's resolvedConnectors(), and ~60 sites moved to port 0 in the same change. This wall
+# is what keeps the next test from re-leasing: the generator of new tests copies the nearest idiom,
+# and until this rule the nearest idiom was the lease.
+#
+# THE MATCHER, and what it deliberately does NOT match.
+#   - `ServerSocket(0).use { it.localPort }` and its named-parameter and fully-qualified spellings:
+#     the lambda's whole body is the port read, so the socket is closed before the number is used.
+#   - `ServerSocket(0).let { … it.localPort … it.close() … }`: the same lease, spelled by hand.
+#   - `freshPort()`: TestNet's lease, the spelling a new test reaches for first.
+#   NOT matched: a socket held OPEN while its port is used — `ServerSocket(0).use { l -> f(l.localPort) }`
+#   or `val s = ServerSocket(0)` — is a listener, not a lease, and is how a test builds a peer that
+#   accepts and never answers. The rule-test pins both sides.
+#
+# THE CENSUS (derived with this rule, 2026-09-23: 35 sites in 15 files, 0 in src/main). Each file is
+# exempt by a glob below, grouped by the reason the tree gives; deleting a glob re-arms the wall for
+# that file.
+#   The lease's one definition — TestNet.kt (freshPort), kept for the daemon boots below.
+#   Full-daemon boots — their ports go into a topology the daemon renders into launch specs, the
+#     statusline command and the MCP endpoint BEFORE it binds, and a head on port 0 is rejected by
+#     design (Topology.invalidPortHeads, CTL-005). They keep the lease until the daemon binds first
+#     and advertises after.
+#   A port nobody may listen on — a connection-refused probe (doctor's "not listening" WARN, the
+#     upgrade in-flight NoDaemon read, the turn-path probe's dead port, ensureDaemon's refused
+#     connect). No server binds the number, so there is no bind to race; the file is exempt, not
+#     the idiom.
+#   OAuthLoginObserverTest — the login flow renders redirect_uri from its port before binding the
+#     redirect listener, the same shape as the daemon boots, so the lease stays until that flow
+#     binds first.
+id: kt-tests-bind-port-zero
+language: kotlin
+severity: error
+message: "A test server binds port 0 and reads back the port it bound (HeadServer.port, ControlServer.listeningPort) — never a port leased with ServerSocket(0)/freshPort() and bound later."
+note: >
+  A leased port is closed before the server binds it, and anything on the machine may take it in
+  between (CI run 35881955038: HeadServerLoadTest's BindException in @BeforeAll). Pass port 0 to the
+  server, start it, then read its bound port. A port that must stay UNBOUND for a connection-refused
+  probe is the one legitimate lease; such a file carries a glob in this rule's `ignores:` and a
+  reason in its header census.
+files:
+  - "**/src/test/**/*.kt"
+  - "**/src/testFixtures/**/*.kt"
+# The dated census — see THE CENSUS in this header for the reason behind every group.
+ignores:
+  # the lease's one definition
+  - features/turns/src/testFixtures/kotlin/splice/head/TestNet.kt
+  # full-daemon boots: ports rendered into the topology before the daemon binds (CTL-005)
+  - app/src/test/kotlin/splice/app/AuthDialectCompatibilityBootTest.kt
+  - app/src/test/kotlin/splice/app/ClaudeHeadLiveProbeTest.kt
+  - app/src/test/kotlin/splice/app/DaemonTest.kt
+  - app/src/test/kotlin/splice/app/LiveWindowsDaemonTest.kt
+  - app/src/test/kotlin/splice/app/MultiProviderDaemonTest.kt
+  - app/src/test/kotlin/splice/app/e2e/ClaudeHeadDaemonE2ETest.kt
+  # a port nobody may listen on: a connection-refused probe, with no bind to race
+  - features/lifecycle/src/test/kotlin/splice/lifecycle/start/SupervisedStartTest.kt
+  - features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorCommandTest.kt
+  - features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorHeadChecksTest.kt
+  - features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorHeadKeyTest.kt
+  - features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorRuntimeSectionTest.kt
+  - features/lifecycle/src/test/kotlin/splice/lifecycle/upgrade/UpgradeInflightTest.kt
+  - app/src/test/kotlin/splice/app/probe/TurnPathProbeLoopTest.kt
+  # the login flow renders redirect_uri from the port before it binds the redirect listener
+  - integrations/oauth/src/test/kotlin/splice/oauth/OAuthLoginObserverTest.kt
+rule:
+  any:
+    # the lease: the lambda's whole body is the port read, so the socket closes before the number
+    # is used. A lambda that USES the port while the socket is open is a listener and is not matched.
+    - pattern: ServerSocket(0).use { it.localPort }
+    - pattern: ServerSocket(0).use { $S -> $S.localPort }
+    - pattern: java.net.ServerSocket(0).use { it.localPort }
+    - pattern: java.net.ServerSocket(0).use { $S -> $S.localPort }
+    # TestNet's lease, the spelling a new test copies first
+    - pattern: freshPort()
+    # the same lease by hand: read the port, close the socket, return the number
+    - all:
+        - any:
+            - pattern: ServerSocket(0).let { $$$B }
+            - pattern: java.net.ServerSocket(0).let { $$$B }
+        - has: {stopBy: end, pattern: it.localPort}
+        - has: {stopBy: end, pattern: it.close()}

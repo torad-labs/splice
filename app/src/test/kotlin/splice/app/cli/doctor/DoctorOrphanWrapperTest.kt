@@ -13,6 +13,7 @@ import splice.app.daemon.TopologyLoader
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class DoctorOrphanWrapperTest {
 
@@ -50,6 +51,20 @@ class DoctorOrphanWrapperTest {
     fun `splice itself is never an orphan, and the key stands in for an absent command`(@TempDir tmp: Path) {
         install(tmp, "openrouter", "splice")
         assertEquals(emptyList<DoctorCheck>(), orphans(tmp, parsed(command = null)))
+    }
+
+    @Test
+    fun `a bin dir that cannot be listed says the scan did not run, never none`(@TempDir tmp: Path) {
+        val bin = install(tmp, "claudeor", "splice")
+        val rows = try {
+            Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("--x------"))
+            DoctorInstallProbes(DoctorProbes()).installationChecks(parsed(command = "claude-openrouter"), env(tmp))
+        } finally {
+            Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwx------"))
+        }
+        val row = rows.single { it.detail.contains("could not be listed") }
+        assertEquals(CheckStatus.WARN, row.status)
+        assertTrue(row.detail.contains("were not checked"), row.detail)
     }
 
     private fun env(tmp: Path) = EnvReader { name ->

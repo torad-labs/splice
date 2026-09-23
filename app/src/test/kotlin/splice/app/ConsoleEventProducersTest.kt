@@ -45,7 +45,6 @@ import splice.core.config.StatePaths
 import splice.core.util.WallClock
 import splice.events.bus.ConsoleEvent
 import splice.head.HeadLifecycle
-import java.net.ServerSocket
 import java.nio.file.Files
 
 private const val TIMEOUT_MS = 10_000L
@@ -60,7 +59,8 @@ private data class Frame(val id: Long, val event: String, val data: JsonObject)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ConsoleEventProducersTest {
 
-    private val port = ServerSocket(0).use { it.localPort }
+    // The server binds port 0 and reports what it got: no leased port can be taken before the bind.
+    private val port: Int get() = control.listeningPort
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val publisher = ConsoleEventPublisher(clock = WallClock { EDGE_AT })
     private lateinit var control: ControlServer
@@ -72,7 +72,7 @@ class ConsoleEventProducersTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -80,7 +80,7 @@ class ConsoleEventProducersTest {
             log = { },
         )
         control.ports.events = publisher.bus
-        control.start()
+        runBlocking { control.start() }
     }
 
     @AfterAll

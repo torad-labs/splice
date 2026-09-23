@@ -42,7 +42,6 @@ import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -106,10 +105,16 @@ class HeadTraceTest {
         defaultContextWindow = 200_000,
     )
 
-    private fun traceDir(port: Int): Path = tmp.resolve("trace-$port")
+    /** Each head's trace directory, by the port it bound: the directory is chosen before the head
+     *  starts, and the port (0, so the OS assigns one with no lease-then-bind window) is known only
+     *  after. */
+    private val traceDirs = mutableMapOf<Int, Path>()
+
+    private fun traceDir(port: Int): Path = traceDirs.getValue(port)
 
     private fun startHead(traced: Boolean): Int {
-        val port = ServerSocket(0).use { it.localPort }
+        val id = heads.size
+        val dir = tmp.resolve("trace-$id")
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
                 key = "anthropic",
@@ -123,13 +128,13 @@ class HeadTraceTest {
             quirks = PassthroughQuirks(providerTag = "claude-splice"),
         )
         val trace = if (traced) {
-            TraceStore(ActivityDays(traceDir(port), "anthropic", 7, ownerOnly = true), "anthropic", 1 shl 20)
+            TraceStore(ActivityDays(dir, "anthropic", 7, ownerOnly = true), "anthropic", 1 shl 20)
         } else {
             null
         }
         val head = HeadServer(
             provider = provider,
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
@@ -137,12 +142,13 @@ class HeadTraceTest {
                 log = {},
             ).copy(
                 inferenceToken = MGMT_KEY,
-                stores = headStores(tmp, suffix = "-$port", trace = trace),
+                stores = headStores(tmp, suffix = "-$id", trace = trace),
             ),
         )
         runBlocking { head.start() }
         heads += head
-        return port
+        traceDirs[head.port] = dir
+        return head.port
     }
 
     @BeforeAll

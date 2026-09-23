@@ -125,12 +125,10 @@ export function selectedExcluded(pool: readonly AccountRow[], nowMs: number): bo
   return pool.some((account) => account.selected === true && isExcluded(account, nowMs));
 }
 
-/** Why the daemon takes its next target: the selector's rules, with the pin the selector walks first. */
-export type PoolRule = 'pinned' | SelectorRule;
-
 export interface PoolNext {
   label: string;
-  rule: PoolRule;
+  /** Why the daemon takes it: the selector rule that chose it, pin included. */
+  rule: SelectorRule;
 }
 
 /**

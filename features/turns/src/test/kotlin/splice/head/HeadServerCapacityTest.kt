@@ -43,7 +43,6 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -63,9 +62,10 @@ class HeadServerCapacityTest {
         defaultRequest { bearerAuth("test-inference-token") }
     }
 
-    // Ephemeral port (HeadServerLoadTest convention): a hardcoded port BindExceptions when a
-    // prior run's socket is still in TIME_WAIT.
-    private val port = ServerSocket(0).use { it.localPort }
+    // The head binds port 0 and this reads back what it got (HeadServerLoadTest convention): a fixed
+    // port BindExceptions on TIME_WAIT, and a port leased then released can be taken before the bind.
+    // A getter, so restart() — which rebinds a fresh OS-assigned port — is followed automatically.
+    private val port: Int get() = head.port
     private lateinit var head: HeadServer
 
     // maxRetries = 1: V4-61 makes a 429 with budget left wait the 15s floor in REAL time before
@@ -105,7 +105,7 @@ class HeadServerCapacityTest {
         tmp = Files.createTempDirectory("head-cap")
         head = HeadServer(
             provider = capacityProvider(),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = upstreamClient,
@@ -338,9 +338,9 @@ class HeadServerCapacityTest {
     @Test
     fun `an exhausted pool refuses with a Retry-After bounded by the cooldown clamp`() = runBlocking {
         val cooldown = RateLimitCooldown(ProcessElapsedNow())
-        val pooledPort = freshPort()
-        val pooled = pooledHead(pooledPort, cooldown)
+        val pooled = pooledHead(cooldown)
         pooled.start()
+        val pooledPort = pooled.port
         try {
             awaitListening(pooledPort)
             // BLOCKED AFTER start(), NEVER BEFORE — HeadServer.start() resets the pool (NF-01's
@@ -416,7 +416,7 @@ class HeadServerCapacityTest {
     }
 
     /** The V4-77 head: one OAuth account, on [cooldown], which the caller blocks after start(). */
-    private fun pooledHead(pooledPort: Int, cooldown: RateLimitCooldown): HeadServer {
+    private fun pooledHead(cooldown: RateLimitCooldown): HeadServer {
         val account = PoolAccount(
             label = "only",
             primary = true,
@@ -426,7 +426,7 @@ class HeadServerCapacityTest {
         )
         return HeadServer(
             provider = capacityProvider(),
-            listenPort = pooledPort,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),

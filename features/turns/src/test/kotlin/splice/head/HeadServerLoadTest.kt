@@ -168,10 +168,11 @@ class HeadServerLoadTest {
     private val n = System.getenv("SPLICE_LOAD_N")?.toIntOrNull() ?: 1000
 
     // Ephemeral port, not a fixed one: a hardcoded port BindExceptions when a prior run's socket is
-    // still in TIME_WAIT or a leftover head process holds it — the exact re-run flake this hardens.
-    // ServerSocket(0) leases a free port and frees it immediately (a listener with no live conns
-    // never enters TIME_WAIT), so Netty rebinds it cleanly — the pattern the mock upstream uses.
-    private val port = ServerSocket(0).use { it.localPort }
+    // still in TIME_WAIT or a leftover head process holds it. And the head binds port 0 ITSELF, then
+    // reports what it got: the old lease (ServerSocket(0), close, hand the number to the head to
+    // bind in @BeforeAll) left a window in which anything else could take the port — this file's own
+    // mock upstream binds ServerSocket(0) inside it — and CI run 35881955038 failed that bind.
+    private val port: Int get() = head.port
     private lateinit var mock: HoldingSseUpstream
     private lateinit var head: HeadServer
     private val gate = InflightGate({ 0 })
@@ -216,7 +217,7 @@ class HeadServerLoadTest {
                 configEffort = "high",
                 configSummary = "detailed",
             ),
-            listenPort = port,
+            listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 120_000, totalTimeoutMs = 200_000, maxRetries = 2),

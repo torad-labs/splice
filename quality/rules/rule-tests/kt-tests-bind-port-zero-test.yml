@@ -1,0 +1,40 @@
+id: kt-tests-bind-port-zero
+valid:
+  # the remedy: the server binds 0 and the test reads back what it bound
+  - |
+    val head = HeadServer(provider = p, listenPort = 0, deps = d)
+    head.start()
+    val port = head.port
+  - |
+    val control = ControlServer(port = 0, heads = heads)
+    control.start()
+    awaitListening(control.listeningPort)
+  # a socket held OPEN while its port is used is a listener, not a lease
+  - |
+    ServerSocket(0).use { listener ->
+        val read = JdkUpgradeInflight(env, port = listener.localPort)()
+    }
+  - |
+    val server = ServerSocket(0)
+    val port = server.localPort
+  # a let that keeps the socket open is not the hand-written lease
+  - 'val s = ServerSocket(0).let { it.soTimeout = 5; it }'
+  # declaring the fixture is not calling it
+  - 'fun freshPort(): Int = 1'
+invalid:
+  # the census spelling (CI run 35881955038)
+  - 'val port = ServerSocket(0).use { it.localPort }'
+  # a named parameter and the fully qualified class do not change the shape
+  - 'val port = ServerSocket(0).use { s -> s.localPort }'
+  - 'val port = java.net.ServerSocket(0).use { it.localPort }'
+  - 'val port = java.net.ServerSocket(0).use { socket -> socket.localPort }'
+  # TestNet's lease
+  - 'private val headPort = freshPort()'
+  - 'HeadServer(provider = p, listenPort = freshPort(), deps = d)'
+  # the same lease written by hand
+  - |
+    val dead = ServerSocket(0).let {
+        val p = it.localPort
+        it.close()
+        p
+    }

@@ -31,7 +31,8 @@ rules = [
   "kt-cancellation-handler-total", "kt-catch-swallows-cancellation", "kt-control-route-guarded",
   "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
   "kt-flow-over-suspend", "kt-force-strict-false-is-literal", "kt-form-encoding-single-source",
-  "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-http-status-single-source",
+  "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-head-sse-drains-on-exit",
+  "kt-http-status-single-source",
   "kt-json-scalars-single-source", "kt-jsonl-sink-single-source", "kt-l3-end-turn-literal",
   "kt-l3-sole-wire-terminals", "kt-log-escapes-caller-input", "kt-no-atomic-in-data-class",
   "kt-no-blocking-io-under-monitor", "kt-no-companion-objects", "kt-no-coroutine-scope-factory",
@@ -42,7 +43,8 @@ rules = [
   "kt-no-runcatching-in-coroutine", "kt-no-sealed-interface", "kt-no-secondary-constructor",
   "kt-no-silent-result-collapse", "kt-no-stream-options-request", "kt-no-system-getenv",
   "kt-no-todo-throws", "kt-no-top-level-functions", "kt-no-unsafe-bang-bang", "kt-no-unsafe-cast",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-quota-tracker-single-resolution",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-perf-history-archived",
+  "kt-quota-tracker-single-resolution",
   "kt-secure-file-single-source", "kt-shared-summary-parts-single-source",
   "kt-state-paths-single-source", "kt-tool-partition-no-transcript",
   "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone", "kt-ws-frame-without-epoch",
@@ -73,6 +75,15 @@ date = "2026-09-20"
 reason = """
 A test-determinism law: a test may not wait on the wall clock. Production waiting is governed by
 kt-no-delay-in-production, which binds src/main.
+"""
+
+[[exclusion]]
+rule = "kt-tests-bind-port-zero"
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+A test-determinism law: a test server binds port 0 instead of a port leased and bound later.
+Production binds the port its topology configures, and had 0 lease sites when the rule was written.
 """
 
 # ─── module scope ────────────────────────────────────────────────────────────────────────────────
@@ -276,6 +287,27 @@ the app process entry, Claude Code launch setup, features-turns quota selection,
 cleanup, and features-turns wire sockets. :integrations-mcp owns none of those structures.
 """
 
+[[exclusion]]
+rule = "kt-head-sse-drains-on-exit"
+modules = [
+  "core", "integrations-upstream", "integrations-http", "integrations-claude-code", "integrations-mcp",
+  "integrations-topology", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok",
+  "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai",
+  "features-sessions", "features-models", "features-heads", "features-accounts", "features-usage",
+  "features-lifecycle", "features-diagnostics", "features-launch", "features-configuration", "features-events",
+  "app", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+A head-local law: the head is the one server whose streams end on a frame written after a throw (the
+cancellation seal's error frame, SealedDrive rethrowing after it), and every head stream is served from
+:features-turns. The control plane's two streams (EventsRoute in :features-events, McpRoutes in
+:integrations-mcp; both lived in daemon-control until LAYOUT-01) end only when their client or the daemon
+goes, with no terminal frame to lose; no other module answers an HTTP stream.
+"""
+
 # ─── file scope: the single declaration site each single-source wall exempts ──────────────────────
 
 [[exclusion]]
@@ -464,6 +496,43 @@ reason = """
 The rule's own dated census, reason by reason: a proof of absence has no event to await
 (LoginHookScriptSafetyTest, DaemonStopDeadlineTest); a readiness poll in blocking code has none
 either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double.
+"""
+
+[[exclusion]]
+rule = "kt-tests-bind-port-zero"
+files = [
+  "features/turns/src/testFixtures/kotlin/splice/head/TestNet.kt",
+  "app/src/test/kotlin/splice/app/AuthDialectCompatibilityBootTest.kt",
+  "app/src/test/kotlin/splice/app/ClaudeHeadLiveProbeTest.kt",
+  "app/src/test/kotlin/splice/app/DaemonTest.kt",
+  "app/src/test/kotlin/splice/app/LiveWindowsDaemonTest.kt",
+  "app/src/test/kotlin/splice/app/MultiProviderDaemonTest.kt",
+  "app/src/test/kotlin/splice/app/e2e/ClaudeHeadDaemonE2ETest.kt",
+  "app/src/test/kotlin/splice/app/cli/daemon/SupervisedStartTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorHeadChecksTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorHeadKeyTest.kt",
+  "app/src/test/kotlin/splice/app/cli/doctor/DoctorRuntimeSectionTest.kt",
+  "app/src/test/kotlin/splice/app/cli/upgrade/UpgradeInflightTest.kt",
+  "app/src/test/kotlin/splice/app/probe/TurnPathProbeLoopTest.kt",
+  "app/src/test/kotlin/splice/app/auth/OAuthLoginObserverTest.kt",
+]
+date = "2026-09-23"
+reason = """
+The rule's own dated census, reason by reason: TestNet is the lease's one definition; the six
+full-daemon boots render their ports into the topology before the daemon binds, and a head on port 0
+is rejected by design (CTL-005); seven files lease a port nobody may listen on for a
+connection-refused probe, so there is no bind to race; OAuthLoginObserverTest's login flow renders
+redirect_uri from the port before it binds the redirect listener.
+"""
+
+[[exclusion]]
+rule = "kt-head-sse-drains-on-exit"
+files = ["features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt"]
+date = "2026-09-23"
+reason = """
+SseResponse is the wrapper the wall routes every head stream through, so it is the one file that must
+name Ktor's WriterContent: it delegates to it and adds the clean close in a finally.
 """
 
 # ─── file scope: the console surface ─────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@
 // commit records red before and green after). It fails on `srv.ports.teams` being null.
 package splice.app
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -19,7 +20,6 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -73,13 +73,15 @@ class TeamWiringTest {
             { },
         )
         val srv = checkNotNull(
-            plane.start(
-                controlPort = ServerSocket(0).use { it.localPort },
-                heads = emptyMap(),
-                failedHeads = { 0 },
-                headCount = 0,
-                turnPathStalled = TurnPathStalled { emptyList() },
-            ),
+            runBlocking {
+                plane.start(
+                    controlPort = 0, // OS-assigned at bind: no leased port to lose before the bind
+                    heads = emptyMap(),
+                    failedHeads = { 0 },
+                    headCount = 0,
+                    turnPathStalled = TurnPathStalled { emptyList() },
+                )
+            },
         ) { "the control plane did not bind" }
         try {
             val store = checkNotNull(srv.ports.teams) { "ControlPlane must assign srv.ports.teams" }

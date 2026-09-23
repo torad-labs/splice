@@ -86,10 +86,10 @@ export function fieldsOf(row: TurnRow, order: readonly string[]): Field[] {
   const values: Record<string, { value: string; basis?: Basis }> = {
     time: at === null ? { value: S.absent } : { value: at, basis: 'measured' },
     head: { value: row.head, basis: 'measured' },
-    model: { value: row.model, basis: 'measured' },
+    model: row.model === null ? { value: S.absent } : { value: row.model, basis: 'measured' },
     outcome: { value: row.outcome, basis: 'measured' },
     session: row.session === undefined ? { value: S.absent } : { value: row.session, basis: 'measured' },
-    compact: { value: row.compact ? 'yes' : 'no', basis: 'measured' },
+    compact: row.compact === null ? { value: S.absent } : { value: row.compact ? 'yes' : 'no', basis: 'measured' },
     account: row.account === undefined ? { value: S.absent } : { value: row.account, basis: 'measured' },
     total: measured(row.total, fmtMs),
     firstByte: measured(row.first_byte, fmtMs),
@@ -160,7 +160,7 @@ export function TurnStrip({ row, selected, order, onOpen }: {
       edgeLabel={row.outcome === 'ok' ? 'landed' : 'failed'}
       selected={selected}
       onOpen={onOpen}
-      ariaLabel={`${S.title} ${row.head} ${row.model}`}
+      ariaLabel={`${S.title} ${row.head} ${row.model ?? S.absent}`}
     >
       {/* No label on a cell: the bay head prints the column names once for the whole rack
           (CONTRACTS.md section 2, m1 design review B9). */}

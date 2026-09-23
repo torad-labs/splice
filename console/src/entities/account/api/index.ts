@@ -5,7 +5,8 @@ import { pendingOf, request } from '@shared/api';
 import { poll } from '@shared/lib';
 import { accountsStore } from '../model/store';
 import { PENDING_ACCOUNTS } from '../model/types';
-import type { AccountsPayload } from '../model/types';
+import type { AccountsWire } from '../model/types';
+import { accountsFromWire } from '../model/wire';
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -14,7 +15,7 @@ function messageOf(err: unknown): string {
 export async function fetchAccounts(): Promise<void> {
   accountsStore.startLoading();
   try {
-    accountsStore.setData(await request<AccountsPayload>('/api/accounts'));
+    accountsStore.setData(accountsFromWire(await request<AccountsWire>('/api/accounts')));
   } catch (err) {
     const pending = pendingOf(err, PENDING_ACCOUNTS);
     if (pending !== null) {

@@ -84,7 +84,7 @@ function groupKeyOf(row: TurnRow, by: GroupBy): string {
     case 'head':
       return row.head;
     case 'model':
-      return row.model;
+      return row.model ?? UNATTRIBUTED;
     case 'outcome':
       return row.outcome;
     case 'session':

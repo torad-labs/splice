@@ -79,9 +79,11 @@ const ID_SOURCES: Record<string, IdSource> = {
   "entities/project|encodeURIComponent(id)": { route: "/api/projects", array: "projects", field: "id" },
 };
 /** Query suffixes the console builds at runtime, filled as the console fills them by default:
- *  fetchPerfTurns always sets n, and fetchCapture sends no query unless the operator scrubs. */
+ *  fetchPerfTurns asks ONE head per request (the route refuses an absent head, PerfRoutes.turns)
+ *  and always sets n, and fetchCapture sends no query unless the operator scrubs. A `{name}` token
+ *  is an ID_SOURCES key, filled with a live value exactly as a path placeholder is. */
 const QUERY_FILL: Record<string, string> = {
-  "entities/perf|query.toString()": "n=20",
+  "entities/perf|query.toString()": "head={head}&n=20",
   "entities/perf|query": "",
 };
 
@@ -686,24 +688,43 @@ async function fillPath(
     const entity = site.file.split("/").slice(0, 2).join("/");
     const query = QUERY_FILL[`${entity}|${part.text}`];
     if (query !== undefined) {
-      path += query;
+      let filled = query;
+      for (const token of query.match(/\{[^}]+\}/g) ?? []) {
+        const idSource = ID_SOURCES[token.slice(1, -1)];
+        if (idSource === undefined) return { unfilled: token };
+        const value = await liveId(idSource, lists, source, sites);
+        if (typeof value !== "string") return value;
+        filled = filled.replace(token, encodeURIComponent(value));
+      }
+      path += filled;
       continue;
     }
     const idSource = ID_SOURCES[`${entity}|${part.text}`] ?? ID_SOURCES[part.text];
     if (idSource === undefined) return { unfilled: part.text };
-    if (!lists.has(idSource.route)) {
-      const lister = sites.find((s) => s.templates?.[0]?.parts.length === 1 && s.templates[0].parts[0] === idSource.route);
-      const read = lister ? await source.read(lister, idSource.route) : { ok: false as const, why: "" };
-      lists.set(idSource.route, read.ok ? read.body : null);
-    }
-    const rows = (lists.get(idSource.route) as Record<string, unknown> | null)?.[idSource.array];
-    const value = Array.isArray(rows)
-      ? rows.map((r) => (isRecord(r) ? r[idSource.field] : null)).find((v) => typeof v === "string" && v !== "")
-      : undefined;
-    if (typeof value !== "string") return { empty: `${idSource.route} has no ${idSource.array}[].${idSource.field}` };
+    const value = await liveId(idSource, lists, source, sites);
+    if (typeof value !== "string") return value;
     path += encodeURIComponent(value);
   }
   return { path };
+}
+
+/** The first live value an ID source's list route reports, read once per run and cached in `lists`. */
+async function liveId(
+  idSource: IdSource,
+  lists: Map<string, unknown>,
+  source: Source,
+  sites: CallSite[],
+): Promise<string | { empty: string }> {
+  if (!lists.has(idSource.route)) {
+    const lister = sites.find((s) => s.templates?.[0]?.parts.length === 1 && s.templates[0].parts[0] === idSource.route);
+    const read = lister ? await source.read(lister, idSource.route) : { ok: false as const, why: "" };
+    lists.set(idSource.route, read.ok ? read.body : null);
+  }
+  const rows = (lists.get(idSource.route) as Record<string, unknown> | null)?.[idSource.array];
+  const value = Array.isArray(rows)
+    ? rows.map((r) => (isRecord(r) ? r[idSource.field] : null)).find((v) => typeof v === "string" && v !== "")
+    : undefined;
+  return typeof value === "string" ? value : { empty: `${idSource.route} has no ${idSource.array}[].${idSource.field}` };
 }
 
 async function run(checker: ts.TypeChecker, calls: CallSite[], fetches: FetchSite[], source: Source): Promise<Outcome> {

@@ -25,11 +25,16 @@ export type {
   PerfStats,
   PerfSummaryHead,
   PerfSummaryPayload,
-  PerfTurnsPayload,
+  PerfTurnsHeadWire,
+  PerfTurnsWire,
   PerfWindowLabel,
   TurnRow,
+  TurnRowWire,
   TurnsState,
+  UnreadHead,
 } from './model/types';
+export { mergeTurns } from './model/turns-wire';
+export type { MergedTurns } from './model/turns-wire';
 export { LIVE_KINDS } from './model/live';
 export const usePerf = perfStore.use;
 export const usePerfSummary = perfSummaryStore.use;

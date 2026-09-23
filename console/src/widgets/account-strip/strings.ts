@@ -11,4 +11,5 @@ export const S = {
   resets: 'resets',
   window: 'window',
   excluded: 'excluded',
+  singleLogin: 'single login',
 } as const;

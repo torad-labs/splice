@@ -1,9 +1,10 @@
 // Models: the catalog per head, as strips, with the tiers a head will and will not fill.
 //
 // The page exists for one question — what is this head actually going to run, and what does it cost
-// per million tokens — and it answers it from GET /api/models, which is pending V4-127. Until the
-// route lands the page prints the honest empty that names the row, never a catalog it assembled
-// from the topology on its own: the topology is boot-only and the console does not read the file.
+// per million tokens — and it answers it from GET /api/models (V4-127). The catalog is never
+// assembled from the topology: /api/models is the daemon's resolved answer. The topology supplies
+// only what that route does not report, the head's own windows in the opened model's detail
+// (GET /api/topology, V4-128), joined on the head key and the provider key the catalog names.
 //
 // The context-window SOURCE is printed on every strip because a window is the one number on this
 // page that Claude Code itself acts on, and "400k" means something different when it came from the
@@ -11,12 +12,13 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { startModelsPolling, useModels } from '@entities/model';
+import { startTopologyPolling, useTopology } from '@entities/topology';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
 import { useViews, ViewTabs } from '@features/views';
 import { Bay, Empty, HolderEdge } from '@shared/ui';
 import { Blank, Fault, Key } from '@shared/controls';
 import { HeadCatalogBay, ModelDetail } from './components';
-import { DEFAULT_VIEWS, EMPTIES, byProvider, findModel } from './model';
+import { DEFAULT_VIEWS, EMPTIES, byProvider, findModel, headWindows } from './model';
 import { S } from './strings';
 import './models.css';
 
@@ -35,8 +37,11 @@ export function fixtureModels(name: string | null): string | null {
   return import.meta.env.DEV && name === FIXTURE ? name : null;
 }
 
-export function ModelsBoard({ catalog, sample }: {
+export function ModelsBoard({ catalog, topology = null, sample }: {
   catalog: ModelsPayload | PendingRoute | null;
+  /** The parsed topology from GET /api/topology, for the opened model's head windows; null while
+   *  unread, and the detail prints the absence. */
+  topology?: Record<string, unknown> | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
 }) {
@@ -70,13 +75,13 @@ export function ModelsBoard({ catalog, sample }: {
               byProvider(heads).map((group) => (
                 <Bay key={group.provider} label={group.provider} count={group.heads.length}>
                   {group.heads.map((head) => (
-                    <HeadCatalogBay key={head.key} head={head} selected={open} onSelect={setOpen} />
+                    <HeadCatalogBay key={head.head} head={head} selected={open} onSelect={setOpen} />
                   ))}
                 </Bay>
               ))
             ) : (
               heads.map((head) => (
-                <HeadCatalogBay key={head.key} head={head} selected={open} onSelect={setOpen} />
+                <HeadCatalogBay key={head.head} head={head} selected={open} onSelect={setOpen} />
               ))
             )}
           </div>
@@ -96,7 +101,7 @@ export function ModelsBoard({ catalog, sample }: {
             {opened === null ? null : (
               <>
                 <Key className="myx-swell-close" onClick={() => setOpen(null)}>{S.close}</Key>
-                <ModelDetail model={opened.model} head={opened.head} />
+                <ModelDetail model={opened.model} windows={headWindows(topology, opened.head)} />
               </>
             )}
           </aside>
@@ -109,8 +114,10 @@ export function ModelsBoard({ catalog, sample }: {
 export default function ModelsPage() {
   const { search } = useLocation();
   const models = useModels((state) => state);
+  const topology = useTopology((state) => state.data);
   const [sample, setSample] = useState<{ name: string; payload: ModelsPayload } | null>(null);
   useEffect(() => startModelsPolling(POLL_MS), []);
+  useEffect(() => startTopologyPolling(POLL_MS), []);
 
   // The name must RESOLVE, not merely be present (law 23): a page that rendered fixture bytes for a
   // name it does not carry would set the capture marker to a fixture that does not exist.
@@ -141,7 +148,11 @@ export default function ModelsPage() {
   return (
     <>
       {models.error === null ? null : <Fault message={models.error} />}
-      <ModelsBoard catalog={catalog} sample={sample?.name} />
+      <ModelsBoard
+        catalog={catalog}
+        topology={sample === null && topology !== null && 'topology' in topology ? topology.topology : null}
+        sample={sample?.name}
+      />
     </>
   );
 }

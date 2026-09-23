@@ -32,7 +32,7 @@ export interface ProviderGroup {
 export function byProvider(heads: readonly HeadCatalog[]): ProviderGroup[] {
   const groups = new Map<string, HeadCatalog[]>();
   for (const head of heads) {
-    const key = head.provider === undefined || head.provider === '' ? PROVIDER_UNKNOWN : head.provider;
+    const key = head.provider === '' ? PROVIDER_UNKNOWN : head.provider;
     groups.set(key, [...(groups.get(key) ?? []), head]);
   }
   return [...groups.entries()]
@@ -51,4 +51,37 @@ export function findModel(
     if (model !== undefined) return { model, head };
   }
   return null;
+}
+
+/** A head's windows as its topology declares them (FEATURES 4.8 "Windows"): the forced head-wide
+ *  window, its provider's default, and how many extra windows and prefix rules that provider
+ *  carries. Read from GET /api/topology because GET /api/models reports each MODEL's window and its
+ *  source, never the head's own (ModelsRoute.row); a number the topology does not set is null, and
+ *  the page prints the absence rather than the daemon's internal zero. */
+export interface HeadWindows {
+  headWindow: number | null;
+  defaultWindow: number | null;
+  extraWindows: number;
+  windowRules: number;
+}
+
+function asTable(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** The head's windows, or null while the topology has not been read or does not name the head. */
+export function headWindows(topology: Record<string, unknown> | null, head: HeadCatalog): HeadWindows | null {
+  const headTable = asTable(asTable(topology?.heads)?.[head.head]);
+  const providerTable = asTable(asTable(topology?.providers)?.[head.provider]);
+  if (headTable === null || providerTable === null) return null;
+  const tokens = (value: unknown): number | null => (typeof value === 'number' && value > 0 ? value : null);
+  const count = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+  return {
+    headWindow: tokens(headTable.context_window),
+    defaultWindow: tokens(providerTable.default_context_window),
+    extraWindows: count(providerTable.extra_windows),
+    windowRules: count(providerTable.window_rules),
+  };
 }

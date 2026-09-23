@@ -99,7 +99,9 @@ export interface NextTarget {
  * reset, so it is a real answer and not an edge case to paper over.
  */
 export function nextTarget(accounts: readonly AccountRow[], stickyLabel?: string): NextTarget | null {
-  const usable = accounts.filter((account) => account.available);
+  // Only pooled accounts are candidates: a single-login head has no label and no pool verdict.
+  const usable = accounts.filter((account): account is AccountRow & { label: string } =>
+    account.available === true && account.label !== null);
   if (usable.length === 0) return null;
 
   const primary = usable.find((account) => account.primary);
@@ -110,7 +112,7 @@ export function nextTarget(accounts: readonly AccountRow[], stickyLabel?: string
     if (sticky !== undefined) return { label: sticky.label, rule: 'sticky' };
   }
 
-  let best: AccountRow | null = null;
+  let best: (AccountRow & { label: string }) | null = null;
   let bestUsed = Number.POSITIVE_INFINITY;
   for (const account of usable) {
     const used = sevenDayUsed(account);
@@ -135,7 +137,8 @@ export const EXCLUDED_REASON = 'excluded by the pool';
  * exclusion can lapse between polls without the flag having been recomputed.
  */
 export function isExcluded(account: AccountRow, nowMs: number): boolean {
-  if (!account.available) return true;
+  // Only the pool's own `false` excludes; a single-login head's null means no pool judged it.
+  if (account.available === false) return true;
   const until = account.auth_excluded_until_epoch_millis ?? null;
   return until !== null && until > nowMs;
 }

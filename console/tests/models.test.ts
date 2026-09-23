@@ -63,7 +63,7 @@ describe('the catalog rack is a grid, and its names are printed once', () => {
   test('the board renders every head as a bay, so a green below is not an empty denominator', () => {
     // Law 34: if the board drew nothing, every assertion here would pass vacuously and the suite
     // would report a rack with no repeated labels and no ragged rows. The denominator is named.
-    expect(bays.map((bay) => bay.label)).toEqual(fixtureCatalog.heads.map((head) => head.key));
+    expect(bays.map((bay) => bay.label)).toEqual(fixtureCatalog.heads.map((head) => head.head));
     expect(bays.every((bay) => bay.rows.length > 0)).toBe(true);
     expect(bays.length).toBeGreaterThan(0);
   });

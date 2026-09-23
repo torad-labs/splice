@@ -19,6 +19,7 @@ import { pendingOf } from '../src/shared/api';
 import {
   NOT_REPORTED,
   SELECTOR_ORDER_TEXT,
+  accountsFromWire,
   accountsStore,
   fetchAccounts,
   nearestOverall,
@@ -28,7 +29,7 @@ import {
   windowLengthText,
   windowUsedText,
 } from '../src/entities/account';
-import type { AccountRow, AccountWindow } from '../src/entities/account';
+import type { AccountRow, AccountWindow, AccountWire } from '../src/entities/account';
 import { dispositionText, knobDispositions, provenanceOf } from '../src/entities/config';
 import { validateTopology } from '../src/entities/topology';
 
@@ -40,9 +41,13 @@ function account(over: Partial<AccountRow> = {}): AccountRow {
   return {
     kind: 'chatgpt-oauth',
     label: 'acct-a',
+    single_login: false,
+    credential_path: null,
     primary: false,
     selected: false,
     available: true,
+    pinned: false,
+    next_target: false,
     credential_present: true,
     windows: [],
     heads: ['claudex'],
@@ -103,6 +108,80 @@ describe('window labels come from the reported length', () => {
     expect(windowLengthText(DAY_30)).not.toContain('w');
   });
 });
+
+// The two row shapes GET /api/accounts sends (AccountsRoute.write), as a live daemon sent them on
+// 2026-09-22: a pooled account whose provider reported both windows, and a single-login head whose
+// label, flags and windows are all null. The page crashed on the second (`e.windows is not
+// iterable`) for as long as the console typed the wire it wished for.
+function wireRow(over: Partial<AccountWire> = {}): AccountWire {
+  return {
+    credential_path: '/home/op/.codex/auth.json',
+    kind: 'chatgpt-oauth',
+    label: 'work',
+    primary: false,
+    single_login: false,
+    plan: 'plus',
+    five_hour_used_percent: 42,
+    five_hour_reset_epoch_seconds: 1_800_003_600,
+    five_hour_window_seconds: HOUR_5,
+    seven_day_used_percent: 7,
+    seven_day_reset_epoch_seconds: 1_800_086_400,
+    seven_day_window_seconds: DAY_7,
+    available: true,
+    credential_present: true,
+    auth_excluded_until_epoch_millis: null,
+    auth_exclusion_reason: null,
+    selected: false,
+    pinned: false,
+    next_target: true,
+    heads: ['e2e-codex'],
+    ...over,
+  };
+}
+
+const SINGLE_LOGIN = wireRow({
+  label: null,
+  primary: true,
+  single_login: true,
+  plan: null,
+  five_hour_used_percent: null,
+  five_hour_reset_epoch_seconds: null,
+  five_hour_window_seconds: null,
+  seven_day_used_percent: null,
+  seven_day_reset_epoch_seconds: null,
+  seven_day_window_seconds: null,
+  available: null,
+  selected: null,
+  pinned: null,
+  next_target: null,
+});
+
+describe('the accounts wire becomes the page model', () => {
+  test('each reported slot becomes a window at the length the provider reported', () => {
+    const [row] = accountsFromWire({ accounts: [wireRow({ seven_day_window_seconds: DAY_30 })] }).accounts;
+    expect(row?.windows).toEqual([
+      { seconds: HOUR_5, used_percent: 42, reset_epoch_seconds: 1_800_003_600 },
+      { seconds: DAY_30, used_percent: 7, reset_epoch_seconds: 1_800_086_400 },
+    ]);
+  });
+
+  test('a slot the provider reported nothing for is no window, never a zero', () => {
+    const [row] = accountsFromWire({ accounts: [SINGLE_LOGIN] }).accounts;
+    expect(row?.windows).toEqual([]);
+    expect(row === undefined ? null : windowUsedTextOf(row)).toBe(NOT_REPORTED);
+  });
+
+  test('a single-login head keeps its nulls and is never a selector candidate', () => {
+    const rows = accountsFromWire({ accounts: [SINGLE_LOGIN] }).accounts;
+    expect(rows[0]).toMatchObject({ label: null, single_login: true, available: null, selected: null });
+    expect(nextTarget(rows)).toBeNull();
+  });
+});
+
+function windowUsedTextOf(row: AccountRow): string {
+  const nearest = nearestWindow(row);
+  return nearest === null ? NOT_REPORTED : windowUsedText(nearest);
+}
 
 describe('the selector order', () => {
   test('is printed as the sentence the daemon implements', () => {
@@ -173,7 +252,7 @@ describe('pending routes resolve in the store, not in a mock', () => {
     // Establish a known-good state first, so this asserts the store's real behaviour rather than
     // whatever the previous test happened to leave behind.
     vi.stubGlobal('fetch', async () => ({
-      ok: true, status: 200, json: async () => ({ accounts: [account({ label: 'real' })] }),
+      ok: true, status: 200, json: async () => ({ accounts: [wireRow({ label: 'real' })] }),
     }));
     await fetchAccounts();
 
@@ -185,7 +264,7 @@ describe('pending routes resolve in the store, not in a mock', () => {
     expect(accountsStore.get().error).toBe('boom');
     // The last good data stays visible (the store's documented no-skeleton-flash rule), and it is
     // NOT a pending marker: a broken daemon must never read as "this route was never built".
-    expect(accountsStore.get().data).toEqual({ accounts: [account({ label: 'real' })] });
+    expect(accountsStore.get().data).toEqual(accountsFromWire({ accounts: [wireRow({ label: 'real' })] }));
   });
 
   test('a plain Error is not a transport failure and never reads as pending', () => {
@@ -194,10 +273,10 @@ describe('pending routes resolve in the store, not in a mock', () => {
 
   test('a successful read leaves no pending marker behind', async () => {
     vi.stubGlobal('fetch', async () => ({
-      ok: true, status: 200, json: async () => ({ accounts: [account({ label: 'real' })] }),
+      ok: true, status: 200, json: async () => ({ accounts: [wireRow({ label: 'real' })] }),
     }));
     await fetchAccounts();
-    expect(accountsStore.get().data).toEqual({ accounts: [account({ label: 'real' })] });
+    expect(accountsStore.get().data).toEqual(accountsFromWire({ accounts: [wireRow({ label: 'real' })] }));
   });
 });
 

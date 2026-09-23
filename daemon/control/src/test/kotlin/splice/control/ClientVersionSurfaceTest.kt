@@ -29,6 +29,8 @@ import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.version.ClientVersionTracker
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.net.ServerSocket

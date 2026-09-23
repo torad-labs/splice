@@ -29,12 +29,12 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-providers-kimi" to setOf(":core", ":integrations-upstream", ":integrations-dialects-anthropic"),
     ":integrations-providers-muse" to setOf(":core", ":integrations-upstream"),
     ":integrations-providers-openai" to setOf(":core", ":integrations-upstream", ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
-    ":features-turns" to setOf(":core", ":integrations-upstream", ":features-sessions"),
+    ":features-turns" to setOf(":core", ":integrations-upstream", ":integrations-http", ":features-sessions"),
     ":features-sessions" to setOf(":core", ":integrations-http"),
     ":features-models" to setOf(":core"),
     ":daemon-control" to setOf(
         ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
-        ":features-heads", ":features-sessions", ":features-usage", ":features-accounts",
+        ":features-heads", ":features-sessions", ":features-usage", ":features-accounts", ":features-turns",
     ),
     ":features-heads" to setOf(":core"),
     // sign-in, refresh, the account pool and their console routes; the pool is a read model every

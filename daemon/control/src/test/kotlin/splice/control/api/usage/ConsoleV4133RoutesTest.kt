@@ -40,9 +40,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import splice.control.CompactView
 import splice.control.ControlServer
-import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
 import splice.control.ManagedHead
 import splice.control.api.turns.PlaygroundFailure
@@ -63,6 +61,8 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.usage.alerts.AlertStore
 import splice.usage.budgets.BudgetStore
 import splice.usage.quota.HeadUsageSource

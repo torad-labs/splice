@@ -21,7 +21,7 @@
 // that edits splice.toml (structure-preserving, backed up first, verified by re-parsing). This
 // route only computes the three `[heads.<key>.overrides]` keys and hands the whole edited Topology
 // to that writer; it holds no file handle of its own.
-package splice.control.api.turns
+package splice.head.wire
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.SerialName
@@ -29,15 +29,15 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.control.api.HeadResolver
-import splice.control.api.fleet.TopologySource
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.topology.Topology
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
+import splice.core.topology.TopologyWriterSource
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.head.TurnsHeadLookup
 import splice.http.JsonReply
 
 internal const val CAPTURE_UNWIRED =
@@ -53,10 +53,10 @@ private data class CaptureWrite(
     @SerialName("max_body_chars") val maxBodyChars: Long? = null,
 )
 
-internal class CaptureRoutes(
-    private val resolver: HeadResolver,
+public class CaptureRoutes(
+    private val heads: TurnsHeadLookup,
     private val config: ConfigService,
-    private val topology: TopologySource,
+    private val topology: TopologyWriterSource,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -123,7 +123,7 @@ internal class CaptureRoutes(
     private fun decode(writer: TopologyWriter): Topology =
         json.decodeFromJsonElement(Topology.serializer(), writer.current())
 
-    private fun resolveKey(name: String): String? = resolver.headByName(name).firstOrNull()?.head?.key
+    private fun resolveKey(name: String): String? = heads.byName(name).firstOrNull()?.key
 
     private fun unknownHead(name: String) = refuse(HttpStatusCode.BadRequest, "unknown head: $name")
 

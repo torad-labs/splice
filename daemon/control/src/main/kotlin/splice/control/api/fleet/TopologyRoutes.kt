@@ -34,6 +34,7 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
+import splice.core.topology.TopologyWriterSource
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.http.JsonReply
@@ -45,12 +46,7 @@ private const val PROVIDERS = "providers"
 private const val EXTRA_HEADERS = "extra_headers"
 private const val TOPOLOGY = "topology"
 
-/** The daemon's topology writer, read per request: ControlPlane assigns it after construction. */
-internal fun interface TopologySource {
-    public operator fun invoke(): TopologyWriter?
-}
-
-internal class TopologyRoutes(private val source: TopologySource, private val stale: TopologyStale) {
+internal class TopologyRoutes(private val source: TopologyWriterSource, private val stale: TopologyStale) {
     private val json = Json { encodeDefaults = false }
 
     public fun read(): JsonReply {

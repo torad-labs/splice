@@ -69,7 +69,7 @@
     "daemon/control/src/main/kotlin/splice/control/ControlServer.kt": 4,
     "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt": 4,
     "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt": 11,
-    "daemon/control/src/main/kotlin/splice/control/api/turns/CompactPayloads.kt": 1,
+    "features/turns/src/main/kotlin/splice/head/compact/CompactPayloads.kt": 1,
     "daemon/control/src/main/kotlin/splice/control/api/diagnostics/McpRoutes.kt": 1,
     "features/usage/src/main/kotlin/splice/usage/perf/PerfSummary.kt": 6,
     "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRoute.kt": 3,

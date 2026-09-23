@@ -52,19 +52,19 @@ import splice.control.api.fleet.DaemonRoutes
 import splice.control.api.fleet.HeadRoutes
 import splice.control.api.fleet.LaunchRoutes
 import splice.control.api.fleet.TopologyRoutes
-import splice.control.api.fleet.TopologySource
 import splice.control.api.fleet.UpgradeRoute
-import splice.control.api.turns.CaptureRoutes
-import splice.control.api.turns.CompactPayloads
-import splice.control.api.turns.CompactionInstructionsRoute
 import splice.control.api.turns.PlaygroundRoute
 import splice.control.api.turns.PlaygroundSource
 import splice.control.api.turns.ResumeHookRoute
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
+import splice.core.topology.TopologyWriterSource
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.head.compact.CompactPayloads
+import splice.head.compaction.CompactionInstructionsRoute
+import splice.head.wire.CaptureRoutes
 import splice.heads.HeadStatusListing
 import splice.heads.ListHeads
 import splice.http.JsonBody
@@ -173,13 +173,15 @@ public class ControlServer(
 
     /** Reads [compaction] at CALL time through a lambda: ControlPlane assigns the property after
      *  the server is constructed, so a route that captured the value would capture null forever. */
-    private val compactionRoute = CompactionInstructionsRoute(resolver)
+    private val turnsLookup = TurnsHeadAdapter.lookup(resolver)
+    private val compactionRoute = CompactionInstructionsRoute(turnsLookup)
 
-    private val topologyRoutes = TopologyRoutes(TopologySource { ports.topology }, topologyStale)
+    private val topologyWriter = TopologyWriterSource { ports.topology }
+    private val topologyRoutes = TopologyRoutes(topologyWriter, topologyStale)
 
-    // V4-133 (FEATURES.md §5/§6): read at CALL time through the same TopologySource/BudgetSource/
+    // V4-133 (FEATURES.md §5/§6): read at CALL time through the same TopologyWriterSource/BudgetSource/
     // AlertSource/PlaygroundSource discipline every other console port keeps — see ConsolePorts.
-    private val captureRoutes = CaptureRoutes(resolver, config, TopologySource { ports.topology })
+    private val captureRoutes = CaptureRoutes(turnsLookup, config, topologyWriter)
     private val budgetRoutes = BudgetRoutes(BudgetSource { ports.budgets }, config)
     private val alertRoutes = AlertRoutes(AlertSource { ports.alerts })
     private val playgroundRoute = PlaygroundRoute(resolver, PlaygroundSource { ports.playground })
@@ -197,7 +199,7 @@ public class ControlServer(
     private val usagePayloads = UsagePayloads(usageHeads, config)
     private val perfPayloads = PerfPayloads(usageHeads)
     private val economicsPayloads = EconomicsPayloads(usageHeads)
-    private val compactPayloads = CompactPayloads(heads)
+    private val compactPayloads = CompactPayloads(TurnsHeadAdapter.heads(heads))
     private val accountHeads = AccountHeadAdapter.adapt(heads)
     private val accountResolver = AccountHeadAdapter.resolver(resolver)
     private val authStatusRoutes = AuthStatusRoutes(accountHeads, accountResolver)

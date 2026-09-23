@@ -1,4 +1,4 @@
-package splice.control.api.turns
+package splice.head.compact
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -7,17 +7,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.control.CompactView
-import splice.control.HeadCompactSource
-import splice.control.HeadLogSource
-import splice.control.ManagedHead
-import splice.core.auth.AuthDescription
-import splice.core.auth.AuthProvider
-import splice.core.head.Head
-import splice.core.head.HeadHealth
-import splice.usage.quota.HeadUsageSource
-import splice.usage.quota.RateLimitView
-import splice.usage.quota.UsageView
+import splice.head.TurnsHead
+import splice.head.TurnsHeads
 
 class CompactPayloadsTest {
 
@@ -40,7 +31,7 @@ class CompactPayloadsTest {
         }
 
         val payload = Json.parseToJsonElement(
-            CompactPayloads(mapOf("astra-head" to managedHead(compact))).compactJson(),
+            CompactPayloads(heads(compact)).compactJson(),
         ).jsonObject
         val row = payload.getValue("stats").jsonObject.getValue("tail").jsonArray.single().jsonObject
 
@@ -61,33 +52,13 @@ class CompactPayloadsTest {
         }
 
         val row = Json.parseToJsonElement(
-            CompactPayloads(mapOf("head" to managedHead(compact))).compactJson(),
+            CompactPayloads(heads(compact)).compactJson(),
         ).jsonObject.getValue("stats").jsonObject.getValue("tail").jsonArray.single().jsonObject
 
         assertEquals("", row.getValue("instructions").jsonPrimitive.content)
         assertEquals("model:astra", row.getValue("instructions_source").jsonPrimitive.content)
     }
 
-    private fun managedHead(compact: HeadCompactSource): ManagedHead = ManagedHead(
-        head = object : Head {
-            override val key: String = "astra-head"
-            override val label: String = key
-            override val port: Int = 0
-            override suspend fun start() = Unit
-            override suspend fun stop() = Unit
-            override fun healthSnapshot(): HeadHealth = HeadHealth(true, true, port, "test")
-        },
-        auth = object : AuthProvider {
-            override suspend fun credentials() = null
-            override suspend fun describe() = AuthDescription(false, "test", emptyMap())
-        },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = compact,
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-    )
+    private fun heads(compact: HeadCompactSource): TurnsHeads =
+        TurnsHeads { listOf(TurnsHead(key = "astra-head", compact = compact)) }
 }

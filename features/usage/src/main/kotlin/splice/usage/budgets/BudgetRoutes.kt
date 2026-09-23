@@ -28,7 +28,7 @@ import splice.core.util.Cancellables
 import splice.http.JsonReply
 
 /** The daemon's budget store, read per request because ControlPlane assigns it after
- *  construction — the same discipline [TeamSource] and [TopologySource] keep. */
+ *  construction — the same discipline [TeamSource] and [splice.core.topology.TopologyWriterSource] keep. */
 public fun interface BudgetSource {
     public operator fun invoke(): BudgetStore?
 }

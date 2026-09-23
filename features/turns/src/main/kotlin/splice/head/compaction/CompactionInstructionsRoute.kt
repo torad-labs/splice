@@ -9,7 +9,7 @@
 // THE LOOKUP IS NOT RE-IMPLEMENTED HERE. The enumeration lives in CompactionInstructions.rules(),
 // over the same rule table resolve() reads and through the same live file cache, so this route and
 // a real compaction cannot disagree about what is configured. This file only filters and shapes.
-package splice.control.api.turns
+package splice.head.compaction
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -19,10 +19,10 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.control.api.HeadResolver
 import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.CompactionScope
 import splice.core.compaction.EffectiveCompactionInstructions
+import splice.head.TurnsHeadLookup
 
 /** Answered when the daemon never wired the table. NOT a 404 and NOT an empty list: the console
  *  reads 404 on this path as "route not built yet", and an empty list would tell an operator that no
@@ -31,8 +31,8 @@ import splice.core.compaction.EffectiveCompactionInstructions
 internal const val COMPACTION_UNWIRED =
     "the daemon did not wire the compaction table; /api/compaction/instructions cannot report it"
 
-internal class CompactionInstructionsRoute(
-    private val resolver: HeadResolver,
+public class CompactionInstructionsRoute(
+    private val heads: TurnsHeadLookup,
 ) {
 
     /** [table] ARRIVES AT CALL TIME, not construction time: ControlPlane assigns the property right
@@ -40,9 +40,9 @@ internal class CompactionInstructionsRoute(
      *  was a `() -> CompactionInstructions?` constructor seam until kt-no-lambda-seam flagged it —
      *  the same unnamed transposable shape, fixed the same way, by the argument rather than by a new
      *  role invented to name the lambda. */
-    suspend fun instructions(call: ApplicationCall, table: CompactionInstructions?) {
+    public suspend fun instructions(call: ApplicationCall, table: CompactionInstructions?) {
         val head = call.request.queryParameters["head"].orEmpty()
-        val matches = if (head.isBlank()) emptyList() else resolver.headByName(head)
+        val matches = if (head.isBlank()) emptyList() else heads.byName(head)
         if (matches.isEmpty()) {
             // 400 naming the head, never 404: 404 on this path means route-not-built to the console.
             call.respondText(

@@ -32,9 +32,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import splice.control.CompactView
 import splice.control.ControlServer
-import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
 import splice.control.ManagedHead
 import splice.core.auth.AuthDescription
@@ -44,6 +42,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView

@@ -10,6 +10,7 @@ import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
+import splice.head.compact.HeadCompactSource
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.PerfRowsSource

@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindowView
 
 class StatuslineBarsTest {
 

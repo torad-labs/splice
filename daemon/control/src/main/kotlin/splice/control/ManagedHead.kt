@@ -9,68 +9,8 @@ import splice.core.head.Head
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 
-/** Reads the head's persisted usage/ratelimit (file truth). */
-public fun interface HeadUsageSource {
-    /** One coherent filesystem read per control/statusline request. */
-    public fun snapshot(): UsageView
-}
-
-public data class RateLimitView(val limitTokens: Long?, val remainingTokens: Long?, val resetTokens: String?)
-public data class UsageView(
-    val outputTokens5h: Long,
-    val entries: Int,
-    val ratelimit: RateLimitView?,
-    /** The provider's own plan windows, when the head has any (see QuotaTracker). */
-    val quota: QuotaView? = null,
-)
-
-public data class QuotaWindowView(val usedPct: Int, val resetsAt: Long?)
-
-public data class QuotaView(val fiveHour: QuotaWindowView?, val sevenDay: QuotaWindowView?, val plan: String?)
-
-/** Reads the head's compaction stats (file truth). */
-public interface HeadCompactSource {
-    public fun summary(tailN: Int): CompactView
-}
-
-public data class CompactView(val total: Int, val byOutcome: Map<String, Int>, val tail: List<Map<String, String>>)
-
-/** Reads the head's hourly token-economics rollup (file truth, oldest first). Separate from
- *  [HeadPerfSource] on purpose: perf answers "where did the latency go" from a bounded TAIL,
- *  economics answers "what has this cost against the plan" and needs SUMS over a week — a figure
- *  no percentile over the last few hundred turns can reconstruct. */
-public fun interface HeadEconomicsSource {
-    public fun buckets(): List<EconomicsRow>
-}
-
-/** One hour of a head's economics on the control-plane side. Sums only; every ratio the dashboard
- *  shows is derived at render time from these. [deferralTurns] is the denominator for the tool
- *  averages and is 0 on a head whose dialect cannot defer — which the UI renders as "n/a". */
-public data class EconomicsRow(
-    val hour: Long,
-    val turns: Long,
-    val inTokens: Long,
-    val cachedTokens: Long,
-    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens]. Its own sum
-     *  because it bills at the vendor's cache_write rate and not at the input rate. */
-    val cacheWriteTokens: Long,
-    val outTokens: Long,
-    val reqBytes: Long,
-    val upstreamBytes: Long,
-    val toolsEager: Long,
-    val toolsDeferred: Long,
-    val deferralTurns: Long,
-    val rateLimited: Long,
-)
-
-/** Reads the head's log tail (file truth). */
-public interface HeadLogSource {
-    public fun tail(lines: Int): String
-
-    /** The log file path — /api/logs reports it (webui LogsPayload.path). */
-    public fun path(): String
-}
-
+// The per-capability sources this record composes live beside it, one file each: HeadUsageSource.kt,
+// HeadCompactSource.kt, HeadEconomicsSource.kt, HeadLogSource.kt, HeadPerfSource.kt, HeadAccountPool.kt.
 public data class ManagedHead(
     val head: Head,
     val auth: AuthProvider,

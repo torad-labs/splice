@@ -26,9 +26,9 @@ import splice.control.LoginStart
 import splice.control.LoginStatus
 import splice.control.ManagedHead
 import splice.control.api.HeadResolver
-import splice.control.api.JsonBody
 import splice.core.auth.AuthDescription
 import splice.core.auth.RefreshableAuthProvider
+import splice.http.JsonBody
 
 // V4-132: the two body/JSON field names every login/switch/accounts route below shares.
 private const val LABEL_FIELD = "label"

@@ -2,6 +2,8 @@
 package splice.control
 
 import splice.core.auth.AuthDescription
+import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindowView
 
 /** Secret-free account-pool state safe for every operator surface, including the statusline. */
 public fun interface HeadAccountPoolSource {

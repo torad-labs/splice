@@ -1,7 +1,7 @@
 // NEW: launch-shim version-marker read and staleness warning. Split from
 // InstallCommand.kt (concentration HIGH, 2026-08-19). DoctorInstallProbes and
-// Main still reach these through InstallCommand delegates.
-package splice.app.cli.install
+// Main's boot warning construct it directly (LAYOUT-01: the InstallCommand delegates are gone).
+package splice.launch.install
 
 import splice.core.SHIM_VERSION
 import splice.core.util.Cancellables
@@ -10,17 +10,18 @@ import splice.core.util.SafeFailureText
 import java.nio.file.Files
 
 // FILE SCOPE ON PURPOSE: one compiled Regex shared by every shim-version read, rather than a
-// recompile per InstallCommand instance (doctor constructs one just to reach installedShimVersion).
+// recompile per InstallShim instance (doctor constructs one just to reach installedShimVersion).
 private val SHIM_VERSION_LINE = Regex("""^const SPLICE_SHIM_VERSION = "([^"]*)";""", RegexOption.MULTILINE)
 
-internal class InstallShim(
+/** The installed launch shim's version marker, read for doctor and for the daemon's boot warning. */
+public class InstallShim(
     private val layout: InstallLayout = InstallLayout(),
 ) {
 
     /** The SPLICE_SHIM_VERSION marker, or null on PROVEN absence or a readable-but-unmarked
      *  shim. DR-69: indeterminate access THROWS — a present shim behind denied access is not
      *  "no marker", and both callers classify the failure loudly. */
-    internal fun installedShimVersion(env: EnvReader): String? {
+    public fun installedShimVersion(env: EnvReader): String? {
         val shim = layout.launchShimPath(env)
         return Cancellables.runCatchingCancellable {
             SHIM_VERSION_LINE.find(Files.readString(shim))?.groupValues?.get(1)
@@ -32,7 +33,7 @@ internal class InstallShim(
     }
 
     /** Non-fatal staleness message for the installed shim, or null when absent/current. */
-    internal fun shimStalenessWarning(env: EnvReader): String? {
+    public fun shimStalenessWarning(env: EnvReader): String? {
         val shim = layout.launchShimPath(env)
         val installed = Cancellables.runCatchingCancellable { installedShimVersion(env) }
             .getOrElse { failure ->

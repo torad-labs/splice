@@ -1,8 +1,9 @@
 // NEW: `splice uninstall` — wrapper-symlink removal and the target-resolution
 // rule (every head + `splice` for --all, else the one named head). Split from
 // InstallCommand.kt (concentration HIGH, 2026-08-19).
-package splice.app.cli.install
+package splice.launch.install
 
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
@@ -10,8 +11,10 @@ import java.nio.file.Files
 import kotlin.io.path.isSymbolicLink
 
 internal class UninstallCommand(
+    private val output: TerminalOutput,
+    private val errors: TerminalOutput,
     private val layout: InstallLayout = InstallLayout(),
-    private val heads: InstallHeads = InstallHeads(),
+    private val heads: InstallHeads = InstallHeads(output),
 ) {
 
     internal fun uninstall(headArg: String?, env: EnvReader): Boolean {
@@ -26,18 +29,18 @@ internal class UninstallCommand(
             val link = layout.wrapperLinkOrNull(bin, command)
             if (link == null) {
                 ok = false
-                println("splice: refusing '$command' — a wrapper must be a bare name directly under $bin")
+                output.line("splice: refusing '$command' — a wrapper must be a bare name directly under $bin")
                 continue
             }
             Cancellables.runCatchingCancellable {
                 if (link.isSymbolicLink()) {
                     Files.delete(link)
-                    println("splice: removed '$command'")
+                    output.line("splice: removed '$command'")
                 }
             }.onFailure { e ->
                 ok = false
                 // SAFE-RENDER-EXEMPT[2026-08-31]: Files.delete of a bin symlink — the failure names the link path, never file content
-                println("splice: failed to remove $command: ${e.message}")
+                output.line("splice: failed to remove $command: ${e.message}")
             }
         }
         return ok
@@ -77,11 +80,11 @@ internal class UninstallCommand(
             return (topology.heads.map { (k, h) -> h.claude.command ?: k } + SELF_COMMAND).distinct()
         }
         if (attempt.exceptionOrNull() is java.nio.file.NoSuchFileException) {
-            println("splice: no config at $configPath — removing only the '$SELF_COMMAND' link")
+            output.line("splice: no config at $configPath — removing only the '$SELF_COMMAND' link")
             return listOf(SELF_COMMAND)
         }
         val reason = attempt.exceptionOrNull()?.let { splice.core.util.SafeFailureText.render(it) } ?: "unknown"
-        System.err.println(
+        errors.line(
             "splice uninstall --all: $configPath unreadable ($reason) — " +
                 "head wrappers NOT removed; fix or delete the config and re-run",
         )

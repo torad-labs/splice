@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
+import splice.app.InstallWiring
 import splice.app.ModelsWiring
 import splice.app.TraceWiring
 import splice.app.cli.add.AddCommand
@@ -12,7 +13,6 @@ import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.doctor.DoctorCommand
-import splice.app.cli.install.InstallCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.LogsCommand
@@ -23,6 +23,7 @@ import splice.app.cli.upgrade.UpgradeCommand
 import splice.app.cli.wire.WireCommand
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
 
 /** The splice CLI verbs as a closed, exhaustively-dispatched hierarchy: argv is parsed into a typed
@@ -42,12 +43,14 @@ public sealed class Command {
         override fun run(): Int = success { println("splice $GATEWAY_VERSION") }
     }
     public data object ShimVersion : Command() { override fun run(): Int = success { println(SHIM_VERSION) } }
-    public data object Init : Command() { override fun run(): Int = success { InstallCommand().init() } }
+    public data object Init : Command() {
+        override fun run(): Int = success { InstallWiring.init(EnvReader(System::getenv)) }
+    }
     public data class Install(val target: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(InstallCommand().install(target))
+        override fun run(): Int = outcomeExitCode(InstallWiring.command().install(target, EnvReader(System::getenv)))
     }
     public data class Uninstall(val target: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(InstallCommand().uninstall(target))
+        override fun run(): Int = outcomeExitCode(InstallWiring.command().uninstall(target, EnvReader(System::getenv)))
     }
 
     /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind. */

@@ -6,10 +6,10 @@
 // stops the flow before the save leaves the previous file byte-identical. :app: println-exempt.
 package splice.app.cli.add
 
+import splice.app.InstallWiring
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
-import splice.app.cli.install.InstallCommand
 import splice.app.cli.upgrade.DaemonRestart
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
@@ -31,7 +31,7 @@ internal class AddCommand(
     private val login: AddLogin = AddLogin { key, provider, topology ->
         LoginCommand().runLoginFlow(key, provider, topology)
     },
-    private val install: WrapperInstall = WrapperInstall { key, env -> InstallCommand().install(key, env) },
+    private val install: WrapperInstall = WrapperInstall { key, env -> InstallWiring.command().install(key, env) },
     private val restart: DaemonRestart = DaemonRestart { RestartCommand().restart() },
     private val daemonUp: DaemonUpProbe = DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
     private val prompt: AddPrompter = ConsolePrompter(),

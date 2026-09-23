@@ -2,8 +2,9 @@
 // the whole-topology command-collision check. Split from InstallCommand.kt
 // (concentration HIGH, 2026-08-19). Path wrappers stay named methods on
 // InstallLayout; they are not inlined into install().
-package splice.app.cli.install
+package splice.launch.install
 
+import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -32,8 +33,9 @@ internal object ExclusiveSymlinkClaim : WrapperClaim {
 }
 
 internal class InstallLinker(
+    private val output: TerminalOutput,
     private val layout: InstallLayout = InstallLayout(),
-    private val heads: InstallHeads = InstallHeads(),
+    private val heads: InstallHeads = InstallHeads(output),
     private val claim: WrapperClaim = ExclusiveSymlinkClaim,
 ) {
 
@@ -68,7 +70,7 @@ internal class InstallLinker(
         commands.forEach { command -> requireReplaceableLink(wrapperLink(bin, command)) }
         requested.forEach { (key, command) -> linkOne(bin, key, command, launchShim) }
         linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
-        println("splice: ensure $bin is on your PATH to use the wrappers")
+        output.line("splice: ensure $bin is on your PATH to use the wrappers")
         return true
     }
 
@@ -105,7 +107,7 @@ internal class InstallLinker(
             val previous = if (link.isSymbolicLink()) Files.readSymbolicLink(link) else null
             if (previous != null) Files.deleteIfExists(link)
             claimOrRestore(link, launchShim, previous)
-            println("splice: installed '$command' -> $launchShim (head=$headKey)")
+            output.line("splice: installed '$command' -> $launchShim (head=$headKey)")
         } catch (e: java.io.IOException) {
             // SAFE-RENDER-EXEMPT[2026-08-31]: symlink claim under bin — the caught java.io.IOException is FileSystemException over a path we own, never file content
             throw IllegalStateException("failed to link $command — $link was not claimable: ${e.message}", e)
@@ -121,7 +123,7 @@ internal class InstallLinker(
         } catch (e: java.io.IOException) {
             val restored = previous == null ||
                 Cancellables.runCatchingCancellable { ExclusiveSymlinkClaim(link, previous) }.isSuccess
-            if (!restored) println("splice: warning — the previous wrapper at $link could not be restored")
+            if (!restored) output.line("splice: warning — the previous wrapper at $link could not be restored")
             throw e
         }
     }

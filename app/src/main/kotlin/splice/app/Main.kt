@@ -13,7 +13,9 @@ import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.launch.install.InstallShim
 import splice.topology.TopologyLoader
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -143,7 +145,7 @@ internal class DaemonProcess {
         // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
         DaemonLog.install(log)
         val shutdownSignal = CompletableDeferred<Unit>()
-        splice.app.cli.install.InstallCommand().shimStalenessWarning()?.let { log("$it\n") }
+        InstallShim().shimStalenessWarning(EnvReader(System::getenv))?.let { log("$it\n") }
         val daemon = Daemon(
             topology,
             statePaths,

@@ -23,6 +23,7 @@ dependencies {
     implementation(project(":integrations-claude-code"))
     implementation(project(":integrations-mcp"))
     implementation(project(":integrations-topology"))
+    implementation(project(":integrations-codemode"))
     implementation(project(":integrations-upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
     implementation(project(":integrations-dialects-openai-chat"))
@@ -46,8 +47,6 @@ dependencies {
     implementation(project(":integrations-http"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.graaljs.polyglot)
-    implementation(libs.graaljs.community)
     implementation(libs.ktor.client.java)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
@@ -55,6 +54,7 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":features-turns")))
+    testImplementation(testFixtures(project(":integrations-codemode")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     testImplementation(testFixtures(project(":integrations-dialects-anthropic")))
 }
@@ -486,7 +486,7 @@ val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     filter {
-        includeTestsMatching("CodeModeRuntimeTest")
+        includeTestsMatching("CodeModeLanguagesTest")
         includeTestsMatching("CodeModeBridgeRuntimeTest")
     }
     val packagedJar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }

@@ -3,7 +3,7 @@
 // DECOMPOSED FOR THE CONCENTRATION RATIO, NOT FOR A DEFECT: CodeModeWire.kt barely changed (own 15
 // percent of its movement, measured with --since 608f63b9) and was lifted into band HIGH by its
 // neighbours getting smaller. Nothing here was wrong where it was.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement

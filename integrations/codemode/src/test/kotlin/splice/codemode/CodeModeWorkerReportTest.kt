@@ -1,4 +1,4 @@
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals

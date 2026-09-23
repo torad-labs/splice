@@ -1,5 +1,5 @@
 // NEW: bundled JavaScript worker yields privileged operations to permission-checked client tools.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray

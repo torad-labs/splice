@@ -1,5 +1,5 @@
 // NEW: real worker deadlines and UTF-8 boundaries are verified through the Codex bridge.
-package splice.app.codemode
+package splice.app.provider
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -22,6 +22,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import splice.codemode.CodeModeWorkerReclamation
+import splice.codemode.JvmCodeModeRuntime
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall

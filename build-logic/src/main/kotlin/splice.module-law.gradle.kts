@@ -20,6 +20,8 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-http" to setOf(":core"),
     // the splice.toml file on disk: load, first-run starter, structural preflight and digest.
     ":integrations-topology" to setOf(":core"),
+    // code mode's GraalJS worker pool: the child-JVM runtime behind the upstream-owned CodeModeRuntime port.
+    ":integrations-codemode" to setOf(":core", ":integrations-upstream"),
     ":integrations-upstream" to setOf(":core"),
     ":integrations-dialects-anthropic" to setOf(":core", ":integrations-upstream"),
     ":integrations-dialects-openai-responses" to setOf(":core", ":integrations-upstream"),

@@ -34,7 +34,7 @@ ignores:
   # `[A-Z]*.kt`, never `*.kt`: ast-grep's glob `*` crosses `/`, so `splice/app/*.kt` also swallowed
   # control/ (measured on a scratch tree); Kotlin files are capitalized and packages are not.
   - app/src/main/kotlin/splice/app/[A-Z]*.kt
-  - app/src/main/kotlin/splice/app/{auth,cli,codemode,console,daemon,head,launch,probe,provider,quota,sources}/**/*.kt
+  - app/src/main/kotlin/splice/app/{auth,cli,console,daemon,head,launch,probe,provider,quota,sources}/**/*.kt
 rule:
   any:
     - pattern: println($$$A)

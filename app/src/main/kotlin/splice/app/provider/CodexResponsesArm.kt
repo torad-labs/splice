@@ -4,10 +4,10 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
 import splice.app.auth.OAuthAccountFiles
-import splice.app.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
-import splice.app.codemode.DEFAULT_HEAP_MB
-import splice.app.codemode.DEFAULT_MAX_WORKERS
-import splice.app.codemode.JvmCodeModeRuntime
+import splice.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
+import splice.codemode.DEFAULT_HEAP_MB
+import splice.codemode.DEFAULT_MAX_WORKERS
+import splice.codemode.JvmCodeModeRuntime
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind

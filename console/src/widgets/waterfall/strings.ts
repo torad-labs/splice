@@ -23,9 +23,6 @@ export const S = {
   tools: 'tools',
   searchRounds: 'search rounds',
   dropped: 'dropped',
-  /** The request drawer. */
-  drawer: 'request drawer',
-  showCapture: 'show capture',
   /** The capture switch's name: its printed word is only the state. */
   capture: 'body capture',
   on: 'on',

@@ -1,5 +1,5 @@
 // NEW: cancellable framed worker I/O retains capacity until process exit is observed.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher

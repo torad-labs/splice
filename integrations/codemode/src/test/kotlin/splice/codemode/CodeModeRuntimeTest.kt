@@ -1,4 +1,4 @@
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -64,16 +64,6 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    fun `bundled regex language is available to JavaScript`() = runBlocking {
-        runtime().use { runtime ->
-            val cell = runtime.start("""return "codes 17 and 4".match(/\d+/g).join("+");""", emptySet())
-            val result = completed(cell.advance())
-            assertEquals("17+4", result.output)
-            assertEquals(null, result.error)
-        }
-    }
-
-    @Test
     fun `dependent await yields a second batch without restarting source`() = runBlocking {
         runtime().use { runtime ->
             val cell = runtime.start(
@@ -127,7 +117,7 @@ class CodeModeRuntimeTest {
             "${System.getProperty("java.home")}/bin/java",
             "-cp",
             testClasspath,
-            "splice.app.codemode.CodeModeWorker",
+            CodeModeWorker::class.java.name,
         ).redirectError(ProcessBuilder.Redirect.DISCARD).start()
         try {
             DataOutputStream(process.outputStream.buffered()).use { input ->

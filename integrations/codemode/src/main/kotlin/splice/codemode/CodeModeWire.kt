@@ -1,5 +1,5 @@
 // NEW: bounded framed protocol between splice and its bundled JavaScript worker.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject

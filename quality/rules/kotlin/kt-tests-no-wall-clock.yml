@@ -131,7 +131,7 @@
 #     integrations/providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt          (2)
 #     integrations/providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt   (1)
 #     core/src/test/kotlin/splice/core/util/AsyncFileIoTest.kt                             (1)
-#     app/src/test/kotlin/splice/app/codemode/CodeModeWorkerReclamation.kt                    (2)
+#     integrations/codemode/src/testFixtures/kotlin/splice/codemode/CodeModeWorkerReclamation.kt (2)
 #     integrations/upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt                  (1)
 #
 #   2026-09-17 · A DELIBERATELY SLOW TEST DOUBLE. The mock upstream's whole job is to be slow on the

@@ -26,6 +26,7 @@ include(
     ":integrations-mcp",
     ":integrations-http",
     ":integrations-topology",
+    ":integrations-codemode",
     ":integrations-upstream",
     ":integrations-dialects-anthropic",
     ":integrations-dialects-openai-responses",
@@ -58,6 +59,7 @@ project(":integrations-claude-code").projectDir = file("integrations/claude-code
 project(":integrations-mcp").projectDir = file("integrations/mcp")
 project(":integrations-http").projectDir = file("integrations/http")
 project(":integrations-topology").projectDir = file("integrations/topology")
+project(":integrations-codemode").projectDir = file("integrations/codemode")
 project(":integrations-upstream").projectDir = file("integrations/upstream")
 project(":integrations-dialects-anthropic").projectDir = file("integrations/dialects/anthropic")
 project(":integrations-dialects-openai-responses").projectDir = file("integrations/dialects/openai-responses")

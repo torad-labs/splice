@@ -1,5 +1,5 @@
 // NEW: serialized stateful callback resumption owns one worker until observed process exit.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock

@@ -1,5 +1,5 @@
 // NEW: strict bounded fatal-worker diagnostics stay distinct from guest completion frames.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

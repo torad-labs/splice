@@ -50,6 +50,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-http" to setOf(":core"),
     // the splice.toml file on disk: load, first-run starter, structural preflight and digest.
     ":integrations-topology" to setOf(":core"),
+    // code mode's GraalJS worker pool: the child-JVM runtime behind the upstream-owned CodeModeRuntime port.
+    ":integrations-codemode" to setOf(":core", ":integrations-upstream"),
     // the provider contract. Speaks the domain and nothing else.
     ":integrations-upstream" to setOf(":core"),
     // a dialect adapts the contract to one wire format.

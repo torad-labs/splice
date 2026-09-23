@@ -1,5 +1,6 @@
-// NEW: timeout cleanup is checked independently of another JVM's cold-start latency.
-package splice.app.codemode
+// NEW: timeout cleanup is checked independently of another JVM's cold-start latency. A test FIXTURE
+// (LAYOUT-01): this module's runtime tests and :app's bridge-over-runtime test both assert with it.
+package splice.codemode
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -12,7 +13,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import java.util.concurrent.Semaphore
 
-internal class CodeModeWorkerReclamation(scope: CoroutineScope) {
+class CodeModeWorkerReclamation(scope: CoroutineScope) {
     private val pollMs = 1L
     private val before = children().map { it.pid() }.toSet()
     private val worker = scope.async(start = CoroutineStart.UNDISPATCHED) {

@@ -2,7 +2,7 @@
 // CodeModeWire.kt. DECOMPOSED FOR THE CONCENTRATION RATIO, NOT FOR A DEFECT: CodeModeWire.kt barely
 // changed (own 15 percent, --since 608f63b9) and was lifted into band HIGH by its neighbours getting
 // smaller; the metric counts every declared type as a concern, and these three carry no logic.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.serialization.json.Json
 import splice.upstream.codemode.CodeModeCall

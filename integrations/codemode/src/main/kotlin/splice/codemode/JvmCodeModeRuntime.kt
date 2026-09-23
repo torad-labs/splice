@@ -1,5 +1,5 @@
 // NEW: bounded child-JVM execution ships inside splice without an external JavaScript runtime.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -18,13 +18,16 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal const val DEFAULT_MAX_WORKERS: Int = 4
-internal const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
+public const val DEFAULT_MAX_WORKERS: Int = 4
+public const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
 
 // why: one bounded GraalJS cell fits in 128MB and the smaller heap keeps each child's spawn and GC
 // cheap
-internal const val DEFAULT_HEAP_MB: Int = 128
-private const val WORKER_MAIN_CLASS: String = "splice.app.codemode.CodeModeWorker"
+public const val DEFAULT_HEAP_MB: Int = 128
+
+// Spelled, not reflected (kt-no-reflection-in-production): every runtime test boots its worker
+// through this name, so a stale one fails the suite rather than the daemon.
+private const val WORKER_MAIN_CLASS: String = "splice.codemode.CodeModeWorker"
 
 /** Runs one GraalJS cell in each bounded child JVM; it never executes client tools. */
 public class JvmCodeModeRuntime(

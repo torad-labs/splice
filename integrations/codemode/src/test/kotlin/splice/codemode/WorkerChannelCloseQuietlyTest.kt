@@ -1,6 +1,6 @@
 // NEW: V4-107 — the cancellation handler's quiet close is total: it destroys the child and closes
 // its streams without the blocking process-exit wait that only the lifecycle-owning close() may do.
-package splice.app.codemode
+package splice.codemode
 
 import kotlinx.coroutines.Dispatchers
 import org.junit.jupiter.api.Assertions.assertFalse

@@ -247,7 +247,7 @@
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
     ],
     "COPY FIELD_ID": [
-      "app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
       "core/src/main/kotlin/splice/core/reasoning/Replay.kt"
     ],
     "COPY FIELD_INPUT": [
@@ -262,13 +262,13 @@
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_NAME": [
-      "app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FIELD_OUTPUT": [
-      "app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
     ],
     "COPY FIELD_PROPERTIES": [
@@ -300,7 +300,7 @@
       "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_TOOLS": [
-      "app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
@@ -570,7 +570,7 @@
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt"
     ],
     "COPY TYPE": [
-      "app/src/main/kotlin/splice/app/codemode/CodeModeFatalFrame.kt",
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeFatalFrame.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/MfjsSanitizer.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",

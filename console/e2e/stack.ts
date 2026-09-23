@@ -295,14 +295,20 @@ async function postTurn(headPort: number, key: string, body: unknown, headers: R
   }
 }
 
-/** One plain turn through a head. Exported: a journey drives its own turn after a console write. */
-export async function driveOneTurn(headPort: number, key: string): Promise<void> {
-  await postTurn(headPort, key, {
-    model: STACK.model,
-    max_tokens: 64,
-    stream: true,
-    messages: [{ role: 'user', content: TURN_PROMPT }],
-  });
+/** One plain turn through a head. Exported: a journey drives its own turn after a console write.
+ *  With `sessionId` the turn carries the client's session header, so its perf row is tagged to it. */
+export async function driveOneTurn(headPort: number, key: string, sessionId?: string): Promise<void> {
+  await postTurn(
+    headPort,
+    key,
+    {
+      model: STACK.model,
+      max_tokens: 64,
+      stream: true,
+      messages: [{ role: 'user', content: TURN_PROMPT }],
+    },
+    sessionId === undefined ? {} : { 'x-claude-code-session-id': sessionId },
+  );
 }
 
 /** The sender's turn after its SendMessage call: the call is the last assistant message of the

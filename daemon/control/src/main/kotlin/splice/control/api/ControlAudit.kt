@@ -3,6 +3,7 @@
 // LogSink. Single-sourcing the `[control] ` prefix keeps LogSink out of HeadRoutes and LaunchRoutes.
 // V4-107: every interpolation now routes through LogSafe, because request bytes (a head key, a
 // launch argument, a warning composed from the request body) must not write the audit format itself.
+// 2026-09-23: a fourth line, a management route that threw (RouteFailure), with its request line.
 package splice.control.api
 
 import splice.core.util.LogSafe
@@ -19,5 +20,10 @@ internal class ControlAudit(private val log: LogSink) {
 
     fun warning(message: String) {
         log("[control] ${LogSafe.str(message)}\n")
+    }
+
+    /** A management route that threw (RouteFailure): the request line is caller bytes like the rest. */
+    fun routeFailed(method: String, path: String, why: String) {
+        log("[control] ${LogSafe.str(method)} ${LogSafe.str(path)} failed: ${LogSafe.str(why)}\n")
     }
 }

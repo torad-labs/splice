@@ -65,6 +65,8 @@ function project(over: Record<string, unknown> = {}) {
     cost_today_usd: 12.84,
     day_start: 0,
     last_activity: T0,
+    compaction: [],
+    statusline_roots: [],
     ...over,
   };
 }

@@ -95,6 +95,69 @@ class CompactionRulesTest {
         assertNull(missing.text, "a file that cannot be read has no text — the route renders that as null, not 0")
     }
 
+    // rulesFor(project) is the project page's answer, and the same pin shape as above but BOTH ways:
+    // the list must hold every rule resolve() picks for that project over every configured model and
+    // one no rule names, and nothing resolve() never picks there. A rule a longer path or a
+    // project-wide rule shadows is exactly what a flat filter of rules() would wrongly show.
+    @Test
+    fun `rulesFor a project is exactly the rules resolve picks there, shadowed ones left out`() {
+        val work = dir.resolve("work")
+        val subject = CompactionInstructions(
+            config = CompactionConfig(
+                instructions = GLOBAL_TEXT,
+                model = listOf(
+                    CompactionModelConfig(model = "m1", instructions = MODEL_TEXT),
+                    CompactionModelConfig(model = "m2", instructions = MODEL_TEXT),
+                ),
+                project = listOf(
+                    CompactionProjectConfig(path = projectA.toString(), instructions = PROJECT_TEXT),
+                    CompactionProjectConfig(
+                        path = projectA.toString(),
+                        model = "m1",
+                        instructions = PROJECT_MODEL_TEXT,
+                    ),
+                    CompactionProjectConfig(path = work.toString(), model = "m2", instructions = PROJECT_MODEL_TEXT),
+                    CompactionProjectConfig(path = projectB.toString(), file = "missing.txt"),
+                ),
+            ),
+            configDir = dir,
+            readFile = CompactionFileRead { Files.readString(it) },
+            log = { },
+        )
+        val models = listOf("m1", "m2", "named-by-no-rule")
+        val projects = listOf(
+            Files.createDirectories(projectA.resolve("src")),
+            projectB,
+            Files.createDirectories(work.resolve("gamma")),
+            Files.createDirectories(dir.resolve("elsewhere")),
+            Path.of("relative/checkout"),
+        )
+        projects.forEach { project ->
+            val picked = models.map { subject.resolve(it, project) }.map { it.scope to it.source }.toSet()
+            val listed = subject.rulesFor(project).map { it.scope to it.source }
+            assertEquals(picked, listed.toSet(), "rulesFor($project) against resolve over $models")
+            assertEquals(listed.size, listed.toSet().size, "rulesFor($project) lists a rule twice: $listed")
+        }
+        // In precedence order: the per-model project rules first, then what the rest resolve to.
+        assertEquals(
+            listOf(CompactionScope.PROJECT_MODEL, CompactionScope.PROJECT_MODEL, CompactionScope.PROJECT),
+            subject.rulesFor(projectA.resolve("src")).map { it.scope },
+            "under alpha the project-wide rule shadows both model rules and the global one",
+        )
+        assertEquals(
+            listOf(CompactionScope.PROJECT_MODEL, CompactionScope.MODEL, CompactionScope.GLOBAL),
+            subject.rulesFor(work.resolve("gamma")).map { it.scope },
+            "m2's project rule takes m2, so only m1's model rule and the global one remain",
+        )
+    }
+
+    @Test
+    fun `rulesFor is empty when nothing is configured, which is the client's own instructions`() {
+        val subject = CompactionInstructions(configDir = dir, log = { })
+        assertEquals(emptyList<EffectiveCompactionInstructions>(), subject.rulesFor(projectA))
+        assertEquals(CompactionScope.CLIENT, subject.resolve("m1", projectA).scope)
+    }
+
     @Test
     fun `an explicit opt-out is listed with empty text, which is a zero length and not an absence`() {
         val subject = CompactionInstructions(

@@ -8,11 +8,14 @@ export {
   startProjectsPolling,
 } from './api';
 export type {
+  ProjectCompactionRule,
   ProjectFile,
   ProjectFileKind,
   ProjectFilesPayload,
   ProjectRow,
+  ProjectStatuslineRoot,
   ProjectsPayload,
+  TrustedRootEntry,
 } from './model/types';
 export const useProjects = projectsStore.use;
 export const useProject = projectStore.use;

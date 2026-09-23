@@ -31,6 +31,7 @@ import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
+import splice.sessions.registry.TrustedRoot
 import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
 import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
@@ -116,6 +117,10 @@ public class SessionsRoutes(
 
     /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */
     public fun repoOf(record: SessionRecord): RepoRoot? = record.cwd?.let { resolverFor(record.head).resolve(it) }
+
+    /** The trusted root [head]'s statusline would probe [path] under, through the SAME per-head root
+     *  set [repoOf] walks with (statuslineGitRoots is per-head overridable), or null outside all. */
+    public fun statuslineRootOf(path: String, head: String?): TrustedRoot? = resolverFor(head).trustedRootOf(path)
 
     /** V4-131: a sender's SendMessage texts, from the transcript trees this route already searches. */
     public fun sentTexts(session: String, head: String?, ids: Set<String>): SentTexts =

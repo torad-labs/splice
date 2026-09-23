@@ -249,6 +249,8 @@ describe('projects board', () => {
               cost_today_usd: null,
               day_start: 0,
               last_activity: null,
+              compaction: [],
+              statusline_roots: [],
             },
           ],
         },

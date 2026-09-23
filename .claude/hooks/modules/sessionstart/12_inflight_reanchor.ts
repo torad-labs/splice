@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { HookResult, hookResult } from "../../orchestrator/result";
+import { type HookResult, hookResult } from "../../orchestrator/result";
 import { findProjectRoot } from "../../lib/project_root";
 
 export const MODULE_NAME = "12_inflight_reanchor";

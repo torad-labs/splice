@@ -10,6 +10,7 @@ import { sentinel, usage as sentinelUsage } from "./src/commands/sentinel.ts";
 import { run, usage as runUsage } from "./src/commands/run.ts";
 import { slot, usage as slotUsage } from "./src/commands/slot.ts";
 import { title, usage as titleUsage } from "./src/commands/title.ts";
+import { typecheck, usage as typecheckUsage } from "./src/commands/typecheck.ts";
 
 const VERBS = {
   run: { usage: runUsage, exec: (argv: string[]) => run(argv) },
@@ -18,6 +19,7 @@ const VERBS = {
   rules: { usage: rulesUsage, exec: (argv: string[]) => rules(argv) },
   title: { usage: titleUsage, exec: (argv: string[]) => title(argv) },
   "no-python": { usage: noPythonUsage, exec: (argv: string[]) => noPython(argv) },
+  typecheck: { usage: typecheckUsage, exec: (argv: string[]) => typecheck(argv) },
   ledger: { usage: ledgerUsage, exec: (argv: string[]) => ledger(argv) },
   audit: { usage: auditUsage, exec: (argv: string[]) => audit(argv) },
   allowlist: { usage: allowlistUsage, exec: (argv: string[]) => allowlist(argv) },

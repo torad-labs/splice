@@ -2191,7 +2191,9 @@ async function milestoneSheets(args) {
           blank: Number(blank.toFixed(4)),
         });
         if (blank >= BLANK_AT) blanks.push(capture.file);
-        if (TERMINAL) process.stdout.write(!verdict.ok ? 'F' : blank >= BLANK_AT ? 'B' : '.');
+        // A frame that failed its predicate already printed its F and continued above; every capture
+        // reaching here passed it, so the mark is blank or clean.
+        if (TERMINAL) process.stdout.write(blank >= BLANK_AT ? 'B' : '.');
       }
     }
     if (TERMINAL) process.stdout.write('\n');

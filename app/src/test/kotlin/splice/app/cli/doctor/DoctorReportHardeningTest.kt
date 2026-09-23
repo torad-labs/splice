@@ -13,9 +13,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
 import splice.app.cli.SafeNames
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountView
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect

@@ -68,6 +68,7 @@ files:
   - integrations/mcp/src/main/**/*.kt
   - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - features/heads/src/main/**/*.kt
+  - features/accounts/src/main/**/*.kt
 rule:
   all:
     # A route registration: an HTTP verb, a PATH string literal, and a handler lambda. The path

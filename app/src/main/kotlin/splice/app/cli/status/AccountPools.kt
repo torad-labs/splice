@@ -10,11 +10,11 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountSwitchView
+import splice.accounts.pool.HeadAccountView
 import splice.app.cli.AdminSupport
 import splice.app.cli.doctor.MgmtKeyRead
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountSwitchView
-import splice.control.HeadAccountView
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars

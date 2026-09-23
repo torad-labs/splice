@@ -3,7 +3,7 @@
 // version). Split from DoctorReport.kt so the emitter file carries the emission only.
 package splice.app.cli.doctor
 
-import splice.control.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountPoolView
 import splice.core.topology.Topology
 import java.nio.file.Path
 import java.nio.file.Paths

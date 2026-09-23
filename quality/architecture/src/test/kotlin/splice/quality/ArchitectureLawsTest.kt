@@ -27,7 +27,8 @@ private val PORT_SCOPE_MODULES = listOf(
     ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat",
     ":integrations-dialects-anthropic", ":integrations-providers-codex", ":integrations-providers-grok", ":integrations-providers-openai",
     ":integrations-providers-kimi", ":integrations-providers-muse", ":features-turns", ":daemon-control",
-    ":features-heads", ":features-models", ":features-sessions", ":features-usage", ":app", ":quality-compiler-plugin",
+    ":features-heads", ":features-models", ":features-sessions", ":features-usage", ":features-accounts", ":app",
+    ":quality-compiler-plugin",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,

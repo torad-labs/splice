@@ -9,6 +9,7 @@ dependencies {
     api(project(":integrations-mcp"))
     implementation(project(":integrations-http"))
     implementation(project(":features-heads"))
+    api(project(":features-accounts"))
     api(project(":features-sessions"))
     api(project(":features-usage"))
     implementation(libs.kotlinx.serialization.json)

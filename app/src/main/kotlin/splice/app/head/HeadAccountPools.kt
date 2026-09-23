@@ -1,13 +1,13 @@
 // NEW: v0.4.0 FEATURES.md §11 — head-local OAuth account pool assembly and control projection.
 package splice.app.head
 
+import splice.accounts.pool.HeadAccountAuthSource
+import splice.accounts.pool.HeadAccountPinSource
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountSwitchView
+import splice.accounts.pool.HeadAccountView
 import splice.app.provider.Wired
-import splice.control.HeadAccountAuthSource
-import splice.control.HeadAccountPinSource
-import splice.control.HeadAccountPoolSource
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountSwitchView
-import splice.control.HeadAccountView
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.upstream.codemode.ProcessElapsedNow
@@ -44,8 +44,8 @@ internal class HeadAccountPools {
     // V4-132: a NAMED class, not the bare HeadAccountPoolSource { } lambda this returned before —
     // a fun-interface lambda cannot ALSO implement HeadAccountPinSource, and widening
     // HeadAccountPoolSource itself would break every test double that implements it by SAM
-    // conversion. AuthRoutes discovers the pin capability with a checked cast
-    // (`managed.accountPool as? HeadAccountPinSource`), the same idiom StatuslineRoute already
+    // conversion. SwitchRoute discovers the pin capability with a checked cast
+    // (`head.pool as? HeadAccountPinSource`), the same idiom StatuslineRoute already
     // uses for HeadPerfSkipSource.
     fun source(pool: AccountPool?): HeadAccountPoolSource? = pool?.let(::PoolSource)
 

@@ -4,10 +4,10 @@
 // reasons are splice's own text; nothing else from the pool is rendered.
 package splice.app.cli.status
 
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
 import splice.app.cli.doctor.CheckStatus
 import splice.app.cli.doctor.DoctorCheck
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountView
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountLabelPolicy
 import java.time.Instant

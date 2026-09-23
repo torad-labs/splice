@@ -68,12 +68,15 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":features-models" to setOf(":core"),
     // Head lifecycle, logs, and status own their sequences and use the shared head contract.
     ":features-heads" to setOf(":core"),
+    // sign-in, refresh, the account pool and their console routes; the pool is a read model every
+    // operator surface renders.
+    ":features-accounts" to setOf(":core", ":integrations-http"),
     ":features-usage" to setOf(":core", ":integrations-http"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
     ":daemon-control" to setOf(
         ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
-        ":features-heads", ":features-sessions", ":features-usage",
+        ":features-heads", ":features-sessions", ":features-usage", ":features-accounts",
     ),
     // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
     ":console" to emptySet(),

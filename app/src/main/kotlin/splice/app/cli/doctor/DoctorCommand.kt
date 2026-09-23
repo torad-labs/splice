@@ -8,13 +8,13 @@
 // owns composition, isolation and the verdict. :app: println ok.
 package splice.app.cli.doctor
 
+import splice.accounts.pool.HeadAccountPoolView
 import splice.app.cli.AdminSupport
 import splice.app.cli.DoctorProbe
 import splice.app.cli.status.AccountPoolRead
 import splice.app.cli.status.AccountPoolText
 import splice.app.cli.status.JdkAccountPoolRead
 import splice.app.daemon.DaemonProbe
-import splice.control.HeadAccountPoolView
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.util.Cancellables

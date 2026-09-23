@@ -34,9 +34,12 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":features-models" to setOf(":core"),
     ":daemon-control" to setOf(
         ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http",
-        ":features-heads", ":features-sessions", ":features-usage",
+        ":features-heads", ":features-sessions", ":features-usage", ":features-accounts",
     ),
     ":features-heads" to setOf(":core"),
+    // sign-in, refresh, the account pool and their console routes; the pool is a read model every
+    // operator surface renders.
+    ":features-accounts" to setOf(":core", ":integrations-http"),
     ":features-usage" to setOf(":core", ":integrations-http"),
     ":quality-architecture" to emptySet(),
     // :console is the Bun/Vite operator console — no Kotlin, no edges; graded here so the map

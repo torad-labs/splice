@@ -36,6 +36,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import splice.accounts.pool.HeadAccountPinSource
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.signin.AccountMutation
+import splice.accounts.signin.ConsoleAccounts
+import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginStart
+import splice.accounts.signin.LoginState
+import splice.accounts.signin.LoginStatus
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
@@ -263,8 +272,8 @@ class AuthAndAccountsRoutesTest {
     )
 
     /** [HeadAccountPoolSource] AND [HeadAccountPinSource] on the same object, the same checked-cast
-     *  shape [splice.control.api.auth.AuthRoutes.switchAccount] discovers in production
-     *  (`managed.accountPool as? HeadAccountPinSource`). */
+     *  shape [splice.accounts.pool.SwitchRoute.switchAccount] discovers in production
+     *  (`head.pool as? HeadAccountPinSource`). */
     private class PinnedPoolSource(
         private val pinner: HeadAccountPinSource,
     ) : HeadAccountPoolSource, HeadAccountPinSource by pinner {

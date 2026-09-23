@@ -40,6 +40,7 @@ include(
     ":features-models",
     ":daemon-control",
     ":features-heads",
+    ":features-accounts",
     ":features-usage",
     ":app",
     ":quality-architecture",
@@ -67,6 +68,7 @@ project(":features-sessions").projectDir = file("features/sessions")
 project(":features-models").projectDir = file("features/models")
 project(":daemon-control").projectDir = file("daemon/control")
 project(":features-heads").projectDir = file("features/heads")
+project(":features-accounts").projectDir = file("features/accounts")
 project(":features-usage").projectDir = file("features/usage")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")

@@ -17,3 +17,5 @@ NEW	:features-usage	NEW	features/usage
 NEW	:features-sessions	NEW	features/sessions
 NEW	:features-models	NEW	features/models
 :upstream	:integrations-upstream	upstream	integrations/upstream
+NEW	:integrations-topology	NEW	integrations/topology
+NEW	:features-accounts	NEW	features/accounts

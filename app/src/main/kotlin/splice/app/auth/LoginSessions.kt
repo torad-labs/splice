@@ -6,19 +6,19 @@
 // the row's "the state reads signed in, live after restart until then". DELETE/PATCH
 // /api/auth/{head}/accounts/{label} are plain OAuthAccountFiles calls, no off-request state.
 //
-// This file is also the :app SIDE of the splice.control.ConsoleAccounts port: :daemon-control depends on
-// :core only, and the flows + OAuthAccountFiles both live here, so the port is how a :daemon-control route
+// This file is also the :app SIDE of the splice.accounts.signin.ConsoleAccounts port: :features-accounts
+// sits below :app, and the flows + OAuthAccountFiles both live here, so the port is how an accounts route
 // reaches them (ConsoleWiring assigns ConsolePorts.accounts, the same shape as its other nine).
 package splice.app.auth
 
 import kotlinx.coroutines.launch
+import splice.accounts.signin.AccountMutation
+import splice.accounts.signin.ConsoleAccounts
+import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginStart
+import splice.accounts.signin.LoginState
+import splice.accounts.signin.LoginStatus
 import splice.app.cli.auth.LoginCommand
-import splice.control.AccountMutation
-import splice.control.ConsoleAccounts
-import splice.control.HeadRestart
-import splice.control.LoginStart
-import splice.control.LoginState
-import splice.control.LoginStatus
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig

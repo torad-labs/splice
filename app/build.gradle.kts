@@ -36,6 +36,7 @@ dependencies {
     implementation(project(":features-sessions"))
     implementation(project(":features-usage"))
     implementation(project(":features-models"))
+    implementation(project(":features-accounts"))
     implementation(project(":daemon-control"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)

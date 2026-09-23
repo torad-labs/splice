@@ -1,4 +1,4 @@
-package splice.control.api.auth
+package splice.control
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -10,11 +10,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.control.HeadAccountPoolSource
-import splice.control.HeadAccountPoolView
-import splice.control.HeadAccountSwitchView
-import splice.control.HeadAccountView
-import splice.control.StatuslineRenderer
+import splice.accounts.pool.AccountPoolJson
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountSwitchView
+import splice.accounts.pool.HeadAccountView
 import splice.core.auth.AuthDescription
 
 class AccountSurfacesTest {

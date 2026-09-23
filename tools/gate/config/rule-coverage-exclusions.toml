@@ -591,3 +591,19 @@ outcomes, the CLI's runBlocking bridge, client-home launching, outcome tags, quo
 cleanup, and streaming wire catches. Every rule that DID select them was widened to
 integrations/topology instead of being excluded, and kt-no-println now reaches them too.
 """
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-accounts"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The account pool read model and the auth/accounts routes came from daemon/control. None of these six
+scopes selected those files there: they grade exceptions as outcomes in the turn path, the CLI's
+runBlocking bridge, client-home launching (Launch*.kt only), quota selection, turn cleanup, and
+streaming wire catches. Every rule that DID select them was widened to features/accounts instead of
+being excluded, and kt-no-println already reaches the whole root.
+"""

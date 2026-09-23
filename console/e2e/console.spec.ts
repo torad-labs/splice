@@ -242,6 +242,9 @@ test('models opens a model with the head windows its topology declares', async (
 });
 
 test('teams composes the stack\'s two sessions, shows their hand-off and the sender\'s priced turn, and unbinds', async ({ page }) => {
+  // The journey drives a real turn bounded at 60 s (stack.ts postTurn), so its budget sits above that
+  // bound: a turn that hangs fails as that turn, named, rather than as a bare test timeout.
+  test.setTimeout(120_000);
   const faults = await open(page, 'teams');
   const main = page.locator('main');
   // Another run of this test may already have left a team in the stack's daemon, in which case the

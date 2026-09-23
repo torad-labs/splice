@@ -65,3 +65,9 @@
    ink, so the printed state was near-invisible on the key in this form's capture. shared/controls
    is outside this row's fence, so the fix is scoped here and the primitive is reported. */
 .myx-compose .myx-flag .myx-edge-label { color: var(--strip-ink); }
+.myx-compose-answer {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--strip-ink);
+}

@@ -1,34 +1,43 @@
-// The project entity's HTTP segment. Two routes, both pending V4-131.
-//
-// The project PAGE needs nothing else from the daemon: its sessions come from @entities/session,
-// its turns and cost from @entities/economics and @entities/perf, its compaction scope and
-// statusline roots entry from @entities/config, so this slice owns the repo list and the repo's own
-// files and lets the page compose the rest. That is why section 6 lists a files route but no
-// project-detail route, and none is invented here.
-import { pendingOf, request } from '@shared/api';
+// The project entity's HTTP segment: the three project routes ProjectsRoutes serves (V4-131): the
+// repo list, one repo's own row and the repo's own files. A 404 on any of them is a failure to
+// report, never "not built": the routes are served, and the detail route answers 404 for a root
+// the daemon has not seen, with a sentence that says so.
+import { request } from '@shared/api';
 import { poll } from '@shared/lib';
-import { projectFilesStore, projectsStore } from '../model/store';
-import type { ProjectFilesPayload, ProjectsPayload } from '../model/types';
+import { projectFilesStore, projectStore, projectsStore } from '../model/store';
+import type { ProjectFilesPayload, ProjectRow, ProjectsPayload } from '../model/types';
 
-/** The v0.4.0 item that will serve the project routes. */
-export const PENDING_PROJECTS = 'V4-131';
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export async function fetchProjects(): Promise<void> {
   projectsStore.startLoading();
   try {
     projectsStore.setData(await request<ProjectsPayload>('/api/projects'));
   } catch (err) {
-    const pending = pendingOf(err, PENDING_PROJECTS);
-    if (pending !== null) {
-      projectsStore.setData(pending);
-      return;
-    }
-    projectsStore.setError(err instanceof Error ? err.message : String(err));
+    projectsStore.setError(messageOf(err));
   }
 }
 
 export function startProjectsPolling(intervalMs = 15000): () => void {
   return poll(fetchProjects, intervalMs);
+}
+
+/** One project's own row (GET /api/projects/{id}): the counts the daemon computes for that root
+ *  alone, read fresh while its detail is open. */
+export async function fetchProject(id: string): Promise<void> {
+  projectStore.startLoading();
+  try {
+    projectStore.setData(await request<ProjectRow>(`/api/projects/${encodeURIComponent(id)}`));
+  } catch (err) {
+    projectStore.setError(messageOf(err));
+  }
+}
+
+/** Polls one project's row while its detail is open, at the list's own cadence. */
+export function startProjectPolling(id: string, intervalMs = 15000): () => void {
+  return poll(() => fetchProject(id), intervalMs);
 }
 
 /** One project's instruction and memory files: read when its page opens, never polled, because a
@@ -40,11 +49,6 @@ export async function fetchProjectFiles(id: string): Promise<void> {
       await request<ProjectFilesPayload>(`/api/projects/${encodeURIComponent(id)}/files`),
     );
   } catch (err) {
-    const pending = pendingOf(err, PENDING_PROJECTS);
-    if (pending !== null) {
-      projectFilesStore.setData(pending);
-      return;
-    }
-    projectFilesStore.setError(err instanceof Error ? err.message : String(err));
+    projectFilesStore.setError(messageOf(err));
   }
 }

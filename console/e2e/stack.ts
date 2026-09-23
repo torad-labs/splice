@@ -15,6 +15,14 @@
 //     the honest-empty state every page has to render without inventing numbers.
 //   - one turn through the OAuth head, driven through the head's own Anthropic endpoint, so the perf
 //     writer (PerfStats.record) writes the row /api/perf/turns serves.
+//   - a git repository with a CLAUDE.md, and two Claude Code session registrations working in it
+//     (~/.claude/sessions/*.json, the files SessionRegistry reads), both on this process's own live
+//     pid: the repository becomes a project (/api/projects), the two sessions become rows of
+//     /api/sessions, and a SECOND turn, sent by one session and carrying its SendMessage call to the
+//     other's address, becomes the message edge /api/sessions/edges reports (MessageEdges reads it
+//     off the request on the wire). The same turn is what /api/projects/{id} counts as today's.
+//   - a [compaction] table with one rule of each configured kind (global, model, project), so
+//     /api/compaction/instructions reports three sources with lengths the spec knows.
 // Nothing leaves loopback: the mock is the only upstream, quota polling is off (CLAUDEX_QUOTA_POLL),
 // and the environment carries no provider credential, DISPLAY or DBUS address.
 //
@@ -22,7 +30,7 @@
 // that never answers, a turn that fails or a row that never lands each throws with the daemon log's
 // tail, and Playwright reports the setup as the failure.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -54,11 +62,26 @@ export const STACK = {
   fiveHourUsedPercent: 42,
   sevenDayUsedPercent: 7,
   plan: 'plus',
+  /** The session that sends the hand-off, and the one it sends it to. Both are registered in the
+   *  repository below, so the project counts them as its live sessions. */
+  sender: { id: 'e2e5e11d-0000-4000-8000-000000000001', name: 'e2e-sender' },
+  peer: { id: 'e2e9ee12-0000-4000-8000-000000000002', name: 'e2e-peer' },
+  /** The compaction rules the topology declares, one per configured kind. Their lengths are what
+   *  /api/compaction/instructions reports as `chars`. */
+  compactGlobal: 'keep the decisions and the open questions',
+  compactModel: 'e2e model: keep every file path',
+  compactProject: 'e2e repo: keep the ledger rows named',
 } as const;
 
 export interface Stack {
   base: string;
   key: string;
+  /** The OAuth head's own port, so a journey can drive a turn through it. */
+  oauthPort: number;
+  /** splice.toml as the daemon booted it, so a journey can read what a console write put there. */
+  configFile: string;
+  /** The repository's real path, which is the project id /api/projects reports. */
+  repo: string;
   stop: () => Promise<void>;
 }
 
@@ -139,7 +162,7 @@ function startMockUpstream(port: number, record: string[]): Promise<Server> {
   });
 }
 
-function config(ports: { control: number; mock: number; oauth: number; solo: number; key: number }, authFiles: { pooled: string; solo: string }): string {
+function config(ports: { control: number; mock: number; oauth: number; solo: number; key: number }, authFiles: { pooled: string; solo: string }, repo: string): string {
   return [
     '[daemon]',
     `control_port = ${ports.control}`,
@@ -194,7 +217,40 @@ function config(ports: { control: number; mock: number; oauth: number; solo: num
     'pinned_model = "e2e/key-model"',
     'models = [{ id = "e2e/key-model", slot = "sonnet" }]',
     '',
+    '[compaction]',
+    `instructions = "${STACK.compactGlobal}"`,
+    '',
+    '[[compaction.model]]',
+    `model = "${STACK.model}"`,
+    `instructions = "${STACK.compactModel}"`,
+    '',
+    '[[compaction.project]]',
+    `path = "${repo}"`,
+    `instructions = "${STACK.compactProject}"`,
+    '',
   ].join('\n');
+}
+
+/** One Claude Code registration file, in the fields SessionRegistry reads. The pid is THIS process,
+ *  which is alive for the whole run, so the registry reports the session live; the file is named
+ *  after the session rather than the pid because two sessions share it. */
+function registerSession(dir: string, session: { id: string; name: string }, cwd: string, socket: string): void {
+  mkdirSync(dir, { recursive: true });
+  const now = Date.now();
+  writeFileSync(
+    join(dir, `${session.name}.json`),
+    JSON.stringify({
+      pid: process.pid,
+      sessionId: session.id,
+      cwd,
+      name: session.name,
+      kind: 'interactive',
+      status: 'idle',
+      startedAt: now,
+      updatedAt: now,
+      messagingSocketPath: socket,
+    }),
+  );
 }
 
 async function answers(url: string): Promise<boolean> {
@@ -222,22 +278,58 @@ async function until<T>(what: string, timeoutMs: number, probe: () => Promise<T 
   }
 }
 
-async function driveOneTurn(headPort: number, key: string): Promise<void> {
+/** The prompt of the plain turn. Exported so a journey can assert the console never prints it: no
+ *  route serves a turn's body, so the text must not reach the page from anywhere. */
+export const TURN_PROMPT = 'one turn so the console has a row';
+
+async function postTurn(headPort: number, key: string, body: unknown, headers: Record<string, string> = {}): Promise<void> {
   const res = await fetch(`http://127.0.0.1:${headPort}/v1/messages`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': key },
-    body: JSON.stringify({
+    headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': key, ...headers },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const text = await res.text();
+  if (res.status !== 200 || !text.includes('message_stop')) {
+    throw new Error(`console e2e: the turn through ${STACK.oauthHead} failed (${res.status}): ${text.slice(0, 400)}`);
+  }
+}
+
+/** One plain turn through a head. Exported: a journey drives its own turn after a console write. */
+export async function driveOneTurn(headPort: number, key: string): Promise<void> {
+  await postTurn(headPort, key, {
+    model: STACK.model,
+    max_tokens: 64,
+    stream: true,
+    messages: [{ role: 'user', content: TURN_PROMPT }],
+  });
+}
+
+/** The sender's turn after its SendMessage call: the call is the last assistant message of the
+ *  history, which is exactly where MessageEdges looks for it, and the session header names the
+ *  sender. The daemon records the edge; the text of the message never leaves the request. */
+async function sendHandOff(headPort: number, key: string, toAddress: string): Promise<void> {
+  const call = 'toolu_console_e2e_handoff';
+  await postTurn(
+    headPort,
+    key,
+    {
       model: STACK.model,
       max_tokens: 64,
       stream: true,
-      messages: [{ role: 'user', content: 'one turn so the console has a row' }],
-    }),
-    signal: AbortSignal.timeout(60_000),
-  });
-  const body = await res.text();
-  if (res.status !== 200 || !body.includes('message_stop')) {
-    throw new Error(`console e2e: the turn through ${STACK.oauthHead} failed (${res.status}): ${body.slice(0, 400)}`);
-  }
+      tools: [{
+        name: 'SendMessage',
+        description: 'send a message to another session',
+        input_schema: { type: 'object', properties: { to: { type: 'string' }, message: { type: 'string' } } },
+      }],
+      messages: [
+        { role: 'user', content: 'hand the review to the peer session' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: call, name: 'SendMessage', input: { to: toAddress, message: 'review ready' } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: call, content: 'sent' }] },
+      ],
+    },
+    { 'x-claude-code-session-id': STACK.sender.id },
+  );
 }
 
 export async function startStack(): Promise<Stack> {
@@ -258,9 +350,18 @@ export async function startStack(): Promise<Stack> {
   writeFileSync(authFiles.pooled, JSON.stringify(dummyAuth('acct_console_e2e')));
   writeFileSync(authFiles.solo, JSON.stringify(dummyAuth('acct_console_e2e_solo')));
   writePoolAccount(authFiles.pooled, STACK.poolLabel);
+  // A `.git` DIRECTORY is what RepoResolver reads as a main checkout; the path is resolved the way
+  // the daemon resolves it (toRealPath), so the id the spec expects is the id the daemon reports.
+  mkdirSync(join(home, 'e2e-repo/.git'), { recursive: true });
+  const repo = realpathSync(join(home, 'e2e-repo'));
+  writeFileSync(join(repo, 'CLAUDE.md'), '# e2e repo\n\nThe console e2e project.\n');
+  const peerAddress = `uds:${join(home, 'e2e-peer.sock')}`;
+  const sessionsDir = join(home, '.claude/sessions');
+  registerSession(sessionsDir, STACK.sender, repo, join(home, 'e2e-sender.sock'));
+  registerSession(sessionsDir, STACK.peer, repo, peerAddress.slice('uds:'.length));
   const configFile = join(home, '.config/splice/splice.toml');
   mkdirSync(dirname(configFile), { recursive: true });
-  writeFileSync(configFile, config(ports, authFiles));
+  writeFileSync(configFile, config(ports, authFiles, repo));
 
   const upstream: string[] = [];
   const mock = await startMockUpstream(ports.mock, upstream);
@@ -322,7 +423,12 @@ export async function startStack(): Promise<Stack> {
       const body = (await read('/api/accounts')) as { accounts?: { five_hour_used_percent?: number | null }[] } | null;
       return body?.accounts?.some((a) => a.five_hour_used_percent === STACK.fiveHourUsedPercent) ? true : null;
     });
-    return { base, key, stop };
+    await sendHandOff(ports.oauth, key, peerAddress);
+    await until(`the hand-off edge from ${STACK.sender.name}`, LANDING_TIMEOUT_MS, async () => {
+      const body = (await read('/api/sessions/edges')) as { sessions?: Record<string, unknown[]> } | null;
+      return (body?.sessions?.[STACK.sender.id]?.length ?? 0) > 0 ? true : null;
+    });
+    return { base, key, oauthPort: ports.oauth, configFile, repo, stop };
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     const detail = `${why}\n-- upstream requests: ${upstream.join(', ') || 'none'}\n-- daemon log tail:\n${tail(log)}`;

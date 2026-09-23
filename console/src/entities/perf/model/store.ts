@@ -1,6 +1,6 @@
 import { createResource } from '@shared/lib';
 import type { PendingRoute } from '@shared/api';
-import type { CaptureSlice, PerfPayload, PerfSummaryPayload, TurnsState } from './types';
+import type { CaptureState, PerfPayload, PerfSummaryPayload, TurnsState } from './types';
 
 /** Per-field percentiles per head (GET /api/perf). */
 export const perfStore = createResource<PerfPayload>();
@@ -13,5 +13,5 @@ export const perfSummaryStore = createResource<PerfSummaryPayload>();
  *  honest empty, never a mocked row. */
 export const perfTurnsStore = createResource<TurnsState | PendingRoute>();
 
-/** One head's body capture (GET /api/heads/{head}/capture), pending V4-133. */
-export const captureStore = createResource<CaptureSlice>();
+/** One head's body capture (GET/PUT /api/heads/{head}/capture): what runs and what was written. */
+export const captureStore = createResource<CaptureState>();

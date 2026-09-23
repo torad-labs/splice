@@ -5,6 +5,19 @@ export const S = {
   /** The reveal's label for the page's one explanation. */
   law: 'why no model',
   sample: 'sample data',
+  /** The rules bay (GET /api/compaction/instructions). */
+  instructions: 'instructions',
+  /** A rule strip's aria label prefix and its holder edge. */
+  instruction: 'instruction',
+  rule: 'rule',
+  scope: 'scope',
+  source: 'source',
+  chars: 'chars',
+  heads: 'heads',
+  /** A rule whose text is empty: the client's own instructions stand. */
+  optOut: 'opt-out',
+  /** A rule whose file cannot be read. */
+  unavailable: 'unavailable',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

@@ -26,15 +26,17 @@ import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
 import {
   fetchSessionEdges,
-  nameForAddress,
-  peerAddresses,
+  latestPeer,
+  peerLabel,
   sessionLabel,
+  startBoardEdgesPolling,
   startSessionsPolling,
+  useBoardEdges,
   useSession,
   useSessionEdges,
   useSessionRegistry,
 } from '@entities/session';
-import type { SessionEdgesSlice, SessionRow, SessionsPayload } from '@entities/session';
+import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
 import { Bay, Empty, Figure, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
@@ -57,10 +59,16 @@ const DEFAULT_VIEWS: View[] = [
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
+/** The address of a hand-off's other end: a sent edge carries the one its call used; a received
+ *  edge carries the sender's session id, so its address is the one the registry holds for it. */
+function peerAddressOf(rows: readonly SessionRow[], edge: SessionEdgesPayload['edges'][number]): string {
+  if (edge.direction === 'out') return edge.to;
+  return rows.find((row) => row.session_id === edge.from)?.address ?? S.absent;
+}
+
 /** One hand-off, as a strip: which way it went, to whom, and when. */
-function EdgeRows({ edges, rows }: { edges: SessionEdgesSlice | null; rows: readonly SessionRow[] }) {
+function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: readonly SessionRow[] }) {
   if (edges === null) return null;
-  if ('pending' in edges) return <Empty text="message edges not routed yet" source="row V4-130" />;
   if (edges.edges.length === 0) return <Empty text="no hand-offs recorded" source="/api/sessions/{id}/edges" />;
   return (
     <>
@@ -71,12 +79,8 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesSlice | null; rows: read
           edgeLabel={edge.direction === 'out' ? S.sent : S.received}
           ariaLabel={`${edge.direction} ${edge.to}`}
         >
-          <StripField
-            w={20}
-            label={S.peer}
-            value={nameForAddress(rows, edge.direction === 'out' ? edge.to : edge.from) ?? edge.to}
-          />
-          <StripField w={22} label={S.address} value={edge.direction === 'out' ? edge.to : edge.from} />
+          <StripField w={20} label={S.peer} value={peerLabel(rows, edge)} />
+          <StripField w={22} label={S.address} value={peerAddressOf(rows, edge)} />
           <StripField w={10} label={S.at} value={timeAgo(edge.at)} />
         </Strip>
       ))}
@@ -85,9 +89,14 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesSlice | null; rows: read
 }
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, edges = null, locked = false, error = null, sample }: {
+export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, sample }: {
   payload: SessionsPayload | null;
-  edges?: SessionEdgesSlice | null;
+  /** The OPENED session's edges, for its hand-offs bay. */
+  edges?: SessionEdgesPayload | null;
+  /** Every session's edges (GET /api/sessions/edges), for the peer column of every row. */
+  boardEdges?: BoardEdgesPayload | null;
+  /** A board edges read that failed, in the daemon's words. */
+  edgesError?: string | null;
   locked?: boolean;
   error?: string | null;
   /** True when a capture fixture is feeding this board, which the header prints. */
@@ -107,17 +116,16 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
   const rows = payload?.sessions ?? [];
   const open = rows.find((row) => keyOf(row) === openId) ?? null;
 
-  // Edges are read for the OPEN session only. A board-wide column would need one
-  // request per row; see the note on M2-02 for the route V4-130 would need.
+  // The OPENED session's hand-offs bay reads its own edges route when it opens; the peer column of
+  // every row comes from the one board-wide read (GET /api/sessions/edges, the route M2-02 asked
+  // V4-130 for), so no row needs a request of its own.
   useEffect(() => {
     if (open?.session_id != null) void fetchSessionEdges(open.session_id);
   }, [open?.session_id]);
 
-  const edgePeers = edges !== null && !('pending' in edges) ? peerAddresses(edges.edges) : [];
   const peerOf = (row: SessionRow): string | null => {
-    if (open === null || row.session_id !== open.session_id) return null;
-    const first = edgePeers[0];
-    return first === undefined ? null : nameForAddress(rows, first) ?? first;
+    if (boardEdges === null || row.session_id === null) return null;
+    return latestPeer(rows, boardEdges.sessions[row.session_id] ?? []);
   };
 
   const selection = selectionOf(rows, active, Date.now());
@@ -163,6 +171,9 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
         {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
       >
         <div className="myx-sx-bays">
+          {/* An edges read that failed leaves every peer unknown, and says why: unwatched is not
+              the same fact as "no hand-offs". */}
+          {edgesError === null ? null : <Fault message={edgesError} />}
           {rows.length === 0 ? (
             <Empty text="no sessions registered" source="/api/sessions" />
           ) : selection.kind === 'groups' ? (
@@ -274,11 +285,15 @@ export default function SessionsPage() {
   const locked = useSession((s) => s.locked);
   const registry = useSessionRegistry((s) => s);
   const edges = useSessionEdges((s) => s);
+  const boardEdges = useBoardEdges((s) => s);
   const [sample, setSample] = useState<{ name: string; payload: SessionsPayload } | null>(null);
   const name = fixtureName();
   const fixture = sample === null ? null : sample.payload;
 
-  useEffect(() => startSessionsPolling(5000), []);
+  useEffect(() => {
+    const stops = [startSessionsPolling(5000), startBoardEdgesPolling(5000)];
+    return () => stops.forEach((stop) => stop());
+  }, []);
 
   // The fixture is imported by name at runtime, never bundled: the shipped dist
   // carries no sample bytes, and the branch is dead outside DEV.
@@ -308,6 +323,9 @@ export default function SessionsPage() {
     <SessionsBoard
       payload={fixture ?? registry.data}
       edges={edges.data}
+      // Live edges never join a sample's rows: a capture's peers would be another board's.
+      boardEdges={fixture === null ? boardEdges.data : null}
+      edgesError={fixture === null ? boardEdges.error : null}
       locked={locked}
       error={registry.error}
       sample={sample?.name}

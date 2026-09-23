@@ -2,12 +2,12 @@
 // row of the day an event lands on, and what a role cost. No React, no store, no clock, so the
 // suite can hold each rule against a fixed payload.
 //
-// THE THREE PAYLOADS BELOW ARE NOT IN @entities/team, and that is deliberate rather than an
-// oversight. They are what GET /api/teams/{id}/economics and the turn log will serve (V4-131), the
-// entity slice is outside this row's fence, and CONTRACTS.md section 8 lets a consumer declare the
-// payload it reads locally. Until the routes land every panel that reads one prints the honest
-// empty naming V4-131, and only the dev fixture supplies them.
-import type { TeamMemberRow, TeamMessage, TeamPayload, TeamSlot } from '@entities/team';
+// WHAT THE VIEWS READ BEYOND THE BOARD (TeamViewData) is composed by pages/teams/board.ts: the
+// team's turn log from the perf rows of its heads, the daemon's own economics tallies, and the turns
+// in flight over the last hour worked out from that log. The economics are the daemon's numbers
+// printed as they arrive: it joins every perf row to a slot on the 8-character session tag itself
+// (TeamsEconomics.kt), so nothing here joins them a second time.
+import type { TeamEconomicsPayload, TeamMemberRow, TeamMessage, TeamPayload, TeamSlot, TeamTally } from '@entities/team';
 
 /** One turn of one member, as the turn log prints it. `live` is a turn still running: its
  *  duration is the time so far, and the timeline racks it on the `now` row. */
@@ -17,21 +17,10 @@ export interface TeamTurn {
   /** HH:MM the turn started. */
   time: string;
   duration: string;
-  input: number;
-  output: number;
+  /** Null when the perf row carried no token counts (a torn or failed turn). */
+  input: number | null;
+  output: number | null;
   live: boolean;
-}
-
-/** One session's day, as the economics route sums it. `session` is the id the TURN LOG carries,
- *  which is longer than the one the board prints, so the join is on a prefix (see costPerRole). */
-export interface TeamEconomicsSession {
-  session: string;
-  input: number;
-  output: number;
-  turns: number;
-  oldestTurnId: string;
-  /** HH:MM of that turn. */
-  oldestTurnAt: string;
 }
 
 /** One point of the team's turn count over the last hour: HH:MM and the turns in flight then. */
@@ -40,18 +29,19 @@ export interface TeamHourPoint {
   turns: number;
 }
 
-/** What the by-role and timeline views read beyond the board payload. Null means the routes that
- *  serve it do not exist yet, and the panels say so. */
+/** What the by-role and timeline views read beyond the board. `economics` is the daemon's answer
+ *  or the reason it gave none. */
 export interface TeamViewData {
   turns: TeamTurn[];
-  economics: TeamEconomicsSession[];
+  economics: TeamEconomicsPayload | { error: string };
   lastHour: TeamHourPoint[];
   /** HH:MM of the moment the views were read, printed as `now` on the rules. */
   now: string;
 }
 
-/** The session prefix the economics join matches on, named here because the panel prints it. */
-export const JOIN_PREFIX = 8;
+/** The characters of a session id the daemon's perf rows keep, and so the width of every join it
+ *  makes between a turn and a session (TurnDrive.SESSION_TAG_CHARS). Printed by the panels. */
+export const SESSION_TAG_CHARS = 8;
 
 // ---- the by-role board ---------------------------------------------------------------------
 
@@ -108,7 +98,8 @@ export function roleRows(board: TeamPayload, bays: readonly RoleBay[]): RoleEven
     return at < 0 ? 0 : at;
   };
   const timed = [
-    ...board.members.map((member) => ({ at: secondsOf(member.created), member, message: null })),
+    // A session whose start the registry does not report racks first rather than at a made-up time.
+    ...board.members.map((member) => ({ at: member.created === null ? 0 : secondsOf(member.created), member, message: null })),
     ...board.messages.map((message) => ({ at: secondsOf(message.time), member: null, message })),
   ].sort((a, b) => a.at - b.at);
 
@@ -170,11 +161,17 @@ export function lastReceived(board: TeamPayload, member: string): string | null 
 
 // ---- the timeline --------------------------------------------------------------------------
 
-/** A slot's name on the timeline's hand-offs: its role, numbered when the team declares the role
- *  more than once (`builder 1`, `builder 2`), in slot order. */
-export function slotName(slots: readonly TeamSlot[], session: string): string {
-  const slot = slots.find((s) => s.session === session);
-  if (slot === undefined) return session;
+/** A member's slot name on the timeline's hand-offs: its role, numbered when the team declares the
+ *  role more than once (`builder 1`, `builder 2`), in slot order. `name` is a member's printed name
+ *  or, for a party the board does not rack, the name the message carried, printed as it is. */
+export function slotName(board: TeamPayload, name: string): string {
+  const member = board.members.find((m) => m.name === name);
+  const slot = board.team.slots.find((s) => (member === undefined ? s.session === name : s.id === member.slot));
+  return slot === undefined ? name : roleName(board.team.slots, slot);
+}
+
+/** One slot's role, numbered among the slots that share it. */
+export function roleName(slots: readonly TeamSlot[], slot: TeamSlot): string {
   const same = slots.filter((s) => s.role === slot.role);
   return same.length > 1 ? `${slot.role} ${same.indexOf(slot) + 1}` : slot.role;
 }
@@ -239,64 +236,60 @@ export function timelineRows(board: TeamPayload, data: TeamViewData): TimelineRo
 
 // ---- the economics panels ------------------------------------------------------------------
 
+/** Every token a turn sent in: fresh input plus what it read from and wrote to the prompt cache,
+ *  which is what the model was handed. */
+export function tokensIn(tally: TeamTally): number {
+  return tally.tokens.input + tally.tokens.cache_read + tally.tokens.cache_write;
+}
+
 export interface RoleCost {
   role: string;
   input: number;
   output: number;
-  total: number;
+  /** USD, or null when a turn in the row had no rate card: a partial sum would be a wrong number. */
+  cost: number | null;
   turns: number;
 }
 
 export interface CostTable {
   rows: RoleCost[];
-  /** Sessions the economics route summed that match no member of this team on the prefix. */
-  unattributed: RoleCost;
   total: RoleCost;
-  oldest: { id: string; at: string } | null;
+  /** Turns on the team's heads that carried no session tag: the daemon counts them and can place
+   *  them in no role, so the table prints the count rather than dropping them. */
+  unattributed: number;
+  /** Epoch ms of the oldest turn the perf files still hold, which is how far back "lifetime"
+   *  reaches. */
+  oldest: number | null;
 }
 
-/**
- * Tokens per role for the day. The economics route keys each session by the id the turn log
- * carries, and the board knows a member by a shorter printed id, so the two are joined on their
- * first JOIN_PREFIX characters and the panel prints that it did. A session the join cannot place is
- * COUNTED on its own row rather than dropped, so the total is the route's total and not the
- * matched part of it.
- */
-export function costPerRole(board: TeamPayload, sessions: readonly TeamEconomicsSession[]): CostTable {
-  const blank = (role: string): RoleCost => ({ role, input: 0, output: 0, total: 0, turns: 0 });
-  const add = (into: RoleCost, s: TeamEconomicsSession) => {
-    into.input += s.input;
-    into.output += s.output;
-    into.total += s.input + s.output;
-    into.turns += s.turns;
-  };
-  const byRole = new Map<string, RoleCost>(rolesOf(board.team.slots).map((role) => [role, blank(role)]));
-  const unattributed = blank('unattributed');
-  const total = blank('total');
-  for (const s of sessions) {
-    const member = board.members.find((m) => m.sessionId.slice(0, JOIN_PREFIX) === s.session.slice(0, JOIN_PREFIX));
-    if (member === undefined) add(unattributed, s);
-    else {
-      if (!byRole.has(member.role)) byRole.set(member.role, blank(member.role));
-      add(byRole.get(member.role) as RoleCost, s);
-    }
-    add(total, s);
-  }
-  const oldest = [...sessions].sort((a, b) => secondsOf(a.oldestTurnAt) - secondsOf(b.oldestTurnAt))[0];
-  return {
-    rows: [...byRole.values()],
-    unattributed,
-    total,
-    oldest: oldest === undefined ? null : { id: oldest.oldestTurnId, at: oldest.oldestTurnAt },
-  };
+/** The daemon's per-role tallies as the table prints them, with their total. */
+export function costTable(economics: TeamEconomicsPayload): CostTable {
+  const rows = economics.roles.map((tally) => ({
+    role: tally.role,
+    input: tokensIn(tally),
+    output: tally.tokens.output,
+    cost: tally.cost_usd,
+    turns: tally.turns,
+  }));
+  const total = rows.reduce<RoleCost>(
+    (sum, row) => ({
+      role: 'total',
+      input: sum.input + row.input,
+      output: sum.output + row.output,
+      cost: sum.cost === null || row.cost === null ? null : sum.cost + row.cost,
+      turns: sum.turns + row.turns,
+    }),
+    { role: 'total', input: 0, output: 0, cost: 0, turns: 0 },
+  );
+  return { rows, total, unattributed: economics.unattributed_turns, oldest: economics.oldest_turn_epoch_millis };
 }
 
-/** Turns per member for the day, on the same prefix join as the cost table so the two agree. */
-export function turnsPerMember(board: TeamPayload, sessions: readonly TeamEconomicsSession[]): { member: string; turns: number }[] {
-  return board.members.map((member) => ({
-    member: member.name,
-    turns: sessions
-      .filter((s) => s.session.slice(0, JOIN_PREFIX) === member.sessionId.slice(0, JOIN_PREFIX))
-      .reduce((n, s) => n + s.turns, 0),
+/** Turns per slot, named by the session sitting in it or, for an open seat, by its role: the
+ *  daemon tallies a slot across every session it ever held, so an open seat can have turns. */
+export function turnsPerSlot(board: TeamPayload, economics: TeamEconomicsPayload): { slot: string; name: string; turns: number }[] {
+  return board.team.slots.map((slot) => ({
+    slot: slot.id,
+    name: board.members.find((member) => member.slot === slot.id)?.name ?? `${roleName(board.team.slots, slot)} (open)`,
+    turns: economics.slots.find((tally) => tally.slot === slot.id)?.turns ?? 0,
   }));
 }

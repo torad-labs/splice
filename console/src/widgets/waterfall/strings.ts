@@ -26,7 +26,12 @@ export const S = {
   /** The request drawer. */
   drawer: 'request drawer',
   showCapture: 'show capture',
-  request: 'request',
-  response: 'response',
-  redacted: 'redacted',
+  /** The capture switch's name: its printed word is only the state. */
+  capture: 'body capture',
+  on: 'on',
+  off: 'off',
+  /** What the daemon records now, which a write changes only after a restart. */
+  running: 'running',
+  retention: 'retention',
+  bodyCap: 'body cap',
 } as const;

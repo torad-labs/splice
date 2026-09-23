@@ -1,30 +1,48 @@
 // The team composer: the form that writes a team — its name, goal, feature list and repo, and the
 // role slots with their lead flag, their standing instructions and the session bound to each.
 //
-// IT CANNOT SAVE YET AND SAYS SO. PUT /api/teams is V4-131's work, so the form validates in full,
-// prints what still stops the draft, and then prints the honest empty naming the row instead of a
-// button that would drop the operator's work on the floor.
+// A SAVE IS ONE OR TWO WRITES, and the form prints the daemon's answer to them. A new team is
+// PUT /api/teams under an Idempotency-Key; an existing one is PUT /api/teams/{id}, which keeps any
+// binding its body leaves null, so a seat the operator opened is then unbound through
+// PUT /api/teams/{id}/sessions. The save stays disabled while the draft breaks a rule the form can
+// check, and a refusal the daemon gives anyway is printed in its own words.
 //
 // THE FIELDS ARE FORM FIELDS, NOT STRIPS. A strip is a focusable button (shared/ui/strip.tsx) and
 // an input inside one is a nested interactive element, which is the same reason the settings page
 // composes field boxes rather than racks.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { bindSessions, createTeam, replaceTeam } from '@entities/team';
+import type { TeamRow } from '@entities/team';
 import { Flag, Input, Key } from '@shared/controls';
-import { Empty } from '@shared/ui';
 import {
-  addSlot, bindSession, blankDraft, editSlot, featuresOf, removeSlot, setArchived, setLead,
-  unbindSession, validateDraft,
+  addSlot, bindSession, blankDraft, draftOf, editSlot, featuresOf, keyFor, removeSlot, setArchived, setLead,
+  unbindSession, unbindsOf, validateDraft, writeOf,
 } from './model';
 import type { TeamDraft } from './model';
 import { S } from './strings';
 import './team-compose.css';
 
-export { addSlot, bindSession, blankDraft, draftOf, editSlot, featuresOf, removeSlot, setArchived, setLead, unbindSession, validateDraft } from './model';
+export {
+  addSlot, bindSession, blankDraft, blankSlot, draftOf, editSlot, featuresOf, keyFor, removeSlot, setArchived, setLead,
+  unbindSession, unbindsOf, validateDraft, writeOf,
+} from './model';
 export type { DraftSlot, TeamDraft } from './model';
 
-/** The row that will serve the write, printed wherever the form would otherwise promise one. */
-export const PENDING_COMPOSE = 'V4-131';
+/** A fresh id: for a slot, and for a create's Idempotency-Key. */
+const mint = (): string => crypto.randomUUID();
+
+/**
+ * Saves the draft: creates it under `key` when `team` is null, else replaces `team` and unbinds
+ * every seat the draft opened. Answers the team as the daemon holds it after the last write.
+ */
+export async function saveDraft(draft: TeamDraft, team: TeamRow | null, key: string): Promise<TeamRow> {
+  const body = writeOf(draft);
+  if (team === null) return createTeam(body, key);
+  const replaced = await replaceTeam(team.id, body);
+  const unbinds = unbindsOf(team, draft);
+  return Object.keys(unbinds).length === 0 ? replaced : bindSessions(team.id, unbinds);
+}
 
 /** A multi-line field in the world's input box. The control set has no text area (a single line is
  *  every other field in the console), so this borrows Input's own label and box classes rather
@@ -38,13 +56,42 @@ function Lines({ label, value, rows, onChange }: { label: string; value: string;
   );
 }
 
-export function TeamCompose({ initial }: { initial?: TeamDraft }) {
-  const [draft, setDraft] = useState<TeamDraft>(initial ?? blankDraft());
+/** The composer, for a new team (`team` absent) or for `team` as the daemon holds it. `onSaved`
+ *  hears the team the daemon answered and the line printed for it, so the page can open the team
+ *  and hand the line to the composer it opens it in: a create re-keys this form onto the new team,
+ *  and the answer would otherwise go with the form it was printed in. */
+export function TeamCompose({ team = null, initial, answer: printed = null, onSaved }: {
+  team?: TeamRow | null;
+  /** A draft to start from instead of `team`'s: the dev fixture's. */
+  initial?: TeamDraft;
+  /** The daemon's answer to the save that opened this form. */
+  answer?: string | null;
+  onSaved?: (saved: TeamRow, answer: string) => void;
+}) {
+  const [draft, setDraft] = useState<TeamDraft>(() => initial ?? (team === null ? blankDraft(mint()) : draftOf(team)));
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(printed);
+  const attempt = useRef<{ body: string; key: string } | null>(null);
   const problems = validateDraft(draft);
 
+  const save = () => {
+    attempt.current = keyFor(attempt.current, JSON.stringify(writeOf(draft)), mint);
+    setBusy(true);
+    setAnswer(null);
+    saveDraft(draft, team, attempt.current.key).then(
+      (saved) => {
+        const line = `saved ${saved.name} as ${saved.id}`;
+        setAnswer(line);
+        onSaved?.(saved, line);
+      },
+      (err: unknown) => setAnswer(err instanceof Error ? err.message : String(err)),
+    ).finally(() => setBusy(false));
+  };
+
+  const title = team === null ? S.compose : `${S.edit} ${team.name}`;
   return (
-    <form className="myx-compose" aria-label={S.compose} onSubmit={(event) => event.preventDefault()}>
-      <h3 className="myx-compose-title">{S.compose}</h3>
+    <form className="myx-compose" aria-label={title} onSubmit={(event) => event.preventDefault()}>
+      <h3 className="myx-compose-title">{title}</h3>
 
       <div className="myx-compose-head">
         <Input label={S.name} value={draft.name} w={24} onChange={(name) => setDraft({ ...draft, name })} />
@@ -56,9 +103,7 @@ export function TeamCompose({ initial }: { initial?: TeamDraft }) {
       <fieldset className="myx-compose-slots">
         <legend>{S.slots}</legend>
         {draft.slots.map((slot, index) => (
-          // The index IS the identity here: two blank slots are not distinguishable by content,
-          // and the operator is editing positions in a list they can see.
-          <div className="myx-compose-slot" key={`slot-${index}`}>
+          <div className="myx-compose-slot" key={slot.id}>
             <Input label={S.role} value={slot.role} w={14} onChange={(role) => setDraft(editSlot(draft, index, { role }))} />
             <Input label={S.head} value={slot.head} w={18} onChange={(head) => setDraft(editSlot(draft, index, { head }))} />
             <Input
@@ -83,7 +128,7 @@ export function TeamCompose({ initial }: { initial?: TeamDraft }) {
           </div>
         ))}
         <div className="myx-compose-slot-actions">
-          <Key onClick={() => setDraft(addSlot(draft))}>{S.addSlot}</Key>
+          <Key onClick={() => setDraft(addSlot(draft, mint()))}>{S.addSlot}</Key>
         </div>
       </fieldset>
 
@@ -99,9 +144,10 @@ export function TeamCompose({ initial }: { initial?: TeamDraft }) {
         </div>
       ) : null}
 
-      {/* The save. Not a disabled button with a tooltip: the route does not exist, and the
-          console's answer to that is the same honest empty every other pending surface prints. */}
-      <Empty text="the console cannot save a team yet" source={`${PENDING_COMPOSE} serves PUT /api/teams`} />
+      <div className="myx-compose-foot">
+        <Key onClick={save} disabled={busy || problems.length > 0}>{team === null ? S.create : S.save}</Key>
+        {answer === null ? null : <p className="myx-compose-answer" role="status">{answer}</p>}
+      </div>
     </form>
   );
 }

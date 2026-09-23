@@ -68,11 +68,10 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
             return report.emit(run, options)
         }
         val sections = run.sections
-        println("${BOLD}splice doctor$RESET $DIM— every ✗ and ! comes with its fix$RESET")
-        sections.forEach { (title, checks) -> renderSection(title, checks) }
         val all = sections.flatMap { it.second }
         val failures = all.count { it.status == CheckStatus.FAIL }
         val warnings = all.count { it.status == CheckStatus.WARN }
+        renderReport(sections, all)
         println()
         when {
             failures > 0 ->
@@ -81,6 +80,75 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
             else -> println("${GREEN}Everything checks out.$RESET")
         }
         return failures == 0
+    }
+
+    /**
+     * Passing checks COLLAPSE, problems EXPAND.
+     *
+     * The previous report printed all twenty-odd checks at equal weight under their section
+     * headings, so the one row that needed acting on was camouflaged by the twenty that did not —
+     * on a surface whose entire job is to surface that row. A check that passed has nothing to say
+     * beyond its own name, and the section rosters say it more briefly than one line each.
+     *
+     * INFO is not a pass and not a problem: it keeps a line, quietly, because an operator reading
+     * "no heads configured" needs it and there is no fix to offer.
+     */
+    private fun renderReport(sections: List<Pair<String, List<DoctorCheck>>>, all: List<DoctorCheck>) {
+        println()
+        println("  ${BOLD}splice doctor$RESET  $DIM${all.size} checks$RESET")
+        println()
+        // EVERY PASS KEEPS ITS LINE, dim, above the problems. An earlier cut collapsed them to a
+        // roster ("18 passed  prerequisites installation ...") whenever anything was wrong, on the
+        // reasoning that a broken row must not be camouflaged by twenty fine ones. Two scar tests
+        // killed it, and they agree with each other: DoctorCommandTest pins `OPENROUTER_API_KEY is
+        // set` and `probe timed out` in the output of machines that DO have failures. A passing
+        // check's DETAIL is the evidence — did it see my key, did that probe hang — and `probe timed
+        // out` is a check that passed without measuring anything, which a "18 passed" line would
+        // have absorbed into its own denominator. The roster was a scan-length optimisation buying
+        // itself with information; hierarchy here is carried by weight and space instead, which is
+        // what the problems below already use and what survives a pipe.
+        for (check in all.filter { it.status == CheckStatus.OK }) {
+            println("  $GREEN✓$RESET  ${check.name}  $DIM${check.detail}$RESET")
+        }
+        // THE SPLIT IS "DOES IT CARRY A FIX", NOT THE STATUS. The first cut expanded WARN and FAIL
+        // and collapsed every INFO to one dim line — which silently dropped the fix off an INFO that
+        // had one, and `topology: no topology yet` is exactly that: INFO, because a machine with no
+        // config yet is not broken, and it carries `splice init`, which is the single most important
+        // string doctor prints on a fresh install. DoctorCommandTest caught it.
+        //
+        // So: a check with a fix gets room, whatever its status, because surfacing the fix is the
+        // entire job of this surface. A note with no fix is a note.
+        val notes = all.filter { it.status == CheckStatus.INFO && it.fix == null }
+        val actionable = all.filter { it.status != CheckStatus.OK && (it.fix != null || it.status != CheckStatus.INFO) }
+        // DR-173's other half. The old render gave an empty section a heading and the words
+        // "nothing to report"; dropping section headings took away the only place that could live,
+        // and an empty section silently vanishing is the same silence the scar was written against —
+        // a live daemon with zero heads would show no runtime line at all, which reads as "not
+        // checked" exactly when the operator is asking whether it was. It keeps a note instead.
+        for ((title, _) in sections.filter { it.second.isEmpty() }) {
+            println("  $DIM–  $title  nothing to report$RESET")
+        }
+        for (check in notes) {
+            println("  $DIM–  ${check.name}  ${check.detail}$RESET")
+        }
+        for (check in actionable) {
+            renderProblem(check)
+        }
+    }
+
+    /** One problem, given room: what is wrong, then why it matters, then the command to run. */
+    private fun renderProblem(check: DoctorCheck) {
+        val glyph = when (check.status) {
+            CheckStatus.FAIL -> "$RED✗$RESET"
+            CheckStatus.WARN -> "$YELLOW!$RESET"
+            // An INFO reaching here has a fix but is not a fault — a fresh machine with no topology
+            // is not sick. It gets the room without the alarm.
+            else -> "$DIM–$RESET"
+        }
+        println()
+        println("  $glyph ${BOLD}${check.name}$RESET")
+        println("      $DIM${check.detail}$RESET")
+        check.fix?.let { println("      ${DIM}fix$RESET   $CYAN$it$RESET") }
     }
 
     /** The `--json` report as TEXT, for a caller that SHIPS it rather than printing it — the
@@ -154,37 +222,6 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
             // render() keeps fs-failure diagnostics and withholds parser excerpts.
             if (genuinelyAbsent) DoctorTopology.Absent else DoctorTopology.Broken(SafeFailureText.render(e))
         }
-
-    private fun renderSection(title: String, checks: List<DoctorCheck>) {
-        println()
-        println("  $DIM$title$RESET")
-        // DR-173: maxOf THROWS NoSuchElementException on an empty list, and this render loop sits
-        // OUTSIDE guarded() — that wraps only the collectors, which have already run by the time
-        // sections is built. An empty list is reachable without anything being wrong: a daemon that
-        // is running, with a readable key and /api/heads answering, but configured with ZERO heads
-        // returns one, because DaemonLock.headsRuntime reserves null for a failed request and hands
-        // back an empty List for an empty array. So `splice doctor` died with a stack trace instead
-        // of printing a report, on an install whose only sin was having no heads yet.
-        //
-        // Total by construction rather than guarded from outside: an empty section SAYS it is
-        // empty. A bare heading with nothing under it is the silence doctor exists to replace, and
-        // DoctorAuth already answers the same input with a one-line INFO.
-        if (checks.isEmpty()) {
-            println("  $DIM–  nothing to report$RESET")
-            return
-        }
-        val width = checks.maxOf { it.name.length }
-        checks.forEach { check ->
-            val glyph = when (check.status) {
-                CheckStatus.OK -> "$GREEN✓$RESET"
-                CheckStatus.INFO -> "$DIM–$RESET"
-                CheckStatus.WARN -> "$YELLOW!$RESET"
-                CheckStatus.FAIL -> "$RED✗$RESET"
-            }
-            println("  $glyph ${check.name.padEnd(width)}  ${check.detail}")
-            check.fix?.let { println("    ${" ".repeat(width)}  ${DIM}fix:$RESET $CYAN$it$RESET") }
-        }
-    }
 }
 
 private val CLAUDE_VERSION = listOf("claude", "--version")

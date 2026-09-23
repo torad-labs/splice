@@ -3,11 +3,8 @@
 package splice.app.cli.status
 
 import splice.app.auth.LoginIo
-import splice.core.terminal.CYAN
-import splice.core.terminal.DIM
-import splice.core.terminal.GREEN
-import splice.core.terminal.RESET
-import splice.core.terminal.YELLOW
+import splice.core.terminal.CliPalette
+import splice.core.terminal.ColorDepthProbe
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
@@ -16,7 +13,9 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 
-internal class StatusTable {
+internal class StatusTable(
+    private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
+) {
 
     private val loginIo = LoginIo()
 
@@ -35,22 +34,33 @@ internal class StatusTable {
         val command = head.claude.command ?: key
         val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
         val authed = selfManaged || loginIo.credentialConfigured(key, provider, envReader)
-        val auth = authLabel(selfManaged, authed, provider.auth.kind, command)
-        val wrapper = if (loginIo.wrapperInstalled(command, envReader)) {
-            "$GREEN✓$RESET"
+        val wrapped = loginIo.wrapperInstalled(command, envReader)
+        // ONE actionable column, not two state columns. A row is ready or it names the single
+        // command that would make it ready, so the operator never has to work out which of
+        // "wrapper missing" and "not signed in" to act on first.
+        val action = action(selfManaged, authed, wrapped, provider.auth.kind, command)
+        val glyph = if (authed && wrapped) {
+            palette.paint(palette.live, LIVE_GLYPH)
         } else {
-            "$YELLOW— splice install$RESET"
+            palette.paint(palette.strain, STRAIN_GLYPH)
         }
-        return pad(key, HEAD_W) + pad(command, CMD_W) + pad(backendLabel(provider), BACKEND_W) +
-            pad(auth, AUTH_W) + wrapper
+        return "$glyph " + pad(key, HEAD_W) + pad(command, CMD_W) + pad(head.port.toString(), PORT_W) +
+            pad(backendLabel(provider), BACKEND_W) + action
     }
 
-    private fun authLabel(selfManaged: Boolean, authed: Boolean, kind: String, command: String): String = when {
-        selfManaged -> "$GREEN✓ client-native$RESET"
-        AuthKindRegistry.isOAuth(kind) && authed -> "$GREEN✓ signed in$RESET"
-        AuthKindRegistry.isOAuth(kind) -> "$YELLOW— $command login$RESET"
-        authed -> "$GREEN✓ key set$RESET"
-        else -> "$YELLOW— set key$RESET"
+    /** The one thing to do about this row, or a dim "ready" when there is nothing. The command is
+     *  painted in splice's own tone because it is meant to be TYPED; the ready state is not. */
+    private fun action(
+        selfManaged: Boolean,
+        authed: Boolean,
+        wrapped: Boolean,
+        kind: String,
+        command: String,
+    ): String = when {
+        !wrapped -> palette.paint(palette.signal, "splice install")
+        authed -> palette.paint(palette.quiet, if (selfManaged) "ready (your login)" else "ready")
+        AuthKindRegistry.isOAuth(kind) -> palette.paint(palette.signal, "$command login")
+        else -> palette.paint(palette.signal, "set the api key")
     }
 
     /** DR-175: the status table's backend column, and it named the wrong vendor for kimi.
@@ -91,7 +101,10 @@ internal class StatusTable {
 
     internal fun printNextSteps(topology: Topology, envReader: EnvReader) {
         val launchable = topology.heads.map { (k, h) -> h.claude.command ?: k }
-        println("  ${DIM}Launch $RESET " + launchable.joinToString("$DIM · $RESET") { "$CYAN$it$RESET" })
+        // Separated by spacing, not by a middle-dot join: the dots read as content in a monospace
+        // grid, and every command here is already one unbroken token.
+        val launchList = launchable.joinToString("   ") { palette.paint(palette.signal, it) }
+        println("  " + palette.paint(palette.quiet, "launch  ") + launchList)
         val needLogin = topology.heads.entries.filter { (k, h) ->
             val p = topology.providers[h.provider]
             p != null && AuthKindRegistry.isOAuth(p.auth.kind) &&
@@ -99,9 +112,10 @@ internal class StatusTable {
                 !loginIo.credentialConfigured(k, p, envReader)
         }.map { (k, h) -> h.claude.command ?: k }
         if (needLogin.isNotEmpty()) {
-            println("  ${DIM}Sign in$RESET " + needLogin.joinToString("$DIM · $RESET") { "$CYAN$it login$RESET" })
+            val loginList = needLogin.joinToString("   ") { palette.paint(palette.signal, "$it login") }
+            println("  " + palette.paint(palette.quiet, "sign in ") + loginList)
         }
-        println("  ${DIM}Panel  $RESET ${CYAN}splice dashboard$RESET")
+        println("  " + palette.paint(palette.quiet, "panel   ") + palette.paint(palette.signal, "splice dashboard"))
     }
 
     // pad by VISIBLE width (ANSI escapes don't count toward column alignment).
@@ -111,7 +125,24 @@ internal class StatusTable {
     }
 }
 
+// Column widths are VISIBLE width; pad() strips SGR before measuring. Sized to the longest real
+// value each column carries rather than to a round number: head keys and wrapper commands come from
+// the shipped example topology, and backendLabel's longest is "Anthropic (your login)" at 22.
 private const val HEAD_W = 14
 private const val CMD_W = 15
+private const val PORT_W = 7
 private const val BACKEND_W = 23
-private const val AUTH_W = 14
+
+// The state glyphs. These are the reason colour can be confined to one character per row, and the
+// reason the table still reads with colour stripped — so they must stay visually distinct as SHAPES,
+// not merely as tones. Both are single-width in every terminal font splice has been run in.
+private const val LIVE_GLYPH = "▸"
+
+private const val STRAIN_GLYPH = "!"
+
+/** Header for [StatusTable.row]'s columns, dimmed by the caller.
+ *
+ *  FOUR leading spaces, not two: the caller indents each row by two and [row] then opens with a
+ *  glyph and a space, so a head name starts at column four. A two-space header lines up with the
+ *  GLYPH gutter instead of the data and every column below it reads one notch left. */
+internal const val STATUS_HEADER: String = "    head          command        port   upstream"

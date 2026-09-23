@@ -2,6 +2,7 @@
 // the dashboard reads the same on-disk truth the head writes (a DOWN head still shows state).
 package splice.app.sources
 
+import kotlinx.serialization.json.JsonPrimitive
 import splice.control.CompactView
 import splice.control.EconomicsRow
 import splice.control.HeadCompactSource
@@ -15,6 +16,7 @@ import splice.control.QuotaWindowView
 import splice.control.RateLimitView
 import splice.control.UsageView
 import splice.core.usage.QuotaSnapshot
+import splice.core.util.JsonScalars
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
@@ -43,7 +45,18 @@ public class UsageStoreSource(
 public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSource {
     override fun summary(tailN: Int): CompactView {
         val s = stats.read(tailN)
-        val tail = s.tail.map { row -> row.mapValues { (_, v) -> v.toString() } }
+        // A primitive's CONTENT, not its JSON text: `toString()` on a JsonPrimitive string keeps its
+        // quotes, so every tail row carried `"model_text"` (quotes included) while `byOutcome`, read
+        // through `.content` in CompactStats, carried `model_text` - and the console, matching the
+        // bare names, printed every event with its quotes and a `warn` edge (measured on the live
+        // /api/compact 2026-09-23: 50 of 50 tail rows). A JSON null is an absent field, not the
+        // word "null"; an object or array value keeps its JSON text.
+        val tail = s.tail.map { row ->
+            row.entries.mapNotNull { (key, v) ->
+                val text = if (v is JsonPrimitive) JsonScalars.str(v) else v.toString()
+                text?.let { key to it }
+            }.toMap()
+        }
         return CompactView(s.total, s.byOutcome, tail)
     }
 }

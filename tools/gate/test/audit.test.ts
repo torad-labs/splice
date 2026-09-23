@@ -96,17 +96,27 @@ describe("gate audit", () => {
 
   // `timeout 60`: the audit has hung for five minutes and then answered 503. A hung attempt must
   // lose the attempt, not the gate's next hour.
+  //
+  // Counted from the RUNNER's own lines, never the fake's counter file: the kill timer starts at
+  // spawn, so on a loaded machine a child can be killed before its first line runs, and the counter
+  // then misses an attempt the runner did make (gate of record on fdd2dd39, 2026-09-23: 2 of 3
+  // recorded; a 1ms timer records none). That each attempt HUNG is proved by time instead — only the
+  // kill timer ends a child that never exits, so every attempt waited it out.
   test("a hung attempt is killed and counts as a failure", async () => {
     const fake = fakeAudit("await new Promise(() => {});\n");
     const log = captured();
+    const timeoutMs = 250;
     const started = Date.now();
     try {
-      expect(await runAudit({ cwd: repoRoot, command: fake.command, backoffStepMs: 1, timeoutMs: 250 })).toBe(1);
+      expect(await runAudit({ cwd: repoRoot, command: fake.command, backoffStepMs: 1, timeoutMs })).toBe(1);
     } finally {
       log.restore();
     }
-    expect(Date.now() - started).toBeLessThan(10_000);
-    expect(attemptsMade(fake.counter).length).toBe(ATTEMPTS);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(ATTEMPTS * timeoutMs);
+    expect(elapsed).toBeLessThan(10_000);
+    expect(log.lines.filter((line) => line.includes("retrying")).length).toBe(ATTEMPTS - 1);
+    expect(log.lines.at(-1)).toBe("bun audit failed on three attempts");
   });
 
   test("through the CLI: the verb takes no arguments, and reports the fake registry's verdict", () => {

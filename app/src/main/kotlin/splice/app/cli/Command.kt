@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
+import splice.app.DoctorWiring
 import splice.app.InstallWiring
 import splice.app.ModelsWiring
 import splice.app.PerfWiring
@@ -13,7 +14,6 @@ import splice.app.cli.add.AddModelVerb
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
-import splice.app.cli.doctor.DoctorCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.StatusCommand
@@ -39,7 +39,7 @@ public sealed class Command {
     public abstract fun run(): Int
 
     public data class Doctor(val args: List<String> = emptyList()) : Command() {
-        override fun run(): Int = outcomeExitCode(DoctorCommand().doctor(args))
+        override fun run(): Int = outcomeExitCode(DoctorWiring.command().doctor(args, EnvReader(System::getenv)))
     }
     public data object Version : Command() {
         override fun run(): Int = success { println("splice $GATEWAY_VERSION") }

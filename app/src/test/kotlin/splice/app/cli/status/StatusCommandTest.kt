@@ -5,10 +5,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.doctor.HealthView
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
+import splice.daemonclient.DaemonProbe.HealthView
 import java.nio.file.Files
 import java.nio.file.Path
 

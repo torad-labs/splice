@@ -5,7 +5,6 @@ package splice.app.cli.status
 
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.CliSignIn
-import splice.app.cli.doctor.HealthView
 import splice.core.GATEWAY_VERSION
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
@@ -14,6 +13,9 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
+import splice.daemonclient.DaemonProbe.HealthView
+import splice.diagnostics.doctor.AccountPoolRead
+import splice.diagnostics.doctor.JdkAccountPoolRead
 import splice.topology.TopologyLoader
 
 /** The `status` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources

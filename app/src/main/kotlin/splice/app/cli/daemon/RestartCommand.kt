@@ -5,9 +5,6 @@
 package splice.app.cli.daemon
 
 import splice.app.cli.AdminSupport
-import splice.app.cli.doctor.DaemonSnapshot
-import splice.app.cli.doctor.DoctorCheck
-import splice.app.cli.doctor.DoctorHeadAuth
 import splice.core.GATEWAY_VERSION
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
@@ -107,14 +104,6 @@ internal class RestartCommand {
         val ports = (livePorts.orEmpty() + tomlPorts).distinct()
         return StopScope(ports, degraded = ports.isEmpty())
     }
-
-    /** The doctor's split-brain check lives beside this verb because this verb IS its fix (FIX_RESTART);
-     *  its logic sits in [SplitBrainChecks] (concentration split, review 2026-09-14). */
-    internal fun splitBrainChecks(
-        heads: List<DoctorHeadAuth>,
-        snapshot: DaemonSnapshot,
-        envReader: EnvReader,
-    ): List<DoctorCheck> = SplitBrainChecks().checks(heads, snapshot, envReader)
 }
 
 /** Which ports a stop must see FREED, and whether that list can be trusted.

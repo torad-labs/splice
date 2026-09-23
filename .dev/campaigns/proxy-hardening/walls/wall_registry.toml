@@ -163,8 +163,8 @@ id = "JW-02"
 phase = "W3-see-the-daemon"
 wall = ""
 retired_to = [
-    "app/src/test/kotlin/splice/app/cli/doctor/DoctorHeadChecksTest.kt",
-    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorHeadChecksTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorCommandTest.kt",
 ]
 proof = "2026-09-21: two mutations, each red on both sides. (a) the per-head TCP probe deleted from DoctorHeadChecks -> wall RED and two DoctorHeadChecksTest arms RED (the unbound head that must WARN 'not listening', and the held port that must read INFO 'listening'); (b) headSummary made to ignore failedHeads -> wall RED, one DoctorHeadChecksTest arm RED (the FAILED-to-start row) and the DoctorCommandTest JW-02 arm RED. Restored, wall GREEN and both homes green (5/5, 14/14). The new home grades the ROWS the check returns rather than doctor's rendered text, so a row that stops being emitted cannot hide behind a sibling row's string"
 
@@ -180,7 +180,7 @@ wall = ""
 retired_to = [
     "app/src/test/kotlin/splice/app/control/ControlServerTest.kt",
     "tools/release/test/launcher.test.ts",
-    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorCommandTest.kt",
 ]
 proof = "2026-09-21: three mutations. (a) the shim's topologyStale block deleted -> wall RED (the launch shim never checks staleness) and the launcher rehearsal RED on 2 arms; restored, wall GREEN and 7 pass. (b) put(\"topologyDigest\", ...) renamed in ControlPayloads.kt, where /health actually publishes it -> the WALL STAYED GREEN while ControlServerTest went RED (25 tests, 1 failure): the wall greps ControlServer.kt for the identifier, and that file still passes the value through to the payload builder, so the key leaving the wire is invisible to it. (c) the same identifier renamed IN ControlServer.kt -> wall RED, which is what proves the wall works and is merely aimed at a file that no longer publishes the value. The homes assert on the response body and on the shim's rendered output, which cannot drift when the publication point moves again"
 
@@ -188,7 +188,7 @@ proof = "2026-09-21: three mutations. (a) the shim's topologyStale block deleted
 id = "JW-05"
 phase = "W3-see-the-daemon"
 wall = ""
-retired_to = ["app/src/test/kotlin/splice/app/cli/doctor/DoctorRuntimeSectionTest.kt"]
+retired_to = ["features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorRuntimeSectionTest.kt"]
 proof = "2026-09-21: two mutations. (a) the error-counter row stripped of its fix -> the new DoctorRuntimeSectionTest arm RED (8 tests, 1 failure) while the WALL STAYED GREEN — the wall asserts the string `splice logs --head codex --tail 50` appears anywhere in doctor's output, and DoctorProbeWrite.perfTailRow emits the same string, so the row losing its own fix was invisible to it; (b) both runtime fixes stripped -> wall RED (runtime warnings carry no actionable fix) and the same arm RED. Restored, both GREEN (8/8). Mutation (a) is the retirement's justification: a fix belongs to a ROW, not to a report, and the new arm asserts on the row object (counters.fix == the exact command, and a clean head's fix == null) where the wall could only grep the page"
 
 [[item]]
@@ -208,7 +208,7 @@ wall = ""
 retired_to = [
     "app/src/test/kotlin/splice/app/cli/CommandParserTest.kt",
     "quality/architecture/src/test/kotlin/splice/quality/RemediationNamesTheLogVerbLawTest.kt",
-    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorCommandTest.kt",
     "features/diagnostics/src/test/kotlin/splice/diagnostics/logs/LogsCommandTest.kt",
 ]
 proof = "2026-09-21: three mutations, each red on both sides. (a) the `logs` CommandFactory row deleted from InstallCommand's parse table -> wall RED (no `logs` verb in the parse table) and the new CommandParserTest JW-08 arm RED (2 tests, 1 failure); (b) a `check daemon.log for the reason` literal planted in daemon/control/.../api/auth/AuthRoutes.kt -> wall RED and RemediationNamesTheLogVerbLawTest RED (3 tests, 1 failure), the law catching it in a module the wall does not read; (c) statePaths.logsDir -> stateDir in DoctorDaemonChecks (2 refs) -> wall RED and the DoctorCommandTest JW-08 arm RED (14 tests, 1 failure). Restored, wall GREEN and every home green. Leg (a) is the one the pre-existing LogsCommandTest could never cover: it builds Command.Logs directly and never crosses the parse table, so deleting the verb left it green"
@@ -219,7 +219,7 @@ phase = "W3-see-the-daemon"
 wall = ""
 retired_to = [
     "app/src/test/kotlin/splice/app/head/HeadBootPortCollisionTest.kt",
-    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorCommandTest.kt",
     "core/src/test/kotlin/splice/core/config/ConfigHonestyPinsTest.kt",
 ]
 proof = "2026-09-21: the claim fails in three independent places, so it is graded in three. (a) HeadBoot's collision pre-check deleted -> wall RED (assembleDaemonHeads does not name the sibling) and the new HeadBootPortCollisionTest RED on 2 of 3 arms; restored 3/3. (b) doctor's collision rows filtered away with the call and types left standing (portCollisions().filter { false }.map { ... }) -> the WALL STAYED GREEN while the DoctorCommandTest JW-13 arm went RED (14 tests, 1 failure), both measured on that one mutation: the wall greps for the tokens portCollisions/portCollisionMessage, which a filter leaves in place, so doctor could stop emitting every collision row without the wall noticing. (c) Topology.portCollisions() itself stays pinned in core by ConfigHonestyPinsTest. The daemon-side home grades the collaborator: a colliding head must be FAILED with a message naming the sibling and must never reach assembly, which an assembly that throws when called states without standing up two servers"
@@ -229,8 +229,8 @@ id = "JW-17"
 phase = "W3-see-the-daemon"
 wall = ""
 retired_to = [
-    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
-    "app/src/test/kotlin/splice/app/cli/doctor/DoctorProbeWriteTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorCommandTest.kt",
+    "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorProbeWriteTest.kt",
 ]
 proof = "2026-09-21: the logs-dir probe replaced by a plain INFO row that still prints the path (probeWrite.writableProbe(\"logs dir\", ...) -> DoctorCheck(\"logs dir\", INFO, ...)) -> wall RED (doctor never probes the LOGS dir for writability) and the DoctorWritableDirsTest arm RED (2 tests, 1 failure) on the same mutation; restored, wall GREEN and 2/2. Re-taken after the arm moved: the first proof graded it inside DoctorCommandTest, and the LargeClass split moved it to the sibling class, so the proof was retaken where the arm now lives rather than carried across the move. The probe's own refusals (symlinks, cleanup) stay pinned by DoctorProbeWriteTest"
 

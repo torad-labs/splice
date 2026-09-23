@@ -79,7 +79,7 @@ internal object SchemaKeysConsumed {
     /** Not consumption. (relative path, dated reason). A stale entry — the file is gone — is a hard
      *  error: a dead exclusion is an un-graded surface one rename later. */
     val NON_CONSUMPTION: List<Pair<String, String>> = listOf(
-        "app/src/main/kotlin/splice/app/cli/doctor/DoctorReportShape.kt" to
+        "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportShape.kt" to
             "2026-09-17: THE ECHO SURFACE. It puts every topology key back out under its own key " +
             "name — the value is being SHOWN, not used. Counting it would make this wall green " +
             "over exactly the population it exists to name.",

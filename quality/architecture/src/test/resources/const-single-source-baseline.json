@@ -77,7 +77,7 @@
     ],
     "COLLISION LOG_TAIL_BYTES": [
       "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogFileSource.kt",
-      "app/src/main/kotlin/splice/app/cli/doctor/DoctorReportTail.kt"
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportTail.kt"
     ],
     "COLLISION MAX_CONVERSATIONS": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ConversationSummaryParts.kt",
@@ -139,7 +139,7 @@
       "features/turns/src/main/kotlin/splice/head/HeadEngine.kt"
     ],
     "COLLISION VERSION": [
-      "app/src/main/kotlin/splice/app/cli/doctor/DoctorReport.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorJsonReport.kt",
       "integrations/mcp/src/main/kotlin/splice/control/mcp/JsonRpcCodec.kt"
     ],
     "COPY API_KEY": [
@@ -336,7 +336,7 @@
     ],
     "COPY HTTP_OK": [
       "integrations/oauth/src/main/kotlin/splice/oauth/OAuthCallbackPage.kt",
-      "app/src/main/kotlin/splice/app/cli/status/AccountPools.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPools.kt",
       "app/src/main/kotlin/splice/app/cli/add/AddChecks.kt",
       "app/src/main/kotlin/splice/app/cli/daemon/DaemonStop.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt",
@@ -430,13 +430,13 @@
       "app/src/main/kotlin/splice/app/quota/QuotaPoller.kt"
     ],
     "COPY MS_PER_MINUTE": [
-      "app/src/main/kotlin/splice/app/cli/doctor/DoctorProbeWrite.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorProbeWrite.kt",
       "features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt",
       "features/usage/src/main/kotlin/splice/usage/perf/PerfSummary.kt"
     ],
     "COPY MS_PER_S": [
       "integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt",
-      "app/src/main/kotlin/splice/app/cli/status/AccountPoolText.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPoolText.kt",
       "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsPulse.kt",
@@ -459,8 +459,8 @@
       "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
     ],
     "COPY OMITTED": [
-      "app/src/main/kotlin/splice/app/cli/doctor/DoctorReportFiles.kt",
-      "app/src/main/kotlin/splice/app/cli/SafeNames.kt"
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportFiles.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/SafeNames.kt"
     ],
     "COPY PARAMS": [
       "integrations/mcp/src/main/kotlin/splice/control/mcp/JsonRpcCodec.kt",
@@ -550,7 +550,7 @@
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt"
     ],
     "COPY S_PER_MIN": [
-      "app/src/main/kotlin/splice/app/cli/status/AccountPoolText.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPoolText.kt",
       "features/turns/src/main/kotlin/splice/head/turn/TurnProgressLine.kt"
     ],
     "COPY TAG_LEN": [

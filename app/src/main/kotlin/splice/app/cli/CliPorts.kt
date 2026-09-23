@@ -1,7 +1,6 @@
-// NEW: the two ROLES the CLI's process and HTTP edges inject, named (HD-22, wave 4b).
+// NEW: the ROLE the CLI's process edge injects, named (HD-22, wave 4b). Its doctor sibling,
+// DoctorProbe, moved to features/diagnostics with the checks it isolates (LAYOUT-01).
 package splice.app.cli
-
-import splice.app.cli.doctor.DoctorCheck
 
 /**
  * Delivers one signal to the daemon process — `destroy()` (TERM) or `destroyForcibly()` (KILL).
@@ -13,16 +12,4 @@ import splice.app.cli.doctor.DoctorCheck
  */
 internal fun interface SignalSend {
     operator fun invoke(handle: ProcessHandle): Boolean
-}
-
-/**
- * One doctor check group, run so that a crash inside it becomes a FAIL row rather than the end of
- * the report.
- *
- * Both halves matter and neither is optional: a crashing check must not kill the report, and it
- * must not masquerade as healthy either. The wrapper turns a throw into a `doctor` FAIL naming the
- * exception, which is why every check group goes through one of these.
- */
-internal fun interface DoctorProbe {
-    operator fun invoke(): List<DoctorCheck>
 }

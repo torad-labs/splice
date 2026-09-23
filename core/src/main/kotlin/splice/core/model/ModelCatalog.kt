@@ -119,15 +119,6 @@ public data class ModelCatalog(
      *  cannot drift into two readings of what a tier suffix is. */
     public fun stripSuffixes(id: String): String = ModelTierSuffix.strip(unwrap(id))
 
-    /** Upstream id -> the window this catalog advertises for it, over its picker rows and extra
-     *  windows; two picker rows over one id keep the wider. What a local runtime is asked about, by
-     *  the boot refusal and by doctor alike (moved from app's LocalProbeInputs, LAYOUT-01). */
-    public fun effectiveWindows(): Map<String, Long> {
-        val rows = models.map { stripSuffixes(it.id) to it.contextWindow } +
-            extraWindows.map { stripSuffixes(it.id) to it.contextWindow }
-        return rows.groupBy({ it.first }, { it.second }).mapValues { (_, windows) -> windows.max() }
-    }
-
     /** Exact -> ordered startsWith prefix rules -> default. Order is the law. */
     public fun contextWindowFor(model: String?, defaultOverride: Long? = null): Long {
         // V4-162: a running head answers from the windows splice.toml declares NOW. The live catalog

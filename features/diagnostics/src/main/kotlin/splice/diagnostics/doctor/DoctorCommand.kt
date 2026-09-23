@@ -9,6 +9,7 @@
 package splice.diagnostics.doctor
 
 import splice.accounts.pool.HeadAccountPoolView
+import splice.core.config.RunningJar
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.terminal.TerminalOutput
@@ -37,7 +38,7 @@ public class DoctorCommand(
     private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
 ) {
 
-    private val probes = DoctorProbes()
+    private val probes = DoctorProbes(jar)
 
     // Install integrity is a separate section with separate inputs; it reads back into [probes] for
     // the one thing the two share, the malformed-PATH-entry parser.

@@ -1,21 +1,17 @@
-// `splice perf [--window]` (v0.4.0, FEATURES.md §3) against a temp state dir: the CLI prints the
-// numbers /api/perf/summary serves for the same files (both go through PerfSummary.summarize over
-// PerfRowsFileSource), --window selects the window, and an unknown window is refused.
+// `splice perf [--window]` (v0.4.0, FEATURES.md §3) against a temp state dir: the CLI reads each
+// head's perf file (the PerfRowsFileSource the daemon's /api/perf reads), --window selects the window,
+// and an unknown window is refused. That the printed numbers ARE the API summary's is held where
+// PerfSummary is visible, features/usage's PerfCommandSummaryTest (LAYOUT-01).
 package splice.app.cli.status
 
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.PerfWiring
-import splice.app.sources.PerfRowsFileSource
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
-import splice.usage.perf.PerfSummary
-import splice.usage.perf.PerfWindow
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -54,7 +50,7 @@ class PerfCommandTest {
     }
 
     @Test
-    fun `the CLI prints the API summary's numbers for the chosen window`(@TempDir tmp: Path) {
+    fun `the CLI reads each head's perf file for the chosen window`(@TempDir tmp: Path) {
         val env = env(tmp)
         val file = StatePaths(envReader = env).perfStatsFile("openrouter")
         Files.createDirectories(file.parent)
@@ -68,15 +64,12 @@ class PerfCommandTest {
                 perfRow(now - HOUR_MS / 3, "ok", 200L),
             ).joinToString("\n", postfix = "\n"),
         )
-        val api = PerfSummary().summarize(PerfRowsFileSource(file), PerfWindow.D7)
-        val p50 = api.getValue("total_ms").jsonObject.getValue("p50").jsonPrimitive.content
-
         val (ok, text) = capture { PerfWiring.command().perf(listOf("--window", "7d"), env) }
 
         assertTrue(ok)
         assertTrue(text.contains("last 7d per head"), text)
         assertTrue(text.contains("4 turn(s)"), text)
-        assertTrue(text.contains("p50 $p50 ms"), "the CLI shows the API's p50: $text")
+        assertTrue(text.contains("p50 "), "the per-head percentiles are printed: $text")
         assertTrue(text.contains("max ") && text.contains("(n=4)"), "max and the denominator: $text")
         assertTrue(text.contains("error:upstream-failed=1 (25.0%)"), "failure share per outcome tag: $text")
         assertTrue(text.contains("failure share 25.0%"), text)

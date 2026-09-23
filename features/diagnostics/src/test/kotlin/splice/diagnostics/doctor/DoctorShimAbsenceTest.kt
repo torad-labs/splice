@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.RunningJar
 import splice.core.util.EnvReader
 import splice.launch.install.InstallShim
 import java.io.IOException
@@ -26,7 +27,7 @@ class DoctorShimAbsenceTest {
         )[name]
     }
 
-    private fun installProbes(jar: RunningJar = DoctorTestPorts.noJar) = DoctorInstallProbes(DoctorProbes(), jar)
+    private fun installProbes(jar: RunningJar = DoctorTestPorts.noJar) = DoctorInstallProbes(DoctorProbes(DoctorTestPorts.noJar), jar)
 
     private fun <T> withDenied(dir: Path, block: () -> T): T = try {
         Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("---------"))
@@ -39,7 +40,7 @@ class DoctorShimAbsenceTest {
     fun `an unreadable wrapper diagnoses as access, not as not-linked - DR-69`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         Files.writeString(bin.resolve("claudex"), "#!/bin/sh\n")
-        val check = withDenied(bin) { DoctorPathCheck(DoctorProbes()).wrapperCheck(bin.resolve("claudex"), "claudex") }
+        val check = withDenied(bin) { DoctorPathCheck(DoctorProbes(DoctorTestPorts.noJar)).wrapperCheck(bin.resolve("claudex"), "claudex") }
         assertTrue(check.toString().contains("unreadable"), check.toString())
         assertTrue(check.toString().contains("not missing"), check.toString())
     }
@@ -47,7 +48,7 @@ class DoctorShimAbsenceTest {
     @Test
     fun `a genuinely missing wrapper still reads not linked - DR-69 control`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
-        val check = DoctorPathCheck(DoctorProbes()).wrapperCheck(bin.resolve("claudex"), "claudex")
+        val check = DoctorPathCheck(DoctorProbes(DoctorTestPorts.noJar)).wrapperCheck(bin.resolve("claudex"), "claudex")
         assertTrue(check.toString().contains("not linked"), check.toString())
     }
 

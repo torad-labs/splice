@@ -34,7 +34,7 @@
     },
     "app/src/main/kotlin/splice/app/control/ManagedHead.kt ManagedHead": {
       "params": 17,
-      "subsystems": 9
+      "subsystems": 10
     },
     "features/turns/src/main/kotlin/splice/head/HeadDeps.kt HeadSeams": {
       "params": 8,

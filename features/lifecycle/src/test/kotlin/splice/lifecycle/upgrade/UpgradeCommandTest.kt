@@ -305,7 +305,7 @@ class UpgradeCommandTest {
         assertTrue(out.contains("predates doctor --json"), out)
         assertTrue(calls.none { it.contains("--json") }, "no doctor --json for a jar that ignores the flag: $calls")
         assertEquals("0.3.9", link(home, "current"))
-        val release = UpgradeRelease(out, JdkUpgradeFetch(), process(), "java")
+        val release = UpgradeRelease(this.out, JdkUpgradeFetch(), process(), "java")
         assertEquals(release.base("v0.4.0", null), release.base("0.4.0", null), "one tag, two spellings")
         assertTrue(release.base("0.4.0", null).endsWith("/download/v0.4.0"), release.base("0.4.0", null))
     }

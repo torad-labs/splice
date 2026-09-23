@@ -37,18 +37,18 @@ private val OK = OutcomeTag.OK.wire
 /** A row whose outcome could not be parsed: shown under this tag, never counted as a failure. */
 internal const val UNATTRIBUTED_OUTCOME: String = "?"
 
-public enum class PerfWindow(public val label: String, public val ms: Long) {
+internal enum class PerfWindow(val label: String, val ms: Long) {
     H1("1h", MS_PER_HOUR),
     H24("24h", HOURS_PER_DAY * MS_PER_HOUR),
     D7("7d", DAYS_PER_WEEK * HOURS_PER_DAY * MS_PER_HOUR),
 }
 
-public class PerfSummary(private val clock: WallClock = WallClock { System.currentTimeMillis() }) {
+internal class PerfSummary(private val clock: WallClock = WallClock { System.currentTimeMillis() }) {
 
     /** The window named by [label], or null when it is not one of 1h / 24h / 7d. */
-    public fun window(label: String?): PerfWindow? = PerfWindow.entries.firstOrNull { it.label == label }
+    fun window(label: String?): PerfWindow? = PerfWindow.entries.firstOrNull { it.label == label }
 
-    public fun summarize(source: PerfRowsSource?, window: PerfWindow): JsonObject {
+    fun summarize(source: PerfRowsSource?, window: PerfWindow): JsonObject {
         val now = clock()
         return json(source?.window(now - window.ms) ?: PerfRowsWindow(emptyList()), window, now)
     }
@@ -59,7 +59,7 @@ public class PerfSummary(private val clock: WallClock = WallClock { System.curre
      *  evidence. No row anywhere is "no perf rows recorded yet", not a clamp. A read error rides
      *  through as is and makes the coverage UNKNOWN (coverage_known false, never clamped): the unread
      *  generation may hold the rest of the window. */
-    public fun json(read: PerfRowsWindow, window: PerfWindow, now: Long): JsonObject {
+    fun json(read: PerfRowsWindow, window: PerfWindow, now: Long): JsonObject {
         val inWindow = read.rows.filter { it.ts >= now - window.ms }
         val coverage = coverage(read, window, now)
         return buildJsonObject {

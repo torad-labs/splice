@@ -3,6 +3,7 @@
 // answers both, and prints through println so a System.out capture reads the report as before.
 package splice.diagnostics.doctor
 
+import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.upstream.transport.LocalHttp
 

@@ -30,7 +30,7 @@ class DoctorAuthProbeFailureTest {
         Files.writeString(gh, "#!/nonexistent/interpreter/splice-test\n")
         Files.setPosixFilePermissions(gh, PosixFilePermissions.fromString("rwx------"))
         val pathEnv = EnvReader { name -> if (name == "PATH") bin.toString() else null }
-        val check = DoctorInstallProbes(DoctorProbes(), DoctorTestPorts.noJar).ghCheck(pathEnv)
+        val check = DoctorInstallProbes(DoctorProbes(DoctorTestPorts.noJar), DoctorTestPorts.noJar).ghCheck(pathEnv)
         assertEquals(CheckStatus.WARN, check.status)
         assertTrue(check.detail.contains("could not be run"), check.detail)
         assertFalse(check.detail.contains("not authenticated"), check.detail)

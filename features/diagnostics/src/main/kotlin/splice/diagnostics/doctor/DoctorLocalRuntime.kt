@@ -8,6 +8,7 @@ package splice.diagnostics.doctor
 
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.model.UpstreamWindows
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
@@ -56,7 +57,8 @@ internal class DoctorLocalRuntime(
     private fun effectiveRows(topology: Topology, key: String): Map<String, Long> = topology.heads
         .filterValues { it.provider == key }
         .flatMap { (headKey, head) ->
-            topology.providers.getValue(key).catalogFor(head, override(topology, headKey)).effectiveWindows().entries
+            val catalog = topology.providers.getValue(key).catalogFor(head, override(topology, headKey))
+            UpstreamWindows(catalog).byId().entries
         }
         .groupBy({ it.key }, { it.value })
         .mapValues { (_, windows) -> windows.max() }

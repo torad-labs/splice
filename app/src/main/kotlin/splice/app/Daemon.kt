@@ -184,7 +184,8 @@ public class Daemon(
         // catalog exists — so each picker is its declared rows plus what its provider lists.
         controlPlane.modelRosters.resolve(
             topology.heads.mapNotNull { (key, head) ->
-                topology.providers[head.provider]?.let { key to buildInputs.effectiveProvider(key, it, key in legacySolo) }
+                val declared = topology.providers[head.provider] ?: return@mapNotNull null
+                key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
             }.toMap(),
         )
         val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->

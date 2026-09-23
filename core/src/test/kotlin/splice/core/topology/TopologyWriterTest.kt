@@ -105,7 +105,7 @@ class TopologyWriterTest {
         val roster = head(PORT).copy(models = listOf(HeadModel("m1", "opus"), HeadModel("m9", "sonnet")))
         val served = TopologyWriter(
             file,
-            TopologyParse { text -> if (text == FILE) topology() else throw IllegalArgumentException("unpredicted") },
+            TopologyParse { text -> topology().also { require(text == FILE) { "unpredicted" } } },
             WallClock { NOW },
             discovered = { key -> if (key == "ex") listOf(DiscoveredModel("m9")) else emptyList() },
         )

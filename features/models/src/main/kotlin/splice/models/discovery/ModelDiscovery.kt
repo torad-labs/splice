@@ -22,6 +22,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.models.list.ModelCredentialSource
 import splice.models.list.ModelsProbe
+import splice.models.list.ProbedProvider
 import splice.models.list.UpstreamModel
 import splice.models.list.UpstreamRoster
 
@@ -35,24 +36,26 @@ public sealed class Discovery {
     public data class Unavailable(val url: String?, val reason: String) : Discovery()
 }
 
-public class ModelDiscovery internal constructor(private val probe: ModelsProbe) {
+public class ModelDiscovery(credentials: ModelCredentialSource) {
 
-    public constructor(credentials: ModelCredentialSource) : this(ModelsProbe(credentials = credentials))
+    private val probe = ModelsProbe(credentials = credentials)
 
     /** Ask the endpoint behind [provider] as head [key] would authenticate to it. */
     public fun discover(key: String, provider: ProviderConfig, env: EnvReader): Discovery {
         if (provider.isLocal) return Discovery.Unavailable(null, LOCAL_NOT_ASKED)
-        val probed = probe.probe(key, provider, env)
-        return when (val roster = probed.roster) {
-            is UpstreamRoster.Published -> Discovery.Found(probed.url, roster.models.mapNotNull(::usable))
-            is UpstreamRoster.Unpublished -> Discovery.Unavailable(probed.url, roster.reason)
-            is UpstreamRoster.Unreadable -> Discovery.Unavailable(probed.url, roster.detail)
-        }
+        return answer(probe.probe(key, provider, env))
+    }
+
+    /** What one probe's answer means for a catalog — the whole decision, apart from the socket. */
+    internal fun answer(probed: ProbedProvider): Discovery = when (val roster = probed.roster) {
+        is UpstreamRoster.Published -> Discovery.Found(probed.url, roster.models.mapNotNull(::usable))
+        is UpstreamRoster.Unpublished -> Discovery.Unavailable(probed.url, roster.reason)
+        is UpstreamRoster.Unreadable -> Discovery.Unavailable(probed.url, roster.detail)
     }
 
     private fun usable(model: UpstreamModel): DiscoveredModel? =
         model.takeIf { it.unusable == null && it.id.isNotBlank() }
-            ?.let { DiscoveredModel(id = it.id, label = it.label, contextWindow = it.contextWindow, aliases = it.aliases) }
+            ?.let { DiscoveredModel(it.id, it.label, it.contextWindow, it.aliases) }
 }
 
 private const val LOCAL_NOT_ASKED =

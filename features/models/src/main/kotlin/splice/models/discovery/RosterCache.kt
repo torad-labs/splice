@@ -18,6 +18,7 @@ import splice.core.util.Cancellables
 import splice.core.util.SecureFile
 import splice.models.list.UpstreamRosterUrl
 import java.nio.file.Files
+import java.nio.file.Path
 
 public class RosterCache(
     private val statePaths: StatePaths,
@@ -27,7 +28,8 @@ public class RosterCache(
     /** Keep [found] as [headKey]'s last answer. Throws what the write throws: the caller logs it. */
     public fun write(headKey: String, found: Discovery.Found) {
         val roster = CachedRoster(found.url, found.models.map(::cached))
-        SecureFile.writeAtomic0600(statePaths.modelRosterFile(headKey), json.encodeToString(CachedRoster.serializer(), roster))
+        val text = json.encodeToString(CachedRoster.serializer(), roster)
+        SecureFile.writeAtomic0600(statePaths.modelRosterFile(headKey), text)
     }
 
     /** What [headKey]'s endpoint last published, or null when nothing was kept for the URL [provider]
@@ -37,10 +39,15 @@ public class RosterCache(
         val file = statePaths.modelRosterFile(headKey)
         if (!Files.isRegularFile(file)) return null
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-22: a cache that cannot be read is a cache that is not there; the caller logs that it fell back to declared rows, which is the whole observable difference.
-        val cached = Cancellables.runCatchingCancellable { json.decodeFromString(CachedRoster.serializer(), Files.readString(file)) }
-            .getOrNull()
+        val cached = Cancellables.runCatchingCancellable { decode(file) }.getOrNull()
         return cached?.takeIf { it.url == url }?.models?.map(CachedModel::model)
     }
+
+    private fun decode(file: Path): CachedRoster =
+        json.decodeFromString(CachedRoster.serializer(), Files.readString(file))
+
+    private fun cached(model: DiscoveredModel): CachedModel =
+        CachedModel(model.id, model.label, model.contextWindow, model.aliases)
 }
 
 @Serializable
@@ -55,5 +62,3 @@ private data class CachedModel(
 ) {
     fun model(): DiscoveredModel = DiscoveredModel(id, label, contextWindow, aliases)
 }
-
-private fun cached(model: DiscoveredModel): CachedModel = CachedModel(model.id, model.label, model.contextWindow, model.aliases)

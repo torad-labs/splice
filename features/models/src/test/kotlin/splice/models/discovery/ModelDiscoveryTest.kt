@@ -15,16 +15,20 @@ import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.models.list.ModelCredentialSource
-import splice.models.list.ModelsAnswer
-import splice.models.list.ModelsProbe
+import splice.models.list.ProbedProvider
+import splice.models.list.UpstreamRoster
+import splice.models.list.UpstreamRosterParser
 import java.nio.file.Files
 import java.nio.file.Path
+
+private const val LIST_URL = "https://api.example.test/v1/models"
 
 class ModelDiscoveryTest {
 
     private val env = EnvReader { null }
-    private val credentials = ModelCredentialSource { _, _, _ -> "key-abc" }
-    private val asked = mutableListOf<String>()
+    private val credentialReads = mutableListOf<String>()
+    private val credentials = ModelCredentialSource { _, key, _ -> "key-abc".also { credentialReads += key } }
+    private val discovery = ModelDiscovery(credentials)
 
     private val remote = ProviderConfig(
         dialect = Dialect.OPENAI_CHAT,
@@ -32,8 +36,9 @@ class ModelDiscoveryTest {
         auth = AuthConfig("api-key", env = "TEST_API_KEY"),
     )
 
-    private fun discovery(answer: ModelsAnswer) =
-        ModelDiscovery(ModelsProbe(http = { url, _ -> answer.also { asked += url } }, credentials = credentials))
+    /** What the probe hands discovery for [body] — the real parser, no socket. */
+    private fun answered(body: String): Discovery =
+        discovery.answer(ProbedProvider("test", remote, LIST_URL, UpstreamRosterParser().parse(body, LIST_URL)))
 
     @Test
     fun `a published list becomes the models that can run a turn`() {
@@ -44,29 +49,29 @@ class ModelDiscoveryTest {
               {"slug":"m-hidden","visibility":"hide"}
             ]}
         """.trimIndent()
-        val found = discovery(ModelsAnswer.Answered(200, body)).discover("test", remote, env)
+        val found = answered(body)
         assertTrue(found is Discovery.Found, "got $found")
         found as Discovery.Found
-        assertEquals("https://api.example.test/v1/models", found.url)
+        assertEquals(LIST_URL, found.url)
         assertEquals(listOf(DiscoveredModel("m-chat", "Chat", 256_000, listOf("m-chat-latest"))), found.models)
     }
 
     @Test
-    fun `a refusal or an unreadable body is unavailable, and names where it asked`() {
-        val refused = discovery(ModelsAnswer.Answered(401, "")).discover("test", remote, env)
-        assertTrue(refused is Discovery.Unavailable)
-        assertEquals("https://api.example.test/v1/models", (refused as Discovery.Unavailable).url)
-        val garbled = discovery(ModelsAnswer.Answered(200, "<html>")).discover("test", remote, env)
-        assertTrue(garbled is Discovery.Unavailable)
+    fun `an unreadable or unpublished list is unavailable, and names where it asked`() {
+        val garbled = answered("<html>sign in</html>")
+        assertTrue(garbled is Discovery.Unavailable, "got $garbled")
+        assertEquals(LIST_URL, (garbled as Discovery.Unavailable).url)
+        val unpublished = ProbedProvider("test", remote, LIST_URL, UpstreamRoster.Unpublished("no list"))
+        assertEquals(Discovery.Unavailable(LIST_URL, "no list"), discovery.answer(unpublished))
     }
 
     @Test
     fun `a local runtime is not asked`() {
         val local = remote.copy(baseUrl = "http://127.0.0.1:8099/v1")
-        val answer = discovery(ModelsAnswer.Answered(200, """{"models":[{"id":"/packs/a.gguf"}]}""")).discover("test", local, env)
+        val answer = discovery.discover("test", local, env)
         assertTrue(answer is Discovery.Unavailable)
         assertNull((answer as Discovery.Unavailable).url)
-        assertTrue(asked.isEmpty(), "a local runtime's list names a file, so it is never asked")
+        assertTrue(credentialReads.isEmpty(), "a local runtime's list names a file, so nothing is asked of it")
     }
 
     @Test
@@ -74,7 +79,7 @@ class ModelDiscoveryTest {
         val cache = RosterCache(StatePaths(baseOverride = tmp))
         val models = listOf(DiscoveredModel("m-chat", "Chat", 256_000, listOf("m-chat-latest")), DiscoveredModel("m-2"))
         assertNull(cache.read("test", remote), "nothing kept yet")
-        cache.write("test", Discovery.Found("https://api.example.test/v1/models", models))
+        cache.write("test", Discovery.Found(LIST_URL, models))
         assertEquals(models, cache.read("test", remote))
         // A moved endpoint is a different endpoint: its old answer says nothing about the new one.
         assertNull(cache.read("test", remote.copy(modelsUrl = "https://elsewhere.test/models")))

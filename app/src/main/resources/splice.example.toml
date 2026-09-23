@@ -879,6 +879,10 @@ command = "claude-splice"
 #   OPENROUTER_API_KEY      the openrouter head's api-key; when set it always beats the key store
 #   PATH and no_proxy / NO_PROXY are read from the ambient environment (the two proxy spellings are
 #                               separate variables and both are honoured)
+#   TERM / COLORTERM / NO_COLOR are read from the ambient terminal by the CLI's colour probe, and are
+#                           never set for splice: NO_COLOR present turns colour off, an empty or
+#                           `dumb` TERM means none, a 256-colour TERM or any COLORTERM the extended
+#                           palette, anything else the basic one
 #   CODEX_OAUTH_AUTHORIZE_URL / CODEX_OAUTH_TOKEN_URL / CODEX_OAUTH_CLIENT_ID / CODEX_OAUTH_ISSUER /
 #   CODEX_OAUTH_ORIGINATOR  override the Codex login endpoints and the originator header
 #   GROK_OAUTH_AUTHORIZE_URL / GROK_OAUTH_TOKEN_URL / GROK_OAUTH_CLIENT_ID / GROK_OAUTH_ISSUER

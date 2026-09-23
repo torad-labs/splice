@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -23,6 +24,7 @@ import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
@@ -36,6 +38,7 @@ import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
@@ -244,22 +247,39 @@ class LaunchSpecClientAuthTest {
         )
     }
 
-    // V4-119: /statusline/{head} is now guarded(call) (ControlServer.kt:158-159, mgmt-key bearer),
-    // but the command this factory writes into every head's settings used to carry no Authorization
-    // header — so every launched head's status line 401d while the suite stayed green (the suite
-    // tests the route, not the launch-time command string). This pin ties the command's bearer to the
-    // factory's ACTUAL mgmt key (spec.inferenceToken), never a re-guessed token.
+    // V4-119: /statusline/{head} is guarded, and the command this factory writes into every head's
+    // settings used to carry no Authorization header — so every launched head's status line 401d
+    // while the suite stayed green. v0.4.0: it then carried the MANAGEMENT key inline, which sat in
+    // settings.json and in curl's argv (/proc/<pid>/cmdline, readable by every local user). The
+    // command now names a 0600 header file holding the TURN key and carries no key of either kind;
+    // the pin ties that file's bearer to the factory's ACTUAL planted token (spec.inferenceToken).
     @Test
-    fun `the statusline command carries the mgmt bearer the guarded route accepts`(@TempDir tmp: Path) {
+    fun `the statusline command names the turn-key header file and carries no key itself`(@TempDir tmp: Path) {
+        val mgmt = MgmtKey(StatePaths(baseOverride = tmp)).get()
         val spec = factory(tmp).launchSpecFor(
             build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
             controlPort = 3099,
             forwardClientAuth = false,
         )
-        assertTrue(
-            spec.statuslineCommand.contains("Authorization: Bearer ${spec.inferenceToken}"),
-            "the statusline command must carry the mgmt-key bearer — /statusline/{head} is guarded",
+        assertFalse(spec.statuslineCommand.contains(mgmt), "no management key in settings.json or argv")
+        assertFalse(spec.statuslineCommand.contains(spec.inferenceToken), "no turn key inline either")
+        val header = Regex("-H '@([^']+)'").find(spec.statuslineCommand)?.groupValues?.get(1)
+        assertTrue(header != null, "the bearer rides a header file: ${spec.statuslineCommand}")
+        assertEquals("Authorization: Bearer ${spec.inferenceToken}\n", Files.readString(Path.of(header!!)))
+    }
+
+    // v0.4.0: ANTHROPIC_AUTH_TOKEN is inherited by every tool the model runs in the session, so the
+    // planted token is the turn key, never the management key that opens the whole control plane.
+    @Test
+    fun `a launched session is planted the turn key, never the management key`(@TempDir tmp: Path) {
+        val mgmt = MgmtKey(StatePaths(baseOverride = tmp))
+        val spec = factory(tmp).launchSpecFor(
+            build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
+            controlPort = 3099,
+            forwardClientAuth = false,
         )
+        assertNotEquals(mgmt.get(), spec.inferenceToken)
+        assertEquals(TurnKey(mgmt).get(), spec.inferenceToken)
     }
 
     // The pin that matters: drive the MATERIALIZED command against a real ControlServer statusline

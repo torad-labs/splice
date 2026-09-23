@@ -32,6 +32,7 @@ import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import java.net.ServerSocket
@@ -67,6 +68,7 @@ class ControlServerTest {
 
     private lateinit var control: ControlServer
     private lateinit var key: String
+    private lateinit var turnKey: String
     private val port = freshPort()
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
@@ -97,6 +99,7 @@ class ControlServerTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
+        turnKey = TurnKey(mgmt).get()
         val managed = ManagedHead(
             head = head,
             auth = FakeAuth(),
@@ -250,6 +253,36 @@ class ControlServerTest {
         assertEquals(HttpStatusCode.Unauthorized, unauth.status)
         val ok = client.get("http://127.0.0.1:$port/api/status") { header("Authorization", "Bearer $key") }
         assertEquals(HttpStatusCode.OK, ok.status)
+    }
+
+    // v0.4.0: a launched session holds the TURN key in its environment, where every tool the model
+    // runs can read it. It opens the routes that session's own statusline command and SessionStart
+    // hook call, and nothing of the management plane: no topology, no config, no logs, no launch.
+    @Test
+    fun `the turn key opens a session's own hook routes and nothing else`() = runTest {
+        val statusline = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $turnKey")
+            setBody("{}")
+        }
+        assertEquals(HttpStatusCode.OK, statusline.status, "POST /statusline")
+        val statuslineGet = client.get("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $turnKey")
+        }
+        assertEquals(HttpStatusCode.OK, statuslineGet.status, "GET /statusline")
+        val resume = client.post("http://127.0.0.1:$port/hooks/resume/codex") {
+            header("Authorization", "Bearer $turnKey")
+            setBody("{}")
+        }
+        assertEquals(HttpStatusCode.OK, resume.status, "POST /hooks/resume")
+        for (path in listOf("/api/status", "/api/heads", "/api/config", "/api/logs/codex", "/api/usage")) {
+            val response = client.get("http://127.0.0.1:$port$path") { header("Authorization", "Bearer $turnKey") }
+            assertEquals(HttpStatusCode.Unauthorized, response.status, path)
+        }
+        val launch = client.post("http://127.0.0.1:$port/launch/codex") {
+            header("Authorization", "Bearer $turnKey")
+            setBody("{}")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, launch.status, "POST /launch")
     }
 
     @Test

@@ -9,60 +9,59 @@
 // /v1/models) and the two session-scoped control routes a session's own hooks call (/statusline,
 // /hooks/resume). The management key keeps everything else, and is still accepted for turns so a
 // session launched before the split keeps working until it is relaunched.
+//
+// DERIVED, not minted — the McpAccessKey shape (FEATURES.md §8): HMAC-SHA256 of the management key
+// under its own scope. One-way, so holding it reveals nothing of the management key; one secret of
+// record on disk, so there is no second mint path to drift and rotating the management key rotates
+// this with it; and anything already holding the MgmtKey derives it, so no constructor grows.
 package splice.core.config
 
+import splice.core.auth.BearerScheme
 import splice.core.util.Cancellables
-import splice.core.util.DaemonLog
-import splice.core.util.LogSink
 import splice.core.util.SecureFile
-import splice.core.util.WallClock
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
-public class TurnKey(
-    statePaths: StatePaths,
-    log: LogSink = LogSink(DaemonLog::write),
-    clock: WallClock = WallClock(System::currentTimeMillis),
-) {
-    // Beside the management key, resolved the way ConsoleWiring and ClaudeLogins resolve their own
-    // state files: StatePaths owns the ROOT, and each store names its file under it.
-    private val keyFile: Path = statePaths.stateDir.resolve(TURN_KEY_FILE)
-    private val headerPath: Path = statePaths.stateDir.resolve(TURN_AUTH_HEADER_FILE)
+public class TurnKey(private val management: MgmtKey) {
+    private val value: String by lazy {
+        val mac = Mac.getInstance(ALGORITHM)
+        mac.init(SecretKeySpec(management.get().toByteArray(UTF_8), ALGORITHM))
+        mac.doFinal(TURN_SCOPE.toByteArray(UTF_8)).joinToString("") { "%02x".format(it) }
+    }
 
-    private val key = StateKey(
-        path = keyFile,
-        label = "turn-key",
-        consequence = "every session launched before it gets 401 on its next turn until it is relaunched",
-        log = log,
-        clock = clock,
-    )
+    public fun get(): String = value
 
-    public val mintedAtMs: Long? get() = key.mintedAtMs
-
-    public fun get(): String = key.get()
-
-    /** Constant-time check of a raw presented credential (no scheme parsing). */
-    public fun matches(presented: String?): Boolean = key.matches(presented)
-
-    public fun matchesBearer(header: String?): Boolean = key.matchesBearer(header)
+    /** Constant-time bearer check, scheme parsing shared with [MgmtKey.matchesBearer]. */
+    public fun matchesBearer(header: String?): Boolean {
+        val presented = BearerScheme.bearerToken(header)?.toByteArray(UTF_8) ?: return false
+        val expected = value.toByteArray(UTF_8)
+        return presented.size == expected.size && MessageDigest.isEqual(presented, expected)
+    }
 
     /**
-     * The 0600 header file `curl -H @file` reads, rewritten whenever it does not hold the current
-     * key and returned by path. Called where the path is PUT INTO a command, so the file the command
-     * names always exists and always matches the key the daemon compares against — a stale file
-     * after a key rotation would 401 every statusline tick with nothing on disk saying why.
+     * The 0600 header file `curl -H @file` reads, beside the management key, rewritten whenever it
+     * does not hold the current key and returned by path. Called where the path is PUT INTO a
+     * command, so the file the command names always exists and always matches the key the daemon
+     * compares against — a stale file after a rotation would 401 every statusline tick with nothing
+     * on disk saying why.
      */
     public fun headerFile(): Path {
-        val wanted = "Authorization: Bearer ${get()}\n"
-        val current = Cancellables.runCatchingCancellable { Files.readString(headerPath) }.getOrNull()
-        if (current != wanted) SecureFile.writeAtomic0600(headerPath, wanted)
-        return headerPath
+        val path = management.keyFile.resolveSibling(TURN_AUTH_HEADER_FILE)
+        val wanted = "Authorization: Bearer $value\n"
+        val current = Cancellables.runCatchingCancellable { Files.readString(path) }.getOrNull()
+        if (current != wanted) SecureFile.writeAtomic0600(path, wanted)
+        return path
     }
 }
 
-// The turn key's own file, 0600, beside mgmt-key in the state dir. A NAME rather than a path so the
-// state root stays StatePaths' alone (kt-state-paths-single-source).
-private const val TURN_KEY_FILE = "turn-key"
+private const val ALGORITHM = "HmacSHA256"
+
+// Versioned so a future change of what this key opens can re-derive every session's key at once.
+private const val TURN_SCOPE = "splice:turn-access:v1"
 
 // The turn key as one `Authorization` header line, 0600, for `curl -H @file`: the statusline command
 // names this path instead of carrying a bearer in settings.json and in curl's argv.

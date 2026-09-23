@@ -65,6 +65,7 @@ import splice.control.api.usage.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
+import splice.core.config.TurnKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.heads.HeadStatusListing
@@ -92,6 +93,10 @@ private const val MAX_TAIL = 2_000
 /** V4-134: answered on /api/events until ControlPlane assigns [ConsolePorts.events]. NOT an empty
  *  stream: a stream that opens and stays quiet reads as a daemon with nothing happening, which is a
  *  confident false negative about a daemon serving turns right now. The text names what was not done. */
+/** Which scoped bearer a route admits BESIDE the management key, which opens every route. One door
+ *  per route, so no route can be widened to two scoped keys by a flag pair. */
+private enum class Door { MANAGEMENT, MCP, SESSION }
+
 private const val EVENTS_UNWIRED = "the daemon wired no console event bus; /api/events cannot stream its events"
 
 public class ControlServer(
@@ -130,6 +135,9 @@ public class ControlServer(
     public val ports: ConsolePorts = ConsolePorts()
 
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
+
+    // v0.4.0: the credential a launched session holds opens its OWN hooks' routes and nothing else.
+    private val turnKey = TurnKey(mgmtKey)
     private val sessionHeads = SessionHeadAdapter.adapt(heads)
 
     private val sessionsRoutes = sessions?.let {
@@ -200,8 +208,8 @@ public class ControlServer(
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
     private val statuslineRoute = StatuslineRoute(resolver, config, clientVersions)
 
-    // V4-169: the SessionStart resume hook's receiving end — mgmt-guarded like the statusline, and
-    // reachable only from loopback, because the daemon binds there.
+    // V4-169: the SessionStart resume hook's receiving end — session-guarded like the statusline,
+    // and reachable only from loopback, because the daemon binds there.
     private val resumeHookRoute = ResumeHookRoute(heads, log)
 
     private val mcpRoutes = mcpHost?.let(::McpRoutes)
@@ -262,14 +270,16 @@ public class ControlServer(
                 }
                 consoleRoutes(this)
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
-                post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
-                post("/hooks/resume/{head}") { guarded(call) { resumeHookRoute.resume(call) } }
-                get("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
+                // The three routes a SESSION's own hooks call, so they are the only ones its turn
+                // key opens: the statusline command and the SessionStart resume hook.
+                post("/statusline/{head}") { guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
+                post("/hooks/resume/{head}") { guarded(call, Door.SESSION) { resumeHookRoute.resume(call) } }
+                get("/statusline/{head}") { guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
                 if (mcpRoutes != null && mcpHost != null) {
                     get("/api/mcp") { guarded(call) { respond(call, mcpHost.statusJson()) } }
-                    post("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.post(call) } }
-                    get("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.stream(call) } }
-                    delete("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.delete(call) } }
+                    post("/mcp/{name}") { guarded(call, Door.MCP) { mcpRoutes.post(call) } }
+                    get("/mcp/{name}") { guarded(call, Door.MCP) { mcpRoutes.stream(call) } }
+                    delete("/mcp/{name}") { guarded(call, Door.MCP) { mcpRoutes.delete(call) } }
                 }
             }
         }
@@ -408,9 +418,13 @@ public class ControlServer(
         EventsRoute(bus).stream(call)
     }
 
-    private suspend fun guarded(call: ApplicationCall, mcp: Boolean = false, block: MgmtRoute) {
+    private suspend fun guarded(call: ApplicationCall, door: Door = Door.MANAGEMENT, block: MgmtRoute) {
         val header = call.request.headers["Authorization"]
-        val authorized = mgmtKey.matchesBearer(header) || (mcp && mcpAccessKey.matchesBearer(header))
+        val authorized = mgmtKey.matchesBearer(header) || when (door) {
+            Door.MANAGEMENT -> false
+            Door.MCP -> mcpAccessKey.matchesBearer(header)
+            Door.SESSION -> turnKey.matchesBearer(header)
+        }
         if (!authorized) {
             call.respondText(
                 buildJsonObject { put("error", "unauthorized") }.toString(),

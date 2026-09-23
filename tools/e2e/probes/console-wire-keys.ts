@@ -48,7 +48,7 @@
  *  The exit code and the last line always agree.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
@@ -524,6 +524,40 @@ function liveMgmtKeyFile(): string {
   return join(liveStateDir(), "mgmt-key");
 }
 
+/** One live Claude Code session in a git repo, so the routes keyed by a project or a session id
+ *  have an id to be read with (M4-05): without it /api/projects is empty and GET /api/projects/{id}
+ *  is never read. The daemon's session registry reads ~/.claude/sessions/*.json and keeps a row
+ *  whose pid is alive (this process), and its repo resolver takes a directory holding `.git` under
+ *  the daemon's own HOME as a project root. The session also gets a two-message transcript where
+ *  TranscriptReader looks (`~/.claude/projects/<dir>/<session id>.jsonl`), so its transcript read is
+ *  checked rather than answered with the 404 of a session that has none. */
+function seedProject(home: string): void {
+  const repo = join(home, "wire-keys-repo");
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  writeFileSync(join(repo, "CLAUDE.md"), "# wire keys\n");
+  const sessionId = "3c0e5a1d-0000-4000-8000-00000000c0de";
+  const transcripts = join(home, ".claude/projects/wire-keys");
+  mkdirSync(transcripts, { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(join(transcripts, `${sessionId}.jsonl`), [
+    { type: "user", timestamp: at, message: { role: "user", content: [{ type: "text", text: "wire keys" }] } },
+    { type: "assistant", timestamp: at, message: { id: "msg_wire_keys", role: "assistant", content: [{ type: "text", text: "read" }] } },
+  ].map((record) => `${JSON.stringify(record)}\n`).join(""));
+  const sessions = join(home, ".claude/sessions");
+  mkdirSync(sessions, { recursive: true });
+  const now = Date.now();
+  writeFileSync(join(sessions, "wire-keys.json"), JSON.stringify({
+    pid: process.pid,
+    sessionId,
+    cwd: realpathSync(repo),
+    name: "wire-keys",
+    kind: "interactive",
+    status: "idle",
+    startedAt: now,
+    updatedAt: now,
+  }));
+}
+
 async function boot(jar: string): Promise<Daemon> {
   if (!existsSync(jar)) throw new Error(`--boot: no jar at ${jar}; build it with :app:shadowJar`);
   const home = mkdtempSync(join(tmpdir(), "console-wire-keys-"));
@@ -553,6 +587,7 @@ async function boot(jar: string): Promise<Daemon> {
     'models = [{ id = "wire/keys-model", slot = "sonnet" }]',
     "",
   ].join("\n"));
+  seedProject(home);
   const env = {
     PATH: process.env.PATH ?? "/usr/bin:/bin",
     HOME: home,

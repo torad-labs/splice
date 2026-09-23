@@ -3,7 +3,7 @@
 // THE BOARD IS COMPOSED, NOT FETCHED. The daemon splits a team's read on purpose (there is no
 // GET /api/teams/{id}), so the opened team is its row from GET /api/teams, and board.ts joins it to
 // the session registry, the day's chat and activity, the lifetime economics and the day's perf
-// rows. All of them are re-read on one timer while the team is open.
+// rows, re-read while the team is open: the panels every 10 s, the turn log every minute.
 //
 // The comp's board is available in dev only, from ?fixture=hero, and never ships.
 //
@@ -43,6 +43,10 @@ const READ_EVERY_MS = 10_000;
 /** The perf rows read for the day's turn log: the route's own ceiling per head (PerfRoutes.kt
  *  MAX_TURNS), so the log is short only on a day busier than the route will serve. */
 const TURN_TAIL = 2_000;
+
+/** How often that log is re-read. A day of rows per head is the heaviest read on the page, and the
+ *  last-hour chart it feeds has a minute's resolution, so a minute is the finest it can show. */
+const TURN_LOG_EVERY_MS = 60_000;
 
 /** Whether the address asks for THIS page's fixture, by that fixture's own FILE name. Exported
  *  because the capture marker's whole value rests on it (law 23): a name this page does not carry
@@ -220,10 +224,14 @@ export function TeamsPage() {
   useEffect(() => {
     if (fixture !== null || openId === null) return undefined;
     return poll(async () => {
-      const at = Date.now();
-      setNow(at);
-      await Promise.all([fetchTeamPanels(openId), fetchSessions(), fetchPerfTurns(undefined, TURN_TAIL, dayStartOf(at))]);
+      setNow(Date.now());
+      await Promise.all([fetchTeamPanels(openId), fetchSessions()]);
     }, READ_EVERY_MS);
+  }, [fixture, openId]);
+
+  useEffect(() => {
+    if (fixture !== null || openId === null) return undefined;
+    return poll(() => fetchPerfTurns(undefined, TURN_TAIL, dayStartOf(Date.now())), TURN_LOG_EVERY_MS);
   }, [fixture, openId]);
 
   const sessions = registry.data?.sessions ?? [];

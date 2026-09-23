@@ -9,6 +9,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -72,7 +73,9 @@ internal class DaemonBoundary {
     // whole change exists to feed emitted concatenated garbage. Exactly one terminator is appended
     // here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
     internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink {
-        Cancellables.runCatchingCancellable { Files.createDirectories(logsDir) }
+        // v0.4.0: owner-only, and re-asserted each start (SecureFile.ownerOnlyDirectory): the dir is
+        // the boundary, so daemon.log and the per-head logs need no mode of their own.
+        Cancellables.runCatchingCancellable { SecureFile.ownerOnlyDirectory(logsDir) }
         val file = logsDir.resolve("daemon.log")
         val rolled = logsDir.resolve("daemon.log.1")
         var writer: java.io.Writer? = null
@@ -143,7 +146,7 @@ internal class DaemonBoundary {
                 "${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
             System.err.print(line)
             Cancellables.runCatchingCancellable {
-                Files.createDirectories(statePaths.logsDir)
+                SecureFile.ownerOnlyDirectory(statePaths.logsDir)
                 Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
             }
         }

@@ -1,0 +1,4 @@
+// The campaign CLIs and walls under .dev/: bun scripts held to tools/gate's standard. The gate's
+// typecheck leg (bun tools/gate typecheck) runs this program; tools/gate imports some of these
+// files, and before 2026-09-23 nothing typechecked the rest.
+{ "extends": "../tools/gate/tsconfig.json", "include": ["**/*.ts"] }

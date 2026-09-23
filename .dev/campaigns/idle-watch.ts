@@ -52,6 +52,7 @@ if (ledger === undefined || idleArg === undefined || pollArg === undefined || di
   console.error("usage: bun .dev/web-console/idle-watch.ts [--once] <ledger.toml> <idle-secs> <poll-secs> <dir1,dir2,...> <seat>...");
   process.exit(2);
 }
+const LEDGER: string = ledger; // narrowed by the guard above; a function body cannot see that narrowing
 const IDLE = Number(idleArg);
 const POLL_MS = Number(pollArg) * 1000;
 const DIRS = dirArg.split(",").filter((d) => existsSync(d));
@@ -157,7 +158,7 @@ function reading(p: string): Reading {
 function inFlightBySeat(): Map<string, string> {
   const out = new Map<string, string>();
   let text: string;
-  try { text = readFileSync(ledger, "utf8"); } catch { return out; }
+  try { text = readFileSync(LEDGER, "utf8"); } catch { return out; }
   for (const block of text.split(/^\[\[items\]\]\s*$/m).slice(1)) {
     const id = /^id = "([^"]+)"/m.exec(block);
     const status = /^status = "([^"]+)"/m.exec(block);

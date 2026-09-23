@@ -702,7 +702,8 @@ const fmt = (value, kind) => {
 
 /** Record one constant. `fails` is the verdict rule: the tolerance by default, and a named rule
  *  where the comp carries a shape rather than a number (a bay whose rail is missing). */
-function record(address, id, kind, compValue, gotValue, note, fails, tol) {
+// `fails` and `tol` are optional: a row without them is judged against its kind's flat limit.
+function record(address, id, kind, compValue, gotValue, note, fails = undefined, tol = undefined) {
   // An absolute-pixel constant is compared against the comp's value SCALED BY THE FRAME, not
   // dropped and not compared raw.
   //
@@ -884,7 +885,7 @@ The comp is console/.impeccable/build/spec.json + build/scaffold/layout.css; not
 Constants (${CONSTANTS.length} geometry + ${TEXT_ROLES.length} text roles):
 ${[...CONSTANTS.map((c) => c.id), ...TEXT_ROLES.map((r) => r.id)].map((id) => `  ${id}`).join('\n')}
 
-Tolerances: box ${TOLERANCE.box.limit}% of frame, cap ${TOLERANCE.cap.limit}px, family and scale exact.
+Tolerances: box ${TOLERANCE.box.limitPx} ${TOLERANCE.box.unit} (restated per constant against its own reference length), cap ${TOLERANCE.cap.limit}px, family and scale exact.
 WHAT GATES AND WHAT ONLY REPORTS (M1-64): geometry, counts, family and scale gate on their tolerance,
 and so does the rung-to-rung RATIO LADDER, which is the property the console must satisfy and which
 is invariant under the comp's unnamed face. The ABSOLUTE cap rows report and do not gate: the comp's

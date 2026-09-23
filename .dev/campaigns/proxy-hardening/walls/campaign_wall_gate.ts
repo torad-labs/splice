@@ -92,7 +92,10 @@ export const SEVERITY: Record<string, string> = {
 
 type Items = Map<string, [string, string]>; // id -> [phase, status], in ledger order
 type Row = Record<string, unknown>;
-type Stats = Record<string, number>;
+type Stats = {
+  total: number; unwalled: number; walled: number; retired: number; green: number; vacuous: number;
+  false_green: number; uncontrolled: number; laws: number; unlawed: number; lawed: number; law_violations: number;
+};
 
 /** Python's str.split() with no argument: split on runs of whitespace, no empty ends. */
 function words(s: string): string[] {
@@ -101,11 +104,6 @@ function words(s: string): string[] {
 
 function code(f: string): string {
   return words(f)[0] ?? "";
-}
-
-/** Python's str.isalpha(): non-empty and every character a letter. */
-function isAlpha(s: string): boolean {
-  return /^\p{L}+$/u.test(s);
 }
 
 /** Python's s[:n], which counts code points rather than UTF-16 units. */
@@ -185,7 +183,7 @@ export function runWall(wall: string, selftest = false, timeout: number = WALL_T
   // only has to know what RUNS that suffix. That is what let the walls convert one at a time under
   // the old runner. Anything else is refused (see the header, deviation 1): exit 126 is a red the
   // gate reports, never a pass.
-  let cmd: string[];
+  let cmd: [string, ...string[]];
   if (target.endsWith(".sh")) cmd = ["bash", target];
   else if (target.endsWith(".ts")) cmd = ["bun", target];
   else return [126, `no runner for '${basename(target)}': walls are .sh or .ts in this repo`];
@@ -199,7 +197,7 @@ export function runWall(wall: string, selftest = false, timeout: number = WALL_T
   if (proc.error) throw proc.error; // a runner that cannot start is an environment fault, not a verdict
   const rc = proc.status ?? -(constants.signals[proc.signal as keyof typeof constants.signals] ?? 1);
   const tail = lines(((proc.stdout ?? "") + (proc.stderr ?? "")).replace(/\r\n?/g, "\n").trim());
-  return [rc, tail.length ? head(tail[tail.length - 1], 190) : ""];
+  return [rc, head(tail.at(-1) ?? "", 190)];
 }
 
 // ── the audit ────────────────────────────────────────────────────────────────
@@ -257,8 +255,9 @@ export function audit(items: Items, rows: Row[], opts: AuditOpts = {}): [string[
   for (const itemId of [...items.keys()].sort()) {
     const status = items.get(itemId)![1];
     const rs = byId.get(itemId) ?? [];
-    if (rs.length !== 1) continue;
-    const wall = String(rs[0].wall ?? "").trim();
+    const row = rs.length === 1 ? rs[0] : undefined;
+    if (row === undefined) continue;
+    const wall = String(row.wall ?? "").trim();
     if (!wall) {
       // A RETIRED wall (restructure PR 6, plan §2.7): the guarantee moved into the owning module's
       // own test and the wrapper was deleted AFTER an equivalence proof — red and green on the same
@@ -273,11 +272,11 @@ export function audit(items: Items, rows: Row[], opts: AuditOpts = {}): [string[
       // `retired_to` therefore takes a string OR a list, and EVERY named home must exist: crediting
       // a row for one existing home would let the other be deleted under a green gate, which is the
       // disappearing-denominator shape this gate exists against.
-      const homes = (Array.isArray(rs[0].retired_to) ? rs[0].retired_to : [rs[0].retired_to])
+      const homes = (Array.isArray(row.retired_to) ? row.retired_to : [row.retired_to])
         .map((h: unknown) => String(h ?? "").trim())
         .filter((h: string) => h !== "");
       if (homes.length > 0) {
-        const proof = String(rs[0].proof ?? "").trim();
+        const proof = String(row.proof ?? "").trim();
         const missing = homes.filter((h: string) => !existsSync(resolveWall(h)));
         if (missing.length > 0) {
           findings.push(`C3 RETIRED HOME  ${itemId}: retired_to ${pyList(missing)} does not exist on disk`);
@@ -605,14 +604,15 @@ function parseArgs(argv: string[]): Set<string> {
     }
     const hits = a.startsWith("--") ? FLAGS.filter((f) => f === a || f.startsWith(a)) : [];
     const exact = hits.includes(a) ? [a] : hits;
-    if (exact.length !== 1) {
+    const only = exact.length === 1 ? exact[0] : undefined;
+    if (only === undefined) {
       const why = exact.length > 1
         ? `ambiguous option: ${a} could match ${exact.join(", ")}`
         : `unrecognized arguments: ${a}`;
       process.stderr.write(`${USAGE}\ncampaign_wall_gate.ts: error: ${why}\n`);
       process.exit(2);
     }
-    got.add(exact[0]);
+    got.add(only);
   }
   return got;
 }

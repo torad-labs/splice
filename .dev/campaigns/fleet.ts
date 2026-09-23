@@ -142,7 +142,7 @@ function seatdAlive(seat: string, socketPath: string, token: string): Promise<bo
     socket.on("error", fail);
     socket.on("connect", () => socket.write(frame({ token })));
     socket.on("data", (chunk) => {
-      buffer = Buffer.concat([buffer, chunk]);
+      buffer = Buffer.concat([buffer, typeof chunk === "string" ? Buffer.from(chunk) : chunk]);
       while (buffer.length >= 4 && buffer.length >= 4 + buffer.readUInt32BE(0)) {
         const length = buffer.readUInt32BE(0);
         const reply = JSON.parse(buffer.subarray(4, 4 + length).toString("utf8")) as { ok?: boolean; reason?: unknown; result?: { alive?: unknown } };

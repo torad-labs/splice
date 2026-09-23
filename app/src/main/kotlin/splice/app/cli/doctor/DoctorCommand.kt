@@ -16,13 +16,8 @@ import splice.app.cli.status.JdkAccountPoolRead
 import splice.app.daemon.DaemonProbe
 import splice.app.daemon.TopologyLoader
 import splice.control.HeadAccountPoolView
-import splice.core.terminal.BOLD
-import splice.core.terminal.CYAN
-import splice.core.terminal.DIM
-import splice.core.terminal.GREEN
-import splice.core.terminal.RED
-import splice.core.terminal.RESET
-import splice.core.terminal.YELLOW
+import splice.core.terminal.CliPalette
+import splice.core.terminal.ColorDepthProbe
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -34,6 +29,12 @@ import java.nio.file.Path
  *  already split across become constructed collaborators; every member keeps the old function's
  *  name so the diff at each call site is a receiver insertion. */
 internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAccountPoolRead()) {
+
+    // The SAME palette the other two surfaces resolve, for the same reason: NO_COLOR is a
+    // contract, and doctor spelling \u001B[1m directly meant an operator who set it got a report
+    // full of escape bytes from the one command they run when things are already wrong. Resolved
+    // once per DoctorCommand — a palette that can change between two rows of one report is not one.
+    private val palette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth())
 
     private val probes = DoctorProbes()
 
@@ -75,9 +76,12 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
         println()
         when {
             failures > 0 ->
-                println("$RED$failures issue(s)$RESET — fixes listed above. Re-run ${CYAN}splice doctor$RESET after.")
-            warnings > 0 -> println("${GREEN}No blockers$RESET ($warnings warning(s) above).")
-            else -> println("${GREEN}Everything checks out.$RESET")
+                println(
+                    palette.paint(palette.dead, "$failures issue(s)") + " — fixes listed above. Re-run " +
+                        palette.paint(palette.signal, "splice doctor") + " after.",
+                )
+            warnings > 0 -> println(palette.paint(palette.live, "No blockers") + " ($warnings warning(s) above).")
+            else -> println(palette.paint(palette.live, "Everything checks out."))
         }
         return failures == 0
     }
@@ -95,7 +99,10 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
      */
     private fun renderReport(sections: List<Pair<String, List<DoctorCheck>>>, all: List<DoctorCheck>) {
         println()
-        println("  ${BOLD}splice doctor$RESET  $DIM${all.size} checks$RESET")
+        println(
+            "  " + palette.paint(palette.strong, "splice doctor") + "  " +
+                palette.paint(palette.quiet, "${all.size} checks"),
+        )
         println()
         // EVERY PASS KEEPS ITS LINE, dim, above the problems. An earlier cut collapsed them to a
         // roster ("18 passed  prerequisites installation ...") whenever anything was wrong, on the
@@ -108,7 +115,10 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
         // itself with information; hierarchy here is carried by weight and space instead, which is
         // what the problems below already use and what survives a pipe.
         for (check in all.filter { it.status == CheckStatus.OK }) {
-            println("  $GREEN✓$RESET  ${check.name}  $DIM${check.detail}$RESET")
+            println(
+                "  " + palette.paint(palette.live, PASS_GLYPH) + "  ${check.name}  " +
+                    palette.paint(palette.quiet, check.detail),
+            )
         }
         // THE SPLIT IS "DOES IT CARRY A FIX", NOT THE STATUS. The first cut expanded WARN and FAIL
         // and collapsed every INFO to one dim line — which silently dropped the fix off an INFO that
@@ -126,10 +136,10 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
         // a live daemon with zero heads would show no runtime line at all, which reads as "not
         // checked" exactly when the operator is asking whether it was. It keeps a note instead.
         for ((title, _) in sections.filter { it.second.isEmpty() }) {
-            println("  $DIM–  $title  nothing to report$RESET")
+            println("  " + palette.paint(palette.quiet, "$NOTE_GLYPH  $title  nothing to report"))
         }
         for (check in notes) {
-            println("  $DIM–  ${check.name}  ${check.detail}$RESET")
+            println("  " + palette.paint(palette.quiet, "$NOTE_GLYPH  ${check.name}  ${check.detail}"))
         }
         for (check in actionable) {
             renderProblem(check)
@@ -139,16 +149,18 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
     /** One problem, given room: what is wrong, then why it matters, then the command to run. */
     private fun renderProblem(check: DoctorCheck) {
         val glyph = when (check.status) {
-            CheckStatus.FAIL -> "$RED✗$RESET"
-            CheckStatus.WARN -> "$YELLOW!$RESET"
+            CheckStatus.FAIL -> palette.paint(palette.dead, FAIL_GLYPH)
+            CheckStatus.WARN -> palette.paint(palette.strain, WARN_GLYPH)
             // An INFO reaching here has a fix but is not a fault — a fresh machine with no topology
             // is not sick. It gets the room without the alarm.
-            else -> "$DIM–$RESET"
+            else -> palette.paint(palette.quiet, NOTE_GLYPH)
         }
         println()
-        println("  $glyph ${BOLD}${check.name}$RESET")
-        println("      $DIM${check.detail}$RESET")
-        check.fix?.let { println("      ${DIM}fix$RESET   $CYAN$it$RESET") }
+        println("  $glyph " + palette.paint(palette.strong, check.name))
+        println("      " + palette.paint(palette.quiet, check.detail))
+        check.fix?.let {
+            println("      " + palette.paint(palette.quiet, "fix") + "   " + palette.paint(palette.signal, it))
+        }
     }
 
     /** The `--json` report as TEXT, for a caller that SHIPS it rather than printing it — the
@@ -223,6 +235,14 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
             if (genuinelyAbsent) DoctorTopology.Absent else DoctorTopology.Broken(SafeFailureText.render(e))
         }
 }
+
+// The glyphs. Colour is the SECOND carrier here, never the only one: at ColorDepth.NONE these
+// four shapes are the entire difference between a pass, a note, a warning and a failure, and they
+// stay distinguishable in a pipe, a CI log and a screen reader's line.
+private const val PASS_GLYPH = "\u2713"
+private const val NOTE_GLYPH = "\u2013"
+private const val WARN_GLYPH = "!"
+private const val FAIL_GLYPH = "\u2717"
 
 private val CLAUDE_VERSION = listOf("claude", "--version")
 private const val ACCOUNTS_CHECK = "accounts"

@@ -2,7 +2,7 @@
 // a time, for GET /api/sessions/{id}/transcript.
 //
 // WHERE IT READS. Claude Code writes `<config dir>/projects/<slug>/<session id>.jsonl`. The caller
-// supplies the config roots in priority order (TranscriptTrees): the session's head config dir, then
+// supplies the config roots in priority order (SessionTranscripts' `roots`): the session's head config dir, then
 // the vanilla ~/.claude tree (sessions splice did not launch, and history from before V4-115
 // un-linked the trees), then every other head's. The page reports the path it opened.
 //
@@ -59,8 +59,8 @@
 // the path it read: a lookup that silently answered fewer ids than it was asked for would read as a
 // complete chat.
 //
-// 2026-09-18 (V4-160, concentration): the public types moved to TranscriptTypes.kt, the page assembly
-// to TranscriptAssembly.kt and the redaction to TranscriptRedaction.kt; same package, same behaviour.
+// 2026-09-18 (V4-160, concentration): page assembly moved to TranscriptAssembly.kt and redaction to
+// TranscriptRedaction.kt. LAYOUT-01 later moved the public response vocabulary to :features-sessions.
 package splice.client.transcript
 
 import kotlinx.serialization.json.Json
@@ -71,6 +71,11 @@ import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
+import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionTranscripts
+import splice.sessions.transcript.TranscriptLookup
+import splice.sessions.transcript.TranscriptPage
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -88,17 +93,18 @@ private const val BAD_ID = "not a session id"
 private const val SEND_MESSAGE = "SendMessage"
 private const val BAD_CURSOR = "not a cursor this daemon minted"
 
-public class TranscriptReader(private val trees: TranscriptTrees) {
+/** The Claude Code implementation of the sessions feature's transcript port: the feature chooses root
+ *  priority, this class owns only Claude Code's on-disk format. */
+public class TranscriptReader : SessionTranscripts {
     private val json = Json { ignoreUnknownKeys = true }
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
     private val redaction = TranscriptRedaction()
 
-    public fun page(sessionId: String, head: String?, cursor: String?, limit: Int): TranscriptLookup {
+    override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
         val start = parseCursor(cursor)
         if (!validSessionId.matches(sessionId) || start == null) {
             return TranscriptLookup.Refused(if (start == null) BAD_CURSOR else BAD_ID)
         }
-        val roots = trees(head)
         val file = locate(roots, sessionId)
             ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
@@ -106,8 +112,7 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
 
     /** The `message` of every SendMessage call in [sessionId]'s transcript whose tool_use id is in
      *  [ids] (see the header). A malformed session id finds nothing and reports every id missing. */
-    public fun sentTexts(sessionId: String, head: String?, ids: Set<String>): SentTexts {
-        val roots = trees(head)
+    override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts {
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
         if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve(Keys.PROJECTS).toString() })
         val found = HashMap<String, String>()

@@ -1,8 +1,8 @@
 // NEW: one-line spinner for the CLI prompt toolkit (cli-wizard CW-2).
 package splice.app.cli.prompt
 
-import splice.app.cli.GREEN
-import splice.app.cli.RESET
+import splice.core.terminal.GREEN
+import splice.core.terminal.RESET
 import java.util.Timer
 import java.util.TimerTask
 

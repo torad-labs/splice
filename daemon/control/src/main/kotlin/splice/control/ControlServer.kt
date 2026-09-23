@@ -32,6 +32,7 @@ import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.mcp.McpAccessKey
+import splice.client.transcript.TranscriptReader
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.EventsRoute
@@ -50,23 +51,12 @@ import splice.control.api.fleet.LaunchRoutes
 import splice.control.api.fleet.TopologyRoutes
 import splice.control.api.fleet.TopologySource
 import splice.control.api.fleet.UpgradeRoute
-import splice.control.api.sessions.ActivitySource
-import splice.control.api.sessions.ProjectsRoutes
-import splice.control.api.sessions.RepoOf
-import splice.control.api.sessions.SentTextSource
-import splice.control.api.sessions.SessionsRoutes
-import splice.control.api.sessions.TeamSource
-import splice.control.api.sessions.TeamsRoutes
 import splice.control.api.turns.CaptureRoutes
 import splice.control.api.turns.CompactPayloads
 import splice.control.api.turns.CompactionInstructionsRoute
 import splice.control.api.turns.PlaygroundRoute
 import splice.control.api.turns.PlaygroundSource
 import splice.control.api.turns.ResumeHookRoute
-import splice.control.api.usage.AlertRoutes
-import splice.control.api.usage.AlertSource
-import splice.control.api.usage.BudgetRoutes
-import splice.control.api.usage.BudgetSource
 import splice.control.api.usage.EconomicsPayloads
 import splice.control.api.usage.PerfPayloads
 import splice.control.api.usage.PerfRoutes
@@ -75,9 +65,22 @@ import splice.control.api.usage.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
-import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.heads.HeadStatusListing
+import splice.heads.ListHeads
+import splice.sessions.http.ActivitySource
+import splice.sessions.http.ProjectsRoutes
+import splice.sessions.http.RepoOf
+import splice.sessions.http.SentTextSource
+import splice.sessions.http.SessionsRoutes
+import splice.sessions.http.TeamSource
+import splice.sessions.http.TeamsRoutes
+import splice.sessions.registry.SessionSource
+import splice.usage.alerts.AlertRoutes
+import splice.usage.alerts.AlertSource
+import splice.usage.budgets.BudgetRoutes
+import splice.usage.budgets.BudgetSource
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
 private const val STOP_GRACE_MS = 100L
@@ -119,7 +122,7 @@ public class ControlServer(
     /** v0.4.0 shared MCP hosting; null keeps the control plane exactly as before. */
     private val mcpHost: McpHost? = null,
     /** v0.4.0 (FEATURES.md §4): the Claude Code session registry, read-only, for /api/sessions. */
-    sessions: SessionRegistry? = null,
+    sessions: SessionSource? = null,
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
     /** The nine ports ControlPlane wires after construction — see [ConsolePorts], which carries the
@@ -127,21 +130,29 @@ public class ControlServer(
     public val ports: ConsolePorts = ConsolePorts()
 
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
+    private val sessionHeads = SessionHeadAdapter.adapt(heads)
 
     private val sessionsRoutes = sessions?.let {
-        SessionsRoutes(it, heads, config, ActivitySource { ports.activity }, teams = TeamSource { ports.teams })
+        SessionsRoutes(
+            it,
+            TranscriptReader(),
+            sessionHeads,
+            config,
+            ActivitySource { ports.activity },
+            teams = TeamSource { ports.teams },
+        )
     }
     private val teamsRoutes = sessionsRoutes?.let { routes ->
         TeamsRoutes(
             TeamSource { ports.teams },
-            heads,
+            sessionHeads,
             sessions,
             ActivitySource { ports.activity },
             SentTextSource(routes::sentTexts),
         )
     }
     private val projectsRoutes = sessionsRoutes?.let { routes ->
-        ProjectsRoutes(sessions, heads, RepoOf(routes::repoOf), TeamSource { ports.teams })
+        ProjectsRoutes(sessions, sessionHeads, RepoOf(routes::repoOf), TeamSource { ports.teams })
     }
     private val payloads =
         ControlPayloads(
@@ -185,6 +196,7 @@ public class ControlServer(
     private val claudeHeadRoutes = ClaudeHeadRoutes(heads)
     private val accountsRoute = AccountsRoute(heads)
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
+    private val listHeads = ListHeads(HeadStatusListing(resolver::headStatuses))
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
     private val statuslineRoute = StatuslineRoute(resolver, config, clientVersions)
 
@@ -218,7 +230,7 @@ public class ControlServer(
                 get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
                 get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
                 get("/api/status") { guarded(call) { respond(call, payloads.statusJson()) } }
-                get("/api/heads") { guarded(call) { respond(call, resolver.headsJson()) } }
+                get("/api/heads") { guarded(call) { listHeads.handle(call) } }
                 post("/api/heads/{head}/{action}") { guarded(call) { headRoutes.headAction(call) } }
                 post("/api/daemon/shutdown") {
                     guarded(call) {

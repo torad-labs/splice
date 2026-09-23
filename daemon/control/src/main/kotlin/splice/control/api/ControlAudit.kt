@@ -5,7 +5,7 @@
 // launch argument, a warning composed from the request body) must not write the audit format itself.
 package splice.control.api
 
-import splice.control.LogSafe
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 
 internal class ControlAudit(private val log: LogSink) {

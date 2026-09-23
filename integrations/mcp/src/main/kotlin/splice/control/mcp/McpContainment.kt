@@ -30,8 +30,8 @@
 //     false-green signature.
 package splice.control.mcp
 
-import splice.control.LogSafe
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path

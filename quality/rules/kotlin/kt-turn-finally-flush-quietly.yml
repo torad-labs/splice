@@ -17,14 +17,14 @@ files:
   # crosses `/` (globset), so a per-directory `*.kt` list reads as the whole module there while the
   # gate's matcher reads it literally; `**` plus an ignores: list of the carried-over subpackages is
   # the one spelling both matchers agree on (57 of 108 files, the package's reach before the move).
-  - daemon/head/src/main/kotlin/splice/head/**/*.kt
+  - features/turns/src/main/kotlin/splice/head/**/*.kt
 ignores:
-  - daemon/head/src/main/kotlin/splice/head/round/**
-  - daemon/head/src/main/kotlin/splice/head/wire/**
-  - daemon/head/src/main/kotlin/splice/head/usage/**
-  - daemon/head/src/main/kotlin/splice/head/pipeline/**
-  - daemon/head/src/main/kotlin/splice/head/reasoning/**
-  - daemon/head/src/main/kotlin/splice/head/compact/**
-  - daemon/head/src/main/kotlin/splice/head/perf/**
+  - features/turns/src/main/kotlin/splice/head/round/**
+  - features/turns/src/main/kotlin/splice/head/wire/**
+  - features/turns/src/main/kotlin/splice/head/usage/**
+  - features/turns/src/main/kotlin/splice/head/pipeline/**
+  - features/turns/src/main/kotlin/splice/head/reasoning/**
+  - features/turns/src/main/kotlin/splice/head/compact/**
+  - features/turns/src/main/kotlin/splice/head/perf/**
 rule:
   pattern: $C.coalesced.flush()

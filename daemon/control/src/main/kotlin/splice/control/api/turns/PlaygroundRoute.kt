@@ -31,8 +31,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.control.ManagedHead
 import splice.control.api.HeadResolver
-import splice.control.api.sessions.JsonReply
 import splice.core.util.Cancellables
+import splice.http.JsonReply
 
 /** How PlaygroundRoute reaches the daemon's ONE upstream probe — read at call time, the same
  *  discipline [BudgetSource]/[TeamSource] keep, because ControlPlane assigns it after

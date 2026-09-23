@@ -22,10 +22,11 @@ import java.io.File
  *  when a module moves under integrations/dialects/ or integrations/providers/, and [ProjectMap] is what turns it into a
  *  directory. */
 private val PORT_SCOPE_MODULES = listOf(
-    ":core", ":client", ":upstream", ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat",
+    ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http", ":upstream",
+    ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat",
     ":integrations-dialects-anthropic", ":integrations-providers-codex", ":integrations-providers-grok", ":integrations-providers-openai",
-    ":integrations-providers-kimi", ":integrations-providers-muse", ":daemon-head", ":daemon-control",
-    ":features-heads", ":app", ":quality-compiler-plugin",
+    ":integrations-providers-kimi", ":integrations-providers-muse", ":features-turns", ":daemon-control",
+    ":features-heads", ":features-models", ":features-sessions", ":features-usage", ":app", ":quality-compiler-plugin",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,
@@ -371,7 +372,7 @@ class ArchitectureLawsTest {
         // root moved to the repository root and every module's directory gained its `gateway/`.
         val ownModule = map.relativeDir(":integrations-dialects-anthropic")
         val headAssembly = map.relativeDir(":app")
-        val headModule = map.relativeDir(":daemon-head")
+        val headModule = map.relativeDir(":features-turns")
         assertEquals(
             emptyList<String>(),
             passthroughQuirksConstructionViolations(

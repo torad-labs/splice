@@ -37,7 +37,7 @@ phase = "W1-bounded-failure"
 wall = ""
 retired_to = [
     "upstream/src/test/kotlin/splice/upstream/transport/UpstreamClientRateLimitTest.kt",
-    "daemon/head/src/test/kotlin/splice/head/HeadServerCapacityTest.kt",
+    "features/turns/src/test/kotlin/splice/head/HeadServerCapacityTest.kt",
 ]
 proof = "2026-09-21: three mutations, no new law, and TWO homes because leg C proves one is not enough. (a) the ceiling removed from the arming expression (`nowMs + minOf(pushbackMs, MAX)` -> `nowMs + pushbackMs`), which is the original 2026-07-26 defect where one multi-day Retry-After poisons a head permanently through accumulateAndGet(max) -> wall RED (MAX_RATE_LIMIT_COOLDOWN_MS is declared but NOT applied in the horizon expression) and UpstreamClientRateLimitTest RED (13 tests, 2 failures, `a multi-day retry-after arms a horizon no longer than the cooldown ceiling`). (b) clear() made a no-op -> wall RED and BOTH homes RED: the unit arm `clearRateLimitCooldown drops an armed horizon immediately` (13, 1) and HeadServerCapacityTest `restart clears an armed 429 cooldown` (5, 2 -- the second is a knock-on, the armed horizon leaking into the capacity arm, which is the defect doing exactly what it does in production). (c) THE CHAIN LINK: HeadServer.startLocked() stops calling the delegate (`accountPool?.reset() ?: upstream.clearRateLimitCooldown()` -> `accountPool?.reset()`) -> wall RED (clearRateLimitCooldown() exists but HeadServer never calls it) and HeadServerCapacityTest RED (5, 2), while UpstreamClientRateLimitTest stays GREEN at 13/0 -- it calls the delegate directly and cannot see that nothing upstream of it does. That is the wall's link-by-link leg, and it is why both homes are named: the unit arm owns the clamp and the clear, the daemon arm owns the chain through a real restart over HTTP. Restored, wall GREEN, 13/13 and 5/5. Checked and NOT a defect: the elvis at HeadServer.kt:108 means a pooled head never reaches clearRateLimitCooldown, but UpstreamClient.activeCooldown() routes a pooled request to ctx.rateLimitCooldown, which accountPool.reset() does clear -- both branches are correct"
 
@@ -54,7 +54,7 @@ phase = "W1-bounded-failure"
 wall = ""
 retired_to = [
   "upstream/src/test/kotlin/splice/upstream/retry/WatchdogTest.kt",
-  "daemon/head/src/test/kotlin/splice/head/HeadServerFoldTest.kt",
+  "features/turns/src/test/kotlin/splice/head/HeadServerFoldTest.kt",
 ]
 proof = "2026-09-21: two homes, because the wall only ever held one of its two requirements. MECHANISM — launchTotalCap's breach threshold multiplied by 1000 (compiles clean, every symbol still used): WatchdogTest 'turn-scoped cap poller reaps with NO open stream - the NF-03 case' FAILED while the WALL STAYED GREEN; the wall is equally green with the body reduced to `if (false)` and with the whole body replaced by `scope.launch { }`, so its requirement 1 — 'samples elapsed >= totalCap independent of any open stream, setting the typed sentinel BEFORE cancelling' — is a check that the TOKEN `fun launchTotalCap(` exists, and an empty coroutine passes it. PLACEMENT — the call site's target changed from turnJob to Job() (DR-35f's own mutant shape): wall RED and HeadServerFoldTest 'totalCap reaps a turn stalled BEFORE upstream headers and frees the slot - NF-03' FAILED on the same bytes, the end-to-end 3s pre-headers stall against a 1s cap that the wall can only judge lexically. INDEPENDENCE — the placement mutation lives in daemon/head, so upstream's sources are byte-identical under it and WatchdogTest is green 14/14 on that tree: the two homes fail for different defects, which is why both are named. Restored: wall GREEN, WatchdogTest 14/14, HeadServerFoldTest 6/6. NOT retired with the guarantee: the wall's refusal clause (RED if `fun launchIn(` disappears) is a fail-closed guard on the wall's own reading of Watchdog.kt, not a behaviour — the idle tiers are owned by WatchdogTest's idle arms whatever the function is called. Both --tests filters derived with arm-class.sh, never from a filename"
 
@@ -292,7 +292,7 @@ wall = ""
 retired_to = [
   "quality/rules/kotlin/kt-l2-single-mirror-definition.yml",
   "quality/rules/kotlin/kt-l2-mirror-delegates-to-predicate.yml",
-  "daemon/head/src/test/kotlin/splice/head/pipeline/TurnPipelineTest.kt",
+  "features/turns/src/test/kotlin/splice/head/pipeline/TurnPipelineTest.kt",
   "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
   "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
   "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesRedactedEmissionTest.kt",

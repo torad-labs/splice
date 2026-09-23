@@ -37,12 +37,19 @@ note: >
   CancellationException so a cancelled coroutine actually stops. A swallowed cancellation here is how
   a cancelled turn kept spinning upstream (the 600%-CPU incident).
 files:
+  - features/sessions/src/main/**/*.kt
+  - features/models/src/main/**/*.kt
+  - core/src/main/kotlin/splice/core/terminal/CliStyle.kt
+  - features/usage/src/main/**/*.kt
+  - integrations/http/src/main/**/*.kt
   - upstream/src/main/**/*.kt
   - integrations/dialects/openai-responses/src/main/**/*.kt
   - integrations/dialects/openai-chat/src/main/**/*.kt
   - integrations/dialects/anthropic/src/main/**/*.kt
-  - daemon/head/src/main/**/*.kt
+  - features/turns/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
+  - integrations/mcp/src/main/**/*.kt
+  - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - app/src/main/**/*.kt
   - features/heads/src/main/**/*.kt
 rule:

@@ -9,20 +9,20 @@
 package splice.app.cli.doctor
 
 import splice.app.cli.AdminSupport
-import splice.app.cli.BOLD
-import splice.app.cli.CYAN
-import splice.app.cli.DIM
 import splice.app.cli.DoctorProbe
-import splice.app.cli.GREEN
-import splice.app.cli.RED
-import splice.app.cli.RESET
-import splice.app.cli.YELLOW
 import splice.app.cli.status.AccountPoolRead
 import splice.app.cli.status.AccountPoolText
 import splice.app.cli.status.JdkAccountPoolRead
 import splice.app.daemon.DaemonProbe
 import splice.app.daemon.TopologyLoader
 import splice.control.HeadAccountPoolView
+import splice.core.terminal.BOLD
+import splice.core.terminal.CYAN
+import splice.core.terminal.DIM
+import splice.core.terminal.GREEN
+import splice.core.terminal.RED
+import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText

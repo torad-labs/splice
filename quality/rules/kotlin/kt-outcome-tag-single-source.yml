@@ -79,8 +79,13 @@ severity: error
 message: "Perf-row outcome tags have ONE declaration: name the tag from splice.core.perf.OutcomeTag (core/src/main/kotlin/splice/core/perf/OutcomeTag.kt), never a literal here."
 note: "The tag is a wire contract compared by string identity in PerfRowsFileSource, PerfSummary (`it != OK`) and PerfSnapshot — three readers that never see this writer. A drifted spelling still compiles and silently reclassifies the turn. Use OutcomeTag.OK / CLIENT_ABORT / EMPTY_MODEL / EMPTY_COMPACT / EMPTY_MESSAGE, or OutcomeTag.error(kind) / OutcomeTag.failure(wireName) for the prefix families. A JSON field name in FIRST argument position (`put(\"ok\", true)`) is exempt — that is a key, not a tag."
 files:
-  - daemon/head/src/main/**/*.kt
+  - features/sessions/src/main/**/*.kt
+  - features/usage/src/main/**/*.kt
+  - integrations/http/src/main/**/*.kt
+  - features/turns/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
+  - integrations/mcp/src/main/**/*.kt
+  - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - features/heads/src/main/**/*.kt
 rule:
   kind: string_literal

@@ -13,17 +13,24 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import splice.heads.HeadAudit
+import splice.heads.HeadResolver
+import splice.heads.HeadTarget
 
 class StartHeadTest {
     @Test
     fun `starts the resolved instance before auditing and projecting its live status`() = testApplication {
         val events = mutableListOf<String>()
         var running = false
-        val target = object : StartHeadTarget {
+        val target = object : HeadTarget {
             override suspend fun start() {
                 events.add("start")
                 running = true
             }
+
+            override suspend fun stop() = Unit
+
+            override suspend fun restart() = Unit
 
             override fun status(): JsonObject {
                 events.add("status")
@@ -32,13 +39,17 @@ class StartHeadTest {
                     put("running", running)
                 }
             }
+
+            override fun tailLogs(tail: Int): String = ""
+
+            override fun logPath(): String = ""
         }
         val start = StartHead(
-            StartHeadResolver { _, name ->
+            HeadResolver { _, name ->
                 events.add("resolve:$name")
                 target
             },
-            StartHeadAudit { name -> events.add("audit:$name") },
+            HeadAudit { name, action -> events.add("audit:$name:$action") },
         )
         application {
             routing {
@@ -50,14 +61,14 @@ class StartHeadTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("{\"key\":\"codex\",\"running\":true}", response.bodyAsText())
-        assertEquals(listOf("resolve:claudex", "start", "audit:claudex", "status"), events)
+        assertEquals(listOf("resolve:claudex", "start", "audit:claudex:start", "status"), events)
     }
 
     @Test
     fun `a lookup refusal keeps its response and never audits a start`() = testApplication {
         val audited = mutableListOf<String>()
         val start = StartHead(
-            StartHeadResolver { call, _ ->
+            HeadResolver { call, _ ->
                 call.respondText(
                     "{\"error\":\"unknown head\"}",
                     ContentType.Application.Json,
@@ -65,7 +76,7 @@ class StartHeadTest {
                 )
                 null
             },
-            StartHeadAudit { name -> audited.add(name) },
+            HeadAudit { name, _ -> audited.add(name) },
         )
         application {
             routing {

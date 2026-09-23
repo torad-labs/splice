@@ -5,8 +5,8 @@
 // pointer it could not put back, never a bare exception. Split from UpgradeCommand.kt (2026-09-13).
 package splice.app.cli.upgrade
 
-import splice.app.cli.GREEN
-import splice.app.cli.RESET
+import splice.core.terminal.GREEN
+import splice.core.terminal.RESET
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.nio.file.Files

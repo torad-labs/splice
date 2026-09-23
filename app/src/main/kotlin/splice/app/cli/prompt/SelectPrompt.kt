@@ -2,10 +2,10 @@
 // holds one final state, not one copy per keystroke.
 package splice.app.cli.prompt
 
-import splice.app.cli.BOLD
-import splice.app.cli.CYAN
-import splice.app.cli.DIM
-import splice.app.cli.RESET
+import splice.core.terminal.BOLD
+import splice.core.terminal.CYAN
+import splice.core.terminal.DIM
+import splice.core.terminal.RESET
 
 internal data class SelectOption<T>(
     val value: T,

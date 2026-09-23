@@ -8,8 +8,8 @@ dependencies {
     implementation(project(":upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(project(":daemon-head"))
+    testImplementation(project(":features-turns"))
     testImplementation(libs.ktor.client.cio)
-    testImplementation(testFixtures(project(":daemon-head")))
+    testImplementation(testFixtures(project(":features-turns")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
 }

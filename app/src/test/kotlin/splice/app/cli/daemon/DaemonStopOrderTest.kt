@@ -62,9 +62,9 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 private const val DAEMON_REL = "app/src/main/kotlin/splice/app/Daemon.kt"
-private const val HEAD_SERVER_REL = "daemon/head/src/main/kotlin/splice/head/HeadServer.kt"
+private const val HEAD_SERVER_REL = "features/turns/src/main/kotlin/splice/head/HeadServer.kt"
 private const val MAIN_REL = "app/src/main/kotlin/splice/app/Main.kt"
-private const val TURN_STREAMER_REL = "daemon/head/src/main/kotlin/splice/head/turn/TurnStreamer.kt"
+private const val TURN_STREAMER_REL = "features/turns/src/main/kotlin/splice/head/turn/TurnStreamer.kt"
 
 class DaemonStopOrderTest {
 

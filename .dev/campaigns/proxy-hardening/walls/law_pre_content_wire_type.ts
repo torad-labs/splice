@@ -36,6 +36,7 @@
  */
 import { globSync, readFileSync, existsSync } from "node:fs";
 import { resolve, relative } from "node:path";
+import { readGradleModules } from "../../../../tools/gate/src/lib/sources.ts";
 
 /** Python repr() of a string, and of a list of strings. An f-string that interpolates a LIST
  *  renders THIS -- `['a', 'b']` -- not JSON, so a port that used JSON.stringify produced a
@@ -70,22 +71,17 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-// Every §2.2 module home (restructure PR 3 moves them out of gateway/ one commit at a time; a glob
-// over an absent directory matches nothing, so the scan can only grow as modules land).
-const SOURCE_ROOT_GLOBS = [
-  "gateway/*/src/main/kotlin", "client/src/main/kotlin", "core/src/main/kotlin", "upstream/src/main/kotlin",
-  "dialects/*/src/main/kotlin", "providers/*/src/main/kotlin", "daemon/*/src/main/kotlin", "app/src/main/kotlin",
-  "quality/*/src/main/kotlin",
-];
-const SOURCE_ROOT_GLOB = SOURCE_ROOT_GLOBS.join(", ");
-const SEAM_FILE = "daemon/head/src/main/kotlin/splice/head/wire/SseEmitter.kt";
+// Derive the census from the build. Hand-authored root globs lost the provider/dialect adapters
+// when they moved to integrations and would lose turn serving when it moved to features.
+const SOURCE_ROOT_GLOB = "Gradle-declared src/main/kotlin roots";
+const SEAM_FILE = "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt";
 const SEAM_FUN = "emitError";
 
-const COLLECT_FILE = "daemon/head/src/main/kotlin/splice/head/wire/CollectingTerminal.kt";
+const COLLECT_FILE = "features/turns/src/main/kotlin/splice/head/wire/CollectingTerminal.kt";
 const COLLECT_MARK = "CollectingTerminal";
 const COLLECT_REASON = "the COLLECT path (stream:false), where the failure's real HTTP status carries the verdict";
 
-const PRE_TURN_FILE = "daemon/head/src/main/kotlin/splice/head/admission/AdmissionResponses.kt";
+const PRE_TURN_FILE = "features/turns/src/main/kotlin/splice/head/admission/AdmissionResponses.kt";
 const PRE_TURN_MARK = "AdmissionResponses";
 const PRE_TURN_REASON = "2026-09-17: the PRE-TURN admission plane. Every verdict here is decided before";
 
@@ -470,14 +466,15 @@ export function detect(sources: Record<string, string> | null, seamText: string 
   return problems;
 }
 
-export function load(): [Record<string, string> | null, string | null] {
+export function load(rootDir: string = ROOT): [Record<string, string> | null, string | null] {
   const sources: Record<string, string> = {};
-  for (const root of SOURCE_ROOT_GLOBS.flatMap((g) => globSync(resolve(ROOT, g))).sort()) {
+  const roots = readGradleModules(rootDir, rootDir).map(({ dir }) => resolve(rootDir, dir, "src/main/kotlin"));
+  for (const root of roots.sort()) {
     for (const kt of globSync(`${root}/**/*.kt`).sort()) {
-      sources[relative(ROOT, kt)] = readFileSync(kt, "utf8");
+      sources[relative(rootDir, kt)] = readFileSync(kt, "utf8");
     }
   }
-  const seam = resolve(ROOT, SEAM_FILE);
+  const seam = resolve(rootDir, SEAM_FILE);
   return [Object.keys(sources).length > 0 ? sources : null, existsSync(seam) ? readFileSync(seam, "utf8") : null];
 }
 

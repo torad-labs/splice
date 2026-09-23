@@ -99,9 +99,17 @@ internal object Concentration {
 
     /** THE RATCHET BASELINE — the census this tree is held to, MEASURED, never estimated. Moving
      *  it is a deliberate, dated edit: UP records that the tree got worse, DOWN is the remedy this
-     *  law itself prints when work lands. */
-    const val RATCHET_RECORDED = "2026-09-21"
-    const val RATCHET_MAX_HIGH = 13
+     *  law itself prints when work lands.
+     *
+     *  2026-09-22, 13 -> 15, LAYOUT-01, cause `neighbourhood` for both files, measured with this
+     *  law's census at d217408d and on the layout tree. Neither file changed: C is 171.0 and 157.0
+     *  in both. ClaudeConfigMaterializer.kt 2.35 -> 3.03: the transcript vocabulary moved to
+     *  :features-sessions, splice.client.transcript's median fell 74.75 -> 54.75, and the median
+     *  neighbour became splice.client.resume (56.5). ProjectsLink.kt 2.97 -> 3.04: the heads
+     *  extraction thinned splice.control.api.fleet (median 52.0 -> 49.75). The remedy is decomposing
+     *  those two files, not reversing the splits. */
+    const val RATCHET_RECORDED = "2026-09-22"
+    const val RATCHET_MAX_HIGH = 15
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

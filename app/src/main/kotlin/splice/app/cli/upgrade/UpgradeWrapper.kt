@@ -8,9 +8,9 @@
 // against the new release's copy is printed so the operator can port the edit. Never lost.
 package splice.app.cli.upgrade
 
-import splice.app.cli.GREEN
-import splice.app.cli.RESET
-import splice.app.cli.YELLOW
+import splice.core.terminal.GREEN
+import splice.core.terminal.RESET
+import splice.core.terminal.YELLOW
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

@@ -30,13 +30,13 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.control.TopologyStale
-import splice.control.api.sessions.JsonReply
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.http.JsonReply
 
 /** What every `extra_headers` value reads as. */
 internal const val MASK = "********"

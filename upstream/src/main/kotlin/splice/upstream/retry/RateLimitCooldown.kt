@@ -27,8 +27,8 @@
 //     the very fix the message asks him to apply. One upstream request per two minutes, on a head
 //     that cannot serve him anyway, is a cheap price for noticing the moment it can.
 //
-// BLOCKED destination, recorded so it is not re-proposed: daemon/head/.../usage/RateLimitStore.kt
-// is in :daemon-head, and :upstream depends only on :core — that edge would invert.
+// BLOCKED destination, recorded so it is not re-proposed: features/turns/.../usage/RateLimitStore.kt
+// is in :features-turns, and :upstream depends only on :core — that edge would invert.
 package splice.upstream.retry
 
 import splice.core.util.Cancellables

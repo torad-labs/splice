@@ -20,7 +20,8 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":client"))
+    implementation(project(":integrations-claude-code"))
+    implementation(project(":integrations-mcp"))
     implementation(project(":upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
     implementation(project(":integrations-dialects-openai-chat"))
@@ -30,7 +31,10 @@ dependencies {
     implementation(project(":integrations-providers-kimi"))
     implementation(project(":integrations-providers-muse"))
     implementation(project(":integrations-providers-openai"))
-    implementation(project(":daemon-head"))
+    implementation(project(":features-turns"))
+    implementation(project(":features-sessions"))
+    implementation(project(":features-usage"))
+    implementation(project(":features-models"))
     implementation(project(":daemon-control"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
@@ -41,7 +45,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
-    testImplementation(testFixtures(project(":daemon-head")))
+    testImplementation(testFixtures(project(":features-turns")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     testImplementation(testFixtures(project(":integrations-dialects-anthropic")))
 }

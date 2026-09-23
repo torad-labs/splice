@@ -35,12 +35,12 @@ import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.prompt.SlotInstructions
-import splice.core.sessions.HeadOfPid
-import splice.core.sessions.ProcessEnvironment
-import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.sessions.prompt.SlotInstructions
+import splice.sessions.registry.HeadOfPid
+import splice.sessions.registry.ProcessEnvironment
+import splice.sessions.registry.SessionRegistry
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path

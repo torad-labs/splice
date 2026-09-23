@@ -2,11 +2,9 @@
 // escaping, byte for byte (CR/LF/control bytes escaped, list elements quoted, every field bounded),
 // and V4-107's rule still reads it by name (any expression beginning `LogSafe.`).
 //
-// MOVED HERE by V4-147 (2026-09-19): the MCP host's own log lines need this escaping, and
-// `splice.control.api` already depends on `splice.control.mcp` (McpRoutes holds an McpHost), so
-// importing it back would have made a package cycle out of a shared helper. The root package is the
-// one place both sides reach without one.
-package splice.control
+// Shared by the control HTTP adapter and the independent MCP host. Pure text escaping lives below
+// both integrations so neither imports the other just to render a safe diagnostic.
+package splice.core.util
 
 import java.util.Locale
 
@@ -14,7 +12,7 @@ import java.util.Locale
  *  second audit line, a carriage return hides the rest of the real one, and a collection's
  *  toString() is not a record format (an element containing ", " or "]" is read back as a
  *  delimiter). List elements are quoted, control bytes escaped, and every field length-bounded. */
-internal object LogSafe {
+public object LogSafe {
     // why: a caller field past 200 chars is audit noise, not signal — the cap keeps one request from
     // bloating a line
     private const val MAX_FIELD = 200
@@ -25,9 +23,9 @@ internal object LogSafe {
     // why: 0x7f is DEL, the last control code, so printable text begins above it
     private const val DELETE_CODE = 0x7f
 
-    fun str(value: String): String = escape(value).take(MAX_FIELD)
+    public fun str(value: String): String = escape(value).take(MAX_FIELD)
 
-    fun list(values: List<String>): String =
+    public fun list(values: List<String>): String =
         values.joinToString(prefix = "[", postfix = "]") { "\"" + escape(it).take(MAX_FIELD) + "\"" }
 
     private fun escape(value: String): String = buildString(value.length) {

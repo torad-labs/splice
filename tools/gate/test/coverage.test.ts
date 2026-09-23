@@ -247,18 +247,18 @@ describe("the P1 coverage proof", () => {
 
     const copy = copyOfTheRealRules();
     // :app is INSIDE kt-json-scalars-single-source's files: list, so excluding :app excuses nothing —
-    // the retirement case, not a typo. The row's seven other modules keep excusing real losses, which
+    // the retirement case, not a typo. The row's six other modules keep excusing real losses, which
     // is exactly the masking condition.
     edit(
       copy.exclusions,
-      'rule = "kt-json-scalars-single-source"\nmodules = [\n  "core",',
-      'rule = "kt-json-scalars-single-source"\nmodules = [\n  "app", "core",',
+      'rule = "kt-json-scalars-single-source"\nmodules = [\n  "integrations-claude-code",',
+      'rule = "kt-json-scalars-single-source"\nmodules = [\n  "app", "integrations-claude-code",',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const stale = report.findings.filter((f) => f.kind === "exclusion-stale");
     // ONE finding. The live siblings are not reported, and their silence is proven by the count
-    // rather than described: eight module cells, one dead, one finding.
+    // rather than described: seven module cells, one dead, one finding.
     expect(stale).toHaveLength(1);
     expect(stale[0]!.rule).toBe("kt-json-scalars-single-source");
     expect(stale[0]!.message).toContain("module app");

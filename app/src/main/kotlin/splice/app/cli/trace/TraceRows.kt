@@ -9,7 +9,7 @@ package splice.app.cli.trace
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.activity.ActivityDays
+import splice.core.storage.ActivityDays
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.head.wire.TraceKinds

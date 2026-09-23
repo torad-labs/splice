@@ -25,14 +25,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.activity.ActivityStores
-import splice.core.activity.MessageEdge
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.sessions.SessionRegistry
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
+import splice.sessions.activity.ActivityStores
+import splice.sessions.activity.MessageEdge
+import splice.sessions.registry.SessionRegistry
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files

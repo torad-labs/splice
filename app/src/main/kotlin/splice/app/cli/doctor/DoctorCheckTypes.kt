@@ -37,4 +37,3 @@ internal sealed class DoctorTopology {
     data class Parsed(val topology: Topology) : DoctorTopology()
     data class Broken(val message: String) : DoctorTopology()
 }
-

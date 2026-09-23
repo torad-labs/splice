@@ -5,8 +5,8 @@
 // DaemonProbe it reads, so a verb outside app can ask whether the daemon is up.
 package splice.daemonclient
 
-import splice.daemonclient.DaemonProbe.HealthView
 import splice.core.GATEWAY_VERSION
+import splice.daemonclient.DaemonProbe.HealthView
 import java.io.IOException
 import java.net.ConnectException
 import java.net.InetSocketAddress

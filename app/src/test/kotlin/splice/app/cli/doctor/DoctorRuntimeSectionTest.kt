@@ -40,7 +40,7 @@ class DoctorRuntimeSectionTest {
     fun `the error-counter row carries its own fix, not one borrowed from a sibling row - JW-05`(@TempDir tmp: Path) {
         val statePaths = splice.core.config.StatePaths(baseOverride = tmp.resolve("state"))
         val rows = DoctorRuntime().headRuntimeRows(
-            splice.app.daemon.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 1, providerErrors = 7),
+            splice.daemonclient.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 1, providerErrors = 7),
             statePaths,
         )
         val counters = rows.single { it.name == "head codex errors" }
@@ -56,7 +56,7 @@ class DoctorRuntimeSectionTest {
     fun `a clean head states it and offers no fix, so the WARN fix is not a constant - JW-05`(@TempDir tmp: Path) {
         val statePaths = splice.core.config.StatePaths(baseOverride = tmp.resolve("state"))
         val rows = DoctorRuntime().headRuntimeRows(
-            splice.app.daemon.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 0, providerErrors = 0),
+            splice.daemonclient.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 0, providerErrors = 0),
             statePaths,
         )
         val counters = rows.single { it.name == "head codex errors" }

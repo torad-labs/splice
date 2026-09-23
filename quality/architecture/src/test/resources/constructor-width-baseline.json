@@ -8,10 +8,6 @@
       "params": 11,
       "subsystems": 8
     },
-    "app/src/main/kotlin/splice/app/cli/setup/SetupCommand.kt SetupCommand": {
-      "params": 9,
-      "subsystems": 7
-    },
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeMaterializeTypes.kt MaterializeSpec": {
       "params": 13,
       "subsystems": 1

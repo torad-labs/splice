@@ -23,7 +23,6 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
-import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.ControlReply
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
@@ -33,34 +32,21 @@ import java.net.HttpURLConnection
 import java.nio.file.Files
 import java.time.Instant
 
-// why: the 5s budget JdkAddHttp gave this verb before it read through the daemon client; the ring of
-// bodies a head serves can be large, and ControlPlaneClient's 3s default was sized for shutdown answers.
-private const val WIRE_READ_TIMEOUT_MS = 5_000
-
 private const val WIRE_USAGE = "usage: splice wire <head> [--last N] [--json]"
 
-internal data class WireOpts(val head: String, val last: Int, val json: Boolean)
-
 private data class WireTarget(val port: Int, val key: String)
-
-/** The one network seam of `splice wire`: a request to the head's own port under the management key,
- *  or null when nothing answers. The method rides along so a test pins the whole request. */
-public fun interface WireFetch {
-    public fun request(method: String, url: String, bearer: String): ControlReply?
-}
 
 /** `splice wire`. [output] is stdout, [errors] stderr: `--json | jq` must never read a refusal. */
 public class WireCommand(
     private val output: TerminalOutput,
     private val errors: TerminalOutput,
-    private val http: WireFetch = WireFetch { method, url, bearer ->
-        ControlPlaneClient.send(url, method, bearer, readTimeoutMs = WIRE_READ_TIMEOUT_MS)
-    },
+    private val http: WireFetch = DaemonWireFetch(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val grammar = WireArgs()
 
     public fun wire(args: List<String>, envReader: EnvReader): Boolean {
-        val opts = parseWireArgs(args)
+        val opts = grammar.parse(args)
             ?: return fail("unknown or malformed arguments ${args.joinToString(" ")}\n$WIRE_USAGE")
         val target = target(opts.head, envReader) ?: return false
         val url = "http://127.0.0.1:${target.port}/wire?last=${opts.last}"
@@ -140,24 +126,5 @@ public class WireCommand(
     private fun fail(message: String): Boolean {
         errors.line("splice wire: $message")
         return false
-    }
-
-    internal fun parseWireArgs(args: List<String>): WireOpts? {
-        var head: String? = null
-        var last = 0
-        var json = false
-        var i = 0
-        while (i < args.size) {
-            when (val arg = args[i]) {
-                "--json" -> json = true
-                "--last" -> {
-                    last = args.getOrNull(i + 1)?.toIntOrNull()?.takeIf { it > 0 } ?: return null
-                    i += 1
-                }
-                else -> if (head == null && !arg.startsWith("-")) head = arg else return null
-            }
-            i += 1
-        }
-        return head?.let { WireOpts(it, last, json) }
     }
 }

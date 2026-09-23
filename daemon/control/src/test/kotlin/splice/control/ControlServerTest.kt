@@ -14,6 +14,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -34,7 +35,6 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -67,7 +67,7 @@ class ControlServerTest {
 
     private lateinit var control: ControlServer
     private lateinit var key: String
-    private val port = freshPort()
+    private val port: Int get() = control.listeningPort
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
     private val head = StubHead("codex", 3099)
@@ -122,7 +122,7 @@ class ControlServerTest {
         )
         val launchSpec = launchSpecFixture(tmp, mgmt.get())
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = mapOf(
                 "codex" to managed.copy(launchSpec = launchSpec),
                 "openrouter" to openrouterHead(managed, launchSpec),
@@ -146,7 +146,7 @@ class ControlServerTest {
             configPath = "/tmp/splice.toml",
             topologyStale = { true },
         )
-        control.start()
+        runBlocking { control.start() }
     }
 
     private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
@@ -216,9 +216,8 @@ class ControlServerTest {
         // invariant a launch shim waits on. Report the configured total (review 2026-07-23).
         val tmp = Files.createTempDirectory("control-degraded")
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
-        val degradedPort = freshPort()
         val degraded = ControlServer(
-            port = degradedPort,
+            port = 0,
             heads = emptyMap(), // the sole configured head failed to ASSEMBLE — never entered `heads`
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths),
@@ -230,7 +229,7 @@ class ControlServerTest {
         degraded.start()
         try {
             val body = json.parseToJsonElement(
-                client.get("http://127.0.0.1:$degradedPort/health").bodyAsText(),
+                client.get("http://127.0.0.1:${degraded.listeningPort}/health").bodyAsText(),
             ).jsonObject
             val heads = body["heads"]!!.jsonPrimitive.content.toInt()
             val ready = body["readyHeads"]!!.jsonPrimitive.content.toInt()
@@ -550,13 +549,13 @@ class ControlServerTest {
 }
 
 // OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
-// collide at bind time on busy hosts; ports are OS-assigned. No readiness poll: ControlServer.start
+// collide at bind time on busy hosts; ports are OS-assigned. Every server here is constructed on
+// port 0 and read back through listeningPort after start (2026-09-23): a port leased with
+// ServerSocket(0) and bound later could be taken in between. No readiness poll: ControlServer.start
 // returns routed and bound (Ktor's default SEQUENTIAL startup runs the modules before
 // NettyApplicationEngine's bind(...).sync(); V4-139).
 private const val HOUR_MS = 3_600_000L
 private const val DAY_MS = 24 * HOUR_MS
-
-private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
 // JW-06 lives in its own class: ControlServerTest sits at detekt's LargeClass ceiling.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -574,14 +573,13 @@ class ControlServerPerHeadConfigTest {
         val tmp = Files.createTempDirectory("control-perhead")
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val perHeadPort = freshPort()
         val svc = ConfigService(
             paths,
             headOverrides = mapOf("maxInflight" to "100"),
             perHeadOverrides = mapOf("kimi" to mapOf("maxInflight" to "8")),
         )
         val server = ControlServer(
-            port = perHeadPort,
+            port = 0,
             heads = emptyMap(),
             config = svc,
             mgmtKey = mgmt,
@@ -589,6 +587,7 @@ class ControlServerPerHeadConfigTest {
             log = {},
         )
         server.start()
+        val perHeadPort = server.listeningPort
         try {
             val bearer = mgmt.get()
             suspend fun getConfig(path: String) = json.parseToJsonElement(

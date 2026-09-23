@@ -6,6 +6,7 @@
 // re-derives the flag from a raw auth.kind string if called directly.
 package splice.app.head
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -34,7 +35,6 @@ import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
-import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -270,16 +270,16 @@ class LaunchSpecClientAuthTest {
     @Test
     fun `the materialized statusline command clears the guarded route with a 200`(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp)
-        val port = freshPort()
         val server = ControlServer(
-            port = port,
+            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths),
             dashboardHtml = { "" },
             log = {},
         )
-        server.start()
+        runBlocking { server.start() }
+        val port = server.listeningPort
         try {
             awaitListening(port)
             val spec = factory(tmp).launchSpecFor(
@@ -310,8 +310,6 @@ class LaunchSpecClientAuthTest {
         check(process.waitFor(10, TimeUnit.SECONDS)) { "statusline command did not exit within 10s: $driven" }
         return out.toInt()
     }
-
-    private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
     // Poll the CONDITION (a listening socket) with a deadline, never a sleep-for-a-duration:
     // Netty binds asynchronously after ControlServer.start(), and a fixed wait is the flaky guess

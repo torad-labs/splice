@@ -79,8 +79,9 @@ private const val HEAD_KEY = "claude"
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ConsoleV4133RoutesTest {
 
-    private val port = ServerSocket(0).use { it.localPort }
-    private val url = "http://127.0.0.1:$port"
+    // The server binds port 0 and reports what it got: no leased port can be taken before the bind.
+    private val port: Int get() = control.listeningPort
+    private val url: String get() = "http://127.0.0.1:$port"
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var control: ControlServer
@@ -92,14 +93,14 @@ class ConsoleV4133RoutesTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(
-            port = port,
+            port = 0,
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html>" },
             log = { },
         )
-        control.start()
+        runBlocking { control.start() }
     }
 
     @AfterAll
@@ -202,9 +203,8 @@ class ConsoleV4133RoutesTest {
         assertEquals(HttpStatusCode.Conflict, noHook.status)
         assertTrue(noHook.bodyAsText().contains("PUT /api/alerts first"), noHook.bodyAsText())
 
-        val hookPort = ServerSocket(0).use { it.localPort }
         var received: String? = null
-        val hookServer = embeddedServer(Netty, port = hookPort, host = "127.0.0.1") {
+        val hookServer = embeddedServer(Netty, port = 0, host = "127.0.0.1") {
             routing {
                 serverPost("/hook") {
                     received = call.receiveText()
@@ -213,6 +213,9 @@ class ConsoleV4133RoutesTest {
             }
         }
         hookServer.start(wait = false)
+        // Port 0: Netty binds an OS-assigned port and publishes it here, so no leased port can be
+        // taken between choosing it and binding it.
+        val hookPort = hookServer.engine.resolvedConnectors().single().port
         try {
             withTimeout(TIMEOUT_MS) {
                 while (runCatching { ServerSocket(hookPort).close() }.isSuccess) delay(POLL_MS)

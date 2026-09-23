@@ -8,6 +8,14 @@
 // A malformed line is skipped, never fatal; an absent generation is quiet; any other failure of
 // the scan that produced the data is carried as the window's readError. A rotation during the
 // read (the generations' file keys changed under it) is read again, once.
+//
+// ARCHIVED GENERATIONS (V4-133's archive, wired 2026-09-23): every generation a rotation retired is
+// kept in [archiveDir] under PerfArchiveName, so the history the source reads reaches past `.1`.
+// They are read first, oldest first, and one that ended a full second before the window's cutoff is
+// skipped UNOPENED — its rotation second is an upper bound on every row inside — so a today-window
+// never pays for months of archive. A skipped generation still counts as retention evidence: the
+// files provably reach back to its rotation second, which is all the coverage check needs to tell
+// "quiet" from "rotated away".
 package splice.app.sources
 
 import kotlinx.serialization.json.Json
@@ -18,6 +26,7 @@ import kotlinx.serialization.json.longOrNull
 import splice.control.PerfRow
 import splice.control.PerfRowsSource
 import splice.control.PerfRowsWindow
+import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -55,8 +64,14 @@ private fun interface LineScan {
     fun over(lines: Sequence<String>)
 }
 
-public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
+public class PerfRowsFileSource(
+    private val file: Path,
+    /** Where PerfStats archives this file's retired generations; null reads the two live ones only. */
+    private val archiveDir: Path? = null,
+) : PerfRowsSource {
     private val json = Json { ignoreUnknownKeys = true }
+
+    private val archiveName = PerfArchiveName(file.fileName.toString())
 
     /** The writer's own row shape: ts first, unquoted. Only a rejection hint, never row authority. */
     private val ownRow = Regex("""^\{"ts":(\d+)[,}]""")
@@ -87,13 +102,31 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
 
     private fun readAll(sinceMs: Long): Scan {
         val scan = Scan(sinceMs)
-        generations.forEach { generation ->
-            Cancellables.runCatchingCancellable { stream(generation) { lines -> lines.forEach(scan::line) } }
-                .exceptionOrNull()
-                ?.takeUnless { it is NoSuchFileException }
-                ?.let { scan.errors += "${generation.fileName}: ${SafeFailureText.render(it)}" }
+        archived(scan).forEach { (generation, rotatedAt) ->
+            if (archiveName.endsBefore(rotatedAt, sinceMs)) scan.heldBack(rotatedAt) else read(scan, generation)
         }
+        generations.forEach { read(scan, it) }
         return scan
+    }
+
+    private fun read(scan: Scan, generation: Path) {
+        Cancellables.runCatchingCancellable { stream(generation) { lines -> lines.forEach(scan::line) } }
+            .exceptionOrNull()
+            ?.takeUnless { it is NoSuchFileException }
+            ?.let { scan.errors += "${generation.fileName}: ${SafeFailureText.render(it)}" }
+    }
+
+    /** This file's archived generations with their rotation seconds, oldest first. No archive
+     *  directory is quiet (nothing has rotated out yet, or the archive is off); any other failure to
+     *  list it is a read error, because the history it holds may be the window's. */
+    private fun archived(scan: Scan): List<Pair<Path, Long>> {
+        val dir = archiveDir ?: return emptyList()
+        val listed = Cancellables.runCatchingCancellable { Files.newDirectoryStream(dir).use { it.toList() } }
+        listed.exceptionOrNull()?.takeUnless { it is NoSuchFileException }
+            ?.let { scan.errors += "${dir.fileName}: ${SafeFailureText.render(it)}" }
+        return listed.getOrDefault(emptyList())
+            .mapNotNull { path -> archiveName.rotatedAt(path.fileName.toString())?.let { path to it } }
+            .sortedBy { it.second }
     }
 
     /** One streaming pass over the generation's lines through a replacing UTF-8 decoder. */
@@ -149,6 +182,12 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
             if (rows.isNotEmpty()) return
             if (before.size == BASELINE_CANDIDATES) before.removeFirst()
             before.addLast(sample)
+        }
+
+        /** A generation skipped unread because it ended before the cutoff: the files provably hold rows
+         *  from before [rotatedAt], so it is retention evidence without being a row. */
+        fun heldBack(rotatedAt: Long) {
+            oldest = minOf(oldest ?: rotatedAt, rotatedAt)
         }
 
         private fun drops(obj: JsonObject): Long? = (obj[PerfKeys.ASYNC_IO_DROPS] as? JsonPrimitive)?.longOrNull

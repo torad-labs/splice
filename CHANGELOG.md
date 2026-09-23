@@ -12,6 +12,13 @@
   `statuslineGitRoots` is per-head overridable, the trusted root that head's statusline probes the
   repo under (`home`, `tmp` or `statuslineGitRoots`), or none, where it shows no branch. The console
   prints both in the project detail.
+- **Perf history is kept past two generations.** The 64 MB perf rotate used to discard the
+  generation before `.1`; V4-133 built an archive for it and wired it to nothing. Every head now
+  archives each retired generation into `<state>/perf-archive` for `perfArchiveRetentionDays` (90;
+  `0` turns it off), the perf readers (the console's windows, team economics, `splice perf`) read the
+  archive oldest first and skip, unopened, any generation that ended before the window, and a team's
+  lifetime tally starts at the team's creation. A new wall, `kt-perf-history-archived`, refuses a
+  production `PerfStats` or `PerfRowsFileSource` that does not name the archive.
 - **Each head's picker offers what its provider serves, not only what splice.toml lists.** At start
   the daemon asks every head's endpoint for its model list — the URL `splice models` already asked,
   presenting the credential the head's turns present — and adds each model no row declares, windowed

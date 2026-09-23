@@ -92,8 +92,12 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
     /** Every session [slot] ever held, the current one included. */
     private fun held(slot: TeamSlot): List<String> = slot.sessionsHistory + listOfNotNull(slot.session)
 
+    /** The team's lifetime starts at its creation: a turn before it is no team's turn, even one a
+     *  later-bound session made. The cutoff is also what keeps this read bounded now that the perf
+     *  history reaches back through the archive (PerfRowsFileSource skips generations older than it);
+     *  a team made before teams recorded a creation time reads from 0, as it always did. */
     private fun tally(head: SessionHead) {
-        val window = head.perfRows?.window(0L) ?: return
+        val window = head.perfRows?.window(team.createdAt) ?: return
         oldest = listOfNotNull(oldest, window.oldestHeldTs ?: window.rows.minOfOrNull { it.ts }).minOrNull()
         for (row in window.rows) {
             if (row.session == null) unattributed += 1

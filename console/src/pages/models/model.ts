@@ -40,17 +40,22 @@ export function byProvider(heads: readonly HeadCatalog[]): ProviderGroup[] {
     .sort((left, right) => left.provider.localeCompare(right.provider));
 }
 
-/** The model an id names anywhere in the catalog, with the head that declares it. */
+/** An opened model: the head it was opened on and its id. The head is part of the key because
+ *  several heads can serve one model id, and the detail reads the OPENED head's windows. */
+export interface OpenedModel {
+  head: string;
+  id: string;
+}
+
+/** The opened model, with the head it was opened on. */
 export function findModel(
   payload: ModelsPayload | PendingRoute,
-  id: string | null,
+  opened: OpenedModel | null,
 ): { model: CatalogModel; head: HeadCatalog } | null {
-  if (id === null || 'pending' in payload) return null;
-  for (const head of payload.heads) {
-    const model = head.models.find((entry) => entry.id === id);
-    if (model !== undefined) return { model, head };
-  }
-  return null;
+  if (opened === null || 'pending' in payload) return null;
+  const head = payload.heads.find((entry) => entry.head === opened.head);
+  const model = head?.models.find((entry) => entry.id === opened.id);
+  return head === undefined || model === undefined ? null : { model, head };
 }
 
 /** A head's windows as its topology declares them (FEATURES 4.8 "Windows"): the forced head-wide

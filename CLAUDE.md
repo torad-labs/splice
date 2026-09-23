@@ -16,22 +16,26 @@ jar the seat did not build and verify itself.
 
 The procedure, every time, in this order:
 
-1. Clean export, never the dirty worktree: `git archive HEAD | tar -x -C <scratch>/export-<sha>`.
-2. Gate of record is the WHOLE ladder, and it runs IN THE CLEAN WORKTREE, never in the export:
-   `bun tools/gate run` inside `buildgate.slice`, ending in `GATE: PASS`, with `git status` empty
-   and HEAD equal to the commit being installed. An export cannot run several of its legs and
-   reports them RED for reasons that are not the code (measured 2026-09-17 on 1808837b): `pr title`
-   reads HEAD's subject and a `git archive` tree has no `.git` (exit 1); `console lint`/`tests`
-   need `node_modules`, which `git archive` excludes (exit 127, `eslint: not found`). The export
-   exists to BUILD the jar from a tree with no dirty edits, which is a different job from running
-   the ladder. Build there, gate here.
+1. Clean export of the exact sha, never the dirty worktree:
+   `git archive <sha> | tar -x -C <scratch>/export-<sha>`. The export exists to BUILD the jar from a
+   tree with no dirty edits; it cannot run the ladder (no `.git`, no `node_modules`).
+2. Gate of record is CI's `gate` job — `npm run gate` = `bun tools/gate run`, the WHOLE ladder —
+   passing on the EXACT sha being landed and installed: `gh run view <run> --json
+   headSha,conclusion` names that sha and `success`, or `gh pr checks <pr>` shows `gate pass` with
+   the PR's head at that sha. Land by fast-forward only; a merge made after the run is a new sha and
+   needs its own pass. Operator ruling (2026-09-23), after the local run lost three gates in one
+   afternoon while CI passed the same ladder on the same sha (run 35917093436 on 679f1954): the local
+   run sits in `buildgate.slice`, which hostshield declares earlyoom's FIRST victim (MANIFEST:
+   "Buildgate scopes get OOMScoreAdjust=800", so its JVMs outscore everything else on the box), and
+   it holds one machine-wide lock that serialises every session's landing. A local
+   `bun tools/gate run` is optional feedback before pushing, never the verdict.
 
    The ladder runs the gradle tier (module-law, detekt, the architecture laws — concentration,
    safe-failure-render and release readiness among them — every unit test, the load test), the
    ast-grep walls, the campaign walls, the oracle replay, the code-mode selftests, config guard,
    the console lint/test, and the pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were
-   green three times while the oracle replay had three drifted pins. Grep the log for `GATE:` and
-   `FAILED`; never tail it. Red = stop, fix forward, no install. Commit subjects use the
+   green three times while the oracle replay had three drifted pins. Read a red job's log for `GATE:`
+   and `FAILED`; never tail it. Red = stop, fix forward, no install. Commit subjects use the
    conventional types in `tools/gate/src/lib/conventional.ts` (`chore(ledger): ...`, never `ledger: ...`), because
    the ladder lints HEAD's subject.
 3. Backup first: `cp -p ~/.local/share/splice/splice.jar
@@ -41,5 +45,5 @@ The procedure, every time, in this order:
 5. `systemctl --user restart splice.service`.
 6. Verify the OPEN file, not the path: sha256 of the jar fd under `/proc/<pid>/fd/` equals the
    built jar's sha256. Print both beside the result in one command block.
-7. One ledger note naming the sha, pid, and backup path. Announce "gradle busy" before step 2 and
-   "gradle free" after.
+7. One ledger note naming the sha, the CI run, the pid, and the backup path. Announce "gradle busy"
+   before the jar build in step 1 and "gradle free" after.

@@ -259,8 +259,19 @@ describe('pending routes', () => {
 
   test('landed rows and the live set arrive together on the happy path', async () => {
     const row = turn({ session: 'aaaaaaaa', total: 4010 });
+    // The route's own shape (PerfRoutes.turnsFor): one block per head, rows without a head field and
+    // with every absent fact written as null. The console stamps the head from the block.
+    const wireRow: Record<string, unknown> = { ...row };
+    delete wireRow.head;
     stubRoutes({
-      '/api/perf/turns': { turns: [row] },
+      '/api/perf/turns': {
+        since: 0,
+        n: 200,
+        heads: [{
+          key: 'claudex', label: 'claudex', count: 1, returned: 1, truncated: false, oldest_held_ts: row.ts,
+          rows: [{ ...wireRow, account: null, cache_cold: null }],
+        }],
+      },
       '/api/heads': {
         heads: [
           head({

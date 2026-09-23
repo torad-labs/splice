@@ -10,6 +10,7 @@ import { slotTiers } from '@entities/model';
 import { fmtTokens } from '@shared/lib';
 import { Bay, Empty, Strip, StripField } from '@shared/ui';
 import { EMPTIES } from './model';
+import type { HeadWindows } from './model';
 import { S } from './strings';
 
 /** A rate the model does not declare prints the absence glyph, not the phrase `no rates` — the
@@ -76,7 +77,7 @@ function ModelStrip({ model, slot, selected, onOpen }: {
 function modelCell(model: CatalogModel, slot: string, key: string): string {
   if (key === 'model') return model.id;
   if (key === 'slot') return slot;
-  if (key === 'contextWindow') return fmtTokens(model.context_window);
+  if (key === 'contextWindow') return model.context_window === null ? S.absent : fmtTokens(model.context_window);
   if (key === 'windowSource') return model.context_window_source;
   if (key === 'rateInput') return rateValue(model, (rates) => rates.input);
   return rateValue(model, (rates) => rates.output);
@@ -107,7 +108,7 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
   const unslotted = head.models.filter((model) => model.slot === null);
   return (
     <Bay
-      label={head.key}
+      label={head.head}
       count={head.models.length}
       empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
       fields={<ColumnNames />}
@@ -163,7 +164,7 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
 }
 
 /** The rate card and windows of the opened model, which is what the strip could not fit. */
-export function ModelDetail({ model, head }: { model: CatalogModel; head: HeadCatalog }) {
+export function ModelDetail({ model, windows }: { model: CatalogModel; windows: HeadWindows | null }) {
   // The edge is the state, so it has to read the same absence the fields do: a missing key used to
   // paint GREEN and label the strip `rates` for a model that declares none (M1-41).
   const noRates = model.rates === undefined || model.rates === null;
@@ -185,10 +186,10 @@ export function ModelDetail({ model, head }: { model: CatalogModel; head: HeadCa
         <StripField w={13} label={S.rateOutput} value={rateValue(model, (rates) => rates.output)} />
       </Strip>
       <Strip edge="grey" edgeLabel={S.window} ariaLabel={S.tiers}>
-        <StripField w={15} label={S.headWindow} value={head.context_window === null ? S.absent : fmtTokens(head.context_window)} />
-        <StripField w={15} label={S.defaultWindow} value={fmtTokens(head.default_context_window)} />
-        <StripField w={15} label={S.extraWindows} value={head.extra_windows.length} />
-        <StripField w={15} label={S.windowRules} value={head.window_rules.length} />
+        <StripField w={15} label={S.headWindow} value={windows === null || windows.headWindow === null ? S.absent : fmtTokens(windows.headWindow)} />
+        <StripField w={15} label={S.defaultWindow} value={windows === null || windows.defaultWindow === null ? S.absent : fmtTokens(windows.defaultWindow)} />
+        <StripField w={15} label={S.extraWindows} value={windows === null ? S.absent : windows.extraWindows} />
+        <StripField w={15} label={S.windowRules} value={windows === null ? S.absent : windows.windowRules} />
       </Strip>
     </>
   );

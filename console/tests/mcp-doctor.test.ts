@@ -13,6 +13,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdict } from '../src/entities/doctor';
+import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
 import { MCP_HOST_KNOBS, MCP_RESTART, serverRows, upText } from '../src/entities/mcp';
 import type { McpPayload } from '../src/entities/mcp';
@@ -305,13 +306,30 @@ describe('budgets and alerts', () => {
 });
 
 describe('the upgrade verdict', () => {
-  test('an unreachable registry is unknown, never up to date', () => {
-    expect(upgradeVerdict({ installed: '0.4.0', latest: null, rollback_available: false })).toBe('unknown');
+  // The payload ConsoleUpgradeStatus.json writes today: latest never checked, rollback measured.
+  const payload = (over: Partial<UpgradePayload> = {}): UpgradePayload => ({
+    installed: '0.4.0',
+    latest: null,
+    latest_basis: 'unavailable',
+    latest_unavailable_reason: 'no upgrade check has succeeded on this daemon',
+    rollback_target: null,
+    rollback_basis: 'measured',
+    rollback_unavailable_reason: null,
+    checked_at_epoch_millis: null,
+    ...over,
+  });
+
+  test('a check that never ran is unknown, never up to date', () => {
+    expect(upgradeVerdict(payload())).toBe('unknown');
+  });
+
+  test('a check that looked and found nothing newer is current', () => {
+    expect(upgradeVerdict(payload({ latest_basis: 'measured', latest: null }))).toBe('current');
   });
 
   test('a matching version is current and a different one is behind', () => {
-    expect(upgradeVerdict({ installed: '0.4.0', latest: '0.4.0', rollback_available: true })).toBe('current');
-    expect(upgradeVerdict({ installed: '0.4.0', latest: '0.5.0', rollback_available: true })).toBe('behind');
+    expect(upgradeVerdict(payload({ latest_basis: 'measured', latest: '0.4.0' }))).toBe('current');
+    expect(upgradeVerdict(payload({ latest_basis: 'measured', latest: '0.5.0' }))).toBe('behind');
   });
 });
 

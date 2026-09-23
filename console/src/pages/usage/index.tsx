@@ -191,8 +191,8 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
     <>
       {catalog.heads.map((head) => (
         <Bay
-          key={head.key}
-          label={head.key}
+          key={head.head}
+          label={head.head}
           count={head.models.length}
           empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
           fields={(
@@ -216,7 +216,7 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               {/* NO PER-CELL LABELS: the bay prints its six column names once (B9). */}
               <StripField w={MODEL_COLS[0]} value={tier.slot} mono={false} />
               <StripField w={MODEL_COLS[1]} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
-              <StripField w={MODEL_COLS[2]} value={tier.model === null ? S.absent : fmtTokens(tier.model.context_window)} />
+              <StripField w={MODEL_COLS[2]} value={tier.model === null || tier.model.context_window === null ? S.absent : fmtTokens(tier.model.context_window)} />
               <StripField w={MODEL_COLS[3]} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
               <StripField w={MODEL_COLS[4]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
               <StripField w={MODEL_COLS[5]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
@@ -226,7 +226,7 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
             <Strip key={model.id} edge="grey" edgeLabel={S.noSlot} ariaLabel={`${S.models} ${model.id}`}>
               <StripField w={MODEL_COLS[0]} value={S.noSlot} mono={false} />
               <StripField w={MODEL_COLS[1]} value={model.id} mono={false} />
-              <StripField w={MODEL_COLS[2]} value={fmtTokens(model.context_window)} />
+              <StripField w={MODEL_COLS[2]} value={model.context_window === null ? S.absent : fmtTokens(model.context_window)} />
               <StripField w={MODEL_COLS[3]} value={model.context_window_source} mono={false} />
               <StripField w={MODEL_COLS[4]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.input)} />
               <StripField w={MODEL_COLS[5]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.output)} />

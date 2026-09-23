@@ -2,7 +2,7 @@
 // code that serves it, never after a screen:
 //   GET /api/perf         -> PerfPayload         (splice/control/api/PerfPayloads.kt:58-76)
 //   GET /api/perf/summary -> PerfSummaryPayload  (splice/control/api/PerfSummary.kt:65-80)
-//   GET /api/perf/turns   -> PerfTurnsPayload    (PENDING V4-127, typed from FEATURES.md 6 + 2.4)
+//   GET /api/perf/turns   -> PerfTurnsWire       (V4-127, PerfRoutes.kt), merged into TurnRow[]
 // The numeric field names are the PerfKeys catalogue (core/perf/PerfKeys.kt), so a mark renamed
 // there renames here.
 import type { PendingRoute } from '@shared/api';
@@ -107,11 +107,9 @@ export const MARK_KEYS = [
 export type MarkKey = (typeof MARK_KEYS)[number];
 
 /**
- * One turn, as GET /api/perf/turns?head=&n=&since= will return it. PENDING V4-127: the route does
- * not exist yet, so this is the contract the console builds against, typed from FEATURES.md 6
- * ("per-turn rows for the turn list, waterfall, session detail, chart click-through") and 2.4
- * ("37 field names plus ts, model, outcome, compact, session ... and, after an account switch, the
- * account label and a cache-cold tag").
+ * One turn as the page renders it: a row of GET /api/perf/turns?head=&n=&since= (PerfRoutes.rowJson)
+ * with the head it came from stamped on, built by model/turns-wire.ts. The route answers per head
+ * (a head is required, ConsoleRoutesTest pins it), so the console reads every head and merges.
  *
  * Every numeric field is OPTIONAL and absent means the row does not carry it: a failed turn has no
  * `stream_end`, and a dialect that cannot defer tools reports no `tools_deferred`. Absent must
@@ -125,10 +123,13 @@ export interface TurnRow {
   head: string;
   /** Epoch ms the turn was recorded. */
   ts: number;
-  model: string;
+  /** Null for a legacy or torn row that never carried it: the daemon reports the absence rather
+   *  than filling in a value the file does not contain (PerfRoutes.rowJson). */
+  model: string | null;
   /** The daemon's outcome tag; "?" is its own tag for a row whose outcome would not parse. */
   outcome: string;
-  compact: boolean;
+  /** Null for a legacy or torn row, as `model`. */
+  compact: boolean | null;
   /** First 8 characters of the client's session id, or absent when the turn carried none. */
   session?: string;
   /** The account label, written only after an account switch. */
@@ -176,9 +177,43 @@ export interface TurnRow {
   search_rounds?: number;
 }
 
-export interface PerfTurnsPayload {
-  /** The rows, newest last, as every perf reader returns them (PerfStats.tailNumeric). */
-  turns: TurnRow[];
+/** One row exactly as PerfRoutes.rowJson writes it: the numeric bag, then the named facts, each of
+ *  which is null (never absent) when the row did not carry it. */
+export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_cold'> & {
+  session: string | null;
+  account: string | null;
+  cache_cold: boolean | null;
+};
+
+/** One head's block. A head the daemon cannot read is listed with `error` in place of its rows, so
+ *  the window fields and `rows` are absent on that branch (PerfRoutes.turns). */
+export interface PerfTurnsHeadWire {
+  key: string;
+  label: string;
+  count?: number;
+  returned?: number;
+  /** Whether the newest-n clamp cut rows from this head's window. */
+  truncated?: boolean;
+  /** The oldest timestamp a valid row holds at all; null when the source cannot say. */
+  oldest_held_ts?: number | null;
+  read_error?: string;
+  skipped_lines?: number;
+  error?: string;
+  rows?: TurnRowWire[];
+}
+
+/** GET /api/perf/turns?head=&n=&since= exactly as the daemon writes it. The type
+ *  tools/e2e/probes/console-wire-keys.ts checks against a live daemon. */
+export interface PerfTurnsWire {
+  since: number;
+  n: number;
+  heads: PerfTurnsHeadWire[];
+}
+
+/** A head whose turns could not be read, and the daemon's reason in its own words. */
+export interface UnreadHead {
+  head: string;
+  reason: string;
 }
 
 /** The pending shape and the rule that detects it now live in @shared/api (hoisted from M2-D1's
@@ -222,4 +257,8 @@ export interface InflightTurn {
 export interface TurnsState {
   inflight: InflightTurn[];
   landed: TurnRow[];
+  /** Heads whose turns are missing from `landed`, each with why. Empty when every head was read: a
+   *  head that failed is named rather than silently dropped from a list that would then look
+   *  complete. */
+  unread: UnreadHead[];
 }

@@ -243,6 +243,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
 
   const pending = landed !== null && 'pending' in landed;
   const rows = landed !== null && !pending ? landed.landed : [];
+  const unread = landed !== null && !pending ? landed.unread : [];
   const stageRows = stageRowsOf(rows);
   const tokenRows = tokenRowsOf(rows);
   const selection: Selection = selectionOf(rows, active, Date.now());
@@ -347,6 +348,10 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
             label={S.landed}
             {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
           >
+            {/* A head whose turns could not be read is NAMED, in the daemon's words: the list below is
+                missing its rows, and a rack that silently lost a head reads exactly like one that
+                was idle. */}
+            {unread.map((head) => <Fault key={`${head.head}:${head.reason}`} message={`${head.head}: ${head.reason}`} />)}
             {pending ? (
               <Empty text="per-turn rows have no route yet" source="row V4-127" />
             ) : (
@@ -393,7 +398,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
           {open?.kind !== 'row' ? null : (
             <>
               <div className="myx-tn-detail-head">
-                <span className="myx-tn-detail-name">{`${open.row.head} ${open.row.model}`}</span>
+                <span className="myx-tn-detail-name">{`${open.row.head} ${open.row.model ?? S.absent}`}</span>
                 <button type="button" className="myx-tn-close" onClick={() => setOpenKey(null)}>
                   {S.close}
                 </button>
@@ -480,7 +485,7 @@ export default function TurnsPage() {
   return (
     <TurnsBoard
       inflight={fixture !== null ? fixture.inflight : inflightFrom(heads.data ?? [])}
-      landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed } : turns.data}
+      landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed, unread: [] } : turns.data}
       summary={fixture !== null ? fixture.summary : summary.data}
       capture={capture.data}
       locked={locked}

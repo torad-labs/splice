@@ -13,281 +13,23 @@
 # silently: a head that cannot be probed is a FAIL with a reason, never a green.
 set -uo pipefail
 
-# V4-177: same state-root rule as StatePaths.kt and app/src/main/dist/bin/splice-launch — SPLICE_STATE_DIR, then the
-# pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when that
-# is the only root on the box. Inside the container there is never a pre-0.4 root to adopt; the
-# branch is kept anyway so this file cannot drift from the rule it is exercising.
-resolve_state_dir() {
-  # A variable holding only whitespace is NOT an answer. `-n` calls " " set; Kotlin's isNotBlank
-  # does not, and StatePaths blank-checks PER VARIABLE. Without this, SPLICE_STATE_DIR=" " in a unit
-  # file makes this read " /mgmt-key" relative to CWD and report "mgmt-key not found" on a perfectly
-  # healthy install, while the daemon resolves the real root. The pattern IS isNotBlank: at least
-  # one non-whitespace character. Per variable, so an empty SPLICE_STATE_DIR falls through to
-  # CLAUDEX_STATE_DIR instead of skipping it.
-  case "${SPLICE_STATE_DIR:-}" in *[![:space:]]*) printf '%s\n' "$SPLICE_STATE_DIR"; return 0 ;; esac
-  case "${CLAUDEX_STATE_DIR:-}" in *[![:space:]]*) printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0 ;; esac
-  # Adoption needs POSITIVE evidence on both sides, the rule StatePaths' three-valued probe follows:
-  # only proven absence may start a fresh root. `[ ! -d ]` is ALSO true for a path that cannot be
-  # stat-ed, so an unreadable ~/.splice would adopt the pre-0.4 root here while the daemon declines
-  # and warns. Believe "absent" only when the parent is traversable, or absent itself.
-  # `-e`, not `-d`: a REGULAR FILE at the current root is not proven absence either, and `[ ! -d ]`
-  # called it adoptable while StatePaths declines and reports it as a fault.
-  if [ ! -e "$HOME/.splice/state" ] && { [ ! -e "$HOME/.splice" ] || [ -x "$HOME/.splice" ]; } &&
-     [ -d "$HOME/.claude-codex/state" ]; then
-    printf '%s\n' "$HOME/.claude-codex/state"
-  else
-    printf '%s\n' "$HOME/.splice/state"
-  fi
-}
-
-ARTIFACTS="${ARTIFACTS:-/artifacts}"
-REPO="${REPO:-/repo}"
-OUT="${OUT:-/out}"
-CONTROL_PORT=3096
-CODEX_HEAD_PORT=3099
-CHAT_HEAD_PORT=3101
-CHAT2_HEAD_PORT=3105
-RECEIPT="$OUT/receipt.json"
-STEPS_FILE="$(mktemp)"
-FAILED=0
-CODEX_MOCK_PORT=""
-CODEX_AUTH_PATH=""
-CHAT_MOCK_PORT=""
-TESTED_CLAUDE_CODE="${SPLICE_TESTED_CLAUDE_CODE:-}"
-CLAUDE_CODE_ACTUAL="$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-
-# ── receipt plumbing ─────────────────────────────────────────────────────────────────────────────
-STEP_N=0
-record() { # name verdict seconds detail
-  local detail slug
-  STEP_N=$((STEP_N + 1))
-  slug="$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//' | cut -c1-60)"
-  mkdir -p "$OUT/steps"
-  printf '%s\n' "$4" > "$OUT/steps/$(printf '%02d' "$STEP_N")-$slug.log"
-  detail="$(printf '%s' "$4" | tail -c 2000)"
-  python3 - "$STEPS_FILE" "$1" "$2" "$3" "$detail" <<'EOF'
-import json, sys
-path, name, verdict, secs, detail = sys.argv[1:6]
-with open(path, "a") as f:
-    f.write(json.dumps({"step": name, "verdict": verdict, "seconds": float(secs), "detail": detail}) + "\n")
-EOF
-  if [ "$2" = "PASS" ]; then
-    printf '  ✓ %s (%ss)\n' "$1" "$3"
-  else
-    printf '  ✗ %s (%ss) — %s\n' "$1" "$3" "$(printf '%s' "$4" | head -c 300 | tr '\n' ' ')"
-    FAILED=1
-  fi
-}
-
-step() { # name -- command...  (verdict = exit status; detail = captured output)
-  local name="$1"; shift
-  local t0 t1 out rc
-  t0=$(date +%s.%N)
-  out="$("$@" 2>&1)"; rc=$?
-  t1=$(date +%s.%N)
-  record "$name" "$([ $rc -eq 0 ] && echo PASS || echo FAIL)" "$(python3 -c "print(round($t1-$t0,2))")" "$out"
-}
-
-finish() {
-  for pidf in "$OUT"/mock_*.pid; do
-    [ -f "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null
-  done
-  # Named, not swallowed: this runs in the EXIT trap, so a wrong root or an absent log used to
-  # leave the artifacts dir with no daemon.log and nothing saying why — whoever investigates the
-  # e2e red gets no daemon output and no explanation for its absence.
-  _daemon_log="$(resolve_state_dir)/../logs/daemon.log"
-  cp "$_daemon_log" "$OUT/daemon.log" 2>/dev/null || echo "no daemon.log at $_daemon_log" >&2
-  python3 - "$STEPS_FILE" "$RECEIPT" "$FAILED" "$CLAUDE_CODE_ACTUAL" "$TESTED_CLAUDE_CODE" <<'EOF'
-import json, sys, datetime
-steps = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-receipt = {
-    "kind": "splice-fresh-machine-e2e",
-    "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-    "verdict": "FAIL" if sys.argv[3] == "1" else "PASS",
-    "claudeCodeVersion": sys.argv[4],
-    "testedClaudeCodeVersion": sys.argv[5],
-    "steps": steps,
-}
-json.dump(receipt, open(sys.argv[2], "w"), indent=1)
-print(f"\nFRESH-MACHINE E2E: {receipt['verdict']} ({sum(s['verdict']=='PASS' for s in steps)}/{len(steps)} steps)")
-EOF
-  exit "$FAILED"
-}
+# The receipt plumbing, the mocks, the topology and the checks this scenario shares with upgrade.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 trap finish EXIT
-
-# Fails BY NAME. `cat` on a missing key wrote to stderr and yielded "", so every curl went out as
-# `Authorization: Bearer ` and the run reported a wall of 401s — "no key at this path" told as an
-# auth failure, which sends the reader looking at the wrong half of the system.
-mgmt() {
-  local key="$(resolve_state_dir)/mgmt-key"
-  [ -r "$key" ] || { echo "no mgmt-key at $key" >&2; return 1; }
-  cat "$key"
-}
-curl_mgmt() { curl -sS -m 10 -H "Authorization: Bearer $(mgmt)" "$@"; }
-strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
-
-wait_health() { # seconds -> 0 when /health reports ok with every head ready
-  local deadline=$(( $(date +%s) + $1 ))
-  while [ "$(date +%s)" -lt "$deadline" ]; do
-    if curl -sf -m 3 "http://127.0.0.1:$CONTROL_PORT/health" 2>/dev/null | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-sys.exit(0 if d.get("ok") and d.get("readyHeads") == d.get("heads") and d.get("failedHeads") == 0 else 1)' 2>/dev/null; then
-      curl -sf -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
-      return 0
-    fi
-    sleep 1
-  done
-  echo "daemon not healthy after $1s"; curl -s -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
-  _daemon_log="$(resolve_state_dir)/../logs/daemon.log"
-  tail -20 "$_daemon_log" 2>/dev/null || echo "no daemon.log at $_daemon_log" >&2
-  return 1
-}
 
 echo "fresh-machine e2e: user=$(id -un) home=$HOME artifacts=$ARTIFACTS"
 
-client_version_receipt() {
-  echo "actual=$CLAUDE_CODE_ACTUAL tested=$TESTED_CLAUDE_CODE"
-  [ -n "$CLAUDE_CODE_ACTUAL" ] || { echo "claude --version did not report a numeric version"; return 1; }
-  [ -n "$TESTED_CLAUDE_CODE" ] || { echo "SPLICE_TESTED_CLAUDE_CODE was not provided"; return 1; }
-  [ "$CLAUDE_CODE_ACTUAL" = "$TESTED_CLAUDE_CODE" ] || {
-    echo "the image has Claude Code $CLAUDE_CODE_ACTUAL, but splice records $TESTED_CLAUDE_CODE as tested"
-    return 1
-  }
-}
 step "Claude Code version matches the splice tested pin" client_version_receipt
 
 # ── 1. the two mock upstreams (loopback only) ───────────────────────────────────────────────────
-# step() runs its command in a command substitution (a subshell), so the mocks report through
-# files — pid + the one JSON line each prints — and the MAIN shell reads the ports back.
-start_mocks() {
-  nohup node "$REPO/tools/e2e/docker/mock_codex.mjs" "$REPO" 0 > "$OUT/mock_codex.out" 2> "$OUT/mock_codex.err" &
-  echo $! > "$OUT/mock_codex.pid"
-  MOCK_CHAT_HOLD_S=45 nohup bun "$REPO/tools/e2e/docker/mock_chat.ts" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
-  echo $! > "$OUT/mock_chat.pid"
-  for _ in $(seq 1 50); do
-    [ -s "$OUT/mock_codex.out" ] && [ -s "$OUT/mock_chat.out" ] && break
-    sleep 0.2
-  done
-  [ -s "$OUT/mock_codex.out" ] || { echo "codex mock did not start: $(cat "$OUT/mock_codex.err")"; return 1; }
-  [ -s "$OUT/mock_chat.out" ] || { echo "chat mock did not start: $(cat "$OUT/mock_chat.err")"; return 1; }
-  cat "$OUT/mock_codex.out" "$OUT/mock_chat.out"
-}
-mock_field() { head -1 "$OUT/$1" | python3 -c "import json,sys; print(json.load(sys.stdin)['$2'])"; }
 step "mock upstreams up" start_mocks
-CODEX_MOCK_PORT="$(mock_field mock_codex.out port 2>/dev/null)"
-CODEX_AUTH_PATH="$(mock_field mock_codex.out auth_path 2>/dev/null)"
-CHAT_MOCK_PORT="$(mock_field mock_chat.out port 2>/dev/null)"
-echo "  codex mock :$CODEX_MOCK_PORT auth=$CODEX_AUTH_PATH; chat mock :$CHAT_MOCK_PORT"
+read_mock_ports
 
 # ── 2. topology: two heads, two dialects, every upstream a mock ──────────────────────────────
-# Written BEFORE install.sh so `splice init` keeps it (init materializes the starter only on
-# proven absence) and `install --all` links exactly these heads.
-write_topology() {
-  mkdir -p "$HOME/.config/splice"
-  cat > "$HOME/.config/splice/splice.toml" <<EOF
-# fresh-machine e2e topology — generated by tools/e2e/docker/inside.sh
-[daemon]
-control_port = $CONTROL_PORT
-
-[providers.codex]
-dialect = "openai-responses"
-base_url = "http://127.0.0.1:$CODEX_MOCK_PORT"
-auth = { kind = "chatgpt-oauth", file = "$CODEX_AUTH_PATH" }
-quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
-
-[[providers.codex.models]]
-id = "gpt-5-codex"
-label = "Codex (mock)"
-context_window = 272000
-
-[providers.mockchat]
-dialect = "openai-chat"
-base_url = "http://127.0.0.1:$CHAT_MOCK_PORT"
-auth = { kind = "api-key", env = "MOCK_CHAT_API_KEY" }
-
-[[providers.mockchat.models]]
-id = "mock-chat"
-label = "Chat (mock)"
-context_window = 128000
-
-# A second chat head on the SAME mock with its own window: the per-head contract check and the
-# cross-head ListAgents proof need two heads whose every turn the harness controls.
-[providers.mockchat2]
-dialect = "openai-chat"
-base_url = "http://127.0.0.1:$CHAT_MOCK_PORT"
-auth = { kind = "api-key", env = "MOCK_CHAT_API_KEY" }
-
-[[providers.mockchat2.models]]
-id = "mock-chat-2"
-label = "Chat 2 (mock)"
-context_window = 64000
-[[providers.mockchat2.models]]
-id = "mock-chat-2-big"
-label = "Chat 2 big (mock)"
-context_window = 128000
-
-[heads.claudex]
-provider = "codex"
-port = $CODEX_HEAD_PORT
-discovery_prefix = "claude-codex--"
-pinned_model = "gpt-5-codex"
-[heads.claudex.claude]
-command = "claudex"
-
-[heads.mockchat]
-provider = "mockchat"
-port = $CHAT_HEAD_PORT
-discovery_prefix = "claude-mockchat--"
-pinned_model = "mock-chat"
-[heads.mockchat.claude]
-command = "claude-mockchat"
-
-[heads.mockchat2]
-provider = "mockchat2"
-port = $CHAT2_HEAD_PORT
-discovery_prefix = "claude-mockchat2--"
-pinned_model = "mock-chat-2"
-[heads.mockchat2.claude]
-command = "claude-mockchat2"
-EOF
-  cat "$HOME/.config/splice/splice.toml"
-}
 step "topology written" write_topology
-
-# The daemon inherits these from whichever CLI call boots it (install.sh's doctor, or status).
-# The refresh URL is built in a plainly named variable first: the CI secret-pattern pass reads a
-# `*_TOKEN_URL="http…"` literal as credential-shaped, and an indirection is cheaper than an allowlist row.
-CODEX_MOCK_REFRESH="http://127.0.0.1:$CODEX_MOCK_PORT/oauth/token"
-export MOCK_CHAT_API_KEY="mock-chat-key"
-export CODEX_OAUTH_TOKEN_URL="$CODEX_MOCK_REFRESH"
+export_mock_env
 
 # ── 3. install from the artifacts, exactly as a release install verifies them ─────────────────
-install_step() {
-  [ -f "$ARTIFACTS/splice.jar" ] || { echo "no $ARTIFACTS/splice.jar"; return 1; }
-  [ -f "$ARTIFACTS/splice-launch" ] || { echo "no $ARTIFACTS/splice-launch"; return 1; }
-  if [ -f "$ARTIFACTS/sha256sums.txt" ]; then
-    # --ignore-missing lets a manifest that omits an artifact pass in silence (reproduced in the
-    # review of #116), so the two names this step claims to verify are asserted by name.
-    local sums f
-    sums="$(cd "$ARTIFACTS" && sha256sum -c sha256sums.txt --ignore-missing 2>&1)" || { printf '%s\n' "$sums"; return 1; }
-    printf '%s\n' "$sums"
-    for f in splice.jar splice-launch; do
-      printf '%s\n' "$sums" | grep -qx "$f: OK" || { echo "$f is not covered by sha256sums.txt"; return 1; }
-    done
-  else
-    echo "no sha256sums.txt beside the artifacts (checkout build) — checksum step skipped"
-  fi
-  local installer="$REPO/install.sh"
-  [ -f "$ARTIFACTS/install.sh" ] && installer="$ARTIFACTS/install.sh"
-  SPLICE_JAR="$ARTIFACTS/splice.jar" SPLICE_SHIM="$ARTIFACTS/splice-launch" bash "$installer" </dev/null || return 1
-  [ -x "$HOME/.local/bin/splice" ] || { echo "splice command not linked"; return 1; }
-  [ -x "$HOME/.local/bin/claudex" ] || { echo "claudex wrapper not linked"; return 1; }
-  [ -x "$HOME/.local/bin/claude-mockchat" ] || { echo "claude-mockchat wrapper not linked"; return 1; }
-  [ -x "$HOME/.local/bin/claude-mockchat2" ] || { echo "claude-mockchat2 wrapper not linked"; return 1; }
-  ls -l "$HOME/.local/bin/"
-  splice version
-}
 step "install.sh from artifacts: jar+shim verified, wrappers linked" install_step
 
 # ── 4. doctor grades the machine: every prerequisite must be a ✓ ─────────────────────────────
@@ -303,23 +45,7 @@ doctor_prereqs() {
 step "doctor: prerequisites ✓, no ✗ anywhere" doctor_prereqs
 
 # ── 5. cold start: `splice restart` is the CLI's boot verb (`status` only reports) ──────────────
-cold_start() {
-  splice restart </dev/null || return 1
-  wait_health 60 || return 1
-  ss -ltn | grep -E ":($CONTROL_PORT|$CODEX_HEAD_PORT|$CHAT_HEAD_PORT|$CHAT2_HEAD_PORT) " || { echo "head ports not listening"; return 1; }
-}
 step "daemon cold start: /health ok, every head ready" cold_start
-
-api_heads() {
-  curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" | python3 -c '
-import json, sys
-d = json.load(sys.stdin); heads = d.get("heads", d)
-rows = heads.values() if isinstance(heads, dict) else heads
-keys = sorted(h["key"] for h in rows)
-print("heads:", [(h["key"], h.get("running"), h.get("healthy")) for h in rows])
-assert keys == ["claudex", "mockchat", "mockchat2"], keys
-assert all(h.get("running") for h in rows), "a head is not running"'
-}
 step "/api/heads lists all three heads running" api_heads
 
 # ── 6. the wire contract, per head, through the real translators ───────────────────────────────
@@ -361,75 +87,7 @@ assert r.get("argv"), "empty argv"' "$2"
 step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CODEX_HEAD_PORT"
 step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mockchat "$CHAT_HEAD_PORT"
 
-# ── 7b. per-head model roster + window: what /model offers, what the client compacts on ─────
-# Each head materializes its OWN picker (settings.json availableModels + model, enforced, and a
-# .claude.json additionalModelOptionsCache row per model carrying its context_window) and hands
-# Claude Code ONE client window (CLAUDE_CODE_MAX_CONTEXT_TOKENS = the pinned row's): every other
-# row's real window is applied by usage scaling on the wire, and a later topology edit reaches a
-# running session through the window it reports on its status line. The four tier
-# slots (ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL) never share a BARE id: two tiers on
-# one bare id drew that model twice in /model (v0.3.0); a repeated tier now rides the head's
-# discovery-wrapped spelling, which the allowlist hides (so wrapped values may repeat) and the
-# head still routes. Three
-# heads, three rosters: a head reading another head's roster is exactly the fresh-install drift
-# this step exists to catch.
-# The same /launch also PACKAGES the head: the daemon's own status line (settings.json statusLine
-# posting Claude Code's blob to /statusline/<head>), the in-session /login command and the hook
-# that runs the head's sign-in when it is submitted. Splice is the whole package, so a head that
-# launches without any of these is a failed install, not a cosmetic gap.
-head_contract() { # head pinned-model pinned-window rows("id:window,...")
-  curl_mgmt -X POST -H 'Content-Type: application/json' \
-    --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
-    > "$OUT/recipe-$1.json" || return 1
-  python3 - "$1" "$2" "$3" "$4" "$HOME" "$OUT/recipe-$1.json" "$CONTROL_PORT" "$(mgmt)" <<'EOF'
-import json, os, re, shlex, sys
-head, model, window, rows_arg, home, recipe, control, mgmt_key = sys.argv[1:9]
-window = int(window)
-expected_rows = {kv.split(":")[0]: int(kv.split(":")[1]) for kv in rows_arg.split(",")}
-r = json.load(open(recipe)); env = r.get("env", {})
-cfg = env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude-" + head)
-settings = json.load(open(os.path.join(cfg, "settings.json")))
-cache = json.load(open(os.path.join(cfg, ".claude.json"))).get("additionalModelOptionsCache", [])
-rows = {row["value"]: row.get("context_window") for row in cache}
-statusline = (settings.get("statusLine") or {}).get("command", "")
-hooks = settings.get("hooks", {}).get("UserPromptSubmit", [])
-hook_cmds = [h.get("command", "") for entry in hooks for h in entry.get("hooks", [])]
-login_md = os.path.join(cfg, "commands", "login.md")
-print("recipe:", {k: env.get(k) for k in ("ANTHROPIC_MODEL", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CONFIG_DIR")})
-print("picker:", {"model": settings.get("model"), "availableModels": settings.get("availableModels"),
-                  "enforceAvailableModels": settings.get("enforceAvailableModels"), "rows": rows})
-print("packaging:", {"statusLine": statusline.replace(mgmt_key, "[redacted]"), "login.md": os.path.isfile(login_md), "UserPromptSubmit": hook_cmds})
-assert env.get("ANTHROPIC_MODEL") == model, env.get("ANTHROPIC_MODEL")
-# the pinned row's window is the env window; the picker cache rows below carry every row's own
-assert env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(window), env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
-assert env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW") == str(window), env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
-assert rows.get(model) == window, "pinned row window in the picker cache: %r" % rows.get(model)
-assert settings.get("model") == model, settings.get("model")
-assert settings.get("availableModels") == list(expected_rows), "picker off: %r" % settings.get("availableModels")
-assert settings.get("enforceAvailableModels") is True, "picker is not enforced"
-assert rows == expected_rows, rows
-slots = [v for k, v in sorted(env.items()) if re.fullmatch(r"ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL", k)]
-print("slots:", slots)
-bare = [v for v in slots if v in expected_rows]
-wrapped = [v for v in slots if v not in expected_rows]
-assert len(set(bare)) == len(bare), "two tiers carry one bare id, so /model draws that model twice: %r" % slots
-assert all(any(v.endswith("--" + m) for m in expected_rows) for v in wrapped), "a tier points outside the roster: %r" % slots
-# v0.4.0: the session holds the TURN key, never the management key, and the status line reads it
-# from a 0600 header file, so neither settings.json nor curl's argv carries a key.
-turn_key = env.get("ANTHROPIC_AUTH_TOKEN", "")
-assert turn_key and turn_key != mgmt_key, "a gateway session must be planted the turn key, not the management key"
-assert mgmt_key not in statusline and turn_key not in statusline, "no key inline in the status line command"
-argv = shlex.split(statusline)
-assert argv[:3] == ["curl", "-sS", "-H"] and argv[3].startswith("@") and \
-    argv[4:] == ["--data-binary", "@-", f"http://127.0.0.1:{control}/statusline/{head}"], \
-    "status line must post to this head with the turn-key header file: %r" % argv
-header_file = argv[3][1:]
-assert open(header_file).read() == f"Authorization: Bearer {turn_key}\n", "header file carries the planted turn key"
-assert os.stat(header_file).st_mode & 0o777 == 0o600, "header file is owner-only"
-assert os.path.isfile(login_md), "no in-session /login command materialized"
-assert any("splice-login-hook" in c for c in hook_cmds), "no /login hook on UserPromptSubmit: %r" % hook_cmds
-EOF
-}
+# ── 7b. per-head model roster + window, packaging, the turn key (head_contract in lib.sh) ─────
 step "head contract + packaging: claudex (gpt-5-codex @272k, status line, /login)" head_contract claudex gpt-5-codex 272000 "gpt-5-codex:272000"
 step "head contract + packaging: mockchat (mock-chat @128k, status line, /login)" head_contract mockchat mock-chat 128000 "mock-chat:128000"
 step "head contract + packaging: mockchat2 (mock-chat-2 @64k + a 128k row, status line, /login)" head_contract mockchat2 mock-chat-2 64000 "mock-chat-2:64000,mock-chat-2-big:128000"
@@ -458,16 +116,6 @@ step "status line: the scaled 128k row shows its label and real window" statusli
 step "status line: the pinned 64k row is untouched" statusline_row mockchat2 mock-chat-2 "Chat 2 (mock)" "32k/64k" "50%"
 
 # ── 8. the real wrapper: Claude Code itself, print mode, through the head, to the mock ───────
-wrapper_turn() { # wrapper expected-substring
-  local out rc
-  out="$(DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-    timeout 120 "$1" -p "Count from 1 to 3 then say END." --output-format text </dev/null 2>&1)"
-  rc=$?
-  printf '%s\n' "$out" | tail -c 1500
-  [ $rc -eq 0 ] || { echo "wrapper exit $rc"; return 1; }
-  printf '%s' "$out" | grep -qF "$2" || { echo "wrapper output lacks the mock's reply '$2'"; return 1; }
-}
 daemon_down() {
   pkill -u "$(id -un)" -f 'splice.jar daemon' || true
   for _ in $(seq 1 100); do
@@ -713,26 +361,6 @@ logs_step() {
   printf '%s\n' "$out"
   [ "$(printf '%s\n' "$out" | grep -c .)" -ge 1 ] || { echo "empty log tail"; return 1; }
 }
-status_step() {
-  local out
-  out="$(splice status </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
-  printf '%s\n' "$out"
-  # The daemon's state rides on the wordmark line since c6ee5eaec ("splice X.Y.Z     daemon running on
-  # PORT", or "daemon stopped (starts on first launch)"); the old labelled row is gone.
-  printf '%s\n' "$out" | grep -qE "^\s*splice \S+\s+daemon running on $CONTROL_PORT\s*$" ||
-    { echo "status does not report the daemon running on :$CONTROL_PORT"; return 1; }
-  printf '%s\n' "$out" | grep -q 'claudex' && printf '%s\n' "$out" | grep -q 'claude-mockchat2' || { echo "status lacks a head row"; return 1; }
-}
 step "splice logs --tail 5: non-empty tail" logs_step
 step "splice status: daemon running, every head listed" status_step
-
-uninstall_step() {
-  local out rc
-  out="$(splice uninstall </dev/null 2>&1)"; rc=$?
-  printf '%s\n' "$out" | tail -c 800
-  [ $rc -eq 0 ] || { echo "uninstall exit $rc"; return 1; }
-  [ ! -e "$HOME/.local/bin/claudex" ] || { echo "claudex link survived uninstall"; return 1; }
-  [ ! -e "$HOME/.local/bin/claude-mockchat" ] || { echo "claude-mockchat link survived uninstall"; return 1; }
-  [ ! -e "$HOME/.local/bin/claude-mockchat2" ] || { echo "claude-mockchat2 link survived uninstall"; return 1; }
-}
 step "splice uninstall removes the wrappers" uninstall_step

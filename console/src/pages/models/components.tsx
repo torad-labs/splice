@@ -119,7 +119,6 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
             key={tier.slot}
             edge="grey"
             edgeLabel={S.undeclared}
-            struck
             ariaLabel={`${S.slot} ${tier.slot}`}
           >
             {/* SIX CELLS, FOUR OF THEM THE ABSENCE GLYPH -- not two cells (M1-107: a view decides

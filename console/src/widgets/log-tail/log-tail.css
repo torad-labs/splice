@@ -134,6 +134,13 @@
 .myx-lt-row .myx-sfield:not(:last-child) .myx-sfield-value { position: sticky; top: 0; }
 /* The columns strip is the rack's head: it prints names and nothing else. Its empty value line and
    its edge are hidden but keep their boxes, so every column lands on the x of the cells below it. */
+/* A log line wraps, so its state word sits on the FIRST line, beside the time it belongs to, and not
+   on the strip's last line where the shared strip puts a one-line row's word. The top offset puts
+   the 12px word on the 16px value's baseline. */
+.myx-lt-row .myx-strip > .myx-edge {
+  align-items: flex-start;
+  padding-block: calc(var(--space-2) + var(--space-2)) 0;
+}
 .myx-lt-cols .myx-sfield-value { display: none; }
 .myx-lt-cols .myx-edge { visibility: hidden; }
 /* a strip's holder pin (ui.css, E-5) shows only where no mark covers it, and this head hides its mark */

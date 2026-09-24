@@ -16,7 +16,10 @@ export function UnlockMgmt() {
     <div className="myx-modal-scrim" role="dialog" aria-modal="true" aria-label="management key required">
       <div className="myx-modal">
         <h3 className="myx-modal-title">management key required</h3>
-        <Well>splice dashboard</Well>
+        <div className="myx-unlock-hint">
+          <span className="myx-field-label">print it with</span>
+          <Well>splice dashboard</Well>
+        </div>
         <form
           className="myx-unlock-form"
           onSubmit={(e) => {

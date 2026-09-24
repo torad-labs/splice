@@ -13,7 +13,7 @@ import { headAttention } from '@entities/heads';
 import { restartHead, startHead, startHeadsPolling, stopHead, useHeads } from '@entities/heads';
 import type { HeadSignals } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { dispositionText, fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
+import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
 import type { KnobDisposition } from '@entities/config';
 import { startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
@@ -149,7 +149,7 @@ function Pool({ head, payload, nowMs }: { head: HeadStatus; payload: AccountsSta
       ) : pooled ? (
         <Empty text={EMPTIES.noneAvailable.text} source={EMPTIES.noneAvailable.source} />
       ) : null}
-      <Bay label={S.accounts} count={pool.length}>
+      <Bay label={S.accounts} count={pool.length} compact>
         {pool.map((account) => {
           const isNext = next !== null && next.label === account.label;
           return (
@@ -243,8 +243,8 @@ export function FleetPage() {
 
   return (
     <div className="myx-fleet">
-      <header className="myx-fleet-head">
-        <h1 className="myx-fleet-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
@@ -261,6 +261,7 @@ export function FleetPage() {
                 key={group.key === '' ? S.bay : group.key}
                 label={group.key === '' ? S.bay : group.key}
                 count={group.heads.length}
+                compact
               >
                 {group.heads.map((head) => (
                   <HeadStrip
@@ -336,12 +337,7 @@ export function FleetPage() {
                 {overrides.length === 0 ? (
                   <p className="myx-fleet-note">{S.noOverrides}</p>
                 ) : (
-                  overrides.map((knob) => (
-                    <div key={knob.key}>
-                      <KnobRow knob={knob} />
-                      <p className="myx-fleet-note">{dispositionText(knob.hot)}</p>
-                    </div>
-                  ))
+                  overrides.map((knob) => <KnobRow key={knob.key} knob={knob} />)
                 )}
               </section>
 

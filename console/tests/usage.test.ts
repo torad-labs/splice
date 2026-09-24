@@ -202,17 +202,16 @@ describe('models page', () => {
     expect(markup).not.toContain('myx-strip');
   });
 
-  test('with a catalog the board draws a strip per tier, and an undeclared tier is a struck one', () => {
+  test('with a catalog the board draws a strip per tier, and an undeclared tier is a vacant one', () => {
     const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
     for (const head of fixtureCatalog.heads) expect(markup).toContain(head.head);
     expect(markup).toContain('gpt-5.6-sol');
-    // The struck tier's edge prints its state and its model cell prints the absence glyph: the
-    // holder edge carries a state inside the contract's 6ch budget and the rack prints its column
-    // names once on the bay head, so `not declared` is now `vacant` (CONTRACTS.md section 2, m1
-    // design review B9/B10) with `n/r` where a model would be.
-    expect(markup).toContain('vacant');
+    // The vacant tier's edge prints its state and its model cell prints the absence glyph, with
+    // `n/r` where a model would be. It is not struck: a strike is the verdict on an excluded or
+    // disabled row, and a line through every vacant slot read as a rendering fault.
+    expect(markup).toContain('<span class="myx-edge-label">vacant</span>');
     expect(markup).toContain('n/r');
-    expect(markup.split('myx-strip-struck').length - 1).toBeGreaterThan(0);
+    expect(markup.split('myx-strip-struck').length - 1).toBe(0);
   });
 
   test('the tiers come from the daemon vocabulary, and an unfilled tier is a row and not a gap', () => {
@@ -300,7 +299,8 @@ interface Rack { label: string; names: { w: number; text: string }[]; rows: numb
  *  under it, and how many per-cell labels survive. A span cell states one value across several
  *  tracks and is excluded BY DECLARATION (M1-73), never by happening not to look. */
 export function racks(markup: string): Rack[] {
-  return markup.split('<section class="myx-bay"').slice(1).map((part) => {
+  // a bay's class list may carry a modifier (a compact rack is `myx-bay myx-bay-compact`)
+  return markup.split(/<section class="myx-bay[ "]/).slice(1).map((part) => {
     const head = /<span class="myx-bay-label">([^<]*)</.exec(part);
     const fields = /<div class="myx-bay-fields">([\s\S]*?)<\/div><div class="myx-bay-rows">/.exec(part);
     const rowsAt = part.indexOf('<div class="myx-bay-rows">');

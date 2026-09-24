@@ -20,6 +20,7 @@ import { useHeads } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { headsReportingNone, nearestWindow, startUsagePolling, useUsage } from '@entities/usage';
 import { useRestartPending } from '@entities/config';
+import { useSession } from '@entities/session';
 import { connect, useEvents } from '@entities/events';
 import { wireLive } from './wire';
 import type { ConnectionStatus } from '@entities/events';
@@ -55,9 +56,12 @@ function useClock(): { local: string; utc: string } {
  * running and healthy (`/api/heads`). A head that is down is the daemon
  * degraded, not the console guessing.
  */
-export type HealthState = 'green' | 'amber' | 'red';
+export type HealthState = 'green' | 'amber' | 'red' | 'grey';
 
-export function healthOf(statusFailed: boolean, anyHeadDown: boolean): HealthState {
+export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: boolean): HealthState {
+  // A 401 is the daemon ANSWERING: without the key the console cannot say how the daemon is, and
+  // the red "unreachable" it printed over the key gate was a claim the answer had just disproved.
+  if (locked) return 'grey';
   if (statusFailed) return 'red';
   return anyHeadDown ? 'amber' : 'green';
 }
@@ -148,6 +152,7 @@ export function Rule() {
   const usage = useUsage((state) => state.data);
   const auth = useAuth((state) => state.data);
   const pendingRestart = useRestartPending((state) => state.pending);
+  const locked = useSession((state) => state.locked);
   const connection = useEvents((state) => state);
   const { local, utc } = useClock();
 
@@ -171,7 +176,7 @@ export function Rule() {
   }, []);
 
   const anyHeadDown = heads !== null && heads.some((head) => !head.running || !head.healthy);
-  const health = healthOf(status.error !== null, anyHeadDown);
+  const health = healthOf(status.error !== null, anyHeadDown, locked);
 
   return (
     <header className="myx-rule">

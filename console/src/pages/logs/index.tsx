@@ -65,8 +65,8 @@ export function LogsBoard({
       className="myx-lg"
       {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
     >
-      <header className="myx-lg-head">
-        <h2 className="myx-lg-title">{S.title}</h2>
+      <header className="myx-page-head myx-lg-head">
+        <h2 className="myx-page-title">{S.title}</h2>
         {/* THE FOUR CHOICES ARE THE WORLD'S CONTROL (M1-103). These were four native `<select>`s,
             which Choice's own header names as the reason it exists: a select's POPUP is the OS's
             window with the OS's font and scrollbar, and `appearance: none` cannot reach inside it.

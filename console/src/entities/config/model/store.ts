@@ -1,6 +1,5 @@
 import { createResource } from '@shared/lib';
 import type { ConfigPayload, ConfigValue, EffectiveConfig } from '@shared/api';
-import { HOT_TEXT, RESTART_TEXT } from './types';
 import type { KnobDisposition, Provenance } from './types';
 
 export const configStore = createResource<ConfigPayload>();
@@ -73,11 +72,6 @@ export function provenanceOf(
     if (layer !== undefined && Object.hasOwn(layer, key)) found = provenance;
   }
   return found;
-}
-
-/** The restart verdict, in the words a field box prints. */
-export function dispositionText(hot: boolean): string {
-  return hot ? HOT_TEXT : RESTART_TEXT;
 }
 
 /**

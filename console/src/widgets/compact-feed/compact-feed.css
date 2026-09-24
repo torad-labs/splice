@@ -18,7 +18,6 @@
   column-gap: 0;
   row-gap: var(--space-5);
   align-items: start;
-  padding: var(--space-5) var(--space-6);
   transition: grid-template-columns var(--dur-2) var(--ease-out),
               column-gap var(--dur-2) var(--ease-out);
 }

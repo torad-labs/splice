@@ -14,20 +14,7 @@
    min-height and not height: a page taller than its room still grows and the room scrolls. */
   min-height: 100%;
 }
-.myx-sx-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-sx-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-5);
-  font-weight: 600;
-  color: var(--ink-strong);
-}
 
 /* The daemon's own sentence about what this registry never shows. Explanation
    is on demand, never inline (the brief's copy rule). */

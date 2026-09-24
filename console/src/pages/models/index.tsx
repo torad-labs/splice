@@ -66,8 +66,8 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
       className="myx-models"
       {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
     >
-      <header className="myx-models-head">
-        <h1 className="myx-models-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>

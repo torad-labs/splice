@@ -188,8 +188,8 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
 
   return (
     <div className="myx-px">
-      <header className="myx-px-head">
-        <h2 className="myx-px-title">{S.title}</h2>
+      <header className="myx-page-head">
+        <h2 className="myx-page-title">{S.title}</h2>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
@@ -209,6 +209,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
             <Bay
               label={S.repos}
               count={rows.length}
+              compact
               actions={<a className="myx-px-open" href="#/sessions">{S.sessionsWord}</a>}
             >
               {rows.map((row) => (

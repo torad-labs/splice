@@ -1,6 +1,6 @@
 // NEW: V4-169 — the SessionStart resume hook as the materializer installs it: registered for
 // `resume` and (V4-183) `startup`, never `compact` or `clear`, as one 0700 script that
-// authenticates from the session's own env (no bearer literal, and v0.4.0: no bearer in curl's argv),
+// authenticates from the daemon's 0600 turn-auth header file (no bearer literal, none in curl's argv),
 // and absent — loudly — when the config dir cannot execute a hook or no daemon port was given.
 package splice.client.resume
 
@@ -18,6 +18,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.MaterializeSpec
@@ -31,9 +33,9 @@ private const val PORT = 3096
 
 class ResumeHookTest {
 
-    private fun materialize(home: Path, configDir: Path, resumeHookPort: Int?): JsonObject {
+    private fun materialize(home: Path, configDir: Path, resumeHook: ResumeHookTarget?): JsonObject {
         Files.createDirectories(home.resolve(".claude"))
-        ClaudeConfigMaterializer(home, resumeHookPort = resumeHookPort).materialize(
+        ClaudeConfigMaterializer(home, resumeHook = resumeHook).materialize(
             MaterializeSpec(
                 configDir = configDir,
                 policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
@@ -56,7 +58,7 @@ class ResumeHookTest {
     ) {
         val head = home.resolve(".claude-codex")
 
-        val entries = sessionStart(materialize(home, head, PORT))
+        val entries = sessionStart(materialize(home, head, ResumeHookTarget(PORT, home.resolve("turn auth header"))))
 
         val matchers = entries!!.map { it.jsonObject["matcher"]!!.jsonPrimitive.content }
         assertEquals(listOf("resume", "startup"), matchers, "/clear and compact never call (V4-183 adds startup)")
@@ -72,7 +74,9 @@ class ResumeHookTest {
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(script)))
         val text = Files.readString(script)
         assertTrue(text.contains("http://127.0.0.1:$PORT/hooks/resume/codex"), text)
-        assertTrue(text.contains("\\$\\{?ANTHROPIC_AUTH_TOKEN".toRegex()), "authenticates from the session's own env")
+        val headerArg = "-H '@${home.resolve("turn auth header")}'"
+        assertTrue(text.contains(headerArg), "reads the turn key's header file: $text")
+        assertFalse(text.contains("ANTHROPIC_AUTH_TOKEN"), "a client-auth head's session has no such variable")
         assertFalse(text.contains("Bearer [0-9a-f]{16}".toRegex()), "no bearer literal is written into the script")
         assertTrue(text.trimEnd().endsWith("exit 0"), "never blocks the session")
     }
@@ -81,8 +85,17 @@ class ResumeHookTest {
     // handed the session's key to every local user for the length of the call. The script is RUN here
     // against a recording `curl` first on PATH: the bearer must reach curl as a header it reads from a
     // file, and never as an argument.
-    @Test
-    fun `the script hands curl the bearer through a header file, never through argv`(@TempDir dir: Path) {
+    //
+    // v0.4.0 review: and the bearer is the TURN KEY from the daemon's header file whatever the session's
+    // environment holds. The script read ANTHROPIC_AUTH_TOKEN, which a client-auth head never plants, so
+    // on that head it exited before calling and no session was ever recorded; and where the operator's
+    // shell exports their OWN credential under that name, it sent that and got a 401. Both are run.
+    @ParameterizedTest
+    @ValueSource(strings = ["", "the-operator's-own-anthropic-credential"])
+    fun `the script hands curl the turn key through its header file, whatever the session env holds`(
+        sessionToken: String,
+        @TempDir dir: Path,
+    ) {
         val bin = Files.createDirectories(dir.resolve("bin"))
         val argvFile = dir.resolve("argv")
         val headersFile = dir.resolve("headers")
@@ -99,14 +112,17 @@ class ResumeHookTest {
                 "cat >/dev/null\n",
         )
         Files.setPosixFilePermissions(fakeCurl, PosixFilePermissions.fromString("rwx------"))
-        val script = dir.resolve(ResumeHook.RESUME_HOOK_SH)
-        Files.writeString(script, ResumeHook.script(PORT, "codex"))
         val token = "turn-key-that-must-not-reach-argv"
+        val headerFile = dir.resolve("turn-auth-header")
+        Files.writeString(headerFile, "Authorization: Bearer $token\n")
+        val script = dir.resolve(ResumeHook.RESUME_HOOK_SH)
+        Files.writeString(script, ResumeHook.script(ResumeHookTarget(PORT, headerFile), "codex"))
 
         val process = ProcessBuilder("bash", script.toString())
             .apply {
                 environment()["PATH"] = "$bin:${System.getenv("PATH")}"
-                environment()["ANTHROPIC_AUTH_TOKEN"] = token
+                environment().remove("ANTHROPIC_AUTH_TOKEN")
+                if (sessionToken.isNotEmpty()) environment()["ANTHROPIC_AUTH_TOKEN"] = sessionToken
             }
             .start()
         process.outputStream.use { it.write("{}".toByteArray()) }
@@ -116,9 +132,10 @@ class ResumeHookTest {
         val argv = Files.readString(argvFile)
         assertFalse(argv.contains(token), "the bearer is not in curl's argv: $argv")
         assertTrue(argv.contains("http://127.0.0.1:$PORT/hooks/resume/codex"), argv)
-        assertTrue(
-            Files.readString(headersFile).lines().contains("Authorization: Bearer $token"),
-            "curl reads the bearer as a header from its file",
+        assertEquals(
+            listOf("Authorization: Bearer $token"),
+            Files.readString(headersFile).lines().filter { it.startsWith("Authorization:") },
+            "curl reads the turn key, and only it, as a header from its file",
         )
     }
 
@@ -126,7 +143,7 @@ class ResumeHookTest {
     fun `no daemon port, no hook - a test materializer changes nothing`(@TempDir home: Path) {
         val head = home.resolve(".claude-codex")
 
-        assertNull(sessionStart(materialize(home, head, resumeHookPort = null)))
+        assertNull(sessionStart(materialize(home, head, resumeHook = null)))
         assertFalse(Files.exists(head.resolve(ResumeHook.RESUME_HOOK_SH)))
     }
 
@@ -136,7 +153,7 @@ class ResumeHookTest {
 
         val additions = ResumeHook.install(
             dir,
-            PORT,
+            ResumeHookTarget(PORT, dir.resolve("turn-auth-header")),
             "codex",
             log = { log.append(it) },
             execProbe = { _, _ -> IOException("mounted noexec") },

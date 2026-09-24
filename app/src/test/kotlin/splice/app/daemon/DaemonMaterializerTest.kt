@@ -13,6 +13,7 @@ import splice.client.ClaudePolicy
 import splice.client.MaterializeSpec
 import splice.client.login.HookExec
 import splice.client.login.TokenCaptureSpec
+import splice.client.resume.ResumeHookTarget
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -41,7 +42,12 @@ class DaemonMaterializerTest {
     @Test
     fun `a capture head fails closed when the wired exec reports noexec`(@TempDir tmp: Path) {
         val failing = HookExec { _, _ -> IOException("Cannot run program: error=13, Permission denied") }
-        val materializer = DaemonMaterializer.build(tmp, rewrite = null, hookExec = failing, controlPort = 3096)
+        val materializer = DaemonMaterializer.build(
+            tmp,
+            rewrite = null,
+            hookExec = failing,
+            resumeHook = ResumeHookTarget(3096, tmp.resolve("turn-auth-header")),
+        )
 
         assertThrows<IOException> { materializer.materialize(captureSpec(tmp.resolve(".claude-head"))) }
     }
@@ -60,6 +66,18 @@ class DaemonMaterializerTest {
         assertTrue(
             call!!.contains("hookExec = HookProcessExec.exec"),
             "ControlPlane must pass the real exec, got: $call",
+        )
+    }
+
+    // v0.4.0 review: the resume hook authenticates from the turn key's header file, so the daemon must
+    // hand the materializer THAT file. Any other path (or none) is a hook that 401s on every head.
+    @Test
+    fun `the daemon points the resume hook at the turn key's header file`() {
+        val call = buildCallArguments(controlPlaneSource())
+        assertNotNull(call, "DaemonMaterializer.build(...) not found in ControlPlane.kt")
+        assertTrue(
+            call!!.contains("ResumeHookTarget(controlPort, TurnKey(mgmtKey).headerFile())"),
+            "ControlPlane must pass the turn key's header file, got: $call",
         )
     }
 

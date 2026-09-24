@@ -58,8 +58,9 @@ import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
 import splice.sessions.prompt.SessionAddress
 import splice.sessions.prompt.SlotInstructions
-import splice.sessions.registry.HeadOfPid
+import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import splice.sessions.teams.TEAMS_FILE
 import splice.sessions.teams.TeamStore
 import splice.topology.TopologyLoader
@@ -136,7 +137,7 @@ internal object ConsoleWiring {
      *  home the state dir lives under, as ControlPlane.start derives it), for the slot text's lead line. */
     internal fun sessionAddress(statePaths: StatePaths): SessionAddress {
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
-        val registry = SessionRegistry(home.resolve(".claude").resolve("sessions"), HeadOfPid { null })
+        val registry = SessionRegistry(home.resolve(".claude").resolve("sessions"), RouteOfPid { SessionRoute.Unknown })
         return SessionAddress { session -> registry.read().firstOrNull { it.sessionId == session }?.address }
     }
 }

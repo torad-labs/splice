@@ -16,6 +16,7 @@ import splice.sessions.query.SessionPerfRow
 import splice.sessions.query.SessionPerfSource
 import splice.sessions.query.SessionPerfWindow
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.sessions.teams.TeamStore
@@ -53,7 +54,7 @@ class TeamRig(val tmp: Path) {
         }
         registry = SessionRegistry(
             sessionsDir = dir,
-            headOf = { pid -> if (pid == 1L) "claude" else "codex" },
+            routeOf = { pid -> SessionRoute.Head(if (pid == 1L) "claude" else "codex") },
             pidAlive = { true },
             clock = { AT },
         )

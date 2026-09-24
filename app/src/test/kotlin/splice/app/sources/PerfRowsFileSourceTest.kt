@@ -165,6 +165,37 @@ class PerfRowsFileSourceTest {
         assertEquals(8L, skipped, "the same spaced row on the fast-skip path, after retention evidence")
     }
 
+    // The summary's `last_ts`: the newest VALID row the files hold, whatever the window. The 500 and
+    // 900 rows are skipped unparsed by the before-cutoff hint (the 100 row is the retention evidence
+    // already held), and the torn 950 line carries the highest hint of all, so only a parse decides.
+    @Test
+    fun `the newest valid row is held whatever the window, a torn higher hint is no row`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            dir.resolve("head-perf.jsonl.1"),
+            """{"ts":100,"outcome":"ok","total":1}""" + "\n" + """{"ts":500,"outcome":"ok","total":1}""" + "\n",
+        )
+        Files.writeString(file, """{"ts":900,"outcome":"ok","total":1}""" + "\n" + """{"ts":950, BROKEN""" + "\n")
+        val idle = PerfRowsFileSource(file).window(1000)
+        assertEquals(emptyList<Long>(), idle.rows.map { it.ts }, "the window holds nothing")
+        assertEquals(900L, idle.newestHeldTs, "the newest row that PARSES, from before the cutoff")
+        assertEquals(100L, idle.oldestHeldTs)
+
+        Files.writeString(
+            file,
+            """{"ts":900,"outcome":"ok","total":1}""" + "\n" +
+                """{"ts":3000,"outcome":"ok","total":1}""" + "\n" +
+                """{"ts":2500,"outcome":"ok","total":1}""" + "\n",
+        )
+        val stepped = PerfRowsFileSource(file).window(1000)
+        assertEquals(listOf(3000L, 2500L), stepped.rows.map { it.ts })
+        assertEquals(3000L, stepped.newestHeldTs, "the maximum ts, not the last line: the clock stepped back")
+
+        Files.delete(file)
+        assertEquals(500L, PerfRowsFileSource(file).window(1000).newestHeldTs, "the rotated generation alone")
+        assertNull(PerfRowsFileSource(dir.resolve("absent.jsonl")).window(0).newestHeldTs, "no row, no newest")
+    }
+
     @Test
     fun `retention is the minimum valid timestamp and rows keep their file order`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")

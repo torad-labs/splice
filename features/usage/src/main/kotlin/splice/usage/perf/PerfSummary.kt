@@ -58,7 +58,14 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  reach past the window is NOT reported clamped; without it the oldest returned row is the only
      *  evidence. No row anywhere is "no perf rows recorded yet", not a clamp. A read error rides
      *  through as is and makes the coverage UNKNOWN (coverage_known false, never clamped): the unread
-     *  generation may hold the rest of the window. */
+     *  generation may hold the rest of the window.
+     *
+     *  `last_ts` is the head's newest row, NOT the window's: [PerfRowsWindow.newestHeldTs] is read
+     *  across every generation the source opens, so a head idle for two days still names its last
+     *  turn under a 1h window. It is the row's own `ts` (epoch ms, the number /api/perf/turns prints
+     *  per row), and null when no row exists. A source that cannot say falls back to the newest row
+     *  it RETURNED, which is bounded by the window it was asked for: that is the only case where
+     *  `last_ts` reads null over a head whose newest row predates the window. */
     fun json(read: PerfRowsWindow, window: PerfWindow, now: Long): JsonObject {
         val inWindow = read.rows.filter { it.ts >= now - window.ms }
         val coverage = coverage(read, window, now)
@@ -66,6 +73,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
             put("window", window.label)
             put("count", inWindow.size)
             put("empty", inWindow.isEmpty())
+            put("last_ts", read.newestHeldTs ?: read.rows.maxOfOrNull { it.ts })
             put("coverage_known", coverage.known)
             put("clamped", coverage.clamped)
             put("covers_ms", minOf(coverage.coveredMs, window.ms))

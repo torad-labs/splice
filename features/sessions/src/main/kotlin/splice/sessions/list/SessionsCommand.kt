@@ -21,8 +21,8 @@ import splice.core.topology.HeadConfig
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
-import splice.sessions.registry.HeadOfPid
 import splice.sessions.registry.ProcessEnvironment
+import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRegistry
@@ -119,9 +119,8 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
         val environment = ProcessEnvironment()
         return SessionRegistry(
             Paths.get(System.getProperty("user.home"), ".claude", "sessions"),
-            HeadOfPid { pid ->
-                val port = environment.spliceHeadPort(pid)
-                heads.entries.firstOrNull { it.value.port == port }?.key
+            RouteOfPid { pid ->
+                environment.route(pid) { port -> heads.entries.firstOrNull { it.value.port == port }?.key }
             },
         )
     }

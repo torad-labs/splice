@@ -21,6 +21,10 @@ private const val LABEL = "label"
 private const val HEADS = "heads"
 private const val USAGE_WINDOW_HOURS = 5
 
+/** When a quota window or the rate-limit read was observed, epoch SECONDS — the encoding the quota
+ *  windows' `resets_at` uses, on both objects, so the console reads one instant format. */
+private const val OBSERVED_AT = "observed_at"
+
 public class UsagePayloads(
     private val heads: UsageHeads,
     private val config: ConfigService,
@@ -56,6 +60,7 @@ public class UsagePayloads(
                                     put("limit_tokens", rlView.limitTokens)
                                     put("remaining_tokens", rlView.remainingTokens)
                                     put("reset_tokens", rlView.resetTokens)
+                                    put(OBSERVED_AT, rlView.observedAt)
                                 }
                             } else {
                                 put("ratelimit", null as String?)
@@ -82,10 +87,12 @@ public class UsagePayloads(
         }
     }
 
+    /** `{used_pct, resets_at, observed_at}`: both instants epoch SECONDS, each null when unknown. */
     private fun window(into: JsonObjectBuilder, name: String, w: QuotaWindowView) {
         into.putJsonObject(name) {
             put("used_pct", w.usedPct)
             put("resets_at", w.resetsAt)
+            put(OBSERVED_AT, w.observedAt)
         }
     }
 }

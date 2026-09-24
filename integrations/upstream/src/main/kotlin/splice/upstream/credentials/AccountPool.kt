@@ -231,6 +231,7 @@ public class AccountPool(
             // must not be rendered as though both were the same "weekly" bar.
             fiveHourWindowSeconds = snapshot?.fiveHour?.windowSeconds,
             sevenDayWindowSeconds = snapshot?.sevenDay?.windowSeconds,
+            quotaObservedAtEpochSeconds = snapshot?.observedAtEpochSeconds,
         )
     }
 

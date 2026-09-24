@@ -10,7 +10,14 @@ public fun interface HeadUsageSource {
     public fun snapshot(): UsageView
 }
 
-public data class RateLimitView(val limitTokens: Long?, val remainingTokens: Long?, val resetTokens: String?)
+/** The persisted `x-ratelimit-*` read. [observedAt] is the round that sent them, in epoch SECONDS
+ *  (the unit the quota windows' `resets_at` uses), or null when the file names no observation. */
+public data class RateLimitView(
+    val limitTokens: Long?,
+    val remainingTokens: Long?,
+    val resetTokens: String?,
+    val observedAt: Long? = null,
+)
 public data class UsageView(
     val outputTokens5h: Long,
     val entries: Int,

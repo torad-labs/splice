@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -33,7 +34,7 @@ class SessionsCommandTest {
         )
         val registry = SessionRegistry(
             sessionsDir = dir,
-            headOf = { pid -> if (pid == 11L) "claudex" else null },
+            routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Unknown },
             pidAlive = { it != 13L },
             clock = { now },
         )
@@ -59,7 +60,12 @@ class SessionsCommandTest {
             dir.resolve("21.json"),
             """{"pid":21,"name":"old","updatedAt":${now - 5_000_000},"messagingSocketPath":"/run/x/21.sock"}""",
         )
-        val registry = SessionRegistry(sessionsDir = dir, headOf = { null }, pidAlive = { true }, clock = { now })
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Unknown },
+            pidAlive = { true },
+            clock = { now },
+        )
         val out = capture { sessionsCommand().sessions({ null }, registry) { now } }
         assertTrue(out.contains("old") && out.contains("stale"), out)
         assertFalse(out.contains("SendMessage("), "only LIVE rows are messageable: $out")
@@ -76,7 +82,12 @@ class SessionsCommandTest {
         val socket = "/run/x/\u009b31m\"q\\\u200e32.sock"
         val blank = """{"pid":32,"name":"","updatedAt":$now,"messagingSocketPath":${Json.encodeToString(socket)}}"""
         Files.writeString(dir.resolve("32.json"), blank)
-        val registry = SessionRegistry(sessionsDir = dir, headOf = { null }, pidAlive = { true }, clock = { now })
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Unknown },
+            pidAlive = { true },
+            clock = { now },
+        )
         val out = capture { sessionsCommand().sessions({ null }, registry) { now } }
         val injected = listOf("\u001b[31m", "\u0007", "\u001b]0;evil", "\u009b", "\u200e")
         assertTrue(injected.none { it in out }, "no registry control sequence reaches the terminal: $out")
@@ -110,7 +121,7 @@ class SessionsCommandTest {
     @Test
     fun `a registry directory that cannot be listed is said, never read as no sessions`(@TempDir dir: Path) {
         val file = Files.writeString(dir.resolve("sessions"), "not a directory")
-        val registry = SessionRegistry(sessionsDir = file, headOf = { null }, clock = { now })
+        val registry = SessionRegistry(sessionsDir = file, routeOf = { SessionRoute.Unknown }, clock = { now })
         var ok = true
         val out = capture { sessionsCommand().sessions({ null }, registry) { now }.also { ok = it } }
         assertFalse(ok, "an unreadable registry is not a successful listing")

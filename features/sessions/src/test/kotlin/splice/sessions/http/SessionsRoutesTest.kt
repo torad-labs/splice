@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -28,7 +29,7 @@ class SessionsRoutesTest {
         Files.writeString(dir.resolve("12.json"), """{"pid":12,"updatedAt":${now - 5_000}}""")
         val registry = SessionRegistry(
             sessionsDir = dir,
-            headOf = { pid -> "claudex".takeIf { pid == 11L } },
+            routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Unknown },
             pidAlive = { it == 11L },
             clock = { now },
         )
@@ -45,10 +46,40 @@ class SessionsRoutesTest {
         assertEquals("gone", bare["availability"]?.jsonPrimitive?.content)
     }
 
+    // `route` tells apart the two facts `head` folds into "unknown head": a session that never went
+    // through splice, and one splice cannot place. The value is the registry's, read once from the
+    // process environment; a GONE pid is never read, so its route is unknown whatever it would say.
+    @Test
+    fun `route names head, direct and unknown while head keeps its old value`(@TempDir dir: Path) {
+        listOf(21, 22, 23, 24).forEach { pid ->
+            Files.writeString(dir.resolve("$pid.json"), """{"pid":$pid,"updatedAt":${now - 5_000}}""")
+        }
+        val routes = mapOf(21L to SessionRoute.Head("codex"), 22L to SessionRoute.Direct, 24L to SessionRoute.Direct)
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { pid -> routes[pid] ?: SessionRoute.Unknown },
+            pidAlive = { it != 24L },
+            clock = { now },
+        )
+        val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts()).sessionsJson()).jsonObject
+        val byPid = body["sessions"]!!.jsonArray.map { it.jsonObject }
+            .associateBy { it["pid"]!!.jsonPrimitive.content }
+        fun field(pid: Int, key: String) = byPid.getValue("$pid")[key]?.jsonPrimitive?.content
+
+        assertEquals("head", field(21, "route"))
+        assertEquals("codex", field(21, "head"))
+        assertEquals("direct", field(22, "route"), "read, and no SPLICE=1: it talks to its provider itself")
+        assertEquals("unknown head", field(22, "head"), "head is unchanged")
+        assertEquals("unknown", field(23, "route"), "unreadable, or a splice launch no head owns")
+        assertEquals("unknown head", field(23, "head"))
+        assertEquals("unknown", field(24, "route"), "a gone pid's environment is never read")
+        assertEquals("gone", field(24, "availability"))
+    }
+
     @Test
     fun `a registry directory that cannot be listed carries an error beside the empty list`(@TempDir dir: Path) {
         val file = Files.writeString(dir.resolve("sessions"), "not a directory")
-        val registry = SessionRegistry(sessionsDir = file, headOf = { null }, clock = { now })
+        val registry = SessionRegistry(sessionsDir = file, routeOf = { SessionRoute.Unknown }, clock = { now })
         val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts()).sessionsJson()).jsonObject
         assertTrue(body["sessions"]!!.jsonArray.isEmpty())
         assertTrue(body["error"]!!.jsonPrimitive.content.contains("sessions"), body.toString())

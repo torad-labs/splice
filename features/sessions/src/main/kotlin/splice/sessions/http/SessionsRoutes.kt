@@ -10,6 +10,9 @@
 //          unwired. Always present, so the console groups every row.
 //   edges  `{sent, received, last_at}` from the message edge store (ActivityRoutes), left off every
 //          row when the stores are unwired, never reported as zero sends nobody watched.
+//   route  `head` | `direct` | `unknown`: the registry's SessionRoute, decided where the process
+//          environment is read. `head` itself is unchanged and still folds the last two into
+//          "unknown head".
 // and GET /api/sessions/{id}/transcript, one page through the injected SessionTranscripts port.
 //
 // WHICH TREES THE TRANSCRIPT ROUTE SEARCHES, in order: the head's own CLAUDE_CONFIG_DIR (the registry
@@ -30,6 +33,7 @@ import splice.sessions.query.SessionHead
 import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionRecord
+import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.TrustedRoot
 import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
@@ -108,11 +112,21 @@ public class SessionsRoutes(
         put("updated_at", s.updatedAt)
         put("address", s.address)
         put("head", s.head ?: UNKNOWN_HEAD)
+        put("route", routeName(s.route))
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
         repoOf(s)?.let { put("repo", repoJson(it)) }
         put("team", s.sessionId?.let { teamOf(it) })
         val id = s.sessionId
         if (edges != null && id != null) put("edges", edges.summary(id, s.address))
+    }
+
+    /** The wire name of the route the registry carried: `head` beside a real `head` key, `direct` for a
+     *  session that never went through splice, `unknown` for one splice cannot place. `head` keeps
+     *  printing "unknown head" for both of the last two; `route` is what tells them apart. */
+    private fun routeName(route: SessionRoute): String = when (route) {
+        is SessionRoute.Head -> "head"
+        SessionRoute.Direct -> "direct"
+        SessionRoute.Unknown -> "unknown"
     }
 
     /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */

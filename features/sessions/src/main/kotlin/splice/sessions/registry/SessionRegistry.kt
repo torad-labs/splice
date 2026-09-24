@@ -43,12 +43,16 @@ public data class SessionRecord(
     val startedAt: Long?,
     val updatedAt: Long?,
     val messagingSocketPath: String?,
-    /** The splice head this session talks to, or null when splice did not launch it. */
-    val head: String?,
+    /** How the session reaches its provider, as its process environment was read (a GONE pid is
+     *  never read, so it is [SessionRoute.Unknown]). */
+    val route: SessionRoute,
     val availability: SessionAvailability,
 ) {
     /** The cross-session address a SendMessage can use when the session carries no name. */
     public val address: String? get() = messagingSocketPath?.let { "uds:$it" }
+
+    /** The splice head this session talks to, or null when [route] names none (direct or unknown). */
+    public val head: String? get() = (route as? SessionRoute.Head)?.key
 }
 
 /** The registry view consumed by session queries. Implementations read on every call so callers never
@@ -74,14 +78,14 @@ public fun interface PidStartedAt {
 /** A process that started this long after its registration's startedAt is a reused pid, not the session. */
 private const val PID_REUSE_TOLERANCE_MS = 300_000L
 
-/** Which splice head launched this pid, if any. */
-public fun interface HeadOfPid {
-    public operator fun invoke(pid: Long): String?
+/** How this live pid reaches its provider (ProcessEnvironment.route in production). */
+public fun interface RouteOfPid {
+    public operator fun invoke(pid: Long): SessionRoute
 }
 
 public class SessionRegistry(
     private val sessionsDir: Path,
-    private val headOf: HeadOfPid,
+    private val routeOf: RouteOfPid,
     private val pidAlive: PidAlive = PidAlive { pid ->
         pid > 0 && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
     },
@@ -135,7 +139,8 @@ public class SessionRegistry(
             startedAt = JsonScalars.long(obj, "startedAt"),
             updatedAt = updatedAt,
             messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
-            head = pid?.takeIf { availability != SessionAvailability.GONE }?.let(headOf::invoke),
+            route = pid?.takeIf { availability != SessionAvailability.GONE }?.let(routeOf::invoke)
+                ?: SessionRoute.Unknown,
             availability = availability,
         )
     }

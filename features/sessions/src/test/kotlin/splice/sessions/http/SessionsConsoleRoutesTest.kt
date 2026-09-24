@@ -21,6 +21,7 @@ import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
@@ -57,7 +58,7 @@ class SessionsConsoleRoutesTest {
         Files.writeString(dir.resolve("13.json"), """{"pid":13,"sessionId":"$GAMMA","updatedAt":$NOW}""")
         return SessionRegistry(
             sessionsDir = dir,
-            headOf = { pid -> "codex".takeIf { pid == 11L } },
+            routeOf = { pid -> if (pid == 11L) SessionRoute.Head("codex") else SessionRoute.Unknown },
             pidAlive = { true },
             clock = { NOW },
         )

@@ -25,7 +25,7 @@
       "subsystems": 8
     },
     "features/accounts/src/main/kotlin/splice/accounts/pool/HeadAccountPool.kt HeadAccountView": {
-      "params": 14,
+      "params": 15,
       "subsystems": 0
     },
     "features/launch/src/main/kotlin/splice/launch/LaunchTypes.kt LaunchSpec": {
@@ -61,7 +61,7 @@
       "subsystems": 0
     },
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt AccountView": {
-      "params": 14,
+      "params": 15,
       "subsystems": 0
     }
   }

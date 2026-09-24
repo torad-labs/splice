@@ -1,5 +1,6 @@
 package splice.usage.perf
 
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -198,5 +199,32 @@ class PerfSummaryTest {
         val blindRows = listOf(fast(8 * day), fast(6 * day))
         val blind = PerfRowsSource { since -> PerfRowsWindow(blindRows.filter { it.ts >= since }) }
         assertEquals("true", n(PerfSummary { now }.summarize(blind, PerfWindow.D7), "clamped"), "no evidence")
+    }
+
+    @Test
+    fun `last_ts names the head's newest row even when the window excludes it`() {
+        val day = 24 * hour
+        val idle = listOf(fast(3 * day), fast(2 * day))
+        val held = PerfRowsSource { since ->
+            PerfRowsWindow(idle.filter { it.ts >= since }, newestHeldTs = idle.maxOf { it.ts })
+        }
+        val hourly = PerfSummary { now }.summarize(held, PerfWindow.H1)
+        assertEquals("0", n(hourly, "count"), "nothing inside the hour")
+        assertEquals((now - 2 * day).toString(), n(hourly, "last_ts"), "the store's newest row, not the window's")
+
+        val stepped = listOf(fast(10 * 60_000L), fast(20 * 60_000L), fast(5 * 60_000L))
+        val inWindow = PerfSummary { now }.json(PerfRowsWindow(stepped), PerfWindow.H1, now)
+        assertEquals(
+            (now - 5 * 60_000L).toString(),
+            n(inWindow, "last_ts"),
+            "a source that cannot say: the newest RETURNED row by ts, not the last appended",
+        )
+
+        val none = PerfSummary { now }.json(PerfRowsWindow(emptyList()), PerfWindow.H24, now)
+        assertTrue(none.containsKey("last_ts"), "always present, so the console never reads undefined")
+        assertEquals(JsonNull, none["last_ts"], "no row anywhere is null, never 0 (which reads as 1970)")
+        val blind = PerfRowsSource { since -> PerfRowsWindow(idle.filter { it.ts >= since }) }
+        val unsaid = PerfSummary { now }.summarize(blind, PerfWindow.H1)
+        assertEquals(JsonNull, unsaid["last_ts"], "the documented fallback: the window's rows, and it has none")
     }
 }

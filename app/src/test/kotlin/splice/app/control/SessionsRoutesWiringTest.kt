@@ -33,6 +33,7 @@ import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -69,7 +70,7 @@ class SessionsRoutesWiringTest {
             log = { },
             sessions = SessionRegistry(
                 sessionsDir = sessions,
-                headOf = { null },
+                routeOf = { SessionRoute.Unknown },
                 pidAlive = { true },
                 clock = { SESSIONS_AT },
             ),

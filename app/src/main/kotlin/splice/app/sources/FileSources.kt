@@ -30,16 +30,19 @@ public class UsageStoreSource(
     override fun snapshot(): UsageView {
         val state = store.readState()
         val ratelimit = store.readRateLimit()?.let {
-            RateLimitView(it.limitTokens, it.remainingTokens, it.resetTokens)
+            RateLimitView(it.limitTokens, it.remainingTokens, it.resetTokens, it.observedAtEpochSeconds)
         }
         return UsageView(state.outputTokens5h, state.entries, ratelimit, quota?.snapshot()?.let(::quotaView))
     }
 
-    private fun quotaView(snapshot: QuotaSnapshot): QuotaView = QuotaView(
-        fiveHour = snapshot.fiveHour?.let { QuotaWindowView(it.usedPercent.toInt(), it.resetsAt) },
-        sevenDay = snapshot.sevenDay?.let { QuotaWindowView(it.usedPercent.toInt(), it.resetsAt) },
-        plan = snapshot.plan,
-    )
+    private fun quotaView(snapshot: QuotaSnapshot): QuotaView {
+        val observed = snapshot.observedAtEpochSeconds
+        return QuotaView(
+            fiveHour = snapshot.fiveHour?.let { QuotaWindowView(it.usedPercent.toInt(), it.resetsAt, observed) },
+            sevenDay = snapshot.sevenDay?.let { QuotaWindowView(it.usedPercent.toInt(), it.resetsAt, observed) },
+            plan = snapshot.plan,
+        )
+    }
 }
 
 public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSource {

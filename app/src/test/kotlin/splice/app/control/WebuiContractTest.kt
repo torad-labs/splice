@@ -193,7 +193,7 @@ class WebuiContractTest {
         val payload = api("/api/compact")
         assertFields(payload, listOf("stats"), "CompactPayload")
         val stats = payload["stats"]!!.jsonObject
-        assertFields(stats, listOf("total", "by_outcome", "tail"), "CompactPayload.stats")
+        assertFields(stats, listOf("total", "by_outcome", "by_outcome_7d", "heads", "tail"), "CompactPayload.stats")
         assertFields(
             stats["tail"]!!.jsonArray.first().jsonObject,
             listOf("head", "ts", "outcome", "chars", "ms"),

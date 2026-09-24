@@ -57,7 +57,7 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
                 text?.let { key to it }
             }.toMap()
         }
-        return CompactView(s.total, s.byOutcome, tail)
+        return CompactView(s.total, s.byOutcome, tail, s.span)
     }
 }
 

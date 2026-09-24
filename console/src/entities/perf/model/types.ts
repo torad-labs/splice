@@ -223,7 +223,7 @@ export type { PendingRoute };
 
 /**
  * GET and PUT /api/heads/{head}/capture, exactly as CaptureRoutes.captureJson writes BOTH answers
- * (daemon/control/src/main/kotlin/splice/control/api/turns/CaptureRoutes.kt:131-140): one head's
+ * (features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt:130-139): one head's
  * trace SETTINGS, never a body. No route serves a captured body; the daemon's own pointer for
  * reading one is the CLI, `splice trace <head>` (DoctorTraceChecks.kt:47).
  *

@@ -18,8 +18,8 @@
 // cannot be tripped by its own explanation is not covering its own directory — the same shape the
 // secret-scan allowlist hit when an exemption entry became a finding.
 //
-// THE ROOTS ARE THE ROW'S, and deliberately not the whole repo: checks/gradle-slot.sh and
-// checks/e2e/docker/run.sh reach for this box's build wrapper BY NAME on purpose — they are the
+// THE ROOTS ARE THE ROW'S, and deliberately not the whole repo: tools/gate/src/lib/slot.ts and
+// tools/e2e/docker/run.sh reach for this box's build wrapper BY NAME on purpose — they are the
 // local integration point, guarded by `command -v`, and a box without it runs the plain gradle
 // path. Naming it there is the opposite of the problem this wall is about. Widening the roots
 // would mean adding those two as exemptions, which is a worse contract than a scope that says

@@ -110,7 +110,7 @@ class StateRootTest {
         assertNull(paths.unmigratedLegacyDir, "a root nobody asked for is not this install's history")
     }
 
-    // Every hermetic test in this repo, app/src/main/dist/bin/splice-launch and checks/e2e/* set the OLD name. Dropping
+    // Every hermetic test in this repo, app/src/main/dist/bin/splice-launch and tools/e2e/* set the OLD name. Dropping
     // it would not fail loudly — it would silently resolve to the real `$HOME`, so a test suite would
     // start reading and WRITING the operator's live state dir.
     @Test

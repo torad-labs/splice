@@ -17,7 +17,7 @@ import java.nio.file.Path
 /** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every
  *  OTHER head's. They are ONE fact — which trees this head can adopt a named session out of — so they
  *  travel as one value, which also keeps [LaunchSpec] inside the constructor-width ratchet
- *  (checks/constructor-width.ts) instead of widening it one field at a time. */
+ *  (ConstructorWidthLawTest) instead of widening it one field at a time. */
 public data class HeadTrees(
     val own: Path,
     val siblings: List<Path> = emptyList(),

@@ -9,10 +9,15 @@ plugins {
 kotlin {
     jvmToolchain(21)
     compilerOptions {
-        // Unused-return-value checker (experimental, Kotlin 2.2+): a discarded non-Unit return is a
-        // warning — the compiler-level half of the swallow-into-null discipline (the ast-grep wall
-        // in checks/ is the write-time half). Promote to error once the codebase is clean.
+        // Unused-return-value checker (experimental, Kotlin 2.2+): a discarded return of a MARKED
+        // function — most of the stdlib, and whatever carries @MustUseReturnValues — is reported, the
+        // compiler-level half of the swallow-into-null discipline (the ast-grep walls are the
+        // write-time half). `check` reports nothing for an unmarked function; `full` would mark all.
         freeCompilerArgs.add("-Xreturn-value-checker=check")
+        // v0.4.0 review round 2: promoted to an ERROR, as planned "once the codebase is clean" — it was
+        // four test lines. As a warning it enforced nothing: SecureFile.ownerOnlyDirectory's reason was
+        // dropped by two callers and the build said so only in a log nobody reads.
+        freeCompilerArgs.add("-Xwarning-level=RETURN_VALUE_NOT_USED:error")
     }
 }
 

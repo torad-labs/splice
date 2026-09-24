@@ -64,7 +64,14 @@ public class ActivityDays(
         AsyncFileIo.submit {
             // ast-grep-ignore: kt-no-silent-result-collapse -- a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed append must not surface on the turn that produced it
             Cancellables.runCatchingCancellable {
-                if (ownerOnly) SecureFile.ownerOnlyDirectory(dir) else Files.createDirectories(dir)
+                // A reason this dir stayed open is not said per append: it sits inside the state dir,
+                // which every start holds owner-only and names if it could not (secureStateDirs), and
+                // nobody else can traverse into it past a 0700 parent.
+                if (ownerOnly) {
+                    val _ = SecureFile.ownerOnlyDirectory(dir)
+                } else {
+                    Files.createDirectories(dir)
+                }
                 JsonlSink.appendLine(file, line, DAY_MAX_BYTES)
                 if (sweptFor.getAndSet(today) != today) sweep(today)
             }

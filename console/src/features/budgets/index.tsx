@@ -13,14 +13,22 @@ import './budgets.css';
 
 const POLL_MS = 30000;
 
-/** Parse a typed dollar amount. An empty or unparsable field is "no budget", which is a real state
- *  and not a validation error: clearing a budget is how an operator removes one. */
-export function parseUsd(raw: string): number | null {
-  const trimmed = raw.trim().replace(/^\$/, '');
-  if (trimmed === '') return null;
-  const value = Number(trimmed);
-  return Number.isFinite(value) && value >= 0 ? value : null;
+/** A typed dollar amount, read. An EMPTY box is "no budget", a real state: clearing the box is how
+ *  an operator removes one. Anything else that is not a non-negative number is a typo, and a typo
+ *  must never save: it used to read as "no budget" and a `5$/day` deleted a $5 budget with no word
+ *  on screen (splice-lead's walkthrough, B2). */
+export type ParsedUsd = { ok: true; value: number | null } | { ok: false };
+
+export function parseUsd(raw: string): ParsedUsd {
+  if (raw.trim() === '') return { ok: true, value: null };
+  const amount = raw.trim().replace(/^\$/, '').trim();
+  if (amount === '') return { ok: false };
+  const value = Number(amount);
+  return Number.isFinite(value) && value >= 0 ? { ok: true, value } : { ok: false };
 }
+
+/** What the row says under a box that does not hold an amount. */
+export const NOT_AN_AMOUNT = 'not a dollar amount; nothing saved';
 
 /** The reverse, for the field box: null prints EMPTY rather than `0`. */
 export function formatUsd(value: number | null): string {
@@ -81,14 +89,23 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
               type="button"
               className="myx-bud-btn"
               onClick={() => {
-                save({ ...budget, daily_usd: parseUsd(typed) });
-                setDraft((current) => ({ ...current, [budget.head]: formatUsd(parseUsd(typed)) }));
+                const parsed = parseUsd(typed);
+                if (!parsed.ok) {
+                  setNotes((current) => ({ ...current, [budget.head]: NOT_AN_AMOUNT }));
+                  return;
+                }
+                save({ ...budget, daily_usd: parsed.value });
+                setDraft((current) => ({ ...current, [budget.head]: formatUsd(parsed.value) }));
               }}
             >
               {S.save}
             </button>
             <span className="myx-bud-note">{budgetText(budget)}</span>
-            {notes[budget.head] ? <span className="myx-bud-note">{notes[budget.head]}</span> : null}
+            {notes[budget.head] ? (
+              <span className={notes[budget.head] === NOT_AN_AMOUNT ? 'myx-bud-note myx-bud-refused' : 'myx-bud-note'} role="status">
+                {notes[budget.head]}
+              </span>
+            ) : null}
           </div>
         );
       })}

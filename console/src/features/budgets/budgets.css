@@ -51,3 +51,6 @@
   font-size: var(--text-1);
   color: var(--ink-mute);
 }
+
+/* A typed amount the row refused: said in the fault colour so it reads as the reason nothing saved. */
+.myx-bud-refused { color: var(--edge-red); }

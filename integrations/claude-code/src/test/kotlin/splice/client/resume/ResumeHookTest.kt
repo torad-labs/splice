@@ -58,7 +58,7 @@ class ResumeHookTest {
     ) {
         val head = home.resolve(".claude-codex")
 
-        val entries = sessionStart(materialize(home, head, ResumeHookTarget(PORT, home.resolve("turn auth header"))))
+        val entries = sessionStart(materialize(home, head, ResumeHookTarget(PORT) { home.resolve("turn auth header") }))
 
         val matchers = entries!!.map { it.jsonObject["matcher"]!!.jsonPrimitive.content }
         assertEquals(listOf("resume", "startup"), matchers, "/clear and compact never call (V4-183 adds startup)")
@@ -116,7 +116,7 @@ class ResumeHookTest {
         val headerFile = dir.resolve("turn-auth-header")
         Files.writeString(headerFile, "Authorization: Bearer $token\n")
         val script = dir.resolve(ResumeHook.RESUME_HOOK_SH)
-        Files.writeString(script, ResumeHook.script(ResumeHookTarget(PORT, headerFile), "codex"))
+        Files.writeString(script, ResumeHook.script(PORT, headerFile, "codex"))
 
         val process = ProcessBuilder("bash", script.toString())
             .apply {
@@ -153,7 +153,7 @@ class ResumeHookTest {
 
         val additions = ResumeHook.install(
             dir,
-            ResumeHookTarget(PORT, dir.resolve("turn-auth-header")),
+            ResumeHookTarget(PORT) { dir.resolve("turn-auth-header") },
             "codex",
             log = { log.append(it) },
             execProbe = { _, _ -> IOException("mounted noexec") },
@@ -162,5 +162,44 @@ class ResumeHookTest {
         assertEquals(emptyMap<String, Any>(), additions, "a hook that cannot run is not registered")
         assertFalse(Files.exists(dir.resolve(ResumeHook.RESUME_HOOK_SH)))
         assertTrue(log.contains("resume hook NOT installed") && log.contains("noexec"), log.toString())
+    }
+
+    // v0.4.0 review round 2: the install writes the turn key's header file, inside its guarded leg. The
+    // daemon resolved it once at start instead, where a state dir refusing the write threw out of the
+    // control plane's start with no hook named.
+    @Test
+    fun `a header file that cannot be written gets no registration and one log line, never a throw`(
+        @TempDir dir: Path,
+    ) {
+        val log = StringBuilder()
+
+        val additions = ResumeHook.install(
+            dir,
+            ResumeHookTarget(PORT) { throw IOException("state dir is read-only") },
+            "codex",
+            log = { log.append(it) },
+        )
+
+        assertEquals(emptyMap<String, Any>(), additions, "a hook that cannot authenticate is not registered")
+        assertFalse(Files.exists(dir.resolve(ResumeHook.RESUME_HOOK_SH)))
+        assertTrue(log.contains("resume hook NOT installed") && log.contains("read-only"), log.toString())
+    }
+
+    // v0.4.0 review round 2: written once at daemon start, a header file removed afterwards stayed gone,
+    // and every statusline tick and resume hook naming it 401ed until a restart. Each launch's
+    // materialize asks for it now, and the source writes it back.
+    @Test
+    fun `every materialize writes the header file current, so one removed since the last launch is back`(
+        @TempDir home: Path,
+    ) {
+        val head = home.resolve(".claude-codex")
+        val header = home.resolve("turn-auth-header")
+        val target = ResumeHookTarget(PORT) { Files.writeString(header, "Authorization: Bearer k\n") }
+        materialize(home, head, target)
+        Files.delete(header)
+
+        materialize(home, head, target)
+
+        assertTrue(Files.exists(header), "the next launch wrote back the file the hook script names")
     }
 }

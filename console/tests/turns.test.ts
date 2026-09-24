@@ -20,6 +20,7 @@ import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import { applyFilter, headOf, headsPresent, levelOf, levelsPresent, timeOf } from '../src/entities/logs';
 import type { LogFilter } from '../src/entities/logs';
 import { TurnsBoard } from '../src/pages/turns';
+import { shareText, stageRowsOf } from '../src/pages/turns/index';
 import { LogsBoard } from '../src/pages/logs';
 import { itemsOf, selectionOf, windowOf } from '../src/pages/turns/select';
 import { edgeOfInflight, fieldsOf, inflightFieldsOf } from '../src/pages/turns/strip';
@@ -241,27 +242,59 @@ describe('turns board', () => {
   const board = (over: Partial<React.ComponentProps<typeof TurnsBoard>> = {}) =>
     render(h(TurnsBoard, { inflight: [inflight()], landed: { inflight: [], landed: [turn()], unread: [] }, summary: null, capture: null, ...over }));
 
-  test('a route that does not exist renders the empty that names its row', () => {
+  test('a route this daemon does not serve says so in words, not a row id', () => {
     const out = board({ landed: { pending: 'V4-127' } });
-    expect(out).toContain('row V4-127');
+    expect(out).toContain('turn history unavailable');
+    expect(out).not.toContain('V4-127');
     expect(out).not.toContain('myx-tn-scroll');
   });
 
-  test('the summary bay renders what exists today, and an empty window says so', () => {
+  test('the summary names its window, prints readable units, and names the idle heads once', () => {
     const out = board({
       summary: {
         window: '24h',
         heads: [
           {
-            key: 'claudex', label: 'claudex', window: '24h', count: 0, empty: true, coverage_known: true,
-            clamped: true, covers_ms: HOUR,
+            key: 'claudex', label: 'claudex', window: '24h', count: 16, empty: false, coverage_known: true,
+            clamped: false, covers_ms: HOUR,
+            time_before_first_byte_ms: { count: 16, p50: 489, p95: 3192, max: 3192 },
+            total_ms: { count: 16, p50: 10_580, p95: 46_967, max: 46_967 },
+            failure_share: 0.25, cache_hit_ratio: 0.979, retries: 0, refreshes: 0, peak_inflight: 1, io_drops_in_window: 0,
           },
+          { key: 'claude-grok', label: 'claude-grok', window: '24h', count: 0, empty: true, coverage_known: true, clamped: true, covers_ms: HOUR },
+          { key: 'claude-kimi', label: 'claude-kimi', window: '24h', count: 0, empty: true, coverage_known: true, clamped: true, covers_ms: HOUR },
         ],
       },
     });
-    expect(out).toContain('no turns in window'); // the whole sentence, in the strip's aria-label
-    expect(out).toContain('>–<'); // no percentile was computed for an empty window
-    expect(out).toContain('>empty<'); // and the edge says the window has no rows
+    expect(out).toContain('summary 24h');
+    expect(out).toContain('>489ms<');
+    expect(out).toContain('>10.6s<');
+    expect(out).toContain('>25%<');
+    expect(out).toContain('>98%<');
+    // An idle head is named once and gets no strip of dashes: an empty window never reads as fast.
+    expect(out).toContain('no turns in 24h: claude-grok, claude-kimi');
+    expect(out).not.toContain('summary claude-grok');
+  });
+
+  test('time per stage is the difference between marks, never the marks added up', () => {
+    // Cumulative marks, ms since arrival: 2 ms of splice work, 7 queued, 100 waiting on the
+    // provider, 890 streaming, 1 closing. Summing the raw marks gave finish (1001) and stream end
+    // (1000) half of all time each.
+    const row = { head: 'h', outcome: 'ok', recv: 1, parse: 2, build: 3, gate: 10, headers: 100, first_byte: 110, first_frame: 111, first_delta: 120, stream_end: 1000, finish: 1001 } as TurnRow;
+    const stages = stageRowsOf([row, row]);
+    expect(stages.map((stage) => [stage.label, stage.perTurn, shareText(stage.share)])).toEqual([
+      ['splice work', 2, '0.2%'],
+      ['waiting for slot', 7, '0.7%'],
+      ['waiting on provider', 100, '10%'],
+      ['streaming reply', 890, '89%'],
+      ['closing', 1, '0.1%'],
+    ]);
+  });
+
+  test('a part no turn reached is not printed, and no rows is no stages', () => {
+    const failed = { head: 'h', outcome: 'upstream_error', recv: 1, parse: 2, build: 3, gate: 10 } as TurnRow;
+    expect(stageRowsOf([failed]).map((stage) => stage.label)).toEqual(['splice work', 'waiting for slot']);
+    expect(stageRowsOf([])).toEqual([]);
   });
 
   test('nothing in flight is an honest empty, not an empty bay', () => {

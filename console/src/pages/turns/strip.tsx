@@ -52,6 +52,15 @@ const COLUMNS: Record<string, { label: string; w: number }> = {
   dropped: { label: S.dropped, w: 22 },
 };
 
+/** The named columns of a view, in its order: the landed rack prints these ONCE, in a header that
+ *  sticks to the top of its scroller, and the rows print values only. */
+export function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
+  return order.flatMap((key) => {
+    const column = COLUMNS[key];
+    return column === undefined ? [] : [{ key, ...column }];
+  });
+}
+
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
  *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the
  *  controls follow with `busy?: boolean | undefined`). */
@@ -162,12 +171,26 @@ export function TurnStrip({ row, selected, order, onOpen }: {
       onOpen={onOpen}
       ariaLabel={`${S.title} ${row.head} ${row.model ?? S.absent}`}
     >
-      {/* No label on a cell: the bay head prints the column names once for the whole rack
-          (CONTRACTS.md section 2, m1 design review B9). */}
+      {/* No label on a cell: the rack's sticky header prints the column names once (LandedNames),
+          where every virtualized row used to repeat all fourteen (console review, 2026-09-24). */}
       {fieldsOf(row, order).map((field) => (
-        <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
+        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
+  );
+}
+
+/** The landed rack's column names, once, at the widths and growth of the cells under them (the
+ *  same share rule as every other names row: see doctor's ColumnNames). */
+export function LandedNames({ order }: { order: readonly string[] }) {
+  return (
+    <div className="myx-tn-names" aria-hidden="true">
+      {columnsOf(order).map((column) => (
+        <span key={column.key} className="myx-tn-col" style={{ width: `${column.w}ch`, flexGrow: column.w }}>
+          <span className="myx-tn-col-name">{column.label}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 

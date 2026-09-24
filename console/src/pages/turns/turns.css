@@ -110,3 +110,47 @@
 @media (max-width: 1120px) {
   .myx-tn-board-open { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The heads a window holds no turns for, named once under the summary rack instead of one strip of
+   dashes each. Quiet ink: it is an absence, said for completeness, not a reading. */
+.myx-tn-idle {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+
+/* The landed rack's column names: once, stuck to the top of the scroller so they stay over their
+   columns while the rows scroll under them, and scrolled sideways with the rows because they live
+   inside the same scroller. The start padding is the strip's edge column, as .myx-bay-fields. */
+.myx-tn-names {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  padding-block: var(--space-2);
+  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2));
+  background: var(--room-deep);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+/* A name box is sized exactly as the cell under it: `ch` resolves against the cell's own anchor
+   face (the code face at --text-3, .myx-sfield), with the cell's padding and its divider's width,
+   so the declared widths and the shared growth land on the same x. The name inside is set in the
+   label face; it is only the BOX that must match. */
+.myx-tn-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  padding-inline: var(--space-3);
+  border-inline-end: var(--hair) solid transparent;
+  font-family: var(--font-code);
+  font-size: var(--text-3);
+  line-height: 1;
+}
+.myx-tn-col-name {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+}

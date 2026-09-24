@@ -16,6 +16,13 @@ export const S = {
   stages: 'time per stage',
   stage: 'stage',
   share: 'share',
+  perTurn: 'per turn',
+  /** The five parts of a turn, in the order the time is spent (entities/perf StageGroup). */
+  stageIngest: 'splice work',
+  stageQueue: 'waiting for slot',
+  stageUpstream: 'waiting on provider',
+  stageStream: 'streaming reply',
+  stageFinish: 'closing',
   tokens: 'tokens',
   tokIn: 'in',
   tokCached: 'cached',
@@ -46,18 +53,16 @@ export const S = {
   inflightCount: 'inflight',
   dropped: 'dropped',
   /** The summary bay. */
-  failureShare: 'failure share',
+  failureShare: 'failed',
   cacheHit: 'cache hit',
-  /** The summary edge's state for a window the rollup has no rows for. Two words, because the
-   *  filter sentence it replaced was four and a holder edge has a character budget, not a word
-   *  count (m1 design review B10). The sentence itself still reaches a reader through the
-   *  strip's aria-label. */
-  noRows: 'empty',
-  /** The summary edge's state for a window the rollup has rows for. */
-  hasRows: 'rows',
-  peakInflight: 'peak inflight',
-  ioDrops: 'io drops',
-  rows: 'rows',
+  turnTime: 'turn time',
+  turnTimeP95: 'turn time p95',
+  firstByteP95: 'first byte p95',
+  /** Printed before the heads a window holds no turns for, on one line under the rack. */
+  noTurnsIn: 'no turns in',
+  peakInflight: 'peak concurrent',
+  ioDrops: 'lost log rows',
+  rows: 'turns',
   coverage: 'coverage',
   refreshes: 'refreshes',
   /** What any cell with no value prints: the approved comp's own glyph (m1 design review B8,

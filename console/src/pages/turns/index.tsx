@@ -25,6 +25,7 @@ import {
   useCapture,
   usePerfSummary,
   usePerfTurns,
+  waterfall,
 } from '@entities/perf';
 import type {
   CaptureState,
@@ -32,6 +33,7 @@ import type {
   PendingRoute,
   PerfSummaryHead,
   PerfSummaryPayload,
+  StageGroup,
   TurnRow,
   TurnsState,
 } from '@entities/perf';
@@ -40,12 +42,13 @@ import { useSession } from '@entities/session';
 import { RequestDrawer, Waterfall } from '@widgets/waterfall';
 import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Fault } from '@shared/controls';
+import { fmtMs } from '@shared/lib';
 import type { Basis } from '@shared/ui';
 import { basisProp } from './strip';
 import { S } from './strings';
 import { itemsOf, selectionOf } from './select';
 import type { Selection } from './select';
-import { InflightStrip, TurnStrip } from './strip';
+import { InflightStrip, LandedNames, TurnStrip } from './strip';
 import './turns.css';
 
 const PAGE_ID = 'turns';
@@ -89,9 +92,9 @@ function cell(value: number | undefined, format: (n: number) => string): { value
  *
  * WHAT EARNED ITS PLACE. The page's own header says the daemon "records where the time went and
  * never why", and the summary rack prints P50 and P95 totals -- it says how LONG a turn took and
- * never WHERE. The five pipeline stages (recv, parse, build, gate, headers, plus stream end and
- * finish) are served on every row, are the daemon's own instrumentation, and answer the question the
- * page's comment names. SECOND MEMBER: the summary prints ONE cache scalar, while the four token
+ * never WHERE. The pipeline marks are served on every row, are the daemon's own instrumentation,
+ * and answer the question the page's comment names, summed into the five parts of a turn the
+ * waterfall already groups them by (see stageRowsOf). SECOND MEMBER: the summary prints ONE cache scalar, while the four token
  * classes (in, cached, cache write, out) are served and unprinted -- and cached versus written is
  * the ten-to-one price difference the operator actually pays. Both are per-head rows, which is the
  * grain the rest of this page reads.
@@ -111,28 +114,59 @@ function cell(value: number | undefined, format: (n: number) => string): { value
  *   - first_byte, first_frame, first_delta, total, ts, model, outcome, compact: ALREADY PRINTED,
  *     by the summary rack and the landed strips.
  */
-const STAGES: readonly { key: keyof TurnRow; label: string }[] = [
-  { key: 'recv', label: 'recv' },
-  { key: 'parse', label: 'parse' },
-  { key: 'build', label: 'build' },
-  { key: 'gate', label: 'gate' },
-  { key: 'headers', label: 'headers' },
-  { key: 'stream_end', label: 'stream end' },
-  { key: 'finish', label: 'finish' },
+const STAGE_GROUPS: readonly { group: StageGroup; label: string }[] = [
+  { group: 'ingest', label: S.stageIngest },
+  { group: 'queue', label: S.stageQueue },
+  { group: 'upstream', label: S.stageUpstream },
+  { group: 'stream', label: S.stageStream },
+  { group: 'finish', label: S.stageFinish },
 ];
 
-/** Each stage's total across the loaded rows and its share of the summed stage time. Absent stages
- *  are skipped rather than counted as zero: the daemon writes only the stages a turn reached. */
-function stageRowsOf(rows: readonly TurnRow[]): { label: string; ms: number; share: number }[] {
-  const totals = STAGES.map((stage) => ({ label: stage.label, ms: 0 }));
+export interface StageRow {
+  label: string;
+  /** Summed over every loaded turn that reached this part. */
+  ms: number;
+  /** The average over those turns: what one turn spends here. */
+  perTurn: number;
+  /** This part's share of all the time the loaded turns spent. */
+  share: number;
+}
+
+/**
+ * Where the loaded turns spent their time, in the five parts of a turn, in pipeline order.
+ *
+ * THE MARKS ARE CUMULATIVE: each is ms since the request arrived (PerfKeys, "marks are
+ * *_ms-since-arrival"), so a part's time is the DIFFERENCE between two marks, which is what
+ * entities/perf's `waterfall` computes for one turn. This table used to add the raw marks up as if
+ * each were a duration, so `finish` (the whole turn) and `stream end` (nearly the whole turn) read
+ * half of all time each and every earlier stage read 0.0 % (console review, 2026-09-24). A part a
+ * turn never reached is left out of that turn rather than counted as zero, and a part no loaded turn
+ * reached is not printed.
+ */
+export function stageRowsOf(rows: readonly TurnRow[]): StageRow[] {
+  const totals = new Map<StageGroup, { ms: number; turns: number }>();
   let sum = 0;
   for (const row of rows) {
-    STAGES.forEach((stage, at) => {
-      const value = row[stage.key];
-      if (typeof value === 'number') { totals[at].ms += value; sum += value; }
-    });
+    const reached = new Map<StageGroup, number>();
+    for (const stage of waterfall(row)) reached.set(stage.group, (reached.get(stage.group) ?? 0) + stage.ms);
+    for (const [group, ms] of reached) {
+      const at = totals.get(group) ?? { ms: 0, turns: 0 };
+      totals.set(group, { ms: at.ms + ms, turns: at.turns + 1 });
+      sum += ms;
+    }
   }
-  return totals.map((total) => ({ ...total, share: sum === 0 ? 0 : total.ms / sum }));
+  return STAGE_GROUPS.flatMap(({ group, label }) => {
+    const at = totals.get(group);
+    return at === undefined ? [] : [{ label, ms: at.ms, perTurn: at.ms / at.turns, share: sum === 0 ? 0 : at.ms / sum }];
+  });
+}
+
+/** A 0..1 share as a person reads it: `25%`, with one decimal under ten so 2.4% is not 2%. */
+export function shareText(share: number): string {
+  const value = share * 100;
+  if (value === 0) return '0%';
+  if (value < 0.1) return '<0.1%';
+  return `${value < 10 ? value.toFixed(1) : value.toFixed(0)}%`;
 }
 
 /** The four token classes per head, with the cache hit share: what the operator pays for. */
@@ -149,20 +183,21 @@ function tokenRowsOf(rows: readonly TurnRow[]): { head: string; in: number; cach
   return [...byHead.values()].map((at) => ({ ...at, hit: at.in === 0 ? 0 : at.cached / at.in }));
 }
 
+/** The window is the bay's own label now, not a column repeating `24h` on every row; the rest
+ *  are sized to what they print (`10.6s`, `98%`), which is what let the rack fit its bay. */
 export const SUMMARY_COLUMNS: readonly { key: string; label: string; w: number }[] = [
   { key: 'head', label: S.head, w: 20 },
-  { key: 'window', label: S.time, w: 15 },
-  { key: 'rows', label: S.rows, w: 15 },
-  { key: 'first_p50', label: S.firstByte, w: 15 },
-  { key: 'first_p95', label: `${S.firstByte} p95`, w: 15 },
-  { key: 'total_p50', label: S.total, w: 15 },
-  { key: 'total_p95', label: `${S.total} p95`, w: 15 },
-  { key: 'failure', label: S.failureShare, w: 15 },
-  { key: 'retries', label: S.retries, w: 15 },
-  { key: 'refreshes', label: S.refreshes, w: 15 },
-  { key: 'cache', label: S.cacheHit, w: 15 },
-  { key: 'peak', label: S.peakInflight, w: 15 },
-  { key: 'drops', label: S.ioDrops, w: 15 },
+  { key: 'rows', label: S.rows, w: 8 },
+  { key: 'first_p50', label: S.firstByte, w: 10 },
+  { key: 'first_p95', label: S.firstByteP95, w: 12 },
+  { key: 'total_p50', label: S.turnTime, w: 10 },
+  { key: 'total_p95', label: S.turnTimeP95, w: 12 },
+  { key: 'failure', label: S.failureShare, w: 8 },
+  { key: 'retries', label: S.retries, w: 8 },
+  { key: 'refreshes', label: S.refreshes, w: 9 },
+  { key: 'cache', label: S.cacheHit, w: 9 },
+  { key: 'peak', label: S.peakInflight, w: 13 },
+  { key: 'drops', label: S.ioDrops, w: 12 },
 ];
 
 function summaryFields(head: PerfSummaryHead): { key: string; label: string; w: number; value: string; basis?: Basis | undefined }[] {
@@ -170,16 +205,15 @@ function summaryFields(head: PerfSummaryHead): { key: string; label: string; w: 
   const total = head.total_ms;
   const values: Record<string, { value: string; basis?: Basis | undefined }> = {
     head: { value: head.label, basis: 'measured' },
-    window: { value: head.window, basis: 'measured' },
     rows: { value: String(head.count), basis: 'measured' },
-    first_p50: cell(first?.p50, String),
-    first_p95: cell(first?.p95, String),
-    total_p50: cell(total?.p50, String),
-    total_p95: cell(total?.p95, String),
-    failure: cell(head.failure_share, (n) => n.toFixed(2)),
+    first_p50: cell(first?.p50, fmtMs),
+    first_p95: cell(first?.p95, fmtMs),
+    total_p50: cell(total?.p50, fmtMs),
+    total_p95: cell(total?.p95, fmtMs),
+    failure: cell(head.failure_share, shareText),
     retries: cell(head.retries, String),
     refreshes: cell(head.refreshes, String),
-    cache: cell(head.cache_hit_ratio ?? undefined, (n) => n.toFixed(2)),
+    cache: cell(head.cache_hit_ratio ?? undefined, shareText),
     peak: cell(head.peak_inflight, String),
     drops: cell(head.io_drops_in_window, String),
   };
@@ -193,26 +227,30 @@ function summaryFields(head: PerfSummaryHead): { key: string; label: string; w: 
  *  so, and never reads as zero latency. It lives here, not in strings.ts, because an honest empty
  *  is not a label (CONTRACTS.md section 4). It is what a reader who needs the whole statement gets
  *  — the strip's aria-label — because the printed edge carries the state in two words. */
-export const NO_ROWS = 'no turns in window';
+export const NO_ROWS = 'no turns in this window';
 
-/** One head's windowed summary. An empty window says so on the edge rather than reading as fast.
- *  The edge prints a state and not the sentence: four words on a holder edge is over the cap and
- *  staggered the field grid beside it (m1 design review B10). */
+/** Where a turn goes once it lands: said under every rack of landed rows when there are none. */
+const LANDS_HERE = 'turns land here as the heads serve them';
+
+/** One head's windowed summary. A head whose window is empty never gets a strip: eight rows of
+ *  dashes buried the two heads that had turns (console review, 2026-09-24), so the empty ones are
+ *  NAMED on one line under the rack instead (IdleHeads), and an empty window still never reads as a
+ *  fast one. */
 function SummaryStrip({ head }: { head: PerfSummaryHead }) {
   return (
-    <Strip
-      edge={head.empty ? 'grey' : 'green'}
-      /* A state, not the head's name: the name is a column of this rack now (CONTRACTS.md section
-         2, m1 design review B10), and at 15 characters it was being clipped to `claude-` by the
-         edge's 6ch budget. */
-      edgeLabel={head.empty ? S.noRows : S.hasRows}
-      ariaLabel={`${S.summary} ${head.label}${head.empty ? ` ${NO_ROWS}` : ''}`}
-    >
+    <Strip edge="green" edgeLabel="" ariaLabel={`${S.summary} ${head.label}`}>
       {summaryFields(head).map((field) => (
         <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );
+}
+
+/** The heads a window holds no turns for, named on one line: an absence said once, not per row. */
+export function IdleHeads({ summary }: { summary: PerfSummaryPayload }) {
+  const idle = summary.heads.filter((head) => head.empty).map((head) => head.label);
+  if (idle.length === 0) return null;
+  return <p className="myx-tn-idle">{`${S.noTurnsIn} ${summary.window}: ${idle.join(', ')}`}</p>;
 }
 
 /** A band between groups in the virtualized list: the name of what follows, and how much of it. */
@@ -303,7 +341,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
             label={S.inflight}
             count={inflight.length}
             compact
-            empty={{ text: 'nothing in flight', source: '/api/heads' }}
+            empty={{ text: 'nothing in flight', source: 'a turn shows here while it runs' }}
           >
             {inflight.map((turn) => (
               <InflightStrip key={`${turn.head}:${turn.label}`} turn={turn} order={INFLIGHT_FIELDS} />
@@ -311,12 +349,13 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
           </Bay>
 
           <Bay
-            label={S.summary}
+            label={summary === null ? S.summary : `${S.summary} ${summary.window}`}
             compact
-            {...(summary === null ? {} : { count: summary.heads.length })}
-            empty={{ text: 'no summary read yet', source: '/api/perf/summary' }}
+            {...(summary === null ? {} : { count: summary.heads.filter((head) => !head.empty).length })}
+            empty={{ text: 'no summary yet', source: 'the daemon has not answered' }}
           >
-            {summary?.heads.map((head) => <SummaryStrip key={head.key} head={head} />)}
+            {summary?.heads.filter((head) => !head.empty).map((head) => <SummaryStrip key={head.key} head={head} />)}
+            {summary === null ? null : <IdleHeads key="idle" summary={summary} />}
           </Bay>
 
           {/* THE TWO COMPOSED MEMBERS (M2-20). Each is a small table wearing its own header, which
@@ -326,13 +365,13 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
           <Bay
             label={S.stages}
             compact
-            {...(pending ? {} : { count: stageRows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
+            {...(pending ? {} : { count: stageRows.length, empty: { text: NO_ROWS, source: LANDS_HERE } })}
           >
             {stageRows.map((stage) => (
-              <Strip key={stage.label} edge="grey" edgeLabel={S.stage} ariaLabel={`${S.stage} ${stage.label}`}>
-                <StripField w={14} label={S.stage} value={stage.label} mono={false} />
-                <StripField w={12} label={S.total} value={stage.ms === 0 ? S.absent : `${Math.round(stage.ms)} ms`} {...basisProp(stage.ms === 0 ? undefined : 'measured')} />
-                <StripField w={8} label={S.share} value={stage.ms === 0 ? S.absent : `${(stage.share * 100).toFixed(1)} %`} {...basisProp(stage.ms === 0 ? undefined : 'measured')} />
+              <Strip key={stage.label} edge="grey" edgeLabel="" ariaLabel={`${S.stage} ${stage.label}`}>
+                <StripField w={20} label={S.stage} value={stage.label} mono={false} />
+                <StripField w={10} label={S.perTurn} value={fmtMs(stage.perTurn)} basis="measured" />
+                <StripField w={8} label={S.share} value={shareText(stage.share)} basis="measured" />
               </Strip>
             ))}
           </Bay>
@@ -340,16 +379,16 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
           <Bay
             label={S.tokens}
             compact
-            {...(pending ? {} : { count: tokenRows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
+            {...(pending ? {} : { count: tokenRows.length, empty: { text: NO_ROWS, source: LANDS_HERE } })}
           >
             {tokenRows.map((row) => (
-              <Strip key={row.head} edge="grey" edgeLabel={S.tokIn} ariaLabel={`${S.tokens} ${row.head}`}>
+              <Strip key={row.head} edge="grey" edgeLabel="" ariaLabel={`${S.tokens} ${row.head}`}>
                 <StripField w={20} label={S.head} value={row.head} mono={false} />
                 <StripField w={11} label={S.tokIn} value={row.in.toLocaleString('en-US')} />
                 <StripField w={11} label={S.tokCached} value={row.cached.toLocaleString('en-US')} />
                 <StripField w={13} label={S.tokWrite} value={row.write.toLocaleString('en-US')} />
                 <StripField w={11} label={S.tokOut} value={row.out.toLocaleString('en-US')} />
-                <StripField w={8} label={S.hit} value={row.in === 0 ? S.absent : `${(row.hit * 100).toFixed(0)} %`} {...basisProp(row.in === 0 ? undefined : 'measured')} />
+                <StripField w={8} label={S.hit} value={row.in === 0 ? S.absent : shareText(row.hit)} {...basisProp(row.in === 0 ? undefined : 'measured')} />
               </Strip>
             ))}
           </Bay>
@@ -357,16 +396,17 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
           <Bay
             label={S.landed}
             compact
-            {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
+            {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: LANDS_HERE } })}
           >
             {/* A head whose turns could not be read is NAMED, in the daemon's words: the list below is
                 missing its rows, and a rack that silently lost a head reads exactly like one that
                 was idle. */}
             {unread.map((head) => <Fault key={`${head.head}:${head.reason}`} message={`${head.head}: ${head.reason}`} />)}
             {pending ? (
-              <Empty text="per-turn rows have no route yet" source="row V4-127" />
+              <Empty text="turn history unavailable" source="this splice version does not serve it" />
             ) : (
               <div className="myx-tn-scroll" ref={scrollRef}>
+                <LandedNames order={active.fields} />
                 <div className="myx-tn-inner" style={{ height: virtualizer.getTotalSize() }}>
                   {virtualizer.getVirtualItems().map((item) => {
                     const entry = items[item.index];

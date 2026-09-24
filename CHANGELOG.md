@@ -1,6 +1,102 @@
 # Changelog
 
-## Unreleased
+## splice v0.4.0 — a console, self-upgrade, account pools and local models, and sessions that never hold the management key - 2026-09-24
+
+### Highlights
+- **Sessions hold a turn key, never the management key.** Every session launched by 0.3.x held
+  the one credential that opens the whole control plane. Upgrade, relaunch your sessions, then
+  rotate the key ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
+- **`splice upgrade`** fetches, verifies and stages a release, waits for in-flight turns, restarts
+  the daemon and runs doctor. `--rollback` puts the previous release back.
+- **Several accounts per provider.** `splice login <head> --label <name>` adds an account, and a
+  head switches accounts on its own when a provider's limits are hit.
+- **Local models are first-class** on the `openai-chat` dialect. splice asks the runtime what it
+  serves and refuses a row it doesn't. llama-server conversations keep their own slot. Local heads
+  report token usage, so Claude Code auto-compacts, and their errors say what happened.
+- **The console** signs accounts in, switches, removes and relabels them. It adds opt-in body
+  capture, budgets, alerts, a playground and a per-project view of the rules that govern a repo.
+- **New commands:** `splice add <profile>`, `splice add-model`, `splice sessions`,
+  `splice perf`, and `splice doctor --json` (a shareable, redacted report).
+- **New heads and modes:** `claude-muse` (a Meta Muse Code subscription); Claude head mode (wrap
+  the default `claude` command); per-head system prompts, including a `strip` mode; custom
+  compaction instructions; shared MCP hosting.
+- **Code mode is out of beta** and on by default for ChatGPT.
+
+### Upgrading from 0.3.x
+0.3.x has no `splice upgrade`. Re-run the installer pinned to this release:
+
+```bash
+curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install.sh \
+  | env SPLICE_VERSION=v0.4.0 bash
+```
+
+- **The installer leaves the running 0.3.x daemon alone.** The next `claude-<head>` launch
+  replaces it: the launch shim sees the old version on `/health`, stops that daemon and starts
+  0.4.0.
+- **Config and credentials are untouched, and the state root stays where it is.** An install
+  made before 0.4.0 keeps `~/.claude-codex/state` and its management key. 0.4.0 tightens that
+  directory to owner-only (0700).
+- **A session launched under 0.3.x keeps working until you relaunch it.** Its environment holds
+  the management key, and that key still runs a turn. Relaunch each one to move it onto the turn
+  key.
+- **Rotate the management key after the relaunch.** Under 0.3.x it sat in every session's
+  environment, where the model's tools could print it into a transcript. Delete
+  `<state>/mgmt-key`, then stop the daemon: `systemctl --user stop splice.service` where a unit
+  runs it, otherwise end its process. Then run `splice restart` or launch any head. A fresh key
+  is minted, the old key is refused, and `turn-auth-header` follows on the next launch.
+- **The installer records 0.3.x as the previous release,** so `splice upgrade --rollback` has a
+  target.
+- **From 0.4.0 on,** `splice upgrade` does all of this in one command.
+
+### Security
+The management key opens the whole control plane: every head's system prompt, every transcript,
+config writes and daemon shutdown. Until 0.4.0 it reached every launched session in three ways:
+- `ANTHROPIC_AUTH_TOKEN` in the session's environment, which every tool the model runs inherits.
+  It was seen in transcripts that went to model providers.
+- Inline in each head's `settings.json`, and in curl's argv on every statusline tick
+  (`/proc/<pid>/cmdline` is world-readable).
+- In the resume hook's argv.
+
+0.4.0 closes each path:
+- **A session holds a turn key.** The turn key is derived one-way from the management key
+  (HMAC-SHA256 under its own scope), so holding it reveals nothing about the management key. It
+  opens a head's turn routes and the session's own statusline and resume-hook routes, nothing
+  else. The management key still opens everything and still runs a turn.
+- **No key in `settings.json` or argv.** The statusline and the resume hook read the bearer from
+  `<state>/turn-auth-header` (0600), which is rewritten on every launch.
+- **DNS rebinding is refused.** The control plane and every head refuse a request whose `Host`
+  names anything but `127.0.0.1`, `localhost` or `[::1]`, before any route runs. Each refused
+  Host is logged once, up to 16 names, then counted at each doubling.
+- **State stays owner-only.** The daemon holds the state root (when splice chose it), the state
+  dir and the logs dir at 0700. It logs any directory that stays open, with the mode it kept.
+- **A client-auth head never forwards splice's own keys upstream.** A turn that carries the turn
+  key or the management key in `Authorization` or `x-api-key` is refused with a 401 that names
+  the header and the variable that set it. This includes a key behind a blank first header line.
+- **`splice dashboard` opens the console unlocked, and the key never crosses a command line or an
+  HTTP answer.** It writes an owner-only redirect page in the state dir that sends the browser to
+  the console with the key in the address fragment. The command line carries only the file's path, a
+  fragment never reaches the daemon or a log, and the daemon serves no page with the key in it. The
+  key is also printed as a fallback, to a terminal only, never into piped or captured output such as
+  an agent's transcript. On JDK 22–24, `System.console()` is non-null even when output is piped, so
+  the launch shim runs the CLI with `-Djdk.console=java.base`.
+
+splice is single-user, and its boundary is your Unix account. A process running as you can read
+`mgmt-key`, as it can read your other credentials. What 0.4.0 closes is every place the key left
+that boundary: transcripts sent to providers, argv other accounts can read, and pages on another
+origin.
+
+### Known limitations
+- **A rate limit after text has streamed ends the turn on a head that cannot continue from a
+  prefill.** A limit before any text restarts the turn on every head. Heads measured to resume
+  (kimi, or any provider with `reanchor_prefill = true`) continue where they stopped. Muse answers
+  an assistant prefill with a 400, as Anthropic documents for Claude 4.6 and later, and
+  restarting would repeat what you already read. Re-send the turn.
+- **A restart waits for turns in flight, but only for 45 s.** A turn still streaming after that
+  is cut, and Claude Code does not retry a turn cut after its text began. `splice upgrade` waits
+  until every head is idle unless you pass `--now`.
+- **Anthropic treats routing Claude Code through a custom gateway as unsupported.** splice is
+  tested against Claude Code 2.1.281. When a session runs a newer one, doctor, `splice status`
+  and the status line say so once.
 
 ### Added
 - **The project page says what governs the repo.** `GET /api/projects/{id}` (and each row of the
@@ -167,6 +263,10 @@
   (deleted or replaced meanwhile) is refused, never recreated from the stale candidate; a typed
   context window that is not a positive integer (`32k`, a decimal, a number past Long) is asked
   again instead of silently becoming 128000, and three misses refuse the add.
+- **`splice add-model` puts more OpenRouter models on a head.** It asks which OpenRouter head,
+  offers the curated models that head cannot reach yet, and writes the picked rows (and, for a head
+  that lists its own `models`, its roster) through one rename. A composed file that does not parse
+  is refused and the old one is left as it was.
 - **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
   `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
   an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the
@@ -447,6 +547,13 @@
   ChatGPT lite backend: every turn answered 400 `X-OpenAI-Internal-Codex-Responses-Lite requires
   parallel_tool_calls to be false`. The knob stays for other Responses backends; on lite turns the
   only batching is the code-mode runner (a two-Read probe on `gpt-5.6-sol` ran in one round trip).
+- **Repository layout consolidated.** `docs/` is now `.docs/`. The `experiments/` cache-replay
+  reproducer, the `goals/` note and the `.superpowers/` leftovers are gone; the one tracked
+  milestone report now sits under `.dev/campaigns/head-decoupling/`, and the untracked `dev/`
+  tree is folded into `.dev/`. Local machine paths are gone from the tracked ledgers and plans.
+- **The shipped code compiles warning-free, and a new warning fails the build.** Every main
+  source set compiles with `allWarningsAsErrors`, and a discarded result the compiler flags
+  (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
 - **Budgets warn and block (V4-133 review).** `PUT /api/budgets` stored a head's daily budget and
@@ -483,12 +590,14 @@
   session by name, as before.
 - **A resumed session follows the resuming head's model (V4-169).** A transcript carries the model
   id of the head that wrote it, and Claude Code refuses to restore a model the head does not serve
-  ("Session model X could not be restored"). Splice now moves the transcript's assistant rows onto
-  the resuming head's model where they lie: at launch for `-r SESSION_ID`, and for the `-r` picker
-  and `-c` through a SessionStart hook (matcher `resume`) each head's `settings.json` now carries,
-  which tells the daemon which session was chosen. The hook authenticates with the session's own
-  bearer from its environment, may only touch transcripts under that head's tree, and never blocks
-  a session: every refusal answers 200 and lands one line in the daemon log.
+  ("Session model X could not be restored"). Splice now moves the transcript's assistant rows that
+  sit on a model the resuming head does not serve onto its model, where they lie; a row on a model
+  the head serves is left byte-identical. This happens at launch for `-r SESSION_ID`, and for the
+  `-r` picker and `-c` through a SessionStart hook (matcher `resume`) each head's `settings.json`
+  now carries, which tells the daemon which session was chosen. The hook authenticates with the
+  turn key from `<state>/turn-auth-header`, never from the session's environment, may only touch
+  transcripts under that head's tree, and never blocks a session: every refusal answers 200 and
+  lands one line in the daemon log.
 - **A third system prompt mode, `strip`, edits the client's system field in place (V4-170, V4-171).**
   A head or a project layer can now delete paragraphs from the client's own system field instead
   of replacing it: the layer's text is a pattern list (one regex per line, `#` comments), and
@@ -591,12 +700,6 @@
   marked LOST but stayed findable by its client call ids, so every later turn of the conversation
   found it, failed to place it and logged `abandoned record` again (82 lines for one record on
   2026-09-20). It now retires with its interruption evidence on the first abandonment.
-
-### Changed
-- **Repository layout consolidated.** `docs/` is now `.docs/`. The `experiments/` cache-replay
-  reproducer, the `goals/` note and the `.superpowers/` leftovers are gone; the one tracked
-  milestone report now sits under `.dev/campaigns/head-decoupling/`, and the untracked `dev/`
-  tree is folded into `.dev/`. Local machine paths are gone from the tracked ledgers and plans.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

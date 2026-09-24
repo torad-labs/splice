@@ -57,7 +57,7 @@ module.exports = { liveStateDir };
 // — bump both together whenever this shim's behavior changes. No code generation.
 const SPLICE_SHIM_VERSION = "shim-7";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
-const SPLICE_GATEWAY_VERSION = "0.3.2";
+const SPLICE_GATEWAY_VERSION = "0.4.0";
 
 const env = process.env;
 const HOME = env.HOME || os.homedir();

@@ -91,8 +91,8 @@ public class ConfigService(
 
     public fun layers(): ConfigLayers = ConfigLayers(
         defaults = Knob.entries.associate { it.key to it.default },
-        headOverrides = coerceAll(headOverrides).accepted,
-        file = fileLayer(),
+        headOverrides = coerceAll(headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys },
+        file = fileLayer().filterKeys { it !in headOnlyKnobKeys },
         env = envLayer(),
         runtime = synchronized(runtimeLock) { runtimeLayer.toMap() },
         // JW-06: [heads.<key>.overrides] folds into mergedRaw but was invisible here — the
@@ -110,6 +110,7 @@ public class ConfigService(
             val knob = knobsByKey[key]
             when {
                 knob == null -> rejected[key] = "unknown key"
+                knob.headOnly -> rejected[key] = HEAD_ONLY
                 raw == null -> {
                     applied[key] = null
                     synchronized(runtimeLock) { runtimeLayer.remove(key) }
@@ -133,12 +134,14 @@ public class ConfigService(
     private fun mergedRaw(headKey: String? = null): Map<String, Any?> {
         val merged = LinkedHashMap<String, Any?>()
         Knob.entries.forEach { merged[it.key] = it.default }
-        coerceAll(headOverrides).accepted.forEach { (k, v) -> merged[k] = v }
+        // A head-only knob (Knob.headOnly) is taken from [heads.KEY.overrides] alone: the global TOML
+        // and the state file drop it here, it has no env alias, and PATCH refuses it.
+        coerceAll(headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
         // Sits directly above the global TOML layer: more specific TOML wins over less specific,
         // while state/env/PATCH keep their existing authority over BOTH (unchanged precedence).
         headKey?.let { key -> perHeadOverrides[key]?.let { coerceAll(it).accepted } }
             ?.forEach { (k, v) -> merged[k] = v }
-        fileLayer().forEach { (k, v) -> merged[k] = v }
+        fileLayer().filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
         envLayer().forEach { (k, v) -> merged[k] = v }
         synchronized(runtimeLock) { runtimeLayer.forEach { (k, v) -> merged[k] = v } }
         return merged
@@ -151,6 +154,7 @@ public class ConfigService(
     public fun coerceRejects(): Map<String, String> {
         val rejects = LinkedHashMap<String, String>()
         coerceAll(headOverrides).rejected.forEach { (key, why) -> rejects[key] = why }
+        headOverrides.keys.filter { it in headOnlyKnobKeys }.forEach { rejects[it] = HEAD_ONLY }
         perHeadOverrides.forEach { (head, raw) ->
             coerceAll(raw).rejected.forEach { (key, why) -> rejects["heads.$head.$key"] = why }
         }
@@ -353,3 +357,5 @@ private data class CoercedLayer(
 )
 
 private const val UNKNOWN_KEY: String = "unknown key"
+private const val HEAD_ONLY: String =
+    "set per head in [heads.<key>.overrides], never globally: it keeps that head's whole conversations"

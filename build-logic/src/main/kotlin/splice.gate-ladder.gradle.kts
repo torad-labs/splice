@@ -85,7 +85,6 @@ val gateOfRecord = tasks.register("gateOfRecord") {
 // The proof exists only under gateOfRecord: standalone, the legs are not in the graph and
 // getDependencies has nothing to read, so verifyLadder says so and fails rather than pass on an
 // empty set.
-@Suppress("UNCHECKED_CAST")
 var ladderProblems: List<String>? = null
 gradle.taskGraph.whenReady {
     val root = gateOfRecord.get()
@@ -93,7 +92,8 @@ gradle.taskGraph.whenReady {
     val direct = getDependencies(root)
     ladderProblems = legs.mapNotNull { leg ->
         val name = leg["task"] as String
-        val command = leg["command"] as List<String>
+        // Checked element by element: a ladder entry of the wrong shape fails here, by name.
+        val command = (leg["command"] as List<*>).map { it as String }
         val task = tasks.findByName(name)
         when {
             task == null -> "$name: named in $ladderPath and registered by nothing"

@@ -20,7 +20,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -110,7 +110,7 @@ class EventsRouteTest {
             client.prepareGet("$url/api/events") { header("Authorization", "Bearer $key") }.execute { response ->
                 assertEquals(HttpStatusCode.OK, response.status)
                 val channel = response.bodyAsChannel()
-                assertEquals(OPEN_FRAME, channel.readUTF8Line(), "the stream opens with its comment frame")
+                assertEquals(OPEN_FRAME, channel.readLine(), "the stream opens with its comment frame")
 
                 val published = bus.publish { seq -> ConsoleEvent.HeadState(seq, "claude", "running") }
                 val frame = readFrame(channel)
@@ -136,7 +136,7 @@ class EventsRouteTest {
                 header("Last-Event-ID", first.seq.toString())
             }.execute { response ->
                 val channel = response.bodyAsChannel()
-                channel.readUTF8Line() // the open comment
+                channel.readLine() // the open comment
                 val frame = readFrame(channel)
                 assertEquals("id: ${second.seq}", frame[0], "resume must start strictly after the given id")
             }
@@ -147,7 +147,7 @@ class EventsRouteTest {
     private suspend fun readFrame(channel: ByteReadChannel): List<String> {
         val lines = mutableListOf<String>()
         while (lines.size < 3) {
-            val line = channel.readUTF8Line() ?: error("the stream ended mid-frame: $lines")
+            val line = channel.readLine() ?: error("the stream ended mid-frame: $lines")
             if (line.startsWith(":") || line.isEmpty()) continue
             lines += line
         }

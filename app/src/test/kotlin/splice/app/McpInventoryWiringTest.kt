@@ -3,16 +3,24 @@
 // agrees with the unit-level classification McpInventoryTest already covers.
 package splice.app
 
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudePolicy
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.McpDisposition
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
+import splice.core.util.LogSink
+import splice.launch.HeadTrees
+import splice.launch.LaunchSpec
+import splice.launch.recipe.LaunchService
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 class McpInventoryWiringTest {
@@ -28,7 +36,7 @@ class McpInventoryWiringTest {
     @Test
     fun `production wiring migrates the canonical home's own server, real filesystem roots`(@TempDir home: Path) {
         home.resolve(".claude.json").writeText("""{"mcpServers":{"exa":{"command":"npx"}}}""")
-        val report = McpInventoryWiring(home, sharing(), McpGlobalRead(home)).inventory.census()
+        val report = McpInventoryWiring(home, sharing(), McpGlobalRead(home), emptyList()).inventory.census()
         val d = report.dispositioned.single { it.registration.name == "exa" }
         assertEquals(McpDisposition.MIGRATED, d.disposition)
         assertEquals(McpSourceKind.entries.toSet(), report.kinds.map { it.kind }.toSet())
@@ -43,9 +51,63 @@ class McpInventoryWiringTest {
         plugin.resolve("plugin.json").writeText(
             """{"name":"desktop-commander","mcpServers":{"desktop-commander":{"command":"npx","args":["-y","x"]}}}""",
         )
-        val report = McpInventoryWiring(home, sharing(), McpGlobalRead(home)).inventory.census()
+        val report = McpInventoryWiring(home, sharing(), McpGlobalRead(home), emptyList()).inventory.census()
         val d = report.dispositioned.single { it.registration.name == "desktop-commander" }
         assertEquals(McpDisposition.EXCLUDED, d.disposition)
         assertTrue(d.reason.contains("plugin"), d.reason)
     }
+
+    /** v0.4.0 mcp review: the census read every `~/.claude-<head>` as another identity's home, so each
+     *  server the materializer copied into a head was reported "not this daemon's to rewrite" once per
+     *  head. Both heads here are launched through the real materializer: `bonsai` shares mcps and gets
+     *  the canonical servers rewritten into its own `.claude.json`; `quiet` isolates mcps and keeps
+     *  its own server, which hosting never reads. */
+    @Test
+    fun `a head's materialized copy takes the canonical plan's answer, a head isolating mcps stays its own`(
+        @TempDir home: Path,
+    ) {
+        home.resolve(".claude.json").writeText("""{"mcpServers":{"exa":{"command":"npx"}}}""")
+        val quiet = home.resolve(".claude-quiet").createDirectories()
+        quiet.resolve(".claude.json").writeText("""{"mcpServers":{"own":{"command":"npx"}}}""")
+        val bonsai = home.resolve(".claude-bonsai")
+        val sharing = sharing()
+        val heads = listOf(
+            spec(bonsai, "bonsai", ClaudePolicy(share = setOf("mcps"), isolate = emptySet())),
+            spec(quiet, "quiet", ClaudePolicy(share = setOf("mcps"), isolate = setOf("mcp"))),
+        )
+        val materializer = ClaudeConfigMaterializer(home, log = LogSink { }, mcpRewrite = sharing.rewrite())
+        val service = LaunchService(materializer)
+        heads.forEach { service.launch(it, emptyList(), dangerouslySkipPermissions = false) }
+        val copied = bonsai.resolve(".claude.json").readText()
+        assertTrue(copied.contains("127.0.0.1:1/mcp/exa"), "setup: bonsai holds the materialized copy")
+
+        val report = McpInventoryWiring(home, sharing, McpGlobalRead(home), heads).inventory.census()
+        fun at(dir: Path, name: String) = report.dispositioned.single {
+            it.registration.sourceFile == dir.resolve(".claude.json") && it.registration.name == name
+        }
+        assertEquals(McpDisposition.MIGRATED, at(home, "exa").disposition)
+        val copy = at(bonsai, "exa")
+        assertEquals(McpDisposition.MIGRATED, copy.disposition, copy.reason)
+        assertTrue(copy.reason.contains("head's copy"), copy.reason)
+        val own = at(quiet, "own")
+        assertEquals(McpDisposition.EXCLUDED, own.disposition)
+        assertTrue(own.reason.contains("different Claude Code identity"), own.reason)
+    }
+
+    private fun spec(configDir: Path, head: String, policy: ClaudePolicy) = LaunchSpec(
+        trees = HeadTrees(configDir),
+        pinnedModel = "m",
+        availableModelIds = listOf("m"),
+        modelLabels = mapOf("m" to "m"),
+        contextWindow = 272_000,
+        apiTimeoutMs = 960_000,
+        modelOptionsCache = buildJsonObject { },
+        statuslineCommand = "true",
+        loginCommand = "claude-$head login",
+        signInLabel = "Head $head",
+        headKey = head,
+        policy = policy,
+        port = 3099,
+        inferenceToken = "test-inference-token",
+    )
 }

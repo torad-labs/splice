@@ -72,7 +72,9 @@ public class InflightGate(
      *  the caller had to know to catch by name was indistinguishable at any broad catch from a real
      *  invariant break, and no signature announced that a refusal existed (V4-114). */
     public sealed class Admission {
-        /** The admitted permit. [slot] MUST be released exactly once. */
+        /** The admitted permit. [slot] MUST be released exactly once. [ConsistentCopyVisibility]: the
+         *  generated copy() is as internal as the constructor, so no caller mints a second permit. */
+        @ConsistentCopyVisibility
         public data class Acquired internal constructor(public val slot: Slot) : Admission()
 
         /** maxQueued is full: this request was never queued and holds no permit. */

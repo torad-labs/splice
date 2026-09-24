@@ -757,7 +757,8 @@ command = "claude-splice"
 #                                                           #     layer, a compaction tail, a dialect's shape), read
 #                                                           #     it, then remove it. Nothing is written to disk, a
 #                                                           #     restart forgets it, and `splice doctor` names the
-#                                                           #     head on every run while it is on.
+#                                                           #     head on every run while it is on. PER HEAD ONLY:
+#                                                           #     in [defaults], env or a PATCH it is refused.
 # trace = false                                             # the FULL request/response trace of this head, on disk:
 #                                                           #     every request it receives, every upstream attempt
 #                                                           #     with the exact body it sent (credentials redacted)
@@ -767,6 +768,7 @@ command = "claude-splice"
 #                                                           #     DEFAULT and opt-in per head for the same reason as
 #                                                           #     wireTap: a record carries whole conversations.
 #                                                           #     Read with `splice trace <head>`; `--purge` deletes.
+#                                                           #     PER HEAD ONLY, like wireTap.
 # traceRetentionDays = 7                                    # days; whole day files older than this are deleted
 # traceMaxBodyChars = 4194304                               # chars; a longer body is cut and the record says so
 # retryBackoffBaseMs = 200                                  # ms; the generic retry curve's base, doubled each attempt
@@ -844,9 +846,10 @@ command = "claude-splice"
 #   CLAUDEX_TOOL_SURFACE toolSurface         CLAUDEX_QUOTA_POLL quotaPoll
 #   CLAUDEX_MAX_INFLIGHT maxInflight         CLAUDEX_MAX_QUEUED maxQueued
 #   CLAUDEX_UPSTREAM_RETRIES upstreamRetries CLAUDEX_UPSTREAM_TIMEOUT_MS upstreamTimeoutMs
-#   SPLICE_WIRE_TAP wireTap
-#   SPLICE_TRACE trace                       SPLICE_TRACE_RETENTION_DAYS traceRetentionDays
+#   SPLICE_TRACE_RETENTION_DAYS traceRetentionDays
 #   SPLICE_TRACE_MAX_BODY_CHARS traceMaxBodyChars
+# retired: SPLICE_WIRE_TAP — wireTap keeps conversations, so it is set per head in [heads.KEY.overrides] only
+# retired: SPLICE_TRACE — trace writes whole conversations to disk, so it is set per head in [heads.KEY.overrides] only
 #   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
 #   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
 #   CLAUDEX_AUTH_CACHE_MS authCacheMs        CLAUDEX_DEBUG / CODEX_PROXY_DEBUG debug

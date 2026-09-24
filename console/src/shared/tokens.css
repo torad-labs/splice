@@ -46,30 +46,19 @@
      (--hairline / --hairline-strong): a rail reads
      `border-top: var(--hair) solid var(--hairline)`. */
   --hair:1px;
-  /* THE ROOT SCALAR (M1-26). THE DEFECT IT FIXES, measured: the layout is in vw while the type and
-     spacing were fixed px, so on the operator's 3840x2160 monitors every container was 2.5x wider
-     and every glyph the same 14px - rendered text fell from 15.30% of the frame at 1536x1024 to
-     2.90% at 3840, and that single cause is both of his complaints, "the font size is too small"
-     and "there is no proper spacing". It was never right on any monitor: 14px on a 24-inch
-     1920x1080 is a 2.0mm x-height, about 11.5 arcminutes at desk distance, below the 16-20
-     arcminute band comfortable display text sits in.
+  /* THE ROOT IS FIXED (2026-09-24, operator ruling, superseding M1-26's linear-no-cap scalar).
+     M1-26 scaled the root with the window (16px per 1536px of frame, no cap) to cure a layout that
+     was in vw while the type was fixed px. On the operator's two 3840x2160 panels at desktop scale
+     1.0 that made the root 40px: every glyph, gap and plate 2.5x the size of every other app on the
+     same screen. Operator: "everything is scaled up, looks a nany of 90 years old is using this".
+     The cure for the original defect is the other half: the containers stopped being vw (the rule
+     and rail are sized in rem, app.css and rule.css), so type and layout both hold their size at any
+     window width and a wider window shows more, not bigger. 100% is the browser's own default (16px
+     unless the operator set it), so browser zoom and a font-size preference still apply.
 
-     THE SCALAR, ruled by the orchestrator 2026-09-18: LINEAR TO THE COMP FRAME, NO CAP. 16px per
-     1536px of frame is the whole of it. At 3840 the root is 40px and the strip label 35px, which
-     on a 32-inch 4K panel (0.184mm per px) is a 6.4mm em, a 3.4mm x-height: 0.30 degrees or 18
-     arcminutes at 650mm - inside the comfortable band, not at its edge. A cap would have to be
-     argued DOWN from what the geometry asks, with no measurement behind it; that would be a fourth
-     authored number in a campaign that struck three in one day.
-
-     THE FLOOR is the comp frame itself, and the comp is its provenance: at or below 1536 the type
-     stops shrinking while the vw layout keeps going, so a narrow window holds a LARGER share of
-     type rather than becoming unreadable. The ladders above are rem so they read against this.
-
-     WHAT MUST NOT SCALE WITH IT: an object follows the TYPE when it is made of type, and the FRAME
-     when it is placed on the frame. The hairlines, the focus ring, anything positioned as a
-     percentage of the frame, and the hand-off lift are frame objects - the lift scaling with this
-     was the accident that proved the rule. */
-  --root-size:max(16px, 1.0417vw);
+     WHAT MUST NOT SCALE WITH IT still holds: the hairlines, the focus ring and anything placed as a
+     percentage of the frame are frame objects. */
+  --root-size:100%;
   --focus-width:2px; --focus-offset:2px;
 
   /* the retired mono face aliases to the new world's code face (fonts.css) */

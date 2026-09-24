@@ -1,6 +1,6 @@
 // NEW: SuperGrok billing probe — GET cli-chat-proxy.grok.com/v1/billing?format=credits. Owns the
 // URL, the xAI header map, and the body parser.
-package splice.app.quota
+package splice.usage.quota
 
 import io.ktor.client.HttpClient
 import kotlinx.serialization.json.JsonObject

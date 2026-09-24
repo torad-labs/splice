@@ -1,6 +1,6 @@
 // NEW: ChatGPT usage probe — GET origin/backend-api/wham/usage. Owns the URL, header map, and body
 // parser; the shared GET is vendor-blind.
-package splice.app.quota
+package splice.usage.quota
 
 import io.ktor.client.HttpClient
 import kotlinx.serialization.json.JsonObject

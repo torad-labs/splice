@@ -1,5 +1,5 @@
 // NEW: Muse mint subs_usage mapped into QuotaSnapshot by window duration, never by name.
-package splice.app.quota
+package splice.usage.quota
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject

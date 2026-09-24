@@ -7,12 +7,16 @@ dependencies {
     api(project(":core"))
     api(project(":integrations-http"))
     api(project(":features-accounts"))
+    // the quota poller's loop ticks on the runtime's Ticker seam (QuotaPoller's public constructor names it).
+    api(project(":integrations-upstream"))
     api(libs.ktor.client.core)
     implementation(libs.ktor.client.java)
     // `splice perf` lists splice.toml's heads, read-only, never materialized.
     implementation(project(":integrations-topology"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.server.test.host) {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }

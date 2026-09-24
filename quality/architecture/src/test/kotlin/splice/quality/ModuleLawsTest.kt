@@ -90,8 +90,15 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // operator surface renders. Whether a head's credential is configured reads its file path the way
     // splice.toml's loader expands it.
     ":features-accounts" to setOf(":core", ":integrations-http", ":integrations-topology"),
-    // usage and perf, and `splice perf`, which lists splice.toml's heads.
-    ":features-usage" to setOf(":core", ":integrations-http", ":features-accounts", ":integrations-topology"),
+    // usage and perf, `splice perf` (which lists splice.toml's heads), and the plan-quota poller, whose
+    // loop ticks on the upstream runtime's Ticker.
+    ":features-usage" to setOf(
+        ":core",
+        ":integrations-http",
+        ":features-accounts",
+        ":integrations-topology",
+        ":integrations-upstream",
+    ),
     // the daemon's own lifecycle: the draining restart, the upgrade surface, and `splice upgrade`, which
     // asks the local daemon through its client and repoints the files launch's install layout names.
     ":features-lifecycle" to setOf(":core", ":integrations-daemon-client", ":integrations-topology", ":features-launch"),

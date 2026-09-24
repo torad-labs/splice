@@ -10,7 +10,7 @@
 //                  {type,end} + creditUsagePercent: one weekly period, no 5-hour window.
 // api-key heads have per-minute x-ratelimit-* families, not plan windows; the client-auth head
 // relays Anthropic's own unified headers from its rounds. Both get no probe.
-package splice.app.quota
+package splice.usage.quota
 
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -18,30 +18,29 @@ import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import splice.app.provider.ProviderBuild
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.WallClock
 
-internal fun interface QuotaProbe {
-    suspend fun probe(): QuotaSnapshot?
+public fun interface QuotaProbe {
+    public suspend fun probe(): QuotaSnapshot?
 }
 
-internal class QuotaProbes(
+/** Picks a head's probe by its auth kind. The kind and base URL are the head's provider config's; app
+ *  passes them in (LAYOUT-01), so the dispatch reads no composition type. */
+public class QuotaProbes(
     private val client: HttpClient,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    fun forHead(ctx: ProviderBuild, auth: AuthProvider, usageFields: UsageFields?): QuotaProbe? {
-        val base = ctx.providerCfg.baseUrl
-        return when (ctx.providerCfg.auth.kind) {
-            "chatgpt-oauth" -> CodexQuotaProbe(client, base, auth, clock)
-            "kimi-oauth" -> KimiQuotaProbe(client, base, auth, clock)
+    public fun forHead(authKind: String, baseUrl: String, auth: AuthProvider, usageFields: UsageFields?): QuotaProbe? =
+        when (authKind) {
+            "chatgpt-oauth" -> CodexQuotaProbe(client, baseUrl, auth, clock)
+            "kimi-oauth" -> KimiQuotaProbe(client, baseUrl, auth, clock)
             "grok-oauth" -> GrokQuotaProbe(client, auth, clock)
             "muse-oauth" -> usageFields?.let { MuseMintProbe(it, MuseQuotaParser(), clock) }
             else -> null
         }
-    }
 }
 
 /** Parses one usage body into a snapshot; a role-named seam so the three parsers share one GET. */

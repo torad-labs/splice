@@ -9,11 +9,6 @@ import splice.app.control.ManagedHead
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
-import splice.app.quota.MuseAuthUsageFields
-import splice.app.quota.QuotaPoller
-import splice.app.quota.QuotaProbe
-import splice.app.quota.QuotaProbes
-import splice.app.quota.UsageFields
 import splice.app.sources.CompactStatsSource
 import splice.app.sources.EconomicsStoreSource
 import splice.app.sources.PerfRowsFileSource
@@ -35,6 +30,11 @@ import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.usage.quota.QuotaPoller
+import splice.usage.quota.QuotaProbe
+import splice.usage.quota.QuotaProbes
+import splice.usage.quota.QuotaSnapshotSink
+import splice.usage.quota.UsageFields
 
 internal fun interface StartQuotaPoller {
     operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker, intervalMs: Long)
@@ -57,7 +57,7 @@ internal class ManagedHeadFactory(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker, intervalMs ->
-        QuotaPoller(probeScope, head, probe, tracker, log, intervalMs = intervalMs).start()
+        QuotaPoller(probeScope, head, probe, QuotaSnapshotSink(tracker::record), log, intervalMs = intervalMs).start()
     },
     private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
 ) {
@@ -164,21 +164,24 @@ internal class ManagedHeadFactory(
         // V4-110: the poll cadence is the quotaPollIntervalMs knob (floored in ConfigCoercion),
         // read per head from the merged+normalized map — always seeded, so `as Long` is safe.
         val intervalMs = ctx.cfg.asMap()[Knob.QUOTA_POLL_INTERVAL_MS.key] as Long
+        val authKind = ctx.providerCfg.auth.kind
+        val baseUrl = ctx.providerCfg.baseUrl
         // Subscription heads have a usage endpoint. Every OAuth account gets its own persisted
         // snapshot and poller; non-pooled heads retain the legacy single tracker path.
         if (wired.accounts.isEmpty()) {
-            quotaProbes.forHead(ctx, wired.auth, usageFields(wired.auth))?.let { probe ->
+            quotaProbes.forHead(authKind, baseUrl, wired.auth, usageFields(wired.auth))?.let { probe ->
                 startQuotaPoller(ctx.key, probe, stores.quota, intervalMs)
             }
             return
         }
         wired.accounts.forEach { account ->
-            quotaProbes.forHead(ctx, account.auth, usageFields(account.auth))?.let { probe ->
+            quotaProbes.forHead(authKind, baseUrl, account.auth, usageFields(account.auth))?.let { probe ->
                 startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label), intervalMs)
             }
         }
     }
 
+    /** Muse reports plan usage on its mint response; the usage slice reads it through [UsageFields]. */
     private fun usageFields(auth: AuthProvider): UsageFields? =
-        (auth as? MuseAuthProvider)?.let(::MuseAuthUsageFields)
+        (auth as? MuseAuthProvider)?.let { muse -> UsageFields { muse.usageFields() } }
 }

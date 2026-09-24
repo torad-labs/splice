@@ -8,7 +8,7 @@
 // that died five times and went permanently down was the opposite of it. The budget still guards the
 // seams runCatchingBestEffort does NOT wrap, and the ticker is one — so that half moved onto the
 // ticker rather than being deleted.
-package splice.app.quota
+package splice.usage.quota
 
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,20 +23,16 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import splice.core.usage.QuotaSnapshot
-import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.head.usage.QuotaTracker
 import splice.upstream.Ticker
-import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class QuotaPollerTest {
 
     @Test
-    fun `a throwing probe logs once and the loop keeps ticking - RETRY DEFAULT IS TOTAL`(@TempDir tmp: Path) = runTest {
+    fun `a throwing probe logs once and the loop keeps ticking - RETRY DEFAULT IS TOTAL`() = runTest {
         // A probe failure is a LOG LINE, never a loop death: the bars keep the last snapshot and the
         // next tick tries again. The once-log is re-armed by any accepted snapshot, so a recovery
         // followed by a fresh failure is reported again rather than swallowed by the first line.
@@ -50,7 +46,7 @@ class QuotaPollerTest {
             scope = scope,
             head = "codex",
             probe = FailsTwiceThenRecoversProbe(calls),
-            tracker = QuotaTracker(tmp.resolve("quota.json"), WallClock { 0L }, LogSink { }),
+            sink = QuotaSnapshotSink { },
             log = logs::add,
             intervalMs = 1_000,
             clock = WallClock { 0L },
@@ -65,7 +61,7 @@ class QuotaPollerTest {
     }
 
     @Test
-    fun `the restart budget still guards a seam runCatchingBestEffort does not wrap`(@TempDir tmp: Path) = runTest {
+    fun `the restart budget still guards a seam runCatchingBestEffort does not wrap`() = runTest {
         // The supervisor is NOT dead code: the budget guards whatever sits outside pollOnce, and the
         // ticker is exactly that — the LOOP calls awaitTick, so nothing catches it. A ticker that
         // dies once kills the loop, the supervisor restarts it under the budget, and the restarted
@@ -81,7 +77,7 @@ class QuotaPollerTest {
             scope = scope,
             head = "codex",
             probe = NeverFailsProbe(),
-            tracker = QuotaTracker(tmp.resolve("quota.json"), WallClock { 0L }, LogSink { }),
+            sink = QuotaSnapshotSink { },
             log = logs::add,
             intervalMs = 1_000,
             ticker = Ticker { intervalMs ->
@@ -102,7 +98,7 @@ class QuotaPollerTest {
     }
 
     @Test
-    fun `a malformed vendor date does not kill the poller`(@TempDir tmp: Path) = runTest {
+    fun `a malformed vendor date does not kill the poller`() = runTest {
         val calls = AtomicInteger()
         val fields = UsageFields {
             Json.parseToJsonElement(
@@ -112,7 +108,7 @@ class QuotaPollerTest {
         val inner = MuseMintProbe(fields, MuseQuotaParser(), WallClock { 1_788_000_000_000L })
         val probe = CountingProbe(inner, calls)
         val logs = mutableListOf<String>()
-        val tracker = QuotaTracker(tmp.resolve("quota.json"), WallClock { 0L }, LogSink { })
+        val recorded = mutableListOf<QuotaSnapshot>()
         val scope = kotlinx.coroutines.CoroutineScope(
             StandardTestDispatcher(testScheduler) + SupervisorJob() +
                 CoroutineExceptionHandler { _, _ -> },
@@ -121,7 +117,7 @@ class QuotaPollerTest {
             scope = scope,
             head = "muse",
             probe = probe,
-            tracker = tracker,
+            sink = QuotaSnapshotSink(recorded::add),
             log = logs::add,
             intervalMs = 1_000,
             clock = WallClock { 0L },
@@ -131,8 +127,8 @@ class QuotaPollerTest {
         poller.stop()
         assertTrue(logs.none { it.contains("loop died") }, "$logs")
         assertEquals(2, calls.get())
-        assertEquals(1.0, tracker.snapshot()!!.sevenDay!!.usedPercent, 1e-9)
-        assertNull(tracker.snapshot()!!.sevenDay!!.resetsAt)
+        assertEquals(1.0, recorded.last().sevenDay!!.usedPercent, 1e-9)
+        assertNull(recorded.last().sevenDay!!.resetsAt)
     }
 
     /** Fails on its first two calls, then returns a SNAPSHOT — which is what re-arms the once-log,

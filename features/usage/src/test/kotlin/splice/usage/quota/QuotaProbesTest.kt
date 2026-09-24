@@ -1,5 +1,5 @@
 // NEW: forHead dispatch per auth kind, shared Bearer GET, and the five-minute poller cadence.
-package splice.app.quota
+package splice.usage.quota
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -11,23 +11,10 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import splice.app.provider.ProviderBuild
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
-import splice.core.config.ConfigService
-import splice.core.config.StatePaths
-import splice.core.model.ModelCatalog
-import splice.core.model.ModelEntry
-import splice.core.topology.AuthConfig
-import splice.core.topology.Dialect
-import splice.core.topology.HeadConfig
-import splice.core.topology.ProviderConfig
-import splice.core.turn.WatchdogBudget
 import splice.core.util.WallClock
-import java.nio.file.Path
-import kotlin.time.Duration.Companion.seconds
 
 class QuotaProbesTest {
 
@@ -115,20 +102,20 @@ class QuotaProbesTest {
     }
 
     @Test
-    fun `forHead dispatches one probe class per auth kind`(@TempDir tmp: Path) {
+    fun `forHead dispatches one probe class per auth kind`() {
         val probes = QuotaProbes(HttpClient(MockEngine { respond("{}", HttpStatusCode.OK) }))
         val auth = FixedAuth(Credentials.Bearer("tok"))
-        assertTrue(probes.forHead(ctx(tmp, "chatgpt-oauth"), auth, null) is CodexQuotaProbe)
-        assertTrue(probes.forHead(ctx(tmp, "kimi-oauth"), auth, null) is KimiQuotaProbe)
-        assertTrue(probes.forHead(ctx(tmp, "grok-oauth"), auth, null) is GrokQuotaProbe)
-        assertNull(probes.forHead(ctx(tmp, "muse-oauth"), auth, null), "muse without UsageFields is refused")
+        assertTrue(probes.forHead("chatgpt-oauth", BASE_URL, auth, null) is CodexQuotaProbe)
+        assertTrue(probes.forHead("kimi-oauth", BASE_URL, auth, null) is KimiQuotaProbe)
+        assertTrue(probes.forHead("grok-oauth", BASE_URL, auth, null) is GrokQuotaProbe)
+        assertNull(probes.forHead("muse-oauth", BASE_URL, auth, null), "muse without UsageFields is refused")
         val fields = UsageFields { null }
-        assertTrue(probes.forHead(ctx(tmp, "muse-oauth"), auth, fields) is MuseMintProbe)
-        assertNull(probes.forHead(ctx(tmp, "api-key"), auth, null))
+        assertTrue(probes.forHead("muse-oauth", BASE_URL, auth, fields) is MuseMintProbe)
+        assertNull(probes.forHead("api-key", BASE_URL, auth, null))
     }
 
     @Test
-    fun `forHead kimi and codex probes carry no xAI headers`(@TempDir tmp: Path) = runTest {
+    fun `forHead kimi and codex probes carry no xAI headers`() = runTest {
         val captured = mutableListOf<Map<String, String>>()
         val engine = MockEngine { request ->
             val names = listOf("x-grok-client-mode", "x-grok-client-version", "X-XAI-Token-Auth")
@@ -137,32 +124,10 @@ class QuotaProbesTest {
         }
         val probes = QuotaProbes(HttpClient(engine))
         val auth = FixedAuth(Credentials.Bearer("tok"))
-        probes.forHead(ctx(tmp, "chatgpt-oauth"), auth, null)!!.probe()
-        probes.forHead(ctx(tmp, "kimi-oauth"), auth, null)!!.probe()
+        probes.forHead("chatgpt-oauth", BASE_URL, auth, null)!!.probe()
+        probes.forHead("kimi-oauth", BASE_URL, auth, null)!!.probe()
         assertEquals(2, captured.size)
         assertTrue(captured.all { it.isEmpty() })
-    }
-
-    private fun ctx(tmp: Path, kind: String): ProviderBuild {
-        val state = StatePaths(baseOverride = tmp.resolve("state"))
-        val config = ConfigService(state, envReader = { null })
-        return ProviderBuild(
-            key = "head",
-            head = HeadConfig(provider = "p", port = 3100, discoveryPrefix = "claude-p--", pinnedModel = "m"),
-            providerCfg = ProviderConfig(
-                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
-                baseUrl = "https://api.example.test/backend-api/codex",
-                auth = AuthConfig(kind = kind),
-            ),
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude-p--",
-                models = listOf(ModelEntry(id = "m", contextWindow = 200_000)),
-                defaultContextWindow = 200_000,
-            ),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
-            cfg = config.getConfig("head"),
-            loginCommand = "login",
-        )
     }
 
     private class QuotaParseAdapter : QuotaParse {
@@ -170,3 +135,6 @@ class QuotaProbesTest {
         override fun parse(body: kotlinx.serialization.json.JsonObject, now: Long) = parsers.parse(body, now)
     }
 }
+
+/** A provider base URL; the probes resolve their usage path against it. */
+private const val BASE_URL = "https://api.example.test/backend-api/codex"

@@ -1,5 +1,5 @@
 // NEW: Kimi usage body fixture (live 2026-09-02) and the exact GET header map — no xAI headers.
-package splice.app.quota
+package splice.usage.quota
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine

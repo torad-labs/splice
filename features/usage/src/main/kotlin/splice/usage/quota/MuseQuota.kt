@@ -1,6 +1,6 @@
-// NEW: Muse subscription usage from the mint response. The poller calls UsageFields (wired to
+// NEW: Muse subscription usage from the mint response. The poller calls UsageFields (app wires it to
 // MuseAuthProvider.usageFields); this file maps subs_usage into QuotaSnapshot by duration.
-package splice.app.quota
+package splice.usage.quota
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -14,12 +14,13 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
-import splice.provider.muse.MuseAuthProvider
 import java.time.DateTimeException
 import java.time.OffsetDateTime
 
-internal fun interface UsageFields {
-    suspend fun invoke(): JsonObject?
+/** The Muse mint response's usage fields, read on the head's own credential. Public since LAYOUT-01:
+ *  app adapts the Muse auth provider to it, so this slice never depends on a vendor integration. */
+public fun interface UsageFields {
+    public suspend fun invoke(): JsonObject?
 }
 
 internal class MuseQuotaParser {
@@ -87,10 +88,6 @@ internal class MuseMintProbe(
         val body = fields.invoke() ?: return null
         return parser.parse(body, clock())
     }
-}
-
-internal class MuseAuthUsageFields(private val auth: MuseAuthProvider) : UsageFields {
-    override suspend fun invoke(): JsonObject? = auth.usageFields()
 }
 
 private const val SECONDS_PER_MINUTE = 60L

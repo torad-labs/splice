@@ -89,8 +89,8 @@
     ],
     "COLLISION PERCENT": [
       "features/usage/src/main/kotlin/splice/usage/perf/PerfCommand.kt",
-      "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
-      "app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/MuseQuota.kt",
       "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
       "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt",
       "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt"
@@ -341,7 +341,7 @@
       "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
-      "app/src/main/kotlin/splice/app/quota/QuotaProbes.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaProbes.kt",
       "integrations/mcp/src/main/kotlin/splice/control/mcp/McpHost.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalLiveReading.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
@@ -377,7 +377,7 @@
     ],
     "COPY MAX_RESTARTS": [
       "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt",
-      "app/src/main/kotlin/splice/app/quota/QuotaPoller.kt"
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt"
     ],
     "COPY MAX_TOTAL_BYTES": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ReasoningCache.kt",
@@ -399,8 +399,8 @@
       "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt"
     ],
     "COPY MILLIS": [
-      "app/src/main/kotlin/splice/app/quota/CodexQuotaProbe.kt",
-      "app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/CodexQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/MuseQuota.kt",
       "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt"
     ],
@@ -427,7 +427,7 @@
     ],
     "COPY MS_PER_MIN": [
       "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt",
-      "app/src/main/kotlin/splice/app/quota/QuotaPoller.kt"
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt"
     ],
     "COPY MS_PER_MINUTE": [
       "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorProbeWrite.kt",
@@ -509,7 +509,7 @@
     ],
     "COPY RESTART_WINDOW_MS": [
       "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt",
-      "app/src/main/kotlin/splice/app/quota/QuotaPoller.kt"
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt"
     ],
     "COPY ROLE": [
       "features/sessions/src/main/kotlin/splice/sessions/http/TeamsEconomics.kt",
@@ -524,16 +524,16 @@
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY SECONDS_PER_DAY": [
-      "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SECONDS_PER_HOUR": [
-      "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SECONDS_PER_MINUTE": [
-      "app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
-      "app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/MuseQuota.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],

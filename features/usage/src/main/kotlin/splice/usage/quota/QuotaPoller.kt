@@ -2,7 +2,7 @@
 // then one every few minutes for the daemon's life. Runs on the daemon's own probe scope so
 // Daemon.stop() ends it with everything else. A failing endpoint is logged once, then silence
 // until it recovers — the bars simply keep the last snapshot.
-package splice.app.quota
+package splice.usage.quota
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -13,16 +13,21 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
-import splice.head.usage.QuotaTracker
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal class QuotaPoller(
+/** Where a fresh snapshot goes: app binds it to the head's QuotaTracker (features/turns), so the poller
+ *  records without reaching into another capability. */
+public fun interface QuotaSnapshotSink {
+    public fun record(snapshot: QuotaSnapshot)
+}
+
+public class QuotaPoller(
     private val scope: CoroutineScope,
     private val head: String,
     private val probe: QuotaProbe,
-    private val tracker: QuotaTracker,
+    private val sink: QuotaSnapshotSink,
     private val log: LogSink,
     private val intervalMs: Long = QUOTA_POLL_INTERVAL_MS,
     private val ticker: Ticker = ProcessTicker(),
@@ -37,7 +42,7 @@ internal class QuotaPoller(
     @Volatile private var stopped = false
     private val restartTimes = ArrayDeque<Long>()
 
-    fun start(): Job {
+    public fun start(): Job {
         synchronized(lifecycle) {
             val existing = job
             if (existing != null) return existing
@@ -46,7 +51,7 @@ internal class QuotaPoller(
         }
     }
 
-    fun stop() {
+    public fun stop() {
         synchronized(lifecycle) {
             stopped = true
             job?.cancel()
@@ -107,7 +112,7 @@ internal class QuotaPoller(
     }
 
     private fun accept(snapshot: QuotaSnapshot) {
-        tracker.record(snapshot)
+        sink.record(snapshot)
         failureLogged.set(false)
         if (firstLogged.compareAndSet(false, true)) {
             val five = snapshot.fiveHour?.let { "5h ${it.usedPercent.toInt()}%" } ?: "5h n/a"

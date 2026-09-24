@@ -100,7 +100,7 @@ public class ControlServer(
         )
     private val resolver = HeadResolver(heads, payloads)
     private val audit = ControlAudit(log)
-    private val guard = ControlGuard(mgmtKey, audit)
+    private val guard = ControlGuard(mgmtKey, audit, log)
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.

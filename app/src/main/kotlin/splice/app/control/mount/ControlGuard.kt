@@ -19,10 +19,12 @@ import splice.app.control.MgmtRoute
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.RouteFailure
 import splice.client.mcp.McpAccessKey
+import splice.core.auth.ForeignHostLog
 import splice.core.auth.LoopbackHost
 import splice.core.config.MgmtKey
 import splice.core.config.TurnKey
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
 
 /** Which scoped bearer a route admits BESIDE the management key, which opens every route. One door
  *  per route, so no route can be widened to two scoped keys by a flag pair. */
@@ -31,18 +33,22 @@ internal enum class Door { MANAGEMENT, MCP, SESSION }
 /** Runs [MgmtRoute] only after the bearer matched the management key or the key of the route's [Door]:
  *  the MCP access key opens only the /mcp/{name} routes, and a launched session's turn key only the
  *  routes its own hooks call. */
-internal class ControlGuard(private val mgmtKey: MgmtKey, audit: ControlAudit) {
+internal class ControlGuard(private val mgmtKey: MgmtKey, audit: ControlAudit, log: LogSink) {
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
 
     // v0.4.0: the credential a launched session holds opens its OWN hooks' routes and nothing else.
     private val turnKey = TurnKey(mgmtKey)
     private val routeFailure = RouteFailure(audit)
+    private val foreignHosts = ForeignHostLog("the control plane", log)
 
     /** v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the operator's browser
-     *  (see LoopbackHost). Refused before routing, so no route — guarded or open — runs for it. */
+     *  (see LoopbackHost). Refused before routing, so no route — guarded or open — runs for it, and
+     *  said in the daemon log once per name (ForeignHostLog). */
     fun refuseForeignHosts(app: Application) {
         app.intercept(ApplicationCallPipeline.Plugins) {
-            if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
+            val host = call.request.headers[HttpHeaders.Host]
+            if (!LoopbackHost.admits(host)) {
+                foreignHosts.refused(host.orEmpty())
                 call.respondText(
                     buildJsonObject { put("error", LoopbackHost.FOREIGN_HOST_REFUSAL) }.toString(),
                     ContentType.Application.Json,

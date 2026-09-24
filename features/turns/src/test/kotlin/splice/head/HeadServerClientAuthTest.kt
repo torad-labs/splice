@@ -36,6 +36,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
+import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.upstream.ProviderTuning
@@ -118,6 +119,7 @@ class HeadServerClientAuthTest {
     private fun startHead(
         forwardClientAuth: Boolean,
         auth: RefreshableAuthProvider = defaultAuthFor(forwardClientAuth),
+        log: LogSink = { },
     ): Int {
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
@@ -141,7 +143,7 @@ class HeadServerClientAuthTest {
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
-                log = {},
+                log = log,
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
                 // This rig carries its OWN bearers and its own store files, keyed by the head's index
@@ -386,7 +388,8 @@ class HeadServerClientAuthTest {
     // change, so the head refuses them before routing and nothing reaches the vendor.
     @Test
     fun `a request naming a foreign Host is refused before any route runs, on the open door too`() {
-        val port = startHead(forwardClientAuth = true)
+        val logLines = CopyOnWriteArrayList<String>()
+        val port = startHead(forwardClientAuth = true, log = { logLines += it })
         val before = upstream.requests.size
         val credential = listOf("Authorization" to "Bearer caller-own-token")
         val refused = rawTurn(port, credential, host = "attacker.example:$port")
@@ -394,6 +397,10 @@ class HeadServerClientAuthTest {
         assertEquals(before, upstream.requests.size, "a rebinding page's turn never reaches the vendor")
         val served = rawTurn(port, credential, host = "localhost:$port")
         assertTrue(served.startsWith("HTTP/1.1 200"), served.lineSequence().first())
+        // v0.4.0 review: and the refusal is SAID in the head's log, which a rebinding page cannot read.
+        val said = logLines.filter { it.startsWith("[security]") }
+        assertEquals(1, said.size, logLines.toString())
+        assertTrue(said.single().contains("'attacker.example:$port'"), said.single())
     }
 
     @Test

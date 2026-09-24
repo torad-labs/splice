@@ -14,6 +14,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -23,6 +24,7 @@ import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import java.net.Socket
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -32,6 +34,7 @@ class ControlServerAccessTest {
     private lateinit var mgmtKey: String
     private lateinit var turnKey: String
     private val dashboardRenders = AtomicInteger()
+    private val logLines = CopyOnWriteArrayList<String>()
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val port: Int get() = control.listeningPort
 
@@ -52,7 +55,7 @@ class ControlServerAccessTest {
                 dashboardRenders.incrementAndGet()
                 "<!doctype html><title>splice</title>"
             },
-            log = {},
+            log = { logLines += it },
         )
         runBlocking { control.start() }
     }
@@ -108,6 +111,10 @@ class ControlServerAccessTest {
         assertEquals(403, rawStatus("/api/status", "attacker.example:$port", bearer = mgmtKey), "even with the key")
         assertEquals(200, rawStatus("/health", "localhost:$port"))
         assertEquals(200, rawStatus("/api/status", "[::1]:$port", bearer = mgmtKey))
+        // v0.4.0 review: and the refusal is SAID, once for the name however many requests carried it.
+        val said = logLines.filter { it.contains("attacker.example") }
+        assertEquals(1, said.size, logLines.toString())
+        assertTrue(said.single().startsWith("[security] the control plane refused"), said.single())
     }
 
     /** Raw HTTP/1.1, so the Host line is exactly the one written here — a client library sets its

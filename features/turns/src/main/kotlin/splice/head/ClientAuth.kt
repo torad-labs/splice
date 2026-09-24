@@ -9,6 +9,7 @@ package splice.head
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.BearerScheme
+import splice.core.auth.ForeignHostLog
 import splice.core.auth.LoopbackHost
 import splice.head.admission.AdmissionResponses
 import java.security.MessageDigest
@@ -40,6 +41,7 @@ private const val FIELD_LINE_SEPARATOR = ", "
 internal class ClientAuth(
     private val deps: HeadDeps,
     private val responses: AdmissionResponses,
+    private val foreignHosts: ForeignHostLog,
 ) {
     // Splits each forwarded value into scheme/credential/parameter tokens for the own-key check.
     // The FULL RFC 7235 delimiter class, not just whitespace (third DR-30 redo): auth-params
@@ -71,10 +73,13 @@ internal class ClientAuth(
      * machines, not a page in the operator's own browser that rebinds its name to loopback (DNS
      * rebinding) — and on a client-auth head that page is a caller [authorize] serves. Its requests
      * name the attacker in Host, the one thing rebinding cannot change, so they are refused (403)
-     * before any route runs. The predicate is the control plane's too ([LoopbackHost]).
+     * before any route runs, and said in the head's log once per name. The predicate is the control
+     * plane's too ([LoopbackHost]).
      */
     suspend fun admitsHost(call: ApplicationCall): Boolean {
-        if (LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) return true
+        val host = call.request.headers[HttpHeaders.Host]
+        if (LoopbackHost.admits(host)) return true
+        foreignHosts.refused(host.orEmpty())
         responses.respondForeignHost(call)
         return false
     }

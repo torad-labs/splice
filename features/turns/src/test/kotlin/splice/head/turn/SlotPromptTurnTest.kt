@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
+import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -133,7 +134,7 @@ class SlotPromptTurnTest {
             deps,
             RequestBodyReader(deps.policy.requestReadTimeoutMs),
             parser,
-            ClientAuth(deps, AdmissionResponses()),
+            ClientAuth(deps, AdmissionResponses(), ForeignHostLog("the test head", deps.log)),
         )
         val perf = TurnPerf()
         var captured: BuiltTurn? = null

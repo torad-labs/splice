@@ -92,5 +92,7 @@ internal class HeadAccountPools {
         )
 
         override fun pin(label: String): Boolean = pool.pin(label)
+
+        override fun unpin() = pool.unpin()
     }
 }

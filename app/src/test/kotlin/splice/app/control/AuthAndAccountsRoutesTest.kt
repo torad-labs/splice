@@ -219,6 +219,30 @@ class AuthAndAccountsRoutesTest {
     }
 
     @Test
+    fun `unpinAccount drops the pin and answers ok true, and again when nothing is pinned`() = runBlocking {
+        awaitPort()
+        val before = pin.unpinned
+
+        val first = delete("/api/auth/$WIRED/switch")
+        val second = delete("/api/auth/$WIRED/switch")
+
+        for (response in listOf(first, second)) {
+            assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+            val ok = json.parseToJsonElement(response.bodyAsText()).jsonObject["ok"]!!.jsonPrimitive.content
+            assertEquals("true", ok)
+        }
+        assertEquals(before + 2, pin.unpinned, "each DELETE reaches the pool's unpin; POST is not the only verb")
+    }
+
+    @Test
+    fun `unpinAccount on a head with no pin source is the pin's 400 naming the head`() = runBlocking {
+        awaitPort()
+        val response = delete("/api/auth/$NO_POOL/switch")
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains("head '$NO_POOL' has no account pool"), response.bodyAsText())
+    }
+
+    @Test
     fun `removeAccount reports ok, unknown head and a refusal through the same mutation shape`() = runBlocking {
         awaitPort()
         accounts.onRemove = { _, _ -> AccountMutation.Ok }
@@ -290,10 +314,15 @@ class AuthAndAccountsRoutesTest {
     private class FakePin : HeadAccountPinSource {
         var result: Boolean = true
         var lastLabel: String? = null
+        var unpinned = 0
 
         override fun pin(label: String): Boolean {
             lastLabel = label
             return result
+        }
+
+        override fun unpin() {
+            unpinned++
         }
     }
 

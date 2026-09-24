@@ -18,8 +18,27 @@ import kotlin.time.Duration.Companion.minutes
 private const val DEFAULT_MAX_SOURCE_CHARS: Int = 65_536
 private const val DEFAULT_MAX_OUTPUT_CHARS: Int = 1_048_576
 
+/** Opens the runtime for one head run. A runtime's close() is terminal and a head stop must close it
+ *  (its workers are child JVMs), so a restarted head needs a new one (V4-107). */
+public fun interface CodeModeRuntimes {
+    public fun open(): CodeModeRuntime
+}
+
+/** The current head run's runtime: opened on the first script after a start, closed at head stop. */
+internal class CodeModeRuntimeRun(private val runtimes: CodeModeRuntimes) {
+    private val monitor = Any()
+    private var current: CodeModeRuntime? = null
+
+    fun runtime(): CodeModeRuntime = synchronized(monitor) { current ?: runtimes.open().also { current = it } }
+
+    fun end() {
+        val ending: CodeModeRuntime? = synchronized(monitor) { current.also { current = null } }
+        ending?.close()
+    }
+}
+
 public data class CodeModeBridgeConfig(
-    val runtime: CodeModeRuntime,
+    val runtimes: CodeModeRuntimes,
     val stateFile: Path,
     val maxRecords: Int = 128,
     val ttl: Duration = 24.hours,
@@ -61,7 +80,8 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
     private val registry = CodexCodeModeRegistry(config, json)
     private val validation = CodexCodeModeValidation(config)
     private val machine = CodexCodeModeMachine(config, registry, validation)
-    private val driver = CodexCodeModeDriver(config, registry, wire, validation, machine)
+    private val run = CodeModeRuntimeRun(config.runtimes)
+    private val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)
     private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
     private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, config.log)
 
@@ -95,7 +115,8 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
     public fun onHeadStop() {
         registry.onHeadStop()
         // The runtime owns child JVM worker processes; a head stop is the one production path that
-        // releases them, so its close() is called here and nowhere else (AutoCloseableClosedLawTest).
-        config.runtime.close()
+        // releases them, so it is closed here and nowhere else (AutoCloseableClosedLawTest). The
+        // provider outlives the stop (Provider.onHeadStop), so the next start opens a fresh runtime.
+        run.end()
     }
 }

@@ -153,7 +153,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val runtime = BoundedRuntime(capacity = 4, callsPerCell = 2)
         val manager = CodexCodeModeBridge(
             CodeModeBridgeConfig(
-                runtime,
+                { runtime },
                 tempDir.resolve("bridge.json"),
                 clock = clock,
                 maxOutputChars = SMALL_BUDGET_CHARS,

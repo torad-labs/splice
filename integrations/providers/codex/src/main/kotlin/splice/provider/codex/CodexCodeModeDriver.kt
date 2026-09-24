@@ -21,6 +21,7 @@ private data class CodeModeDriveState(
 
 internal class CodexCodeModeDriver(
     private val config: CodeModeBridgeConfig,
+    private val run: CodeModeRuntimeRun,
     private val registry: CodexCodeModeRegistry,
     private val wire: CodexCodeModeWire,
     private val validation: CodexCodeModeValidation,
@@ -183,10 +184,10 @@ internal class CodexCodeModeDriver(
 
     /** One start attempt; at capacity the oldest parked cell is evicted first and the start retried once. */
     private suspend fun startWithEviction(record: CodeModeRecord, context: CodeModeRunContext) = try {
-        config.runtime.start(record.source, context.turn.tools)
+        run.runtime().start(record.source, context.turn.tools)
     } catch (error: CodeModeCapacityException) {
         registry.evictIdleCell() ?: throw error
-        config.runtime.start(record.source, context.turn.tools)
+        run.runtime().start(record.source, context.turn.tools)
     }
 
     /** The spawn failure's cause chain goes to the head log; the previous `catch (_: …)` hid it, and

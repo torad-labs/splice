@@ -87,7 +87,7 @@ class CodexCodeModeReanchorTest {
         finish: suspend (TurnOutcome) -> Unit,
         post: suspend (String) -> TurnOutcome,
     ): RoundStrategy {
-        val bridge = CodexCodeModeBridge(CodeModeBridgeConfig(runtime, tempDir.resolve("state.json")))
+        val bridge = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, tempDir.resolve("state.json")))
         val turn = CodexCodeModeBridge.Turn("session", "conversation", "gpt-6-astra", setOf("Read"), emptyList())
         val emitter = SseEmitterFactory().create({}, "model", { buildJsonObject { } })
         return RoundStrategy(

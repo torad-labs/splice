@@ -17,19 +17,55 @@ import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `onHeadStop closes the code-mode runtime`() {
-        var closed = false
-        val runtime = object : CodeModeRuntime {
-            override suspend fun start(source: String, tools: Set<String>): CodeModeCell = error("unused")
-            override fun close() {
-                closed = true
-            }
-        }
-        val bridge = bridge(runtime)
+    fun `onHeadStop closes the code-mode runtime`() = runTest {
+        val opened = mutableListOf<TerminalRuntime>()
+        val bridge = restartableBridge(opened)
+        assertTrue(runScript(bridge, "outer-1") is TurnOutcome.Success)
 
         bridge.onHeadStop()
 
-        assertTrue(closed, "onHeadStop must close the code-mode runtime")
+        assertTrue(opened.single().closed, "onHeadStop must close the code-mode runtime")
+    }
+
+    // V4-107: HeadServer.restart is onHeadStop then start on the SAME provider, and a runtime's close()
+    // is terminal. Reusing the closed runtime failed every code-mode turn until the daemon restarted.
+    @Test
+    fun `a head restart opens a fresh runtime, so code mode survives stop then start`() = runTest {
+        val opened = mutableListOf<TerminalRuntime>()
+        val bridge = restartableBridge(opened)
+        assertTrue(runScript(bridge, "outer-1") is TurnOutcome.Success)
+
+        bridge.onHeadStop()
+        val after = runScript(bridge, "outer-2")
+
+        assertTrue(after is TurnOutcome.Success, "the first turn after a restart must run: $after")
+        assertEquals(2, opened.size, "the restarted head opened its own runtime")
+        assertTrue(opened.first().closed && !opened.last().closed)
+    }
+
+    /** Mirrors JvmCodeModeRuntime: close() is terminal, and a start after it fails. */
+    private class TerminalRuntime : CodeModeRuntime {
+        var closed = false
+
+        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+            check(!closed) { "Code-mode runtime is closed" }
+            return ScriptedCell(ArrayDeque(listOf(CodeModeStep.Completed("done"))))
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private fun restartableBridge(opened: MutableList<TerminalRuntime>) = CodexCodeModeBridge(
+        CodeModeBridgeConfig({ TerminalRuntime().also(opened::add) }, tempDir.resolve("bridge.json")),
+    )
+
+    private suspend fun runScript(bridge: CodexCodeModeBridge, callId: String): TurnOutcome {
+        var posts = 0
+        return bridge.interceptor(turn(), null, disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
+            if (++posts == 1) outerOutcome(callId) else completedOutcome()
+        }
     }
 
     @Test

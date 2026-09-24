@@ -152,6 +152,39 @@ class CodeModeBridgeRuntimeTest {
         }
     }
 
+    // V4-107: a head restart is onHeadStop then start on the same provider, and the real runtime's
+    // close() is terminal, so the bridge must run the next script on a runtime it opens fresh.
+    @Test
+    fun `code mode survives a head restart on the real runtime`() = runBlocking<Unit> {
+        val opened = mutableListOf<JvmCodeModeRuntime>()
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig({ runtime().also(opened::add) }, tempDir.resolve("restart.json")),
+        )
+        try {
+            assertTrue(script(bridge, "return 'before';", "outer-1") is TurnOutcome.Success)
+            bridge.onHeadStop()
+            val after = script(bridge, "return 'after';", "outer-2")
+            assertTrue(after is TurnOutcome.Success, "the first script after a restart must run: $after")
+            assertEquals(2, opened.size, "the restarted head opened its own runtime")
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking { opened.first().start("return 1;", emptySet()) }
+            }
+        } finally {
+            bridge.onHeadStop()
+        }
+    }
+
+    private suspend fun script(bridge: CodexCodeModeBridge, source: String, callId: String): TurnOutcome {
+        var posts = 0
+        return bridge.interceptor(turn(), disableParallel = false).intercept(BRIDGE_BASE_REQUEST, Sink()) {
+            if (++posts == 1) {
+                outer(source, callId)
+            } else {
+                TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+            }
+        }
+    }
+
     @Test
     fun `bridge result UTF8 boundary matches the real worker`() = runBlocking {
         // 65_536 bytes fits untouched; 65_538 is admitted truncated (never rejected: Claude Code
@@ -326,7 +359,7 @@ class CodeModeBridgeRuntimeTest {
     )
 
     private fun bridge(runtime: JvmCodeModeRuntime, filename: String = "bridge.json") =
-        CodexCodeModeBridge(CodeModeBridgeConfig(runtime, tempDir.resolve(filename)))
+        CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, tempDir.resolve(filename)))
 
     private fun turn(id: String? = null, output: String = "") = CodexCodeModeBridge.Turn(
         "session",
@@ -336,10 +369,10 @@ class CodeModeBridgeRuntimeTest {
         id?.let { listOf(CodeModeResult(it, output)) }.orEmpty(),
     )
 
-    private fun outer(source: String): TurnOutcome.Success {
+    private fun outer(source: String, callId: String = "outer"): TurnOutcome.Success {
         val raw = buildJsonObject {
             put("type", "custom_tool_call")
-            put("call_id", "outer")
+            put("call_id", callId)
             put("name", "splice_exec")
             put("input", source)
         }
@@ -347,7 +380,7 @@ class CodeModeBridgeRuntimeTest {
             false,
             false,
             upstreamUsage,
-            customCalls = listOf(GatewayCustomCall("outer", "splice_exec", source, raw)),
+            customCalls = listOf(GatewayCustomCall(callId, "splice_exec", source, raw)),
         )
     }
 

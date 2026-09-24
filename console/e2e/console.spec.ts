@@ -117,6 +117,13 @@ test('turns lists the turn the stack drove through a real head', async ({ page }
   await expect(page.locator('main')).toContainText(STACK.oauthHead);
 });
 
+/** Picks `option` in the `nth` picker named `label` inside `scope`: the Choice is a combobox named by
+ *  its printed label, and its rack is a listbox of options named by their text (shared/controls). */
+async function pick(scope: Locator, label: string, option: string, nth = 0): Promise<void> {
+  await scope.getByRole('combobox', { name: label, exact: true }).nth(nth).click();
+  await scope.getByRole('option', { name: option, exact: true }).click();
+}
+
 /** An account strip's `next` cell: the rule the daemon's next target was chosen by, empty on every
  *  strip the daemon did not flag (widgets/account-strip). */
 function nextCell(strip: Locator): Locator {
@@ -139,7 +146,7 @@ test('accounts shows the OAuth account with the windows its provider reported', 
   await expect(nextCell(main.getByRole('button', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true }))).toHaveText('');
   await expect(nextCell(main.getByRole('button', { name: 'chatgpt-oauth single login', exact: true }))).toHaveText('');
   // The order the daemon walks, the pin first.
-  await expect(main).toContainText('pinned then primary then sticky then lowest 7-day used');
+  await expect(main).toContainText('pinned, then primary, then last used, then most weekly room');
 });
 
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {
@@ -165,18 +172,19 @@ test('fleet opens a head with its account pool and the next target marked', asyn
   await headStrip(page, STACK.oauthHead, 'chatgpt-oauth').click();
   const detail = page.getByRole('complementary', { name: 'head detail' });
   // Both accounts of the pool, as account strips; the primary carries the windows the turn reported.
-  await expect(detail.getByRole('button', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true })).toBeVisible({ timeout: 15_000 });
-  const primary = detail.getByRole('button', { name: 'chatgpt-oauth primary', exact: true });
+  // A pool account in the detail opens nothing, so it is a named group, not a button (S9).
+  await expect(detail.getByRole('group', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true })).toBeVisible({ timeout: 15_000 });
+  const primary = detail.getByRole('group', { name: 'chatgpt-oauth primary', exact: true });
   await expect(primary).toContainText(`${STACK.fiveHourUsedPercent}%`);
   await expect(primary).toContainText(STACK.plan);
   // The daemon's own next target (next_target on the primary), printed where the column shows it.
   await expect(detail).toContainText('next target primary');
   // The solo head's single login rides another head, so it is not in this pool.
-  await expect(detail.getByRole('button', { name: 'chatgpt-oauth single login', exact: true })).toHaveCount(0);
+  await expect(detail.getByRole('group', { name: 'chatgpt-oauth single login', exact: true })).toHaveCount(0);
 
-  // An api-key head has no OAuth pool and says so, rather than printing an empty rack.
+  // An api-key head has no account pool and says so, rather than printing an empty rack.
   await headStrip(page, STACK.keyHead, 'api-key').click();
-  await expect(detail).toContainText('no oauth pool');
+  await expect(detail).toContainText('no account pool');
   expect(faults.pageErrors, 'opening a head threw').toEqual([]);
 });
 
@@ -230,7 +238,7 @@ test('doctor\'s playground sends one prompt through a head to the upstream and s
   const faults = await open(page, 'doctor');
   const detail = page.getByRole('complementary', { name: 'check detail' });
   await detail.getByRole('button', { name: 'playground', exact: true }).click();
-  await detail.getByRole('textbox', { name: /^head/ }).fill(STACK.oauthHead);
+  await pick(detail, 'head', STACK.oauthHead);
   await detail.getByRole('textbox', { name: /^prompt/ }).fill('one prompt from the console e2e');
   await detail.getByRole('button', { name: 'send', exact: true }).click();
   // The mock upstream's own answer text, inside the raw response the daemon relayed.
@@ -272,12 +280,12 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await field('name').fill(name);
   await field('repo').fill(env('CONSOLE_E2E_REPO'));
   await field('role').fill('lead');
-  await field('head').fill(STACK.oauthHead);
-  await field('session').fill(STACK.sender.id);
+  await pick(form, 'head', STACK.oauthHead);
+  await pick(form, 'session', STACK.sender.name);
   await form.getByRole('button', { name: 'add slot' }).click();
   await field('role', 1).fill('builder');
-  await field('head', 1).fill(STACK.oauthHead);
-  await field('session', 1).fill(STACK.peer.id);
+  await pick(form, 'head', STACK.oauthHead, 1);
+  await pick(form, 'session', STACK.peer.name, 1);
   await form.getByRole('button', { name: 'create team' }).click();
 
   // The page opens the team it made: the composer now edits it rather than creating another, and
@@ -294,7 +302,7 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await expect(page.locator('.myx-board-bay-0')).toContainText(STACK.sender.name, { timeout: 15_000 });
   await expect(page.locator('.myx-board-bay-0')).toContainText(STACK.peer.name);
   // The day's chat carries the hand-off, sender to recipient, both resolved to their seats.
-  await expect(page.getByRole('button', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible();
+  await expect(page.getByRole('group', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible();
   // Activity was READ for this team: the stack runs no client to answer a label query, so it is
   // empty, never unreadable.
   await expect(main).toContainText('nothing sampled today');
@@ -310,7 +318,7 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
 
   // Opening the seat is its own write: the replace keeps a binding its body leaves null.
   await edit.getByRole('textbox', { name: 'role instructions', exact: true }).first().fill('drive the e2e packet');
-  await edit.getByRole('button', { name: 'unbind' }).first().click();
+  await pick(edit, 'session', 'open seat');
   await edit.getByRole('button', { name: 'save team' }).click();
   await expect(edit.getByRole('status')).toContainText(`saved ${name} as team-`);
   await expect(main).toContainText('2 slots, 1 bound', { timeout: 15_000 });
@@ -336,16 +344,16 @@ test('projects opens the stack repository with the detail its own route reports'
   await expect(detail).toContainText(/live sessions\s*2/);
   expect(row.turns_today, 'the sender\'s hand-off is a turn in this repository today').toBeGreaterThanOrEqual(1);
   await expect(detail).toContainText(new RegExp(`turns today\\s*${row.turns_today}(?!\\d)`));
-  await expect(detail).toContainText(/cost today\s*n\/r/);
+  await expect(detail).toContainText(/cost today\s*–/);
   await expect(detail).toContainText(`${repo}/CLAUDE.md`);
   // What governs the repo (FEATURES.md 4.14), from the same row: the stack's project rule for this
   // repo shadows its model and global rules here, so it is the only one listed; and every head's
   // statusline probes the repo under the daemon's HOME, the stack's temp home.
-  const rule = (source: string) => detail.getByRole('button', { name: `instruction ${source}` });
+  const rule = (source: string) => detail.getByRole('group', { name: `instruction ${source}` });
   await expect(rule(`project:${repo}`)).toContainText(String(STACK.compactProject.length));
   await expect(rule('global')).toHaveCount(0);
   await expect(rule(`model:${STACK.model}`)).toHaveCount(0);
-  const statusline = detail.getByRole('button', { name: `statusline roots ${STACK.oauthHead}`, exact: true });
+  const statusline = detail.getByRole('group', { name: `statusline roots ${STACK.oauthHead}`, exact: true });
   await expect(statusline).toContainText(dirname(repo));
   await expect(statusline).toContainText(/entry\s*home/);
   expect(faults.pageErrors, 'opening a project threw').toEqual([]);
@@ -366,7 +374,7 @@ test('sessions prints each session\'s peer from the fleet-wide edges read, unope
 
 test('compaction lists the instruction rules the daemon has in effect, with their lengths', async ({ page }) => {
   const faults = await open(page, 'compaction');
-  const rule = (source: string) => page.getByRole('button', { name: `instruction ${source}` });
+  const rule = (source: string) => page.getByRole('group', { name: `instruction ${source}` });
   await expect(rule('global')).toContainText(String(STACK.compactGlobal.length), { timeout: 15_000 });
   await expect(rule(`model:${STACK.model}`)).toContainText(String(STACK.compactModel.length));
   await expect(rule(`project:${env('CONSOLE_E2E_REPO')}`)).toContainText(String(STACK.compactProject.length));

@@ -181,14 +181,13 @@ below instead of excusing the entire core module.
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat", "quality-compiler-plugin"]
+modules = ["quality-compiler-plugin"]
 sourceSets = ["main"]
-date = "2026-09-22"
+date = "2026-09-24"
 reason = """
-The wall binds Result consumption in backend, auth, process, and MCP-host paths. The dialects are
-pure byte builders and :quality-compiler-plugin is a compiler plugin. :core, :integrations-claude-code
-and :providers-muse were excused here or beside this row until 2026-09-24, when the rule selected
-all three and every site in them was dispositioned (the rule's WIDENED 2026-09-24 note).
+:quality-compiler-plugin is a compiler plugin with no Result path. Every other module is selected:
+:core, :integrations-claude-code and :providers-muse joined on 2026-09-24 (LAYOUT-01 review), and the
+three dialects the same day (v0.4.0 release) at zero findings (the rule's WIDENED 2026-09-24 notes).
 """
 
 [[exclusion]]

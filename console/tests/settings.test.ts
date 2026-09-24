@@ -319,11 +319,12 @@ describe('settings: the Claude head modes', () => {
     expect(unwrapped).not.toContain('backup files');
   });
 
-  test('before the first poll answers, the empty names the route and not a closed row', () => {
+  test('before the first poll answers, the empty says it is waiting, naming no route and no row', () => {
     const unread = render(
       h(ClaudeModeSection, { state: null, result: null, onWrap: () => undefined, onUnwrap: () => undefined, busy: false }),
     );
-    expect(unread).toContain('GET /api/claude-head');
+    expect(unread).toContain('waiting for the daemon to answer');
+    expect(unread).not.toContain('/api/');
     expect(unread).not.toContain('V4-129');
   });
 });

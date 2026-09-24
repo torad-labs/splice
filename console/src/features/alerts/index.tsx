@@ -4,7 +4,7 @@
 // out and keeps exactly this much in. The panel offers a TEST SEND because a webhook the operator
 // cannot try is a webhook they will discover is wrong during an outage.
 import { useEffect, useState } from 'react';
-import { PENDING_ALERTS, canTest, desktopText, fetchAlerts, putAlerts, sendTestAlert, useAlerts, webhookText } from '@entities/alert';
+import { canTest, desktopText, fetchAlerts, putAlerts, sendTestAlert, useAlerts, webhookText } from '@entities/alert';
 import { Empty, FieldBox } from '@shared/ui';
 import { S } from './strings';
 import './alerts.css';
@@ -18,7 +18,7 @@ export function AlertsPanel() {
   useEffect(() => { void fetchAlerts(); }, []);
 
   if (alerts.data !== null && 'pending' in alerts.data) {
-    return <Empty text="alerts not built" source={`row ${PENDING_ALERTS}`} />;
+    return <Empty text="alerts unavailable" source="this splice version does not serve alerts" />;
   }
 
   const settings = alerts.data !== null && !('pending' in alerts.data) ? alerts.data : null;

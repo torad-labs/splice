@@ -5,7 +5,7 @@
 // the state every head starts in and prints as such, never as $0.00 — a zero budget would block a
 // head on its first turn.
 import { useEffect, useState } from 'react';
-import { PENDING_BUDGETS, budgetFor, budgetText, putBudgets, startBudgetsPolling, useBudgets } from '@entities/budget';
+import { budgetFor, budgetText, putBudgets, startBudgetsPolling, useBudgets } from '@entities/budget';
 import type { Budget, BudgetAction } from '@entities/budget';
 import { Empty, FieldBox } from '@shared/ui';
 import { S } from './strings';
@@ -43,7 +43,7 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
   useEffect(() => startBudgetsPolling(POLL_MS), []);
 
   if (budgets.data !== null && 'pending' in budgets.data) {
-    return <Empty text="budgets not built" source={`row ${PENDING_BUDGETS}`} />;
+    return <Empty text="budgets unavailable" source="this splice version does not serve budgets" />;
   }
 
   const payload = budgets.data;

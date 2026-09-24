@@ -39,7 +39,6 @@ export function BoardHeader({ board }: { board: TeamPayload }) {
 export function BoardFooter({ board }: { board: TeamPayload }) {
   return (
     <div className="myx-board-footer">
-      <span className="myx-board-footer-cell">{S.teamId} {board.team.id}</span>
       <span className="myx-board-footer-cell">{S.teamCreated} {stamp(board.team.created_epoch_millis)}</span>
       <span className="myx-board-footer-cell">{S.teamUpdated} {stamp(board.team.updated_epoch_millis)}</span>
     </div>

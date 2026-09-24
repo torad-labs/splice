@@ -64,7 +64,7 @@ export function RequestDrawer({ capture, error = null, onSwitch }: {
       {error === null ? null : <Fault message={error} />}
       {/* Bodies exist only while capture runs, and they stay on the operator's disk: the daemon's
           own pointer for reading them is its CLI (DoctorTraceChecks), because no route serves one. */}
-      {view.running ? <Empty text="no daemon route serves captured bodies" source={`splice trace ${settings.head}`} /> : null}
+      {view.running ? <Empty text="read captured bodies with this command" source={`splice trace ${settings.head}`} /> : null}
     </div>
   );
 }

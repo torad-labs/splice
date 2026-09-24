@@ -292,9 +292,10 @@ describe('compaction page', () => {
 });
 
 describe('models page', () => {
-  test('a pending catalog names the row that will serve it, and nothing else is drawn', () => {
+  test('a catalog this daemon does not serve says so without a row id, and nothing else is drawn', () => {
     const markup = render(h(ModelsBoard, { catalog: { pending: 'V4-127' } }));
-    expect(markup).toContain('V4-127 serves /api/models');
+    expect(markup).toContain('catalog unavailable');
+    expect(markup).not.toContain('V4-127');
     expect(markup).not.toContain('myx-strip');
   });
 

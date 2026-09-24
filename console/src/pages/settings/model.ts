@@ -9,13 +9,13 @@ import { S } from './strings';
 /** The honest empties this page prints. Sentences, not labels, so they live here and not in the
  *  string table (CONTRACTS.md section 4), and each one names the thing that did not answer. */
 export const EMPTIES = {
-  noConfig: { text: 'no config from the daemon yet', source: 'GET /api/config' },
+  noConfig: { text: 'no config from the daemon yet', source: 'waiting for the daemon to answer' },
   noKnobs: { text: 'this view holds no knobs', source: 'the other view tabs' },
   noHeads: { text: 'no heads declared', source: 'splice.toml' },
   topologyPending: { text: 'splice.toml unavailable', source: 'this splice version does not serve splice.toml editing' },
   // V4-175: not "pending" any more. The route is served (V4-129), so the only absence left is the
   // one before the first poll answers, and it names the route rather than a row that closed.
-  claudeUnread: { text: 'the mode has not been read yet', source: 'GET /api/claude-head' },
+  claudeUnread: { text: 'the mode has not been read yet', source: 'waiting for the daemon to answer' },
   nothingChanged: { text: 'nothing changed yet', source: 'the loaded topology' },
 } as const;
 

@@ -57,7 +57,6 @@ export const S = {
   headLabel: 'head:',
   chatLabel: 'team chat',
   activityLabel: 'activity',
-  teamId: 'team id:',
   teamCreated: 'created:',
   teamUpdated: 'updated:',
   /** the by-role board and the timeline (comps team-board-b and team-board-c) */

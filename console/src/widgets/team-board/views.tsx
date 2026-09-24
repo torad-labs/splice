@@ -105,7 +105,7 @@ function TurnsChart({ data }: { data: TeamViewData | null }) {
   if (data === null || data.lastHour.length === 0) {
     return (
       <ScopeInset title={`${S.turns} over the last hour`} basis="unavailable">
-        <Empty text="reading the turn log" source="GET /api/perf/turns" />
+        <Empty text="reading the turn log" source="this team's turns, from each head's perf log" />
       </ScopeInset>
     );
   }
@@ -211,7 +211,7 @@ export function TeamBoardByRole({ board, data = null, chat, feed }: {
 
         <aside className="myx-board-aside myx-role-aside">
           {focus === null
-            ? <Empty text="no session is bound" source="GET /api/teams" />
+            ? <Empty text="no session is bound" source="give one of this team's slots a session and it shows here" />
             : <MemberCard board={board} member={focus} />}
           <TurnsChart data={data} />
           {chat}
@@ -270,7 +270,7 @@ function economicsEmpty(title: string, data: TeamViewData | null) {
     <div className="myx-board-panel">
       <h3 className="myx-board-panel-title">{title}</h3>
       {data === null
-        ? <Empty text="reading the economics" source="GET /api/teams/{id}/economics" />
+        ? <Empty text="reading the economics" source="what this team's turns cost" />
         : <Empty text="economics unreadable" source={'error' in data.economics ? data.economics.error : ''} />}
     </div>
   );

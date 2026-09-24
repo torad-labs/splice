@@ -311,8 +311,10 @@ describe('conversation', () => {
     expect(out).toContain('/home/user/.claude/projects/x/s1.jsonl');
   });
 
-  test('a pending transcript names the row that will serve it', () => {
-    expect(render(h(Conversation, { sessionId: 's1', slice: { pending: 'V4-130' } }))).toContain('row V4-130');
+  test('a transcript this daemon does not serve says so, without a row id', () => {
+    const out = render(h(Conversation, { sessionId: 's1', slice: { pending: 'V4-130' } }));
+    expect(out).toContain('transcript unavailable');
+    expect(out).not.toContain('V4-130');
   });
 
   test('a finished transcript offers no load more', () => {

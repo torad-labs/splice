@@ -38,12 +38,12 @@ export function feedOrder(activity: readonly TeamActivity[]): TeamActivity[] {
 
 /** The feed's empty, when it has one: the five answers the route can give that are not rows. */
 export function feedEmpty(state: ActivityFeedState): { text: string; source: string } | null {
-  if (state === null) return { text: 'reading activity', source: 'GET /api/teams/{id}/activity' };
-  if ('pending' in state) return { text: 'no activity route', source: `${state.pending} pending` };
+  if (state === null) return { text: 'reading activity', source: "what this team's sessions are doing, sampled every 30 s" };
+  if ('pending' in state) return { text: 'activity unavailable', source: 'this splice version does not serve team activity' };
   if ('error' in state) return { text: 'activity unreadable', source: state.error };
   if (state.activity.length > 0) return null;
   if (!state.clientMatching) return { text: 'client no longer matching', source: 'the 30 s sampler' };
-  return { text: 'nothing sampled yet', source: 'the 30 s sampler' };
+  return { text: 'nothing sampled yet', source: "splice samples this team's sessions every 30 s" };
 }
 
 export function ActivityFeed({ state }: { state: ActivityFeedState }) {

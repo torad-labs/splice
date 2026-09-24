@@ -80,8 +80,9 @@ const COMP_WORDS: string[] = [
   'searching for fly_raw', 'rg -n "fly_raw"',
   '14:02:00', 'reading MANIFEST.toml', 'MANIFEST.toml',
   'messaging a peer session', 'to gs-backend-builder2',
-  // the footer
-  'team id:', 'team_7f2c1b4a', 'created:', '2025-05-22 09:12:33', 'updated:', '2025-05-22 14:02:05',
+  // the footer. The comp also printed `team id: team_…`; it is an internal key no page or command
+  // takes, and the walkthrough flagged it (S4), so the board prints when the team was made instead.
+  'created:', '2025-05-22 09:12:33', 'updated:', '2025-05-22 14:02:05',
 ];
 
 describe('the board renders the comp', () => {
@@ -339,10 +340,11 @@ describe('the chat panel', () => {
     expect(html).not.toContain('GS-41 done, see ledger');
   });
 
-  test('a route that does not exist yet is not an empty chat', () => {
+  test('a route this daemon does not serve is not an empty chat, and says so without a row id', () => {
     const html = unescapeHtml(renderToStaticMarkup(createElement(TeamChat, { state: { pending: PENDING_TEAMS } })));
-    expect(html).toContain('no chat route');
-    expect(html).toContain('V4-131 pending');
+    expect(html).toContain('chat unavailable');
+    expect(html).not.toContain('V4-131');
+    expect(html).not.toContain('/api/');
   });
 });
 
@@ -425,7 +427,7 @@ describe('the activity feed', () => {
   test('nothing sampled and a client that stopped matching are different answers', () => {
     expect(feedEmpty({ activity: [], clientMatching: true })?.text).toBe('nothing sampled yet');
     expect(feedEmpty({ activity: [], clientMatching: false })?.text).toBe('client no longer matching');
-    expect(feedEmpty({ pending: PENDING_TEAMS })?.text).toBe('no activity route');
+    expect(feedEmpty({ pending: PENDING_TEAMS })?.text).toBe('activity unavailable');
     expect(feedEmpty(null)?.text).toBe('reading activity');
     expect(feedEmpty({ activity: viewsBoard.activity, clientMatching: true })).toBeNull();
   });

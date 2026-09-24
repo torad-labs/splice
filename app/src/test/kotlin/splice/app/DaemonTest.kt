@@ -27,9 +27,9 @@ import splice.app.daemon.DaemonLock
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.head.MockChatGptUpstream
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -45,8 +45,8 @@ class DaemonTest {
     private lateinit var daemon: Daemon
     private lateinit var statePaths: StatePaths
     private lateinit var key: String
-    private val controlPort = freshPort()
-    private val headPort = freshPort()
+    private val controlPort = TestPorts.reserve()
+    private val headPort = TestPorts.reserve()
 
     private fun topologyToml() = """
         [daemon]
@@ -193,10 +193,10 @@ class DaemonTest {
         val tmp = Files.createTempDirectory("daemon-degraded")
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"tok-1","account_id":"acct-1","refresh_token":"r"}}""")
-        val degradedControl = freshPort()
-        val degradedHead = freshPort()
+        val degradedControl = TestPorts.reserve()
+        val degradedHead = TestPorts.reserve()
         val authPath = authFile.toString().replace("\\", "/")
-        val toml = degradedTopologyToml(degradedControl, degradedHead, freshPort(), authPath)
+        val toml = degradedTopologyToml(degradedControl, degradedHead, TestPorts.reserve(), authPath)
         val degraded = Daemon(
             topology = TopologyLoader.parse(toml),
             statePaths = StatePaths(baseOverride = tmp.resolve("state")),

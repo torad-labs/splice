@@ -13,9 +13,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.SHIM_VERSION
+import splice.core.testing.TestPorts
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -49,7 +49,7 @@ class DoctorHeadKeyTest {
         "SPLICE_SHARE_DIR" to share.toString(),
         "PATH" to bin.toString(),
         "CLAUDEX_STATE_DIR" to Files.createDirectories(tmp.resolve("state")).toString(),
-        "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+        "SPLICE_CONTROL_PORT" to TestPorts.reserve().toString(),
     ) + extra
 
     // Head key `fast` ≠ provider key `openrouter`; the api-key provider omits `env`, so auth resolves

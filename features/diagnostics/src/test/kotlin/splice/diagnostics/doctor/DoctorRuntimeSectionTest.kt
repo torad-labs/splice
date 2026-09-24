@@ -9,10 +9,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.testing.TestPorts
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -180,7 +180,7 @@ class DoctorRuntimeSectionTest {
 
     @Test
     fun `runtime section is INFO-skipped when the daemon is stopped - JW-05`(@TempDir tmp: Path) {
-        val freePort = ServerSocket(0).use { it.localPort }
+        val freePort = TestPorts.reserve()
         val (_, out) = runDoctor(baseEnv(tmp, freePort))
         assertTrue(out.contains("skipped (daemon stopped)"), out)
     }

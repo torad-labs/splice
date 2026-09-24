@@ -25,10 +25,10 @@ import org.junit.jupiter.api.TestInstance
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.core.util.Cancellables
 import splice.head.MockChatGptUpstream
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -118,13 +118,13 @@ class MultiProviderDaemonTest {
     private val client = HttpClient(CIO)
     private lateinit var daemon: Daemon
     private lateinit var key: String
-    private val controlPort = freshPort()
-    private val codexPort = freshPort()
-    private val grokPort = freshPort()
-    private val chatPort = freshPort()
-    private val claudePort = freshPort()
-    private val neutralPort = freshPort()
-    private val kimiPort = freshPort()
+    private val controlPort = TestPorts.reserve()
+    private val codexPort = TestPorts.reserve()
+    private val grokPort = TestPorts.reserve()
+    private val chatPort = TestPorts.reserve()
+    private val claudePort = TestPorts.reserve()
+    private val neutralPort = TestPorts.reserve()
+    private val kimiPort = TestPorts.reserve()
 
     // DR-81: openrouter is the launchable api-key head (the ONE provider with a capture-pattern
     // entry, so its spec carries TokenCaptureSpec) — key file + claude config dir are fields so

@@ -130,13 +130,14 @@ class EventBusBackpressureTest {
         val aInBuild = CountDownLatch(1)
         val bDone = CountDownLatch(1)
         lateinit var b: Thread
+
+        // B is still between minting and appending: neither finished nor parked on the bus.
+        fun bInFlight() = bDone.count > 0 && b.state != Thread.State.BLOCKED
         val a = Thread {
             bus.publish { seq ->
                 aInBuild.countDown()
                 val deadline = System.nanoTime() + INTERLEAVE_DEADLINE_NS
-                while (bDone.count > 0 && b.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
-                    Thread.onSpinWait()
-                }
+                while (bInFlight() && System.nanoTime() < deadline) Thread.onSpinWait()
                 event(seq)
             }
         }

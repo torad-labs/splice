@@ -32,8 +32,8 @@ private const val CONTEXT_WINDOW = "context_window"
 private const val MODELS = "models"
 
 /** V4-127 §6: the oldest file a state-directory scan found, and how long it has been there. The
- *  MEASUREMENT is not this file's job — every shaper here takes values and returns JSON — so the
- *  route walks the directory and hands the result in. [ageMs] is an age rather than a timestamp for
+ *  MEASUREMENT is not this file's job — every shaper here takes values and returns JSON — so
+ *  DoctorStateDirScan walks the directory and hands the result in. [ageMs] is an age rather than a timestamp for
  *  the same reason the perf rows report latency: an age survives being read on another machine. */
 internal data class StateDirFile(val name: String, val ageMs: Long)
 internal class DoctorReportShape(private val redaction: DoctorRedaction, private val names: SafeNames) {
@@ -61,13 +61,17 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
      *  THE NAME IS REDACTED, deliberately: a state filename carries an account label on several
      *  heads, which is exactly the operator-authored text [redaction] exists for, and [topology]
      *  already redacts the directory itself for the same reason. */
-    fun stateDirUsage(sizeBytes: Long, fileCount: Int, oldest: StateDirFile?): JsonObject = buildJsonObject {
-        put("size_bytes", sizeBytes)
-        put("file_count", fileCount)
+    fun stateDirUsage(usage: StateDirUsage): JsonObject = buildJsonObject {
+        put("size_bytes", usage.sizeBytes)
+        put("file_count", usage.fileCount)
         // An EMPTY state dir reports nulls rather than a 1970 timestamp or a fabricated name: the
         // console renders "no files" from an explicit null, and a sentinel would render as data.
+        val oldest = usage.oldest
         put("oldest_file", oldest?.let { JsonPrimitive(redaction.text(it.name)) } ?: JsonNull)
         put("oldest_age_ms", oldest?.let { JsonPrimitive(it.ageMs) } ?: JsonNull)
+        // What the walk could not read, so a partial footprint never passes for a whole one
+        // (DoctorStateDirScan's header).
+        put("unreadable_entries", usage.unreadable)
     }
 
     /** Exactly {id, status, detail} (schema 1): the fix rides inside the detail. A check's name and

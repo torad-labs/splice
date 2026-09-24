@@ -48,6 +48,7 @@ internal class DoctorJsonReport(
     private val files = DoctorReportFiles(redaction)
     private val perfTail = DoctorReportPerf(statePaths, files, json)
     private val tail = DoctorReportTail(statePaths, redaction, files)
+    private val stateDir = DoctorStateDirScan(statePaths.stateDir)
 
     /** Print (on [output]) or write the report; true when no check FAILED (the same verdict as the
      *  text doctor). */
@@ -94,6 +95,9 @@ internal class DoctorJsonReport(
         put("checks", shape.checks(run.sections))
         put("accounts", shape.accounts(run.accountPools))
         put("perf", perfTail.perf(run.topology, names))
+        // V4-127: the state dir's own footprint (FEATURES.md §6), measured on every build so the CLI's
+        // --json and the console's /api/doctor carry the same numbers for one run.
+        put("state_dir_usage", shape.stateDirUsage(stateDir.scan(System.currentTimeMillis())))
         if (withLogs) {
             val logs = tail.logs(names)
             put("logs", logs.lines)

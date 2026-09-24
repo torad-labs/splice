@@ -18,7 +18,7 @@ export const S = {
    *  tell which head did. Printed where `head: unknown head` was. */
   noHead: 'no splice head',
   /** A session's head cell when it was started with `claude` directly, not through a head. */
-  direct: 'not via splice',
+  direct: 'started directly',
   openProject: 'open project',
   openTeam: 'open team',
   conversation: 'conversation',

@@ -61,9 +61,11 @@ const DEFAULT_VIEWS: View[] = [
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
-/** Why a session has no head: splice did not start it (it talks to its provider directly), or
- *  the daemon could not read how it was started. A sentence, so it lives here (CONTRACTS.md 4). */
-export const NO_HEAD_WHY = 'splice did not start these sessions, or could not tell which head did, so their turns do not pass through splice';
+/** Why a session has no head: splice did not start it, or the daemon could not read how it was
+ *  started. A sentence, so it lives here (CONTRACTS.md 4). It says only what the registry knows:
+ *  it used to add "so their turns do not pass through splice", and the walkthrough watched a
+ *  headless session's turn go through a head (S3); where a turn goes is the turns page's fact. */
+export const NO_HEAD_WHY = 'splice did not start these sessions, or could not tell which head did';
 
 /** Why a group of sessions has no head, from each row's route when the daemon reports one: a
  *  session started with `claude` directly skips splice; one whose environment could not be read
@@ -73,7 +75,7 @@ export function noHeadWhy(rows: readonly SessionRow[]): string {
   const unread = rows.filter((row) => row.route === 'unknown').length;
   if (direct + unread === 0) return NO_HEAD_WHY;
   const parts = [
-    direct === 0 ? null : `${direct} started with claude directly, not a splice head, so their turns skip splice`,
+    direct === 0 ? null : `${direct} started with claude directly, not with a splice head`,
     unread === 0 ? null : `${unread} could not be read, so splice cannot tell which head started them`,
   ];
   return parts.filter((part) => part !== null).join('; ');

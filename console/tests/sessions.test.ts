@@ -219,16 +219,16 @@ describe('sessions board', () => {
     expect(out).toContain('head: claudex');
   });
 
-  test('a daemon that reports the route says which sessions skipped splice and which it could not read', () => {
+  test('a daemon that reports the route says which sessions splice did not start and which it could not read', () => {
     const rows = [
       session({ session_id: 'a', head: 'unknown head', route: 'direct' }),
       session({ session_id: 'b', head: 'unknown head', route: 'direct' }),
       session({ session_id: 'c', head: 'unknown head', route: 'unknown' }),
     ];
-    expect(noHeadWhy(rows)).toBe('2 started with claude directly, not a splice head, so their turns skip splice; '
+    expect(noHeadWhy(rows)).toBe('2 started with claude directly, not with a splice head; '
       + '1 could not be read, so splice cannot tell which head started them');
     expect(noHeadWhy([session({ head: 'unknown head' })])).toBe(NO_HEAD_WHY);
-    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('not via splice');
+    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('started directly');
     expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('no splice head');
     expect(headText(session({ head: 'claudex', route: 'head' }))).toBe('claudex');
   });

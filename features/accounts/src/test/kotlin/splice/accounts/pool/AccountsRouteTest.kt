@@ -15,9 +15,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
+import splice.accounts.HeadQuotaSource
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
+import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindowView
 
 class AccountsRouteTest {
     private val json = Json { ignoreUnknownKeys = true }
@@ -36,6 +39,7 @@ class AccountsRouteTest {
             200L,
             fiveHourWindowSeconds = 18_000L,
             sevenDayWindowSeconds = 604_800L,
+            quotaObservedAtEpochSeconds = 1_699_999_000L,
         )
         val pool = HeadAccountPoolView(selectedLabel = "backup", accounts = listOf(poolAccount), lastSwitch = null)
         val authPath = "/shared/backup.json"
@@ -53,6 +57,7 @@ class AccountsRouteTest {
         assertEquals(listOf("head-a", "head-b"), riders)
         assertEquals(18_000L, row["five_hour_window_seconds"]!!.jsonPrimitive.content.toLong())
         assertEquals(604_800L, row["seven_day_window_seconds"]!!.jsonPrimitive.content.toLong())
+        assertEquals(1_699_999_000L, row["observed_at_epoch_seconds"]!!.jsonPrimitive.content.toLong())
     }
 
     @Test
@@ -77,6 +82,45 @@ class AccountsRouteTest {
         assertEquals(listOf("solo"), row["heads"]!!.jsonArray.map { it.jsonPrimitive.content })
     }
 
+    // console live evidence, 2026-09-24: claudex/claude-grok/claude-kimi/claude-muse all read
+    // five_hour_*/seven_day_*/plan null on /api/accounts while /api/usage carried real numbers for
+    // the same heads — foldSingleLogin hard-coded the windows instead of reading the head's quota.
+    @Test
+    fun `a single-login head with a quota snapshot carries its plan, windows and observed_at`() = runBlocking {
+        val quota = QuotaView(
+            fiveHour = QuotaWindowView(usedPct = 42, resetsAt = 1_700_000_000L, observedAt = 1_699_999_000L),
+            sevenDay = QuotaWindowView(usedPct = 50, resetsAt = 1_700_500_000L, observedAt = 1_699_999_000L),
+            plan = "pro",
+        )
+        val heads = mapOf("solo" to oauthHeadNoPool("solo", quota))
+
+        val body = json.parseToJsonElement(AccountsRoute(heads).accountsJson()).jsonObject
+        val row = body["accounts"]!!.jsonArray.single().jsonObject
+
+        assertEquals("pro", row["plan"]!!.jsonPrimitive.content)
+        assertEquals(42.0, row["five_hour_used_percent"]!!.jsonPrimitive.content.toDouble())
+        assertEquals(1_700_000_000L, row["five_hour_reset_epoch_seconds"]!!.jsonPrimitive.content.toLong())
+        assertEquals(50.0, row["seven_day_used_percent"]!!.jsonPrimitive.content.toDouble())
+        assertEquals(1_700_500_000L, row["seven_day_reset_epoch_seconds"]!!.jsonPrimitive.content.toLong())
+        assertEquals(1_699_999_000L, row["observed_at_epoch_seconds"]!!.jsonPrimitive.content.toLong())
+        // The head's own tracked QuotaView carries no window LENGTH (only a pooled AccountView does).
+        assertEquals(JsonNull, row["five_hour_window_seconds"])
+        assertEquals(JsonNull, row["seven_day_window_seconds"])
+    }
+
+    @Test
+    fun `a single-login head with no quota snapshot keeps every window and plan null`() = runBlocking {
+        val heads = mapOf("solo" to oauthHeadNoPool("solo"))
+
+        val body = json.parseToJsonElement(AccountsRoute(heads).accountsJson()).jsonObject
+        val row = body["accounts"]!!.jsonArray.single().jsonObject
+
+        assertEquals(JsonNull, row["plan"])
+        assertEquals(JsonNull, row["five_hour_used_percent"])
+        assertEquals(JsonNull, row["seven_day_used_percent"])
+        assertEquals(JsonNull, row["observed_at_epoch_seconds"])
+    }
+
     private fun oauthHead(key: String, pool: HeadAccountPoolView, authPath: String): AccountHead =
         base(key, "chatgpt-oauth").copy(
             pool = HeadAccountPoolSource { pool },
@@ -85,7 +129,8 @@ class AccountsRouteTest {
             },
         )
 
-    private fun oauthHeadNoPool(key: String): AccountHead = base(key, "chatgpt-oauth")
+    private fun oauthHeadNoPool(key: String, quota: QuotaView? = null): AccountHead =
+        base(key, "chatgpt-oauth").copy(quota = quota?.let { q -> HeadQuotaSource { q } })
 
     private fun apiKeyHead(key: String): AccountHead = base(key, "api-key")
 

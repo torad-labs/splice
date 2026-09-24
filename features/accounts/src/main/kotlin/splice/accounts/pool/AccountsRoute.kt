@@ -16,6 +16,7 @@ import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
 import splice.core.auth.AuthDescription
 import splice.core.topology.AuthKindRegistry
+import splice.core.usage.QuotaView
 
 public class AccountsRoute(private val heads: Map<String, AccountHead>) {
     public suspend fun accountsJson(): String {
@@ -33,7 +34,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         if (!AuthKindRegistry.isOAuth(description.kind)) return
         val pool = head.pool
         if (pool == null) {
-            foldSingleLogin(head.key, description, joined)
+            foldSingleLogin(head.key, description, head.quota?.quota(), joined)
             return
         }
         val authPaths = head.accountAuth?.descriptions().orEmpty().mapValues { (_, d) -> d.fields["auth_path"] }
@@ -43,6 +44,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
     private fun foldSingleLogin(
         headKey: String,
         description: AuthDescription,
+        quota: QuotaView?,
         joined: MutableMap<String, JoinedAccount>,
     ) {
         val authPath = description.fields["auth_path"]
@@ -53,9 +55,13 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
                 label = null,
                 primary = true,
                 singleLogin = true,
-                plan = null,
-                fiveHour = QuotaWindowView(null, null, null),
-                sevenDay = QuotaWindowView(null, null, null),
+                plan = quota?.plan,
+                // No window-LENGTH here: unlike a pooled HeadAccountView, the head's own tracked
+                // QuotaView carries no windowSeconds (UsagePayloads.window() doesn't emit one either)
+                // — a single-login head's quota tracker never learned it.
+                fiveHour = QuotaWindowView(quota?.fiveHour?.usedPct?.toDouble(), quota?.fiveHour?.resetsAt, null),
+                sevenDay = QuotaWindowView(quota?.sevenDay?.usedPct?.toDouble(), quota?.sevenDay?.resetsAt, null),
+                observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
                 authExclusion = AuthExclusionView(null, null),
                 flags = AccountFlags(
                     available = null,
@@ -105,6 +111,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
             account.sevenDayResetEpochSeconds,
             account.sevenDayWindowSeconds,
         ),
+        observedAtEpochSeconds = account.quotaObservedAtEpochSeconds,
         authExclusion = AuthExclusionView(account.authExcludedUntilEpochMillis, account.authExclusionReason),
         flags = AccountFlags(
             available = account.available,
@@ -146,6 +153,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         into.put("seven_day_used_percent", row.sevenDay.usedPercent)
         into.put("seven_day_reset_epoch_seconds", row.sevenDay.resetEpochSeconds)
         into.put("seven_day_window_seconds", row.sevenDay.windowSeconds)
+        into.put("observed_at_epoch_seconds", row.observedAtEpochSeconds)
         into.put("available", row.flags.available)
         into.put("credential_present", row.flags.credentialPresent)
         into.put("auth_excluded_until_epoch_millis", row.authExclusion.untilEpochMillis)
@@ -188,6 +196,8 @@ private data class JoinedAccount(
     val plan: String?,
     val fiveHour: QuotaWindowView,
     val sevenDay: QuotaWindowView,
+    /** Epoch SECONDS the quota was read, from whichever source carried it — null when it didn't. */
+    val observedAtEpochSeconds: Long?,
     val authExclusion: AuthExclusionView,
     val flags: AccountFlags,
     val heads: MutableSet<String> = sortedSetOf(),

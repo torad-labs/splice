@@ -57,6 +57,8 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":features-turns")))
+    // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
+    testImplementation(testFixtures(project(":core")))
     testImplementation(testFixtures(project(":integrations-codemode")))
     testImplementation(testFixtures(project(":integrations-oauth")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))

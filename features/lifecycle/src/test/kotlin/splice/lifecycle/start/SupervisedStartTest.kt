@@ -10,12 +10,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
+import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonSettings
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readText
@@ -106,8 +106,6 @@ class SupervisedStartTest {
         override fun logsDir(): Path = Files.createTempDirectory("splice-launch-test")
     }
 
-    private fun freePort(): Int = ServerSocket(0).use { it.localPort }
-
     private fun captured(block: () -> Unit): String {
         val out = ByteArrayOutputStream()
         val prior = System.out
@@ -127,7 +125,7 @@ class SupervisedStartTest {
         val spawn = RecordingSpawn(health)
         val launch = DaemonLaunch(out, health, spawn, SupervisedStart(ctl, env(), settings), startupPolls = 2)
         var up = true
-        val out = captured { up = launch.ensureDaemon(freePort()) }
+        val out = captured { up = launch.ensureDaemon(TestPorts.reserve()) }
         assertFalse(up, "nothing answers on a free port, so the start is reported failed")
         assertEquals(0, spawn.spawns, "a second daemon was spawned beside the unit:\n$out")
         val started = listOf("start", UNIT) in ctl.calls
@@ -146,7 +144,7 @@ class SupervisedStartTest {
             val health = DaemonHealth()
             val spawn = RecordingSpawn(health)
             val launch = DaemonLaunch(out, health, spawn, SupervisedStart(ctl, reader, settings), startupPolls = 1)
-            val out = captured { assertFalse(launch.ensureDaemon(freePort())) }
+            val out = captured { assertFalse(launch.ensureDaemon(TestPorts.reserve())) }
             assertEquals(1, spawn.spawns, "the raw spawn is still the cold start here:\n$out")
             assertTrue(ctl.calls.none { it[0] == "start" }, "the unit must not be started: ${ctl.calls}")
         }

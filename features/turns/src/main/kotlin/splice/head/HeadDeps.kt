@@ -7,6 +7,7 @@
 // import list at all.
 package splice.head
 
+import splice.core.config.Knob
 import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
@@ -36,7 +37,8 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 
 /** Was `HeadDeps.DEFAULT_MAX_REQUEST_BYTES` / `HeadDeps.DEFAULT_REQUEST_READ_TIMEOUT_MS`
- *  (companion consts); same names, now at file scope in the same package.
+ *  (companion consts), then file-scope consts of those names; V4-210 renamed them for what they now
+ *  are, values read off the Knob.
  *
  *  V4-150: `internal`, which is the module boundary stated rather than a narrowing. These are DEFAULTS
  *  for two members of the [HeadDeps.HeadPolicy] bundle and nothing outside :daemon-head ever named them —
@@ -45,10 +47,14 @@ import splice.upstream.transport.UpstreamClient
  *  types, so the inference escape does not apply: a default expression is not part of a signature, and
  *  no consumer can bind one by inference. The compiler is the judge of that and it agrees — a public
  *  value parameter defaulting to an internal const is legal Kotlin, which is exactly what makes these
- *  two burnable where the others were not. */
-internal const val DEFAULT_MAX_REQUEST_BYTES: Int = 8 * 1024 * 1024
+ *  two burnable where the others were not.
+ *
+ *  V4-210: both READ the Knob (MAX_REQUEST_BYTES, REQUEST_READ_TIMEOUT_MS), the operator-facing
+ *  source HeadServerFactory already reads per head. A re-typed default was a KNOB-SHADOW that the
+ *  const-single-source law missed only because it could not read a default written by name. */
+internal val defaultMaxRequestBytes: Int = (Knob.MAX_REQUEST_BYTES.default as Long).toInt()
 
-internal const val DEFAULT_REQUEST_READ_TIMEOUT_MS: Long = 30_000
+internal val defaultRequestReadTimeoutMs: Long = Knob.REQUEST_READ_TIMEOUT_MS.default as Long
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(
@@ -138,8 +144,8 @@ public data class HeadDeps(
     /** Read-once values. Nothing here is derived from a turn, which is what makes it policy rather
      *  than state: an operator sets it and every turn reads the same answer. */
     public data class HeadPolicy(
-        val maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
-        val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
+        val maxRequestBytes: Int = defaultMaxRequestBytes,
+        val requestReadTimeoutMs: Long = defaultRequestReadTimeoutMs,
         val mirrorReasoning: Boolean = false,
         val progressLine: Boolean = true,
         val forwardClientAuth: Boolean = false,

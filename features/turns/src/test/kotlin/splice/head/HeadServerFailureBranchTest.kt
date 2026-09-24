@@ -133,7 +133,7 @@ class HeadServerFailureBranchTest {
     private fun buildHead(
         auth: RefreshableAuthProvider,
         wrap: (Provider) -> Provider = { it },
-        readTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
+        readTimeoutMs: Long = defaultRequestReadTimeoutMs,
     ): HeadServer {
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(

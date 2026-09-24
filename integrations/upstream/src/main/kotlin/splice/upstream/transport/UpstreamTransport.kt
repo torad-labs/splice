@@ -34,6 +34,7 @@ import jdk.net.ExtendedSocketOptions
 import kotlinx.coroutines.asCoroutineDispatcher
 import okhttp3.Dispatcher
 import okhttp3.Protocol
+import splice.core.config.Knob
 import splice.core.util.LogSink
 import splice.upstream.DnsBackoff
 import splice.upstream.RetryBackoff
@@ -119,9 +120,9 @@ public class UpstreamTransport {
      *  base/cap/jitter are the generic bounded curve an unpredicted failure falls onto (V4-110). */
     public fun defaultBackoff(
         waiter: Waiter,
-        baseMs: Long = BACKOFF_BASE_MS,
-        capMs: Long = MAX_BACKOFF_MS,
-        jitterPct: Int = JITTER_PCT,
+        baseMs: Long = defaultBackoffBaseMs,
+        capMs: Long = defaultBackoffCapMs,
+        jitterPct: Int = defaultJitterPct,
     ): RetryBackoff = RetryBackoff { attempt, minDelayMs ->
         val base = cappedExponentialBase(baseMs, capMs, attempt)
         val jittered = (base * jitterMultiplier(jitterPct)).toLong()
@@ -181,11 +182,12 @@ public class UpstreamTransport {
      *  generic 200/400/800ms curve undershoots. No minDelayMs — transport errors never carry
      *  a Retry-After header (no response was received). Shares the jitter knob with the generic
      *  curve so the budget check and the sleep cannot drift apart. */
-    public fun defaultDnsBackoff(waiter: Waiter, jitterPct: Int = JITTER_PCT): DnsBackoff = DnsBackoff { attempt ->
-        val base = cappedExponentialBase(DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS, attempt)
-        val jittered = (base * jitterMultiplier(jitterPct)).toLong()
-        waiter.wait(jittered)
-    }
+    public fun defaultDnsBackoff(waiter: Waiter, jitterPct: Int = defaultJitterPct): DnsBackoff =
+        DnsBackoff { attempt ->
+            val base = cappedExponentialBase(DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS, attempt)
+            val jittered = (base * jitterMultiplier(jitterPct)).toLong()
+            waiter.wait(jittered)
+        }
 
     /** A multiplier in [1 - pct/100, 1 + pct/100) — the shared jitter range for both curves. Zero
      *  jitter is the exact multiplier, never a zero-width Random range (which would throw). */
@@ -239,9 +241,14 @@ private const val DEFAULT_HTTPS_PORT = 443
 // one. Narrowing was checked before it was made: the only match for any of the five outside
 // :upstream is HostedServer.kt's own private BACKOFF_BASE_MS = 5_000L, a different declaration
 // with a different value, so no consumer is cut off. Single-sourcing is untouched either way.
-internal const val BACKOFF_BASE_MS: Long = 200L
-internal const val MAX_BACKOFF_MS: Long = 10_000L
-internal const val JITTER_PCT: Int = 10
+//
+// V4-210: the generic curve's three READ the Knob. Knob.RETRY_BACKOFF_* is what an operator sets and
+// what UpstreamFactory hands every production head, so a const re-typing its default was a second
+// source for the same 200ms / 10s / ±10% — const-single-source's KNOB-SHADOW names the base once it
+// reads a default written by name. The two DNS numbers have no knob and stay the one source they were.
+internal val defaultBackoffBaseMs: Long = Knob.RETRY_BACKOFF_BASE_MS.default as Long
+internal val defaultBackoffCapMs: Long = Knob.RETRY_BACKOFF_CAP_MS.default as Long
+internal val defaultJitterPct: Int = (Knob.RETRY_BACKOFF_JITTER_PCT.default as Long).toInt()
 internal const val DNS_BACKOFF_BASE_MS: Long = 1_000L
 internal const val DNS_MAX_BACKOFF_MS: Long = 4_000L
 

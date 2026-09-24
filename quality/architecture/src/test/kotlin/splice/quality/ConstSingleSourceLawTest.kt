@@ -35,11 +35,12 @@
 // the same 744 files, proven file-for-file at the port.
 //
 // DENOMINATOR, FROM THE SOURCE (§24). Every `const val` at any depth, 1352 today, plus the Knob
-// plane parsed out of Knob.kt's enum entries. A file added tomorrow, or a Knob added tomorrow, is
-// in scope with no edit to this file. Three guards refuse a vacuous pass: zero source files is a
-// failure, zero parsed consts is a failure, and the parsed count must EQUAL the count of
-// `const val` lines in the tree — a parser that has drifted off the source cannot be trusted to
-// report an absence.
+// plane parsed out of Knob.kt's enum entries: every entry classed by its kind, and every NUMBER
+// entry's default read by name or by position, or the run refuses naming the entry (V4-210). A file
+// added tomorrow, or a Knob added tomorrow, is in scope with no edit to this file. Three guards
+// refuse a vacuous pass: zero source files is a failure, zero parsed consts is a failure, and the
+// parsed count must EQUAL the count of `const val` lines in the tree — a parser that has drifted off
+// the source cannot be trusted to report an absence.
 //
 // PARSE, line-based and comment/string aware. VALUES ARE COMPARED NORMALISED, which is not
 // cosmetic: measured on this tree a textual comparison mis-classed BOLD/RED/GREEN/DIM/CYAN/RESET
@@ -60,8 +61,9 @@
 // value-only matching over 619 numeric consts is mostly noise, so the HTTP status family gets its
 // own structural wall (quality/rules/kotlin/kt-http-status-single-source.yml) and the general case
 // stays open by choice. Non-`const` `val` declarations: a computed val is a different subject. A
-// Knob shadow more than one qualifier away from its Knob's name. An equality comment whose
-// counterpart is a SINGLE-token name, or is not a const at all.
+// Knob shadow more than one qualifier away from its Knob's name. One number spelled two ways
+// (`4L shl 20` against `4_194_304`): values compare as normalised text and are never evaluated. An
+// equality comment whose counterpart is a SINGLE-token name, or is not a const at all.
 package splice.quality
 
 import kotlinx.serialization.json.Json
@@ -103,6 +105,12 @@ internal object ConstSingleSource {
      *  newline and the checker's `^…$` did not. */
     private val NUM_TOKEN = Regex("(?:0[xX][0-9a-fA-F_]+|[0-9][0-9_]*(?:\\.[0-9_]+)?(?:[eE][-+]?[0-9]+)?)[LlFfDdUu]*")
 
+    /** A number as Knob.kt spells a default: one literal, or literals joined by arithmetic
+     *  (`8 * 1024 * 1024L`, `4L shl 20`). Compared as normalised TEXT and never evaluated. */
+    private val NUM_EXPR = Regex(
+        "${NUM_TOKEN.pattern}(?:\\s*(?:[-+*/]|shl|shr|ushr)\\s*${NUM_TOKEN.pattern})*",
+    )
+
     /** An equality obligation written in prose — a sentence a human wrote instead of a wall. The
      *  detector needs one of these AND a named counterpart before it fires, and the finding quotes
      *  the PATTERN back, so re-wording one would change the message. */
@@ -122,8 +130,13 @@ internal object ConstSingleSource {
      *  equal"). Requiring an underscore drops CLIENT and KIND while keeping the real ones. */
     private val NAMED_CONST = Regex("\\b(?:Knob\\.)?([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\\b")
     private val KNOB_ENTRY = Regex("^ {4}([A-Z][A-Z0-9_]*)(?=\\()", RegexOption.MULTILINE)
-    private val NAMED_ARG = Regex("^[A-Za-z_][A-Za-z0-9_]*\\s*=[^=]")
-    private val LINE_COMMENT = Regex("//[^\\n]*")
+    private val NAMED_ARG = Regex("^([A-Za-z_][A-Za-z0-9_]*)\\s*=(?!=)\\s*(.*)$")
+    private val KNOB_KIND = Regex("^KnobKind\\.([A-Z_]+)$")
+
+    /** Where Knob's constructor takes `kind` and `default` when an entry passes them by position. */
+    private const val KIND_POSITION = 1
+    private const val DEFAULT_POSITION = 3
+
     private val REQUIRED_KEYS = listOf("recorded", "total", "denominator", "groups")
 
     /** One `const val` declaration, its value already normalised. */
@@ -389,30 +402,62 @@ internal object ConstSingleSource {
         return Census(consts, problems)
     }
 
-    /** Knob name -> normalised numeric default, parsed from the enum entries. */
+    /** Knob name -> normalised numeric default, parsed from the enum entries. Every entry is classed
+     *  by its KIND, and a NUMBER entry's default is read where the entry writes it: `default = …` by
+     *  name first, else the FOURTH positional. An entry that cannot be classed, and a NUMBER entry
+     *  whose default does not read as a number, is a problem BY NAME, because skipping it switches
+     *  KNOB-SHADOW off for that knob with every test green. That is what the positional-only reader
+     *  did to the 19 entries that name their default, with two real shadows under it (V4-210). */
     fun knobDefaults(knob: File, knobRel: String): Knobs {
-        if (!knob.isFile) return Knobs(emptyMap(), emptyList())
+        if (!knob.isFile) return Knobs(emptyMap(), listOf("$knobRel: missing — the Knob plane cannot be checked"))
         val text = knob.readText()
         val entries = KNOB_ENTRY.findAll(text).toList()
         if (entries.isEmpty()) {
             return Knobs(emptyMap(), listOf("$knobRel: parsed 0 Knob entries — the Knob plane cannot be checked"))
         }
-        val defaults = linkedMapOf<String, String>()
-        for (match in entries) {
-            val body = Reader.balanced(text, match.range.last + 1)
-            val positional = Reader.splitTopLevel(body.orEmpty()).filterNot { NAMED_ARG.containsMatchIn(it) }
-            val readable = body != null && positional.size >= 4
-            if (readable) {
-                val fallback = Reader.normalise(LINE_COMMENT.replace(positional[3], ""))
-                if (NUM_TOKEN.matches(fallback)) defaults[match.groupValues[1]] = fallback
-            }
+        val read = entries.map { match -> knobEntry(match.groupValues[1], Reader.balanced(text, match.range.last + 1)) }
+        val defaults = read.filter { it.numeric }.associateTo(linkedMapOf()) { it.name to it.default.orEmpty() }
+        val unclassed = read.filter { it.kind == null }.map { it.name }
+        return Knobs(defaults, knobProblems(knobRel, unclassed, read.filter { it.unread }.map { it.name }))
+    }
+
+    /** One enum entry as this reader sees it: its kind, and its default as normalised text. */
+    private data class KnobEntry(val name: String, val kind: String?, val default: String?) {
+        val numeric: Boolean get() = kind == "NUMBER" && default != null && NUM_EXPR.matches(default)
+
+        /** `null` is a NUMBER knob with no default, so nothing to shadow; anything else is unread. */
+        val unread: Boolean get() = kind == "NUMBER" && !numeric && default != "null"
+    }
+
+    /** Comments go BEFORE the comma split, a line at a time and string-aware: a comment between two
+     *  arguments may hold commas and apostrophes of its own, and the split knows neither. */
+    private fun knobEntry(name: String, body: String?): KnobEntry {
+        val code = body.orEmpty().lines().joinToString("\n") { Reader.stripLineComment(it) }
+        val args = Reader.splitTopLevel(code).map { Reader.normalise(it) }.filter { it.isNotEmpty() }
+        val kind = argument(args, "kind", KIND_POSITION)?.let { KNOB_KIND.matchEntire(it)?.groupValues?.get(1) }
+        return KnobEntry(name, kind, argument(args, "default", DEFAULT_POSITION))
+    }
+
+    /** `name = x` wherever the entry writes it, else the [position]th positional argument. */
+    private fun argument(args: List<String>, name: String, position: Int): String? {
+        val named = args.mapNotNull { NAMED_ARG.matchEntire(it) }.firstOrNull { it.groupValues[1] == name }
+        return named?.groupValues?.get(2) ?: args.filterNot { NAMED_ARG.matches(it) }.getOrNull(position)
+    }
+
+    private fun knobProblems(knobRel: String, unclassed: List<String>, unread: List<String>): List<String> {
+        val out = mutableListOf<String>()
+        if (unclassed.isNotEmpty()) {
+            out += "$knobRel: cannot read the kind of ${unclassed.size} Knob entry/entries — neither `kind = " +
+                "KnobKind.X` nor the second positional says what it is, so whether it carries a numeric default " +
+                "to guard is unknown and KNOB-SHADOW would be silently off for it: ${unclassed.joinToString(", ")}"
         }
-        // KNOB-SHADOW compares against these DEFAULTS, so entries that all match while none yields a
-        // default is the plane switched OFF, not a clean tree — and `entries.isEmpty()` cannot see it.
-        val unreadable = "$knobRel: matched ${entries.size} Knob entry/entries but read 0 defaults — the " +
-            "reader drops named arguments and takes the default from the FOURTH positional, so respelling " +
-            "the entries leaves every entry matched and every default unread, with KNOB-SHADOW silently off"
-        return if (defaults.isEmpty()) Knobs(emptyMap(), listOf(unreadable)) else Knobs(defaults, emptyList())
+        if (unread.isNotEmpty()) {
+            out += "$knobRel: cannot read the default of ${unread.size} NUMBER Knob(s) — neither `default = …` " +
+                "nor the fourth positional is a numeric literal or literal arithmetic, so KNOB-SHADOW would be " +
+                "silently off for each. Spell the default in literals, or teach this reader the new spelling: " +
+                unread.joinToString(", ")
+        }
+        return out
     }
 
     /** Every name declared in 2+ FILES, classed COPY (one normalised value) or COLLISION. */
@@ -450,7 +495,7 @@ internal object ConstSingleSource {
      *  subprocess budget ({TIMEOUT, MS}) against Knob.FIRST_BYTE_TIMEOUT_MS — same number, unrelated
      *  subject. Two names for ONE value differ by at most one qualifier, so that is the bound. */
     private fun shadow(konst: Konst, knobs: Map<String, String>): ShadowHit? {
-        val local = if (NUM_TOKEN.matches(konst.value)) Reader.tokens(konst.name) else emptySet()
+        val local = if (NUM_EXPR.matches(konst.value)) Reader.tokens(konst.name) else emptySet()
         if (local.isEmpty()) return null
         val knob = knobs.keys.sorted().firstOrNull { name ->
             val knobTokens = Reader.tokens(name)
@@ -676,6 +721,31 @@ class ConstSingleSourceLawTest {
     }
 
     @Test
+    fun `the law can actually fail - a Knob default written by name is graded - V4-210`(@TempDir root: File) {
+        with(Tree(root)) {
+            // Knob.kt writes most of its numeric defaults as `default = N`. A reader that took only
+            // the fourth positional skipped every one of them, and two real shadows sat under it.
+            write(A_KT to KNOB_SHADOW_SRC)
+            rewriteKnob(KNOB_NAMED_ARGS)
+            assertHit(audit(baseline()), "KNOB-SHADOW", "USAGE_WARN_PCT") { "a default written by name is a default" }
+
+            // Literal arithmetic is how two of them are spelled, and it compares as normalised text.
+            write(A_KT to BYTES_SHADOW_SRC)
+            rewriteKnob(KNOB_ARITHMETIC)
+            assertHit(audit(baseline()), "KNOB-SHADOW", "MAX_REQUEST_BYTES") {
+                "a const spelling a Knob's arithmetic default must be RED by name"
+            }
+
+            // A NUMBER knob this reader cannot read is named, never skipped: one readable entry
+            // beside it used to be enough to keep the whole plane quiet.
+            rewriteKnob(KNOB_UNREADABLE)
+            assertHit(audit(baseline()), "cannot read", "SESSION_CAP") {
+                "a NUMBER Knob whose default this reader cannot read must REFUSE by name"
+            }
+        }
+    }
+
+    @Test
     fun `the law can actually fail - growth on the ratchet plane - V4-88`(@TempDir root: File) {
         with(Tree(root)) {
             write(A_KT to dup("SEAM_WIDTH", "8"), B_KT to dup("SEAM_WIDTH", "8"))
@@ -782,13 +852,13 @@ class ConstSingleSourceLawTest {
             ) { "a tree with no main sources at all must REFUSE" }
 
             // The Knob plane's teeth are the parsed DEFAULTS, and `entries.isEmpty()` cannot see a
-            // Knob whose entries all still MATCH while none of them yields a default. Respelling the
-            // entries is enough to do it, and before this arm that turned KNOB-SHADOW off for good
-            // with every test green.
+            // Knob whose entries all still MATCH while none of them yields one. Only a NUMBER entry
+            // has a default to compare, so an entry whose KIND does not parse is named rather than
+            // skipped: skipping it is KNOB-SHADOW switched off for that knob with every test green.
             write(A_KT to dup("SEAM_WIDTH", "8"), B_KT to dup("SEAM_WIDTH", "8"))
-            rewriteKnob(KNOB_NAMED_ARGS)
-            assertHit(audit(baseline()), "read 0 defaults") {
-                "a Knob whose entries match but whose defaults do not parse must REFUSE"
+            rewriteKnob(KNOB_KIND_RESPELLED)
+            assertHit(audit(baseline()), "cannot read the kind", "USAGE_WARN_PCT") {
+                "a Knob entry whose kind does not parse must REFUSE by name"
             }
         }
     }
@@ -849,8 +919,75 @@ private const val UPSTREAM_ATTEMPTS = 4
         // Same value as a Knob default but sharing no name token: GREEN (see the header's NOT CAUGHT).
         const val KNOB_UNRELATED = "package splice.a\n\nprivate const val RETRY_SLOTS = 80\n"
 
-        /** The same enum, respelled with named arguments: every entry still matches KNOB_ENTRY and
-         *  not one of them yields a readable default. */
+        const val BYTES_SHADOW_SRC =
+            "package splice.a\n\nprivate const val DEFAULT_MAX_REQUEST_BYTES = 8 * 1024 * 1024\n"
+
+        /** Two defaults spelled as literal arithmetic, as Knob.kt spells them, beside a STRING knob
+         *  whose default is no number and must not read as an unreadable one. */
+        const val KNOB_ARITHMETIC = """package splice.core.config
+
+public enum class Knob(
+    public val key: String,
+    public val kind: KnobKind,
+    public val envNames: List<String>,
+    public val default: Any?,
+    public val restartRequired: Boolean = false,
+) {
+    PINNED_MODEL("pinnedModel", KnobKind.STRING, listOf("CLAUDEX_PINNED_MODEL"), "gpt-5.6-sol"),
+    MAX_REQUEST_BYTES(
+        "maxRequestBytes",
+        KnobKind.NUMBER,
+        listOf("SPLICE_MAX_REQUEST_BYTES"),
+        default = 8 * 1024 * 1024L,
+        restartRequired = true,
+    ),
+    TRACE_MAX_BODY_CHARS(
+        "traceMaxBodyChars",
+        KnobKind.NUMBER,
+        listOf("SPLICE_TRACE_MAX_BODY_CHARS"),
+        default = 4L shl 20,
+        restartRequired = true,
+    ),
+}
+"""
+
+        /** One readable NUMBER entry beside one whose default is a call no text reader can value. */
+        const val KNOB_UNREADABLE = """package splice.core.config
+
+public enum class Knob(
+    public val key: String,
+    public val kind: KnobKind,
+    public val envNames: List<String>,
+    public val default: Any?,
+) {
+    USAGE_WARN_PCT("usageWarnPct", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L),
+    SESSION_CAP(
+        "sessionCap",
+        KnobKind.NUMBER,
+        listOf("SPLICE_SESSION_CAP"),
+        default = sessionCapFromHost(),
+    ),
+}
+"""
+
+        /** The kind imported bare: the entry still matches KNOB_ENTRY and its default still reads,
+         *  but nothing says it is a NUMBER knob. */
+        const val KNOB_KIND_RESPELLED = """package splice.core.config
+
+import splice.core.config.KnobKind.NUMBER
+
+public enum class Knob(
+    public val key: String,
+    public val kind: KnobKind,
+    public val envNames: List<String>,
+    public val default: Any?,
+) {
+    USAGE_WARN_PCT("usageWarnPct", NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L),
+}
+"""
+
+        /** The same enum, respelled with named arguments: every entry still matches KNOB_ENTRY, and
+         *  the default is read by its name. */
         const val KNOB_NAMED_ARGS = """package splice.core.config
 
 public enum class Knob(
@@ -882,10 +1019,13 @@ public enum class Knob(
         "foldMaxTier",
         KnobKind.NUMBER,
         listOf("CLAUDEX_FOLD_MAX_TIER"),
-        // a comment between the args, which a naive positional split would count as one
+        // a comment between the args, which a naive positional split would count as one: it's why
+        // comments leave before the split
         6L,
         restartRequired = true,
     ),
+    // A NUMBER knob with no default at all: nothing to shadow, and not an unread one.
+    CONTEXT_WINDOW_OVERRIDE("contextWindowOverride", KnobKind.NUMBER, listOf("CODEX_MODEL_CONTEXT_WINDOW"), null),
 }
 """
     }

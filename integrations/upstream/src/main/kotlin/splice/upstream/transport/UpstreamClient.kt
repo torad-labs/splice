@@ -70,9 +70,9 @@ public class UpstreamClient(
     // Read from the head config by the factory; the defaults here are for direct construction (tests,
     // embedders). Known errors keep their specific plans (DNS 1s/2s/4s, 429 Retry-After); this is the
     // bounded floor everything unpredicted falls on.
-    private val backoffBaseMs: Long = BACKOFF_BASE_MS,
-    private val backoffCapMs: Long = MAX_BACKOFF_MS,
-    private val backoffJitterPct: Int = JITTER_PCT,
+    private val backoffBaseMs: Long = defaultBackoffBaseMs,
+    private val backoffCapMs: Long = defaultBackoffCapMs,
+    private val backoffJitterPct: Int = defaultJitterPct,
     private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(
         waiter,
         baseMs = backoffBaseMs,

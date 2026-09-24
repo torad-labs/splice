@@ -1,6 +1,6 @@
 // The documented topology key set as data, and the pure validator that checks a parsed topology
 // against it. Source of every key below: FEATURES.md section 2.3 ("Topology"), which mirrors
-// `Topology.kt`, `QuirksConfig.kt`, `TopologySchema.kt`, `CompactionScope.kt`,
+// `Topology.kt`, `HeadConfig.kt`, `QuirksConfig.kt`, `TopologySchema.kt`, `CompactionScope.kt`,
 // `HeadSystemPrompt.kt` and `TokenCost.kt`.
 //
 // What it is FOR: a topology edit is boot-only and a bad one is only discovered at the next

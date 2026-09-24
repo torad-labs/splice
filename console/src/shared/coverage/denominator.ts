@@ -87,9 +87,11 @@ export function parseRouteNames(markdown: string): string[] {
 /** The runtime knob enum — the denominator for `kind: 'knob'`. */
 export const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';
 
-/** The six topology sources named by M1-04; CompactionScope.kt declares no @SerialName. */
+/** The six topology sources named by M1-04, and HeadConfig.kt since HeadConfig and HeadModel left
+ *  Topology.kt (concentration, 2026-09-23); CompactionScope.kt declares no @SerialName. */
 export const TOPOLOGY_SOURCES: readonly string[] = [
   'core/src/main/kotlin/splice/core/topology/Topology.kt',
+  'core/src/main/kotlin/splice/core/topology/HeadConfig.kt',
   'core/src/main/kotlin/splice/core/topology/QuirksConfig.kt',
   'core/src/main/kotlin/splice/core/topology/TopologySchema.kt',
   'core/src/main/kotlin/splice/core/prompt/HeadSystemPrompt.kt',

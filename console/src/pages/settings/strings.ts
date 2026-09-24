@@ -27,6 +27,9 @@ export const S = {
   allKnobs: 'all knobs',
   live: 'applies live',
   restart: 'restart to apply',
+  /** The view of restart-only knobs, named as each knob in it says it (knob-form `applies on
+   *  restart`). `restart to apply` above is the instruction after splice.toml is written. */
+  restartView: 'applies on restart',
   sample: 'sample data',
   onPath: 'claude on path',
   shim: 'shim',

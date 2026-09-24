@@ -23,7 +23,7 @@ export const EMPTIES = {
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'all', name: S.allKnobs, layout: 'rack', filter: {}, sort: null, group: null, fields: [] },
   { id: 'live', name: S.live, layout: 'rack', filter: { hot: 'true' }, sort: null, group: null, fields: [] },
-  { id: 'restart', name: S.restart, layout: 'rack', filter: { hot: 'false' }, sort: null, group: null, fields: [] },
+  { id: 'restart', name: S.restartView, layout: 'rack', filter: { hot: 'false' }, sort: null, group: null, fields: [] },
 ];
 
 export type TopologyLeaf = {

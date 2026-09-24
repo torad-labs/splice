@@ -6424,5 +6424,6 @@ id = "V4-211"
 phase = "release"
 title = "CONST-SINGLE-SOURCE NORMALISER READS A HEX LITERAL AS ONE TOKEN (claude-builder, found while fixing V4-210; the law is V4-88's, whose walls-review row V4-206 is done, so the finding is a row of the open milestone): NUMERIC_SUFFIX runs before HEX, so 0x1F and 0x1D both normalise to 0x1 and two different hex values under one const name read as a COPY instead of a COLLISION, a law that cannot tell two values apart. Fix: move the HEX normalisation ahead of NUMERIC_SUFFIX. Red first: two consts under one name, 0x1F and 0x1D, must read COLLISION and read COPY today. Fence: quality/architecture only."
 files = ["quality/architecture/src/test/kotlin/**"]
-status = "todo"
+status = "done"
 verify = "the red-first test red on the unfixed normaliser, green after; bun tools/gate slot V4-211 -- :quality-architecture:test; CI gate on the PR head"
+# [2026-09-24] RECEIPT cmd="bun tools/gate slot v4-211 -- --continue --no-build-cache :quality-architecture:cleanTest :quality-architecture:test :quality-architecture:detekt --rerun" exit=0 tests=223 touched=quality/architecture/src/test/kotlin/splice/quality/ConstSingleSourceLawTest.kt tail="red first: 0x1F vs 0x1D read SEAM_MASK = 0x1 COPY; now COLLISION, and 0x1f/0x1F, 0xFF_FF/0xFFFF, 0xFFL/0xFF each one value; 223/0 on de7d2f02e"

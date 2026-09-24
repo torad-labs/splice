@@ -94,7 +94,9 @@ button:not(:disabled):active {
      the band and its floor are now type multiples so they follow the root with everything else. */
   --rule-h: calc(var(--text-6) * 2.582);
   --rule-min: calc(var(--text-6) * 2.4);
-  --rail-w: 9vw;
+  /* The rail is as wide as its plates, not a share of the window: 9vw was 130px at 1440 and 346px
+     at 3840, a column of air around the same eight-letter plates (2026-09-24, fixed root). */
+  --rail-w: 8.25rem;
   --rail-min: 118px;
   height: 100vh;
   display: grid;
@@ -118,6 +120,15 @@ button:not(:disabled):active {
   min-width: 0;
   overflow: auto;
   padding: var(--space-5);
+}
+
+/* A WIDER WINDOW SHOWS THE SAME PAGE, NOT A STRETCHED ONE (2026-09-24, fixed root). A strip's cells
+   share the bay's slack, so at 3840 a ten-field row spread its short values 370px apart and the eye
+   lost the row between them. The page stops at 120rem (1920px at the default root) and sits centred
+   in whatever the window has left. */
+.myx-console-page > * {
+  max-width: 120rem;
+  margin-inline: auto;
 }
 
 /* The bay holds its space for the frame before a lazily loaded page arrives.

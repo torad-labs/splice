@@ -74,6 +74,38 @@ export function recentLine(tail: readonly CompactRow[]): string | null {
     + (failed === 0 ? 'none failed' : `${failed} failed`);
 }
 
+/**
+ * THE COUNTS THE OUTCOMES RACK SHOWS, and the line that dates the rest. A daemon with #226 sends the
+ * last seven days beside the counted rows, and the rack leads with those: the counted rows reach back
+ * to each head's oldest kept row, and on the live feed that was a July failure rate read as today's.
+ * The older count then prints as one dated line under the rack, from the heads' own `first_ts`. An
+ * older daemon sends neither, and the rack shows its counts as before, undated.
+ */
+export function outcomeCounts(stats: CompactPayload['stats']): {
+  counts: Record<string, number>;
+  total: number;
+  week: boolean;
+} {
+  const week = stats.by_outcome_7d;
+  if (week === undefined) return { counts: stats.by_outcome, total: stats.total, week: false };
+  return { counts: week, total: Object.values(week).reduce((sum, n) => sum + n, 0), week: true };
+}
+
+/** `since sep 21: 3,787 counted, 1,315 failed`, or null when the daemon does not date its counts. */
+export function countedLine(stats: CompactPayload['stats']): string | null {
+  if (stats.by_outcome_7d === undefined) return null;
+  const firsts = Object.values(stats.heads ?? {})
+    .map((head) => head.first_ts)
+    .filter((ts): ts is number => ts !== undefined);
+  if (firsts.length === 0 || stats.total === 0) return null;
+  const since = new Date(Math.min(...firsts));
+  const failed = Object.entries(stats.by_outcome)
+    .filter(([outcome]) => stateOf(outcome) === 'fail')
+    .reduce((sum, [, n]) => sum + n, 0);
+  return `since ${MONTHS[since.getMonth()]} ${since.getDate()}: ${fmtInt(stats.total)} counted, `
+    + (failed === 0 ? 'none failed' : `${fmtInt(failed)} failed`);
+}
+
 function eventKey(row: CompactRow, index: number): string {
   return `${row.head}-${row.ts}-${index}`;
 }
@@ -133,7 +165,9 @@ export function CompactFeed({ payload, sample = false, labels = new Map() }: {
   const [open, setOpen] = useState<string | null>(null);
   const nameOf = (key: string): string => labels.get(key) ?? key;
   // Most common first: the daemon's map order put three failure kinds above the 65% that worked.
-  const outcomes = Object.entries(payload.stats.by_outcome).sort(([, a], [, b]) => b - a);
+  const shown = outcomeCounts(payload.stats);
+  const outcomes = Object.entries(shown.counts).sort(([, a], [, b]) => b - a);
+  const counted = countedLine(payload.stats);
   const tail = [...payload.stats.tail].reverse();
   const opened = tail.find((row, index) => eventKey(row, index) === open) ?? null;
 
@@ -156,7 +190,7 @@ export function CompactFeed({ payload, sample = false, labels = new Map() }: {
       <div className="myx-cfeed-bays">
         {recent === null ? null : <p className="myx-cfeed-recent">{recent}</p>}
         <Bay
-          label={S.outcomes}
+          label={shown.week ? S.week : S.outcomes}
           count={outcomes.length}
           // The fixture's own mark (CONTRACTS.md section 4: a grey `sample data` edge in the bay
           // label). It used to ride as the closed detail column's empty, which M3-03 removed.
@@ -177,7 +211,7 @@ export function CompactFeed({ payload, sample = false, labels = new Map() }: {
               already prints the word `total`, so the label was the same five characters twice on
               one row and a third time in the bay's own head (m1 design review B10). */}
           <Strip edge="grey" edgeLabel={S.total} ariaLabel={S.total}>
-            <StripField w={OUTCOME + COUNT + SHARE} span={3} value={fmtInt(payload.stats.total)} />
+            <StripField w={OUTCOME + COUNT + SHARE} span={3} value={fmtInt(shown.total)} />
           </Strip>
           {outcomes.map(([outcome, count]) => (
             <Strip
@@ -192,10 +226,11 @@ export function CompactFeed({ payload, sample = false, labels = new Map() }: {
                   two words the rack states once. Seven rows here, six in the tail. */}
               <StripField w={OUTCOME} value={outcomeText(outcome)} mono={false} />
               <StripField w={COUNT} value={fmtInt(count)} />
-              <StripField w={SHARE} value={shareText(count, payload.stats.total)} />
+              <StripField w={SHARE} value={shareText(count, shown.total)} />
             </Strip>
           ))}
         </Bay>
+        {counted === null ? null : <p className="myx-cfeed-recent myx-cfeed-counted">{counted}</p>}
 
         <Bay
           label={S.events}

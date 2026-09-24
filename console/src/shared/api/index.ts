@@ -313,8 +313,25 @@ export interface CompactRow {
   instructions_source?: string;
 }
 
+/** One head's compaction counts and the span of rows they came from (#226). `first_ts`/`last_ts`
+ *  are absent for a head with no rows: no rows, no span to claim. */
+export interface CompactHeadStats {
+  total: number;
+  by_outcome: Record<string, number>;
+  by_outcome_7d?: Record<string, number>;
+  first_ts?: number;
+  last_ts?: number;
+}
+
 export interface CompactPayload {
-  stats: { total: number; by_outcome: Record<string, number>; tail: CompactRow[] };
+  stats: {
+    total: number;
+    by_outcome: Record<string, number>;
+    tail: CompactRow[];
+    /** The last seven days among the counted rows; absent on a daemon older than #226. */
+    by_outcome_7d?: Record<string, number>;
+    heads?: Record<string, CompactHeadStats>;
+  };
 }
 
 export interface ProviderAuth {

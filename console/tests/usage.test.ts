@@ -13,7 +13,7 @@ import { describe, expect, test } from 'vitest';
 import { costOf, sum, within } from '../src/entities/economics';
 import { slotTiers, windowSourceText } from '../src/entities/model';
 import type { HeadCatalog } from '../src/entities/model';
-import { CompactFeed, edgeFor, outcomeText, recentLine, shareText, stateOf } from '../src/widgets/compact-feed';
+import { CompactFeed, countedLine, edgeFor, outcomeCounts, outcomeText, recentLine, shareText, stateOf } from '../src/widgets/compact-feed';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
 import { CompactionBoard } from '../src/pages/compaction';
 import { fixtureCompact } from '../src/pages/compaction/fixtures/compaction';
@@ -258,6 +258,41 @@ describe('compaction page', () => {
     expect(markup, 'a head the map does not name keeps its key').toContain('>claude-splice<');
   });
 
+  test('with seven-day counts the rack leads with the week, and the older rows print as one dated line', () => {
+    const sep21 = new Date(2026, 8, 21, 12).getTime();
+    const stats = {
+      ...fixtureCompact.stats,
+      total: 3787,
+      by_outcome: { model_text: 2467, empty_model: 666, stream_error: 567, upstream_error: 82 },
+      by_outcome_7d: { model_text: 40, stream_error: 2 },
+      heads: {
+        claudex: { total: 3000, by_outcome: {}, first_ts: sep21 + 86_400_000 },
+        bonsai: { total: 787, by_outcome: {}, first_ts: sep21 },
+        fresh: { total: 0, by_outcome: {} },
+      },
+    };
+    expect(outcomeCounts(stats)).toEqual({ counts: { model_text: 40, stream_error: 2 }, total: 42, week: true });
+    expect(countedLine(stats)).toBe('since sep 21: 3,787 counted, 1,315 failed');
+    const markup = render(h(CompactFeed, { payload: { stats } }));
+    expect(markup).toContain('>last 7 days<');
+    expect(markup).toContain('>42<');
+    expect(markup, 'shares are of the week, not of every counted row').toContain('>95%<');
+    expect(markup).toContain('since sep 21: 3,787 counted, 1,315 failed');
+  });
+
+  test('without seven-day counts the rack shows the counted rows, undated and never called all', () => {
+    expect(outcomeCounts(fixtureCompact.stats)).toEqual({
+      counts: fixtureCompact.stats.by_outcome, total: fixtureCompact.stats.total, week: false,
+    });
+    expect(countedLine(fixtureCompact.stats)).toBeNull();
+    const markup = render(h(CompactFeed, { payload: fixtureCompact }));
+    expect(markup).toContain('>recorded outcomes<');
+    expect(markup).not.toContain('all recorded');
+    expect(markup).not.toContain('last 7 days');
+    // a week sent with no head carrying a first row has nothing to date the older count by
+    expect(countedLine({ ...fixtureCompact.stats, by_outcome_7d: {}, heads: { fresh: { total: 0, by_outcome: {} } } })).toBeNull();
+  });
+
   test('an outcome the daemon is known to write reads in words, and a new one in its own spelling', () => {
     // The live feed on 2026-09-24 carried exactly these six names across 3,786 compactions.
     expect(['model_text', 'model_thinking', 'tooled_no_text', 'empty_model', 'stream_error', 'upstream_error'].map(outcomeText))
@@ -454,7 +489,7 @@ describe('a rack of like rows prints its column names once', () => {
     // Law 34's shape: if the boards rendered nothing, every assertion below would pass vacuously
     // and the suite would report that no rack repeats its labels. The denominator is named first.
     const all = boards.flatMap(([, markup]) => racks(markup));
-    expect(all.map((rack) => rack.label)).toEqual(['all recorded outcomes', 'recent compactions', 'heads']);
+    expect(all.map((rack) => rack.label)).toEqual(['recorded outcomes', 'recent compactions', 'heads']);
     expect(all.every((rack) => rack.rows.length > 0)).toBe(true);
   });
 

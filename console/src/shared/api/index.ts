@@ -95,11 +95,22 @@ function errorMessage(body: unknown, status: number): string {
  *  the response that never came. */
 const NOT_ANSWERING = 'splice is not answering';
 
+/** What an HTTP header value may hold here: printable ASCII, no space. */
+const HEADER_SAFE = /^[\x21-\x7e]*$/;
+
 // Exported for entity api segments (entities/*/api), which own their routes and payload types
 // locally (CONTRACTS.md section 8); the key, the 401 lockout and the error envelope stay here.
 // `control` below keeps the routes that predate the console rebuild.
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (locked) throw new MgmtError(401, 'management key required');
+  // A key a header cannot carry never reaches the daemon: fetch throws on it before sending, and that
+  // throw read as `splice is not answering` on every page. A key pasted from rich text is the usual
+  // one (a smart quote, a zero-width space). The daemon's keys are printable ASCII, so the gate
+  // reopens and asks for it again (code review, 2026-09-24).
+  if (!HEADER_SAFE.test(currentKey())) {
+    noteUnauthorized();
+    throw new MgmtError(401, 'management key required');
+  }
   let res: Response;
   try {
     res = await fetch(path, {
@@ -345,6 +356,8 @@ export interface ProviderAuth {
   /** api-key heads: the variable the key is read from, and the key masked (`sk-f…ee94`). */
   env_var?: string;
   api_key_masked?: string;
+  /** The head's key_file, path only: read before the key store, after the variable. */
+  key_file?: string;
 }
 
 export type AuthPayload = Record<string, ProviderAuth>;

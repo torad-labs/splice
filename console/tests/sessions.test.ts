@@ -367,3 +367,18 @@ describe('file view', () => {
     expect(out).not.toContain('FILE-BODY-NOT-IN-MARKUP');
   });
 });
+
+describe('the session rack budget', () => {
+  const ALL = ['name', 'head', 'project', 'started', 'seen', 'peer'];
+  const width = (order: string[]) => fieldsOf(session({}), 'peer-session', order).reduce((sum, field) => sum + field.w, 0);
+
+  test('no view passes 122ch, the ones that print head included', () => {
+    // by team prints all six; at the widths the head-less view uses it measured 151ch
+    expect(width(ALL)).toBe(122);
+    expect(width(ALL.filter((key) => key !== 'head'))).toBe(122);
+    for (let drop = 0; drop < ALL.length; drop += 1) {
+      expect(width(ALL.filter((_, at) => at !== drop))).toBeLessThanOrEqual(122);
+    }
+  });
+});
+

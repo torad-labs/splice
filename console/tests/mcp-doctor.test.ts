@@ -408,6 +408,10 @@ describe('budgets and alerts', () => {
     expect(parseUsd('5$/day')).toEqual({ ok: false });
     expect(parseUsd('-3')).toEqual({ ok: false });
     expect(parseUsd('$')).toEqual({ ok: false });
+    // Number() reads these as amounts; none is one a person typed as dollars
+    for (const typo of ['0x10', '0b11', '0o7', '1e3', 'Infinity', '5.5.5']) expect(parseUsd(typo), typo).toEqual({ ok: false });
+    expect(parseUsd('.5')).toEqual({ ok: true, value: 0.5 });
+    expect(parseUsd('12.')).toEqual({ ok: true, value: 12 });
   });
 
   test('a head absent from the payload has no budget', () => {

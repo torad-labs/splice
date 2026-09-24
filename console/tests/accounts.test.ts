@@ -29,7 +29,7 @@ import { AccountStrip, windowFieldLabel } from '../src/widgets/account-strip';
 import { refusalOf } from '../src/features/account-login';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from '../src/pages/accounts/model';
 import { dispositions } from '../src/pages/accounts/coverage';
-import { AccountsBoard, ApiKeyDetail } from '../src/pages/accounts';
+import { AccountsBoard, ApiKeyDetail, apiKeyHint } from '../src/pages/accounts';
 import { Empty } from '../src/shared/ui';
 import type { View } from '../src/features/views';
 
@@ -504,5 +504,19 @@ describe('the api-key heads have a bay of their own', () => {
     const out = render(h(ApiKeyDetail, { row: { head: 'claude-deepseek', kind: 'api-key', present: false, masked: null, note: null, envVar: 'DEEPSEEK_API_KEY' } }));
     expect(out).toContain('splice key set DEEPSEEK_API_KEY');
     expect(out).toContain('no restart needed');
+  });
+
+  test('the hint follows the order the daemon reads a key in: variable, key_file, then the store', () => {
+    const base = { head: 'claude-or', kind: 'api-key', masked: null, note: null, envVar: 'OR_KEY' };
+    // a stored key is what a set replaces, and an exported variable still wins over it
+    expect(apiKeyHint({ ...base, present: true })).toContain('a OR_KEY exported where splice runs wins over it');
+    // a key_file is read before the store, so the head is sent to the file and offered no command
+    const filed = { ...base, present: true, keyFile: '/keys/or.txt' };
+    expect(apiKeyHint(filed)).toContain('replace the key in that file');
+    expect(render(h(ApiKeyDetail, { row: filed }))).not.toContain('splice key set');
+    // with the variable and the file both empty, the store is what the daemon reads next
+    const empty = { ...base, present: false, keyFile: '/keys/or.txt' };
+    expect(apiKeyHint(empty)).toContain('no key in OR_KEY or /keys/or.txt');
+    expect(render(h(ApiKeyDetail, { row: empty }))).toContain('splice key set OR_KEY');
   });
 });

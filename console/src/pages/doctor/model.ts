@@ -85,7 +85,8 @@ export function groupChecks(checks: readonly DoctorCheck[], view: { sort: { fiel
 
 /** One row of the checks rack: a check, or several that say the same thing about different heads. */
 export interface CheckRow {
-  /** The first member's id: stable across polls, and what the page opens by. */
+  /** `status|family|fix`: unique on the rack, but it moves when a check's status does, so the page
+   *  opens a row by its first member's id instead (DoctorBoard resolves either). */
   key: string;
   status: DoctorStatus;
   /** The id for one check; for several, the id up to the colon with the member count. */

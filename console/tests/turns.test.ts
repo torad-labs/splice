@@ -21,7 +21,7 @@ import { applyFilter, headOf, headsPresent, levelOf, levelsPresent, timeOf } fro
 import type { LogFilter } from '../src/entities/logs';
 import { IdleHeads, TurnsBoard } from '../src/pages/turns';
 import { shareText, stageRowsOf } from '../src/pages/turns/index';
-import { LogsBoard } from '../src/pages/logs';
+import { LogsBoard, unseenAfter } from '../src/pages/logs';
 import { itemsOf, selectionOf, windowOf } from '../src/pages/turns/select';
 import { edgeOfInflight, fieldsOf, inflightFieldsOf } from '../src/pages/turns/strip';
 import { barRows, totalOf } from '../src/widgets/waterfall/model';
@@ -223,6 +223,16 @@ describe('turn views', () => {
     expect(grouped.groups[0]?.rows.map((row) => row.ts)).toEqual([T0 - 10_000, T0 - 90_000]);
   });
 
+  test('a row keeps its key when a newer turn lands above it, and two turns in one millisecond differ', () => {
+    const keys = (list: TurnRow[]) => itemsOf(selectionOf(list, view(), T0)).map((item) => item.key);
+    const before = keys(rows);
+    const after = keys([...rows, turn({ ts: T0 - 5_000 })]);
+    // the opened row is found by key on every poll; the new turn sits first and moves nobody's key
+    expect(after.slice(1)).toEqual(before);
+    const twins = keys([turn({ ts: T0 }), turn({ ts: T0 })]);
+    expect(new Set(twins).size).toBe(2);
+  });
+
   test('a grouped view puts a band before each group, and no band for an empty one', () => {
     const selection = selectionOf(rows, view({ group: 'outcome' }), T0);
     const items = itemsOf(selection);
@@ -392,6 +402,21 @@ describe('logs board', () => {
     expect(board()).not.toContain('>level<');
     expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>tag<');
     expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>level<');
+  });
+
+  test('a chosen filter keeps its box, and its value, after the lines that offered it scroll out', () => {
+    // level=error was picked, then the error lines left the tail: the filter still applies, so its
+    // box must stay, still saying error, for the reader to clear it.
+    const out = board({ filter: { ...NO_FILTER, level: 'error' }, levels: [] });
+    expect(out).toContain('>level<');
+    expect(out).toContain('>error<');
+    expect(board({ filter: { ...NO_FILTER, head: 'daemon' }, tags: ['claudex'] })).toContain('>tag<');
+  });
+
+  test('a paused count adds what arrived, and a rotation starts it over rather than adding the window', () => {
+    expect(unseenAfter(5, { appended: ['a', 'b'], reset: false }, false)).toBe(7);
+    expect(unseenAfter(5, { appended: Array.from({ length: 200 }, () => 'x'), reset: true }, false)).toBe(0);
+    expect(unseenAfter(5, { appended: ['a'], reset: false }, true)).toBe(0);
   });
 
   test('the new-lines count prints while paused and never while following', () => {

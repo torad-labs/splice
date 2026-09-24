@@ -159,6 +159,9 @@ describe('the knob row', () => {
   test('a picker keeps a hand-written value it does not list, and names the unset one', () => {
     expect(choiceOptions(['auto', 'off'], 'auto').map((o) => o.value)).toEqual(['auto', 'off']);
     expect(choiceOptions(['auto', 'off'], 'sometimes').map((o) => o.value)).toEqual(['auto', 'off', 'sometimes']);
+    // only effort declares an empty value, which each model fills in; elsewhere empty is unset
+    expect(choiceOptions(['', 'low', 'high'], '').find((o) => o.value === '')?.label).toBe('model default');
+    expect(choiceOptions(['warn', 'block'], '').find((o) => o.value === '')?.label).toBe('not set');
     expect(choiceOptions(['', 'high'], '')[0]).toEqual({ value: '', label: 'model default' });
   });
 

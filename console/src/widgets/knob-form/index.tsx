@@ -30,10 +30,13 @@ export type { KnobCopy, KnobGroup, KnobUnit } from './copy';
 const GROUP_ORDER = Object.keys(GROUP_LABELS) as KnobGroup[];
 
 /** A picker's options: the daemon's values, plus the current one when it is outside them (a value
- *  written into splice.toml by hand), so the row never shows a choice it does not hold. */
+ *  written into splice.toml by hand), so the row never shows a choice it does not hold. An empty
+ *  value is `model default` only where the knob declares it (effort, which each model fills in);
+ *  on any other knob it is a value nobody set, and the daemon's own default applies. */
 export function choiceOptions(choices: readonly string[], current: string): { value: string; label: string }[] {
   const values = choices.includes(current) ? choices : [...choices, current];
-  return values.map((value) => ({ value, label: value === '' ? S.modelDefault : value }));
+  const blank = choices.includes('') ? S.modelDefault : S.unset;
+  return values.map((value) => ({ value, label: value === '' ? blank : value }));
 }
 /** Inside a group, knobs keep the order copy.ts lists them in: the one an operator reaches for
  *  first leads, and a knob with no copy goes last. */

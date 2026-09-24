@@ -22,9 +22,10 @@ export type ParsedUsd = { ok: true; value: number | null } | { ok: false };
 export function parseUsd(raw: string): ParsedUsd {
   if (raw.trim() === '') return { ok: true, value: null };
   const amount = raw.trim().replace(/^\$/, '').trim();
-  if (amount === '') return { ok: false };
-  const value = Number(amount);
-  return Number.isFinite(value) && value >= 0 ? { ok: true, value } : { ok: false };
+  // Plain decimal digits only: Number() also reads `0x10` as 16, `0b11` as 3 and `1e3` as 1000, each
+  // a typo that would save a budget nobody typed (code review, 2026-09-24).
+  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(amount)) return { ok: false };
+  return { ok: true, value: Number(amount) };
 }
 
 /** What the row says under a box that does not hold an amount. */

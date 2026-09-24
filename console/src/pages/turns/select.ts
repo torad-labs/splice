@@ -87,33 +87,45 @@ export type Item =
  * instead, where a number can say it without pretending to be a rack.
  */
 export function itemsOf(selection: Selection): Item[] {
+  const rowKey = rowKeyer();
   if (selection.kind === 'table') {
-    return selection.rows.map((row, index) => ({ kind: 'row', key: rowKey(row, index), index, row }));
+    return selection.rows.map((row, index) => ({ kind: 'row', key: rowKey(row), index, row }));
   }
   if (selection.kind === 'timeline') {
     const items: Item[] = [];
     selection.timeline.buckets.forEach((bucket) => {
       if (bucket.rows.length === 0) return;
       items.push({ kind: 'band', key: `band:${bucket.start}`, label: clockOf(bucket.start), count: bucket.rows.length });
-      bucket.rows.forEach((row, index) => items.push({ kind: 'row', key: rowKey(row, index), index, row }));
+      bucket.rows.forEach((row, index) => items.push({ kind: 'row', key: rowKey(row), index, row }));
     });
     selection.timeline.undated.forEach((row, index) =>
-      items.push({ kind: 'row', key: rowKey(row, index), index, row }),
+      items.push({ kind: 'row', key: rowKey(row), index, row }),
     );
     return items;
   }
   const items: Item[] = [];
   selection.groups.forEach((group) => {
     items.push({ kind: 'band', key: `band:${group.key}`, label: `${group.key}`, count: group.count });
-    group.rows.forEach((row, index) => items.push({ kind: 'row', key: rowKey(row, index), index, row }));
+    group.rows.forEach((row, index) => items.push({ kind: 'row', key: rowKey(row), index, row }));
   });
   return items;
 }
 
-/** A per-head file can hold two turns in the same millisecond; the index keeps the key unique, and
- *  a wrong key here is a row React reuses for another row's data. */
-export function rowKey(row: TurnRow, index: number): string {
-  return `${row.head}:${row.ts}:${index}`;
+/**
+ * A row's key: its head and ts, plus an ordinal only among rows that share both (a per-head file can
+ * hold two turns in the same millisecond, and a wrong key is a row React reuses for another row's
+ * data). NOT THE LIST INDEX: the list is newest first, so every new turn shifted every other row's
+ * index, and an opened turn lost its key, and the detail column closed, on the next poll. One keyer
+ * per list, so the ordinals count within it.
+ */
+export function rowKeyer(): (row: TurnRow) => string {
+  const seen = new Map<string, number>();
+  return (row) => {
+    const base = `${row.head}:${row.ts}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}:${n}`;
+  };
 }
 
 /** HH:00 of a bucket start: the timeline's own axis label. */

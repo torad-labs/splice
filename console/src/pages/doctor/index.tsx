@@ -302,7 +302,9 @@ export function DoctorBoard({ report, pending = null, error = null, lastRead = n
                     key={row.key}
                     row={row}
                     selected={opened?.key === row.key}
-                    onOpen={() => onToggle(row.key)}
+                    // By a member's id, not the row key: the key carries the status, so a check that
+                    // went from warn to fail between polls closed its own detail as it got worse.
+                    onOpen={() => onToggle(row.members[0]?.id ?? row.key)}
                   />
                 ))}
               </Bay>

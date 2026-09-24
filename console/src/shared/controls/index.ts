@@ -21,5 +21,5 @@ export type { ChoiceOption } from './choice';
 export { Flag } from './flag';
 export { Blank } from './blank';
 export { Fault } from './fault';
-export { Copy } from './copy';
+export { Copy, copyLabel } from './copy';
 export { S as CONTROL_LABELS } from './strings';

@@ -58,14 +58,25 @@ const ABSENT = S.absent;
 // The default view (by head) stopped printing `head`, which its bay label already names, so its
 // 29ch went back into the same 122: to `name` and `project`, the two real names, and to `peer`,
 // whose label is now `last hand-off` (13 characters) and which holds a session name or id.
-// The views that still print `head` keep its 29ch (console review, 2026-09-24).
-const COLUMNS: Record<string, { label: string; w: number }> = {
+// A view that still prints `head` gets its 29ch back from the same three, so EVERY view is a subset
+// of one of the two tables below and none can pass 122: by team printed all six at the wide widths
+// and measured 151ch (code review, 2026-09-24), a custom view could do the same, and peer keeps 13ch
+// in both, the length of its label.
+type Columns = Record<string, { label: string; w: number }>;
+const WITHOUT_HEAD: Columns = {
   name: { label: S.name, w: 42 },
-  head: { label: S.head, w: 29 },
   project: { label: S.project, w: 30 },
   started: { label: S.started, w: 17 },
   seen: { label: S.seen, w: 17 },
   peer: { label: S.peer, w: 16 },
+};
+const WITH_HEAD: Columns = {
+  name: { label: S.name, w: 30 },
+  head: { label: S.head, w: 29 },
+  project: { label: S.project, w: 20 },
+  started: { label: S.started, w: 17 },
+  seen: { label: S.seen, w: 13 },
+  peer: { label: S.peer, w: 13 },
 };
 
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
@@ -130,10 +141,11 @@ export function fieldsOf(row: SessionRow, peer: string | null, order: readonly s
     seen: row.updated_at === null ? { value: ABSENT } : { value: timeAgo(row.updated_at), basis: 'measured' },
     peer: peer === null ? { value: ABSENT } : { value: peer, basis: 'measured' },
   };
+  const columns = order.includes('head') ? WITH_HEAD : WITHOUT_HEAD;
   const fields: Field[] = [];
   for (const key of order) {
     const found = values[key];
-    const column = COLUMNS[key];
+    const column = columns[key];
     if (found === undefined || column === undefined) continue;
     fields.push({ key, label: column.label, w: column.w, value: found.value, ...basisProp(found.basis) });
   }

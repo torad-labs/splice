@@ -196,3 +196,17 @@ describe('the upgrade section prints the live strip only', () => {
     expect(board(report([]))).not.toContain('upgrade status not built');
   });
 });
+
+describe('an opened check stays open while its status moves', () => {
+  test('a check opened by its id is still the opened one after warn becomes fail', () => {
+    const opened = (status: 'warn' | 'fail', key: string | null) =>
+      board(report([check('daemon/port', status, 'port 3096 answers slowly')]), key).split('port 3096 answers slowly').length - 1;
+    // the finding prints once on the strip, and again in the detail only while the check is open
+    const closed = opened('warn', null);
+    // the row key carries the status (`warn|daemon/port|…`), so the page opens by the member's id
+    expect(opened('warn', 'daemon/port')).toBeGreaterThan(closed);
+    expect(opened('fail', 'daemon/port')).toBeGreaterThan(closed);
+    // opened by the old row key, a status change closes it: the reason the page does not
+    expect(opened('fail', 'warn|daemon/port|null')).toBe(closed);
+  });
+});

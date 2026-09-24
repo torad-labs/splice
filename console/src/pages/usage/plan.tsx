@@ -82,8 +82,14 @@ function PlanStrip({ row, warnPct, now }: { row: PlanRow; warnPct: number; now: 
   );
 }
 
-export function PlanBay({ usage, now, names }: { usage: UsagePayload | null; now: number; names: ReactNode }) {
-  if (usage === null) return <Blank strips={2} />;
+export function PlanBay({ usage, error = null, now, names }: {
+  usage: UsagePayload | null;
+  /** The read's failure, which the page prints as a fault: a failed read is not still loading. */
+  error?: string | null;
+  now: number;
+  names: ReactNode;
+}) {
+  if (usage === null) return error === null ? <Blank strips={2} /> : null;
   const rows = planRows(usage, now);
   return (
     <Bay

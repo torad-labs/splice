@@ -55,6 +55,21 @@ export interface LogsBoardProps {
   onTail?: (tail: number) => void;
 }
 
+/** The paused reader's count of lines that arrived since they paused. Following, or on the first
+ *  read, nothing is unseen. A RESET STARTS IT OVER: `appended` is then the whole new window, and
+ *  adding it read a rotation as 200 new lines, which advance() exists to never say; the `rotated`
+ *  edge says what happened instead. */
+export function unseenAfter(prior: number, next: { appended: readonly string[]; reset: boolean }, current: boolean): number {
+  if (current || next.reset) return 0;
+  return prior + next.appended.length;
+}
+
+/** The values a filter box offers: those the tail holds, plus the chosen one when it holds it no
+ *  longer. */
+export function kept<T extends string>(present: readonly T[], chosen: T | null): T[] {
+  return chosen === null || present.includes(chosen) ? [...present] : [...present, chosen];
+}
+
 export function LogsBoard({
   payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture, captureError = null,
   onCaptureSwitch, locked = false, error = null, lastRead = null, sample, onFilter, onFollow, onHead, onTail,
@@ -99,21 +114,23 @@ export function LogsBoard({
         />
         {/* A filter prints only when it has something to choose: a head's own log carries one tag
             (its own), and the daemon marks a level on few lines or none, so each box offered `all`
-            and one option that changed nothing. */}
-        {tags.length > 1 ? (
+            and one option that changed nothing. A filter already CHOSEN keeps its box, and its value
+            stays an option, even once the lines that offered it have scrolled out of the tail: the
+            filter still applies, and a hidden box left no way to clear it. */}
+        {tags.length > 1 || filter.head !== null ? (
           <Choice
             label={S.tag}
             value={filter.head ?? ''}
-            options={[{ value: '', label: S.all }, ...tags.map((tag) => ({ value: tag, label: tag }))]}
+            options={[{ value: '', label: S.all }, ...kept(tags, filter.head).map((tag) => ({ value: tag, label: tag }))]}
             onChange={(next) => onFilter?.({ ...filter, head: next === '' ? null : next })}
             w={16}
           />
         ) : null}
-        {levels.length > 0 ? (
+        {levels.length > 0 || filter.level !== null ? (
           <Choice
             label={S.level}
             value={filter.level ?? ''}
-            options={[{ value: '', label: S.all }, ...levels.map((level) => ({ value: level, label: level }))]}
+            options={[{ value: '', label: S.all }, ...kept(levels, filter.level).map((level) => ({ value: level, label: level }))]}
             onChange={(next) => onFilter?.({ ...filter, level: next === '' ? null : (next as LogLevel) })}
             w={10}
           />
@@ -250,7 +267,7 @@ export default function LogsPage() {
     if (payload === null) return;
     setCursor((previous) => {
       const next = advance(previous.tail, payload);
-      const unseen = following.current || previous.tail === null ? 0 : previous.appended + next.appended.length;
+      const unseen = unseenAfter(previous.appended, next, following.current || previous.tail === null);
       return { tail: next.tail, appended: unseen, reset: next.reset };
     });
   }, [payload]);

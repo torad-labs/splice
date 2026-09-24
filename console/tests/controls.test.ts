@@ -369,3 +369,14 @@ describe('Flag', () => {
     expect(out).toContain('type="button"');
   });
 });
+
+describe('the copy key', () => {
+  test('an answer holds only for the value it was given for', () => {
+    const copied = { outcome: 'copied' as const, value: 'splice key set A_KEY' };
+    expect(controls.copyLabel(copied, 'splice key set A_KEY', 'copy')).toBe('copied');
+    // the detail column opened another head: its command was never copied
+    expect(controls.copyLabel(copied, 'splice key set B_KEY', 'copy')).toBe('copy');
+    expect(controls.copyLabel({ outcome: 'refused', value: 'x' }, 'x', 'copy')).toBe('copy by hand');
+    expect(controls.copyLabel(null, 'x', 'copy')).toBe('copy');
+  });
+});

@@ -9,21 +9,29 @@ import { useState } from 'react';
 import { Key } from './key';
 import { S } from './strings';
 
-type CopyState = 'idle' | 'copied' | 'refused';
+// THE ANSWER BELONGS TO THE VALUE IT WAS GIVEN FOR. A detail column reuses one Copy as the operator
+// opens another head or check, so a state held alone said `copied` beside a command that was never
+// copied, and a paste put the previous head's command in the terminal (code review, 2026-09-24). The
+// state records the value it answered, and any other value reads as not yet pressed.
+type CopyState = { outcome: 'copied' | 'refused'; value: string } | null;
+
+export function copyLabel(state: CopyState, value: string, label: string): string {
+  if (state === null || state.value !== value) return label;
+  return state.outcome === 'copied' ? S.copied : S.copyByHand;
+}
 
 export function Copy({ value, label = S.copy }: { value: string; label?: string }) {
-  const [state, setState] = useState<CopyState>('idle');
+  const [state, setState] = useState<CopyState>(null);
   const press = () => {
     const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
     if (clipboard === undefined) {
-      setState('refused');
+      setState({ outcome: 'refused', value });
       return;
     }
-    clipboard.writeText(value).then(() => setState('copied'), () => setState('refused'));
+    clipboard.writeText(value).then(
+      () => setState({ outcome: 'copied', value }),
+      () => setState({ outcome: 'refused', value }),
+    );
   };
-  return (
-    <Key onClick={press}>
-      {state === 'copied' ? S.copied : state === 'refused' ? S.copyByHand : label}
-    </Key>
-  );
+  return <Key onClick={press}>{copyLabel(state, value, label)}</Key>;
 }

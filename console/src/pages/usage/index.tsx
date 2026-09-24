@@ -241,10 +241,11 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
   );
 }
 
-export function UsageBoard({ payload, usage = null, catalog, now, sample }: {
+export function UsageBoard({ payload, usage = null, usageError = null, catalog, now, sample }: {
   payload: EconomicsPayload | null;
   /** /api/usage, for the plan limits rack. The rule bar polls it on every page. */
   usage?: UsagePayload | null;
+  usageError?: string | null;
   catalog: ModelsPayload | PendingRoute | null;
   now: number;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
@@ -296,8 +297,12 @@ export function UsageBoard({ payload, usage = null, catalog, now, sample }: {
         )
       ) : (
         <>
+          {/* No plan rack behind a sample: the fixture carries no /api/usage, and a rack fed nothing
+              is a skeleton that never resolves. */}
+          {sample !== undefined ? null : (
           <PlanBay
             usage={usage}
+            error={usageError}
             now={now}
             names={(
               <ColumnNames
@@ -310,6 +315,7 @@ export function UsageBoard({ payload, usage = null, catalog, now, sample }: {
               />
             )}
           />
+          )}
           <Bay
             label={S.heads}
             count={heads.length}
@@ -371,7 +377,7 @@ export default function UsagePage() {
   const { search } = useLocation();
   const economics = useEconomics((state) => state);
   const models = useModels((state) => state);
-  const usage = useUsage((state) => state.data);
+  const usage = useUsage((state) => state);
 
   useEffect(() => startEconomicsPolling(POLL_MS), []);
   useEffect(() => startModelsPolling(POLL_MS), []);
@@ -418,9 +424,11 @@ export default function UsagePage() {
     <>
       {economics.error === null ? null : <Fault message={economics.error} lastRead={fixture === null ? economics.lastUpdated : null} />}
       {models.error === null ? null : <Fault message={models.error} lastRead={fixture === null ? models.lastUpdated : null} />}
+      {usage.error === null || fixture !== null ? null : <Fault message={usage.error} lastRead={usage.lastUpdated} />}
       <UsageBoard
         payload={payload}
-        usage={fixture === null ? usage : null}
+        usage={fixture === null ? usage.data : null}
+        usageError={fixture === null ? usage.error : null}
         catalog={catalog}
         now={fixture === null ? Date.now() : payload === null ? 0 : payload.generated_at}
         sample={sample?.name}

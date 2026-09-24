@@ -81,6 +81,7 @@ interface HeadRow {
   /** api-key heads: the variable the key is read from, and the key masked. */
   envVar?: string | undefined;
   keyMasked?: string | undefined;
+  keyFile?: string | undefined;
 }
 
 export function openKeyHeadKey(head: string): string {
@@ -119,22 +120,38 @@ function ApiKeyBay({ rows, openKey, onOpen }: {
   );
 }
 
-/** An opened api-key head: where its key comes from, and the one command that sets it. */
+/**
+ * Where an api-key head's key comes from, and how to set it. THE DAEMON READS THREE PLACES IN ORDER
+ * (ApiKeyAuthProvider.readKey): the variable in its own environment, then the head's key_file, then
+ * the key store `splice key set` writes. A stored key is the one a set replaces, so a head whose key
+ * is present is told which source wins over the store, and a head reading a key_file is sent to the
+ * file: a `splice key set` there writes a key the daemon never reads.
+ */
+export function apiKeyHint(row: HeadRow): string {
+  const variable = row.envVar;
+  if (variable === undefined) return 'this head signs every request with one api key';
+  if (row.keyFile !== undefined) {
+    return row.present
+      ? `this head reads its key from ${row.keyFile} unless ${variable} is set where splice runs; replace the key in that file`
+      : `no key in ${variable} or ${row.keyFile}; store one with this, and the next request uses it, no restart needed`;
+  }
+  return row.present
+    ? `this head signs every request with its ${variable} key; this replaces a stored key, and the next request uses it, but a ${variable} exported where splice runs wins over it until it is removed`
+    : `no key in ${variable}; set one with this, and the next request uses it, no restart needed`;
+}
+
+/** An opened api-key head: where its key comes from, and the command that sets it when a set would
+ *  reach the daemon. */
 export function ApiKeyDetail({ row }: { row: HeadRow }) {
-  const command = row.envVar === undefined ? null : `splice key set ${row.envVar}`;
+  const reachable = row.keyFile === undefined || !row.present;
+  const command = row.envVar === undefined || !reachable ? null : `splice key set ${row.envVar}`;
   return (
     <section className="myx-accounts-key">
       <div className="myx-accounts-key-row">
         <HolderEdge state={row.present ? 'green' : 'amber'} label={row.present ? S.keySet : S.keyMissing} />
         <span className="myx-accounts-key-name">{row.head}</span>
       </div>
-      <p className="myx-accounts-hint">
-        {row.envVar === undefined
-          ? 'this head signs every request with one api key'
-          : row.present
-            ? `this head signs every request with the key in ${row.envVar}; to replace it, run this, and the next request uses the new key, no restart needed`
-            : `no key in ${row.envVar}; set one with this, and the next request uses it, no restart needed`}
-      </p>
+      <p className="myx-accounts-hint">{apiKeyHint(row)}</p>
       {command === null ? null : (
         <p className="myx-accounts-key-row">
           <code className="myx-accounts-key-command">{command}</code>
@@ -380,6 +397,7 @@ export function AccountsPage() {
     note: auth.refresh_latched ?? null,
     envVar: auth.env_var,
     keyMasked: auth.api_key_masked,
+    keyFile: auth.key_file,
   }));
 
   return (

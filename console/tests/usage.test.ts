@@ -23,7 +23,7 @@ import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
 import { ratesFor, sortedHeads } from '../src/pages/usage/model';
-import { planEdge, planRows, readText, windowCells } from '../src/pages/usage/plan';
+import { PlanBay, planEdge, planRows, readText, windowCells } from '../src/pages/usage/plan';
 import type { UsagePayload } from '../src/shared/api';
 
 /** The first element, or a named failure: the strict preset forbids a non-null assertion, and a
@@ -172,6 +172,13 @@ describe('usage page', () => {
 });
 
 describe('plan limits', () => {
+  test('a failed usage read leaves no skeleton, and a sample renders no plan rack', () => {
+    expect(render(h(PlanBay, { usage: null, now: 0, names: null }))).toContain('myx-blank');
+    expect(render(h(PlanBay, { usage: null, error: 'splice is not answering', now: 0, names: null }))).toBe('');
+    expect(render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW, sample: 'usage' }))).not.toContain('plan limits');
+  });
+
+
   // The live shape of /api/usage on 2026-09-24, with times moved to NOW: `warn` said `none` for
   // every one of these heads while the plan windows carried the figures.
   const nowS = NOW / 1000;

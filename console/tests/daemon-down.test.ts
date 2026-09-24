@@ -64,6 +64,16 @@ describe('the shared client', () => {
     expect((err as InstanceType<typeof MgmtError>).status).toBe(0);
   });
 
+  test('a key a header cannot carry reopens the gate, and is never read as the daemon being down', async () => {
+    // a zero-width space and a smart quote, as a paste from rich text brings them
+    storeKey('k\u200bey\u201d');
+    const err = await request('/api/heads').catch((caught: unknown) => caught);
+    expect(fetchMock, 'nothing was sent').not.toHaveBeenCalled();
+    expect((err as InstanceType<typeof MgmtError>).status).toBe(401);
+    expect((err as InstanceType<typeof MgmtError>).message).not.toBe(DOWN);
+    storeKey('k');
+  });
+
   test('a request its caller aborted stays an abort', async () => {
     storeKey('k');
     const controller = new AbortController();

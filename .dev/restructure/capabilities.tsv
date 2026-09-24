@@ -2235,3 +2235,5 @@ tools/gate/test/ledger-guard.test.ts	fbfe7ffa3086212cef86c767cdda546c65cd5b85103
 tools/e2e/docker/lib.sh	6b15b25ffc1d93e55de9dc864ad06eb58874d0f21e7aa7ff966162cc45e800d5	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
 tools/e2e/docker/lib.ts	00ab27780f3718459623d610a142fcf7b507353f0ecb64123fb72712131e96dd	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
 tools/e2e/docker/upgrade.sh	6bb1e27737fe135c76ed855cecfc8c160a645d2457565ecd0ae3c7f7f97faee6	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
+tools/gate/src/commands/attribution.ts	28bd6cedf6a7e9f5bb96720482ba405d1f36665823a50c67df799f9911c23961	created		no commit HEAD reaches carries a Claude attribution line (history rewrite 2026-09-24)
+tools/gate/test/attribution.test.ts	9d33fa06aeac5493ed25fd06152762b83c1e68c22c1a05898bb50b29a3992986	created		no commit HEAD reaches carries a Claude attribution line (history rewrite 2026-09-24)

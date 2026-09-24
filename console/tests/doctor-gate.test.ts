@@ -18,8 +18,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { isRedacted, leaksIn, leaksInText } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
-import { DoctorBoard } from '../src/pages/doctor';
-import { EMPTIES } from '../src/pages/doctor/model';
+import { DoctorBoard, openIdOf } from '../src/pages/doctor';
+import { EMPTIES, collapseChecks } from '../src/pages/doctor/model';
+import type { CheckRow } from '../src/pages/doctor/model';
 
 const h = React.createElement;
 
@@ -199,14 +200,15 @@ describe('the upgrade section prints the live strip only', () => {
 
 describe('an opened check stays open while its status moves', () => {
   test('a check opened by its id is still the opened one after warn becomes fail', () => {
+    const checks = (status: 'warn' | 'fail') => [check('daemon/port', status, 'port 3096 answers slowly')];
     const opened = (status: 'warn' | 'fail', key: string | null) =>
-      board(report([check('daemon/port', status, 'port 3096 answers slowly')]), key).split('port 3096 answers slowly').length - 1;
+      board(report(checks(status)), key).split('port 3096 answers slowly').length - 1;
     // the finding prints once on the strip, and again in the detail only while the check is open
     const closed = opened('warn', null);
-    // the row key carries the status (`warn|daemon/port|…`), so the page opens by the member's id
-    expect(opened('warn', 'daemon/port')).toBeGreaterThan(closed);
-    expect(opened('fail', 'daemon/port')).toBeGreaterThan(closed);
-    // opened by the old row key, a status change closes it: the reason the page does not
-    expect(opened('fail', 'warn|daemon/port|null')).toBe(closed);
+    // what the page records when the warn row is opened, then the next poll reports it failing
+    const [warnRow] = collapseChecks(checks('warn'));
+    const recorded = openIdOf(warnRow as CheckRow);
+    expect(opened('warn', recorded)).toBeGreaterThan(closed);
+    expect(opened('fail', recorded), 'the detail closed as the check got worse').toBeGreaterThan(closed);
   });
 });

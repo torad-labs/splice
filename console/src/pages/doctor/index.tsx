@@ -216,6 +216,13 @@ function Playground({ heads }: { heads: readonly string[] }) {
 /** The board, drawn from a report it is handed rather than from the store, so a test can plant a
  *  payload in it (a static render only ever sees a store's initial state). Which check is open is
  *  the page's state, handed in beside the report, so a render can show an opened check too. */
+/** What opening a row records: its first check's id, not the row key. The key carries the status,
+ *  so a check that went from warn to fail between polls closed its own detail as it got worse;
+ *  the board resolves an open row by key or by any member's id. */
+export function openIdOf(row: CheckRow): string {
+  return row.members[0]?.id ?? row.key;
+}
+
 export function DoctorBoard({ report, pending = null, error = null, lastRead = null, upgrade = null, heads = [], openKey = null, onToggle, sample }: {
   report: DoctorPayload | null;
   pending?: string | null;
@@ -302,9 +309,7 @@ export function DoctorBoard({ report, pending = null, error = null, lastRead = n
                     key={row.key}
                     row={row}
                     selected={opened?.key === row.key}
-                    // By a member's id, not the row key: the key carries the status, so a check that
-                    // went from warn to fail between polls closed its own detail as it got worse.
-                    onOpen={() => onToggle(row.members[0]?.id ?? row.key)}
+                    onOpen={() => onToggle(openIdOf(row))}
                   />
                 ))}
               </Bay>

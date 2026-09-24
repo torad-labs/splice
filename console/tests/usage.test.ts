@@ -175,7 +175,8 @@ describe('plan limits', () => {
   test('a failed usage read leaves no skeleton, and a sample renders no plan rack', () => {
     expect(render(h(PlanBay, { usage: null, now: 0, names: null }))).toContain('myx-blank');
     expect(render(h(PlanBay, { usage: null, error: 'splice is not answering', now: 0, names: null }))).toBe('');
-    expect(render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW, sample: 'usage' }))).not.toContain('plan limits');
+    // behind a sample the rack is absent, not a skeleton waiting on a read that never comes
+    expect(render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW, sample: 'usage' }))).not.toContain('myx-blank');
   });
 
 

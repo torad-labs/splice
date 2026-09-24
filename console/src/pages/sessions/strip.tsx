@@ -54,13 +54,18 @@ const ABSENT = S.absent;
 //
 // Widths went to the two columns holding real names and away from the four holding tokens and
 // absences. No phrase was shortened and no absence renamed to buy the pixels.
+//
+// The default view (by head) stopped printing `head`, which its bay label already names, so its
+// 29ch went back into the same 122: to `name` and `project`, the two real names, and to `peer`,
+// whose label is now `last hand-off` (13 characters) and which holds a session name or id.
+// The views that still print `head` keep its 29ch (console review, 2026-09-24).
 const COLUMNS: Record<string, { label: string; w: number }> = {
-  name: { label: S.name, w: 30 },
+  name: { label: S.name, w: 42 },
   head: { label: S.head, w: 29 },
-  project: { label: S.project, w: 20 },
+  project: { label: S.project, w: 30 },
   started: { label: S.started, w: 17 },
   seen: { label: S.seen, w: 17 },
-  peer: { label: S.peer, w: 9 },
+  peer: { label: S.peer, w: 16 },
 };
 
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs

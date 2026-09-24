@@ -8,6 +8,7 @@ package splice.app.daemon
 import splice.client.ClaudeConfigMaterializer
 import splice.client.login.HookExec
 import splice.client.mcp.McpRewrite
+import splice.client.resume.ResumeHookTarget
 import java.nio.file.Path
 
 /** Builds the daemon's [ClaudeConfigMaterializer]. The caller NAMES the exec so the noexec
@@ -25,7 +26,7 @@ internal object DaemonMaterializer {
         home: Path,
         rewrite: McpRewrite?,
         hookExec: HookExec,
-        controlPort: Int,
+        resumeHook: ResumeHookTarget,
     ): ClaudeConfigMaterializer =
-        ClaudeConfigMaterializer(home, mcpRewrite = rewrite, hookExec = hookExec, resumeHookPort = controlPort)
+        ClaudeConfigMaterializer(home, mcpRewrite = rewrite, hookExec = hookExec, resumeHook = resumeHook)
 }

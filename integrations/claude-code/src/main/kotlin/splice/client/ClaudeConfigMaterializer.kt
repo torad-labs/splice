@@ -38,6 +38,7 @@ import splice.client.login.HookScriptFiles
 import splice.client.login.LoginInterception
 import splice.client.mcp.McpRewrite
 import splice.client.resume.ResumeHook
+import splice.client.resume.ResumeHookTarget
 import splice.client.resume.SessionRegistryLink
 import splice.client.wrap.ProjectsLink
 import splice.core.util.Cancellables
@@ -72,10 +73,10 @@ public class ClaudeConfigMaterializer(
      *  exec-probe — a test materializer omits it; the daemon wires the real one so a noexec config
      *  dir still fails the capture-hook launch. */
     private val hookExec: HookExec? = null,
-    /** V4-169: the daemon's control port, for the SessionStart resume hook each head gets — a
-     *  resumed session is moved onto the head's model where it lies. Null installs no hook (tests,
-     *  and a materializer built without a daemon behind it). */
-    private val resumeHookPort: Int? = null,
+    /** V4-169: where the SessionStart resume hook each head gets calls back — a resumed session is
+     *  moved onto the head's model where it lies. Null installs no hook (tests, and a materializer
+     *  built without a daemon behind it). */
+    private val resumeHook: ResumeHookTarget? = null,
 ) {
 
     private val json = Json {
@@ -130,8 +131,8 @@ public class ClaudeConfigMaterializer(
                 } else {
                     emptyMap()
                 },
-                resumeHookPort?.let { port ->
-                    ResumeHook.install(spec.configDir, port, spec.headKey, log, execProbe = hookExecProbe)
+                resumeHook?.let { target ->
+                    ResumeHook.install(spec.configDir, target, spec.headKey, log, execProbe = hookExecProbe)
                 } ?: emptyMap(),
             ),
         )

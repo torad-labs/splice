@@ -8,6 +8,7 @@ export {
   providerFamily,
   queueAtMax,
   ATTENTION_CAUSES,
+  EDGE_WORDS,
   NO_SIGNALS,
   PROVIDER_FAMILIES,
   FAMILY_NAME,

@@ -14,6 +14,7 @@ import { NOT_REPORTED } from '../src/entities/account';
 import type { AccountRow } from '../src/entities/account';
 import {
   ATTENTION_CAUSES,
+  EDGE_WORDS,
   headAttention,
   inflightText,
   liveTurnText,
@@ -25,8 +26,9 @@ import {
 import type { HeadSignals } from '../src/entities/heads';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
 import { HeadStrip, lastTurnText, providerText } from '../src/widgets/head-strip';
-import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
+import { EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
+import { CauseLine } from '../src/pages/fleet';
 import { Empty } from '../src/shared/ui';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
 import type { View } from '../src/features/views';
@@ -81,6 +83,7 @@ describe('one printed cause, and the worst one wins', () => {
       headAttention(head({ healthy: false }), signals()).cause,
       headAttention(head({ versionMatch: false }), signals()).cause,
       headAttention(head(), signals({ credentialPresent: false })).cause,
+      headAttention(head({ authKind: 'api-key' }), signals({ credentialPresent: false })).cause,
       headAttention(head(), signals({ refreshLatched: 'refresh failed' })).cause,
       headAttention(head(), signals({ accountExcluded: true })).cause,
       headAttention(head({ gate: gate({ queued: 4, max: 4 }) }), signals()).cause,
@@ -109,7 +112,41 @@ describe('one printed cause, and the worst one wins', () => {
     expect(state.edge).toBe('amber');
     expect(state.cocked).toBe(true);
     expect(state.struck).toBe(false);
-    expect(state.label).toBe('version mismatch');
+    expect(state.label).toBe('mismatch');
+    expect(state.cause).toBe('version mismatch');
+  });
+
+  test('every edge word fits the 8ch edge whole', () => {
+    // Walkthrough S1: `account excluded` printed as `account…` and `signed out` as `signed o…`.
+    for (const word of Object.values(EDGE_WORDS)) expect(word.length).toBeLessThanOrEqual(8);
+  });
+
+  test('an api-key head with no credential is missing its key, not signed out, and says how to set it', () => {
+    const keyHead = head({ authKind: 'api-key' });
+    const state = headAttention(keyHead, signals({ credentialPresent: false }));
+    expect(state.cause).toBe('key missing');
+    expect(state.label).toBe('no key');
+    const help = causeHelp(keyHead, state.cause, { kind: 'api-key', login: 'manual', present: false, env_var: 'DEEPSEEK_API_KEY' });
+    expect(help?.command).toBe('splice key set DEEPSEEK_API_KEY');
+    expect(help?.text).toContain('DEEPSEEK_API_KEY');
+    // A login head keeps `signed out`, and its step is the accounts page.
+    const login = causeHelp(head(), headAttention(head(), signals({ credentialPresent: false })).cause, undefined);
+    expect(login?.href).toBe('#/accounts');
+  });
+
+  test('the opened head prints the command to copy, and the page to open', () => {
+    const keyed = renderToStaticMarkup(React.createElement(CauseLine, { help: { text: 'no api key in X', command: 'splice key set X' } }));
+    expect(keyed).toContain('splice key set X');
+    expect(keyed).toContain('>copy<');
+    const linked = renderToStaticMarkup(React.createElement(CauseLine, { help: { text: 'no login', href: '#/accounts', link: 'sign in on accounts' } }));
+    expect(linked).toContain('href="#/accounts"');
+    expect(renderToStaticMarkup(React.createElement(CauseLine, { help: null }))).toBe('');
+  });
+
+  test('every state but ok explains itself when the head is opened', () => {
+    for (const cause of [...ATTENTION_CAUSES, 'down'] as const) expect(causeHelp(head(), cause, undefined)?.text).toBeTruthy();
+    expect(causeHelp(head(), 'ok', undefined)).toBeNull();
+    expect(causeHelp(head(), 'unhealthy', undefined)?.href).toBe(`#/logs?head=${head().key}`);
   });
 
   test('an unhealthy head is the only red', () => {
@@ -323,7 +360,7 @@ describe('what one strip prints', () => {
 
   test('a cocked head prints its cause beside the edge', () => {
     const out = strip({ versionMatch: false });
-    expect(out).toContain('version mismatch');
+    expect(out).toContain('>mismatch<');
     expect(out).toContain('myx-edge-amber');
   });
 

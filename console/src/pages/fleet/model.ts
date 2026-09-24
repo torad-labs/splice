@@ -5,7 +5,7 @@ import { isExcluded, nextRuleOf } from '@entities/account';
 import type { AccountRow, SelectorRule } from '@entities/account';
 import { headAttention, providerFamily } from '@entities/heads';
 import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
-import type { HeadStatus } from '@shared/api';
+import type { HeadStatus, ProviderAuth } from '@shared/api';
 import type { View } from '@features/views';
 
 export interface HeadGroup {
@@ -26,6 +26,7 @@ const SEVERITY: Record<HeadState, number> = {
   unhealthy: 6,
   'version mismatch': 5,
   'signed out': 5,
+  'key missing': 5,
   'login expired': 5,
   'account excluded': 4,
   'queue full': 3,
@@ -154,6 +155,54 @@ export function poolNext(pool: readonly AccountRow[]): PoolNext | null {
 /** The families whose heads ride OAuth logins, so GET /api/accounts reports them (AuthKindRegistry
  *  .isOAuth, AccountsRoute.fold). Every other kind is outside the join by the daemon's own rule. */
 const OAUTH_FAMILIES: ReadonlySet<ProviderFamily> = new Set<ProviderFamily>(['chatgpt', 'grok', 'kimi', 'muse']);
+
+/** What the opened head says about its state: the cause in a sentence, and the one step that
+ *  clears it, as a command to copy or a page to open. The strip's edge has room for one word; this
+ *  is where the word is explained (walkthrough S1, S2). */
+export interface CauseHelp {
+  text: string;
+  command?: string;
+  href?: string;
+  link?: string;
+}
+
+export function causeHelp(head: HeadStatus, cause: HeadState, auth: ProviderAuth | undefined): CauseHelp | null {
+  const logs = { href: `#/logs?head=${encodeURIComponent(head.key)}`, link: 'open log' };
+  switch (cause) {
+    case 'ok':
+      return null;
+    case 'down':
+      return { text: 'this head is not running; start it below' };
+    case 'unhealthy':
+      return { text: 'this head is running but failing its health check; its log says why', ...logs };
+    case 'version mismatch':
+      return { text: 'this head runs a different splice version than the daemon; restart it below' };
+    case 'signed out':
+      return { text: 'no login is saved for this head', href: '#/accounts', link: 'sign in on accounts' };
+    case 'key missing': {
+      // `splice key set` writes ~/.config/splice/keys.toml, and the next request reads it: no
+      // restart (KeyCommand.kt). An exported variable would need the daemon restarted to be seen.
+      const variable = auth?.env_var;
+      return variable === undefined
+        ? { text: 'this head has no api key; set one with splice key set' }
+        : { text: `no api key in ${variable}; set one with this command and the next request uses it, no restart needed`, command: `splice key set ${variable}` };
+    }
+    case 'login expired':
+      return {
+        text: auth?.refresh_latched === undefined
+          ? 'the login could not be refreshed; sign in again'
+          : `the login could not be refreshed (${auth.refresh_latched}); sign in again`,
+        href: '#/accounts',
+        link: 'sign in on accounts',
+      };
+    case 'account excluded':
+      return { text: 'the account this head would use next is excluded; the pool below says why and until when' };
+    case 'queue full':
+      return { text: 'every slot is busy and the queue is at its limit, so a new turn waits or is refused' };
+    case 'restart needed':
+      return { text: 'splice.toml changed since this head started; restart it below to apply the change' };
+  }
+}
 
 /**
  * What an opened head's pool section says when GET /api/accounts names no row for it. Four

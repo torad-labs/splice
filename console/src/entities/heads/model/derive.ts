@@ -9,14 +9,16 @@ import { fmtMs } from '@shared/lib';
 import type { Edge } from '@shared/ui';
 
 /** Every condition that can cock a head's strip, in the order they are tested. The order is the
- *  severity order: the first cause that holds is the printed one. Each is the word printed on the
- *  strip, so each says what the operator sees rather than what the code checked: no credential on
- *  disk is `signed out`, a latched refresh is `login expired`, a gate at its ceiling is `queue full`
- *  and a topology the head has not reloaded is `restart needed` (console review, 2026-09-24). */
+ *  severity order: the first cause that holds is the one reported. Each names what the operator
+ *  sees rather than what the code checked: no credential on disk is `signed out` for a login and
+ *  `key missing` for an api-key head, a latched refresh is `login expired`, a gate at its ceiling is
+ *  `queue full` and a topology the head has not reloaded is `restart needed` (console review,
+ *  2026-09-24). The strip's edge prints the shorter EDGE_WORDS below. */
 export const ATTENTION_CAUSES = [
   'unhealthy',
   'version mismatch',
   'signed out',
+  'key missing',
   'login expired',
   'account excluded',
   'queue full',
@@ -27,6 +29,22 @@ export type AttentionCause = (typeof ATTENTION_CAUSES)[number];
 
 /** The printed cause, or 'down' for a struck head, or 'ok'. */
 export type HeadState = AttentionCause | 'down' | 'ok';
+
+/** The word a state prints on the strip's edge. The edge holds 8ch (ui.css), and the causes run to
+ *  16: `account excluded` printed as `account…` and `signed out` as `signed o…` (walkthrough S1).
+ *  Each word fits whole; the opened head says the cause in a sentence with its fix. */
+export const EDGE_WORDS: Record<HeadState, string> = {
+  unhealthy: 'failing',
+  'version mismatch': 'mismatch',
+  'signed out': 'no login',
+  'key missing': 'no key',
+  'login expired': 'expired',
+  'account excluded': 'excluded',
+  'queue full': 'full',
+  'restart needed': 'restart',
+  down: 'down',
+  ok: 'ok',
+};
 
 /** What the other slices know about one head. Every field is nullable because a route that has
  *  not answered must not read as a healthy answer. */
@@ -72,25 +90,28 @@ export function queueAtMax(head: HeadStatus): boolean {
 
 export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNALS): HeadAttention {
   if (!head.running) {
-    return { edge: 'grey', cocked: false, struck: true, label: 'down', cause: 'down' };
+    return { edge: 'grey', cocked: false, struck: true, label: EDGE_WORDS.down, cause: 'down' };
   }
   // Unhealthy is the only red: every other cause is a warning the operator can act on, while an
   // unhealthy head has already broken a promise it made.
   if (!head.healthy) {
-    return { edge: 'red', cocked: true, struck: false, label: 'unhealthy', cause: 'unhealthy' };
+    return { edge: 'red', cocked: true, struck: false, label: EDGE_WORDS.unhealthy, cause: 'unhealthy' };
   }
+  // An api-key head has no login to sign out of: its credential is a key in a variable, and
+  // `signed out` sent the operator to the accounts page, which cannot set one (walkthrough S2).
+  const noCredential: AttentionCause = head.authKind === 'api-key' ? 'key missing' : 'signed out';
   const cause: AttentionCause | null =
     head.versionMatch === false ? 'version mismatch'
-      : signals.credentialPresent === false ? 'signed out'
+      : signals.credentialPresent === false ? noCredential
         : signals.refreshLatched !== null ? 'login expired'
           : signals.accountExcluded ? 'account excluded'
             : queueAtMax(head) ? 'queue full'
               : signals.topologyStale ? 'restart needed'
                 : null;
   if (cause === null) {
-    return { edge: 'green', cocked: false, struck: false, label: 'ok', cause: 'ok' };
+    return { edge: 'green', cocked: false, struck: false, label: EDGE_WORDS.ok, cause: 'ok' };
   }
-  return { edge: 'amber', cocked: true, struck: false, label: cause, cause };
+  return { edge: 'amber', cocked: true, struck: false, label: EDGE_WORDS[cause], cause };
 }
 
 /** The provider families the fleet groups by. Derived from the head's auth kind, which is the only

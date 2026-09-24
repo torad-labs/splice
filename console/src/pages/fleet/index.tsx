@@ -25,10 +25,11 @@ import { poll } from '@shared/lib';
 import type { HeadStatus } from '@shared/api';
 import { Bay, Empty, HolderEdge } from '@shared/ui';
 import { KnobReadout } from '@widgets/knob-form';
-import { Blank, Fault, Key } from '@shared/controls';
+import { Blank, Copy, Fault, Key } from '@shared/controls';
 import { ACCOUNT_COLUMNS, AccountStrip } from '@widgets/account-strip';
 import { HeadStrip, HEAD_COLUMNS } from '@widgets/head-strip';
-import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from './model';
+import { EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from './model';
+import type { CauseHelp } from './model';
 import { dispositions } from './coverage';
 import { S } from './strings';
 import './fleet.css';
@@ -105,6 +106,23 @@ function Lifecycle({ head }: { head: HeadStatus }) {
       )}
       {error === null ? null : <Fault message={error} />}
       {note === null ? null : <p className="myx-fleet-note" role="status">{note}</p>}
+    </div>
+  );
+}
+
+/** Why the opened head is in the state its edge names, and the step that clears it. */
+export function CauseLine({ help }: { help: CauseHelp | null }) {
+  if (help === null) return null;
+  return (
+    <div className="myx-fleet-cause">
+      <p className="myx-fleet-note">{help.text}</p>
+      {help.command === undefined ? null : (
+        <p className="myx-fleet-cause-row">
+          <code className="myx-fleet-cause-command">{help.command}</code>
+          <Copy value={help.command} />
+        </p>
+      )}
+      {help.href === undefined ? null : <a className="myx-fleet-cause-link" href={help.href}>{help.link}</a>}
     </div>
   );
 }
@@ -314,6 +332,7 @@ export function FleetPage() {
                 <span className="myx-fleet-detail-name">{opened.label}</span>
                 <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
               </div>
+              <CauseLine help={causeHelp(opened, headAttention(opened, signalsFor(opened)).cause, auth?.[opened.key])} />
 
               <section className="myx-fleet-section">
                 <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>

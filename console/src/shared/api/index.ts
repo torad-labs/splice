@@ -311,6 +311,9 @@ export interface ProviderAuth {
   last_refresh?: string;
   auth_path?: string;
   refresh_latched?: string;
+  /** api-key heads: the variable the key is read from, and the key masked (`sk-f…ee94`). */
+  env_var?: string;
+  api_key_masked?: string;
 }
 
 export type AuthPayload = Record<string, ProviderAuth>;

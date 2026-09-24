@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { useEconomics, startEconomicsPolling, burn, hitRate, perTurn, amplification, wireDelta, sum, within } from '@entities/economics';
 import type { EconomicsPayload, HeadEconomics, UsagePayload } from '@shared/api';
-import { startModelsPolling, useModels, slotTiers } from '@entities/model';
+import { startModelsPolling, useModels, slotTiers, windowSourceText } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
 import { useUsage } from '@entities/usage';
 import { useViews, ViewTabs } from '@features/views';
@@ -220,7 +220,7 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               <StripField w={MODEL_COLS[0]} value={tier.slot} mono={false} />
               <StripField w={MODEL_COLS[1]} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
               <StripField w={MODEL_COLS[2]} value={tier.model === null || tier.model.context_window === null ? S.absent : fmtTokens(tier.model.context_window)} />
-              <StripField w={MODEL_COLS[3]} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
+              <StripField w={MODEL_COLS[3]} value={tier.model === null ? S.absent : windowSourceText(tier.model.context_window_source)} mono={false} />
               <StripField w={MODEL_COLS[4]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
               <StripField w={MODEL_COLS[5]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
             </Strip>
@@ -230,7 +230,7 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               <StripField w={MODEL_COLS[0]} value={S.noSlot} mono={false} />
               <StripField w={MODEL_COLS[1]} value={model.id} mono={false} />
               <StripField w={MODEL_COLS[2]} value={model.context_window === null ? S.absent : fmtTokens(model.context_window)} />
-              <StripField w={MODEL_COLS[3]} value={model.context_window_source} mono={false} />
+              <StripField w={MODEL_COLS[3]} value={windowSourceText(model.context_window_source)} mono={false} />
               <StripField w={MODEL_COLS[4]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.input)} />
               <StripField w={MODEL_COLS[5]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.output)} />
             </Strip>

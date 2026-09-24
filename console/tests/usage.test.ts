@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 
 import { costOf, sum, within } from '../src/entities/economics';
-import { slotTiers } from '../src/entities/model';
+import { slotTiers, windowSourceText } from '../src/entities/model';
 import type { HeadCatalog } from '../src/entities/model';
 import { CompactFeed, edgeFor, outcomeText, recentLine, shareText, stateOf } from '../src/widgets/compact-feed';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
@@ -297,6 +297,15 @@ describe('models page', () => {
     expect(markup).toContain('catalog unavailable');
     expect(markup).not.toContain('V4-127');
     expect(markup).not.toContain('myx-strip');
+  });
+
+  test('the window source reads as words, whatever label the daemon sends', () => {
+    // ModelsRoute.kt WINDOW_FROM_*, plus `head` from splice-lead's S15 change.
+    expect(['model', 'head', 'rule', 'extra-window', 'default', 'unknown'].map(windowSourceText)).toEqual([
+      'model catalog', 'head setting', 'prefix rule', 'extra window', 'provider default', 'unknown',
+    ]);
+    expect(windowSourceText('some-new-label')).toBe('some new label');
+    expect(render(h(ModelsBoard, { catalog: fixtureCatalog }))).not.toContain('extra-window');
   });
 
   test('with a catalog the board draws a strip per filled tier, and names the tier no model fills', () => {

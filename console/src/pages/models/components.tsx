@@ -6,7 +6,7 @@
 // "which tiers Claude Code will and will not get on this head" — so an undeclared tier is a STRUCK
 // strip that prints `not declared`, never a missing row.
 import type { CatalogModel, HeadCatalog } from '@entities/model';
-import { slotTiers } from '@entities/model';
+import { slotTiers, windowSourceText } from '@entities/model';
 import { fmtTokens } from '@shared/lib';
 import { Bay, Empty, Strip, StripField } from '@shared/ui';
 import { EMPTIES } from './model';
@@ -80,7 +80,7 @@ function modelCell(model: CatalogModel, slot: string, key: string): string {
   if (key === 'model') return model.id;
   if (key === 'slot') return slot === S.noSlot ? S.absent : slot;
   if (key === 'contextWindow') return model.context_window === null ? S.absent : fmtTokens(model.context_window);
-  if (key === 'windowSource') return model.context_window_source;
+  if (key === 'windowSource') return windowSourceText(model.context_window_source);
   if (key === 'rateInput') return rateValue(model, (rates) => rates.input);
   return rateValue(model, (rates) => rates.output);
 }

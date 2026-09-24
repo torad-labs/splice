@@ -68,17 +68,17 @@ export const fixtureModels: ModelsPayload = {
       models: [
         {
           id: 'gpt-5.6-sol', label: 'sol', description: 'frontier reasoning',
-          slot: 'opus', context_window: 400_000, context_window_source: 'head declaration',
+          slot: 'opus', context_window: 400_000, context_window_source: 'head',
           rates: { input: 1.25, cache_read: 0.125, cache_write: 1.5, output: 10 }, pinned: true, resolved: true,
         },
         {
           id: 'gpt-5.6-luna', label: 'luna', description: 'fast builder',
-          slot: 'sonnet', context_window: 272_000, context_window_source: 'provider model entry',
+          slot: 'sonnet', context_window: 272_000, context_window_source: 'model',
           rates: { input: 0.4, cache_read: 0.04, cache_write: 0.5, output: 3.2 }, pinned: false, resolved: true,
         },
         {
           id: 'gpt-5.5', label: 'terra', description: 'long-context reviewer',
-          slot: 'haiku', context_window: 200_000, context_window_source: 'prefix rule 5.5*',
+          slot: 'haiku', context_window: 200_000, context_window_source: 'rule',
           rates: null, pinned: false, resolved: true,
         },
       ],
@@ -90,7 +90,7 @@ export const fixtureModels: ModelsPayload = {
       models: [
         {
           id: 'deepseek-flash', label: 'flash', description: 'cheap builder',
-          slot: 'sonnet', context_window: 128_000, context_window_source: 'provider default',
+          slot: 'sonnet', context_window: 128_000, context_window_source: 'default',
           rates: { input: 0.14, cache_read: 0.014, output: 0.28 }, pinned: true, resolved: true,
         },
       ],

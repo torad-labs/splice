@@ -11,11 +11,6 @@ import splice.upstream.credentials.AccountLabelPolicy
 import java.time.Instant
 import kotlin.math.roundToInt
 
-private const val MS_PER_S = 1_000L
-private const val S_PER_MIN = 60L
-private const val S_PER_H = 3_600L
-private const val S_PER_DAY = 86_400L
-
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
 
     /** `on work (1 of 2 open) · 5h 12% · 7d 40%; switched primary -> work 3m ago: 7d window exhausted` */
@@ -77,13 +72,5 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
     private fun earliestReset(a: HeadAccountView): Long? =
         listOfNotNull(a.fiveHourResetEpochSeconds, a.sevenDayResetEpochSeconds).minOrNull()
 
-    private fun ago(atMillis: Long): String {
-        val s = ((now() - atMillis) / MS_PER_S).coerceAtLeast(0)
-        return when {
-            s < S_PER_MIN -> "${s}s ago"
-            s < S_PER_H -> "${s / S_PER_MIN}m ago"
-            s < S_PER_DAY -> "${s / S_PER_H}h ago"
-            else -> "${s / S_PER_DAY}d ago"
-        }
-    }
+    private fun ago(atMillis: Long): String = DoctorAge.ago(now() - atMillis)
 }

@@ -89,8 +89,8 @@ internal class DoctorProbeWrite(
         unread: String,
     ): DoctorCheck {
         val (outcome, ts) = failures.last()
-        val ageMin = ((System.currentTimeMillis() - ts) / MS_PER_MINUTE).coerceAtLeast(0)
-        val last = "last failure: ${ageMin}m ago (${tag(outcome)})"
+        val age = DoctorAge.ago(System.currentTimeMillis() - ts)
+        val last = "last failure: $age (${tag(outcome)})"
         val detail = "${failures.size} of last $n turn(s) failed — $last$unread"
         return DoctorCheck(name, CheckStatus.WARN, detail, "splice logs --head $headKey --tail 50")
     }
@@ -113,4 +113,3 @@ private const val PERF_TAIL_TURNS = 20
 
 /** Enough bytes for well over 20 rows per generation (a row is under 1 KiB). */
 private const val PROBE_TAIL_BYTES = 64 shl 10
-private const val MS_PER_MINUTE = 60_000L

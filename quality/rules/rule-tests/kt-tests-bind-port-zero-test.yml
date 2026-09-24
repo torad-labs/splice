@@ -19,8 +19,9 @@ valid:
     val port = server.localPort
   # a let that keeps the socket open is not the hand-written lease
   - 'val s = ServerSocket(0).let { it.soTimeout = 5; it }'
-  # declaring the fixture is not calling it
-  - 'fun freshPort(): Int = 1'
+  # a port needed before any bind is RESERVED below the ephemeral range, not leased
+  - 'private val controlPort = TestPorts.reserve()'
+  - '"SPLICE_CONTROL_PORT" to TestPorts.reserve().toString()'
 invalid:
   # the census spelling (CI run 35881955038)
   - 'val port = ServerSocket(0).use { it.localPort }'
@@ -28,9 +29,6 @@ invalid:
   - 'val port = ServerSocket(0).use { s -> s.localPort }'
   - 'val port = java.net.ServerSocket(0).use { it.localPort }'
   - 'val port = java.net.ServerSocket(0).use { socket -> socket.localPort }'
-  # TestNet's lease
-  - 'private val headPort = freshPort()'
-  - 'HeadServer(provider = p, listenPort = freshPort(), deps = d)'
   # the same lease written by hand
   - |
     val dead = ServerSocket(0).let {

@@ -39,8 +39,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 
@@ -70,8 +70,8 @@ class ClaudeHeadLiveProbeTest {
     @Test
     fun `the claude head reaches the real anthropic endpoint and adds no credential of its own`() =
         runBlocking {
-            val controlPort = freshPort()
-            val headPort = freshPort()
+            val controlPort = TestPorts.reserve()
+            val headPort = TestPorts.reserve()
             val tmp = Files.createTempDirectory("live-probe")
             val daemon = Daemon(
                 topology = TopologyLoader.parse(topologyToml(controlPort, headPort)),

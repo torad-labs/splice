@@ -18,4 +18,6 @@ dependencies {
     // `splice restart` reads the topology for the control port and the head ports its stop must see freed.
     implementation(project(":integrations-topology"))
     implementation(libs.kotlinx.serialization.json)
+    // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
+    testImplementation(testFixtures(project(":core")))
 }

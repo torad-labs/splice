@@ -15,6 +15,7 @@ package splice.diagnostics.doctor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.testing.TestPorts
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
@@ -57,7 +58,7 @@ class DoctorHeadChecksTest {
         // A bound-but-unassembled head and an unbound one are the same to the counters; only the
         // probe tells them apart, and this is the case the operator is chasing when a wrapper
         // command hangs.
-        val free = ServerSocket(0).use { it.localPort }
+        val free = TestPorts.reserve()
         val rows = checks.headChecks(DaemonSnapshot(port = 1, health = health(1, 1, 0)), topology("codex" to free))
         val row = rowFor("codex", rows)
         assertEquals(CheckStatus.WARN, row.status, "an unbound head port is a WARN: $row")
@@ -100,7 +101,7 @@ class DoctorHeadChecksTest {
     fun `a stopped daemon is probed for nothing - JW-02`() {
         // A stopped daemon's closed ports are expected, not findings: probing them would turn
         // every `splice doctor` on a stopped install into a wall of WARNs.
-        val free = ServerSocket(0).use { it.localPort }
+        val free = TestPorts.reserve()
         val rows = checks.headChecks(DaemonSnapshot(port = 1, health = null), topology("codex" to free))
         assertEquals(emptyList<DoctorCheck>(), rows, "a stopped daemon yields no head rows: $rows")
     }

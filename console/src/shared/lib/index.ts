@@ -90,17 +90,43 @@ export function timeAgo(ts: number, now = Date.now()): string {
   return `${Math.floor(delta / 86_400_000)}d ago`;
 }
 
-/** Interval runner with immediate first tick; returns a stop function. */
+/** Interval runner with immediate first tick; returns a stop function.
+ *
+ *  A HIDDEN TAB DOES NOT TICK. Nobody reads a page in a background tab, and every poller on it kept
+ *  its full rate anyway (29 requests in 20 s, console walkthrough 2026-09-24), so while the document
+ *  is hidden the interval is cleared, and the tab coming back ticks at once and restarts it: the
+ *  reader never waits out an interval for data that went stale behind their back. The first tick
+ *  stays unconditional, so a page opened in a background tab still loads. Without a document (the
+ *  node test environment) it is the plain interval it always was. */
 export function poll(fn: () => void | Promise<void>, intervalMs: number): () => void {
+  const doc = typeof document === 'undefined' ? null : document;
   let stopped = false;
+  let id: ReturnType<typeof setInterval> | null = null;
   const tick = () => {
     if (stopped) return;
     void fn();
   };
+  const resume = () => {
+    if (id === null) id = setInterval(tick, intervalMs);
+  };
+  const pause = () => {
+    if (id !== null) clearInterval(id);
+    id = null;
+  };
+  const onVisibility = () => {
+    if (doc?.visibilityState === 'hidden') {
+      pause();
+    } else if (id === null) {
+      tick();
+      resume();
+    }
+  };
   tick();
-  const id = setInterval(tick, intervalMs);
+  if (doc?.visibilityState !== 'hidden') resume();
+  doc?.addEventListener('visibilitychange', onVisibility);
   return () => {
     stopped = true;
-    clearInterval(id);
+    pause();
+    doc?.removeEventListener('visibilitychange', onVisibility);
   };
 }

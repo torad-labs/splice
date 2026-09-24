@@ -1,7 +1,7 @@
 // `splice add` (v0.4.0, FEATURES.md §1) against a fake HOME, no network, no terminal: a second
 // provider lands next to the starter without editing TOML; every refusal and every failed check
 // leaves the previous file byte-identical.
-package splice.app.cli.add
+package splice.configuration.add
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
@@ -50,26 +51,30 @@ class AddCommandTest {
         deleteConfigDuringLogin: Boolean = false,
         answers: Map<String, ArrayDeque<String>> = emptyMap(),
     ) = AddCommand(
-        checks = AddChecks(http),
-        login = { key, provider, _ ->
-            if (login) {
-                Files.writeString(authFile(provider.auth.kind), TOKENS)
-                installed += "login:$key"
-            }
-            if (editConfigDuringLogin) Files.writeString(config(), Files.readString(config()) + EDIT)
-            if (deleteConfigDuringLogin) Files.delete(config())
-            login
-        },
-        install = { key, _ ->
-            installed += key
-            true
-        },
-        restart = {
-            restarted += 1
-            restartOk
-        },
-        daemonUp = { daemonUp },
-        prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
+        output = TerminalOutput(::println),
+        errors = TerminalOutput(System.err::println),
+        checks = AddChecks(TerminalOutput(::println), http),
+        ports = AddPorts(
+            login = { key, provider, _ ->
+                if (login) {
+                    Files.writeString(authFile(provider.auth.kind), TOKENS)
+                    installed += "login:$key"
+                }
+                if (editConfigDuringLogin) Files.writeString(config(), Files.readString(config()) + EDIT)
+                if (deleteConfigDuringLogin) Files.delete(config())
+                login
+            },
+            install = { key, _ ->
+                installed += key
+                true
+            },
+            restart = {
+                restarted += 1
+                restartOk
+            },
+            daemonUp = { daemonUp },
+            prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
+        ),
     )
 
     private fun authFile(kind: String): Path {

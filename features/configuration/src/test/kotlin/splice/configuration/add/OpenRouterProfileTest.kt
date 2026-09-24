@@ -1,6 +1,6 @@
 // NEW: V4-34 — OpenRouter ships a real model surface. Loading the topology is not enough:
 // catalogFor is where modelsFor runs, and that is where duplicate-id and unknown-slot refuse boot.
-package splice.app.cli.add
+package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

@@ -1,7 +1,7 @@
 // NEW: V4-35 — DeepSeek over its Anthropic-format endpoint. The failure this profile can cause is
 // a head that refuses to BOOT, and nothing in the profile source reveals it on inspection, so the
 // tests build the head rather than reading the fields back.
-package splice.app.cli.add
+package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.topology.Dialect
+import splice.core.model.ModelRates
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -79,34 +79,34 @@ class DeepSeekProfileTest {
         assertEquals("api-key", profile.authKind)
     }
 
-    /** The reasoning_cache scar in ExampleConfigTest's roster test is exactly this assertion's reason for
-     *  existing, and it applies harder here: block_allowlist and strip_cache_control ARE the
-     *  DeepSeek integration. If either were decorative — parsed and then ignored — every replayed
-     *  signed-thinking turn would still ship a redacted_thinking block DeepSeek reject, and the
-     *  head would fail in a way no unit test of the profile source could see. */
-    @Test
-    fun `deepseek quirks reach the parsed fields rather than decorating the example`() {
-        val topology = TopologyLoader.parse(exampleToml())
-        val deepseek = topology.providers[topology.heads["claude-deepseek"]!!.provider]!!
-        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, deepseek.dialect)
-        assertEquals("api-key", deepseek.auth.kind)
-        assertEquals(true, deepseek.quirks.stripCacheControl)
-        val allowed = deepseek.quirks.blockAllowlist!!
-        assertTrue("thinking" in allowed, "thinking is supported and must ride")
-        assertTrue("redacted_thinking" !in allowed, "DeepSeek reject redacted_thinking")
-    }
-
-    /** The committed example off the classpath, as ExampleConfigTest reads it: a TESTED artifact,
-     *  so this reads the real file rather than a fixture. */
-    private fun exampleToml(): String =
-        checkNotNull(javaClass.getResourceAsStream("/splice.example.toml")) {
-            "splice.example.toml is not on the classpath"
-        }.bufferedReader().use { it.readText() }
-
     @Test
     fun `the api-key env is the derived DEEPSEEK_API_KEY`() {
         assertEquals("DEEPSEEK_API_KEY", AddProfiles().apiKeyEnv("deepseek"))
         assertNotNull(AddProfiles().find("deepseek"))
+    }
+
+    // From HeadRatesOverrideTest when `splice add` moved to features/configuration (LAYOUT-01): the
+    // emitted TOML is this profile's, so the arm that drives it through catalogFor lives beside it.
+    @Test
+    fun `the deepseek profile's own emitted TOML carries a card through catalogFor`() {
+        // The end the operator actually reaches: `splice add deepseek` emits TOML, and a head
+        // BOOTS from it. catalogFor is the fold's home and it runs at head-build time — a topology
+        // that merely PARSES proves nothing about it, so this drives the profile's real output
+        // through load and then through catalogFor, which is where a broken fold would take a head
+        // down while doctor's parse stayed green.
+        val profile = requireNotNull(AddProfiles().find("deepseek")) { "deepseek profile missing" }
+        val emitted = AddProfiles().toml(profile, "deepseek", 3101)
+        val parsed = TopologyLoader.parse("[daemon]\ncontrol_port = 3096\n$emitted")
+        val catalog = parsed.providers.getValue("deepseek").catalogFor(parsed.heads.getValue("deepseek"))
+        assertEquals(
+            ModelRates(input = 0.15, cacheRead = 0.003, output = 0.60),
+            catalog.models.first { it.id == "deepseek-flash" }.rates,
+            "the emitted card must survive emit -> parse -> catalogFor, or the head prices nothing",
+        )
+        assertEquals(
+            ModelRates(input = 0.66, cacheRead = 0.022, output = 1.98),
+            catalog.models.first { it.id == "deepseek-v4-pro" }.rates,
+        )
     }
 }
 

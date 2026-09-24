@@ -2,7 +2,7 @@
 // (2026-09-16): widening DeepSeek's block allowlist to the endpoint's real accepted set pushed that
 // file from 2.98 to 3.09 and the concentration wall put it in the HIGH band. The rows are the bulk
 // and they are pure data, so they are what moves; AddProfiles keeps the lookup and the TOML render.
-package splice.app.cli.add
+package splice.configuration.add
 
 import splice.core.model.ModelRates
 

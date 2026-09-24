@@ -42,9 +42,9 @@ internal object QuirksKeysDocumented {
     const val SOURCE_IN_CORE = "splice/core/topology/QuirksConfig.kt"
 
     /** The two files an operator reads to write a quirk: the copyable example config (repository
-     *  root) and the `splice add PROFILE` emitter (:app's main sources). */
+     *  root) and the `splice add PROFILE` emitter (:features-configuration's main sources). */
     const val EXAMPLE_CONFIG = "app/src/main/resources/splice.example.toml"
-    const val PROFILE_EMITTER_IN_APP = "splice/app/cli/add/AddProfileCatalog.kt"
+    const val PROFILE_EMITTER_IN_CONFIGURATION = "splice/configuration/add/AddProfileCatalog.kt"
 
     private val DATA_CLASS = Regex("(?:public\\s+)?data class\\s+(\\w+)\\s*\\(")
     private val SERIAL_NAME = Regex("@SerialName\\(\\s*\"([^\"]+)\"\\s*\\)")
@@ -177,7 +177,8 @@ internal object QuirksKeysDocumented {
     /** The live surfaces, spelled through the map. */
     fun liveSurfaces(map: ProjectMap): List<Surface> = listOf(
         Surface(EXAMPLE_CONFIG, File(map.root, EXAMPLE_CONFIG)),
-        File(map.mainSources(":app"), PROFILE_EMITTER_IN_APP).let { Surface(KotlinText.rel(map, it), it) },
+        File(map.mainSources(":features-configuration"), PROFILE_EMITTER_IN_CONFIGURATION)
+            .let { Surface(KotlinText.rel(map, it), it) },
     )
 }
 
@@ -201,10 +202,12 @@ class QuirksKeysDocumentedLawTest {
     private class Tree(root: File) {
         val source = File(root, "core/src/main/kotlin/${QuirksKeysDocumented.SOURCE_IN_CORE}")
         val doc = File(root, QuirksKeysDocumented.EXAMPLE_CONFIG)
-        val emitter = File(root, "app/src/main/kotlin/${QuirksKeysDocumented.PROFILE_EMITTER_IN_APP}")
+        private val emitterRel = "features/configuration/src/main/kotlin/" +
+            QuirksKeysDocumented.PROFILE_EMITTER_IN_CONFIGURATION
+        val emitter = File(root, emitterRel)
         val surfaces = listOf(
             QuirksKeysDocumented.Surface(QuirksKeysDocumented.EXAMPLE_CONFIG, doc),
-            QuirksKeysDocumented.Surface("app/src/main/kotlin/${QuirksKeysDocumented.PROFILE_EMITTER_IN_APP}", emitter),
+            QuirksKeysDocumented.Surface(emitterRel, emitter),
         )
 
         fun write(src: String, docText: String, emitterText: String = "") {

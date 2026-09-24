@@ -63,7 +63,7 @@
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt"
     ],
     "COLLISION LIVE_MAX_TOKENS": [
-      "app/src/main/kotlin/splice/app/cli/add/AddChecks.kt",
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
     ],
     "COLLISION LOCK_WAIT_MS": [
@@ -106,7 +106,7 @@
       "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonHealth.kt"
     ],
     "COLLISION PROBE_TIMEOUT_S": [
-      "app/src/main/kotlin/splice/app/cli/add/AddHttp.kt",
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddHttp.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
       "app/src/main/kotlin/splice/app/provider/JdkLocalHttp.kt"
     ],
@@ -144,7 +144,7 @@
     ],
     "COPY API_KEY": [
       "app/src/main/kotlin/splice/app/auth/SignInPlan.kt",
-      "app/src/main/kotlin/splice/app/cli/add/AddProfileCatalog.kt"
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt"
     ],
     "COPY BASE64_SEPARATOR": [
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
@@ -337,7 +337,7 @@
     "COPY HTTP_OK": [
       "integrations/oauth/src/main/kotlin/splice/oauth/OAuthCallbackPage.kt",
       "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPools.kt",
-      "app/src/main/kotlin/splice/app/cli/add/AddChecks.kt",
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",

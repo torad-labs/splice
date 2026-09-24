@@ -16,6 +16,8 @@ dependencies {
     api(project(":integrations-providers-kimi"))
     api(project(":integrations-providers-muse"))
     api(libs.ktor.client.core)
+    // StoredCredential expands a credential file's `~` the way the topology loader does.
+    implementation(project(":integrations-topology"))
     implementation(libs.ktor.client.java)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)

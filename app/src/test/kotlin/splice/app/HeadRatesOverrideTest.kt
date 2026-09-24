@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.add.AddProfiles
 import splice.core.model.ModelRates
 import splice.topology.TopologyLoader
 
@@ -135,28 +134,6 @@ class HeadRatesOverrideTest {
         """.trimIndent()
         val failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(subTable) }
         assertTrue("defined twice" in (failure.message ?: ""), failure.message ?: "")
-    }
-
-    @Test
-    fun `the deepseek profile's own emitted TOML carries a card through catalogFor`() {
-        // The end the operator actually reaches: `splice add deepseek` emits TOML, and a head
-        // BOOTS from it. catalogFor is the fold's home and it runs at head-build time — a topology
-        // that merely PARSES proves nothing about it, so this drives the profile's real output
-        // through load and then through catalogFor, which is where a broken fold would take a head
-        // down while doctor's parse stayed green.
-        val profile = requireNotNull(AddProfiles().find("deepseek")) { "deepseek profile missing" }
-        val emitted = AddProfiles().toml(profile, "deepseek", 3101)
-        val parsed = TopologyLoader.parse("[daemon]\ncontrol_port = 3096\n$emitted")
-        val catalog = parsed.providers.getValue("deepseek").catalogFor(parsed.heads.getValue("deepseek"))
-        assertEquals(
-            ModelRates(input = 0.15, cacheRead = 0.003, output = 0.60),
-            catalog.models.first { it.id == "deepseek-flash" }.rates,
-            "the emitted card must survive emit -> parse -> catalogFor, or the head prices nothing",
-        )
-        assertEquals(
-            ModelRates(input = 0.66, cacheRead = 0.022, output = 1.98),
-            catalog.models.first { it.id == "deepseek-v4-pro" }.rates,
-        )
     }
 
     @Test

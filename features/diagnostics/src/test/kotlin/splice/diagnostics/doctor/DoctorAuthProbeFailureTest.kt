@@ -1,5 +1,5 @@
 // NEW: V4-112 — one of the two BEHAVIOUR changes the widened-wall burn-down in :app made, pinned so
-// it cannot silently revert (the `splice add` half lives in cli/add/AddModelsNullIdTest.kt).
+// it cannot silently revert (the `splice add` half lives in features/configuration's add/AddModelsNullIdTest.kt).
 //   kt-no-silent-result-collapse: doctor's `gh auth status` probe collapsed a spawn failure into
 //   `false`, i.e. into "installed but not authenticated — gh auth login". A probe that could not
 //   RUN is a different fact, and prescribing a login for an exec failure is the 2026-07-18

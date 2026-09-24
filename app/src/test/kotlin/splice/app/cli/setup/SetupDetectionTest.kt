@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.add.DaemonUpProbe
+import splice.configuration.add.DaemonUpProbe
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.EnvReader

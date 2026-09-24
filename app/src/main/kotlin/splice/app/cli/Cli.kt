@@ -3,7 +3,7 @@
 // to stdout. Verbs live in Command.kt; doctor's checks in DoctorCommand.kt.
 package splice.app.cli
 
-import splice.app.cli.add.AddRefused
+import splice.configuration.add.AddRefused
 
 /** The CLI entry seam: argv in, process exit code out. A class rather than a top-level function
  *  (Kotlin style law, 2026-08-15); `fun main` in Main.kt stays top-level because the JVM entry

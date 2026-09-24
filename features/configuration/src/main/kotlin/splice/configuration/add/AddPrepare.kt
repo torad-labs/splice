@@ -3,8 +3,9 @@
 // next free port, and the candidate topology parsed from the operator's file plus the appended
 // tables. Split from AddCommand.kt (concentration, 2026-09-13); the model rows live in AddModelRows
 // (concentration, 2026-09-14).
-package splice.app.cli.add
+package splice.configuration.add
 
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
@@ -30,9 +31,13 @@ internal data class AddCandidate(
     val args: AddArgs,
 )
 
-internal class AddPrepare(private val checks: AddChecks, private val prompt: AddPrompter) {
+internal class AddPrepare(
+    private val output: TerminalOutput,
+    private val checks: AddChecks,
+    prompt: AddPrompter,
+) {
     private val profiles = AddProfiles()
-    private val modelRows = AddModelRows(prompt)
+    private val modelRows = AddModelRows(output, prompt)
 
     fun candidate(args: AddArgs, env: EnvReader): AddCandidate? {
         val profile = args.profile?.let(profiles::find) ?: return usage()
@@ -59,7 +64,7 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
                 )
             },
             onFailure = { e ->
-                println("splice add: ${refusal(e)}")
+                output.line("splice add: ${refusal(e)}")
                 null
             },
         )
@@ -78,15 +83,17 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
         // operator sentence, never from upstream or file content. The single construction site is
         // AddModels.kt line 58 (a context window must be a positive integer in tokens). The
         // exemption stops being true the day an AddRefused is built from a caught throwable.
-        println("splice add: ${refused.message}")
+        output.line("splice add: ${refused.message}")
         null
     }
 
     private fun usage(): AddCandidate? {
-        println("splice add: which profile? one of:")
-        profiles.describe().forEach { println("  $it") }
-        println("  usage: splice add <profile> [--name KEY] [--base-url URL] [--model ID:WINDOW ...] [--command NAME]")
-        println("         [--live] [--yes]")
+        output.line("splice add: which profile? one of:")
+        profiles.describe().forEach { output.line("  $it") }
+        output.line(
+            "  usage: splice add <profile> [--name KEY] [--base-url URL] [--model ID:WINDOW ...] [--command NAME]",
+        )
+        output.line("         [--live] [--yes]")
         return null
     }
 
@@ -130,5 +137,6 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
     }
 }
 
-/** A refusal decided before the candidate was parsed; its message is the whole explanation. */
-internal class AddRefused(message: String) : RuntimeException(message)
+/** A refusal decided before the candidate was parsed; its message is the whole explanation. Public
+ *  since LAYOUT-01: the CLI's guard renders it verbatim, as a refusal rather than a breakage. */
+public class AddRefused(message: String) : RuntimeException(message)

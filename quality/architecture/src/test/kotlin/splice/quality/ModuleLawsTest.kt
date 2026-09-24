@@ -64,7 +64,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // auth, beside the HTTP-client-agnostic providers whose token shapes it speaks.
     ":integrations-oauth" to setOf(
         ":core", ":integrations-upstream", ":integrations-providers-codex", ":integrations-providers-grok",
-        ":integrations-providers-kimi", ":integrations-providers-muse",
+        ":integrations-providers-kimi", ":integrations-providers-muse", ":integrations-topology",
     ),
     // the provider contract. Speaks the domain and nothing else.
     ":integrations-upstream" to setOf(":core"),
@@ -105,8 +105,12 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // launching Claude Code against a head: the exec recipe, the Claude head's wrap, the resume hook,
     // and the wrapper commands `splice install` links to the launch shim from splice.toml's heads.
     ":features-launch" to setOf(":core", ":integrations-claude-code", ":integrations-http", ":integrations-topology"),
-    // the daemon's knobs and splice.toml, read and written as data.
-    ":features-configuration" to setOf(":core", ":integrations-http"),
+    // the daemon's knobs and splice.toml, read and written as data, and `splice add`, which appends a
+    // provider and a head to it after the operator signs in and the checks pass.
+    ":features-configuration" to setOf(
+        ":core", ":integrations-http", ":integrations-topology", ":integrations-terminal", ":integrations-oauth",
+        ":integrations-daemon-client", ":features-accounts",
+    ),
     // the console's live event stream: the bus, its event shapes, and GET /api/events.
     ":features-events" to setOf(":integrations-http"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and

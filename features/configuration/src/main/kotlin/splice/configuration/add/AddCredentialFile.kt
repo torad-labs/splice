@@ -3,13 +3,13 @@
 // flat) plus a refresh token or an expiry still ahead lets `splice add` skip the sign-in; an empty,
 // gutted, decoy-shaped or dead file must not. Reads the file once, names no byte of it, never goes to
 // the network: the bar is "the daemon could serve or refresh this", which is what each provider needs.
-package splice.app.cli.add
+package splice.configuration.add
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import splice.app.auth.StoredCredential
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.oauth.StoredCredential
 import java.nio.file.Files
 import java.nio.file.Path
 

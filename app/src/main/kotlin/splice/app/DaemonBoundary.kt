@@ -172,7 +172,9 @@ internal class DaemonBoundary {
                 "${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
             System.err.print(line)
             Cancellables.runCatchingCancellable {
-                SecureFile.ownerOnlyDirectory(statePaths.logsDir)
+                // The crash line is this handler's one job; a logs dir left open was already said at
+                // boot, by persistentLogger's logsDirProblem.
+                val _ = SecureFile.ownerOnlyDirectory(statePaths.logsDir)
                 Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
             }
         }

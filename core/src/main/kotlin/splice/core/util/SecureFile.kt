@@ -13,6 +13,9 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 
+// v0.4.0 review round 2: every result here is a verdict the caller must act on (ownerOnlyDirectory's
+// "why it is still open"); with RETURN_VALUE_NOT_USED an error, dropping one does not compile.
+@MustUseReturnValues
 public object SecureFile {
     private val OWNER_ONLY = PosixFilePermissions.fromString("rw-------")
     private val OWNER_ONLY_DIR = PosixFilePermissions.fromString("rwx------")

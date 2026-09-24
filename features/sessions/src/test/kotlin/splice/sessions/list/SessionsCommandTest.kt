@@ -126,7 +126,7 @@ class SessionsCommandTest {
         val original = System.out
         System.setOut(PrintStream(buf, true))
         try {
-            block()
+            val _ = block()
         } finally {
             System.setOut(original)
         }

@@ -167,6 +167,36 @@ describe('the phone at 390', () => {
     expect(body(css, '.myx-px-bays .myx-sfield')).toBe('');
   });
 
+  // Every sheet on disk, not the seven pages that had it: a rack that pins its strips to exactly
+  // the bay squeezes nothing (ui.css's `flex: 0 0 auto` holds the cells) but lets the cells run past
+  // the strip's paper, measured at 390 on accounts (985px past), sessions (889), usage (697), models
+  // (610), doctor (486), compaction (476) and mcp (447). `min-width: 100%` fills the bay the same at
+  // 1440 and scrolls the rack on a phone.
+  const PINNED_OK: Record<string, string> = {
+    // A hand-off row spans the gutter between two bays, and its cells take `min-width: 0` so they
+    // shrink inside it: the exact width is the design, not a rack.
+    '.myx-board-role .myx-role-cross .myx-strip': 'a cross row spans the gutter; its cells shrink by design',
+  };
+  const pinnedStrips = (css: string): string[] => [...css.replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/([^{}]*\.myx-strip)\s*\{([^}]*)\}/g)]
+    .filter((m) => /(^|[;\s])width:\s*100%/.test(m[2]))
+    .map((m) => m[1].trim());
+
+  test('no rack pins its strips to exactly the bay, so no cell runs past its strip', () => {
+    const pinned = allSheets().flatMap((rel) => pinnedStrips(sheet(rel)).map((selector) => `${rel}: ${selector}`));
+    expect(pinned.filter((entry) => !Object.keys(PINNED_OK).some((ok) => entry.endsWith(ok)))).toEqual([]);
+  });
+
+  test('the pinned-strip scan can fail, and reads min-width as the fix it is', () => {
+    expect(pinnedStrips('.myx-x .myx-strip { width: 100%; }')).toEqual(['.myx-x .myx-strip']);
+    expect(pinnedStrips('.myx-x .myx-strip { min-width: 100%; }')).toEqual([]);
+    expect(pinnedStrips('/* .myx-x .myx-strip { width: 100%; } */')).toEqual([]);
+    const all = allSheets().flatMap((rel) => pinnedStrips(sheet(rel)));
+    expect(all, 'the one written exclusion is still in the tree, so the scan is reading real sheets').toContain(
+      Object.keys(PINNED_OK)[0],
+    );
+  });
+
   test('the board footer scrolls with its board rather than sitting over the page', () => {
     expect(body(sheet('src/widgets/team-board/board.css'), '.myx-board-footer')).not.toMatch(/position:\s*fixed/);
   });

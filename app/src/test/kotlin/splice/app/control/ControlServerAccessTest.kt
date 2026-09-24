@@ -10,11 +10,13 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -69,7 +71,7 @@ class ControlServerAccessTest {
             mgmtKey = mgmt,
             dashboardHtml = {
                 dashboardRenders.incrementAndGet()
-                "<!doctype html><title>splice</title>"
+                "<!doctype html><html><head><title>splice</title></head><body></body></html>"
             },
             log = { logLines += it },
             mcpHost = McpHost(sharing, { JsonObject(emptyMap()) }, log = { }),
@@ -151,6 +153,19 @@ class ControlServerAccessTest {
         val said = logLines.filter { it.contains("attacker.example") }
         assertEquals(1, said.size, logLines.toString())
         assertTrue(said.single().startsWith("[security] the control plane refused"), said.single())
+    }
+
+    // 2026-09-24: the page never carries the key. Every local process, and every account on the box,
+    // reaches this route with a loopback Host (curl does), so a key in the page is a key for all of
+    // them. The console gets it from `splice dashboard`'s owner-only redirect page instead.
+    @Test
+    fun `the console page carries no key, at either of its paths`() = runBlocking {
+        for (path in listOf("/", "/dashboard")) {
+            val page = client.get("http://127.0.0.1:$port$path").bodyAsText()
+            assertTrue(page.contains("<title>splice</title>"), page)
+            assertFalse(page.contains(mgmtKey), "$path served the management key")
+            assertFalse(page.contains(turnKey), "$path served the turn key")
+        }
     }
 
     /** `/statusline/{key}/(method:POST)` — how the router renders a route — as `POST /statusline/{key}`. */

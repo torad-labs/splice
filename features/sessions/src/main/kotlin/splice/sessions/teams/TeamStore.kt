@@ -47,6 +47,7 @@ import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.security.MessageDigest
 import java.util.HexFormat
 
@@ -106,9 +107,21 @@ public class TeamRefusal(message: String) : IllegalArgumentException(message)
 /** A create that reused an idempotency key with a different body; the route answers 409. */
 public class TeamKeyConflict(message: String) : IllegalArgumentException(message)
 
+/** The real filesystem: [TeamStore]'s production default [RepoProbe], the only implementation that
+ *  ever touches disk. */
+public val realRepoProbe: RepoProbe = RepoProbe { path ->
+    val at = Paths.get(path)
+    when {
+        !Files.exists(at) -> RepoPathCheck.MISSING
+        !Files.isDirectory(at) -> RepoPathCheck.NOT_A_DIRECTORY
+        else -> RepoPathCheck.DIRECTORY
+    }
+}
+
 public class TeamStore(
     private val file: Path,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val repoProbe: RepoProbe = realRepoProbe,
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -158,7 +171,7 @@ public class TeamStore(
      *  composer never unbinds a live session. */
     @Synchronized
     public fun upsert(team: Team): Team {
-        rules.validate(team)
+        rules.validate(team, repoProbe)
         val all = writable()
         val previous = all.firstOrNull { it.id == team.id && team.id.isNotEmpty() }
         val now = clock()

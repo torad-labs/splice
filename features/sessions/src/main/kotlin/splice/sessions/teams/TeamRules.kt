@@ -9,6 +9,16 @@ import java.util.UUID
 // teams one daemon holds is not a case worth handling, and short enough to read in a URL.
 private const val ID_HEX_CHARS = 12
 
+/** What probing a team's declared repo path found. [TeamStore] carries the production default that
+ *  reads the real filesystem; this pure port is what makes [TeamRules.validate] testable without one. */
+public enum class RepoPathCheck { DIRECTORY, MISSING, NOT_A_DIRECTORY }
+
+/** Answers what [path] is on disk, so a team's repo is validated without this class owning a
+ *  filesystem of its own. */
+public fun interface RepoProbe {
+    public operator fun invoke(path: String): RepoPathCheck
+}
+
 internal class TeamRules {
 
     /** [slot] as re-saved over [before]: a binding the upsert left out is kept, the history is kept,
@@ -33,17 +43,30 @@ internal class TeamRules {
 
     fun mintId(): String = "team-" + UUID.randomUUID().toString().replace("-", "").take(ID_HEX_CHARS)
 
-    /** Refuses a team with no name, a slot with no id or head, or a repeated slot id. */
-    fun validate(team: Team) {
+    /** Refuses a team with no name, a slot with no id or head, a repeated slot id, or a repo that
+     *  is set but is not a real directory: the console cannot stat paths, so a refusal here is the
+     *  only one a team with a dead repo ever gets. A blank repo (none set) is not checked — this is
+     *  the write that SETS a repo, not every write a team's row ever takes. */
+    fun validate(team: Team, repoProbe: RepoProbe) {
         val ids = team.slots.map { it.id }
         val reason = when {
             team.name.isBlank() -> "a team needs a name"
             ids.any { it.isBlank() } -> "every slot needs an id"
             ids.toSet().size != ids.size -> "slot ids repeat in ${team.name}"
             team.slots.any { it.head.isBlank() } -> "every slot needs a head"
-            else -> null
+            else -> repoReason(team, repoProbe)
         }
         if (reason != null) throw TeamRefusal(reason)
+    }
+
+    /** Why [team]'s repo is refused, or null when it is blank (unset) or a real directory. */
+    private fun repoReason(team: Team, repoProbe: RepoProbe): String? {
+        if (team.repo.isBlank()) return null
+        return when (repoProbe(team.repo)) {
+            RepoPathCheck.MISSING -> "repo '${team.repo}' does not exist"
+            RepoPathCheck.NOT_A_DIRECTORY -> "repo '${team.repo}' is not a directory"
+            RepoPathCheck.DIRECTORY -> null
+        }
     }
 
     private fun stampOf(before: TeamSlot?, slot: TeamSlot): Long? =

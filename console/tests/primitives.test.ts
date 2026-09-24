@@ -360,7 +360,10 @@ describe("the rule's health word takes the cell's size", () => {
   const rule = sheet('src/widgets/rule/rule.css');
   const wordSize = (css: string) => {
     const own = declared(css, '.myx-rule-health .myx-edge-label', 'font-size') ?? declared(ui, '.myx-edge-label', 'font-size');
-    return own === 'inherit' ? declared(css, '.myx-rule-health', 'font-size') : own;
+    // an inherited size resolves up the tree: the cell, then the band the cells share
+    return own === 'inherit'
+      ? declared(css, '.myx-rule-health', 'font-size') ?? declared(css, '.myx-rule', 'font-size')
+      : own;
   };
 
   test('the word prints at the cell size, --text-4', () => {

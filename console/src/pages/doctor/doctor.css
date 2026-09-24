@@ -7,19 +7,7 @@
   gap: var(--space-4);
 }
 
-.myx-doc-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-doc-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-6);
-  color: var(--ink-strong);
-}
 
 .myx-doc-body {
   display: grid;
@@ -42,9 +30,11 @@
    instead of the sum. 1.2 : 1 is the ratio the two racks' own declared widths ask for -- the checks
    carry 44ch across two cells, the facts 38ch -- measured at 1536 as 520px and 434px in a 966px
    bay area, both inside their columns with no rack scrolling. */
+/* the checks are the page: they take the main column's full width, and the report's seven facts
+   sit under them (side by side, each was cut to half a sentence) */
 .myx-doc-bays {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
   min-width: 0;
@@ -58,9 +48,6 @@
    looked stacked and was not. */
 @media (max-width: 1120px) {
   .myx-doc-body { grid-template-columns: minmax(0, 1fr); }
-  /* The inner pair stacks with it: two racks whose cells total 82ch cannot sit side by side in a
-     column that has just lost the detail column's 24rem. */
-  .myx-doc-bays { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* A TABLE'S ROWS, NOT A RACK'S STRIPS. `--space-7` between rows is the comp's measurement for
@@ -145,8 +132,9 @@
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
   padding: var(--space-1) var(--space-2);
-  overflow-x: auto;
-  white-space: nowrap;
+  /* a remedy is a sentence to read and copy whole, not a cell to scroll */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* The playground's raw exchange (M4-03). NOT .myx-doc-fix: that box is one command on one line, and

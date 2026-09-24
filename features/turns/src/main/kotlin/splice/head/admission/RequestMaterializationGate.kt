@@ -6,8 +6,9 @@ import kotlinx.coroutines.sync.withPermit
 import splice.head.turn.MaterializedRequest
 
 /** Default permits. Was `RequestMaterializationGate.DEFAULT_MAX_CONCURRENT` (a companion const);
- *  same package-visible name, now at file scope. */
-public const val DEFAULT_MAX_CONCURRENT: Int = 16
+ *  same name, now at file scope. `internal` (V4-210): its one reader is the constructor default
+ *  below, and a default is not contract, so nothing outside this module can bind it. */
+internal const val DEFAULT_MAX_CONCURRENT: Int = 16
 
 /**
  * Process-shared bound on requests concurrently being decoded and translated.

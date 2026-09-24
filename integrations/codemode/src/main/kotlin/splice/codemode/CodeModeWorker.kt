@@ -33,9 +33,9 @@ private const val ARGUMENT_FAILURE: String = "Tool arguments must be a serializa
 private const val CALL_LIMIT_FAILURE: String = "Code-mode tool call limit exceeded"
 
 /** The isolated child-JVM entry point; its stdout is exclusively length-prefixed JSON protocol. */
-public object CodeModeWorker {
+internal object CodeModeWorker {
     @JvmStatic
-    public fun main(args: Array<String>) {
+    fun main(args: Array<String>) {
         DataInputStream(System.`in`.buffered()).use { input ->
             DataOutputStream(System.out.buffered()).use { output ->
                 runWorker(input, output)

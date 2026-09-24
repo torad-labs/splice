@@ -93,7 +93,7 @@ public class McpContainment(
 }
 
 /** `systemctl --user show <slice> -p MemoryMax --value`; null when systemd is not there to ask. */
-public class SystemdSliceCap : SliceMemoryCap {
+internal class SystemdSliceCap : SliceMemoryCap {
     override fun invoke(slice: String): String? =
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-147): a box with no systemd, or one where the call fails, is a box whose slices cannot be read at all; null is the complete answer and McpContainment says it out loud.
         Cancellables.runCatchingCancellable {
@@ -107,7 +107,7 @@ public class SystemdSliceCap : SliceMemoryCap {
 
 /** `/proc/<pid>/oom_score_adj`, written and read back. A RAISE off an inherited -1000 is unprivileged
  *  (verified on this box), which is the only direction this writes. */
-public class ProcOomScoreAdj(private val procRoot: Path = Path.of("/proc")) : OomScoreAdjWrite {
+internal class ProcOomScoreAdj(private val procRoot: Path = Path.of("/proc")) : OomScoreAdjWrite {
     override fun invoke(pid: Long, value: Int): Int? {
         val file = procRoot.resolve(pid.toString()).resolve("oom_score_adj")
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-147): a child that died between spawn and this write, or a kernel without /proc, has no adj to read back; null IS the failure and protect() reports it in words rather than swallowing it.

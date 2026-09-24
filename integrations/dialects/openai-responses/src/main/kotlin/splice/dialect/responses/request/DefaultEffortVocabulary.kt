@@ -4,7 +4,7 @@ package splice.dialect.responses.request
 
 import splice.upstream.EffortVocabulary
 
-public class DefaultEffortVocabulary : EffortVocabulary {
+internal class DefaultEffortVocabulary : EffortVocabulary {
     override fun normalize(raw: String): String? = when (raw) {
         "ultracode", "ultra" -> "max"
         "extra_high", "extra-high", "extrahigh" -> XHIGH

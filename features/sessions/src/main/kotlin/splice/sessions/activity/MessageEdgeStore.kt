@@ -23,7 +23,7 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
 /** The day-file prefix edges are written under. */
-public const val EDGES_PREFIX: String = "edges"
+internal const val EDGES_PREFIX: String = "edges"
 
 /** One observed SendMessage. [from] is the sending session id, [to] the address or name the call
  *  named, [at] epoch ms of the observation, [id] the tool_use id that makes the row unique. */

@@ -26,7 +26,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /** `content` accepts a bare string or a block list; a bare string becomes one TextBlock. */
-public object ContentSerializer : KSerializer<List<ContentBlock>> {
+internal object ContentSerializer : KSerializer<List<ContentBlock>> {
     private val listSerializer = ListSerializer(ContentBlockSerializer)
     override val descriptor: SerialDescriptor = listSerializer.descriptor
 
@@ -47,7 +47,7 @@ public object ContentSerializer : KSerializer<List<ContentBlock>> {
 }
 
 /** `system` accepts a bare string or [{type:"text",text}] blocks; joins text blocks. */
-public object SystemTextSerializer : KSerializer<String?> {
+internal object SystemTextSerializer : KSerializer<String?> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("splice.SystemText")
 
     override fun deserialize(decoder: Decoder): String? {
@@ -92,7 +92,7 @@ public object ContentBlockSerializer : JsonContentPolymorphicSerializer<ContentB
         }
 }
 
-public object UnknownBlockSerializer : KSerializer<UnknownBlock> {
+internal object UnknownBlockSerializer : KSerializer<UnknownBlock> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("splice.UnknownBlock")
 
     override fun deserialize(decoder: Decoder): UnknownBlock {

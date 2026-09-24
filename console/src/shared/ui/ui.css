@@ -874,6 +874,10 @@
   font-family: var(--font-label);
   font-size: var(--text-1);
   width: max-content;
+  /* Cut to its content, but never past its rack: an empty's text is a sentence, not a cell, so on
+     a phone it wraps inside the box instead of running under the rack's edge (S12, measured at 390:
+     accounts' "one login per claude head" ran 61px past the clip, compaction's rules empty 132). */
+  max-width: 100%;
   background: var(--strip);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;

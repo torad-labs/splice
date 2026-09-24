@@ -6,7 +6,7 @@
 //
 // The addresses arrive as a prop rather than an import: the table lives in the
 // app layer, and a widget may not reach upward for it.
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { cx } from '@shared/lib';
 import { HolderEdge } from '@shared/ui';
@@ -20,8 +20,31 @@ const STEP: Record<string, number> = {
   ArrowLeft: -1,
 };
 
+/** How far a scroll box has to move along one axis to show an item it holds: nothing when the item
+ *  is already whole inside the box, else the distance that centres it. Both spans are screen
+ *  coordinates, so the box's own positioning does not enter into it. */
+export function revealBy(box: { start: number; size: number }, item: { start: number; size: number }): number {
+  if (item.start >= box.start && item.start + item.size <= box.start + box.size) return 0;
+  return item.start + item.size / 2 - (box.start + box.size / 2);
+}
+
 export function Rail({ active, addresses }: { active: string; addresses: readonly string[] }) {
   const tabs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const nav = useRef<HTMLElement>(null);
+
+  // The bay you are standing in is on the rail's screen (S12). On a phone the rail is one sideways
+  // line of thirteen plates, and from accounts on the current one opened past the right edge: 0% of
+  // it visible on 8 of 13 addresses at 390. Only the rail's own scroll moves, never the page, and a
+  // tab already in view is left where it is, so a tap does not jump the strip under the thumb.
+  useEffect(() => {
+    const box = nav.current;
+    const tab = tabs.current[addresses.indexOf(active)];
+    if (box === null || tab === undefined || tab === null) return;
+    const b = box.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    box.scrollLeft += revealBy({ start: b.left + box.clientLeft, size: box.clientWidth }, { start: t.left, size: t.width });
+    box.scrollTop += revealBy({ start: b.top + box.clientTop, size: box.clientHeight }, { start: t.top, size: t.height });
+  }, [active, addresses]);
 
   const step = (event: KeyboardEvent<HTMLAnchorElement>, index: number) => {
     const delta = STEP[event.key];
@@ -32,7 +55,7 @@ export function Rail({ active, addresses }: { active: string; addresses: readonl
   };
 
   return (
-    <nav className="myx-rail" aria-label={S.nav}>
+    <nav className="myx-rail" aria-label={S.nav} ref={nav}>
       <div className="myx-rail-tabs">
         {addresses.map((address, index) => (
           <a

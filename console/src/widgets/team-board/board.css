@@ -636,19 +636,27 @@
 /* --- the footer: region footer-strip (frame x1 y94 w36 h3), which the comp
    draws across the rail's edge, so it is placed against the frame itself --- */
 .myx-board-footer {
-  position: fixed;
+  /* THE FOOTER SCROLLS WITH ITS BOARD (S12). It was `position: fixed` so it could cross the rail's
+     edge the way the comp's does, and fixed means it stays on the screen while the page moves: the
+     view tabs sit directly under the board (y 1024 at 1536x1024), so the first scroll carried them
+     under the plate. Scanning the page's whole scroll at 1440x900, 15 of 693 tab samples were
+     painted by the footer (18 of 786 at 1536x1024). The board clips at the rail, so a plate that
+     scrolls cannot cross it: it keeps the comp's size and its height off the bottom, and its 22px
+     inset now counts from the board's edge rather than the frame's. */
+  position: absolute;
   /* THE PLATE, NOT THE REGION (M3-03). These four numbers were the region box the footer was
      measured INTO (x1 y94 w36 h3), and a region is generous where its ink is not -- the same
      distinction the header above carries. Scanned on the comp's own pixels: the plate's paper runs
      x 22..558 and y 968..988, so it is 537x21 at (22, 968) and not 553x31 at (15, 963). The build
      was therefore 16px wider and 10px taller than the comp's plate with its first word 8px early,
      and the responsive gate read footer-strip as CONTRADICTED at structure 47 percent (ink box
-     553x48 against the comp's 538x22). Expressed as shares of the frame, which is what the rest of
-     this sheet does, because the footer follows the frame at every width. */
-  left: 1.432%;
-  bottom: 3.418%;
-  width: 34.961%;
-  height: 2.051%;
+     553x48 against the comp's 538x22). Expressed as shares of the FRAME in viewport units, which is
+     what the fixed box's percentages resolved against, so the plate's size is unchanged at every
+     width; the board fills the frame below the rule, so its bottom is the frame's at rest. */
+  left: 1.432vw;
+  bottom: 3.418vh;
+  width: 34.961vw;
+  height: 2.051vh;
   display: flex;
   align-items: center;
   gap: var(--space-5);

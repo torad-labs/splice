@@ -234,7 +234,7 @@ default-off for the codex head — see "L1 — RETIRED" above.)
 | UPSTREAM_TRUNCATED | L4 | L2 L4 | L3 L4 | — |
 | UPSTREAM_CONN_RESET | L1 L4 | L1 L4 | L4 | — |
 | UPSTREAM_STATUS_5XX | L1 L4 | L1 L2 L4 | L3 L4 | — |
-| UPSTREAM_STATUS_4XX | L4 | L4 | L4 | — |
+| UPSTREAM_STATUS_4XX | L1 L4 | L1 L4 | L4 | — |
 | UPSTREAM_REPORTED | L1 L4 | L1 L2 L4 | L3 L4 | — |
 | MODEL_REFUSED | — | — | — | — |
 | CONTENT_FILTERED | — | — | — | — |

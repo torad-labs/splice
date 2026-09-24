@@ -183,7 +183,8 @@ origin.
   `POST /api/auth/{head}/switch` is a REAL pin now — `AccountPool.select` tries the pinned account
   FIRST, ahead of the primary preference, from the next turn, and falls through to ordinary policy
   the moment the pin names an unavailable or unknown account, so pinning never wedges a head that
-  would otherwise still be serving turns. `GET /api/accounts` joins every pool's accounts across
+  would otherwise still be serving turns; `DELETE /api/auth/{head}/switch` drops the pin (idempotent).
+  `GET /api/accounts` joins every pool's accounts across
   every head, on the credential path — two heads sharing one login are one row, not one per head —
   carrying each window's own reported length (a 30-day provider is never rendered as a 7-day one),
   the operator's pin, the next target by the real selector order, and single-login heads read from

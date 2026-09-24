@@ -178,10 +178,9 @@ names = [
     "BrowserOpener",
     "CredentialPresenceProbe",
     "DirectoryProbe",
-    "HeadAccountPinSource",
     "VersionedRestart",
 ]
-reason = """Two ask and two ACT, which is the distinction that matters when the answer is a bare Boolean. DirectoryProbe asks whether a path is a directory; CredentialPresenceProbe asks whether a head's credential is configured. BrowserOpener LAUNCHES a browser at a URL and reports whether the launch succeeded; VersionedRestart "restarts the daemon the plain way (stop, then cold start from this shell), waiting for a daemon that reports [expectedVersion]" — a multi-second side effect whose false means "it did not come back", not "no". A probe's double wired where an actor was meant reports a clean skip for work that never ran, which is the shape of a green upgrade that never upgraded. ADDED 2026-09-20 (V4-132): HeadAccountPinSource answers whether a head has an account PINNED by the operator - a stored policy decision, read per selection. BrowserOpener performs an action and reports whether it worked; CredentialPresenceProbe and DirectoryProbe ask whether something EXISTS on disk; VersionedRestart performs a restart. A pin is none of those, and reading it must never be satisfiable by a probe that happens to return true."""
+reason = """Two ask and two ACT, which is the distinction that matters when the answer is a bare Boolean. DirectoryProbe asks whether a path is a directory; CredentialPresenceProbe asks whether a head's credential is configured. BrowserOpener LAUNCHES a browser at a URL and reports whether the launch succeeded; VersionedRestart "restarts the daemon the plain way (stop, then cold start from this shell), waiting for a daemon that reports [expectedVersion]" — a multi-second side effect whose false means "it did not come back", not "no". A probe's double wired where an actor was meant reports a clean skip for work that never ran, which is the shape of a green upgrade that never upgraded. (HeadAccountPinSource sat here from 2026-09-20, V4-132, until 2026-09-24, when it gained unpin() and stopped being a fun interface.)"""
 
 # ── 4 names, (String) -> String ───────────────────────────────────────────────────────────────────
 [[groups]]

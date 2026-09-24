@@ -46,6 +46,7 @@ internal class AccountsMount(
         route.post("/api/auth/{head}/login") { guard.guarded(call) { loginRoutes.startLogin(call) } }
         route.get("/api/auth/{head}/login/{id}") { guard.guarded(call) { loginRoutes.pollLogin(call) } }
         route.post("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.switchAccount(call) } }
+        route.delete("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.unpinAccount(call) } }
         route.delete("/api/auth/{head}/accounts/{label}") {
             guard.guarded(call) { accountEditRoutes.removeAccount(call) }
         }

@@ -22,9 +22,13 @@ public fun interface HeadAccountAuthSource {
  *  widening it would break every one of them for a capability only the real [splice.upstream.credentials.AccountPool]
  *  has. A route discovers this with a checked cast — the same idiom [splice.usage.statusline.StatuslineRoute]
  *  already uses for [HeadPerfSkipSource] (`managed.perf as? HeadPerfSkipSource`). */
-public fun interface HeadAccountPinSource {
+public interface HeadAccountPinSource {
     /** False (nothing pinned) when [label] names no account in this head's pool. */
     public fun pin(label: String): Boolean
+
+    /** Hands the choice back to the pool's own policy from the next turn (console review
+     *  2026-09-24: the console could pin and never unpin). A no-op when nothing is pinned. */
+    public fun unpin()
 }
 
 public data class HeadAccountPoolView(

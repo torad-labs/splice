@@ -104,7 +104,15 @@ public class McpInventory(
         else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE)
     }
 
+    /** A head's copy is written at that head's LAUNCH and the plan is read now, so the copy speaks for the
+     *  canonical answer only while it is byte-for-byte what the plan writes ([McpPlan.rewritten], the
+     *  materializer's own input). A canonical edit, a hosting change or a rotated bearer since that launch
+     *  leaves the head running something else, and a name match alone would report the new answer. */
     private fun headCopyDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
+        !plan.rewritten.containsKey(reg.name) ->
+            McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.HEAD_COPY_NOT_CANONICAL)
+        plan.rewritten[reg.name] != reg.entry ->
+            McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.HEAD_COPY_STALE)
         plan.hosted.containsKey(reg.name) ->
             McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.HEAD_COPY_MIGRATED)
         plan.passthrough.containsKey(reg.name) -> McpDispositioned(
@@ -112,7 +120,7 @@ public class McpInventory(
             McpDisposition.EXCLUDED,
             McpDispositionReasons.HEAD_COPY_AS_DECLARED + plan.passthrough.getValue(reg.name),
         )
-        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.HEAD_COPY_NOT_CANONICAL)
+        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE)
     }
 
     /** One spelling per file: a head's config dir comes from the topology, a registration's path from a
@@ -149,6 +157,10 @@ internal object McpDispositionReasons {
     const val HEAD_COPY_NOT_CANONICAL: String =
         "in a splice head's materialized .claude.json but not among the canonical home's servers, the only " +
             "ones hosting reads: added in that head after its launch, or left from an earlier canonical file"
+    const val HEAD_COPY_STALE: String =
+        "a stale splice head's copy: it differs from what the canonical home's plan writes now (the entry, " +
+            "its hosting or the bearer changed since that head launched), and that head runs this copy until " +
+            "its next launch rewrites it"
     const val RACE: String =
         "read on a separate pass over the same file that disagreed with the plan just computed — most likely an " +
             "operator edit mid-census; recompute on the next call"

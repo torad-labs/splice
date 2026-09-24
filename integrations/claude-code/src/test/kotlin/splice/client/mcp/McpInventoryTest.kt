@@ -99,8 +99,8 @@ class McpInventoryTest {
 
     @Test
     fun `a head's copy of a hosted server is migrated, and the reason names the copy`() {
-        val copied = """{"type":"http","url":"http://127.0.0.1:3096/mcp/exa"}"""
-        val d = headCopy("exa", copied, """{"exa":{"command":"npx"}}""")
+        val canonical = """{"exa":{"command":"npx"}}"""
+        val d = headCopy("exa", written(canonical, "exa"), canonical)
         assertEquals(McpDisposition.MIGRATED, d.disposition)
         assertTrue(d.reason.contains("head's copy"), d.reason)
     }
@@ -111,6 +111,33 @@ class McpInventoryTest {
         val d = headCopy("scoped", declared, """{"scoped":$declared}""")
         assertEquals(McpDisposition.EXCLUDED, d.disposition)
         assertTrue(d.reason.contains("head's copy") && d.reason.contains("cwd"), d.reason)
+    }
+
+    /** What the materializer writes into a head for [name] from [canonical]: the plan's own rewrite. */
+    private fun written(canonical: String, name: String): String =
+        sharing().plan(entry(canonical)).rewritten.getValue(name).toString()
+
+    // v0.4.0 mcp review, second pass: a head's copy is written at its LAUNCH, the plan is read on every
+    // census, so a canonical edit since then leaves the copy saying something else. Matching the name
+    // alone reported what the canonical file says now, not what that head runs.
+    @Test
+    fun `a head's copy the canonical plan no longer writes is reported stale, whichever way it drifted`() {
+        val hostedNow = """{"exa":{"command":"npx"}}"""
+        val declaredNow = """{"exa":{"command":"npx","cwd":"/x"}}"""
+        val cases = mapOf(
+            "hosted now, the copy still spawns its own" to headCopy("exa", """{"command":"npx"}""", hostedNow),
+            "left as declared now, the copy still points at the host" to
+                headCopy("exa", written(hostedNow, "exa"), declaredNow),
+            "hosted, the copy carries an older bearer" to headCopy(
+                "exa",
+                written(hostedNow, "exa").replace("Bearer KEY", "Bearer OLD"),
+                hostedNow,
+            ),
+        )
+        cases.forEach { (case, d) ->
+            assertEquals(McpDisposition.EXCLUDED, d.disposition, case)
+            assertTrue(d.reason.contains("stale"), "$case: ${d.reason}")
+        }
     }
 
     @Test

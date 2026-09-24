@@ -113,16 +113,17 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         if (!SESSION_ID_SHAPE.matches(sessionId)) {
             return SessionAdoption.Invalid("a session id is letters, digits, '-' and '_' only, up to 128 characters")
         }
+        val roster = Roster(pinnedModel, served)
         val others = otherConfigDirs.filter { it != callingConfigDir }.distinct()
         val own = findAllIn(callingConfigDir, sessionId, log).firstOrNull()
         val foreign = others.flatMap { dir -> findAllIn(dir, sessionId, log) }
         return when {
             own != null ->
-                SessionAdoption.HeadOwned(own.transcript, rewriteInPlace(own.transcript, pinnedModel, served, log))
+                SessionAdoption.HeadOwned(own.transcript, rewriteInPlace(own.transcript, roster, log))
             foreign.isEmpty() -> SessionAdoption.Absent(sessionId, (listOf(callingConfigDir) + others).map(::headName))
             else -> {
                 val chosen = preferSameCwd(callingConfigDir, foreign, log)
-                copyIn(callingConfigDir, chosen, sessionId, pinnedModel, served, log)
+                copyIn(callingConfigDir, chosen, sessionId, roster, log)
             }
         }
     }
@@ -131,11 +132,11 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
      *  moved onto this head's model where it lies. Nothing else is at stake in a failure here (the
      *  session still resumes, on the head's default, with Claude Code's one-line notice), so it is
      *  said in the log and the launch goes on. */
-    private fun rewriteInPlace(transcript: Path, pinnedModel: String, served: Collection<String>, log: LogSink): Int {
-        val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, pinnedModel, served) }
+    private fun rewriteInPlace(transcript: Path, roster: Roster, log: LogSink): Int {
+        val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, roster.pinned, roster.served) }
         outcome.exceptionOrNull()?.let { cause ->
             log(
-                "[resume] $transcript could not be moved onto $pinnedModel (${SafeFailureText.render(cause)}) — " +
+                "[resume] $transcript could not be moved onto ${roster.pinned} (${SafeFailureText.render(cause)}) — " +
                     "the session resumes on this head's default model after Claude Code's restore notice\n",
             )
         }
@@ -144,6 +145,10 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
 
     /** A config dir as the operator names it in a message: the directory itself, never a guess. */
     private fun headName(configDir: Path): String = configDir.fileName?.toString() ?: configDir.toString()
+
+    /** The calling head's model and its whole roster — what the rewrite moves rows onto, and what it
+     *  leaves alone. One value because neither means anything to the rewrite without the other. */
+    private data class Roster(val pinned: String, val served: Collection<String>)
 
     /** The encoded-cwd directory a transcript was found under — Claude Code's name for the session's
      *  own working directory, which the copy must preserve or the resumed session resolves no project. */
@@ -179,8 +184,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         callingConfigDir: Path,
         chosen: Located,
         sessionId: String,
-        pinnedModel: String,
-        served: Collection<String>,
+        roster: Roster,
         log: LogSink,
     ): SessionAdoption {
         val targetDir = callingConfigDir.resolve(Keys.PROJECTS).resolve(chosen.cwdDir)
@@ -193,7 +197,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
             Files.copy(chosen.transcript, target, REPLACE_EXISTING)
             val sourceSubdir = chosen.transcript.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
-            rewriter.rewrite(target, pinnedModel, served)
+            rewriter.rewrite(target, roster.pinned, roster.served)
         }
         copied.exceptionOrNull()?.let { cause ->
             return SessionAdoption.Refused(sessionId, chosen.headConfigDir, SafeFailureText.render(cause))
@@ -201,7 +205,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         val rewritten = copied.getOrDefault(0)
         log(
             "[resume] adopted session $sessionId from ${chosen.headConfigDir} into $callingConfigDir " +
-                "($rewritten assistant rows rewritten to $pinnedModel); the source tree is untouched\n",
+                "($rewritten assistant rows rewritten to ${roster.pinned}); the source tree is untouched\n",
         )
         return SessionAdoption.Adopted(sessionId, chosen.transcript, target, rewritten)
     }

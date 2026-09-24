@@ -9,6 +9,7 @@ package splice.head
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.BearerScheme
+import splice.core.auth.LoopbackHost
 import splice.head.admission.AdmissionResponses
 import java.security.MessageDigest
 
@@ -49,16 +50,32 @@ internal class ClientAuth(
     private val authDelimiterRe = Regex("[\\s,=;'\"]+")
 
     suspend fun authorize(call: ApplicationCall): Boolean {
-        // A client-auth head has NO splice-held credential to protect: the mgmt key is what the
+        // A client-auth head has NO splice-held credential to protect: the turn key is what the
         // launcher plants in a client whose own credentials it replaced, and this head does the
         // opposite — it leaves the client's native auth intact and forwards it. Comparing the
-        // inbound header against the mgmt key would therefore reject exactly the requests this
+        // inbound header against splice's keys would therefore reject exactly the requests this
         // head exists to serve. The listener is loopback-only, and an unauthenticated caller
         // simply forwards no valid upstream credential and gets the upstream's own 401.
-        // ONE exception, below: the mgmt key itself is never a credential this head may forward.
+        // ONE exception, below: splice's own keys are never a credential this head may forward.
         if (deps.policy.forwardClientAuth) return allowUnlessOwnKey(call)
-        if (matchesInferenceToken(presentedCredential(call))) return true
+        // The turn key is what a launched client holds; the management key still runs a turn so a
+        // session launched before the v0.4.0 split keeps working until it is relaunched.
+        val presented = presentedCredential(call)
+        if (matchesInferenceToken(presented) || matchesOperatorToken(presented)) return true
         responses.respondUnauthorized(call)
+        return false
+    }
+
+    /**
+     * v0.4.0: which NAME the caller used to reach this listener. Binding 127.0.0.1 stops other
+     * machines, not a page in the operator's own browser that rebinds its name to loopback (DNS
+     * rebinding) — and on a client-auth head that page is a caller [authorize] serves. Its requests
+     * name the attacker in Host, the one thing rebinding cannot change, so they are refused (403)
+     * before any route runs. The predicate is the control plane's too ([LoopbackHost]).
+     */
+    suspend fun admitsHost(call: ApplicationCall): Boolean {
+        if (LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) return true
+        responses.respondForeignHost(call)
         return false
     }
 
@@ -77,7 +94,9 @@ internal class ClientAuth(
      * on every head kind, so what opens it is what `splice` itself holds and nothing a session has.
      */
     suspend fun authorizeOperator(call: ApplicationCall): Boolean {
-        if (matchesInferenceToken(presentedCredential(call))) return true
+        // The OPERATOR key alone (v0.4.0): the turn key is in every launched session's environment,
+        // so accepting it here handed any session every other session's upstream bodies.
+        if (matchesOperatorToken(presentedCredential(call))) return true
         responses.respondUnauthorized(call, "this route takes splice's management key")
         return false
     }
@@ -85,9 +104,9 @@ internal class ClientAuth(
     /**
      * The open door, minus the one caller it must never serve (DR-30).
      *
-     * splice's own inference token is not an upstream credential — sending it to the vendor spends
-     * nothing, authenticates nothing, and leaks a local secret to a third party. It reaches this
-     * seam by accident rather than by malice: LaunchService plants ANTHROPIC_AUTH_TOKEN=<mgmt key>
+     * splice's own keys are not upstream credentials — sending one to the vendor spends nothing,
+     * authenticates nothing, and leaks a local secret to a third party. It reaches this seam by
+     * accident rather than by malice: LaunchService plants ANTHROPIC_AUTH_TOKEN=<turn key>
      * for every non-native head, `app/src/main/dist/bin/splice-launch` execs `env` WITHOUT -i, and a native head's
      * unset list is empty by design — so a native head launched from inside another head's session
      * inherits that bearer. Forwarding it would ALSO mean the caller's real credential never rides,
@@ -107,25 +126,31 @@ internal class ClientAuth(
         val forwardable =
             call.request.headers[HttpHeaders.Authorization].orEmpty().split(authDelimiterRe) +
                 listOfNotNull(call.request.headers["x-api-key"])
-        if (forwardable.none { matchesInferenceToken(it) }) return true
+        if (forwardable.none { matchesInferenceToken(it) || matchesOperatorToken(it) }) return true
         deps.log(
-            "[auth] refused a turn on a client-auth head that presented splice's own management key — " +
+            "[auth] refused a turn on a client-auth head that presented one of splice's own keys (the " +
+                "management key or the turn key) — " +
                 "ANTHROPIC_AUTH_TOKEN is set in the launching environment and shadowed the caller's own " +
                 "credential; unset it (or launch from a clean shell) so this head can forward yours\n",
         )
         responses.respondUnauthorized(
             call,
-            "splice's management key is not an upstream credential — this head forwards your own " +
+            "splice's own keys (the management key and the turn key) are not upstream credentials — " +
+                "this head forwards your own " +
                 "Anthropic credential, so unset ANTHROPIC_AUTH_TOKEN in the environment that launched it",
         )
         return false
     }
 
-    /** Constant-time compare against this head's own inference token. Length is checked first
-     *  because [MessageDigest.isEqual] is only constant-time for equal-length inputs. */
-    private fun matchesInferenceToken(presented: String?): Boolean {
+    private fun matchesInferenceToken(presented: String?): Boolean = constantTimeEquals(presented, deps.inferenceToken)
+
+    private fun matchesOperatorToken(presented: String?): Boolean = constantTimeEquals(presented, deps.operatorToken)
+
+    /** Constant-time compare against one of this head's own keys. Length is checked first because
+     *  [MessageDigest.isEqual] is only constant-time for equal-length inputs. */
+    private fun constantTimeEquals(presented: String?, expected: String): Boolean {
         val presentedBytes = presented?.toByteArray(Charsets.UTF_8) ?: return false
-        val expectedBytes = deps.inferenceToken.toByteArray(Charsets.UTF_8)
+        val expectedBytes = expected.toByteArray(Charsets.UTF_8)
         if (presentedBytes.size != expectedBytes.size) return false
         return MessageDigest.isEqual(presentedBytes, expectedBytes)
     }

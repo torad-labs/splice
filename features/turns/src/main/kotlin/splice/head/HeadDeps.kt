@@ -53,8 +53,14 @@ internal const val DEFAULT_REQUEST_READ_TIMEOUT_MS: Long = 30_000
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(
     val upstream: UpstreamClient,
-    /** Per-install bearer used by local Claude clients. Never use a source-known sentinel here. */
+    /** Per-install bearer used by local Claude clients for their TURNS (the turn key). Never use a
+     *  source-known sentinel here. */
     val inferenceToken: String,
+    /** The management key: the ONLY credential this head's operator routes accept (GET /wire), and
+     *  still accepted for turns so a session launched before the v0.4.0 key split keeps working. It
+     *  is never what a launched client is handed — that is [inferenceToken] — so a session's
+     *  environment cannot read what the head sent upstream on other sessions' behalf. */
+    val operatorToken: String,
     val gate: InflightGate,
     /** WHAT THE HEAD STORES (V4-105 item 1): everything it writes observations into. */
     val stores: HeadStores,
@@ -76,6 +82,10 @@ public data class HeadDeps(
 
     init {
         require(inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
+        require(operatorToken.isNotBlank()) { "operatorToken must not be blank" }
+        // The split is the security property (v0.4.0): a head wired with ONE key for both roles hands
+        // every session the operator routes again, so that wiring is refused rather than served.
+        require(operatorToken != inferenceToken) { "operatorToken must differ from inferenceToken" }
         require(policy.requestReadTimeoutMs > 0) { "requestReadTimeoutMs must be positive" }
         require(!policy.mirrorReasoning) { "mirrorReasoning is operator-locked off" }
     }

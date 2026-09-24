@@ -49,6 +49,9 @@ import kotlin.time.Duration.Companion.seconds
 
 private const val MGMT_KEY = "mgmt-key-for-this-test"
 
+/** The v0.4.0 turn key: what a launched client presents, split from [MGMT_KEY]. */
+private const val TURN_KEY = "turn-key-for-this-test"
+
 /** An Anthropic-shaped upstream that records every request's headers — APPEND-ONLY, so a test can
  *  pin "exactly one NEW request" with a size boundary instead of reading whatever request (possibly
  *  a previous test's) happened to arrive last. */
@@ -141,10 +144,12 @@ class HeadServerClientAuthTest {
                 log = {},
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
-                // This rig carries its OWN bearer and its own store files, keyed by the head's index
+                // This rig carries its OWN bearers and its own store files, keyed by the head's index
                 // (the port is not known until the bind) so two heads in one test never share a
-                // usage file.
-                inferenceToken = MGMT_KEY,
+                // usage file. Two keys, as production wires them: the turn key a launched client
+                // holds, and the management key.
+                inferenceToken = TURN_KEY,
+                operatorToken = MGMT_KEY,
                 stores = headStores(tmp, suffix = "-${heads.size}"),
             ),
         )
@@ -175,12 +180,12 @@ class HeadServerClientAuthTest {
      *  The Ktor client cannot express this: `header(name, v)` twice arrives at the server as ONE
      *  comma-joined line, which would make a repeated-header test pass no matter what the server
      *  does with repeats. Raw bytes are the only way this assertion can fail. */
-    private fun rawTurn(port: Int, headers: List<Pair<String, String>>): String {
+    private fun rawTurn(port: Int, headers: List<Pair<String, String>>, host: String = "127.0.0.1:$port"): String {
         val body = """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
             """"messages":[{"role":"user","content":"hi"}],"stream":true}"""
         val request = buildString {
             append("POST /v1/messages HTTP/1.1\r\n")
-            append("Host: 127.0.0.1:$port\r\n")
+            append("Host: $host\r\n")
             append("Content-Type: application/json\r\n")
             append("Content-Length: ${body.toByteArray().size}\r\n")
             headers.forEach { (name, value) -> append("$name: $value\r\n") }
@@ -361,6 +366,46 @@ class HeadServerClientAuthTest {
     // and hands it straight to this seam. Forwarding it means splice's local key reaches the vendor
     // (the SAFETY shape commit 2ba8780 fixed in the E2E harness and not here) and the user's real
     // credential is never used at all.
+
+    // ── the v0.4.0 key split ──────────────────────────────────────────────────────────────────
+    //
+    // A launched client now holds the TURN key, and the management key is no longer in any
+    // session's environment. The management key must still run a turn (a session launched before the
+    // split holds it until relaunched), and NEITHER key may ever be forwarded to a vendor.
+
+    @Test
+    fun `a gateway head runs a turn on the turn key and, for sessions launched before the split, the mgmt key`() {
+        val port = startHead(forwardClientAuth = false)
+        assertEquals(HttpStatusCode.OK, turn(port, mapOf("Authorization" to "Bearer $TURN_KEY")).first, "the turn key")
+        assertEquals(HttpStatusCode.OK, turn(port, mapOf("Authorization" to "Bearer $MGMT_KEY")).first, "the mgmt key")
+    }
+
+    // v0.4.0: DNS rebinding. A client-auth head's turn door is open to any caller holding its own
+    // credential, and a page in the operator's browser that rebinds attacker.example to 127.0.0.1 is
+    // such a caller. Its requests name attacker.example in Host, the one thing rebinding cannot
+    // change, so the head refuses them before routing and nothing reaches the vendor.
+    @Test
+    fun `a request naming a foreign Host is refused before any route runs, on the open door too`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val credential = listOf("Authorization" to "Bearer caller-own-token")
+        val refused = rawTurn(port, credential, host = "attacker.example:$port")
+        assertTrue(refused.startsWith("HTTP/1.1 403"), refused.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "a rebinding page's turn never reaches the vendor")
+        val served = rawTurn(port, credential, host = "localhost:$port")
+        assertTrue(served.startsWith("HTTP/1.1 200"), served.lineSequence().first())
+    }
+
+    @Test
+    fun `a client-auth head refuses the turn key too - neither splice key is an upstream credential`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, _) = turn(port, mapOf("Authorization" to "Bearer $TURN_KEY"))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        val (apiKeyStatus, _) = turn(port, mapOf("x-api-key" to TURN_KEY))
+        assertEquals(HttpStatusCode.Unauthorized, apiKeyStatus, "the x-api-key spelling of the turn key")
+        assertEquals(before, upstream.requests.size, "splice's own turn key must never reach the vendor")
+    }
 
     @Test
     fun `a client-auth head refuses the caller's own splice management key instead of forwarding it`() {

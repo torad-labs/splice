@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.GATEWAY_VERSION
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream
@@ -23,6 +24,10 @@ import java.security.MessageDigest
 private const val STOCK = "#!/bin/sh\necho stock\n"
 private const val PATCHED = "#!/bin/sh\necho patched\n"
 private const val NEWER = "#!/bin/sh\necho newer\n"
+
+// A flat install has no `current` pointer, so upgrade records it under the running binary's version
+// (UpgradeLayout.installedVersion). Spelled as a literal, this file went red at the 0.4.0 bump.
+private const val INSTALLED = GATEWAY_VERSION
 
 class UpgradeCommandTest {
 
@@ -125,7 +130,7 @@ class UpgradeCommandTest {
 
     /** install.sh 0.4.0 keeps a pristine copy of the installed release's shim. */
     private fun pristine(home: Path, shim: String = STOCK) {
-        val dir = Files.createDirectories(home.resolve("share/releases/0.3.2"))
+        val dir = Files.createDirectories(home.resolve("share/releases/$INSTALLED"))
         Files.writeString(dir.resolve("splice-launch"), shim)
     }
 
@@ -190,8 +195,8 @@ class UpgradeCommandTest {
         assertEquals(NEWER, read(home, "splice-launch"))
         assertFalse(Files.isSymbolicLink(home.resolve("share/splice-launch")), "the shim stays a real file")
         assertEquals("9.9.9", link(home, "current"))
-        assertEquals("0.3.2", link(home, "previous"))
-        assertEquals("old-jar", read(home, "releases/0.3.2/splice.jar"), "the flat jar was recorded")
+        assertEquals(INSTALLED, link(home, "previous"))
+        assertEquals("old-jar", read(home, "releases/$INSTALLED/splice.jar"), "the flat jar was recorded")
         assertEquals(1 to 0, unitRestarts to verbRestarts, "the active unit that names this jar was restarted")
         assertTrue(out.contains("serving 9.9.9"), out)
         assertTrue(calls.any { it.first() == "java" && it.last() == "doctor" }, "doctor ran on the new jar")
@@ -238,15 +243,15 @@ class UpgradeCommandTest {
         assertTrue(ok, out)
         assertTrue(out.contains("edited since") && out.contains("+echo patched"), out)
         assertEquals(NEWER, read(home, "splice-launch"), "the new release's shim is live")
-        assertEquals(PATCHED, read(home, "releases/0.3.2/splice-launch.edited"), "the edit is saved")
+        assertEquals(PATCHED, read(home, "releases/$INSTALLED/splice-launch.edited"), "the edit is saved")
         assertEquals(2, out.split("in flight").size - 1, "waited two polls for the turns in flight")
         val (back, out2) = captured { command(home, base).upgrade(listOf("--rollback", "--now")) }
         assertTrue(back, out2)
         assertEquals("old-jar", read(home, "splice.jar"))
-        assertEquals("0.3.2", link(home, "current"))
+        assertEquals(INSTALLED, link(home, "current"))
         assertEquals("9.9.9", link(home, "previous"))
         assertEquals(STOCK, read(home, "splice-launch"), "rollback activates that release's shim")
-        assertEquals(PATCHED, read(home, "releases/0.3.2/splice-launch.edited"), "the saved edit stays")
+        assertEquals(PATCHED, read(home, "releases/$INSTALLED/splice-launch.edited"), "the saved edit stays")
         assertEquals(0 to 2, unitRestarts to verbRestarts, "no unit names this install's jar: the verb restarts")
         assertIntact(intact)
     }
@@ -262,7 +267,7 @@ class UpgradeCommandTest {
         val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9", "--now")) }
         assertTrue(ok, out)
         assertEquals(NEWER, read(home, "splice-launch"))
-        assertEquals(STOCK, read(home, "releases/0.3.2/splice-launch"), "the flat shim was recorded with its jar")
+        assertEquals(STOCK, read(home, "releases/$INSTALLED/splice-launch"), "the flat shim was recorded with its jar")
         assertTrue(out.contains("refreshed from the release") && !out.contains("saved at"), out)
         val (back, out2) = captured { command(home, base).upgrade(listOf("--rollback", "--now")) }
         assertTrue(back, out2)
@@ -289,7 +294,7 @@ class UpgradeCommandTest {
         }
         assertFalse(back, out2)
         assertTrue(out2.contains("still serves 9.9.9"), out2)
-        assertEquals("0.3.2", link(home, "current"), "the rollback itself landed; only the restart is red")
+        assertEquals(INSTALLED, link(home, "current"), "the rollback itself landed; only the restart is red")
     }
 
     /** A candidate older than 0.4.0 has no `doctor --json`; its text doctor is not run against the
@@ -369,7 +374,7 @@ class UpgradeCommandTest {
         try {
             val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9")) }
             assertFalse(ok, out)
-            assertTrue(out.contains("0.3.2 restored") || out.contains("staging failed"), out)
+            assertTrue(out.contains("$INSTALLED restored") || out.contains("staging failed"), out)
         } finally {
             Files.setPosixFilePermissions(share, perms)
         }

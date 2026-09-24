@@ -216,14 +216,32 @@ describe("the gradle slot", () => {
     }
   }
 
+  /** Until the fake's pid (written by the script before its `exec`) IS the sleep. A marker file alone
+   *  races the exec: a SIGINT that lands while bash still waits on the command that wrote the marker
+   *  is swallowed by bash's wait-and-cooperative-exit (the child exited normally, so bash carries on)
+   *  and the exec'd sleep runs its full 5 s. SIGTERM has no such rule, which is why only the SIGINT
+   *  arm lost CI run 36051292857 (5000 ms) while its twin took 38 ms. */
+  async function waitForExec(pidFile: string, comm: string, ms = 10_000): Promise<void> {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const pid = existsSync(pidFile) ? Number.parseInt(readFileSync(pidFile, "utf8"), 10) : Number.NaN;
+      if (Number.isInteger(pid)) {
+        const ps = Bun.spawnSync(["ps", "-o", "comm=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" });
+        if (ps.stdout.toString().trim() === comm) return;
+      }
+      if (Date.now() > deadline) throw new Error(`the fake gradle never became ${comm} — ${pidFile} after ${ms}ms`);
+      await Bun.sleep(5);
+    }
+  }
+
   for (const [signal, status] of [["SIGTERM", 143], ["SIGINT", 130]] as const) {
     test(`a parent-only ${signal} ends the wrapper with ${status}, long before the child would finish`, async () => {
       // `exec`, so the child is the sleep itself: a bash that only forwards its own death would let
       // the sleep outlive the wrapper and make a prompt exit say nothing about the JVM.
-      const fake = fakeBuildRoot('touch "$(dirname "$0")/started"\nexec sleep 5\n');
+      const fake = fakeBuildRoot('echo $$ >"$(dirname "$0")/started"\nexec sleep 5\n');
       const holder = join(fake.dir, ".gradle-slot.lock.holder");
       const wrapper = wrapperProcess(fake, "signalled");
-      await waitForFile(join(fake.dir, "started"), "started");
+      await waitForExec(join(fake.dir, "started"), "sleep");
       expect(existsSync(holder)).toBe(true);
       const at = Date.now();
       process.kill(wrapper.pid, signal);

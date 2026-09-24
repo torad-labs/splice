@@ -62,7 +62,7 @@ For example, ask one session to implement a change and the other to review it. T
 
 Each named backend connection is called a **head**. You choose which heads to configure and launch; the commands above do not configure providers for you.
 
-**In [v0.3.1](https://github.com/torad-labs/splice/releases/tag/v0.3.1):** more reliable compaction, plus an optional [JavaScript tool runner](#beta-code-mode-for-chatgpt) that lets the model coordinate several client tools in one script. The runner is an opt-in beta, not a requirement for using splice.
+**In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; several accounts per provider with automatic switching; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
 
 ## Install
 
@@ -99,8 +99,8 @@ curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install
 To pin one version instead of following `latest` (prereleases never become `latest`):
 
 ```bash
-curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.2/install.sh \
-  | env SPLICE_VERSION=v0.3.2 bash
+curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install.sh \
+  | env SPLICE_VERSION=v0.4.0 bash
 ```
 
 **Upgrading.** `splice upgrade` fetches and verifies the latest release the same way (or one
@@ -108,7 +108,9 @@ version with `--to vX.Y.Z`), stages it beside the current one under
 `~/.local/share/splice/releases/`, waits for every head's in-flight turns to finish (`--now` skips
 the wait), repoints the live jar, restarts the daemon and runs doctor. A launch shim you edited is
 kept and its diff printed. `splice upgrade --rollback` puts the previous release back; it is kept
-until the next successful upgrade. Config and credentials are never touched.
+until the next successful upgrade. Config and credentials are never touched. 0.3.x has no
+`splice upgrade`: re-run the pinned installer above, then follow
+[the 0.4.0 upgrade notes](CHANGELOG.md#upgrading-from-03x).
 
 <details>
 <summary>Other installation options: from source or with a coding agent</summary>
@@ -194,6 +196,7 @@ splice status         # per-head status
 splice doctor         # check the whole install; every failing check prints its fix
 splice doctor --json  # the same as a redacted, shareable report (--with-logs, --out FILE, --live)
 splice add <profile>  # add a provider + head without editing TOML (codex|grok|kimi|muse|claude|api-key)
+splice add-model      # put more of the curated OpenRouter models on an OpenRouter head
 splice models         # what each provider ACTUALLY serves, against your declared rows (--all, or one provider)
 splice upgrade        # verified upgrade to the latest release (--to vX, --now, --rollback)
 splice sessions       # the Claude Code sessions on this machine, joined to their heads
@@ -213,7 +216,7 @@ before writing anything (the file parses, the credential is present, the endpoin
 models are listed where the dialect lists them; `--live` adds one short turn) and appends the two
 tables through a temp file and one rename, so a refused add leaves your file byte-identical.
 
-The dashboard and every control endpoint are bearer-guarded and loopback-only. `splice dashboard` prints the unlock key; it lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
+The dashboard and every control endpoint are bearer-guarded and loopback-only. A launched session never holds this key: it gets a turn key that opens only its head's turns and its own statusline and resume hook. `splice dashboard` prints the unlock key; it lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
 
 ### Plan usage in Claude Code
 
@@ -412,6 +415,34 @@ Reasons to walk away:
 - **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
 - **A JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving.
 - **A one-person project.** No warranty, no SLA. The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. It is still one person.
+
+## Compatibility
+
+splice follows SemVer and is still `0.x`. A patch release (0.4.0 → 0.4.1) never breaks what is
+listed below. A minor release (0.4 → 0.5) may, and when it does its [CHANGELOG](CHANGELOG.md)
+entry says so under "Upgrading", with the steps.
+
+What 0.4.x keeps stable, and the check that holds it:
+
+| Contract | Held by |
+| --- | --- |
+| `splice.toml` keys | the parser refuses a key it does not know (`TopologyUnknownKeyTest`), and the committed example config must parse (`ExampleConfigTest`), so a removed or renamed key fails the build |
+| where state and credentials live | the `StatePaths` header; a pre-0.4 install keeps `~/.claude-codex/state` |
+| the `splice` verbs | `CommandParserTest` (every verb 0.4.0 ships still parses) |
+| the Anthropic `/v1` surface every head serves | the frozen migration oracle |
+| `splice doctor --json` | its `schema_version` (1); a breaking change bumps it |
+| the `/api/*` fields the console reads | `WebuiContractTest`; fields are added, never renamed or removed |
+
+Not a contract: log wording, the console's layout, the format of files under the state directory,
+and the Kotlin module API (splice publishes no library).
+
+**Claude Code.** Each release is tested against one Claude Code version in a fresh-machine e2e
+(0.4.0: 2.1.281). A newer client usually works, but Anthropic can change what it sends at any
+time, so when a session runs a newer one, `splice doctor`, `splice status` and the status line say
+so.
+
+**Security fixes** land on the latest release only. Report a vulnerability privately, as
+[SECURITY.md](.github/SECURITY.md) describes.
 
 ## How it works
 

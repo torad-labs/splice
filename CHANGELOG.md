@@ -704,6 +704,23 @@ origin.
   marked LOST but stayed findable by its client call ids, so every later turn of the conversation
   found it, failed to place it and logged `abandoned record` again (82 lines for one record on
   2026-09-20). It now retires with its interruption evidence on the first abandonment.
+- **The usage warning reads the plan windows the `usageWarnPct` setting describes.** The setting
+  says "warn when a plan window passes this share", but the level read only rate-limit token
+  headers, which a subscription head never sends. A head at 99% of its 7-day window reported
+  `ok`, and the console said no head reported a limit. `/api/usage`'s `warn` now takes the fuller
+  plan window whose reset is still ahead (a window past its reset is history, not a limit). It
+  names the window as `quota_5h` or `quota_7d` and gives the reset as an ISO-8601 instant. When a
+  head reports both, the worse of the rate-limit and plan signals wins, and the 5-hour token count
+  stays the fallback. A `usageWarnPct` of 0 silences `warn`, never `critical`.
+- **The compaction page says which days its counts cover.** `/api/compact` carried all-time counts
+  only, so failures from weeks ago read as a current failure rate. `stats.by_outcome_7d` sums the
+  last seven days across heads, and `stats.heads.<key>` gives each head's `total`, `by_outcome`,
+  `by_outcome_7d`, `first_ts` and `last_ts`. `splice doctor` prints the last turn failure's age in
+  the largest whole unit (`20d ago`, not `28801m ago`), as `splice status` already did.
+- **`/api/models` says when a window is the head's own.** A head's `context_window`, or the
+  `contextWindowOverride` setting, replaces the provider's window on every model, rule and default,
+  but each such row said `context_window_source: "model"`. Those rows now say `"head"`. A discovered
+  model held to a smaller published ceiling still says `"model"`, because that number is the model's.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

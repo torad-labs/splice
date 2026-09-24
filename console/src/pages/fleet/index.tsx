@@ -42,6 +42,7 @@ const USAGE_MS = 5000;
 /** The accounts page's own cadence: windows move per turn, not per second. */
 const POOL_MS = 15000;
 const SLOW_MS = 30000;
+const LAST_TURN_MS = 60000;
 
 /** The three views this page ships with. `by head` is first because it is the default. */
 export const DEFAULT_VIEWS: readonly View[] = [
@@ -212,7 +213,9 @@ export function FleetPage() {
       startAuthPolling(SLOW_MS),
       startTopologyPolling(SLOW_MS),
       startModelsPolling(SLOW_MS),
-      startPerfSummaryPolling('24h', SLOW_MS),
+      // The summary is read only for each head's last turn, which prints to the minute, and one read
+      // costs the daemon ~300ms (measured 2026-09-24, against 14ms for /api/heads): once a minute.
+      startPerfSummaryPolling('24h', LAST_TURN_MS),
     ];
     return () => stops.forEach((stop) => stop());
   }, []);

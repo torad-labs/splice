@@ -12,7 +12,7 @@
 // could not be tested or captured from data.
 import { useState } from 'react';
 import type { CompactPayload, CompactRow } from '@shared/api';
-import { ABSENT, fmtInt, fmtMs, timeAgo } from '@shared/lib';
+import { ABSENT, MONTHS, fmtInt, fmtMs, fmtShare, timeAgo } from '@shared/lib';
 import { Key } from '@shared/controls';
 import { Bay, HolderEdge, Strip, StripField } from '@shared/ui';
 import type { Edge } from '@shared/ui';
@@ -51,13 +51,8 @@ export function outcomeText(outcome: string): string {
 
 /** One outcome's part of all compactions, to one decimal under 10% so a rare failure still reads. */
 export function shareText(count: number, total: number): string {
-  if (total <= 0) return ABSENT;
-  const pct = (count / total) * 100;
-  if (pct > 0 && pct < 0.1) return '<0.1%';
-  return `${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`;
+  return total <= 0 ? ABSENT : fmtShare(count / total);
 }
-
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /**
  * THE LINE THE PAGE LEADS WITH: how the most recent compactions went, and since when (console

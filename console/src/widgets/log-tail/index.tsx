@@ -15,6 +15,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { dateOf, headOf, levelOf, timeOf } from '@entities/logs';
 import type { LogFilter, LogLevel, LogsPayload } from '@entities/logs';
 import { Fault, Flag } from '@shared/controls';
+import { MONTHS } from '@shared/lib';
 import { Empty, Figure, Strip, StripField } from '@shared/ui';
 import type { Edge } from '@shared/ui';
 import { S } from './strings';
@@ -62,7 +63,6 @@ export function messageOf(line: string): string {
    ch count and takes the rack's slack, and the other three keep the grid. */
 const COLS = { time: 15, head: 18, text: 60 } as const;
 
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /** The reader's own day as the daemon stamps it (local, `YYYY-MM-DD`). */
 function localDay(now: Date): string {

@@ -43,7 +43,7 @@ import { useSession } from '@entities/session';
 import { RequestDrawer, Waterfall } from '@widgets/waterfall';
 import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { fmtMs, timeAgo } from '@shared/lib';
+import { fmtMs, fmtShare, timeAgo } from '@shared/lib';
 import type { Basis } from '@shared/ui';
 import { basisProp } from './strip';
 import { S } from './strings';
@@ -158,13 +158,8 @@ export function stageRowsOf(rows: readonly TurnRow[]): StageRow[] {
   });
 }
 
-/** A 0..1 share as a person reads it: `25%`, with one decimal under ten so 2.4% is not 2%. */
-export function shareText(share: number): string {
-  const value = share * 100;
-  if (value === 0) return '0%';
-  if (value < 0.1) return '<0.1%';
-  return `${value < 10 ? value.toFixed(1) : value.toFixed(0)}%`;
-}
+/** A 0..1 share as a person reads it (@shared/lib's fmtShare, kept under this page's name). */
+export const shareText = fmtShare;
 
 /** The four token classes per head, with the cache hit share: what the operator pays for. */
 function tokenRowsOf(rows: readonly TurnRow[]): { head: string; in: number; cached: number; write: number; out: number; hit: number }[] {

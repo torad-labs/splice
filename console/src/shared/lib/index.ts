@@ -74,6 +74,19 @@ export function fmtDurationS(totalSeconds: number): string {
   return `${s}s`;
 }
 
+/** A 0..1 share as a person reads it: `25%`, one decimal under ten so 2.4% is not 2%, and a floor
+ *  of `<0.1%` so a rare failure never reads as none. One copy: turns and compaction each kept their
+ *  own (code review, 2026-09-24). */
+export function fmtShare(share: number): string {
+  const value = share * 100;
+  if (value === 0) return '0%';
+  if (value < 0.1) return '<0.1%';
+  return `${value < 10 ? value.toFixed(1) : value.toFixed(0)}%`;
+}
+
+/** Month names as the console prints a date (`sep 21`), one table for every page that dates a row. */
+export const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as const;
+
 export function fmtMs(ms: number): string {
   if (ms >= 60_000) return fmtDurationS(ms / 1000);
   if (ms >= 1_000) return `${(ms / 1000).toFixed(1)}s`;

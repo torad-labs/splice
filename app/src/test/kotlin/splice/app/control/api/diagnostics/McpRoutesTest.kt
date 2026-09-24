@@ -97,6 +97,7 @@ class McpRoutesTest {
             ),
             canonicalGlobalFile = censusHome.resolve(".claude.json"),
             canonicalPlan = McpGlobalPlan { sharing.plan(global) },
+            materializedHomes = emptySet(),
         )
         host = McpHost(sharing, { global }, log = { }, inventory = inventory)
         control = ControlServer(

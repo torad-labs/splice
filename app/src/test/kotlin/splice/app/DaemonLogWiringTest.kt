@@ -66,6 +66,23 @@ class DaemonLogWiringTest {
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(open)))
     }
 
+    // v0.4.0 review round 2: a logs dir that cannot be MADE is not an owner-only failure. It was said as
+    // "other local users can read what splice keeps there" — about a directory that does not exist —
+    // while the real loss, no daemon.log at all, went unsaid.
+    @Test
+    fun `a logs dir that cannot be made is said as a lost daemon log, not as an open one`(@TempDir tmp: Path) {
+        val boundary = DaemonBoundary()
+        val blocker = Files.writeString(tmp.resolve("a-file"), "")
+        val unmakeable = blocker.resolve("logs")
+
+        val said = boundary.logsDirProblem(unmakeable)
+
+        assertTrue(said?.contains("could not be created") == true, said.toString())
+        assertTrue(said!!.contains("no daemon.log is kept"), said)
+        assertTrue(!said.contains("other local users"), said)
+        assertEquals(null, boundary.logsDirProblem(tmp.resolve("makeable")), "a dir it can make and hold says nothing")
+    }
+
     @Test
     fun `a message is never double-terminated`(@TempDir logs: Path) {
         process.persistentLogger(logs)("[x] already terminated\n")

@@ -27,14 +27,15 @@ import java.nio.file.Path
 private const val SESSION = "0f6b1c2e-7d3a-4b8e-9c1d-2a5f6e7b8c9d"
 private const val OTHER = "1a2b3c4d-0000-4000-8000-000000000000"
 private const val PINNED = "gpt-5.6-sol"
+private const val SERVED = "gpt-6-astra"
 private const val FOREIGN_ROW = """{"type":"assistant","sessionId":"$SESSION","message":{"model":"k3-256k","content":[]}}"""
 
 class ResumeHookRouteTest {
 
     private val log = StringBuilder()
 
-    private fun route(own: Path): ResumeHookRoute {
-        return ResumeHookRoute(launchHeadsOf(head(own)), log = { log.append(it) })
+    private fun route(own: Path, served: List<String> = listOf(PINNED)): ResumeHookRoute {
+        return ResumeHookRoute(launchHeadsOf(head(own, served)), log = { log.append(it) })
     }
 
     private fun hookJson(
@@ -76,6 +77,22 @@ class ResumeHookRouteTest {
 
         assertTrue(Files.readString(transcript).contains("\"$PINNED\""), Files.readString(transcript))
         assertTrue(log.contains("1 assistant rows moved onto $PINNED"), log.toString())
+    }
+
+    // v0.4.0 review round 2: the route hands the rewrite the head's whole roster, so a resumed row on a
+    // model this head serves (claude-splice's opus beside its pinned fable) is left exactly as it is.
+    @Test
+    fun `a resume leaves rows on a model the head serves and moves only foreign ones`(@TempDir home: Path) {
+        val (own, shared) = linkedHead(home)
+        val servedRow = FOREIGN_ROW.replace("k3-256k", SERVED)
+        val transcript = write(shared.resolve("-work-repo").resolve("$SESSION.jsonl"), "$servedRow\n$FOREIGN_ROW\n")
+        val claimed = own.resolve("projects").resolve("-work-repo").resolve("$SESSION.jsonl")
+
+        assertNull(route(own, served = listOf(PINNED, SERVED)).handle("codex", hookJson(SESSION, claimed)))
+
+        val rows = Files.readString(transcript).lines()
+        assertEquals(servedRow, rows[0], "a served model's row is restored by Claude Code as it is")
+        assertTrue(rows[1].contains("\"$PINNED\""), rows[1])
     }
 
     @Test
@@ -194,14 +211,14 @@ class ResumeHookRouteTest {
         assertNull(SessionOwnership(own).newestFor(elsewhere), "a hook without a cwd enters nothing")
     }
 
-    private fun head(own: Path): LaunchHead = LaunchHead(
+    private fun head(own: Path, served: List<String>): LaunchHead = LaunchHead(
         head = runningHead("codex"),
         auth = absentAuth("test"),
         spec = LaunchSpec(
             trees = HeadTrees(own),
             pinnedModel = PINNED,
-            availableModelIds = listOf(PINNED),
-            modelLabels = mapOf(PINNED to PINNED),
+            availableModelIds = served,
+            modelLabels = served.associateWith { it },
             contextWindow = 1_000,
             modelOptionsCache = buildJsonObject { },
             statuslineCommand = "",

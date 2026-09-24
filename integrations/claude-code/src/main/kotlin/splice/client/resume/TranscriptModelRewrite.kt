@@ -40,15 +40,20 @@ public class TranscriptModelRewrite {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Rewrite every assistant row's `message.model` to [pinnedModel] in [transcript] and in every
-     *  jsonl under its sibling `<id>/` subdir (the subagent transcripts and tool results Claude Code
-     *  keeps beside it). Returns the number of rows changed; throws [IOException] on the first file
-     *  that could not be read or written. */
-    public fun rewrite(transcript: Path, pinnedModel: String): Int {
-        var rewritten = rewriteFile(transcript, pinnedModel)
+    /** Rewrite to [pinnedModel] every assistant row whose `message.model` the head does NOT serve, in
+     *  [transcript] and in every jsonl under its sibling `<id>/` subdir (the subagent transcripts and
+     *  tool results Claude Code keeps beside it). A row on a model in [served] — the head's roster,
+     *  the same list its `availableModels` allowlist is written from — is restored by Claude Code as
+     *  it is, so it stays (v0.4.0 review: claude-splice's tree is the operator's main
+     *  ~/.claude/projects, and moving its opus rows onto fable rewrote history for nothing). Returns
+     *  the number of rows changed; throws [IOException] on the first file that could not be read or
+     *  written. */
+    public fun rewrite(transcript: Path, pinnedModel: String, served: Collection<String>): Int {
+        val kept = served.toSet() + pinnedModel
+        var rewritten = rewriteFile(transcript, pinnedModel, kept)
         val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
         if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) {
-            jsonlUnder(subdir).forEach { file -> rewritten += rewriteFile(file, pinnedModel) }
+            jsonlUnder(subdir).forEach { file -> rewritten += rewriteFile(file, pinnedModel, kept) }
         }
         return rewritten
     }
@@ -57,12 +62,12 @@ public class TranscriptModelRewrite {
         stream.filter { it.fileName.toString().endsWith(TRANSCRIPT_SUFFIX) && Files.isRegularFile(it) }.toList()
     }
 
-    private fun rewriteFile(file: Path, pinnedModel: String): Int {
+    private fun rewriteFile(file: Path, pinnedModel: String, kept: Set<String>): Int {
         val text = Cancellables.runCatchingCancellable { Files.readString(file) }
             .getOrElse { cause -> throw IOException("$file unreadable (${SafeFailureText.render(cause)})") }
         var changed = 0
         val rows = text.split("\n").map { row ->
-            val rewritten = rewriteRow(row, pinnedModel)
+            val rewritten = rewriteRow(row, pinnedModel, kept)
             if (rewritten != null) changed += 1
             rewritten ?: row
         }
@@ -75,12 +80,12 @@ public class TranscriptModelRewrite {
 
     /** The rewritten row, or null when this row is not an assistant row on another model — an
      *  unparseable line included: a transcript is history, and history is never silently dropped. */
-    private fun rewriteRow(row: String, pinnedModel: String): String? {
+    private fun rewriteRow(row: String, pinnedModel: String, kept: Set<String>): String? {
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-169): an unparseable line is kept verbatim BY DESIGN (see the KDoc); null here means "leave this row alone", never a swallowed failure.
         val obj = Cancellables.runCatchingCancellable { json.parseToJsonElement(row).jsonObject }
             .getOrNull() ?: return null
         val message = assistantMessage(obj)
-        if (message == null || JsonScalars.str(message, Keys.MODEL) == pinnedModel) return null
+        if (message == null || JsonScalars.str(message, Keys.MODEL) in kept) return null
         val fixedMessage = JsonObject(message.toMutableMap().apply { put(Keys.MODEL, JsonPrimitive(pinnedModel)) })
         return json.encodeToString(
             JsonObject.serializer(),

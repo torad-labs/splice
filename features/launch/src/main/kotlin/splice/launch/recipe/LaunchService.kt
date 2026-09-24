@@ -126,7 +126,13 @@ public class LaunchService(
      *  id: the picker is head-bounded by construction, and this is where that stays true. */
     private fun adoptResume(spec: LaunchSpec, extraArgs: List<String>): SessionAdoption? {
         val sessionId = requestedSessionId(extraArgs) ?: return null
-        return resumeAcrossHeads.adopt(spec.trees.own, spec.trees.siblings, sessionId, spec.pinnedModel)
+        return resumeAcrossHeads.adopt(
+            spec.trees.own,
+            spec.trees.siblings,
+            sessionId,
+            spec.pinnedModel,
+            spec.availableModelIds,
+        )
     }
 
     /** The session id a launch asked to resume BY NAME, or null. Every spelling the client accepts

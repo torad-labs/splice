@@ -46,7 +46,7 @@ class DaemonMaterializerTest {
             tmp,
             rewrite = null,
             hookExec = failing,
-            resumeHook = ResumeHookTarget(3096, tmp.resolve("turn-auth-header")),
+            resumeHook = ResumeHookTarget(3096) { tmp.resolve("turn-auth-header") },
         )
 
         assertThrows<IOException> { materializer.materialize(captureSpec(tmp.resolve(".claude-head"))) }
@@ -71,12 +71,13 @@ class DaemonMaterializerTest {
 
     // v0.4.0 review: the resume hook authenticates from the turn key's header file, so the daemon must
     // hand the materializer THAT file. Any other path (or none) is a hook that 401s on every head.
+    // Round 2: handed as the method reference, never its result, so each install writes it current.
     @Test
     fun `the daemon points the resume hook at the turn key's header file`() {
         val call = buildCallArguments(controlPlaneSource())
         assertNotNull(call, "DaemonMaterializer.build(...) not found in ControlPlane.kt")
         assertTrue(
-            call!!.contains("ResumeHookTarget(controlPort, TurnKey(mgmtKey).headerFile())"),
+            call!!.contains("ResumeHookTarget(controlPort, AuthHeaderFile(TurnKey(mgmtKey)::headerFile))"),
             "ControlPlane must pass the turn key's header file, got: $call",
         )
     }

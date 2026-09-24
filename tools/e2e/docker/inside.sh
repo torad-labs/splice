@@ -717,7 +717,10 @@ status_step() {
   local out
   out="$(splice status </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
   printf '%s\n' "$out"
-  printf '%s\n' "$out" | grep -qE '^\s*daemon\s+running' || { echo "status does not report the daemon running"; return 1; }
+  # The daemon's state rides on the wordmark line since c6ee5eaec ("splice X.Y.Z     daemon running on
+  # PORT", or "daemon stopped (starts on first launch)"); the old labelled row is gone.
+  printf '%s\n' "$out" | grep -qE "^\s*splice \S+\s+daemon running on $CONTROL_PORT\s*$" ||
+    { echo "status does not report the daemon running on :$CONTROL_PORT"; return 1; }
   printf '%s\n' "$out" | grep -q 'claudex' && printf '%s\n' "$out" | grep -q 'claude-mockchat2' || { echo "status lacks a head row"; return 1; }
 }
 step "splice logs --tail 5: non-empty tail" logs_step

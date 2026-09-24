@@ -12,7 +12,7 @@ FROM eclipse-temurin:21-jre-noble
 # version (run.sh passes Versions.kt's TESTED_CLAUDE_CODE value explicitly).
 ARG NODE_VERSION=24.20.0
 ARG NODE_SHA256=2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2
-ARG CLAUDE_CODE_VERSION=2.1.257
+ARG CLAUDE_CODE_VERSION=2.1.281
 # Bun runs the mock upstream and wire probe; match package.json's pinned packageManager.
 ARG BUN_VERSION=1.4.2
 ARG BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913

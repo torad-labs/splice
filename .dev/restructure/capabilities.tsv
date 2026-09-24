@@ -2232,3 +2232,6 @@ tools/release/src/commands/notes.ts	054aeac5b8b33e596aa07a3e3995cb9202ccc9fc4213
 tools/release/test/changelog.test.ts	174fae7dc7ce59abe25864ecb0ac3cdff0524ac9b99d6758602a2dac459f8d98	created		the release body from the version's CHANGELOG section, and the gate that a version bump carries one (V4-198)
 core/src/test/kotlin/splice/core/config/ConfigHeadOnlyKnobsTest.kt	9c83cb121073496c5ef178e4c94ec3f2a9e9ea56115652f37e081669a15ee3fb	created		the trace and the wire tap are set per head only (v0.4.0 prompt-review)
 tools/gate/test/ledger-guard.test.ts	fbfe7ffa3086212cef86c767cdda546c65cd5b85103afbb16846de7bf25e9ae9	created		the campaign-ledger guard driven through its PreToolUse entry (v0.4.0 tooling review)
+tools/e2e/docker/lib.sh	6b15b25ffc1d93e55de9dc864ad06eb58874d0f21e7aa7ff966162cc45e800d5	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
+tools/e2e/docker/lib.ts	00ab27780f3718459623d610a142fcf7b507353f0ecb64123fb72712131e96dd	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
+tools/e2e/docker/upgrade.sh	6bb1e27737fe135c76ed855cecfc8c160a645d2457565ecd0ae3c7f7f97faee6	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release

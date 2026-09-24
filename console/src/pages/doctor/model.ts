@@ -8,7 +8,7 @@
 // thing a test can prove holds nothing anywhere else; a component that quietly wrote to the store
 // or to localStorage could not be.
 import type { DoctorCheck, DoctorPayload, DoctorStatus, Leak } from '@entities/doctor';
-import { checkSection, leaksIn } from '@entities/doctor';
+import { checkFix, checkSection, leaksIn } from '@entities/doctor';
 import type { Edge } from '@shared/ui';
 
 /** What the board may print of a report, and why it may print nothing. */
@@ -85,6 +85,51 @@ export function groupChecks(checks: readonly DoctorCheck[], view: { sort: { fiel
       const worst = (group: CheckGroup) => Math.max(...group.checks.map((check) => rank[check.status]));
       return worst(right) - worst(left) || left.key.localeCompare(right.key);
     });
+}
+
+/** One row of the checks rack: a check, or several that say the same thing about different heads. */
+export interface CheckRow {
+  /** The first member's id: stable across polls, and what the page opens by. */
+  key: string;
+  status: DoctorStatus;
+  /** The id for one check; for several, the id up to the colon with the member count. */
+  label: string;
+  fix: string | null;
+  members: DoctorCheck[];
+}
+
+/** The part of an id after its colon, which names the head or project a check is about. */
+export function subjectOf(check: DoctorCheck): string {
+  const colon = check.id.indexOf(':');
+  return colon === -1 ? check.id : check.id.slice(colon + 1);
+}
+
+/**
+ * THE SAME FINDING ONCE, NOT ONCE PER HEAD (console review, 2026-09-24). The live report carried
+ * eleven `configuration/system-prompt:<head>` warnings with one identical fix, and they filled the
+ * first screen of the rack. Checks collapse when they share a status, the id up to its colon, and
+ * the fix word for word; a check whose fix names its head (`splice logs --head claudex`) stays its
+ * own row, because its remedy differs. Order is the first member's.
+ */
+export function collapseChecks(checks: readonly DoctorCheck[]): CheckRow[] {
+  const rows = new Map<string, CheckRow>();
+  for (const check of checks) {
+    const colon = check.id.indexOf(':');
+    const fix = checkFix(check);
+    const family = colon === -1 ? null : `${check.status}|${check.id.slice(0, colon)}|${fix ?? ''}`;
+    const row = family === null ? undefined : rows.get(family);
+    if (row === undefined) rows.set(family ?? `id|${check.id}`, { key: check.id, status: check.status, label: check.id, fix, members: [check] });
+    else row.members.push(check);
+  }
+  return [...rows.values()].map((row) => row.members.length === 1
+    ? row
+    : { ...row, label: `${row.key.slice(0, row.key.indexOf(':'))} (${row.members.length})` });
+}
+
+/** The head a `splice logs --head <head>` remedy names, so the page can open that log itself. */
+export function logsHeadOf(fix: string | null): string | null {
+  const match = fix === null ? null : /^splice logs --head (\S+)/.exec(fix);
+  return match === null ? null : match[1];
 }
 
 /** How many checks are not `ok`. The report's one number, and the one the page leads with. */
@@ -226,6 +271,6 @@ export function fixtureName(search: string, dev: boolean): string | null {
  * source (CONTRACTS.md section 8).
  */
 export const EMPTIES = {
-  noReport: { text: 'doctor report not built', source: 'row V4-127' },
-  noChecks: { text: 'no checks reported', source: 'GET /api/doctor' },
+  noReport: { text: 'doctor unavailable', source: 'this splice version does not serve the doctor report' },
+  noChecks: { text: 'no checks reported', source: 'the daemon returned an empty report; run splice doctor in a terminal to compare' },
 } as const;

@@ -8,17 +8,20 @@
 // state, are dropped the moment a new run starts, and touch no store and no storage.
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router';
-import { checkFix, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
-import type { DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
+import { checkFinding, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import type { DoctorPayload, UpgradePayload } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
-import { Blank, Fault } from '@shared/controls';
-import { EMPTIES, attentionCount, canSend, gateReport, groupChecks, playgroundNext, reportFacts, statusEdge, wantsAttention, IDLE_PLAYGROUND } from './model';
-import type { PlaygroundEvent } from './model';
+import { Bay, Empty, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
+import { Blank, Choice, Fault, Input } from '@shared/controls';
+import {
+  EMPTIES, attentionCount, canSend, collapseChecks, gateReport, groupChecks, logsHeadOf, playgroundNext, reportFacts,
+  statusEdge, subjectOf, wantsAttention, IDLE_PLAYGROUND,
+} from './model';
+import type { CheckRow, PlaygroundEvent } from './model';
 import { fixtureDoctor } from './fixtures/doctor';
 import { fixtureName } from './model';
 import { dispositions } from './coverage';
@@ -66,27 +69,54 @@ function CopyFix({ command }: { command: string }) {
   );
 }
 
-export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; selected: boolean; onOpen: () => void }) {
-  const fix = checkFix(check);
+export function CheckStrip({ row, selected, onOpen }: { row: CheckRow; selected: boolean; onOpen: () => void }) {
   return (
     <Strip
-      edge={statusEdge(check.status)}
-      edgeLabel={check.status}
-      cocked={wantsAttention(check.status)}
+      edge={statusEdge(row.status)}
+      edgeLabel={row.status}
+      cocked={wantsAttention(row.status)}
       selected={selected}
       onOpen={onOpen}
-      ariaLabel={check.id}
+      ariaLabel={row.label}
     >
       {/* NO PER-CELL LABEL: the rack prints its column names once (B9), and this is the rack B9
           measured on ("doctor.png: three x fourteen"). The stack is what made every check two
           lines of type in a 64px row where one line of 16px fits. */}
-      <StripField w={CHECK} value={check.id} mono={false} />
+      <StripField w={CHECK} value={row.label} mono={false} />
       {/* No status field: the holder edge above prints the identical word on every strip (m1
           design review B10). A check with nothing to fix prints the absence glyph in the fix
           cell; the sentence `no fix offered` is what the opened check's note says, which is where
           a Doctor fix's paragraph belongs. */}
-      <StripField w={FIX} value={fix ?? S.absent} mono={false} />
+      <StripField w={FIX} value={row.fix ?? S.absent} mono={false} />
     </Strip>
+  );
+}
+
+/** The opened row: what it found, on which heads, and its fix with a copy key. A remedy that is a
+ *  `splice logs --head` command also opens that log here, since this console has the page for it. */
+function OpenedCheck({ row }: { row: CheckRow }) {
+  const first = row.members[0];
+  const logsHead = logsHeadOf(row.fix);
+  return (
+    <section className="myx-doc-section">
+      <div className="myx-doc-row">
+        <HolderEdge state={statusEdge(row.status)} label={row.status} />
+        <span className="myx-doc-note">{row.label}</span>
+      </div>
+      {row.members.length > 1 ? (
+        <p className="myx-doc-note">{`on ${row.members.map(subjectOf).join(', ')}`}</p>
+      ) : null}
+      {first === undefined ? null : <p className="myx-doc-note">{checkFinding(first)}</p>}
+      {row.fix === null ? (
+        <p className="myx-doc-note">{S.noFix}</p>
+      ) : (
+        <div className="myx-doc-row">
+          <code className="myx-doc-fix">{row.fix}</code>
+          <CopyFix command={row.fix} />
+          {logsHead === null ? null : <a className="myx-doc-btn" href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLogs}</a>}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -150,24 +180,22 @@ function Playground({ heads }: { heads: readonly string[] }) {
   return (
     <Reveal label={S.playground}>
       <div className="myx-doc-section">
-        <div className="myx-doc-row">
-          <FieldBox
-            label={S.head}
-            value={state.head}
-            provenance="state file"
-            hot
-            onChange={(value) => send({ kind: 'head', value })}
-          />
-        </div>
-        <p className="myx-doc-note">
-          {heads.length === 0 ? 'no heads loaded' : heads.join(' ')}
-        </p>
-        <FieldBox
+        {/* A picker and a plain field. These were FieldBoxes, which print a knob's provenance and
+            restart verdict, so the prompt box read `state file / applies live`; and the head was
+            typed by hand against a list of names printed under it. */}
+        <Choice
+          label={S.head}
+          value={state.head}
+          options={[{ value: '', label: S.pickHead }, ...heads.map((head) => ({ value: head, label: head }))]}
+          onChange={(value) => send({ kind: 'head', value })}
+          w={24}
+        />
+        <Input
           label={S.prompt}
           value={state.prompt}
-          provenance="state file"
-          hot
           onChange={(value) => send({ kind: 'prompt', value })}
+          placeholder="one prompt, sent once and not recorded"
+          w={36}
         />
         <div className="myx-doc-row">
           <button type="button" className="myx-doc-btn" disabled={!canSend(state)} onClick={start}>
@@ -219,9 +247,8 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
   const { shown, leaks } = useMemo(() => gateReport(report), [report]);
 
   const checks = shown?.checks ?? [];
-  const groups = groupChecks(checks, active);
-  const opened = checks.find((check) => check.id === openKey) ?? null;
-  const fixes = checks.filter((check) => checkFix(check) !== null);
+  const rows = collapseChecks(groupChecks(checks, active).flatMap((group) => group.checks));
+  const opened = rows.find((row) => row.key === openKey) ?? null;
 
   return (
     <div
@@ -235,7 +262,7 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
 
       {error === null ? null : <Fault message={error} />}
 
-      {pending !== null ? <Empty text={EMPTIES.noReport.text} source={`row ${pending}`} /> : null}
+      {pending !== null ? <Empty text={EMPTIES.noReport.text} source={EMPTIES.noReport.source} /> : null}
       {report === null && pending === null ? <Blank strips={4} /> : null}
 
       {/* The gate. A payload that still carries a credential shape is refused, by path, and never
@@ -272,12 +299,12 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
                 count={checks.length}
                 fields={<ColumnNames columns={[{ w: CHECK, label: S.check }, { w: FIX, label: S.fix }]} />}
               >
-                {groups.flatMap((group) => group.checks).map((check) => (
+                {rows.map((row) => (
                   <CheckStrip
-                    key={check.id}
-                    check={check}
-                    selected={openKey === check.id}
-                    onOpen={() => onToggle(check.id)}
+                    key={row.key}
+                    row={row}
+                    selected={openKey === row.key}
+                    onOpen={() => onToggle(row.key)}
                   />
                 ))}
               </Bay>
@@ -297,6 +324,10 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
         </div>
 
         <aside className="myx-doc-detail" aria-label={S.detail}>
+          {/* The opened check leads the column, where a click on a row lands in view. The column
+              also carried every fix in the report a second time, a list as long as the rack's
+              fix column; the copy key it existed for is on the opened check now. */}
+          {opened === null ? null : <OpenedCheck row={opened} />}
           {/* Rendered whether or not the report itself has landed: the upgrade strip reads its own
               route (GET /api/upgrade), and the restart is an action on the daemon rather than on
               the report, so hiding either behind the report hid it entirely. What IS read off the
@@ -325,37 +356,10 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
               </Strip>
             </div>
             <p className="myx-doc-note">{`claude code ${shown?.claude_code.version ?? S.absent}`}</p>
-            <p className="myx-doc-note">{`${shown === null ? S.absent : attentionCount(checks)} need attention`}</p>
+            <p className="myx-doc-note">{`${shown === null ? S.absent : attentionCount(checks)} checks need attention`}</p>
             {/* The draining restart (WC-08), the same control the fleet's head detail mounts. */}
             <DaemonRestart />
           </section>
-
-          <section className="myx-doc-section">
-            <h2 className="myx-doc-section-title">{S.fix}</h2>
-            {shown === null ? (
-              <p className="myx-doc-note">{S.absent}</p>
-            ) : fixes.length === 0 ? (
-              <p className="myx-doc-note">{S.noFix}</p>
-            ) : (
-              fixes.map((check) => (
-                <div key={check.id} className="myx-doc-row">
-                  <span className="myx-doc-note">{check.id}</span>
-                  <code className="myx-doc-fix">{checkFix(check)}</code>
-                  <CopyFix command={checkFix(check) ?? ''} />
-                </div>
-              ))
-            )}
-          </section>
-
-          {opened === null ? null : (
-            <section className="myx-doc-section">
-              <div className="myx-doc-row">
-                <HolderEdge state={statusEdge(opened.status)} label={opened.status} />
-                <span className="myx-doc-note">{opened.id}</span>
-              </div>
-              <p className="myx-doc-note">{opened.detail}</p>
-            </section>
-          )}
 
           <Playground heads={heads} />
         </aside>

@@ -36,6 +36,8 @@ export const S = {
   upgrade: 'upgrade',
   restart: 'restart',
   noFix: 'no fix offered',
+  openLogs: 'open log',
+  pickHead: 'choose a head',
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
    *  replacing `unknown` in the upgrade strip's three cells. */
   absent: ABSENT,

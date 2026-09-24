@@ -25,7 +25,9 @@ import {
   EMPTIES as DOCTOR_EMPTIES,
   attentionCount,
   canSend,
+  collapseChecks,
   groupChecks,
+  logsHeadOf,
   playgroundNext,
   statusEdge,
   wantsAttention,
@@ -42,6 +44,13 @@ const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
 
 /** The daemon's own separator: a space, U+2014, then " fix: " (DoctorReportShape.kt:59). */
 const SEP = ` ${String.fromCharCode(0x2014)} fix: `;
+
+/** One check as the rack's row. */
+function rowOf(one: DoctorCheck) {
+  const [row] = collapseChecks([one]);
+  if (row === undefined) throw new Error(`no row for ${one.id}`);
+  return row;
+}
 
 function check(id: string, status: DoctorCheck['status'], detail: string): DoctorCheck {
   return { id, status, detail };
@@ -111,7 +120,7 @@ describe('every failing check carries its fix', () => {
   });
 
   test('the strip prints the check id, its status and its fix', () => {
-    const out = render(h(CheckStrip, { check: failing, selected: false, onOpen: () => undefined }));
+    const out = render(h(CheckStrip, { row: rowOf(failing), selected: false, onOpen: () => undefined }));
     expect(out).toContain('daemon/port');
     expect(out).toContain('>fail<');
     expect(out).toContain('splice doctor --json');
@@ -121,9 +130,40 @@ describe('every failing check carries its fix', () => {
   test('a check with no remedy prints the absence glyph rather than a blank cell', () => {
     // The sentence `no fix offered` moved to the opened check's own note, where a Doctor fix's
     // paragraph belongs; the rack cell carries the absence glyph (m1 design review B8).
-    const out = render(h(CheckStrip, { check: plain, selected: false, onOpen: () => undefined }));
+    const out = render(h(CheckStrip, { row: rowOf(plain), selected: false, onOpen: () => undefined }));
     expect(out).toContain('>–<');
     expect(out).not.toContain('no fix offered');
+  });
+
+  test('the same finding on several heads is one row that counts them', () => {
+    // Live 2026-09-24: eleven `configuration/system-prompt:<head>` warnings with one fix filled
+    // the first screen of the rack.
+    const fix = 'set system_prompt_mode = "append"';
+    const rows = collapseChecks([
+      check('configuration/system-prompt:claudex', 'warn', `head 'claudex' replaces${SEP}${fix}`),
+      check('configuration/system-prompt:bonsai', 'warn', `head 'bonsai' replaces${SEP}${fix}`),
+      check('configuration/topology', 'ok', 'fine'),
+    ]);
+    expect(rows.map((row) => [row.label, row.members.length])).toEqual([
+      ['configuration/system-prompt (2)', 2], ['configuration/topology', 1],
+    ]);
+    expect(rows[0]?.key).toBe('configuration/system-prompt:claudex');
+  });
+
+  test('checks whose fixes differ stay their own rows', () => {
+    const rows = collapseChecks([
+      check('configuration/local:a', 'warn', `down${SEP}start it`),
+      check('configuration/local:b', 'fail', `down${SEP}start it`),
+      check('configuration/wire-tap:a', 'warn', `on${SEP}remove overrides.wireTap from [heads.a]`),
+      check('configuration/wire-tap:b', 'warn', `on${SEP}remove overrides.wireTap from [heads.b]`),
+    ]);
+    expect(rows).toHaveLength(4);
+  });
+
+  test('a splice logs remedy names the head whose log the page can open', () => {
+    expect(logsHeadOf('splice logs --head claude-kimi --tail 50')).toBe('claude-kimi');
+    expect(logsHeadOf('splice restart')).toBeNull();
+    expect(logsHeadOf(null)).toBeNull();
   });
 
   test('warn and fail cock the strip; ok and info do not', () => {
@@ -249,8 +289,11 @@ describe('the playground never persists a body', () => {
 describe('pending routes render an empty naming their row', () => {
   // M4-07: GET /api/upgrade is served and the version strip reads it, so its `not built` empty is
   // gone (tests/doctor-gate.test.ts pins the absence).
-  test('the doctor empty names V4-127', () => {
-    expect(render(h(Empty, DOCTOR_EMPTIES.noReport))).toContain('V4-127');
+  test('the doctor empties say what happened, never a row id or a route', () => {
+    for (const empty of Object.values(DOCTOR_EMPTIES)) {
+      expect(empty.source).not.toMatch(/V4-|\/api\//);
+    }
+    expect(render(h(Empty, DOCTOR_EMPTIES.noReport))).toContain('does not serve the doctor report');
   });
 
   // Body capture is served (/api/heads/{head}/capture, driven from the turns and logs drawers), so

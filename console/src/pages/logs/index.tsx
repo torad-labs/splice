@@ -10,6 +10,7 @@
 // were away. A rotated log REPLACES the view instead of pretending the whole window is new, and
 // the header says it restarted.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router';
 import { applyFilter, advance, headsPresent, levelsPresent, startLogsPolling, setLogHead, setLogTail, useLogs } from '@entities/logs';
 import type { LogFilter, LogLevel, LogTail as Tail, LogsPayload } from '@entities/logs';
 import type { CaptureState } from '@entities/perf';
@@ -175,11 +176,14 @@ export default function LogsPage() {
   const registry = useControlStatus((s) => s.data?.registry);
   const store = useLogs((s) => s);
   const capture = useCapture((s) => s);
-  // The head the operator picked, else the FIRST head the daemon's registry reports: never a name
-  // written into the console, which 404ed on every install that did not carry it (2026-09-22).
-  const [chosen, setChosen] = useState<string | null>(null);
+  // The head the operator picked, or the one the address asks for (`#/logs?head=claudex`, what the
+  // doctor's `open log` links to), else the FIRST head the daemon's registry reports: never a name
+  // written into the console, which 404ed on every install that did not carry it (2026-09-22). An
+  // asked-for head the registry does not list falls back rather than 404ing.
+  const { search } = useLocation();
+  const [chosen, setChosen] = useState<string | null>(() => new URLSearchParams(search).get('head'));
   const heads = registry ?? [];
-  const head = chosen ?? heads[0]?.key ?? null;
+  const head = (heads.some((entry) => entry.key === chosen) ? chosen : null) ?? heads[0]?.key ?? null;
   const [tail, setTail] = useState(200);
   const [filter, setFilter] = useState<LogFilter>({ head: null, level: null, substring: '' });
   const [follow, setFollow] = useState(true);

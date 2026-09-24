@@ -60,9 +60,9 @@ public class CaptureRoutes(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** GET: the head's EFFECTIVE trace settings (env/state/PATCH included, the same layering
-     *  GET /api/config already reports) — what the daemon is actually doing right now, not
-     *  necessarily what splice.toml alone would produce. */
+    /** GET: the head's EFFECTIVE trace settings, in the layering GET /api/config reports: `trace` from
+     *  that head's overrides only (a head-only knob), retention and the body cap from every layer
+     *  (env/state/PATCH included) — what the daemon is actually doing right now. */
     public fun read(head: String): JsonReply {
         val key = resolveKey(head) ?: return unknownHead(head)
         val cfg = config.getConfig(key)

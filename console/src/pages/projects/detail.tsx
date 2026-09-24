@@ -82,7 +82,7 @@ export function ProjectDetail({ id, row }: { id: string; row?: ProjectRow | unde
   const fields = detailFieldsOf(data);
   return (
     <>
-      {error === null ? null : <Fault message={error} />}
+      {error === null ? null : <Fault message={error} lastRead={state.lastUpdated} />}
       <Strip
         edge={data.live_sessions > 0 ? 'green' : 'grey'}
         edgeLabel={data.live_sessions > 0 ? S.running : S.quiet}

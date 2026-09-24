@@ -416,8 +416,8 @@ export default function UsagePage() {
 
   return (
     <>
-      {economics.error === null ? null : <Fault message={economics.error} />}
-      {models.error === null ? null : <Fault message={models.error} />}
+      {economics.error === null ? null : <Fault message={economics.error} lastRead={fixture === null ? economics.lastUpdated : null} />}
+      {models.error === null ? null : <Fault message={models.error} lastRead={fixture === null ? models.lastUpdated : null} />}
       <UsageBoard
         payload={payload}
         usage={fixture === null ? usage : null}

@@ -111,7 +111,7 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: re
 }
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, sample }: {
+export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
   payload: SessionsPayload | null;
   /** The OPENED session's edges, for its hand-offs bay. */
   edges?: SessionEdgesPayload | null;
@@ -121,6 +121,8 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
   edgesError?: string | null;
   locked?: boolean;
   error?: string | null;
+  /** When the rows on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** True when a capture fixture is feeding this board, which the header prints. */
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
    *  marker and the sample chrome are the same value, so they cannot disagree. */
@@ -193,6 +195,9 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
         {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
       >
         <div className="myx-sx-bays">
+          {/* A registry read that fails after one landed keeps the rows and says so: the fault used
+              to show only while nothing had loaded, so a dead daemon's sessions read as live. */}
+          {error === null ? null : <Fault message={error} lastRead={lastRead} />}
           {/* An edges read that failed leaves every peer unknown, and says why: unwatched is not
               the same fact as "no hand-offs". */}
           {edgesError === null ? null : <Fault message={edgesError} />}
@@ -358,7 +363,8 @@ export default function SessionsPage() {
       boardEdges={fixture === null ? boardEdges.data : null}
       edgesError={fixture === null ? boardEdges.error : null}
       locked={locked}
-      error={registry.error}
+      error={fixture === null ? registry.error : null}
+      lastRead={registry.lastUpdated}
       sample={sample?.name}
     />
   );

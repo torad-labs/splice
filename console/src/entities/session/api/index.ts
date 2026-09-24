@@ -10,16 +10,19 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Wire the 401 signal from the mgmt client into session state (app mount). */
+/** Wire the 401 signal from the mgmt client into session state (app mount). A 401 while a key is
+ *  held is that key refused, and the gate says so: without it a wrong paste re-opened the same
+ *  empty modal and read as if nothing had been tried. */
 export function initSession(): void {
-  bindUnauthorized(() => sessionStore.setState({ locked: true }));
+  bindUnauthorized(() => sessionStore.setState({ locked: true, refused: Boolean(currentKey()) }));
   sessionStore.setState({ hasKey: Boolean(currentKey()), locked: !currentKey() });
 }
 
-/** Store the pasted management key and unlock; pollers retry on their next tick. */
+/** Store the pasted management key and unlock; pollers retry on their next tick. A new attempt
+ *  clears the refusal until the daemon answers it. */
 export function unlock(key: string): void {
   storeKey(key);
-  sessionStore.setState({ locked: false, hasKey: Boolean(key.trim()) });
+  sessionStore.setState({ locked: false, hasKey: Boolean(key.trim()), refused: false });
 }
 
 /** GET /api/sessions — the registry, re-read daemon-side on every request because Claude Code

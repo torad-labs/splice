@@ -170,7 +170,7 @@ function fixtureName(search: string): string | null {
 }
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
+export function ProjectsBoard({ payload, files = {}, sample, error = null, lastRead = null }: {
   payload: ProjectsPayload | null;
   /** Sample file payloads, keyed by project id: the capture fixture seam. */
   files?: Record<string, ProjectFilesPayload>;
@@ -178,6 +178,8 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
    *  marker and the sample chrome are the same value, so they cannot disagree. */
   sample?: string | undefined;
   error?: string | null;
+  /** When the rows on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
 }) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -195,6 +197,10 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
+
+      {/* A read that fails after one landed keeps the rows and says so: the fault used to show only
+          while nothing had loaded, so a dead daemon's last list read as a live one. */}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
       {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
           carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
@@ -319,7 +325,8 @@ export default function ProjectsPage() {
       payload={fixture === null ? store.data : { projects: fixture.projects }}
       files={fixture?.files ?? {}}
       sample={sample?.name}
-      error={store.error}
+      error={fixture === null ? store.error : null}
+      lastRead={store.lastUpdated}
     />
   );
 }

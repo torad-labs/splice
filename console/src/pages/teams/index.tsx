@@ -11,6 +11,7 @@
 // the hero gate vetoes ink the comp does not have, so the view switcher sits at the end of the
 // page's own flow: the first viewport is the comp, and the tabs are one scroll below it.
 import { useEffect, useState } from 'react';
+import type { ReactElement } from 'react';
 import { useLocation } from 'react-router';
 import { fetchTeamPanels, fetchTeams, isPending, useTeamPanels, useTeams } from '@entities/team';
 import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/session';
@@ -24,7 +25,7 @@ import type { TeamChatState } from '@widgets/team-chat';
 import { ActivityFeed } from '@widgets/activity-feed';
 import type { ActivityFeedState } from '@widgets/activity-feed';
 import { TeamCompose, draftOf } from '@features/team-compose';
-import { Key } from '@shared/controls';
+import { Fault, Key } from '@shared/controls';
 import { poll } from '@shared/lib';
 import { Bay, Empty, Strip, StripField } from '@shared/ui';
 import type { TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
@@ -80,6 +81,8 @@ export interface TeamsBodyInput {
   view: string;
   teams: TeamsState | null;
   error?: string | null;
+  /** When the list behind a drawn board was read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** The opened team's board: composed from the daemon's reads, or the dev fixture's. */
   board: TeamPayload | null;
   /** The board the by-role and timeline views draw when it is not `board` (the fixture's). */
@@ -92,14 +95,18 @@ export interface TeamsBodyInput {
   unread?: { chat?: string; activity?: string };
 }
 
-export function teamsBodyFor({ view, teams, error = null, board, views = null, viewData = null, chat = null, feed = null, unread = {} }: TeamsBodyInput) {
+export function teamsBodyFor({ view, teams, error = null, lastRead = null, board, views = null, viewData = null, chat = null, feed = null, unread = {} }: TeamsBodyInput) {
+  // A list read that fails after a board was drawn keeps the board and says so above it, with the
+  // age of what it shows; it used to keep it silently, so a dead daemon's team read as a live one.
+  // With nothing drawn, the empty below already names the failure.
+  const held = (drawn: ReactElement) => (error === null ? drawn : <><Fault message={error} lastRead={lastRead} />{drawn}</>);
   if (view === ROLE_VIEW || view === TIMELINE_VIEW) {
     const drawn = views ?? board;
     if (drawn === null) return liveEmpty(teams, error);
-    if (view === TIMELINE_VIEW) return <TeamTimeline board={drawn} data={viewData} />;
-    return <TeamBoardByRole board={drawn} data={viewData} chat={<TeamChat state={chat} />} feed={<ActivityFeed state={feed} />} />;
+    if (view === TIMELINE_VIEW) return held(<TeamTimeline board={drawn} data={viewData} />);
+    return held(<TeamBoardByRole board={drawn} data={viewData} chat={<TeamChat state={chat} />} feed={<ActivityFeed state={feed} />} />);
   }
-  if (board !== null) return <TeamBoard board={board} unread={unread} />;
+  if (board !== null) return held(<TeamBoard board={board} unread={unread} />);
   return liveEmpty(teams, error);
 }
 
@@ -259,7 +266,8 @@ export function TeamsPage() {
   const body = teamsBodyFor({
     view: active.id,
     teams: teams.data,
-    error: teams.error,
+    error: fixture === null ? teams.error : null,
+    lastRead: teams.lastUpdated,
     board,
     views,
     viewData: sample !== null ? sample.data : live === null ? null : viewDataOf(live, rows, panels.data, now),

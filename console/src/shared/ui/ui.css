@@ -904,10 +904,13 @@
    the dark plane only, and a token swap on the class would have moved it rather than removed it
    (M1-52 measured that shape: their first cut moved `.myx-head-key` from 1.07 to 1.06).
    So the rules are PLANE-SCOPED: the strip already has its own ink vocabulary - --strip-ink and
-   --strip-ink-mute, the latter recorded as the comp's #6B685B darkened one step - and these two
-   rules print it. The room case above is untouched, which is what keeps the other 56 renders. */
+   --strip-ink-mute, the latter recorded as the comp's #6B685B darkened one step - and these
+   rules print it. The room case above is untouched, which is what keeps the other 56 renders. The
+   basis joined them when a Fault began printing a `stale` figure on its strip (2026-09-24): its
+   word was --ink-mute on strip paper, the unit's defect again. */
 .myx-strip .myx-fig-value { color: var(--strip-ink); }
 .myx-strip .myx-fig-unit { color: var(--strip-ink-mute); }
+.myx-strip .myx-fig-basis { color: var(--strip-ink-mute); }
 .myx-fig-unit {
   /* FIGURE: the unit beside a figure; it sits on the figure's baseline. */
   font-family: var(--font-figure);

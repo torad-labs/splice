@@ -259,7 +259,7 @@ export function FleetPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {headsResource.error === null ? null : <Fault message={headsResource.error} />}
+      {headsResource.error === null ? null : <Fault message={headsResource.error} lastRead={headsResource.lastUpdated} />}
       {headsResource.data === null ? <Blank strips={4} /> : null}
 
       <div className={opened === null ? 'myx-fleet-body' : 'myx-fleet-body myx-fleet-body-open'}>
@@ -356,7 +356,7 @@ export function FleetPage() {
 
               <section className="myx-fleet-section">
                 <h2 className="myx-fleet-section-title">{S.pool}</h2>
-                {accountsResource.error === null ? null : <Fault message={accountsResource.error} />}
+                {accountsResource.error === null ? null : <Fault message={accountsResource.error} lastRead={accountsResource.lastUpdated} />}
                 <Pool head={opened} payload={accountsResource.data} nowMs={nowMs} />
               </section>
             </>

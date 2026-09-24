@@ -264,7 +264,7 @@ public class ControlServer(
      *  in one body. Adding a route should not be a reason to restructure startup, or the reverse. */
     private fun controlEngine(): EmbeddedServer<NettyApplicationEngine, *> =
         embeddedServer(Netty, port = port, host = "127.0.0.1") {
-            refuseForeignHosts()
+            refuseForeignHosts(this)
             routing {
                 // Unauthenticated liveness probe: the launch shim polls this to tell a running
                 // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.
@@ -455,8 +455,8 @@ public class ControlServer(
 
     /** v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the operator's browser
      *  (see LoopbackHost). Refused before routing, so no route — guarded or open — runs for it. */
-    private fun Application.refuseForeignHosts() {
-        intercept(ApplicationCallPipeline.Plugins) {
+    private fun refuseForeignHosts(app: Application) {
+        app.intercept(ApplicationCallPipeline.Plugins) {
             if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
                 call.respondText(
                     buildJsonObject { put("error", LoopbackHost.FOREIGN_HOST_REFUSAL) }.toString(),

@@ -150,6 +150,7 @@ public class ControlServer(
      *  in one body. Adding a route should not be a reason to restructure startup, or the reverse. */
     private fun controlEngine(): EmbeddedServer<NettyApplicationEngine, *> =
         embeddedServer(Netty, port = port, host = "127.0.0.1") {
+            guard.refuseForeignHosts(this)
             routing {
                 fleet.register(this)
                 lifecycle.register(this)

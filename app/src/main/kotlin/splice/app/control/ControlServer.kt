@@ -17,10 +17,14 @@
 // 37 slice packages, which made this one file every feature's edit.
 package splice.app.control
 
+import io.ktor.server.application.pluginOrNull
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
+import io.ktor.server.routing.RoutingNode
+import io.ktor.server.routing.RoutingRoot
+import io.ktor.server.routing.getAllRoutes
 import io.ktor.server.routing.routing
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlPayloads
@@ -100,7 +104,7 @@ public class ControlServer(
         )
     private val resolver = HeadResolver(heads, payloads)
     private val audit = ControlAudit(log)
-    private val guard = ControlGuard(mgmtKey, audit)
+    private val guard = ControlGuard(mgmtKey, audit, log)
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
@@ -130,6 +134,12 @@ public class ControlServer(
      *  ServerSocket(0) and handing it here to bind later leaves a window in which anything else may
      *  take it (the BindException class of CI run 35881955038). */
     public val listeningPort: Int get() = boundPort ?: port
+
+    /** v0.4.0 review: every route the running engine serves, read off its router, so the test that walks
+     *  every door takes the list from here and never from a list kept beside it (a route added with the
+     *  wrong door would otherwise pass). Empty while stopped. */
+    internal fun routeTable(): List<RoutingNode> =
+        server?.application?.pluginOrNull(RoutingRoot)?.getAllRoutes().orEmpty()
 
     /** Suspend since 2026-09-23, for the one read below: Ktor 3 publishes the bound port only
      *  through the engine's suspend resolvedConnectors(). */

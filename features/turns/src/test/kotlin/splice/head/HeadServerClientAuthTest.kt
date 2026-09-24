@@ -36,6 +36,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
+import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.upstream.ProviderTuning
@@ -118,6 +119,7 @@ class HeadServerClientAuthTest {
     private fun startHead(
         forwardClientAuth: Boolean,
         auth: RefreshableAuthProvider = defaultAuthFor(forwardClientAuth),
+        log: LogSink = { },
     ): Int {
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
@@ -141,7 +143,7 @@ class HeadServerClientAuthTest {
                 tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
-                log = {},
+                log = log,
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
                 // This rig carries its OWN bearers and its own store files, keyed by the head's index
@@ -386,7 +388,8 @@ class HeadServerClientAuthTest {
     // change, so the head refuses them before routing and nothing reaches the vendor.
     @Test
     fun `a request naming a foreign Host is refused before any route runs, on the open door too`() {
-        val port = startHead(forwardClientAuth = true)
+        val logLines = CopyOnWriteArrayList<String>()
+        val port = startHead(forwardClientAuth = true, log = { logLines += it })
         val before = upstream.requests.size
         val credential = listOf("Authorization" to "Bearer caller-own-token")
         val refused = rawTurn(port, credential, host = "attacker.example:$port")
@@ -394,6 +397,10 @@ class HeadServerClientAuthTest {
         assertEquals(before, upstream.requests.size, "a rebinding page's turn never reaches the vendor")
         val served = rawTurn(port, credential, host = "localhost:$port")
         assertTrue(served.startsWith("HTTP/1.1 200"), served.lineSequence().first())
+        // v0.4.0 review: and the refusal is SAID in the head's log, which a rebinding page cannot read.
+        val said = logLines.filter { it.startsWith("[security]") }
+        assertEquals(1, said.size, logLines.toString())
+        assertTrue(said.single().contains("'attacker.example:$port'"), said.single())
     }
 
     @Test
@@ -514,6 +521,39 @@ class HeadServerClientAuthTest {
         assertEquals(HttpStatusCode.OK, status)
         assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
         assertEquals(listOf(header), upstream.requests[before]["authorization"].orEmpty())
+    }
+
+    // v0.4.0 review: the check read the FIRST line of each credential header while the forwarder
+    // sends the first NON-BLANK one, so an empty line ahead of the key passed the check and the key
+    // rode upstream. What is checked is now what is forwarded, read from the same function.
+    @Test
+    fun `a blank Authorization line ahead of the key cannot smuggle it upstream`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val response = rawTurn(port, listOf("Authorization" to "", "Authorization" to "Bearer $TURN_KEY"))
+        assertTrue(response.startsWith("HTTP/1.1 401"), response.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "splice's own turn key must never reach the vendor")
+    }
+
+    @Test
+    fun `a whitespace-only Authorization line ahead of the key cannot smuggle it upstream`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val response = rawTurn(port, listOf("Authorization" to "   ", "Authorization" to "Basic $MGMT_KEY"))
+        assertTrue(response.startsWith("HTTP/1.1 401"), response.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
+    @Test
+    fun `a blank x-api-key line ahead of the key cannot smuggle it upstream`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val response = rawTurn(
+            port,
+            listOf("Authorization" to "Bearer caller-own-token", "x-api-key" to "", "x-api-key" to MGMT_KEY),
+        )
+        assertTrue(response.startsWith("HTTP/1.1 401"), response.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 
     // ── the cell that was never built ─────────────────────────────────────────────────────────

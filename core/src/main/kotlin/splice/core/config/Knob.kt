@@ -21,6 +21,10 @@ public enum class Knob(
     public val envNames: List<String>,
     public val default: Any?,
     public val restartRequired: Boolean = false,
+    /** Set only through [heads.KEY.overrides]: no env alias, no global TOML, no state file, no PATCH
+     *  reaches it (ConfigService). For a knob that turns on keeping a head's conversations, where
+     *  the per-head table is the one switch `splice doctor` reads and names (v0.4.0 prompt-review). */
+    public val headOnly: Boolean = false,
 ) {
     PORT("port", KnobKind.NUMBER, listOf("CODEX_PROXY_PORT"), 3099L, restartRequired = true),
     CHATGPT_API_BASE(
@@ -475,9 +479,10 @@ public enum class Knob(
     WIRE_TAP(
         "wireTap",
         KnobKind.NUMBER,
-        listOf("SPLICE_WIRE_TAP"),
+        listOf(), // head-only: no env alias
         default = 0L,
         restartRequired = true,
+        headOnly = true,
     ),
 
     // V4-174: the per-head FULL TRACE — every request the head receives, every upstream attempt it
@@ -490,9 +495,10 @@ public enum class Knob(
     TRACE(
         "trace",
         KnobKind.BOOL,
-        listOf("SPLICE_TRACE"),
+        listOf(), // head-only: no env alias
         false,
         restartRequired = true,
+        headOnly = true,
     ),
 
     // V4-174: how many UTC days of trace files a traced head keeps; older day files are deleted on

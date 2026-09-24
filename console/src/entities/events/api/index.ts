@@ -9,7 +9,7 @@
 // WHAT IT DOES NOT DO: it subscribes nothing. Entities that refetch on an event do that in their
 // own rows (M3-01); this row builds the transport and proves it with hand-written frames, because
 // the daemon route (V4-126) is still in flight.
-import { getStoredKey, noteUnauthorized } from '@shared/api';
+import { currentKey, noteUnauthorized } from '@shared/api';
 import { backoffMs, parseFrames } from '@shared/lib/live';
 import type { EventFrame, EventKind } from '@shared/lib/live';
 import { eventsStore } from '../model/store';
@@ -86,7 +86,7 @@ async function read(body: ReadableStream<Uint8Array>): Promise<void> {
 
 async function loop(): Promise<void> {
   while (running) {
-    const key = getStoredKey();
+    const key = currentKey();
     if (key === '') {
       // No key yet: there is nothing to authenticate with, and this is not a failure to retry.
       // The key gate re-arms the app, and a caller connects again after the operator pastes one.

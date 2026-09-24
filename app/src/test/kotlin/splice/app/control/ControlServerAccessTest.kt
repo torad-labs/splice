@@ -10,6 +10,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -37,7 +39,8 @@ import java.util.concurrent.atomic.AtomicInteger
 private val SESSION_ROWS = setOf("GET /statusline/{head}", "POST /statusline/{head}", "POST /hooks/resume/{head}")
 
 /** The rows that answer with no key at all: the liveness probe, and the dashboard page at both of its
- *  paths (FleetMount), which asks for the key itself before it calls anything. */
+ *  paths (FleetMount), which carries the key itself to the loopback browser that loads it
+ *  (ServedConsole). */
 private val OPEN_ROWS = setOf("GET /health", "GET /", "GET /dashboard")
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -69,7 +72,7 @@ class ControlServerAccessTest {
             mgmtKey = mgmt,
             dashboardHtml = {
                 dashboardRenders.incrementAndGet()
-                "<!doctype html><title>splice</title>"
+                "<!doctype html><html><head><title>splice</title></head><body></body></html>"
             },
             log = { logLines += it },
             mcpHost = McpHost(sharing, { JsonObject(emptyMap()) }, log = { }),
@@ -151,6 +154,20 @@ class ControlServerAccessTest {
         val said = logLines.filter { it.contains("attacker.example") }
         assertEquals(1, said.size, logLines.toString())
         assertTrue(said.single().startsWith("[security] the control plane refused"), said.single())
+    }
+
+    // 2026-09-24: the console never asks for the key. The page a loopback browser loads carries it,
+    // and only that page does: the arm above proves a rebinding Host never reaches the handler. The
+    // page cannot be framed by another site, and it is never written to the disk cache.
+    @Test
+    fun `the console page served to a loopback Host carries the key and cannot be framed`() = runBlocking {
+        val response = client.get("http://127.0.0.1:$port/")
+        val page = response.bodyAsText()
+        assertTrue(page.contains("<head><meta name=\"splice-mgmt-key\" content=\"$mgmtKey\"><title>"), page)
+        assertEquals("no-store", response.headers[HttpHeaders.CacheControl])
+        assertEquals("DENY", response.headers["X-Frame-Options"])
+        assertEquals("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        assertTrue(client.get("http://127.0.0.1:$port/dashboard").bodyAsText().contains(mgmtKey), "both paths")
     }
 
     /** `/statusline/{key}/(method:POST)` — how the router renders a route — as `POST /statusline/{key}`. */

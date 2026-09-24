@@ -13,6 +13,9 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 
+// v0.4.0 review round 2: every result here is a verdict the caller must act on (ownerOnlyDirectory's
+// "why it is still open"); with RETURN_VALUE_NOT_USED an error, dropping one does not compile.
+@MustUseReturnValues
 public object SecureFile {
     private val OWNER_ONLY = PosixFilePermissions.fromString("rw-------")
     private val OWNER_ONLY_DIR = PosixFilePermissions.fromString("rwx------")
@@ -38,13 +41,24 @@ public object SecureFile {
         } catch (_: UnsupportedOperationException) {
             Files.createDirectories(dir)
         }
-        return Cancellables.runCatchingCancellable {
-            Files.setPosixFilePermissions(dir, OWNER_ONLY_DIR)
-            val held = Files.getPosixFilePermissions(dir)
-            if (held.none { it in OPEN_TO_OTHERS }) null else "its mode stayed ${PosixFilePermissions.toString(held)}"
-        }.getOrElse { failure ->
-            if (failure is UnsupportedOperationException) null else SafeFailureText.render(failure)
+        val held = try {
+            Cancellables.runCatchingCancellable {
+                Files.setPosixFilePermissions(dir, OWNER_ONLY_DIR)
+                Files.getPosixFilePermissions(dir)
+            }
+        } catch (_: UnsupportedOperationException) {
+            // No POSIX modes on this filesystem: nothing to hold. Caught here, by name —
+            // runCatchingCancellable passes it through, so a branch for it in getOrElse never ran
+            // and the "null" this KDoc promises was a throw (v0.4.0 review round 2).
+            return null
         }
+        return held.fold(
+            onSuccess = { mode ->
+                val open = mode.any { it in OPEN_TO_OTHERS }
+                if (open) "its mode stayed ${PosixFilePermissions.toString(mode)}" else null
+            },
+            onFailure = { failure -> SafeFailureText.render(failure) },
+        )
     }
 
     /**

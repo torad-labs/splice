@@ -140,7 +140,7 @@ private class TearingAnthropicUpstream {
     }
 
     fun stop() {
-        runCatching { server.close() }
+        val _ = runCatching { server.close() }
     }
 
     private fun serve(socket: Socket) {
@@ -150,8 +150,9 @@ private class TearingAnthropicUpstream {
         requestBodies.add(body)
         val act = acts.getOrElse(index) { acts.last() }
         val out = socket.getOutputStream()
-        runCatching { respond(socket, out, act) }
-        runCatching { socket.close() }
+        // A client that hung up mid-response is the case under test; the socket closes regardless.
+        val _ = runCatching { respond(socket, out, act) }
+        val _ = runCatching { socket.close() }
     }
 
     private fun respond(socket: Socket, out: OutputStream, act: Act) {

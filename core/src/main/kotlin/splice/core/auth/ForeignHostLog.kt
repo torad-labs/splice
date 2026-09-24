@@ -7,16 +7,18 @@ package splice.core.auth
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
-// why: a real rebinding attack names one host, a few at most; sixteen names every plausible probe and
-// bounds the log at seventeen lines for the daemon's lifetime whatever a page sends.
+// why: a real rebinding attack names one host, a few at most; sixteen names every plausible probe.
+// Past them the requests are COUNTED and the count said at each doubling (v0.4.0 review round 2): the
+// log went quiet for the daemon's lifetime, so 17 refusals and 17 million read the same. A doubling
+// bounds it at one line per power of two — 63 more for a count that fills a Long.
 private const val MAX_NAMED_HOSTS = 16
 
-/** Says in [log] that [listener] refused a request for its Host, once per name. */
+/** Says in [log] that [listener] refused a request for its Host, once per name, then by count. */
 public class ForeignHostLog(private val listener: String, private val log: LogSink) {
     private val named: MutableSet<String> = ConcurrentHashMap.newKeySet()
-    private val capped = AtomicBoolean(false)
+    private val unnamed = AtomicLong(0)
 
     public fun refused(host: String) {
         val name = LogSafe.str(host)
@@ -29,11 +31,19 @@ public class ForeignHostLog(private val listener: String, private val log: LogSi
                         "splice by another name; nothing ran\n",
                 )
             }
-        } else if (capped.compareAndSet(false, true)) {
-            log(
-                "[security] $listener has refused $MAX_NAMED_HOSTS foreign Hosts; more are refused " +
-                    "without a line each\n",
-            )
+        } else {
+            val count = unnamed.incrementAndGet()
+            if (count == 1L) {
+                log(
+                    "[security] $listener has refused $MAX_NAMED_HOSTS foreign Hosts; more are refused " +
+                        "without a line each\n",
+                )
+            } else if (count and (count - 1) == 0L) {
+                log(
+                    "[security] $listener has refused $count requests past its $MAX_NAMED_HOSTS named " +
+                        "foreign Hosts (said again at ${count * 2})\n",
+                )
+            }
         }
     }
 }

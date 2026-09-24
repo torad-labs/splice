@@ -63,7 +63,7 @@ interface Ctx {
   readonly env: Record<string, string>;
   /** the harness's own daemon: the selectors that aim the shim at this sandbox */
   readonly harness: Record<string, string>;
-  readonly captures: { java: string; unit: string; pwned: string; bootLog: string };
+  readonly captures: { java: string; javaArgv: string; unit: string; pwned: string; bootLog: string };
   readonly stateDir: string;
   readonly daemonState: string;
   launch(env: Record<string, string | undefined>, argv?: readonly string[]): Promise<Run>;
@@ -254,6 +254,27 @@ const ARMS: readonly Arm[] = [
       return read(ctx.captures.java) === "spawned" ? null : "without a unit the cold start is the raw spawn";
     },
   },
+  {
+    // v0.4.0 review: the CLI asks System.console() whether a person is at a terminal, and on JDK 22-24
+    // it answers yes into a pipe unless java runs with -Djdk.console=java.base: `splice dashboard` then
+    // prints the management key into an agent's transcript. Both paths that run the CLI must carry it.
+    // LAST on purpose: the java mock marks the daemon "new", which no arm after this one may inherit.
+    name: "the CLI's java runs with the terminal-only console",
+    run: async (ctx) => {
+      const paths: readonly (readonly [string, readonly string[]])[] = [["splice", ["dashboard"]], ["test", ["login"]]];
+      for (const [head, argv] of paths) {
+        rmSync(ctx.captures.javaArgv, { force: true });
+        await ctx.launch({ SPLICE_HEAD: head }, argv);
+        const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+        const label = `${head} ${argv.join(" ")}`;
+        if (runs.length === 0) return `${label}: java never ran`;
+        if (!runs.every((javaArgv) => javaArgv[0] === "-Djdk.console=java.base")) {
+          return `${label}: java ran without -Djdk.console=java.base: ${JSON.stringify(runs)}`;
+        }
+      }
+      return null;
+    },
+  },
 ];
 
 /** Every arm's name, in order — the rehearsal's inventory, for a count that cannot drift from it. */
@@ -274,6 +295,7 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
   const daemonState = join(dir, "daemon-state");
   const captures = {
     java: join(dir, "java-spawns"),
+    javaArgv: join(dir, "java-argv"),
     unit: join(dir, "unit-starts"),
     pwned: join(dir, "pwned"),
     // the shim's LOGS_DIR is <state dir>/../logs
@@ -310,6 +332,7 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
     base.SPLICE_HEAD = "test";
     base.LAUNCHER_DAEMON_STATE = daemonState;
     base.LAUNCHER_JAVA_CAPTURE = captures.java;
+    base.LAUNCHER_JAVA_ARGV = captures.javaArgv;
     base.LAUNCHER_START_CAPTURE = captures.unit;
     base.LAUNCHER_UNIT_PRESENT = "1";
     base.LAUNCHER_UNIT_BOOTS = "1";
@@ -341,6 +364,7 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
       cold() {
         writeFileSync(daemonState, "down\n");
         rmSync(captures.java, { force: true });
+        rmSync(captures.javaArgv, { force: true });
         rmSync(captures.unit, { force: true });
         daemon.forget();
       },
@@ -450,6 +474,7 @@ function writeMocks(bin: string): void {
       "  process.exit(1);\n" +
       "}\n" +
       'writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n");\n' +
+      'if (process.env.LAUNCHER_JAVA_ARGV) appendFileSync(process.env.LAUNCHER_JAVA_ARGV, JSON.stringify(process.argv.slice(2)) + "\\n");\n' +
       'if (process.env.LAUNCHER_JAVA_CAPTURE) appendFileSync(process.env.LAUNCHER_JAVA_CAPTURE, "spawned\\n");\n',
   );
   // V4-189: the supervisor unit, mocked. `cat <unit>` answers "the unit exists" only when

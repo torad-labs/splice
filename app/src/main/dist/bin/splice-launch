@@ -55,7 +55,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-6";
+const SPLICE_SHIM_VERSION = "shim-7";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.3.2";
 
@@ -123,6 +123,11 @@ const JAR = or(env.SPLICE_JAR, path.join(or(env.SPLICE_SHARE_DIR, path.join(HOME
 // 1G→2G after the 2026-07-19 429 storm: ~650 concurrent SSE turns exhausted 1G even before the
 // inflight cap existed; 2G rides out a full 48-inflight + 512-queue burst with headroom.
 const SPLICE_JVM_OPTS = or(env.SPLICE_JVM_OPTS, "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000");
+// v0.4.0 review: the CLI decides "is a person at a terminal?" with System.console() != null, and on
+// JDK 22-24 the default console provider answers a Console even when output is piped (JDK-8308591),
+// so `splice dashboard` printed the management key into an agent's transcript. This flag is the
+// documented restore of "a console only on a terminal"; JDK 21 and 25+ already behave that way.
+const CLI_CONSOLE = "-Djdk.console=java.base";
 // JW-01: the spawned JVM's output lands here, never /dev/null — a boot-dead daemon must leave a
 // tailable stack trace. One rolled generation at 1MB, same cap discipline as daemon.log.
 const LOGS_DIR = path.join(STATE_DIR, "..", "logs");
@@ -179,7 +184,7 @@ const args = process.argv.slice(2);
 // (setup, status, dashboard, login <head>, install, …). The CLI self-manages the daemon.
 if (HEAD === "splice") {
   needJar();
-  exec(["java", "-jar", JAR, ...args], env);
+  exec(["java", CLI_CONSOLE, "-jar", JAR, ...args], env);
 }
 
 // `<command> login [--label NAME]` runs the OAuth browser flow for this head directly (no daemon
@@ -187,7 +192,7 @@ if (HEAD === "splice") {
 // account of this head's kind).
 if (args[0] === "login") {
   needJar();
-  exec(["java", "-jar", JAR, "login", HEAD, ...args.slice(1)], env);
+  exec(["java", CLI_CONSOLE, "-jar", JAR, "login", HEAD, ...args.slice(1)], env);
 }
 
 /** One HTTP exchange against the control plane: the body on ANY status (curl without -f), "" on a

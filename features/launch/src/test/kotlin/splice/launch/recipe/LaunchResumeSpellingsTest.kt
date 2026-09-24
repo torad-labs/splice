@@ -124,6 +124,20 @@ class LaunchResumeSpellingsTest {
         )
     }
 
+    // v0.4.0 review round 2: the adoption hands the rewrite this head's whole roster, so a row on a
+    // model the head serves is copied in as it is — Claude Code restores a served model unchanged.
+    @Test
+    fun `-r SESSION_ID keeps a row whose model this head serves`() {
+        val sibling = seedSiblingSession("abc-456")
+        val mine = spec("server", available = listOf("gpt-5.6-sol", "k3-256k"))
+            .copy(trees = HeadTrees(tmp.resolve(".claude-server"), listOf(sibling)))
+
+        service.launch(mine, extraArgs = listOf("-r", "abc-456"), dangerouslySkipPermissions = false)
+
+        val adopted = Files.readString(tmp.resolve(".claude-server/projects/-home-x/abc-456.jsonl"))
+        assertTrue(adopted.contains("\"model\":\"k3-256k\""), adopted)
+    }
+
     /** A SIBLING head's projects tree holding [sessionId] under the encoded cwd `-home-x`. The head
      *  name is fixed and distinct from every calling head in these tests: seeding the CALLING head's
      *  own dir would make the adoption a no-op (HeadOwned) and pin nothing. */

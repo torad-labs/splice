@@ -424,6 +424,27 @@ class HeadServerClientAuthTest {
         assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 
+    // v0.4.0 review round 2: the refusal blamed ANTHROPIC_AUTH_TOKEN whichever header carried the key, so
+    // an operator whose ANTHROPIC_API_KEY (x-api-key) or ANTHROPIC_CUSTOM_HEADERS held it unset a variable
+    // that was never set, and the refusal kept happening. The log and the 401 name the header and the
+    // variable that writes it.
+    @Test
+    fun `the refusal names the header that carried the key and the variable that set it`() {
+        val logLines = CopyOnWriteArrayList<String>()
+        val port = startHead(forwardClientAuth = true, log = { logLines += it })
+
+        val (_, body) = turn(port, mapOf("x-api-key" to MGMT_KEY))
+        val said = logLines.single { it.startsWith("[auth] refused") }
+        for (text in listOf(body, said)) {
+            assertTrue(text.contains("x-api-key") && text.contains("ANTHROPIC_API_KEY"), text)
+            assertFalse(text.contains("ANTHROPIC_AUTH_TOKEN"), "not the variable that was never set: $text")
+        }
+        val (_, betaBody) = turn(port, mapOf("anthropic-beta" to "tools-2024, $TURN_KEY"))
+        assertTrue(betaBody.contains("anthropic-beta") && betaBody.contains("ANTHROPIC_CUSTOM_HEADERS"), betaBody)
+        val (_, bearerBody) = turn(port, mapOf("Authorization" to "Bearer $TURN_KEY"))
+        assertTrue(bearerBody.contains("ANTHROPIC_AUTH_TOKEN"), bearerBody)
+    }
+
     @Test
     fun `the refusal covers the x-api-key spelling of the same key`() {
         val port = startHead(forwardClientAuth = true)

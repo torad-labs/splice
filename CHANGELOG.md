@@ -72,9 +72,13 @@ config writes and daemon shutdown. Until 0.4.0 it reached every launched session
 - **A client-auth head never forwards splice's own keys upstream.** A turn that carries the turn
   key or the management key in `Authorization` or `x-api-key` is refused with a 401 that names
   the header and the variable that set it. This includes a key behind a blank first header line.
-- **`splice dashboard` prints the key to a terminal only,** never into piped or captured output
-  such as an agent's transcript. On JDK 22–24, `System.console()` is non-null even when output is
-  piped, so the launch shim runs the CLI with `-Djdk.console=java.base`.
+- **`splice dashboard` opens the console unlocked, and the key never crosses a command line or an
+  HTTP answer.** It writes an owner-only redirect page in the state dir that sends the browser to
+  the console with the key in the address fragment. The command line carries only the file's path, a
+  fragment never reaches the daemon or a log, and the daemon serves no page with the key in it. The
+  key is also printed as a fallback, to a terminal only, never into piped or captured output such as
+  an agent's transcript. On JDK 22–24, `System.console()` is non-null even when output is piped, so
+  the launch shim runs the CLI with `-Djdk.console=java.base`.
 
 splice is single-user, and its boundary is your Unix account. A process running as you can read
 `mgmt-key`, as it can read your other credentials. What 0.4.0 closes is every place the key left

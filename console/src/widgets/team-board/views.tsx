@@ -27,6 +27,7 @@ import {
 import type { TeamTurn, TeamViewData } from './model';
 import { S } from './strings';
 import './views.css';
+import { ABSENT } from '@shared/lib';
 
 /** The three bay widths of team-board-b as a grid track list, in the comp's own proportions. A
  *  team with another number of roles has no measured geometry, so its bays share the rack
@@ -34,8 +35,8 @@ import './views.css';
 const ROLE_TRACKS = '23.538fr 25.183fr 15.310fr';
 const tracksFor = (bays: number): string => (bays === 3 ? ROLE_TRACKS : `repeat(${Math.max(bays, 1)}, 1fr)`);
 
-const thousand = (value: number | null): string => (value === null ? 'n/r' : value.toLocaleString('en-US'));
-const money = (value: number | null): string => (value === null ? 'n/r' : `$${value.toFixed(3)}`);
+const thousand = (value: number | null): string => (value === null ? ABSENT : value.toLocaleString('en-US'));
+const money = (value: number | null): string => (value === null ? ABSENT : `$${value.toFixed(3)}`);
 
 /** HH:MM of an epoch, in UTC like every other stamp on the board (parts.tsx stamp). */
 const clock = (epochMs: number): string => new Date(epochMs).toISOString().slice(11, 16);
@@ -61,8 +62,8 @@ function SessionStrip({ member }: { member: TeamMemberRow }) {
     <WrapStrip edge={member.role === 'lead' ? 'green' : 'grey'} ariaLabel={`${member.name} session`}>
       <StripField w={0} fixed label={S.session} value={member.name} mono={false} />
       <StripField w={0} fixed label={S.head} value={member.head} mono={false} />
-      <StripField w={0} fixed label={S.model} value={member.model ?? 'n/r'} mono={false} />
-      <StripField w={0} fixed label={S.account} value={member.account ?? 'n/r'} mono={false} />
+      <StripField w={0} fixed label={S.model} value={member.model ?? ABSENT} mono={false} />
+      <StripField w={0} fixed label={S.account} value={member.account ?? ABSENT} mono={false} />
       {/* A window no provider reports is named as that, never as a zero or a dash. */}
       <StripField w={0} fixed label={S.window} value={member.window ?? 'not reported by provider'} mono={false} />
       <StripField w={0} fixed label={S.state} value={member.state} mono={false} />
@@ -76,7 +77,7 @@ function MemberCard({ board, member }: { board: TeamPayload; member: TeamMemberR
   const rows: [string, string][] = [
     [S.name, member.name],
     [S.head, member.head],
-    [S.model, member.model ?? 'n/r'],
+    [S.model, member.model ?? ABSENT],
     [S.repo, board.team.repo],
     [S.boundSlot, slot?.role ?? 'none'],
     [S.window, member.window ?? 'not reported by provider'],
@@ -232,7 +233,7 @@ function TurnStrip({ turn }: { turn: TeamTurn }) {
       <StripField w={0} fixed label={S.duration} value={turn.duration} />
       <StripField w={0} fixed label={S.tokensIn} value={thousand(turn.input)} />
       <StripField w={0} fixed label={S.tokensOut} value={thousand(turn.output)} />
-      <StripField w={0} fixed label={S.total} value={turn.input === null || turn.output === null ? 'n/r' : thousand(turn.input + turn.output)} />
+      <StripField w={0} fixed label={S.total} value={turn.input === null || turn.output === null ? ABSENT : thousand(turn.input + turn.output)} />
     </WrapStrip>
   );
 }

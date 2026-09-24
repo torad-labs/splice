@@ -2,6 +2,8 @@
 // wall globs this file). The pending empties, the "telemetry dropped" gap and the
 // capture sentences are not labels and live in the component (CONTRACTS.md
 // section 4).
+import { ABSENT } from '@shared/lib';
+
 export const S = {
   title: 'turns',
   locked: 'console locked',
@@ -63,13 +65,14 @@ export const S = {
    *  whole statement — the basis word that used to sit beside it was a second sentence saying
    *  the same thing, and printed as "- unavailable" it read as a typo. A cell that has a value
    *  but a qualified one still prints its basis: `estimated` and `stale` qualify something. */
-  absent: 'n/r',
+  absent: ABSENT,
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
 // These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
 // these meanings is how the console reached eleven phrasings for "nothing here".
-//   n/r        nobody reported a value for this cell. The default, and the comp's own glyph.
+//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
+//              default. It was `n/r`, which no reader could expand.
 //   none       the question was asked and its answer is nothing (no tier hands this model out).
 //   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
 //   unavailable  it exists and we cannot reach it.

@@ -122,7 +122,7 @@ describe('every failing check carries its fix', () => {
     // The sentence `no fix offered` moved to the opened check's own note, where a Doctor fix's
     // paragraph belongs; the rack cell carries the absence glyph (m1 design review B8).
     const out = render(h(CheckStrip, { check: plain, selected: false, onOpen: () => undefined }));
-    expect(out).toContain('>n/r<');
+    expect(out).toContain('>–<');
     expect(out).not.toContain('no fix offered');
   });
 

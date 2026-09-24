@@ -126,9 +126,9 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
                 only, on the reading that two cells ARE what a missing model means, and measured at
                 1536 dark that ended the strip at x=553 in a rack whose other rows run to x=1137:
                 the bay stopped being a grid at the third column and the eye had nothing to read
-                down. The sibling rack on usage already renders all six with `n/r` for the same
+                down. The sibling rack on usage already renders all six with `–` for the same
                 vacant tiers, from the same data, so this is the tree's own answer and not a new
-                one. `n/r` is the right word by the vocabulary in strings.ts: nobody reported a
+                one. `–` is the right word by the vocabulary in strings.ts: nobody reported a
                 value for this cell, because there is no model here to report one. */}
             {MODEL_COLUMNS.map((column) => (
               <StripField

@@ -207,10 +207,10 @@ describe('models page', () => {
     for (const head of fixtureCatalog.heads) expect(markup).toContain(head.head);
     expect(markup).toContain('gpt-5.6-sol');
     // The vacant tier's edge prints its state and its model cell prints the absence glyph, with
-    // `n/r` where a model would be. It is not struck: a strike is the verdict on an excluded or
+    // `–` where a model would be. It is not struck: a strike is the verdict on an excluded or
     // disabled row, and a line through every vacant slot read as a rendering fault.
     expect(markup).toContain('<span class="myx-edge-label">vacant</span>');
-    expect(markup).toContain('n/r');
+    expect(markup).toContain('–');
     expect(markup.split('myx-strip-struck').length - 1).toBe(0);
   });
 

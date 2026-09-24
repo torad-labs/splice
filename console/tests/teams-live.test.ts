@@ -148,7 +148,7 @@ describe('the messages and the activity', () => {
     const messages = messagesOf(members, CHAT);
     expect(messages.map((m) => [m.time, m.from, m.to, m.fromHead])).toEqual([
       ['13:50', 'lead-seat', 'bbbbbbbb-2222', 'claude'],
-      ['13:55', 'cccccccc-9999', 'someone-else', 'n/r'],
+      ['13:55', 'cccccccc-9999', 'someone-else', '–'],
     ]);
   });
 
@@ -156,7 +156,7 @@ describe('the messages and the activity', () => {
     const messages = messagesOf(members, CHAT);
     expect(messages[0].text).toBe('build it');
     expect(messages[1].text).toBe('text not read: no transcript for the sender in ~/.claude/projects');
-    expect(messages.every((m) => m.packet === 'n/r')).toBe(true);
+    expect(messages.every((m) => m.packet === '–')).toBe(true);
   });
 
   test('a sample lands under its member', () => {

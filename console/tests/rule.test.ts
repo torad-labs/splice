@@ -49,7 +49,7 @@ const auth: AuthPayload = {
  */
 function expectedWindowParts(payload: UsagePayload | null): string[] {
   const nearest = nearestWindow(payload, auth);
-  if (nearest === null) return ['no window reported'];
+  if (nearest === null) return ['no head reports a limit'];
   return [
     nearest.head,
     nearest.window,
@@ -65,16 +65,23 @@ describe('the rule window cell', () => {
 
   test('prints the nearest window the entity derives, for a fleet where one head is ahead', () => {
     const out = render(h(WindowCell, { usage: crowded, auth }));
-    expect(out).toContain('nearest window');
+    expect(out).toContain('closest limit');
+    expect(out).toContain('>used<');
     for (const part of expectedWindowParts(crowded)) expect(out).toContain(part);
     expect(out).toContain('74'); // the highest percentage wins, not the first head
     expect(out).not.toContain('>41<');
   });
 
+  test('the login method is not an account: a head with no account id prints none', () => {
+    // claude-grok wins at 74 and its auth card has `login: 'oauth'` and no masked id.
+    expect(nearestWindow(crowded, auth)?.account).toBeNull();
+    expect(render(h(WindowCell, { usage: crowded, auth }))).not.toContain('oauth');
+  });
+
   test('a fleet where nobody reports a window prints the absence, never a zero', () => {
     const out = render(h(WindowCell, { usage: quiet, auth }));
     for (const part of expectedWindowParts(quiet)) expect(out).toContain(part);
-    expect(out).toContain('no window reported');
+    expect(out).toContain('no head reports a limit');
     expect(out).not.toContain('>0<');
   });
 
@@ -114,7 +121,7 @@ describe('the rule connection cell', () => {
 
   test('a stream that has never delivered a frame says so, and never reads as an age', () => {
     const out = render(h(ConnectionCell, { status: 'live', lastFrameAt: null }));
-    expect(out).toContain('no frame yet');
+    expect(out).toContain('no events yet');
     expect(out).not.toContain('ago');
   });
 

@@ -1,6 +1,8 @@
 // Labels of the projects page. Three words or fewer, lowercase, no em-dash (the
 // label wall globs this file). The pending empties and the data values a strip
 // prints are not labels and live in the component (CONTRACTS.md section 4).
+import { ABSENT } from '@shared/lib';
+
 export const S = {
   title: 'projects',
   locked: 'console locked',
@@ -44,13 +46,14 @@ export const S = {
   none: 'none',
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
    *  replacing `no rates` in the cost cell and `unknown` in the last-seen cell. */
-  absent: 'n/r',
+  absent: ABSENT,
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
 // These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
 // these meanings is how the console reached eleven phrasings for "nothing here".
-//   n/r        nobody reported a value for this cell. The default, and the comp's own glyph.
+//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
+//              default. It was `n/r`, which no reader could expand.
 //   none       the question was asked and its answer is nothing (no tier hands this model out).
 //   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
 //   unavailable  it exists and we cannot reach it.

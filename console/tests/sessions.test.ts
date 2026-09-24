@@ -154,7 +154,7 @@ describe('session strip', () => {
       pid: 42,
     });
     const fields = fieldsOf(bare, null, ['name', 'project', 'started', 'seen', 'peer']);
-    expect(fields.map((f) => f.value)).toEqual(['pid 42', 'n/r', 'n/r', 'n/r', 'n/r']);
+    expect(fields.map((f) => f.value)).toEqual(['pid 42', '–', '–', '–', '–']);
     // No basis word on an absent cell: the glyph is the whole statement (m1 design review B8).
     expect(fields.slice(1).every((f) => f.basis === undefined)).toBe(true);
     // The name a session falls back to is never empty either.
@@ -200,7 +200,7 @@ describe('sessions board', () => {
 
   test('the peer is unknown, and prints the absence glyph, until the board edges are read', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ session_id: 'a' })]) }));
-    expect(out).toContain('>n/r<');
+    expect(out).toContain('>–<');
     expect(out).not.toContain('unavailable');
   });
 
@@ -256,7 +256,7 @@ describe('projects board', () => {
         },
       }),
     );
-    expect(out).toContain('>n/r<');
+    expect(out).toContain('>–<');
     expect(out).not.toContain('no rates');
     expect(out).toContain('/dev/atlas');
   });

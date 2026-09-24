@@ -13,7 +13,7 @@ export interface Field {
   label: string;
   w: number;
   value: string;
-  /** Absent for a cell that carries no value: `n/r` is the whole statement, and a basis word
+  /** Absent for a cell that carries no value: `–` is the whole statement, and a basis word
    *  beside it was a second sentence saying the same thing (m1 design review B8). */
   basis?: Basis | undefined;
 }
@@ -68,7 +68,7 @@ export function atText(ts: number | undefined): string | null {
   return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
-/** A number the row does not carry prints `n/r`, never a zero the daemon did not report. */
+/** A number the row does not carry prints `–`, never a zero the daemon did not report. */
 function measured(value: number | undefined, format: (n: number) => string): { value: string; basis?: Basis } {
   return value === undefined ? { value: S.absent } : { value: format(value), basis: 'measured' };
 }

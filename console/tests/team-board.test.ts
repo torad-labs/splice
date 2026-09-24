@@ -62,7 +62,7 @@ const COMP_WORDS: string[] = [
   'context left', 'scratchpad', 'workspace', 'branch', 'base', 'diff', 'checks',
   '35%', '12.8 k', '~/.../storefront-api', 'feature/gs-41', 'main', '+412 -37', 'pass',
   // the builder's three lines
-  'gs-backend-builder', 'builder', 'deepseek-flash', 'n/r', '13:58', 'building GS-41 done',
+  'gs-backend-builder', 'builder', 'deepseek-flash', '–', '13:58', 'building GS-41 done',
   'claude-deepseek', 's-5f3b8a11', '09:18:02', '4h 44m', '18', '93,274', '38,611', '$0.183',
   '8.1 k', '+289 -37',
   // bay labels
@@ -105,11 +105,11 @@ describe('the board renders the comp', () => {
     expect(boardHtml).toContain('head: claude-deepseek');
   });
 
-  test('a figure no provider reports prints n/r rather than a zero', () => {
+  test('a figure no provider reports prints – rather than a zero', () => {
     const builder = heroBoard.members[1];
     expect(builder.window).toBeNull();
     expect(builder.contextLeftPct).toBeNull();
-    expect(boardHtml).toContain('n/r');
+    expect(boardHtml).toContain('–');
     // Read the cells, not the markup: the board's rows carry their own pitch in
     // a style attribute, and a row at the top of its rack is legitimately 0%.
     const values = [...boardHtml.matchAll(/myx-sfield-text">([^<]*)</g)].map((match) => match[1]);
@@ -306,7 +306,7 @@ describe('the timeline', () => {
     expect(table.rows[0].input).toBe(1110);
     expect(table.total.cost).toBeNull();
     expect(unescapeHtml(renderToStaticMarkup(createElement(TeamTimeline, { board: viewsBoard, data: { ...viewsData, economics: cached } }))))
-      .toContain('n/r');
+      .toContain('–');
   });
 
   test('turns per slot reads the same tallies, and an open seat is a row with its own count', () => {

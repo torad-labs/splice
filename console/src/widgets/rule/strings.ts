@@ -12,12 +12,15 @@ export const S = {
     red: 'daemon unreachable',
     grey: 'key required',
   },
-  nearest: 'nearest window',
+  /** The plan limit closest to running out, across every head that reports one. */
+  nearest: 'closest limit',
+  used: 'used',
   /** Saved knobs the running daemon has not read yet (a restart-only knob was patched). */
   restartPending: 'restart pending',
   /** The live connection, printed beside health: the word follows the holder edge's state. */
   live: 'live',
   reconnecting: 'reconnecting',
   off: 'off',
-  noneTail: 'heads report none',
+  /** Beside a count: heads with no plan limit to report (a pay-per-token key has none). */
+  noneTail: 'report no limit',
 } as const;

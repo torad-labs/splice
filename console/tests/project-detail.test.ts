@@ -52,7 +52,7 @@ describe('the project detail', () => {
       ['turns today', '1', 'measured'],
     ]);
     expect(values(fields.today)).toEqual([
-      ['cost today', 'n/r', null],
+      ['cost today', '–', null],
       ['day start', '2026-09-23 UTC', 'measured'],
       ['last seen', '1m ago', 'measured'],
     ]);
@@ -63,7 +63,7 @@ describe('the project detail', () => {
     expect(values(fields.today)).toEqual([
       ['cost today', '$12.84', 'estimated'],
       ['day start', '2026-09-23 UTC', 'measured'],
-      ['last seen', 'n/r', null],
+      ['last seen', '–', null],
     ]);
   });
 

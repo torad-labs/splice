@@ -103,7 +103,7 @@ describe('the catalog rack is a grid, and its names are printed once', () => {
     for (const strip of vacant) {
       const values = [...strip.slice(0, strip.indexOf('</div></div>') + 12)
         .matchAll(/<span class="myx-sfield-text">([^<]*)</g)].map((m) => m[1]);
-      // Six values: the tier's own slot name, and `n/r` everywhere a model would have spoken.
+      // Six values: the tier's own slot name, and `–` everywhere a model would have spoken.
       expect(values.length).toBe(MODEL_COLUMNS.length);
       expect(values.filter((value) => value === S.absent).length).toBe(MODEL_COLUMNS.length - 1);
     }

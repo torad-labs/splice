@@ -39,6 +39,12 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
 }
 
+/** What a cell prints when nobody reported a value for it: the en dash every table uses for "no
+ *  value". It was `n/r`, an abbreviation no reader could expand (console review, 2026-09-24).
+ *  One constant, so the next change of mind is one line and not eight copies. The other absence
+ *  words (none, unknown, unavailable, ineligible) are different facts and stay words. */
+export const ABSENT = '–';
+
 export function fmtInt(n: number): string {
   return new Intl.NumberFormat('en-US').format(n);
 }

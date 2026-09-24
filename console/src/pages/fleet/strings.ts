@@ -3,6 +3,8 @@
 //
 // Sentences that are not labels live in the component or in model.ts: the honest empties and the
 // field-status words are statements, not chrome, and section 4 exempts them.
+import { ABSENT } from '@shared/lib';
+
 export const S = {
   title: 'fleet',
   bay: 'heads',
@@ -27,7 +29,7 @@ export const S = {
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
    *  It replaces the bare `not built` this page used to print in a strip; the pending routes are
    *  named where they belong, in its honest empties (EMPTIES.fields, EMPTIES.pool). */
-  absent: 'n/r',
+  absent: ABSENT,
   /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
   close: 'close',
 } as const;
@@ -35,7 +37,8 @@ export const S = {
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
 // These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
 // these meanings is how the console reached eleven phrasings for "nothing here".
-//   n/r        nobody reported a value for this cell. The default, and the comp's own glyph.
+//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
+//              default. It was `n/r`, which no reader could expand.
 //   none       the question was asked and its answer is nothing (no tier hands this model out).
 //   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
 //   unavailable  it exists and we cannot reach it.

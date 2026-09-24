@@ -11,8 +11,9 @@ import type { AuthPayload, UsagePayload } from '@shared/api';
 /** The plan window nearest exhaustion, at its reported length. */
 export interface NearestWindow {
   head: string;
-  /** The account's masked id or login, where the head reports one. Null when the head is on a
-   *  credential the auth card does not name. */
+  /** The account's masked id, where the head reports one. Null when the auth card names no
+   *  account: its `login` is HOW the head signed in (browser, device, manual), not who, and a
+   *  login method printed where an account belongs read as one ("claude-grok browser 5h"). */
   account: string | null;
   /** The window's reported length, printed as the daemon reports it (`5h`). */
   window: string;
@@ -40,7 +41,7 @@ export function nearestWindow(
     const card = auth?.[entry.key];
     best = {
       head: entry.key,
-      account: card?.account_id_masked ?? card?.login ?? null,
+      account: card?.account_id_masked ?? null,
       window: `${usage.window_hours}h`,
       pct: head.warn.pct,
       reset: head.warn.reset,

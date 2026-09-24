@@ -73,13 +73,14 @@ export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: 
     <p className="myx-rule-cell myx-rule-window">
       <span className="myx-rule-word">{S.nearest}</span>
       {nearest === null ? (
-        <span className="myx-rule-absent">no window reported</span>
+        <span className="myx-rule-absent">no head reports a limit</span>
       ) : (
         <>
           <span className="myx-rule-head">{nearest.head}</span>
           {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
           <span className="myx-rule-period">{nearest.window}</span>
           <Figure value={nearest.pct} unit="%" basis="measured" />
+          <span className="myx-rule-word">{S.used}</span>
           {nearest.reset !== null ? <span className="myx-rule-reset">resets {nearest.reset}</span> : null}
         </>
       )}
@@ -103,7 +104,7 @@ export function ConnectionCell({ status, lastFrameAt }: { status: ConnectionStat
     <p className="myx-rule-cell myx-rule-connection">
       <HolderEdge state={edge} label={word} />
       {lastFrameAt === null ? (
-        <span className="myx-rule-absent">no frame yet</span>
+        <span className="myx-rule-absent">no events yet</span>
       ) : (
         <Figure value={timeAgo(lastFrameAt)} basis={Date.now() - lastFrameAt < 15_000 ? 'measured' : 'stale'} />
       )}

@@ -67,7 +67,7 @@ const DEFAULT_VIEWS: View[] = [
 const ROW_H = 40;
 
 /** A cell the rollup does not carry prints the absence glyph, never a zero the daemon did not
- *  report. It carries no basis: `n/r` is the whole statement, and the word `unavailable` beside it
+ *  report. It carries no basis: `–` is the whole statement, and the word `unavailable` beside it
  *  said the same thing twice (m1 design review B8). */
 function cell(value: number | undefined, format: (n: number) => string): { value: string; basis?: Basis | undefined } {
   return value === undefined ? { value: S.absent } : { value: format(value), basis: 'measured' };

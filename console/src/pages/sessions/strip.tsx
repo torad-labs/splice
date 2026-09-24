@@ -14,7 +14,7 @@ export interface Field {
   label: string;
   w: number;
   value: string;
-  /** Absent for a cell that carries no value: `n/r` is the whole statement, and the basis word
+  /** Absent for a cell that carries no value: `–` is the whole statement, and the basis word
    *  that used to sit beside it said the same thing twice (m1 design review B8). */
   basis?: Basis | undefined;
 }

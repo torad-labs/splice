@@ -13,7 +13,11 @@ import { resolve } from "node:path";
 const ROOT = resolve(import.meta.dir, "../../..");
 const VERSIONS = resolve(ROOT, "core/src/main/kotlin/splice/core/Versions.kt");
 const DOCKERFILE = resolve(ROOT, "tools/e2e/docker/Dockerfile");
-const INSIDE = resolve(ROOT, "tools/e2e/docker/inside.sh");
+const LIB = resolve(ROOT, "tools/e2e/docker/lib.sh");
+const LIB_TS = resolve(ROOT, "tools/e2e/docker/lib.ts");
+// The container scenarios: each sources lib.sh (where the receipt contract lives) and runs its
+// version step, so neither can write a receipt that skips the pin.
+const SCENARIOS = ["inside.sh", "upgrade.sh"].map((name) => resolve(ROOT, "tools/e2e/docker", name));
 const RUN = resolve(ROOT, "tools/e2e/docker/run.sh");
 
 function rel(p: string): string {
@@ -39,16 +43,39 @@ function sourcePin(): string {
     throw new Error(`Dockerfile pins Claude Code ${image}, but Versions.kt records ${tested}`);
   }
 
-  const inside = readFileSync(INSIDE, "utf8");
-  const requiredInside = [
+  const lib = readFileSync(LIB, "utf8");
+  const requiredLib = [
     'CLAUDE_CODE_ACTUAL="$(claude --version',
-    '"claudeCodeVersion": sys.argv[4]',
-    '"testedClaudeCodeVersion": sys.argv[5]',
     '[ "$CLAUDE_CODE_ACTUAL" = "$TESTED_CLAUDE_CODE" ]',
+    'finish "$STEPS_FILE" "$RECEIPT" "$FAILED" "$CLAUDE_CODE_ACTUAL" "$TESTED_CLAUDE_CODE"',
   ];
-  for (const token of requiredInside) {
-    if (!inside.includes(token)) {
-      throw new Error(`inside.sh does not enforce receipt contract token: ${token}`);
+  for (const token of requiredLib) {
+    if (!lib.includes(token)) {
+      throw new Error(`lib.sh does not enforce receipt contract token: ${token}`);
+    }
+  }
+  // lib.sh hands the two versions to lib.ts's receipt writer in that order; the writer must put them
+  // in the receipt under the names validateReceipt reads.
+  const writer = readFileSync(LIB_TS, "utf8");
+  const requiredWriter = [
+    'claudeCodeVersion: arg(argv, 3, "actual")',
+    'testedClaudeCodeVersion: arg(argv, 4, "tested")',
+  ];
+  for (const token of requiredWriter) {
+    if (!writer.includes(token)) {
+      throw new Error(`lib.ts does not write receipt contract field: ${token}`);
+    }
+  }
+  const requiredScenario = [
+    'source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"',
+    'step "Claude Code version matches the splice tested pin" client_version_receipt',
+  ];
+  for (const scenario of SCENARIOS) {
+    const text = readFileSync(scenario, "utf8");
+    for (const token of requiredScenario) {
+      if (!text.includes(token)) {
+        throw new Error(`${rel(scenario)} does not carry the receipt contract: ${token}`);
+      }
     }
   }
 

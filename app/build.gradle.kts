@@ -18,6 +18,12 @@ plugins {
     id("com.github.jk1.dependency-license-report") version "3.1.4"
 }
 
+// :integrations-codemode's compiled runtime suite, rerun by codeModePackagedTest against the fat jar.
+val codeModeRuntimeTests: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
 dependencies {
     implementation(project(":core"))
     implementation(project(":integrations-claude-code"))
@@ -61,6 +67,7 @@ dependencies {
     testImplementation(testFixtures(project(":integrations-oauth")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     testImplementation(testFixtures(project(":integrations-dialects-anthropic")))
+    codeModeRuntimeTests(project(path = ":integrations-codemode", configuration = "packagedRuntimeTests"))
 }
 
 application {
@@ -487,10 +494,11 @@ tasks.register("stageRelease") {
 // A classpath test cannot catch lost language service registrations in the shipped fat JAR.
 val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
     dependsOn(tasks.named("shadowJar"))
-    testClassesDirs = sourceSets.test.get().output.classesDirs
-    classpath = sourceSets.test.get().runtimeClasspath
+    testClassesDirs = sourceSets.test.get().output.classesDirs + codeModeRuntimeTests
+    classpath = sourceSets.test.get().runtimeClasspath + codeModeRuntimeTests
     filter {
         includeTestsMatching("CodeModeLanguagesTest")
+        includeTestsMatching("CodeModeRuntimeTest")
         includeTestsMatching("CodeModeBridgeRuntimeTest")
     }
     val packagedJar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }

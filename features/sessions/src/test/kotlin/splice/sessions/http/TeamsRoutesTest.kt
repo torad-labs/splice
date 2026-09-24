@@ -92,6 +92,23 @@ class TeamsRoutesTest {
     }
 
     @Test
+    fun `create and replace refuse a repo that does not exist, and accept a real directory`() {
+        val routes = routes()
+        val badCreate = routes.create("""{"name":"walk","repo":"/no/such/repo","slots":$B1}""", "k-repo")
+        assertEquals(HttpStatusCode.BadRequest, badCreate.status)
+        assertEquals("""{"error":"repo '/no/such/repo' does not exist"}""", badCreate.body)
+
+        val created = routes.create("""{"name":"walk","repo":"${rig.repo}","slots":$B1}""", "k-repo-ok")
+        assertEquals(HttpStatusCode.Created, created.status, created.body)
+        val id = idOf(created.body)
+
+        val badReplace = routes.replace(id, """{"name":"walk","repo":"/no/such/repo","slots":$B1}""")
+        assertEquals(HttpStatusCode.BadRequest, badReplace.status)
+        assertEquals("""{"error":"repo '/no/such/repo' does not exist"}""", badReplace.body)
+        assertEquals(rig.repo.toString(), rig.store.team(id)?.repo, "the refused replace never touched the team")
+    }
+
+    @Test
     fun `unwired ports answer their named 503 and an unknown team is a 404`() {
         val routes = routes(wired = false)
         val unwired = """{"error":"the team store is not wired into this control plane"}"""

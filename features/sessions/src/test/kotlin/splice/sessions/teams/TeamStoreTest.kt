@@ -30,7 +30,7 @@ class TeamStoreTest {
     private fun store() = TeamStore(file, WallClock { now })
 
     private fun team(vararg slots: TeamSlot, id: String = "") =
-        Team(id = id, name = "atlas", goal = "ship", repo = "/w/repo", slots = slots.toList())
+        Team(id = id, name = "atlas", goal = "ship", repo = dir.toString(), slots = slots.toList())
 
     private val lead = TeamSlot(id = "lead", role = "orchestrator", head = "claude", lead = true)
     private val builder = TeamSlot(id = "b1", role = "builder", head = "codex")
@@ -95,16 +95,33 @@ class TeamStoreTest {
     @Test
     fun `a composition the store cannot hold is refused with the reason`() {
         val s = store()
+        val notADirectory = Files.createFile(dir.resolve("plain-file")).toString()
         val reasons = listOf(
             team(lead).copy(name = " ") to "a team needs a name",
             team(lead, builder.copy(id = "")) to "every slot needs an id",
             team(lead, lead.copy(role = "again")) to "slot ids repeat in atlas",
             team(lead, builder.copy(head = "")) to "every slot needs a head",
+            team(lead).copy(repo = "/no/such/repo") to "repo '/no/such/repo' does not exist",
+            team(lead).copy(repo = notADirectory) to "repo '$notADirectory' is not a directory",
         )
         for ((bad, reason) in reasons) {
             assertEquals(reason, assertThrows(TeamRefusal::class.java) { s.upsert(bad) }.message)
         }
         assertFalse(Files.exists(file), "a refused write writes nothing")
+    }
+
+    @Test
+    fun `a real directory is accepted, and a team whose repo later vanishes still lists and archives`() {
+        val s = store()
+        val saved = s.upsert(team(lead))
+        assertEquals(dir.toString(), saved.repo, "a real directory is accepted")
+
+        val repo = Files.createDirectory(dir.resolve("repo-that-vanishes"))
+        val id = s.upsert(team(lead).copy(repo = repo.toString())).id
+        Files.delete(repo)
+        assertEquals(repo.toString(), s.team(id)?.repo, "a gone repo does not disappear from the list")
+        val archived = s.archive(id)
+        assertTrue(archived.archived, "archiving a team whose repo vanished still works")
     }
 
     @Test

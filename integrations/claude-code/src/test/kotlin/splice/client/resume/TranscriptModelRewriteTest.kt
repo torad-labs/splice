@@ -60,7 +60,11 @@ class TranscriptModelRewriteTest {
 
         assertEquals(listOf(true, true), rows(subagent).take(2).map { it.contains("\"gpt-5.6-sol\"") })
         assertEquals(untouchedStamp, Files.getLastModifiedTime(transcript), "an unchanged file is not rewritten")
-        assertEquals(0, rewriter.rewrite(transcript, "gpt-5.6-sol", SOL_ONLY), "idempotent: a second pass moves nothing")
+        assertEquals(
+            0,
+            rewriter.rewrite(transcript, "gpt-5.6-sol", SOL_ONLY),
+            "idempotent: a second pass moves nothing",
+        )
     }
 
     // v0.4.0 review round 2: Claude Code refuses to restore only a model OUTSIDE the head's roster, so a

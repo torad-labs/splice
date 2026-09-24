@@ -233,10 +233,12 @@ function Playground({ heads }: { heads: readonly string[] }) {
 /** The board, drawn from a report it is handed rather than from the store, so a test can plant a
  *  payload in it (a static render only ever sees a store's initial state). Which check is open is
  *  the page's state, handed in beside the report, so a render can show an opened check too. */
-export function DoctorBoard({ report, pending = null, error = null, upgrade = null, heads = [], openKey = null, onToggle, sample }: {
+export function DoctorBoard({ report, pending = null, error = null, lastRead = null, upgrade = null, heads = [], openKey = null, onToggle, sample }: {
   report: DoctorPayload | null;
   pending?: string | null;
   error?: string | null;
+  /** When the report on screen was read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   upgrade?: UpgradePayload | null;
   heads?: readonly string[];
   openKey?: string | null;
@@ -273,7 +275,7 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {error === null ? null : <Fault message={error} />}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
       {pending !== null ? <Empty text={EMPTIES.noReport.text} source={EMPTIES.noReport.source} /> : null}
       {report === null && pending === null ? <Blank strips={4} /> : null}
@@ -405,6 +407,7 @@ export function DoctorPage() {
       report={report ?? (doctor.data !== null && 'checks' in doctor.data ? doctor.data : null)}
       pending={report === null && doctor.data !== null && 'pending' in doctor.data ? doctor.data.pending : null}
       error={doctor.error}
+      lastRead={report === null ? doctor.lastUpdated : null}
       upgrade={upgrade.data !== null && 'installed' in upgrade.data ? upgrade.data : null}
       heads={(heads ?? []).map((head) => head.key)}
       openKey={openKey}

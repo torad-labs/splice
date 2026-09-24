@@ -280,12 +280,14 @@ export interface TurnsBoardProps {
   captureError?: string | null;
   locked?: boolean;
   error?: string | null;
+  /** When the landed turns on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
    *  marker and the sample chrome are the same value, so they cannot disagree. */
   sample?: string | undefined;
 }
 
-export function TurnsBoard({ inflight, landed, summary, capture, captureError = null, locked = false, error = null, sample }: TurnsBoardProps) {
+export function TurnsBoard({ inflight, landed, summary, capture, captureError = null, locked = false, error = null, lastRead = null, sample }: TurnsBoardProps) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -338,6 +340,11 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
         ) : null}
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
+
+      {/* A read that fails after one landed keeps the turns and says so. The fault used to show
+          only while nothing had loaded (console walkthrough, 2026-09-24): with the daemon down this
+          page printed its last summary and stage times as if they were live, and no fault at all. */}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
       {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
           carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
@@ -559,7 +566,8 @@ export default function TurnsPage() {
       capture={capture.data}
       captureError={capture.error}
       locked={locked}
-      error={turns.error}
+      error={fixture === null ? turns.error : null}
+      lastRead={turns.lastUpdated}
       sample={sample?.name}
     />
   );

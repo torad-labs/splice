@@ -240,9 +240,9 @@ export function SettingsPage() {
         {sample === null ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
-      {config.error === null ? null : <Fault message={config.error} />}
-      {topology.error === null ? null : <Fault message={topology.error} />}
-      {claude.error === null ? null : <Fault message={claude.error} />}
+      {config.error === null ? null : <Fault message={config.error} lastRead={sample === null ? config.lastUpdated : null} />}
+      {topology.error === null ? null : <Fault message={topology.error} lastRead={sample === null ? topology.lastUpdated : null} />}
+      {claude.error === null ? null : <Fault message={claude.error} lastRead={sample === null ? claude.lastUpdated : null} />}
       {claudeFault === null ? null : <Fault message={claudeFault} />}
 
       <section className="myx-settings-section">

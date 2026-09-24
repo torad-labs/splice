@@ -15,6 +15,8 @@ export const S = {
   fault: 'fault',
   /** The single field a fault strip carries: the daemon's own message. */
   message: 'message',
+  /** What a fault prints before the age of the rows a failed read left on screen. */
+  lastRead: 'last read',
   /** What a Choice's box says while its rack is shut, and while it is open. */
   open: 'open',
   close: 'close',

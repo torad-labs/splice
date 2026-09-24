@@ -135,12 +135,14 @@ function ClaudeBay({ rows, openKey, onOpen }: {
 
 /** The board, drawn from a payload it is handed rather than from the store, so a test can hand it
  *  pools (a static render only ever sees a store's initial state). */
-export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sample }: {
+export function AccountsBoard({ payload, headRows = [], nowMs, error = null, lastRead = null, sample }: {
   payload: AccountsState | null;
   /** Every head as GET /api/auth reports it: the fallback rack and the claude bay. */
   headRows?: readonly HeadRow[];
   nowMs: number;
   error?: string | null;
+  /** When the pools on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
 }) {
@@ -181,7 +183,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {error === null ? null : <Fault message={error} />}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
       {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
 
@@ -312,6 +314,7 @@ export function AccountsPage() {
       headRows={headRows}
       nowMs={nowMs}
       error={accountsResource.error}
+      lastRead={rows === null ? accountsResource.lastUpdated : null}
       sample={import.meta.env.DEV && rows !== null && fixture !== null ? fixture : undefined}
     />
   );

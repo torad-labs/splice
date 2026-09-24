@@ -88,19 +88,33 @@ function errorMessage(body: unknown, status: number): string {
   return sentence !== undefined && sentence.trim() !== '' ? sentence : `HTTP ${status}`;
 }
 
+/** What a read says when the daemon did not answer at all. The browser's own words for a refused
+ *  connection ("Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed",
+ *  one per engine) name the transport and not the fact, and every page printed them verbatim
+ *  (console walkthrough, 2026-09-24). Mapped here, once, so no store ever holds them; status 0 is
+ *  the response that never came. */
+const NOT_ANSWERING = 'splice is not answering';
+
 // Exported for entity api segments (entities/*/api), which own their routes and payload types
 // locally (CONTRACTS.md section 8); the key, the 401 lockout and the error envelope stay here.
 // `control` below keeps the routes that predate the console rebuild.
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (locked) throw new MgmtError(401, 'management key required');
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${currentKey()}`,
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${currentKey()}`,
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    // A caller's own abort stays an abort; anything else thrown before a response is no answer.
+    if (init?.signal?.aborted) throw err;
+    throw new MgmtError(0, NOT_ANSWERING);
+  }
   if (res.status === 401) {
     locked = true;
     onUnauthorized?.();

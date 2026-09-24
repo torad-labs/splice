@@ -163,7 +163,7 @@ export function McpPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {mcp.error === null ? null : <Fault message={mcp.error} />}
+      {mcp.error === null ? null : <Fault message={mcp.error} lastRead={mcp.lastUpdated} />}
       {payload === null && mcp.error === null ? <Blank strips={3} /> : null}
 
       <div className="myx-mcp-body">

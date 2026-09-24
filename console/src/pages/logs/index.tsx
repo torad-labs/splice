@@ -17,7 +17,7 @@ import type { CaptureState } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
 import { fetchCapture, putCapture, useCapture } from '@entities/perf';
 import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Choice } from '@shared/controls';
+import { Choice, Fault } from '@shared/controls';
 import { LogTail } from '@widgets/log-tail';
 import { RequestDrawer } from '@widgets/waterfall';
 import { S } from './strings';
@@ -44,6 +44,8 @@ export interface LogsBoardProps {
   onCaptureSwitch?: (enabled: boolean) => void;
   locked?: boolean;
   error?: string | null;
+  /** When the lines on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
    *  marker and the sample chrome are the same value, so they cannot disagree. */
   sample?: string | undefined;
@@ -55,7 +57,7 @@ export interface LogsBoardProps {
 
 export function LogsBoard({
   payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture, captureError = null,
-  onCaptureSwitch, locked = false, error = null, sample, onFilter, onFollow, onHead, onTail,
+  onCaptureSwitch, locked = false, error = null, lastRead = null, sample, onFilter, onFollow, onHead, onTail,
 }: LogsBoardProps) {
   if (locked) return <Empty text="console locked" source="management key" />;
   // A capture fixture IS the data: a live read that failed behind it must not blank the page.
@@ -119,6 +121,10 @@ export function LogsBoard({
         {reset ? <HolderEdge state="amber" label={S.rotated} /> : null}
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
+
+      {/* A tail read that fails after one landed keeps the lines it had, and says both things: it
+          used to keep them silently, so a dead daemon's last lines read as a quiet live one. */}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
       <Bay label={S.log} {...(payload === null ? {} : { count: payload.lines.length })}>
         <LogTail
@@ -273,7 +279,8 @@ export default function LogsPage() {
       captureError={capture.error}
       {...(head === null ? {} : { onCaptureSwitch: (enabled: boolean) => void putCapture(head, enabled) })}
       locked={false}
-      error={store.error}
+      error={fixture === null ? store.error : null}
+      lastRead={store.lastUpdated}
       sample={sample?.name}
       onFilter={setFilter}
       onFollow={(next) => {

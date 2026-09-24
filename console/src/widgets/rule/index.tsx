@@ -15,7 +15,7 @@
 // payloads rather than from the stores (a static render sees a store's initial
 // state and never its current one).
 import { useEffect, useState } from 'react';
-import { fetchControlStatus, useControlStatus } from '@entities/control-status';
+import { startControlStatusPolling, useControlStatus } from '@entities/control-status';
 import { useHeads } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { headsReportingNone, nearestWindow, startUsagePolling, useUsage } from '@entities/usage';
@@ -158,11 +158,10 @@ export function Rule() {
   const { local, utc } = useClock();
 
   useEffect(() => {
-    // The daemon's identity and registry are near-static; the two routes the
-    // readout needs are polled, because the rule is chrome and outlives every
-    // page it is drawn over.
-    void fetchControlStatus();
-    const stops = [startUsagePolling(15_000), startAuthPolling(30_000)];
+    // The daemon's identity and registry are near-static, but the health cell is whether it
+    // answers, so the status read is polled with the two routes the readout needs: the rule is
+    // chrome and outlives every page it is drawn over.
+    const stops = [startControlStatusPolling(10_000), startUsagePolling(15_000), startAuthPolling(30_000)];
     // The live stream is opened here because the rule is the chrome that outlives every page and
     // the surface that prints the connection; connect() is idempotent, so whoever else asks for it
     // gets the same one stream.

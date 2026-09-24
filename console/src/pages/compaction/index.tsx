@@ -55,10 +55,15 @@ export const NO_RULE = {
 
 /** The rules bay: a rule per strip, every head that could not be asked named in the daemon's
  *  words, and no rule at all said as what it means. */
-export function InstructionsBay({ instructions, error = null }: { instructions: InstructionsState | null; error?: string | null }) {
+export function InstructionsBay({ instructions, error = null, lastRead = null }: {
+  instructions: InstructionsState | null;
+  error?: string | null;
+  /** When the rules on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
+}) {
   return (
     <section className="myx-compaction-rules">
-      {error === null ? null : <Fault message={error} />}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
       {instructions?.unread.map((unread) => (
         <Fault key={unread.head} message={`${unread.head}: ${unread.reason}`} />
       ))}
@@ -85,11 +90,13 @@ export function InstructionsBay({ instructions, error = null }: { instructions: 
  * static render only ever sees a zustand store's initial state, so a board that read the store
  * could not be rendered from data by a test or a capture.
  */
-export function CompactionBoard({ payload, instructions = null, instructionsError = null, sample }: {
+export function CompactionBoard({ payload, instructions = null, instructionsError = null, instructionsRead = null, sample }: {
   payload: CompactPayload | null;
   /** The rules in effect; null until read, and null behind a sample (no sample rules exist). */
   instructions?: InstructionsState | null;
   instructionsError?: string | null;
+  /** When the rules on screen were read. */
+  instructionsRead?: number | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
 }) {
@@ -106,7 +113,7 @@ export function CompactionBoard({ payload, instructions = null, instructionsErro
           also the page's whole reason to be here, so it is kept — one click away, and out of the
           rack's way. */}
       <Reveal label={S.law}>{<p className="myx-compaction-law">{LAW_TEXT}</p>}</Reveal>
-      {sample === undefined ? <InstructionsBay instructions={instructions} error={instructionsError} /> : null}
+      {sample === undefined ? <InstructionsBay instructions={instructions} error={instructionsError} lastRead={instructionsRead} /> : null}
       {payload === null ? <Blank strips={4} /> : <CompactFeed payload={payload} sample={sample !== undefined} />}
     </div>
   );
@@ -150,11 +157,12 @@ export default function CompactionPage() {
 
   return (
     <>
-      {compact.error === null ? null : <Fault message={compact.error} />}
+      {compact.error === null ? null : <Fault message={compact.error} lastRead={sample === null ? compact.lastUpdated : null} />}
       <CompactionBoard
         payload={sample === null ? compact.data : sample.payload}
         instructions={instructions.data}
         instructionsError={instructions.error}
+        instructionsRead={instructions.lastUpdated}
         sample={sample?.name}
       />
     </>

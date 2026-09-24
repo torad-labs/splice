@@ -8,20 +8,7 @@
   min-width: 0;
 }
 
-.myx-tn-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-tn-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-5);
-  font-weight: 600;
-  color: var(--ink-strong);
-}
 
 /* A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-119, mirroring M1-116's mechanism rather than
    choosing a fourth repair). The track collapses to literal 0 at rest, but `gap` was still

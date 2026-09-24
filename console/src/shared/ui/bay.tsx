@@ -23,7 +23,7 @@ function keyedRows(children: ReactNode): { key: string; node: ReactNode }[] {
   });
 }
 
-export function Bay({ label, count, fields, empty, actions, className, style, children }: {
+export function Bay({ label, count, fields, compact, empty, actions, className, style, children }: {
   label: string;
   count?: number;
   /** The rack's column names, printed once for the whole bay instead of on every strip (m1 design
@@ -32,6 +32,9 @@ export function Bay({ label, count, fields, empty, actions, className, style, ch
    *  rows then pass their `StripField`s no label. Rendered only when given, so a bay that prints
    *  its labels per strip is unchanged. */
   fields?: ReactNode;
+  /** The rows are one shape: the first strip prints the column names and the rest pack under it as
+   *  single lines (the comp's activity bay). Implied by `fields`, which prints the names above. */
+  compact?: boolean;
   empty?: { text: string; source: string };
   actions?: ReactNode;
   className?: string;
@@ -52,7 +55,7 @@ export function Bay({ label, count, fields, empty, actions, className, style, ch
   ].sort((left, right) => left.at - right.at);
 
   return (
-    <section className={cx('myx-bay', className)} style={style}>
+    <section className={cx('myx-bay', (compact === true || fields !== undefined) && 'myx-bay-compact', className)} style={style}>
       <header className="myx-bay-head">
         <span className="myx-bay-label">{label}</span>
         {typeof count === 'number' ? <span className="myx-bay-count">{count}</span> : null}

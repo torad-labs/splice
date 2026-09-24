@@ -77,7 +77,7 @@ function HeadBay({ label, rows, openKey, onOpen }: {
   onOpen: (key: string) => void;
 }) {
   return (
-    <Bay label={label} count={rows.length}>
+    <Bay label={label} count={rows.length} compact>
       {rows.map((row) => (
         <HeadAuthStrip
           key={row.head}
@@ -106,7 +106,7 @@ function ClaudeBay({ rows, openKey, onOpen }: {
   onOpen: (key: string) => void;
 }) {
   return (
-    <Bay label={S.claudeBay} count={rows.length}>
+    <Bay label={S.claudeBay} count={rows.length} compact>
       {rows.map((row) => (
         <HeadAuthStrip
           key={row.head}
@@ -167,8 +167,8 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
       className="myx-accounts"
       {...(sample === undefined ? {} : { 'data-sample': sample })}
     >
-      <header className="myx-accounts-head">
-        <h1 className="myx-accounts-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
@@ -191,33 +191,41 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
           ) : groups.length === 0 ? (
             <Empty text={EMPTIES.noAccounts.text} source={EMPTIES.noAccounts.source} />
           ) : (
-            groups.map((group) => (
-              <Bay
-                key={group.key === '' ? S.bay : group.key}
-                label={group.key === '' ? S.bay : group.key}
-                count={group.accounts.length}
-                actions={<span className="myx-accounts-order">{SELECTOR_ORDER_TEXT}</span>}
-              >
-                {group.accounts.map((account) => {
-                  const key = openAccountKey(account);
-                  // The daemon's own next target, per pool (M4-08): the strip it flagged, and the
-                  // rule inside that strip's own pool that explains it.
-                  const rule = nextRuleOf(account, accounts);
-                  return (
-                    <AccountStrip
-                      key={key}
-                      account={account}
-                      isNext={rule !== null}
-                      nextRule={rule ?? ''}
-                      columns={columns}
-                      nowMs={nowMs}
-                      selected={openKey === key}
-                      onOpen={() => toggle(key)}
-                    />
-                  );
-                })}
-              </Bay>
-            ))
+            <>
+              {/* The order the selector walks, once for the page: it is one rule for every pool, and
+                  printed on each rack's plate it said the same sentence four times over the label. */}
+              <p className="myx-accounts-order">
+                <span className="myx-accounts-order-label">{S.order}</span>
+                {SELECTOR_ORDER_TEXT}
+              </p>
+              {groups.map((group) => (
+                <Bay
+                  key={group.key === '' ? S.bay : group.key}
+                  label={group.key === '' ? S.bay : group.key}
+                  count={group.accounts.length}
+                  compact
+                >
+                  {group.accounts.map((account) => {
+                    const key = openAccountKey(account);
+                    // The daemon's own next target, per pool (M4-08): the strip it flagged, and the
+                    // rule inside that strip's own pool that explains it.
+                    const rule = nextRuleOf(account, accounts);
+                    return (
+                      <AccountStrip
+                        key={key}
+                        account={account}
+                        isNext={rule !== null}
+                        nextRule={rule ?? ''}
+                        columns={columns}
+                        nowMs={nowMs}
+                        selected={openKey === key}
+                        onOpen={() => toggle(key)}
+                      />
+                    );
+                  })}
+                </Bay>
+              ))}
+            </>
           )}
 
           <ClaudeBay rows={claudeHeads} openKey={openKey} onOpen={toggle} />

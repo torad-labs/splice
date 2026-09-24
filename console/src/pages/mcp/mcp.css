@@ -14,12 +14,6 @@
   flex-wrap: wrap;
 }
 
-.myx-mcp-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-6);
-  color: var(--ink-strong);
-}
 
 .myx-mcp-body {
   display: grid;

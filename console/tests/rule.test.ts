@@ -131,8 +131,13 @@ describe('the rule connection cell', () => {
 
 describe('health', () => {
   test('a failed status read is red, a down head is amber, otherwise green', () => {
-    expect(healthOf(true, true)).toBe('red');
-    expect(healthOf(false, true)).toBe('amber');
-    expect(healthOf(false, false)).toBe('green');
+    expect(healthOf(true, true, false)).toBe('red');
+    expect(healthOf(false, true, false)).toBe('amber');
+    expect(healthOf(false, false, false)).toBe('green');
+  });
+
+  test('a locked console says the key is missing, not that the daemon is unreachable', () => {
+    // the status read fails with a 401 while locked: the daemon answered, so red would be false
+    expect(healthOf(true, false, true)).toBe('grey');
   });
 });

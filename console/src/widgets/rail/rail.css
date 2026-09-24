@@ -14,118 +14,74 @@
    so the bays keep the comp's 29px tab and 33px gap at any window size. */
 
 .myx-rail {
-  /* The comp's rail plates measure #b5a68f, a cream a step or two under --strip.
-     Section 1 carries no such token, and the plate is not --strip (that is the
-     strip bay's paper), so it is derived from the world's own two grounds here
-     rather than borrowed from a retired ramp. */
-  /* mixed against the warm mute ink rather than the room, which keeps the
-     comp's warmth: the plate measures (184,172,149) and this lands at
-     (182,178,161) */
+  /* The comp's rail plates measure #b5a68f, a cream a step or two under --strip, mixed here from
+     the world's own paper and its mute ink (lands at 182,178,161). */
   --plate: color-mix(in srgb, var(--strip) 70%, var(--strip-ink-mute));
   --plate-hover: color-mix(in srgb, var(--strip) 88%, var(--room));
+  /* the holder slot each plate sits in: one step up from the rail's floor */
+  --slot: color-mix(in srgb, var(--room-deep) 93%, white);
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
   background: var(--room-deep);
   border-right: var(--hair) solid var(--hairline);
 }
 
+/* THE TABS ARE MADE OF TYPE (2026-09-23, console design pass). They were shares of the rail's
+   HEIGHT (a 3.66% tab on an 80.76% column) while their label is a share of the frame's WIDTH, so
+   on any frame flatter than the comp's 3:2 the plate shrank under its word: at 1440x900 a 25px
+   plate held a 14px bold label and "compaction" ran out of both ends. A plate is now a fixed
+   number of rems, so it scales with the word it carries; only the gap between slots follows the
+   frame's height, capped at the comp's own spacing, so thirteen addresses fit a 16:9 frame. */
 .myx-rail-tabs {
-  position: absolute;
-  left: 13.33%;
-  width: 77.78%;
-  /* The comp's own tabs span frame y68.6..847.6, which inside the rail is
-     0.954% down and 80.76% tall: the label column is 6.5% down the FRAME and the
-     rail starts at 5.8%, and the comp leaves 2px above its first tab and 18px
-     below its last rather than filling the column edge to edge. */
-  top: 0.954%;
-  height: 80.76%;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
+  gap: min(var(--space-6), 2.4vh);
+  padding: var(--space-4) var(--space-3);
 }
 
+/* THE SLOT: a dark holder the plate is racked in, wider than the plate so the standing mark has
+   a place inside it (the comp's green bar sits in the slot, right of the plate). */
 .myx-rail-tab {
   position: relative;
   display: flex;
-  align-items: center;
-  /* the comp insets its plates 4px inside the label column and starts the label
-     17px into the plate; both are read off the crop, and the label column itself
-     is 13.33% of the rail (1.2% of the frame) with a 77.78% width */
-  /* the comp's plates measure 80px wide inside the 107.5px label column */
-  width: 74.4%;
-  /* the comp's plates are 29px on this column */
-  height: 3.66%;
-  margin-inline-start: var(--space-2);
-  /* THE WORD IS CENTRED IN THE PLATE (M1-36, N-4). It used to be pushed 12px off the
-     plate's left edge, which read as a left-aligned label in a box that is not a list.
-     Measured on the comp: the word's centre sits at x62.0 of an 80px plate whose centre
-     is x61.5 - half a pixel, which is centred. The inline padding is the clearance the
-     two holder marks below need: they occupy 4..8 and 72..76, the word box is 8..72, and
-     the longest label ("compaction") measures 61px inside it. */
-  justify-content: center;
-  padding-inline: var(--space-3);
-  background: var(--plate);
-  border: var(--hair) solid var(--room);
+  align-items: stretch;
+  height: 2.5rem;
+  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-2);
+  background: var(--slot);
+  box-shadow:
+    inset 0 var(--hair) 0 0 var(--hairline),
+    0 0 0 var(--hair) color-mix(in srgb, var(--room) 27%, black);
   border-radius: 0;
   text-decoration: none;
-  transition: background-color var(--dur-1) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
 }
-/* The holder edge prints its label in the room's ink by default; on a plate the
-   label belongs to the plate, and the plate carries the comp's near-black. */
+/* THE PLATE: the holder edge itself, painted as a printed cream label with a pin at each end. */
+.myx-rail-tab .myx-edge {
+  position: relative;
+  flex: 1 1 auto;
+  justify-content: center;
+  align-items: center;
+  padding-inline: var(--space-4);
+  background: var(--plate);
+  box-shadow: 0 0 0 var(--hair) color-mix(in srgb, var(--plate) 60%, black);
+  transition: background-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
+}
 .myx-rail-tab .myx-edge-label {
   color: var(--strip-ink);
   font-family: var(--font-label);
-  /* --text-2 on the wdth axis's 75, no transform: the comp's labels measure a
-     13-14px ascender and its longest word, "compaction", 65px inside an 80px
-     plate. At the axis's floor that word is 53px, which leaves the plate half
-     empty; at 75 it is 61px and the ink stands at the height the crop shows. */
   font-size: var(--text-2);
   font-variation-settings: 'wdth' 75;
-  /* the comp's label ink is dense enough to break a whole row of its plate */
   font-weight: 600;
+  white-space: nowrap;
 }
-/* The comp prints a small holder mark inside each plate, 4px in and no taller
-   than the label's own x-height, in the plate's ink rather than the edge
-   colours: the address that is STANDING is not marked here but by the green bar
-   outside the plate's right edge, so the plate keeps one fill and the address
-   is still readable with the colour gone (aria-current carries it). */
-/* THE MARK HAS TO LEAVE THE FLEX LINE TO BE PLACED AT ALL (M1-36, N-12). `.myx-edge-mark`
-   in shared/ui/ui.css carries only `width` and `background`, so it is a STATIC child of
-   `.myx-edge` (`align-items: stretch`): giving it an explicit height cancels the stretch
-   and parks it at the top of the label's line box, and the `inset-inline-start`, `top` and
-   `margin-block-start` this rule used to carry never applied to anything. That is what the
-   render showed - one mark straddling the plate's top edge. Absolute against the tab (the
-   tab is the positioned ancestor; `.myx-edge` is static) puts it where it was always
-   written to go, and takes it out of the line so `justify-content: center` above centres
-   the WORD rather than the mark-and-word pair.
-   The comp prints TWO of them, one at each end: 4x5 at a 3px inset from the plate's edge,
-   centres at y13.0 against the label's y12.5. The inset token is --space-1 and not
-   --space-2 because an absolutely positioned mark measures from the PADDING edge: 2px
-   inside a 1px hairline is the comp's 3px exactly. --space-2 put the dots a pixel further
-   in, and a pixel is the whole budget here - it left "compaction" (61.0px, the longest
-   address) clearing the dot by 0.19px, which reads as touching. At --space-1 the same
-   word clears by 2.0px against the comp's own 2.5px. Height is 4px rather than the comp's
-   5: the scale has no 5, and at this size a 4px square under a full radius is the comp's
-   round dot. */
-.myx-rail-tab .myx-edge-mark {
-  position: absolute;
-  inset-inline-start: var(--space-1);
-  inset-block: auto;
-  top: 50%;
-  width: var(--space-2);
-  height: var(--space-2);
-  margin-block-start: calc(-1 * var(--space-2) / 2);
-  border-radius: 50%;
-  background: var(--strip-ink);
-}
-/* The second mark. It is a pseudo-element rather than a second node because the plate's
-   two dots are one printed ornament, not a second holder edge: HolderEdge means "a state
-   with a word on it", and this end of the plate carries no state and no word. */
-.myx-rail-tab::before {
+/* The two pins: the holder mark at the left end and a pseudo at the right. They are one printed
+   ornament of the plate, not state, so both take the plate's ink whatever the address. */
+.myx-rail-tab .myx-edge-mark,
+.myx-rail-tab .myx-edge::after {
   content: '';
   position: absolute;
-  inset-inline-end: var(--space-1);
   top: 50%;
   width: var(--space-2);
   height: var(--space-2);
@@ -133,24 +89,25 @@
   border-radius: 50%;
   background: var(--strip-ink);
 }
-.myx-rail-tab:hover { background: var(--plate-hover); }
-/* THE STANDING MARK IS THE COMP'S OWN, AND IT IS MEANT TO FLOAT (M1-36, N-9). N-9 read the
-   marker as debris floating 40px clear of its tab; that 40px is the 3840 frame, and the comp
-   floats it too - measured on team-board-a.png the mark sits x117..123 against a plate ending
-   at x101, which is 15px of room, and the build renders 15px at 1536 and 15.6px at comp scale
-   at 3840. The gap is not the defect and the entry is withdrawn.
-   What the same measurement DID find is the width: the comp's mark is 7px on an 80px plate,
-   which is 8.75%, and this rule carried 6.5% - it drew 5px at 1536 and 13px at 3840 where the
-   comp asks for 7px and 17.5px. The comment above it said 7px while the declaration said
-   something else. */
+.myx-rail-tab .myx-edge-mark { inset-inline-start: var(--space-2); }
+.myx-rail-tab .myx-edge::after { inset-inline-end: var(--space-2); }
+
+@media (hover: hover) and (pointer: fine) {
+  .myx-rail-tab:hover .myx-edge { background: var(--plate-hover); }
+}
+.myx-rail-tab:active .myx-edge { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .myx-rail-tab:active .myx-edge { transform: none; }
+}
+
+/* THE STANDING MARK: the comp's green bar, inside the slot to the right of the plate. The address
+   stays readable with the colour gone (aria-current carries it). */
 .myx-rail-tab[aria-current='page']::after {
   content: '';
   position: absolute;
-  /* 15px clear of the plate at 1536, which is where the comp puts it */
-  left: 119.6%;
-  inset-block: calc(-1 * var(--space-1));
-  /* the comp's mark is 7px on its 80px plate */
-  width: 8.75%;
+  inset-block: var(--space-2);
+  inset-inline-end: var(--space-2);
+  width: var(--space-2);
   background: var(--edge-green);
 }
 .myx-rail-tab:focus-visible {
@@ -174,25 +131,21 @@
     scrollbar-width: none;
   }
   .myx-rail-tabs {
-    position: static;
     width: max-content;
-    height: auto;
     flex-direction: row;
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-3) var(--space-4);
   }
   .myx-rail-tab {
-    width: auto;
     height: auto;
     min-height: var(--space-8);
-    margin-inline-start: 0;
-    padding-inline: var(--space-5);
+    padding: var(--space-2) var(--space-2) var(--space-4);
   }
+  .myx-rail-tab .myx-edge { padding-inline: var(--space-5); }
   .myx-rail-tab[aria-current='page']::after {
-    left: 0;
-    right: 0;
-    inset-block: auto calc(-1 * var(--space-3));
+    inset-inline: var(--space-2);
+    inset-block: auto var(--space-1);
     width: auto;
     height: var(--space-2);
   }

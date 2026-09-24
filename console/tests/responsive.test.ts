@@ -110,8 +110,8 @@ describe('the phone', () => {
   test('the rail lies down: its tabs are a row that scrolls sideways', () => {
     expect(rail).toMatch(/\.myx-rail-tabs\s*\{[^}]*flex-direction:\s*row/);
     expect(rail).toMatch(/\.myx-rail\s*\{[^}]*overflow-x:\s*auto/);
-    // the tabs give up the vertical column's measured percentages
-    expect(rail).toMatch(/\.myx-rail-tabs\s*\{[^}]*position:\s*static/);
+    // the tabs lie in one line that is as wide as its plates, not the column's width
+    expect(rail).toMatch(/\.myx-rail-tabs\s*\{[^}]*width:\s*max-content/);
   });
 
   test('the rule stacks the clocks over health', () => {

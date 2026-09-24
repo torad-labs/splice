@@ -325,10 +325,13 @@ The **OAuth-identity** routes are the reason splice exists: they run Claude Code
 ### Local models
 
 A provider on a loopback `base_url` (Ollama at `http://localhost:11434/v1`, LM Studio at
-`http://localhost:1234/v1`, vLLM at `http://localhost:8000/v1`) is treated as local: splice never
-downloads a model or manages the runtime, but at boot and in `splice doctor` it asks the runtime
-what it serves and refuses a row the runtime does not list or that declares more context than the
-runtime serves, with the runtime's own words (`declares context_window 65536, runtime serves
+`http://localhost:1234/v1`, vLLM at `http://localhost:8000/v1`) is treated as local. splice itself
+never downloads a model or manages the runtime; on a Linux x86_64 machine with an NVIDIA card,
+`splice setup` can hand the card to [rig](https://github.com/torad-labs/rig), which does: asked
+(default no), rig installs into `~/.local/share/rig`, downloads bonsai-2-27b (about 7 GB) and serves
+it on 127.0.0.1, and setup adds a `bonsai` head (`claude-bonsai`) from what `rig describe` reports.
+At boot and in `splice doctor` splice asks the runtime what it serves and refuses a row the runtime
+does not list or that declares more context than the runtime serves, with the runtime's own words (`declares context_window 65536, runtime serves
 32768`). The refused head is reported DEGRADED while the rest of the daemon serves; a runtime
 that is down boots as before and fails per turn. `splice doctor --live` adds one tiny streamed
 request with one tool per listed model, so tool calling and streaming are proven before a session

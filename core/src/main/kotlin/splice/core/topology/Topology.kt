@@ -248,6 +248,7 @@ public data class ProviderConfig(
             } else {
                 selectedModels.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
             },
+            headWindow = window,
         )
     }
 

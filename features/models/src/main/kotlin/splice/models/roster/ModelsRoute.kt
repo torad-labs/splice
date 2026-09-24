@@ -55,6 +55,7 @@ internal const val MODELS_UNWIRED =
  *  and to every fixture — the fixtures spelled it the console's way, so the two hand-authored
  *  artifacts agreed with each other and disagreed with the daemon. */
 private const val WINDOW_FROM_MODEL = "model"
+private const val WINDOW_FROM_HEAD = "head"
 private const val WINDOW_FROM_RULE = "rule"
 private const val WINDOW_FROM_EXTRA = "extra-window"
 private const val WINDOW_FROM_DEFAULT = "default"
@@ -121,7 +122,7 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                     put("label", entry.label)
                     put("description", entry.description)
                     put("context_window", entry.contextWindow)
-                    put("context_window_source", WINDOW_FROM_MODEL)
+                    put("context_window_source", resolvedWindowSource(entry, catalog))
                     put("resolved", true)
                     put("slot", declared?.firstOrNull { it.id == entry.id }?.slot)
                     put("pinned", isPinned(catalog, entry))
@@ -166,10 +167,22 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
     private fun windowSourceFor(id: String, catalog: ModelCatalog?): String = when {
         catalog == null -> WINDOW_UNKNOWN
         catalog.models.any { it.id == id } -> WINDOW_FROM_MODEL
+        // the head's window replaced every extra window, rule and the default alike
+        catalog.headWindow != null -> WINDOW_FROM_HEAD
         catalog.extraWindows.any { it.id == id } -> WINDOW_FROM_EXTRA
         catalog.windowRules.any { id.startsWith(it.prefix) } -> WINDOW_FROM_RULE
         else -> WINDOW_FROM_DEFAULT
     }
+
+    /** A resolved row's window is the head's when the head declared one and it is the number in force;
+     *  a discovered model whose published ceiling sits under the head's window keeps that ceiling
+     *  (ProviderConfig.headWindow clamps to it), and that number is the model's. */
+    private fun resolvedWindowSource(entry: ModelEntry, catalog: ModelCatalog?): String =
+        if (catalog?.headWindow != null && entry.contextWindow == catalog.headWindow) {
+            WINDOW_FROM_HEAD
+        } else {
+            WINDOW_FROM_MODEL
+        }
 
     private fun windowFor(id: String, catalog: ModelCatalog?): Long? = when {
         catalog == null -> null

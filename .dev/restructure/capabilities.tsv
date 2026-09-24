@@ -2253,3 +2253,4 @@ tools/e2e/docker/upgrade.sh	6bb1e27737fe135c76ed855cecfc8c160a645d2457565ecd0ae3
 features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorAge.kt	067391f796cb53bf6b3fc96ea2ed66704db0e5f9815d42d061a49b220b742889	created		one "how long ago" spelling for doctor sentences (console review 2026-09-24)
 core/src/test/kotlin/splice/core/usage/UsageWarnPlanTest.kt	7334651bc40c4bbc58e1f2cb18ae661079edc29e165b4914ba14a3a5029966ab	created		usage warn reads the plan windows (console review 2026-09-24)
 features/usage/src/test/kotlin/splice/usage/quota/UsageWarnPayloadTest.kt	ab95fb31b334c26d810a5c45e24f9da50fd6b2d1b5479c41004c23ce84e73726	created		usage warn reads the plan windows (console review 2026-09-24)
+features/models/src/test/kotlin/splice/models/roster/ModelsWindowSourceTest.kt	2444fa8779e9856bcc79f9783dab782f5b12dc9d8d5c9d78b539904c9e72accd	created		/api/models names a head-declared window as the head's (console review 2026-09-24)

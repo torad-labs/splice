@@ -25,11 +25,6 @@ export const PROVENANCE_LAYERS = [
 
 export type Provenance = (typeof PROVENANCE_LAYERS)[number];
 
-/** The two verdicts a field box prints. A hot knob applies on the next turn; every other knob
- *  waits for a restart, and the strip cocks until that restart runs. */
-export const HOT_TEXT = 'applies live';
-export const RESTART_TEXT = 'restart to apply';
-
 /** One knob, resolved: its effective value, where that value came from, and whether saving it
  *  needs a restart. */
 export interface KnobDisposition {

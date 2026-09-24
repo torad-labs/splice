@@ -30,9 +30,15 @@ export { dispositions };
 const PAGE_ID = 'doctor';
 const POLL_MS = 60000;
 /** The check's id and its remedy. The widths are ch, so the two racks below stay a grid at every
- *  breakpoint; a rack that does not fit its column scrolls (`.myx-bay-rows`) rather than clipping. */
-const WIDE = 22;
-const NARROW = 10;
+ *  breakpoint; a rack that does not fit its column scrolls (`.myx-bay-rows`) rather than clipping.
+ *  An id runs to `configuration/system-prompt:claude-deepseek` (43 characters) and a remedy is a
+ *  sentence, so the remedy takes the larger share; the full sentence is in the fix column. */
+const CHECK = 32;
+const FIX = 48;
+const NARROW = 8;
+/** The latest version prints its basis beside it, and `n/r unavailable` is 15 characters: at the
+ *  version fields' 10 it clipped to `n/r unavail...`. The three version fields keep their 30ch. */
+const LATEST = 14;
 /** The report's own facts: the field's own name, and its value. Sized to the longest of each the
  *  payload can carry -- `schema_version` at 14 and `2026-09-18T07:45:00Z` at 20. */
 const FACT_KEY = 16;
@@ -74,12 +80,12 @@ export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; se
       {/* NO PER-CELL LABEL: the rack prints its column names once (B9), and this is the rack B9
           measured on ("doctor.png: three x fourteen"). The stack is what made every check two
           lines of type in a 64px row where one line of 16px fits. */}
-      <StripField w={WIDE} value={check.id} mono={false} />
+      <StripField w={CHECK} value={check.id} mono={false} />
       {/* No status field: the holder edge above prints the identical word on every strip (m1
           design review B10). A check with nothing to fix prints the absence glyph in the fix
           cell; the sentence `no fix offered` is what the opened check's note says, which is where
           a Doctor fix's paragraph belongs. */}
-      <StripField w={WIDE} value={fix ?? S.absent} mono={false} />
+      <StripField w={FIX} value={fix ?? S.absent} mono={false} />
     </Strip>
   );
 }
@@ -222,8 +228,8 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
       className="myx-doc"
       {...(sample === undefined ? {} : { 'data-sample': sample })}
     >
-      <header className="myx-doc-head">
-        <h1 className="myx-doc-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
@@ -264,7 +270,7 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
                 className="myx-doc-checks"
                 label={S.checks}
                 count={checks.length}
-                fields={<ColumnNames columns={[{ w: WIDE, label: S.check }, { w: WIDE, label: S.fix }]} />}
+                fields={<ColumnNames columns={[{ w: CHECK, label: S.check }, { w: FIX, label: S.fix }]} />}
               >
                 {groups.flatMap((group) => group.checks).map((check) => (
                   <CheckStrip
@@ -308,7 +314,7 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
                 ariaLabel={S.upgrade}
               >
                 <StripField w={NARROW} label={S.installed} value={shown?.splice.version ?? S.absent} />
-                <StripField w={NARROW} label={S.latest} value={upgrade?.latest ?? S.absent} {...(upgrade === null ? {} : { basis: upgrade.latest_basis })} />
+                <StripField w={LATEST} label={S.latest} value={upgrade?.latest ?? S.absent} {...(upgrade === null ? {} : { basis: upgrade.latest_basis })} />
                 <StripField
                   w={NARROW}
                   label={S.rollback}
@@ -322,7 +328,6 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
             <p className="myx-doc-note">{`${shown === null ? S.absent : attentionCount(checks)} need attention`}</p>
             {/* The draining restart (WC-08), the same control the fleet's head detail mounts. */}
             <DaemonRestart />
-            <Empty text={EMPTIES.capture.text} source={EMPTIES.capture.source} />
           </section>
 
           <section className="myx-doc-section">

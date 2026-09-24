@@ -17,6 +17,8 @@ export const S = {
   provider: 'provider',
   heads: 'heads',
   next: 'next',
+  /** Leads the selector's order, printed once above the provider racks. */
+  order: 'selector order',
   /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
   close: 'close',
 } as const;

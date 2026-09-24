@@ -153,8 +153,8 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
 
   return (
     <div className="myx-sx">
-      <header className="myx-sx-head">
-        <h2 className="myx-sx-title">{S.title}</h2>
+      <header className="myx-page-head">
+        <h2 className="myx-page-title">{S.title}</h2>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         <Reveal label={S.headless}>
           <p className="myx-sx-note">{payload?.note ?? S.registry}</p>
@@ -182,6 +182,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
                 key={group.key}
                 label={`${groupWord}: ${group.key}`}
                 count={group.count}
+                compact
                 actions={<a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a>}
               >
                 {group.rows.map(strip)}
@@ -200,12 +201,13 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
                     key={bucket.start}
                     label={`${pad(new Date(bucket.start).getHours())}:00`}
                     count={bucket.sessions.length}
-                      >
+                    compact
+                  >
                     {bucket.sessions.map(strip)}
                   </Bay>
                 ))}
               {undated.length === 0 ? null : (
-                <Bay label={S.undated} count={undated.length}>
+                <Bay label={S.undated} count={undated.length} compact>
                   {undated.map(strip)}
                 </Bay>
               )}

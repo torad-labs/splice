@@ -28,6 +28,12 @@
    and goal at 1440 and, twice their height, pushed the three labels off the one baseline they
    share. */
 .myx-compose-lines { flex: 1 1 100%; }
+/* A field keeps its ch width until the form is narrower than it, then shrinks to the form: on a
+   390 phone the 40ch repo and goal boxes measured 367px and ran 19px past the paper's inner edge
+   (S12). The field is a flex item, so its min-content floor has to be lifted before the box can
+   take the narrower width. */
+.myx-compose .myx-input { min-width: 0; max-width: 100%; }
+.myx-compose .myx-input-box { max-width: 100%; }
 .myx-compose-lines .myx-input-box { width: 100%; resize: vertical; font-family: var(--font-label); }
 .myx-compose-slots {
   display: flex;

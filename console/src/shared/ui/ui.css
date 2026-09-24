@@ -257,7 +257,27 @@
   background: var(--strip-ink);
   pointer-events: none;
 }
-.myx-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* THE FOCUS RING IS DRAWN INSIDE THE STRIP (S9). Outside it, 1px off the border, it was clipped by
+   the rack: `.myx-bay-rows` scrolls (overflow-x auto, overflow-y hidden) and a strip starts flush at
+   its left edge and, in a compact rack, runs to its right one, so both sides went and the 4px gap
+   let the next strip paint over the bottom. Measured on turns: of the four sides only the top
+   survived, a 2px line. Inset on the strip itself it is still lost on the left, because the holder
+   mark is absolutely positioned and a positioned child paints after its parent's outline (2 of 34
+   rows of the left side carried the full ring). So the ring is an outline on a last child that
+   sits over the padding box: it paints over the mark, the pin and the fields, and nothing outside
+   the strip can clip it. It stands one --hair in from the padding box, two from the border edge,
+   because a packed rack (the turns list, zero gap) paints the next strip's two outer rings over
+   this one's last two rows: flush with the padding box the bottom side kept 2 of 1997 columns. A
+   z-index cannot lift it there, since every virtual row is its own stacking context. */
+.myx-strip:focus-visible { outline: none; }
+.myx-strip:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: var(--hair);
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  pointer-events: none;
+}
 .myx-strip-fields {
   display: flex;
   align-items: stretch;
@@ -854,6 +874,10 @@
   font-family: var(--font-label);
   font-size: var(--text-1);
   width: max-content;
+  /* Cut to its content, but never past its rack: an empty's text is a sentence, not a cell, so on
+     a phone it wraps inside the box instead of running under the rack's edge (S12, measured at 390:
+     accounts' "one login per claude head" ran 61px past the clip, compaction's rules empty 132). */
+  max-width: 100%;
   background: var(--strip);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;

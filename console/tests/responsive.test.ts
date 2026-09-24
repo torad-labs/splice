@@ -16,6 +16,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
+import { revealBy } from '../src/widgets/rail';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const sheet = (rel: string): string => readFileSync(path.join(HERE, '..', rel), 'utf8');
@@ -132,5 +133,57 @@ describe('the phone', () => {
   test('the walls can fail: the phone blocks are real text, not an empty match', () => {
     expect(phone('.myx-x { color: red; }')).toBe('');
     for (const block of [app, rail, rule, ui]) expect(block.length).toBeGreaterThan(40);
+  });
+});
+
+// S12, THE 390 WALKTHROUGH. Five things the phone got wrong, each measured in a browser at 390x844
+// before and after (the row's note carries the numbers). What is pinned here is the declaration or
+// the arithmetic that produced each fix, so a later row cannot drop one while every page renders.
+/** The declarations of the rule whose selector is exactly `selector`, at a line start. Comments go
+ *  first: a note that names the old value would otherwise read as the value. */
+function body(sheetText: string, selector: string): string {
+  const css = sheetText.replace(/\/\*[\s\S]*?\*\//g, '');
+  const at = css.search(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`, 'm'));
+  return at < 0 ? '' : css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+}
+
+describe('the phone at 390', () => {
+  test('an empty wraps its sentence inside the rack instead of running under its edge', () => {
+    expect(body(sheet('src/shared/ui/ui.css'), '.myx-empt')).toMatch(/max-width:\s*100%/);
+  });
+
+  test("team compose's fields shrink to the form", () => {
+    const css = sheet('src/features/team-compose/team-compose.css');
+    expect(body(css, '.myx-compose .myx-input')).toMatch(/min-width:\s*0/);
+    expect(body(css, '.myx-compose .myx-input')).toMatch(/max-width:\s*100%/);
+    expect(body(css, '.myx-compose .myx-input-box')).toMatch(/max-width:\s*100%/);
+  });
+
+  test("projects' cells never shrink below their ch: the strip is at least the bay, not exactly it", () => {
+    const css = sheet('src/pages/projects/projects.css');
+    expect(body(css, '.myx-px-bays .myx-strip')).toMatch(/min-width:\s*100%/);
+    expect(body(css, '.myx-px-bays .myx-strip')).not.toMatch(/(^|[;\s])width:/);
+    // the page rule that brought flex-shrink back over ui.css's `flex: 0 0 auto`
+    expect(body(css, '.myx-px-bays .myx-sfield')).toBe('');
+  });
+
+  test('the board footer scrolls with its board rather than sitting over the page', () => {
+    expect(body(sheet('src/widgets/team-board/board.css'), '.myx-board-footer')).not.toMatch(/position:\s*fixed/);
+  });
+
+  test('the rail brings an out-of-view tab to the middle and leaves a visible one alone', () => {
+    const box = { start: 0, size: 390 };
+    expect(revealBy(box, { start: 100, size: 80 })).toBe(0);
+    // doctor, measured at 390 before the fix: x 1016..1089 in a 0..390 rail
+    expect(revealBy(box, { start: 1016, size: 73 })).toBeCloseTo(1052.5 - 195);
+    // a tab behind the start comes back the other way
+    expect(revealBy(box, { start: -120, size: 60 })).toBe(-90 - 195);
+    // a tab cut by the edge is not in view
+    expect(revealBy(box, { start: 350, size: 80 })).toBe(390 - 195);
+  });
+
+  test('the walls can fail: a missing rule reads as empty, not as a pass', () => {
+    expect(body('.myx-x { color: red; }', '.myx-empt')).toBe('');
+    expect(body(sheet('src/shared/ui/ui.css'), '.myx-empt')).toMatch(/background/);
   });
 });

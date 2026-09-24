@@ -32,10 +32,16 @@
 .myx-key:hover { border-color: var(--strip-ink); }
 
 /* Focus is the world's ring, never the browser's outline, and it is on the BUTTON so a keyboard
-   reader sees the same 2px frame every other focusable thing in the console wears. */
+   reader sees the same 2px frame every other focusable thing in the console wears.
+   IT IS DRAWN INSIDE THE BOX, as the strip's is (S9), and for the same reason: a control can stand
+   flush against a rack's scroller (`.myx-bay-rows`, overflow-x auto), which cuts anything drawn
+   past its edge. Measured on logs: the body capture key, first in its rack, kept 0 of 24 rows of its
+   left side with the ring 1px outside. Every control in this sheet that can sit in a rack (key,
+   input, choice box and option) insets its ring by its own width, which lands it on the box line
+   and the padding's first pixel and clear of the label. */
 .myx-key:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 .myx-key[disabled] {
@@ -109,7 +115,7 @@
 .myx-input-box::placeholder { color: var(--strip-ink-mute); }
 .myx-input-box:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 .myx-input-box[disabled] {
   color: var(--strip-ink-mute);
@@ -223,7 +229,7 @@
   cursor: pointer;
 }
 .myx-choice-box:hover { border-color: var(--strip-ink); }
-.myx-choice-box:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-choice-box:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .myx-choice-box[disabled] { color: var(--strip-ink-mute); cursor: not-allowed; }
 .myx-choice-value {
   font-variant-numeric: tabular-nums;
@@ -266,7 +272,7 @@
 }
 /* The pointer's own position, which is not the same thing as the chosen option. */
 .myx-choice-active { border-color: var(--strip-ink); }
-.myx-choice-option:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-choice-option:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 /* The chosen option is marked the way the comp marks a selected strip: its box line is drawn in
    the strip's own ink rather than the field's grey, and its holder edge prints the word. */
 .myx-choice-chosen { border-color: var(--strip-ink); }

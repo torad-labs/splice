@@ -334,6 +334,19 @@ describe('Choice', () => {
   });
 });
 
+// S9: a control flush against a rack's scroller lost the side of its ring drawn past its edge (the
+// logs body capture key kept 0 of 24 rows of its left side). Measured in a browser; pinned here is
+// that every control that can stand in a rack draws its ring inside its own box.
+describe('the focus ring', () => {
+  for (const selector of ['.myx-key', '.myx-input-box', '.myx-choice-box', '.myx-choice-option']) {
+    test(`${selector} draws its ring inside the box`, () => {
+      const ring = declared(css, `${selector}:focus-visible`);
+      expect(ring.outline).toContain('var(--focus)');
+      expect(parseFloat(ring['outline-offset'] ?? '0')).toBeLessThan(0);
+    });
+  }
+});
+
 describe('Flag', () => {
   test('is a switch whose two states print different words', () => {
     const on = render(h(Flag, { on: true, onLabel: 'following', offLabel: 'paused', onChange: () => undefined }));

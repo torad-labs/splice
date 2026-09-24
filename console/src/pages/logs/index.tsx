@@ -9,13 +9,13 @@
 // in view; not following keeps the reader's place and prints how many lines arrived while they
 // were away. A rotated log REPLACES the view instead of pretending the whole window is new, and
 // the header says it restarted.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyFilter, advance, headsPresent, levelsPresent, startLogsPolling, setLogHead, setLogTail, useLogs } from '@entities/logs';
 import type { LogFilter, LogLevel, LogTail as Tail, LogsPayload } from '@entities/logs';
 import type { CaptureState } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
 import { fetchCapture, putCapture, useCapture } from '@entities/perf';
-import { Bay, Empty, Figure, HolderEdge } from '@shared/ui';
+import { Bay, Empty, HolderEdge } from '@shared/ui';
 import { Choice } from '@shared/controls';
 import { LogTail } from '@widgets/log-tail';
 import { RequestDrawer } from '@widgets/waterfall';
@@ -58,7 +58,7 @@ export function LogsBoard({
 }: LogsBoardProps) {
   if (locked) return <Empty text="console locked" source="management key" />;
   // A capture fixture IS the data: a live read that failed behind it must not blank the page.
-  if (error !== null && payload === null) return <Empty text="log tail unreadable" source={error} />;
+  if (error !== null && payload === null) return <Empty text="log unreadable" source={error} />;
 
   return (
     <div
@@ -66,7 +66,7 @@ export function LogsBoard({
       {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
     >
       <header className="myx-page-head myx-lg-head">
-        <h2 className="myx-page-title">{S.title}</h2>
+        <h1 className="myx-page-title">{S.title}</h1>
         {/* THE FOUR CHOICES ARE THE WORLD'S CONTROL (M1-103). These were four native `<select>`s,
             which Choice's own header names as the reason it exists: a select's POPUP is the OS's
             window with the OS's font and scrollbar, and `appearance: none` cannot reach inside it.
@@ -79,7 +79,7 @@ export function LogsBoard({
             Keyboard is the native select's: Enter, Space and the arrows open and move, Home and End
             jump, Escape closes, and a printable character type-aheads. */}
         <Choice
-          label="head"
+          label={S.head}
           value={head}
           options={heads.map((entry) => ({ value: entry.key, label: entry.label }))}
           onChange={(next) => onHead?.(next)}
@@ -94,35 +94,39 @@ export function LogsBoard({
           // review read `2…` where 200 stood
           w={12}
         />
-        <Choice
-          label={S.tag}
-          value={filter.head ?? ''}
-          options={[{ value: '', label: S.all }, ...tags.map((tag) => ({ value: tag, label: tag }))]}
-          onChange={(next) => onFilter?.({ ...filter, head: next === '' ? null : next })}
-          w={16}
-        />
-        <Choice
-          label={S.level}
-          value={filter.level ?? ''}
-          options={[{ value: '', label: S.all }, ...levels.map((level) => ({ value: level, label: level }))]}
-          onChange={(next) => onFilter?.({ ...filter, level: next === '' ? null : (next as LogLevel) })}
-          w={10}
-        />
-        {reset ? <Figure value={1} unit="rotated" basis="measured" /> : null}
+        {/* A filter prints only when it has something to choose: a head's own log carries one tag
+            (its own), and the daemon marks a level on few lines or none, so each box offered `all`
+            and one option that changed nothing. */}
+        {tags.length > 1 ? (
+          <Choice
+            label={S.tag}
+            value={filter.head ?? ''}
+            options={[{ value: '', label: S.all }, ...tags.map((tag) => ({ value: tag, label: tag }))]}
+            onChange={(next) => onFilter?.({ ...filter, head: next === '' ? null : next })}
+            w={16}
+          />
+        ) : null}
+        {levels.length > 0 ? (
+          <Choice
+            label={S.level}
+            value={filter.level ?? ''}
+            options={[{ value: '', label: S.all }, ...levels.map((level) => ({ value: level, label: level }))]}
+            onChange={(next) => onFilter?.({ ...filter, level: next === '' ? null : (next as LogLevel) })}
+            w={10}
+          />
+        ) : null}
+        {reset ? <HolderEdge state="amber" label={S.rotated} /> : null}
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
-      <Bay
-        label={S.tail}
-        {...(payload === null ? {} : { count: payload.lines.length })}
-        empty={{ text: 'no tail read yet', source: '/api/logs/{head}' }}
-      >
+      <Bay label={S.log} {...(payload === null ? {} : { count: payload.lines.length })}>
         <LogTail
           payload={payload}
           filter={filter}
           appended={appended}
           reset={reset}
           follow={follow}
+          tagged={tags.length > 1}
           onFilter={onFilter}
           onFollow={onFollow}
         />
@@ -179,6 +183,8 @@ export default function LogsPage() {
   const [tail, setTail] = useState(200);
   const [filter, setFilter] = useState<LogFilter>({ head: null, level: null, substring: '' });
   const [follow, setFollow] = useState(true);
+  // Read inside the payload effect, which must not re-run when follow flips.
+  const following = useRef(follow);
   const [cursor, setCursor] = useState<{ tail: Tail | null; appended: number; reset: boolean }>({
     tail: null,
     appended: 0,
@@ -227,12 +233,15 @@ export default function LogsPage() {
   const payload = fixture?.payload ?? store.data;
 
   // The cursor is what makes follow mode and the "N new lines" count honest: it says which lines
-  // of this payload the reader has already seen.
+  // of this payload the reader has already seen. The count is what arrived SINCE the reader paused,
+  // summed across polls: it held one poll's arrivals before, so it read 0 five seconds after a burst,
+  // and it counted the whole first read as new.
   useEffect(() => {
     if (payload === null) return;
     setCursor((previous) => {
       const next = advance(previous.tail, payload);
-      return { tail: next.tail, appended: next.appended.length, reset: next.reset };
+      const unseen = following.current || previous.tail === null ? 0 : previous.appended + next.appended.length;
+      return { tail: next.tail, appended: unseen, reset: next.reset };
     });
   }, [payload]);
 
@@ -263,8 +272,17 @@ export default function LogsPage() {
       error={store.error}
       sample={sample?.name}
       onFilter={setFilter}
-      onFollow={setFollow}
-      onHead={setChosen}
+      onFollow={(next) => {
+        following.current = next;
+        setFollow(next);
+        if (next) setCursor((previous) => ({ ...previous, appended: 0 }));
+      }}
+      onHead={(next) => {
+        // A tag or level picked on another head's log would filter this one while its box is
+        // hidden (a box prints only when it has a choice), so the filters start over.
+        setChosen(next);
+        setFilter((previous) => ({ ...previous, head: null, level: null }));
+      }}
       onTail={(next) => {
         setTail(next);
         setLogTail(next);

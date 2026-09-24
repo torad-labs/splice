@@ -7,11 +7,12 @@
 // ellipsis instead of wrapping.
 //
 // Severity is the holder edge AND a printed word (the world's rule): an ERROR line carries a red
-// edge with `error` printed on it, a WARN line amber, everything the daemon left unmarked grey.
-// Color never carries the state alone.
+// edge with `error` printed on it, a WARN line amber, everything the daemon left unmarked grey and
+// wordless. Color never carries the state alone. There is no level column: it printed the edge's
+// word a second time, and `-` on the 996 of 1,000 live lines the daemon leaves unmarked.
 import { useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { headOf, levelOf, timeOf } from '@entities/logs';
+import { dateOf, headOf, levelOf, timeOf } from '@entities/logs';
 import type { LogFilter, LogLevel, LogsPayload } from '@entities/logs';
 import { Fault, Flag } from '@shared/controls';
 import { Empty, Figure, Strip, StripField } from '@shared/ui';
@@ -59,29 +60,48 @@ export function messageOf(line: string): string {
    at 1536 every long line was cut at the bay's edge (`first_byt…`) and read only by scrolling. The
    virtualizer measures each row, so a wrapped line takes its own height; the cell declares a modest
    ch count and takes the rack's slack, and the other three keep the grid. */
-const COLS = { time: 11, head: 18, level: 8, text: 60 } as const;
+const COLS = { time: 15, head: 18, text: 60 } as const;
 
-/** The rack's column names, once, on a strip of the same grid as the lines under it. */
-export function LogColumns() {
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** The reader's own day as the daemon stamps it (local, `YYYY-MM-DD`). */
+function localDay(now: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** When a line was written: the time for a line from today, `sep 22 10:47:14` for any other day.
+ *  A tail spans days (the daemon's log rotates by size), and a time alone read 21:48 above 01:16
+ *  with nothing to say a midnight fell between them. */
+export function whenOf(line: string, now = new Date()): string {
+  const time = timeOf(line);
+  if (time === null) return '';
+  const day = dateOf(line);
+  if (day === null || day === localDay(now)) return time;
+  return `${MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))} ${time}`;
+}
+
+/** The rack's column names, once, on a strip of the same grid as the lines under it. The head
+ *  column prints only when the tail carries more than one head's lines: a head's own log is all
+ *  its own tag, and the column repeated the head picked above it on every row. */
+export function LogColumns({ tagged = true }: { tagged?: boolean }) {
   return (
-    <Strip className="myx-lt-cols" edge="grey" edgeLabel={S.line} ariaLabel="log columns">
+    <Strip className="myx-lt-cols" edge="grey" edgeLabel="" ariaLabel="log columns">
       <StripField w={COLS.time} label={S.time} value="" />
-      <StripField w={COLS.head} label={S.head} value="" />
-      <StripField w={COLS.level} label={S.level} value="" />
+      {tagged ? <StripField w={COLS.head} label={S.head} value="" /> : null}
       <StripField w={COLS.text} label={S.text} value="" />
     </Strip>
   );
 }
 
-export function LogLine({ line }: { line: string }) {
+export function LogLine({ line, tagged = true }: { line: string; tagged?: boolean }) {
   const level = levelOf(line);
   // ariaLabel keeps the WHOLE line: the cell drops what the row prints beside it, and a screen
   // reader reading the row aloud should still get the daemon's line as the daemon wrote it.
   return (
-    <Strip edge={edgeOfLevel(level)} edgeLabel={level ?? S.line} ariaLabel={line.slice(0, 120)}>
-      <StripField w={COLS.time} value={timeOf(line) ?? '-'} />
-      <StripField w={COLS.head} value={headOf(line) ?? '-'} mono={false} />
-      <StripField w={COLS.level} value={level ?? '-'} mono={false} />
+    <Strip edge={edgeOfLevel(level)} edgeLabel={level ?? ''} ariaLabel={line.slice(0, 120)}>
+      <StripField w={COLS.time} value={whenOf(line)} />
+      {tagged ? <StripField w={COLS.head} value={headOf(line) ?? ''} mono={false} /> : null}
       <StripField w={COLS.text} value={messageOf(line)} />
     </Strip>
   );
@@ -94,6 +114,8 @@ export interface LogTailProps {
   appended: number;
   reset: boolean;
   follow: boolean;
+  /** Whether the tail carries more than one head's lines, so the head column says something. */
+  tagged?: boolean;
   error?: string | null;
   /** `| undefined` on the optional callbacks: this tree runs `exactOptionalPropertyTypes`, so a
    *  caller that forwards its own optional prop must be able to pass the undefined through. */
@@ -101,7 +123,7 @@ export interface LogTailProps {
   onFollow?: ((follow: boolean) => void) | undefined;
 }
 
-export function LogTail({ payload, filter, appended, reset, follow, error = null, onFilter, onFollow }: LogTailProps) {
+export function LogTail({ payload, filter, appended, reset, follow, tagged = true, error = null, onFilter, onFollow }: LogTailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const filtered = payload === null ? [] : payload.lines;
 
@@ -125,7 +147,7 @@ export function LogTail({ payload, filter, appended, reset, follow, error = null
   return (
     <div className="myx-lt">
       <header className="myx-lt-head">
-        <StripField w={44} label={S.path} value={payload?.path ?? '-'} />
+        <StripField w={44} label={S.path} value={payload?.path ?? ''} />
         {onFilter === undefined ? null : (
           <div className="myx-lt-controls">
             <label className="myx-lt-field">
@@ -150,14 +172,19 @@ export function LogTail({ payload, filter, appended, reset, follow, error = null
         {onFollow === undefined ? null : (
           <Flag on={follow} onLabel={S.follow} offLabel={S.paused} onChange={onFollow} />
         )}
-        <Figure value={appended} unit={S.newLines} basis="measured" />
+        {/* Only while paused: following, every line is already in view, and the count read `200 new
+            lines` on the first read of a tail the reader had just opened. */}
+        {follow ? null : <Figure value={appended} unit={S.newLines} basis="measured" />}
       </header>
 
       {filtered.length === 0 ? (
-        <Empty text="no lines in this tail" source={payload?.path ?? '/api/logs/{head}'} />
+        <Empty
+          text={payload === null ? 'reading the log' : 'no lines to show'}
+          source={payload === null ? "the last lines of this head's log show here" : `${payload.path} is empty, or no line matches the filters`}
+        />
       ) : (
         <>
-        <LogColumns />
+        <LogColumns tagged={tagged} />
         <div className="myx-lt-scroll" ref={scrollRef}>
           <div className="myx-lt-inner" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((item) => (
@@ -171,7 +198,7 @@ export function LogTail({ payload, filter, appended, reset, follow, error = null
                 // translated row still sits at 0 and every value was pushed to its cell's floor
                 style={{ top: item.start }}
               >
-                <LogLine line={filtered[item.index]} />
+                <LogLine line={filtered[item.index]} tagged={tagged} />
               </div>
             ))}
           </div>

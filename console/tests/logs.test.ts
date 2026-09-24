@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headOf, levelOf, timeOf } from '../src/entities/logs';
-import { LogColumns, LogLine, edgeOfLevel, messageOf } from '../src/widgets/log-tail';
+import { LogColumns, LogLine, edgeOfLevel, messageOf, whenOf } from '../src/widgets/log-tail';
 
 const LINE = '[2026-09-18 01:14:02] [claude-deepseek] turn compact=false model=deepseek-flash ok';
 
@@ -65,8 +65,15 @@ describe('the rack prints its column names once', () => {
     expect(labels(renderToStaticMarkup(React.createElement(LogLine, { line: LINE })))).toEqual([]);
   });
 
-  test('the column strip prints all four, in the row order', () => {
-    expect(labels(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['time', 'head', 'level', 'text']);
+  test('the column strip prints its names in the row order, with no level column', () => {
+    // The level is the edge's word; a column beside it printed it twice, and `-` on unmarked lines.
+    expect(labels(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['time', 'head', 'message']);
+  });
+
+  test('a head\'s own log drops the head column from the names and from every row', () => {
+    expect(labels(renderToStaticMarkup(React.createElement(LogColumns, { tagged: false })))).toEqual(['time', 'message']);
+    const row = renderToStaticMarkup(React.createElement(LogLine, { line: LINE, tagged: false }));
+    expect(row.replace(/\saria-label="[^"]*"/g, '')).not.toContain('claude-deepseek');
   });
 });
 
@@ -126,5 +133,33 @@ describe('the edge is the daemon severity', () => {
     const line = '[2026-09-18 01:14:05] [claude-deepseek] turn ERROR conn-reset latency=2827ms';
     expect(levelOf(line)).toBe('error');
     expect(edgeOfLevel(levelOf(line))).toBe('red');
+  });
+});
+
+// A LINE FROM ANOTHER DAY SAYS WHICH (console review, 2026-09-24). daemon.log rotates by size, so a
+// tail spans days, and the time alone read 21:48:51 above 01:16:00 with no sign a midnight fell
+// between them. The daemon dates every line for exactly this (DaemonBoundary.kt); the row now
+// prints the day for any line not from the reader's today.
+describe('a row says the day when it is not today', () => {
+  const noon = new Date(2026, 8, 24, 12, 0, 0);
+
+  test('today prints the time alone', () => {
+    expect(whenOf('[2026-09-24 01:16:00] [claudex] ok', noon)).toBe('01:16:00');
+  });
+
+  test('another day prints the day before the time', () => {
+    expect(whenOf('[2026-09-22 21:48:51] [claudex] ok', noon)).toBe('sep 22 21:48:51');
+    expect(whenOf('[2025-12-31 23:59:59] [claudex] ok', noon)).toBe('dec 31 23:59:59');
+  });
+
+  test('a line with no timestamp prints no time', () => {
+    expect(whenOf('    at Module._load (node:internal/modules/cjs/loader:1285:25)', noon)).toBe('');
+  });
+
+  test('an unmarked line has a quiet edge with no word, and a marked one prints its level', () => {
+    const edgeWords = (html: string) => [...html.matchAll(/class="myx-edge-label">([^<]*)</g)].map((m) => m[1]);
+    expect(edgeWords(renderToStaticMarkup(React.createElement(LogLine, { line: LINE })))).not.toContain('line');
+    const marked = '[2026-09-18 01:14:05] [claude-deepseek] turn ERROR conn-reset';
+    expect(edgeWords(renderToStaticMarkup(React.createElement(LogLine, { line: marked })))).toEqual(['error']);
   });
 });

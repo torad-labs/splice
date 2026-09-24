@@ -142,6 +142,14 @@ export function timeOf(line: string): string | null {
   return match === null ? null : match[2];
 }
 
+/** The day the daemon stamped on the line as `YYYY-MM-DD`, or null when it carries no timestamp.
+ *  The daemon dates every line because one daemon.log spans days (DaemonBoundary.kt); the tail
+ *  prints the day beside the time for any line not from today. */
+export function dateOf(line: string): string | null {
+  const match = TIME.exec(line);
+  return match === null ? null : match[1].slice(0, 10);
+}
+
 /** The severity the daemon marked on the line, or null when it marked none. */
 export function levelOf(line: string): LogLevel | null {
   const match = SEVERITY.exec(line);

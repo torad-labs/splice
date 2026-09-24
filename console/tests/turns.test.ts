@@ -315,10 +315,12 @@ describe('log lines', () => {
     expect(out).toContain('myx-edge-red'); // the severity is also the edge, and the word is printed
   });
 
-  test('an unmarked line is grey and says it was not marked, never `info`', () => {
+  test('an unmarked line is grey and wordless, never `info`', () => {
+    // It printed `-` in a level column and `line` on its edge; the grey edge alone says unmarked.
     const out = render(h(LogLine, { line: '[2026-09-18 01:14:01] [claudex] turn latency=3052ms ok' }));
     expect(out).toContain('myx-edge-grey');
-    expect(out).toContain('>-<');
+    expect(out).not.toContain('>info<');
+    expect(out).not.toContain('>-<');
   });
 
   test('the filter model reads tags, levels and substrings', () => {
@@ -354,8 +356,22 @@ describe('logs board', () => {
 
   test('an empty tail names the path it read', () => {
     const out = board();
-    expect(out).toContain('no lines in this tail');
+    expect(out).toContain('no lines to show');
     expect(out).toContain('/home/user/.splice/logs/daemon.log');
+    expect(out, 'an empty rack gives guidance, not a route').not.toContain('/api/');
+  });
+
+  test('a filter box prints only when it has a choice to offer', () => {
+    // A head's own log carries one tag and, usually, no level: each box offered `all` and nothing.
+    expect(board()).not.toContain('>tag<');
+    expect(board()).not.toContain('>level<');
+    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>tag<');
+    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>level<');
+  });
+
+  test('the new-lines count prints while paused and never while following', () => {
+    expect(board({ follow: true, appended: 200 })).not.toContain('new lines');
+    expect(board({ follow: false, appended: 12 })).toContain('new lines');
   });
 
   test('the drawer prints the tailed head\'s capture, and never another head\'s', () => {

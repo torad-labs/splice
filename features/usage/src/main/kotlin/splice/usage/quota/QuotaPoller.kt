@@ -10,6 +10,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
@@ -77,16 +78,23 @@ public class QuotaPoller(
             if (stopped || job !== launched) return
             recordRestart()
         }
+        // Every value in a quota log line goes through LogSafe (kt-log-escapes-caller-input): the failure
+        // text and the vendor's plan name arrive from outside, and a newline in either would forge a line.
         val why = SafeFailureText.render(cause)
         if (n <= MAX_RESTARTS) {
-            log("[$head][quota] loop died: $why — restarting ($n/$MAX_RESTARTS)\n")
+            val restarts = "$n/$MAX_RESTARTS"
+            log(
+                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)} — " +
+                    "restarting (${LogSafe.str(restarts)})\n",
+            )
             synchronized(lifecycle) {
                 if (!stopped && job === launched) launchSupervised()
             }
         } else {
+            val budget = "$MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m"
             log(
-                "[$head][quota] loop died: $why — restart budget exhausted " +
-                    "($MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m); probe permanently down\n",
+                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)} — restart budget exhausted " +
+                    "(${LogSafe.str(budget)}); probe permanently down\n",
             )
         }
     }
@@ -106,7 +114,10 @@ public class QuotaPoller(
             .onFailure { failure ->
                 if (failureLogged.compareAndSet(false, true)) {
                     val why = SafeFailureText.render(failure)
-                    log("[$head][quota] usage probe failed ($why) — bars keep the last snapshot\n")
+                    log(
+                        "[${LogSafe.str(head)}][quota] usage probe failed (${LogSafe.str(why)}) — " +
+                            "bars keep the last snapshot\n",
+                    )
                 }
             }
     }
@@ -117,7 +128,8 @@ public class QuotaPoller(
         if (firstLogged.compareAndSet(false, true)) {
             val five = snapshot.fiveHour?.let { "5h ${it.usedPercent.toInt()}%" } ?: "5h n/a"
             val seven = snapshot.sevenDay?.let { "7d ${it.usedPercent.toInt()}%" } ?: "7d n/a"
-            log("[$head][quota] $five, $seven${snapshot.plan?.let { " (plan $it)" }.orEmpty()}\n")
+            val plan = snapshot.plan?.let { " (plan $it)" }.orEmpty()
+            log("[${LogSafe.str(head)}][quota] ${LogSafe.str(five)}, ${LogSafe.str(seven)}${LogSafe.str(plan)}\n")
         }
     }
 }

@@ -124,6 +124,16 @@
     },
     { "task": "prTitle", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
     {
+      "task": "census",
+      "why": "Every tracked product path has a capabilities.tsv row with a disposition, the denominator taken from git ls-files rather than from the census. It was run by hand until 2026-09-24 and missed twice: three e2e docker files (train 1) and eight console files (#220), each passing its PR's gate unclaimed.",
+      "command": ["bun", ".dev/restructure/census.ts"]
+    },
+    {
+      "task": "censusSelftest",
+      "why": "The census's own red arms (an unclaimed path, a pending row, a relocate whose source still exists, ...), so the leg above cannot pass because the checker lost its ability to find anything.",
+      "command": ["bun", ".dev/restructure/census.ts", "--selftest"]
+    },
+    {
       "task": "attribution",
       "why": "splice is public: no commit HEAD reaches carries a Claude-Session trailer, a claude.ai session URL, a Co-Authored-By for noreply@anthropic.com or a Generated-with-Claude-Code line. The whole history is scanned, not the PR's commits, because a branch cut from the pre-rewrite tip carries the old attributed commits back in; a shallow CI clone is deepened blobless first and an unreadable history fails.",
       "command": ["bun", "tools/gate", "attribution"]

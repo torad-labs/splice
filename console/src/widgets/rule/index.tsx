@@ -196,7 +196,7 @@ export function Rule() {
 
   return (
     <header className="myx-rule">
-      <h1 className="myx-rule-cell myx-rule-wordmark">{S.wordmark}</h1>
+      <p className="myx-rule-cell myx-rule-wordmark">{S.wordmark}</p>
 
       <p className="myx-rule-cell myx-rule-clocks">
         <span className="myx-rule-clock">{local}</span>

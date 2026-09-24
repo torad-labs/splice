@@ -191,7 +191,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
   return (
     <div className="myx-px">
       <header className="myx-page-head">
-        <h2 className="myx-page-title">{S.title}</h2>
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>

@@ -29,7 +29,7 @@ export function BoardHeader({ board }: { board: TeamPayload }) {
       <StripField w={HEAD_COLS[0]} label={S.team} value={board.team.name} mono={false} />
       <StripField w={HEAD_COLS[1]} label={S.goal} value={board.team.goal} mono={false} />
       <StripField w={HEAD_COLS[2]} label={S.repo} value={board.team.repo} mono={false} />
-      <StripField w={HEAD_COLS[3]} label={S.slots} value={`${board.team.slots.length} slots, ${board.team.slots.filter((s) => s.session !== null).length} bound`} mono={false} />
+      <StripField w={HEAD_COLS[3]} label={S.slots} value={`${board.team.slots.length} ${board.team.slots.length === 1 ? 'slot' : 'slots'}, ${board.team.slots.filter((s) => s.session !== null).length} bound`} mono={false} />
       <StripField w={HEAD_COLS[4]} label={S.leadDriving} value={leadSlot?.session ?? 'none'} mono={false} />
     </Strip>
   );

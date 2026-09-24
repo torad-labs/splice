@@ -176,7 +176,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
   return (
     <div className="myx-sx">
       <header className="myx-page-head">
-        <h2 className="myx-page-title">{S.title}</h2>
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         <Reveal label={S.headless}>
           <p className="myx-sx-note">{payload?.note ?? S.registry}</p>

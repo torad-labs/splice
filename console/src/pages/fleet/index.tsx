@@ -151,7 +151,9 @@ function Pool({ head, payload, nowMs }: { head: HeadStatus; payload: AccountsSta
   return (
     <>
       {next !== null ? (
-        <p className="myx-fleet-note">{`${S.nextTarget} ${next.label}, ${next.rule}`}</p>
+        // The rule in brackets only when it is not the label itself: an account labelled `primary`
+        // chosen because it is primary printed `next target primary, primary` (walkthrough polish).
+        <p className="myx-fleet-note">{next.label === next.rule ? `${S.nextTarget} ${next.label}` : `${S.nextTarget} ${next.label} (${next.rule})`}</p>
       ) : pooled ? (
         <Empty text={EMPTIES.noneAvailable.text} source={EMPTIES.noneAvailable.source} />
       ) : null}

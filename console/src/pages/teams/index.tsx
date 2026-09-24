@@ -155,7 +155,7 @@ export function TeamList({ teams, opened = null, onOpen }: {
           <StripField w={LIST_COLS[0]} label={S.name} value={team.name} mono={false} />
           <StripField w={LIST_COLS[1]} label={S.goal} value={team.goal} mono={false} />
           <StripField w={LIST_COLS[2]} label={S.repo} value={team.repo} mono={false} />
-          <StripField w={LIST_COLS[3]} label={S.slots} value={`${team.slots.length} slots, ${team.slots.filter((slot) => slot.session !== null).length} bound`} mono={false} />
+          <StripField w={LIST_COLS[3]} label={S.slots} value={`${team.slots.length} ${team.slots.length === 1 ? 'slot' : 'slots'}, ${team.slots.filter((slot) => slot.session !== null).length} bound`} mono={false} />
           <StripField w={LIST_COLS[4]} label={S.state} value={team.archived ? S.archived : S.live} mono={false} />
         </Strip>
       ))}

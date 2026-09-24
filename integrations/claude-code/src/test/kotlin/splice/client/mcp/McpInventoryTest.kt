@@ -16,6 +16,7 @@ import java.nio.file.Path
 class McpInventoryTest {
 
     private val canonical: Path = Path.of("/home/.claude.json")
+    private val headHome: Path = Path.of("/home/.claude-bonsai")
 
     private fun entry(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 
@@ -39,14 +40,14 @@ class McpInventoryTest {
         overrides: Map<McpSourceKind, McpSourceReader> = emptyMap(),
         plan: JsonObject = entry("{}"),
         readerMap: Map<McpSourceKind, McpSourceReader> = readers(overrides),
-    ) = McpInventory(readerMap, canonical, McpGlobalPlan { sharing().plan(plan) })
+    ) = McpInventory(readerMap, canonical, McpGlobalPlan { sharing().plan(plan) }, setOf(headHome))
 
     @Test
     fun `deleting one kind reader makes the census refuse rather than under-report`() {
         val incomplete = readers().toMutableMap()
         incomplete.remove(McpSourceKind.PLUGIN_INLINE)
         val ex = assertThrows(IllegalStateException::class.java) {
-            McpInventory(incomplete, canonical, McpGlobalPlan { sharing().plan(entry("{}")) })
+            McpInventory(incomplete, canonical, McpGlobalPlan { sharing().plan(entry("{}")) }, emptySet())
         }
         assertTrue(ex.message!!.contains("PLUGIN_INLINE"), ex.message)
     }
@@ -85,6 +86,38 @@ class McpInventoryTest {
         val d = inv.census().dispositioned.single()
         assertEquals(McpDisposition.EXCLUDED, d.disposition)
         assertTrue(d.reason.contains("different Claude Code identity"), d.reason)
+    }
+
+    // v0.4.0 mcp review: a head that shares mcps gets its `.claude.json` servers written from the
+    // canonical home at launch, so a server found there is this daemon's own copy, never another
+    // identity's. It takes the canonical plan's answer, and the reason says it is the copy.
+    private fun headCopy(name: String, entryJson: String, plan: String): McpDispositioned {
+        val reg = McpRegistration(McpSourceKind.GLOBAL, name, headHome.resolve(".claude.json"), null, entry(entryJson))
+        val inv = inventory(mapOf(McpSourceKind.GLOBAL to stub(McpSourceKind.GLOBAL, listOf(reg))), entry(plan))
+        return inv.census().dispositioned.single()
+    }
+
+    @Test
+    fun `a head's copy of a hosted server is migrated, and the reason names the copy`() {
+        val copied = """{"type":"http","url":"http://127.0.0.1:3096/mcp/exa"}"""
+        val d = headCopy("exa", copied, """{"exa":{"command":"npx"}}""")
+        assertEquals(McpDisposition.MIGRATED, d.disposition)
+        assertTrue(d.reason.contains("head's copy"), d.reason)
+    }
+
+    @Test
+    fun `a head's copy of a server hosting leaves as declared carries the plan's own reason`() {
+        val declared = """{"command":"node","cwd":"/x"}"""
+        val d = headCopy("scoped", declared, """{"scoped":$declared}""")
+        assertEquals(McpDisposition.EXCLUDED, d.disposition)
+        assertTrue(d.reason.contains("head's copy") && d.reason.contains("cwd"), d.reason)
+    }
+
+    @Test
+    fun `a server only in a head's copy is excluded as absent from the canonical home, not as a race`() {
+        val d = headCopy("added", """{"command":"npx"}""", "{}")
+        assertEquals(McpDisposition.EXCLUDED, d.disposition)
+        assertTrue(d.reason.contains("not among the canonical home's servers"), d.reason)
     }
 
     @Test

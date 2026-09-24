@@ -71,7 +71,7 @@ class HeadServerCapacityTest {
     // maxRetries = 1: V4-61 makes a 429 with budget left wait the 15s floor in REAL time before
     // retrying; these tests need the ARM that follows exhaustion, not the schedule (:upstream
     // pins the schedule), so the budget is a single attempt and the arm is immediate.
-    private val upstreamClient = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1)
+    private val upstreamClient = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1)
     private val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
     private lateinit var tmp: java.nio.file.Path
 
@@ -429,7 +429,7 @@ class HeadServerCapacityTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 }),
                 log = {},
                 // V4-80: a tracker, because the defect is only observable through one — without a

@@ -106,7 +106,7 @@ class OpenAiResponsesTest {
  *  another module test source set and this module cannot see it. Small on purpose: this module has
  *  exactly one head shape, so there is nothing here to share with a second rig. */
 private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
-    upstream = UpstreamClient(5_000, 30_000, 2),
+    upstream = UpstreamClient(30_000, 2),
     inferenceToken = "test-inference-token",
     operatorToken = "test-operator-token",
     gate = InflightGate({ 0 }),

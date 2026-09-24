@@ -94,7 +94,7 @@ class HeadServerStopDrainTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 60_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 1),
                 gate = gate,
                 log = {},
             ),

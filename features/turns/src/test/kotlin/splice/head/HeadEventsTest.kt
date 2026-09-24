@@ -240,7 +240,7 @@ private class Rig {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(firstByteTimeoutMs = 5_000L, totalTimeoutMs = 30_000L, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
             quota = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
             seams = HeadDeps.HeadSeams(events = events),
         ).copy(stores = headStores(tmp).copy(perfStats = PerfStats(perfFile))),

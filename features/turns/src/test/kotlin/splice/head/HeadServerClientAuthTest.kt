@@ -141,7 +141,7 @@ class HeadServerClientAuthTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
                 log = log,
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),

@@ -63,7 +63,6 @@ class QuotaExhaustionIs429Test {
     )
 
     private fun clientOver(engine: MockEngine) = UpstreamClient(
-        firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 5_000,
         maxRetries = 1,
         client = HttpClient(engine),

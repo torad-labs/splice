@@ -346,7 +346,7 @@ class MidStreamTearContinuesTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 10_000, totalTimeoutMs = 60_000, maxRetries = 4),
+                upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 4),
                 gate = InflightGate({ 4 }),
                 log = { line -> journal.add(line) },
             ).copy(

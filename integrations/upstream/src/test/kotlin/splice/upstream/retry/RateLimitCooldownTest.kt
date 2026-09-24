@@ -454,7 +454,6 @@ class RateLimitCooldownBudgetTest {
             respond("fine", HttpStatusCode.OK, headersOf())
         }
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
@@ -490,7 +489,6 @@ class RateLimitCooldownBudgetTest {
             respond("busy", HttpStatusCode.ServiceUnavailable, headersOf())
         }
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
@@ -526,7 +524,6 @@ class RateLimitCooldownBudgetTest {
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "5301"))
         }
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
@@ -566,7 +563,6 @@ class RateLimitCooldownBudgetTest {
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "1"))
         }
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
@@ -600,7 +596,6 @@ class RateLimitCooldownBudgetTest {
                 respond("busy", status, headersOf("Retry-After", "30"))
             }
             val client = UpstreamClient(
-                firstByteTimeoutMs = 5_000L,
                 totalTimeoutMs = 60_000L,
                 maxRetries = 3,
                 client = HttpClient(engine),
@@ -634,7 +629,6 @@ class RateLimitCooldownBudgetTest {
             }
             val cooldown = RateLimitCooldown(ElapsedClock { 0L })
             val client = UpstreamClient(
-                firstByteTimeoutMs = 5_000L,
                 totalTimeoutMs = 60_000L,
                 maxRetries = 3,
                 client = HttpClient(engine),
@@ -674,7 +668,6 @@ class RateLimitCooldownOuterTurnTest {
             respond("provider-specific failure", HttpStatusCode.ServiceUnavailable, headersOf())
         }
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
@@ -711,7 +704,6 @@ class RateLimitCooldownOuterTurnTest {
                 }
             }
             val client = UpstreamClient(
-                firstByteTimeoutMs = 5_000L,
                 totalTimeoutMs = 5_000L,
                 maxRetries = 3,
                 client = HttpClient(engine),

@@ -364,7 +364,7 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
         // or the swap stays invisible.
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(firstByteTimeoutMs = 5_000L, totalTimeoutMs = 30_000L, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
             log = logs::add,
             policy = HeadDeps.HeadPolicy(maxRequestBytes = 2_048),
             quota = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),

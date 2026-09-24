@@ -109,7 +109,7 @@ class HeadServerDetachedStopOrderTest {
         waiter: Waiter,
     ): HeadDeps = headDeps(
         tmp = tmp,
-        upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 1),
+        upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 1),
         gate = gate,
         log = { lines += it },
         seams = HeadDeps.HeadSeams(waiter = waiter),

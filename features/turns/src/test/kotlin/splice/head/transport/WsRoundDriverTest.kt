@@ -297,7 +297,7 @@ class WsRoundDriverTest {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
             log = log,
             seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(2)),
         ).copy(stores = headStores(tmp, suffix = "-${++built}")),

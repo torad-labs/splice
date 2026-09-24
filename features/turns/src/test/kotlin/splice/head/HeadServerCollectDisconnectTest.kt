@@ -75,7 +75,6 @@ class HeadServerCollectDisconnectTest {
             deps = headDeps(
                 tmp = tmp,
                 upstream = UpstreamClient(
-                    firstByteTimeoutMs = 600_000,
                     totalTimeoutMs = 900_000,
                     maxRetries = 2,
                 ),

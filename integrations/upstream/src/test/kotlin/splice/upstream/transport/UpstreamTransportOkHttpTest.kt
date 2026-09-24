@@ -10,16 +10,25 @@
 // is the manual acceptance the ledger row keeps beside this.
 package splice.upstream.transport
 
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import jdk.net.ExtendedSocketOptions
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.IOException
+import java.io.InputStream
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+
+// Longer than any per-read bound a first-byte tier would set in this test, far under its total cap.
+private const val SILENT_GAP_MS = 1_500
+private const val SSE_HEAD = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
 
 class UpstreamTransportOkHttpTest {
 
@@ -42,7 +51,7 @@ class UpstreamTransportOkHttpTest {
 
     @Test
     fun `the engine reads response bodies on virtual threads, not Dispatchers IO`() {
-        val client = UpstreamTransport().defaultClient(1_000, 1_000)
+        val client = UpstreamTransport().defaultClient(1_000)
         val virtual = runBlocking { withContext(client.engine.dispatcher) { Thread.currentThread().isVirtual } }
         client.close()
         assertTrue(virtual, "ktor's OkHttp engine blocks a thread per held stream; it must be a virtual one")
@@ -68,6 +77,57 @@ class UpstreamTransportOkHttpTest {
             }
         }
     }
+
+    // V4-125: under OkHttp, HttpTimeout's socketTimeoutMillis is the PER-READ timeout. Bound to the
+    // first-byte tier (90s in production) it tore a silent-but-alive peer, the case the watchdog's
+    // probe-then-hold exists to keep; the only wall short of the peer dying is the total cap. The peer
+    // goes silent after its first frame and speaks again once the client has stayed connected for the
+    // whole gap, or reports that it hung up.
+    @Test
+    fun `a peer that goes silent but stays connected is read to the end`() {
+        ServerSocket(0).use { server ->
+            val served = CompletableFuture.supplyAsync { serveWithSilentGap(server) }
+            val client = UpstreamTransport().defaultClient(totalTimeoutMs = 10_000)
+            val body = try {
+                runBlocking { client.get("http://127.0.0.1:${server.localPort}/").bodyAsText() }
+            } finally {
+                client.close()
+            }
+            assertEquals("stayed connected", served.get(10, TimeUnit.SECONDS))
+            assertTrue("data: last" in body, body)
+        }
+    }
+
+    private fun serveWithSilentGap(server: ServerSocket): String = server.accept().use { peer ->
+        val input = peer.getInputStream()
+        val output = peer.getOutputStream()
+        readRequestHead(input)
+        output.write((SSE_HEAD + chunk("data: first\n\n")).toByteArray())
+        output.flush()
+        peer.soTimeout = SILENT_GAP_MS
+        val hungUp = try {
+            input.read() == -1
+        } catch (_: SocketTimeoutException) {
+            false
+        } catch (_: IOException) {
+            true
+        }
+        if (hungUp) return@use "hung up"
+        output.write((chunk("data: last\n\n") + "0\r\n\r\n").toByteArray())
+        output.flush()
+        "stayed connected"
+    }
+
+    private fun readRequestHead(input: InputStream) {
+        val head = StringBuilder()
+        while (!head.endsWith("\r\n\r\n")) {
+            val next = input.read()
+            if (next == -1) return
+            head.append(next.toChar())
+        }
+    }
+
+    private fun chunk(text: String) = "${text.length.toString(16)}\r\n$text\r\n"
 
     private fun assertArmed(socket: Socket) {
         assertTrue(socket.keepAlive, "SO_KEEPALIVE")

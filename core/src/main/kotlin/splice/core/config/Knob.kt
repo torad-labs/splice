@@ -219,8 +219,8 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // The headers-phase timeout, and — through WatchdogBudget — the watchdog's FIRST-OUTPUT tier, so
-    // one number judges a stream before and after its first frame. 90_000 with STREAM_IDLE_MS below
+    // Through WatchdogBudget, the watchdog's FIRST-OUTPUT tier: a probe, not a verdict. It is not a
+    // socket timeout; a read waits up to UPSTREAM_TIMEOUT_MS (V4-125). 90_000 with STREAM_IDLE_MS below
     // and for the same reason; read that entry, including the 129-compaction scar it keeps.
     // Named rather than positional because §magic-number blesses this spelling (see STALL_REANCHOR_MS).
     FIRST_BYTE_TIMEOUT_MS(

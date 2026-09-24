@@ -1,5 +1,5 @@
 // NEW (G4d): cross-attempt wall-clock deadline pins. The retry loop reuses totalTimeoutMs as the
-// route-timeout analog (firstByteTimeoutMs already covers the per-try budget via HttpTimeout) — a
+// route-timeout analog (HttpTimeout caps each try's call with the same value) — a
 // deadline check runs before every new attempt AND before every backoff sleep, on both the
 // HTTP-status BACKOFF path and the transport-error retry path, so a pathological run of
 // repeated-slow-failing-attempts cannot spin past the budget even with maxRetries left on the
@@ -36,7 +36,6 @@ class UpstreamClientDeadlineTest {
         maxRetries: Int,
         clock: () -> Long,
     ) = UpstreamClient(
-        firstByteTimeoutMs = 5_000,
         totalTimeoutMs = totalTimeoutMs,
         maxRetries = maxRetries,
         client = HttpClient(engine),

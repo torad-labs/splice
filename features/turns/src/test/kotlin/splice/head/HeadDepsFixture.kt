@@ -76,7 +76,7 @@ public fun quotaFor(
  */
 public fun headDeps(
     tmp: Path,
-    upstream: UpstreamClient = UpstreamClient(firstByteTimeoutMs = 5_000L, totalTimeoutMs = 30_000L, maxRetries = 2),
+    upstream: UpstreamClient = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
     log: LogSink = { },
     gate: InflightGate = InflightGate({ 0 }),
     quota: HeadDeps.HeadQuota = noQuota(),

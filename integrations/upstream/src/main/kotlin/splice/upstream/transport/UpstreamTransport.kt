@@ -54,7 +54,6 @@ import kotlin.random.Random
 
 public class UpstreamTransport {
     public fun defaultClient(
-        firstByteTimeoutMs: Long,
         totalTimeoutMs: Long,
         log: LogSink = LogSink {},
         noDelayGuard: AtomicBoolean = nodelayLogged,
@@ -76,7 +75,10 @@ public class UpstreamTransport {
             install(HttpTimeout) {
                 connectTimeoutMillis = CONNECT_TIMEOUT_MS
                 requestTimeoutMillis = totalTimeoutMs
-                socketTimeoutMillis = firstByteTimeoutMs
+                // Under OkHttp this is the PER-READ timeout. A silent-but-alive peer is the watchdog's
+                // to probe and hold, and nothing short of the total cap may tear it (V4-125), so a
+                // read may block as long as the turn itself may last, and no longer.
+                socketTimeoutMillis = totalTimeoutMs
             }
             engine {
                 // The engine's own dispatcher, where every response body is read with a blocking
@@ -201,8 +203,8 @@ public class UpstreamTransport {
 
 // G11: a blackholed/dead address must fail fast into the existing transport-retry loop
 // (isRetryableTransport) instead of stalling to the OS SYN timeout x maxRetries. Decoupled
-// from firstByteTimeoutMs (5min default), which governs headers-wait/body phase via
-// socketTimeoutMillis, not TCP connect.
+// from the total cap, which bounds the whole call and each read (socketTimeoutMillis), not TCP
+// connect.
 private const val CONNECT_TIMEOUT_MS = 10_000L
 
 // V4-125: how long the out-of-band probe waits before giving up. Short on purpose — it runs while a

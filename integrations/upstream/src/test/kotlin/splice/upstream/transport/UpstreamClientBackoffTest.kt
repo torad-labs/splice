@@ -259,7 +259,6 @@ class UpstreamClientBackoffTest {
     }
 
     private fun realCurveClientOver(engine: MockEngine, waiter: RecordingWaiter) = UpstreamClient(
-        firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 60_000,
         maxRetries = 3,
         client = HttpClient(engine),
@@ -305,7 +304,6 @@ class UpstreamClientBackoffTest {
             respond("fine", HttpStatusCode.OK, headersOf())
         }
         private val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = totalTimeoutMs,
             maxRetries = 3,
             client = HttpClient(engine),

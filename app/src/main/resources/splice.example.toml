@@ -772,10 +772,11 @@ command = "claude-splice"
 # retryBackoffBaseMs = 200                                  # ms; the generic retry curve's base, doubled each attempt
 # retryBackoffCapMs = 10000                                 # ms; the generic retry curve's ceiling
 # retryBackoffJitterPct = 10                                # percent; the generic retry curve's plus-or-minus jitter
-# firstByteTimeoutMs = 90000                                # ms; headers-phase timeout, the first byte must land,
-#                                                           #     and (through WatchdogBudget) the watchdog's
-#                                                           #     FIRST-OUTPUT tier, so one number judges a stream
-#                                                           #     before and after its first frame
+# firstByteTimeoutMs = 90000                                # ms; (through WatchdogBudget) the watchdog's
+#                                                           #     FIRST-OUTPUT tier: silence before the first frame
+#                                                           #     past this is a PROBE, like streamIdleMs below.
+#                                                           #     Not a socket timeout: a read waits up to
+#                                                           #     upstreamTimeoutMs (V4-125)
 # streamIdleMs = 90000                                      # ms; stream silence before the stall watchdog ASKS.
 #                                                           #     Since V4-125 a breach is a PROBE, not a verdict:
 #                                                           #     the round's path is asked whether it is alive, a live

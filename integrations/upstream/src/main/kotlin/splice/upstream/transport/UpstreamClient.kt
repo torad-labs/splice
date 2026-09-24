@@ -51,14 +51,13 @@ import splice.upstream.retry.RetryRules
 import splice.upstream.sse.AttemptRecorder
 
 public class UpstreamClient(
-    private val firstByteTimeoutMs: Long,
     private val totalTimeoutMs: Long,
     private val maxRetries: Int,
     /** zstd-compress the request body (CX-03). DEFAULT OFF and set PER PROVIDER: measured on
      *  codex-cli 0.145.0 against ChatGPT (2.7x), unproven anywhere else, and the sibling gzip ban
      *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
     zstdRequestBody: Boolean = false,
-    client: HttpClient = UpstreamTransport().defaultClient(firstByteTimeoutMs, totalTimeoutMs),
+    client: HttpClient = UpstreamTransport().defaultClient(totalTimeoutMs),
     // HD-19: the seam both backoff curves below sleep through. Declared BEFORE them so their default
     // values can close over it (a Kotlin default may reference an earlier parameter), which is what
     // lets a test replace the WAIT without also having to re-author the CURVE it is measuring —
@@ -372,7 +371,7 @@ public class UpstreamClient(
         return fits
     }
 
-    /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
+    /** Cross-attempt wall-clock budget: the same [totalTimeoutMs] that caps each try's HTTP call. */
     private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
 
     private fun turnWaitExhausted(ctx: PostContext): Boolean =

@@ -62,19 +62,22 @@ public class ActivityDays(
         val today = day(clock())
         val file = dir.resolve("$prefix-$today.jsonl")
         AsyncFileIo.submit {
-            // ast-grep-ignore: kt-no-silent-result-collapse -- a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed append must not surface on the turn that produced it
-            Cancellables.runCatchingCancellable {
-                // A reason this dir stayed open is not said per append: it sits inside the state dir,
-                // which every start holds owner-only and names if it could not (secureStateDirs), and
-                // nobody else can traverse into it past a 0700 parent.
-                if (ownerOnly) {
-                    val _ = SecureFile.ownerOnlyDirectory(dir)
-                } else {
-                    Files.createDirectories(dir)
-                }
-                JsonlSink.appendLine(file, line, DAY_MAX_BYTES)
-                if (sweptFor.getAndSet(today) != today) sweep(today)
-            }
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable {
+                    // A reason this dir stayed open is not said per append: it sits inside the state dir,
+                    // which every start holds owner-only and names if it could not (secureStateDirs), and
+                    // nobody else can traverse into it past a 0700 parent.
+                    if (ownerOnly) {
+                        val _ = SecureFile.ownerOnlyDirectory(dir)
+                    } else {
+                        Files.createDirectories(dir)
+                    }
+                    JsonlSink.appendLine(file, line, DAY_MAX_BYTES)
+                    if (sweptFor.getAndSet(today) != today) sweep(today)
+                },
+                "a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed " +
+                    "append must not surface on the turn that produced it",
+            )
         }
     }
 
@@ -91,7 +94,6 @@ public class ActivityDays(
     public fun sweep(today: LocalDate = day(clock())) {
         val oldest = oldestKept(today)
         for ((date, file) in days()) {
-            // ast-grep-ignore: kt-no-silent-result-collapse -- a file that cannot be deleted now is retried on the next day's sweep, and reads already ignore it
             if (date.isBefore(oldest)) deleteDay(file)
         }
     }
@@ -108,8 +110,11 @@ public class ActivityDays(
     /** The day file and the siblings JsonlSink writes beside it. */
     private fun deleteDay(file: Path) {
         for (suffix in DAY_SIBLINGS) {
-            // ast-grep-ignore: kt-no-silent-result-collapse -- a file that cannot be deleted now is retried on the next day's sweep, and reads already ignore it
-            Cancellables.runCatchingCancellable { Files.deleteIfExists(file.resolveSibling("${file.fileName}$suffix")) }
+            val sibling = file.resolveSibling("${file.fileName}$suffix")
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { Files.deleteIfExists(sibling) },
+                "a file that cannot be deleted now is retried on the next day's sweep, and reads already ignore it",
+            )
         }
     }
 

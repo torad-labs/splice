@@ -61,6 +61,7 @@ internal class SessionRegistryLink(
     fun link(globalSessions: Path, dst: Path, log: LogSink = LogSink(DaemonLog::write)) {
         if (!ensureGlobalRegistry(globalSessions, log)) return
         if (dst.isSymbolicLink()) {
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable link is relinked below, and a failed relink logs its cause
             val target = Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull()
             if (target == globalSessions) return
         } else if (Files.exists(dst, NOFOLLOW_LINKS) && !Files.isDirectory(dst, NOFOLLOW_LINKS)) {

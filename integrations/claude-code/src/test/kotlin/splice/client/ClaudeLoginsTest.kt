@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.util.LogSink
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteExisting
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -113,5 +115,26 @@ class ClaudeLoginsTest {
 
         val target = home.resolve("target").createDirectories()
         assertFalse(logins.materializeSelected(target), "a removed selection must not still materialize")
+    }
+
+    // A selection the launch could not apply used to be as silent as no selection at all, and the
+    // caller ignores the return: the head started on its PREVIOUS credential with nothing saying so.
+    @Test
+    fun `a selected login whose stored file cannot be read is logged, not silently skipped`(@TempDir home: Path) {
+        val logins = logins(home)
+        logins.store("work", configDirWithCredentials(home, "a", """{"t":"work"}"""))
+        logins.select("work")
+        // Still listed as a label (the name matches), but no longer a readable file.
+        val stored = home.resolve("store").resolve("work.credentials.json")
+        stored.deleteExisting()
+        stored.createDirectories()
+        val lines = mutableListOf<String>()
+
+        val target = home.resolve("target").createDirectories()
+        assertFalse(logins.materializeSelected(target, LogSink { lines += it }))
+
+        assertFalse(target.resolve(".credentials.json").exists())
+        assertEquals(1, lines.size, "$lines")
+        assertTrue(lines.single().startsWith("[logins] selected login 'work' NOT applied"), lines.single())
     }
 }

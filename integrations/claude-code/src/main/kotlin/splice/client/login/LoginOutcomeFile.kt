@@ -73,6 +73,7 @@ public object LoginOutcomeFile {
     /** Read and CONSUME a fresh receipt, or null. Consuming is the point: a confirmation is shown
      *  once, not on every prompt for the rest of the session. */
     public fun consume(stateDir: Path, head: String, nowMs: Long = System.currentTimeMillis()): String? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a receipt is a one-shot confirmation; an unreadable one is simply not shown
         Cancellables.runCatchingCancellable {
             val path = pathFor(stateDir, head)
             if (!Files.isRegularFile(path)) return@runCatchingCancellable null

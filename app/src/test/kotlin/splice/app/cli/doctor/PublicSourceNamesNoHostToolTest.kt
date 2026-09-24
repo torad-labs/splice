@@ -30,6 +30,7 @@
 package splice.app.cli.doctor
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -37,6 +38,7 @@ import splice.app.cli.AdminSupport
 import splice.core.config.Knob
 import splice.core.util.EnvReader
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
@@ -49,8 +51,9 @@ import kotlin.io.path.relativeTo
  *  allowlist splits its fixtures. */
 private val BANNED: List<String> = listOf("host" + "shield", "build" + "gate")
 
-/** Generated output and dependency trees are not source and are not ours to phrase. */
-private val SKIP_DIRS = setOf("build", "node_modules", ".git", "dist", ".gradle")
+/** Generated output and dependency trees are not source and are not ours to phrase. `dist` is NOT one:
+ *  under these roots the only dist/ is app/src/main/dist, the launch shim that ships in every release. */
+private val SKIP_DIRS = setOf("build", "node_modules", ".git", ".gradle")
 
 /** Generated output, images and archives are not prose and carry no requirement to state. */
 private val SKIP_EXTENSIONS = setOf("jar", "png", "ico", "woff2")
@@ -64,9 +67,11 @@ private fun findingsIn(root: Path, file: Path): List<String> {
     }.toList()
 }
 
+/** A root that does not exist throws rather than reading nothing: `gateway` stayed in this list after
+ *  the restructure emptied it, and a scan that filtered missing roots out read none of app/, core/
+ *  or the feature and integration modules under a green test. */
 private fun scan(root: Path, roots: List<Path>): List<String> =
-    roots.filter { Files.exists(it) }
-        .flatMap { start -> Files.walk(start).use { walk -> walk.toList() } }
+    roots.flatMap { start -> Files.walk(start).use { walk -> walk.toList() } }
         .filter { it.isRegularFile() && it.none { part -> part.name in SKIP_DIRS } }
         .flatMap { findingsIn(root, it) }
         .sorted()
@@ -84,11 +89,17 @@ class PublicSourceNamesNoHostToolTest {
     fun `no public source names a host tool`() {
         assertTrue(Files.exists(repo.resolve("install.sh")), "repo root not found from ${Path.of("").toAbsolutePath()}")
 
-        // PR 2 moved the Gradle build root out of gateway/ to the repository root. These are the
-        // same files this row already owned, under their new paths — a wall whose roots stay
-        // spelled `gateway` after the move would quietly stop reading the build files.
+        // The row's roots are what gateway/ held when it was opened — the whole Gradle tree — under
+        // their homes since the restructure: the modules (app, core, features, integrations), the
+        // architecture laws and compiler plugin (quality/), and the build files. A root that moves
+        // again fails the scan below rather than quietly dropping out of it.
         val roots = listOf(
-            "gateway",
+            "app",
+            "core",
+            "features",
+            "integrations",
+            "quality/architecture",
+            "quality/compiler-plugin",
             "build-logic",
             "quality/detekt",
             "gradle",
@@ -131,6 +142,26 @@ class PublicSourceNamesNoHostToolTest {
         Files.writeString(dir.resolve("A.kt"), "// ${"build" + "gate"} caps the build\n")
 
         assertEquals(listOf("A.kt:1 names '${"build" + "gate"}'"), scan(dir, listOf(dir)))
+    }
+
+    // The launch shim ships from app/src/main/dist, so a dist/ directory is read like any other source.
+    @Test
+    fun `a shipped dist file is scanned`(@TempDir dir: Path) {
+        val shim = dir.resolve("app/src/main/dist/bin/splice-launch")
+        Files.createDirectories(shim.parent)
+        Files.writeString(shim, "// cold start per the ${"host" + "shield"} law\n")
+
+        assertEquals(
+            listOf("app/src/main/dist/bin/splice-launch:1 names '${"host" + "shield"}'"),
+            scan(dir, listOf(dir)),
+        )
+    }
+
+    // The mutant for the roots themselves: a root that moved away. The scan used to filter it out
+    // and report a clean tree, which is how the module sources fell out of this wall.
+    @Test
+    fun `a root that no longer exists fails the scan rather than reading nothing`(@TempDir dir: Path) {
+        assertThrows(NoSuchFileException::class.java) { scan(dir, listOf(dir.resolve("gateway"))) }
     }
 }
 

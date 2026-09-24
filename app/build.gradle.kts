@@ -64,6 +64,7 @@ dependencies {
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":features-turns")))
     testImplementation(testFixtures(project(":integrations-codemode")))
+    testImplementation(testFixtures(project(":features-lifecycle")))
     testImplementation(testFixtures(project(":integrations-oauth")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     testImplementation(testFixtures(project(":integrations-dialects-anthropic")))

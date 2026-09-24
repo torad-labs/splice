@@ -41,7 +41,7 @@ internal class ClientAuth(
     private val deps: HeadDeps,
     private val responses: AdmissionResponses,
 ) {
-    // Splits an Authorization value into scheme/credential/parameter tokens for the own-key check.
+    // Splits each forwarded value into scheme/credential/parameter tokens for the own-key check.
     // The FULL RFC 7235 delimiter class, not just whitespace (third DR-30 redo): auth-params
     // delimit with "=", DQUOTE and "," — `Digest response=<key>` hid the key from a whitespace
     // split while the raw header still forwarded verbatim. ";" and "'" ride along for legacy
@@ -121,11 +121,13 @@ internal class ClientAuth(
      * full auth-param delimiter class, not just whitespace (second redo — the Basic spelling
      * slipped the raw-equality check; third redo — `Digest response=<key>` slipped the
      * whitespace-only split while the raw header still carried the key to the vendor).
+     *
+     * The values checked are the values [forwardedClientHeaders] sends, read from it (v0.4.0 review):
+     * checking `headers[name]`, the FIRST line, while the forwarder sends the first NON-BLANK one let
+     * an empty line ahead of the key pass the check and the key ride upstream.
      */
     private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
-        val forwardable =
-            call.request.headers[HttpHeaders.Authorization].orEmpty().split(authDelimiterRe) +
-                listOfNotNull(call.request.headers["x-api-key"])
+        val forwardable = forwardedClientHeaders(call).values.flatMap { it.split(authDelimiterRe) }
         if (forwardable.none { matchesInferenceToken(it) || matchesOperatorToken(it) }) return true
         deps.log(
             "[auth] refused a turn on a client-auth head that presented one of splice's own keys (the " +

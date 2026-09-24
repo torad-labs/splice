@@ -516,6 +516,39 @@ class HeadServerClientAuthTest {
         assertEquals(listOf(header), upstream.requests[before]["authorization"].orEmpty())
     }
 
+    // v0.4.0 review: the check read the FIRST line of each credential header while the forwarder
+    // sends the first NON-BLANK one, so an empty line ahead of the key passed the check and the key
+    // rode upstream. What is checked is now what is forwarded, read from the same function.
+    @Test
+    fun `a blank Authorization line ahead of the key cannot smuggle it upstream`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val response = rawTurn(port, listOf("Authorization" to "", "Authorization" to "Bearer $TURN_KEY"))
+        assertTrue(response.startsWith("HTTP/1.1 401"), response.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "splice's own turn key must never reach the vendor")
+    }
+
+    @Test
+    fun `a whitespace-only Authorization line ahead of the key cannot smuggle it upstream`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val response = rawTurn(port, listOf("Authorization" to "   ", "Authorization" to "Basic $MGMT_KEY"))
+        assertTrue(response.startsWith("HTTP/1.1 401"), response.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
+    @Test
+    fun `a blank x-api-key line ahead of the key cannot smuggle it upstream`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val response = rawTurn(
+            port,
+            listOf("Authorization" to "Bearer caller-own-token", "x-api-key" to "", "x-api-key" to MGMT_KEY),
+        )
+        assertTrue(response.startsWith("HTTP/1.1 401"), response.lineSequence().first())
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
     // ── the cell that was never built ─────────────────────────────────────────────────────────
     //
     // Bypass ON while splice STILL HOLDS a credential. Every case above ties the flag to the auth

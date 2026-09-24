@@ -23,7 +23,7 @@ splice puts Claude Code in front of the backend you choose.
   It never runs away, and never corrupts a credential.  integrations/upstream  core/config
   Your Claude Code stays yours.                         integrations/claude-code
   You see what happens and what it costs.               features/usage  app/control  console/
-  Every failure comes with its remedy.                  app/cli/doctor  features/turns
+  Every failure comes with its remedy.                  features/diagnostics  features/turns
   Heads see each other.                                 features/sessions  integrations/claude-code
 
   app/ assembles all of it.
@@ -474,6 +474,8 @@ core/          :core — the shared kernel: config, topology, auth, turn, model,
                persistence primitives state lives in (framework-free by module law)
 integrations/  reusable adapters: claude-code/ (login, mcp, wrap, resume, transcript), upstream/
                (transport, retry, credentials), http/, mcp/ (the MCP host), topology/ (the loader),
+               oauth/ (sign-in flows and account files), codemode/ (the GraalJS worker pool),
+               daemon-client/ (the CLI's calls to a running daemon), terminal/ (prompts),
                dialects/ (wire contracts) and providers/ (vendor adapters)
 features/      capability projects — turns, sessions, models, heads, accounts, usage, lifecycle,
                diagnostics, launch, configuration, events — with use-case slices as packages; one

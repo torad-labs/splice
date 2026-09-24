@@ -2,7 +2,8 @@
 // section 4, enforced by the label wall). Outcome names are DATA from the daemon; the ones it is
 // known to write get words in OUTCOME_WORDS, and any other name prints as the daemon spells it.
 export const S = {
-  outcomes: 'outcomes',
+  /** All time, as far back as the daemon's stats file reaches: not dated by the payload. */
+  outcomes: 'all recorded outcomes',
   events: 'recent compactions',
   detail: 'compaction',
   total: 'total',

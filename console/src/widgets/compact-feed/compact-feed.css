@@ -87,3 +87,11 @@
   overflow: hidden;
   white-space: nowrap;
 }
+
+/* The dated line over the racks: how the latest compactions went. Room ink, the page's own voice. */
+.myx-cfeed-recent {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-3);
+  color: var(--ink-strong);
+}

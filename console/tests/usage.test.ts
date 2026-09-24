@@ -13,7 +13,7 @@ import { describe, expect, test } from 'vitest';
 import { costOf, sum, within } from '../src/entities/economics';
 import { slotTiers } from '../src/entities/model';
 import type { HeadCatalog } from '../src/entities/model';
-import { CompactFeed, edgeFor, outcomeText, shareText, stateOf } from '../src/widgets/compact-feed';
+import { CompactFeed, edgeFor, outcomeText, recentLine, shareText, stateOf } from '../src/widgets/compact-feed';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
 import { CompactionBoard } from '../src/pages/compaction';
 import { fixtureCompact } from '../src/pages/compaction/fixtures/compaction';
@@ -197,6 +197,20 @@ describe('compaction page', () => {
     expect(outcomeText('something_new')).toBe('something new');
   });
 
+  test('the page leads with the recent rows and their date, not the undated totals', () => {
+    // Live 2026-09-24: 33% of all recorded compactions failed, all of them months old; the last
+    // 50 had none. The totals carry no date, the tail does.
+    const at = (month: number, day: number) => new Date(2026, month - 1, day, 12).getTime();
+    const tail = [
+      { head: 'a', ts: at(9, 21), outcome: 'model_text' },
+      { head: 'a', ts: at(9, 24), outcome: 'stream_error' },
+      { head: 'a', ts: at(9, 23), outcome: 'model_text' },
+    ];
+    expect(recentLine(tail)).toBe('last 3 compactions, since sep 21: 1 failed');
+    expect(recentLine(tail.filter((row) => row.outcome === 'model_text'))).toBe('last 2 compactions, since sep 21: none failed');
+    expect(recentLine([])).toBeNull();
+  });
+
   test('an outcome\'s share of all compactions keeps a rare failure visible', () => {
     // Live 2026-09-24: 666 empty replies, 567 broken streams and 3 reasoning summaries of 3,786.
     expect(shareText(666, 3786)).toBe('18%');
@@ -361,7 +375,7 @@ describe('a rack of like rows prints its column names once', () => {
     // Law 34's shape: if the boards rendered nothing, every assertion below would pass vacuously
     // and the suite would report that no rack repeats its labels. The denominator is named first.
     const all = boards.flatMap(([, markup]) => racks(markup));
-    expect(all.map((rack) => rack.label)).toEqual(['outcomes', 'recent compactions', 'heads']);
+    expect(all.map((rack) => rack.label)).toEqual(['all recorded outcomes', 'recent compactions', 'heads']);
     expect(all.every((rack) => rack.rows.length > 0)).toBe(true);
   });
 

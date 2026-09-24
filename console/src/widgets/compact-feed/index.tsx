@@ -57,6 +57,23 @@ export function shareText(count: number, total: number): string {
   return `${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`;
 }
 
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * THE LINE THE PAGE LEADS WITH: how the most recent compactions went, and since when (console
+ * review, 2026-09-24). The outcome totals are every row the daemon's stats file still holds, with
+ * no date on the payload, and the live file's 18% empty replies were all from before 2026-07-13:
+ * an operator read an old count as today's failure rate. The tail carries a time on every row, so
+ * its span is known and its failures are current.
+ */
+export function recentLine(tail: readonly CompactRow[]): string | null {
+  if (tail.length === 0) return null;
+  const since = new Date(Math.min(...tail.map((row) => row.ts)));
+  const failed = tail.filter((row) => stateOf(row.outcome ?? 'unknown') === 'fail').length;
+  return `last ${tail.length} compactions, since ${MONTHS[since.getMonth()]} ${since.getDate()}: `
+    + (failed === 0 ? 'none failed' : `${failed} failed`);
+}
+
 function eventKey(row: CompactRow, index: number): string {
   return `${row.head}-${row.ts}-${index}`;
 }
@@ -126,9 +143,11 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
   // for the one error I already knew about. THE FILTER IS THE LESSON: a censored gate reads
   // clean, and the only reason this was caught is that another seat ran the same leg and read
   // ALL of it.
+  const recent = recentLine(payload.stats.tail);
   return (
     <div className={cx('myx-cfeed', opened !== null && 'myx-cfeed-open')}>
       <div className="myx-cfeed-bays">
+        {recent === null ? null : <p className="myx-cfeed-recent">{recent}</p>}
         <Bay
           label={S.outcomes}
           count={outcomes.length}

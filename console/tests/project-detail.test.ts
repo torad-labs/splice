@@ -52,7 +52,7 @@ describe('the project detail', () => {
       ['turns today', '1', 'measured'],
     ]);
     expect(values(fields.today)).toEqual([
-      ['cost today', 'n/r', null],
+      ['cost today', '–', null],
       ['day start', '2026-09-23 UTC', 'measured'],
       ['last seen', '1m ago', 'measured'],
     ]);
@@ -63,7 +63,7 @@ describe('the project detail', () => {
     expect(values(fields.today)).toEqual([
       ['cost today', '$12.84', 'estimated'],
       ['day start', '2026-09-23 UTC', 'measured'],
-      ['last seen', 'n/r', null],
+      ['last seen', '–', null],
     ]);
   });
 
@@ -95,7 +95,7 @@ describe('what governs the repo', () => {
     const out = renderToStaticMarkup(h(ProjectCompaction, { id: row().id, row: row({ compaction: rules }) }));
     expect(out).toContain(`aria-label="instruction ${rule.source}"`);
     expect(out).toContain('>9<');
-    expect(out).toContain('opt-out');
+    expect(out).toContain('client default');
     expect(out).toContain('unavailable');
     expect(out, 'the project view has no per-head list for a rule').not.toContain('heads');
   });

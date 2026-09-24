@@ -8,9 +8,11 @@ export {
   providerFamily,
   queueAtMax,
   ATTENTION_CAUSES,
+  EDGE_WORDS,
   NO_SIGNALS,
   PROVIDER_FAMILIES,
-  PROVIDER_MARK,
+  FAMILY_NAME,
+  familyName,
 } from './model/derive';
 export type {
   AttentionCause,

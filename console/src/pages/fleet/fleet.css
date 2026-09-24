@@ -45,13 +45,6 @@
   .myx-fleet-body { transition: none; }
 }
 
-/* THE RACK ENDS AFTER ITS LAST ROW (2026-09-24, fixed root; this was M1-39's fill-the-room rule,
-   carried here by M1-44). Stretched to the window, the ten-head rack drew 1600px of empty ribs on a
-   2160 panel once the type stopped scaling with it: the floor had become most of the page. The
-   body still stretches (it holds the detail column), so the bay says it takes its content height
-   rather than the grow every bay carries from ui.css. */
-.myx-fleet-bays > .myx-bay { flex: 0 0 auto; }
-
 /* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
    width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value
    was 1120 on accounts and 1600 on fleet, doctor and mcp, measured when a bay CLIPPED its rack —
@@ -165,3 +158,41 @@
   font-size: var(--text-1);
   color: var(--ink-mute);
 }
+
+/* Why the opened head is in its state, and the one step that clears it (walkthrough S1, S2). The
+   command box paints the strip's paper, so it takes the strip's ink, as the doctor's fix box does. */
+.myx-fleet-cause {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.myx-fleet-cause-row {
+  margin: var(--space-0);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.myx-fleet-cause-command {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  color: var(--strip-ink);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}
+.myx-fleet-add {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block-start: var(--space-3);
+}
+.myx-fleet-cause-link {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+.myx-fleet-cause-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

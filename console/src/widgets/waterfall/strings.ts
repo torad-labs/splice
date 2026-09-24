@@ -5,12 +5,6 @@
 export const S = {
   title: 'waterfall',
   phases: 'phases',
-  /** The phase groups, printed as each row's name. */
-  ingest: 'ingest',
-  queue: 'queue',
-  upstream: 'upstream',
-  stream: 'stream',
-  finish: 'finish',
   /** The counters beside the bar. */
   counters: 'counters',
   retries: 'retries',

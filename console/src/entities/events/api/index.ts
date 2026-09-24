@@ -47,6 +47,24 @@ export function subscribeAll(fn: FrameListener): () => void {
   };
 }
 
+/** Listeners told when the stream REOPENS after it was lost, never on the first open. */
+const onReopen = new Set<() => void>();
+let opens = 0;
+
+/**
+ * Be told each time the stream comes back after a drop. Whatever happened while it was down was
+ * never delivered, and when the drop was a daemon restart `Last-Event-ID` cannot replay it either:
+ * the new process starts a new event log. So a store that follows events has to re-read its route
+ * here, or it keeps the state it last heard (measured 2026-09-24: the rule bar said `daemon
+ * degraded` for six minutes after an install, from heads it read while they were still booting).
+ */
+export function subscribeReopen(fn: () => void): () => void {
+  onReopen.add(fn);
+  return () => {
+    onReopen.delete(fn);
+  };
+}
+
 function dispatch(frame: EventFrame): void {
   for (const fn of byKind.get(frame.kind) ?? []) fn(frame);
   for (const fn of anyKind) fn(frame);
@@ -118,6 +136,8 @@ async function loop(): Promise<void> {
       if (!res.ok || res.body === null) throw new Error(`HTTP ${res.status}`);
 
       eventsStore.set({ status: 'live' });
+      opens += 1;
+      if (opens > 1) for (const fn of onReopen) fn();
       await read(res.body);
     } catch {
       // A read that failed (the daemon restarted, the network dropped, the connection was aborted)
@@ -148,6 +168,7 @@ export function connect(): void {
  *  until its tab does); it exists so a test can end one stream before starting the next. */
 export function disconnect(): void {
   running = false;
+  opens = 0;
   controller?.abort();
   controller = null;
   eventsStore.set({ status: 'off' });

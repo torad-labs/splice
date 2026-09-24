@@ -14,10 +14,11 @@ import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { bindSessions, createTeam, replaceTeam } from '@entities/team';
 import type { TeamRow } from '@entities/team';
-import { Flag, Input, Key } from '@shared/controls';
+import { Choice, Flag, Input, Key } from '@shared/controls';
+import type { ChoiceOption } from '@shared/controls';
 import {
   addSlot, bindSession, blankDraft, draftOf, editSlot, featuresOf, keyFor, removeSlot, setArchived, setLead,
-  unbindSession, unbindsOf, validateDraft, writeOf,
+  unbindsOf, validateDraft, writeOf,
 } from './model';
 import type { TeamDraft } from './model';
 import { S } from './strings';
@@ -47,21 +48,36 @@ export async function saveDraft(draft: TeamDraft, team: TeamRow | null, key: str
 /** A multi-line field in the world's input box. The control set has no text area (a single line is
  *  every other field in the console), so this borrows Input's own label and box classes rather
  *  than inventing a second look for the one field that needs a newline. */
-function Lines({ label, value, rows, onChange }: { label: string; value: string; rows: number; onChange: (next: string) => void }): ReactNode {
+function Lines({ label, value, rows, placeholder, onChange }: { label: string; value: string; rows: number; placeholder: string; onChange: (next: string) => void }): ReactNode {
   return (
     <label className="myx-input myx-compose-lines">
       <span className="myx-input-label">{label}</span>
-      <textarea className="myx-input-box" rows={rows} value={value} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+      <textarea className="myx-input-box" rows={rows} value={value} placeholder={placeholder} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
+}
+
+/**
+ * The options a slot's choice offers: what the daemon lists, with the slot's own value kept even
+ * when the list no longer has it (a head since removed, a session since gone), so opening an old
+ * team never silently rewrites a slot. `blank` is the option for "nothing chosen".
+ */
+export function optionsFor(listed: readonly ChoiceOption[], current: string, blank: ChoiceOption): ChoiceOption[] {
+  const known = current === '' || listed.some((option) => option.value === current);
+  return [blank, ...listed, ...(known ? [] : [{ value: current, label: current }])];
 }
 
 /** The composer, for a new team (`team` absent) or for `team` as the daemon holds it. `onSaved`
  *  hears the team the daemon answered and the line printed for it, so the page can open the team
  *  and hand the line to the composer it opens it in: a create re-keys this form onto the new team,
  *  and the answer would otherwise go with the form it was printed in. */
-export function TeamCompose({ team = null, initial, answer: printed = null, onSaved }: {
+export function TeamCompose({ team = null, initial, answer: printed = null, onSaved, heads = [], sessions = [] }: {
   team?: TeamRow | null;
+  /** The heads a slot can run on, from the daemon. Empty (not loaded, or a fixture) falls back to
+   *  a typed head key. */
+  heads?: readonly ChoiceOption[];
+  /** The live sessions a slot can be bound to, by name. Empty falls back to a typed session id. */
+  sessions?: readonly ChoiceOption[];
   /** A draft to start from instead of `team`'s: the dev fixture's. */
   initial?: TeamDraft;
   /** The daemon's answer to the save that opened this form. */
@@ -94,25 +110,47 @@ export function TeamCompose({ team = null, initial, answer: printed = null, onSa
       <h3 className="myx-compose-title">{title}</h3>
 
       <div className="myx-compose-head">
-        <Input label={S.name} value={draft.name} w={24} onChange={(name) => setDraft({ ...draft, name })} />
-        <Input label={S.repo} value={draft.repo} w={40} onChange={(repo) => setDraft({ ...draft, repo })} />
-        <Input label={S.goal} value={draft.goal} w={40} onChange={(goal) => setDraft({ ...draft, goal })} />
-        <Lines label={S.features} rows={3} value={draft.features.join('\n')} onChange={(text) => setDraft({ ...draft, features: featuresOf(text) })} />
+        <Input label={S.name} value={draft.name} w={24} placeholder="a short name" onChange={(name) => setDraft({ ...draft, name })} />
+        <Input label={S.repo} value={draft.repo} w={40} placeholder="path to the repo" onChange={(repo) => setDraft({ ...draft, repo })} />
+        <Input label={S.goal} value={draft.goal} w={40} placeholder="what the team is here to finish" onChange={(goal) => setDraft({ ...draft, goal })} />
+        <Lines label={S.features} rows={3} placeholder="one feature per line" value={draft.features.join('\n')} onChange={(text) => setDraft({ ...draft, features: featuresOf(text) })} />
       </div>
 
       <fieldset className="myx-compose-slots">
         <legend>{S.slots}</legend>
         {draft.slots.map((slot, index) => (
           <div className="myx-compose-slot" key={slot.id}>
-            <Input label={S.role} value={slot.role} w={14} onChange={(role) => setDraft(editSlot(draft, index, { role }))} />
-            <Input label={S.head} value={slot.head} w={18} onChange={(head) => setDraft(editSlot(draft, index, { head }))} />
-            <Input
-              label={S.session}
-              value={slot.session ?? ''}
-              w={22}
-              placeholder={S.open}
-              onChange={(session) => setDraft(bindSession(draft, index, session))}
-            />
+            <Input label={S.role} value={slot.role} w={14} placeholder="lead, builder, reviewer" onChange={(role) => setDraft(editSlot(draft, index, { role }))} />
+            {heads.length === 0 ? (
+              <Input label={S.head} value={slot.head} w={18} onChange={(head) => setDraft(editSlot(draft, index, { head }))} />
+            ) : (
+              <Choice
+                label={S.head}
+                value={slot.head}
+                w={18}
+                options={optionsFor(heads, slot.head, { value: '', label: S.pickHead })}
+                onChange={(head) => setDraft(editSlot(draft, index, { head }))}
+              />
+            )}
+            {/* Choosing `open seat` (or clearing the typed id) unbinds: one gesture, where the form
+                used to carry a separate unbind key beside the field that already did it. */}
+            {sessions.length === 0 ? (
+              <Input
+                label={S.session}
+                value={slot.session ?? ''}
+                w={22}
+                placeholder={S.open}
+                onChange={(session) => setDraft(bindSession(draft, index, session))}
+              />
+            ) : (
+              <Choice
+                label={S.session}
+                value={slot.session ?? ''}
+                w={22}
+                options={optionsFor(sessions, slot.session ?? '', { value: '', label: S.open })}
+                onChange={(session) => setDraft(bindSession(draft, index, session))}
+              />
+            )}
             {/* The lead flag is exclusive: setting it here clears it on every other slot. */}
             <Flag
               on={slot.lead}
@@ -120,9 +158,8 @@ export function TeamCompose({ team = null, initial, answer: printed = null, onSa
               offLabel={S.notLead}
               onChange={(on) => setDraft(on ? setLead(draft, index) : { ...draft, slots: draft.slots.map((s, at) => (at === index ? { ...s, lead: false } : s)) })}
             />
-            <Lines label={S.instructions} rows={2} value={slot.instructions} onChange={(instructions) => setDraft(editSlot(draft, index, { instructions }))} />
+            <Lines label={S.instructions} rows={2} placeholder="what this role owns and how it hands work on" value={slot.instructions} onChange={(instructions) => setDraft(editSlot(draft, index, { instructions }))} />
             <div className="myx-compose-slot-actions">
-              <Key onClick={() => setDraft(unbindSession(draft, index))} disabled={slot.session === null}>{S.unbind}</Key>
               <Key onClick={() => setDraft(removeSlot(draft, index))}>{S.removeSlot}</Key>
             </div>
           </div>

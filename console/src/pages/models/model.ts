@@ -6,10 +6,10 @@ import { S } from './strings';
 
 /** Sentences, not labels (CONTRACTS.md section 4). */
 export const EMPTIES = {
-  catalog: { text: 'no catalog from the daemon yet', source: 'GET /api/models' },
-  catalogPending: { text: 'the console cannot read the catalog yet', source: 'V4-127 serves /api/models' },
+  catalog: { text: 'no catalog from the daemon yet', source: 'waiting for the daemon to answer' },
+  catalogPending: { text: 'catalog unavailable', source: 'this splice version does not serve the model catalog' },
   noModels: { text: 'this head declares no models', source: 'the topology' },
-  noProvider: { text: 'the payload reports no provider', source: 'GET /api/models' },
+  noProvider: { text: 'no provider in the catalog', source: 'add a provider to splice.toml in settings' },
 } as const;
 
 /** The honest bay label for heads whose payload carries no provider. A printed sentence-ish word

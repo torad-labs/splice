@@ -88,19 +88,44 @@ function errorMessage(body: unknown, status: number): string {
   return sentence !== undefined && sentence.trim() !== '' ? sentence : `HTTP ${status}`;
 }
 
+/** What a read says when the daemon did not answer at all. The browser's own words for a refused
+ *  connection ("Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed",
+ *  one per engine) name the transport and not the fact, and every page printed them verbatim
+ *  (console walkthrough, 2026-09-24). Mapped here, once, so no store ever holds them; status 0 is
+ *  the response that never came. */
+const NOT_ANSWERING = 'splice is not answering';
+
+/** What an HTTP header value may hold here: printable ASCII, no space. */
+const HEADER_SAFE = /^[\x21-\x7e]*$/;
+
 // Exported for entity api segments (entities/*/api), which own their routes and payload types
 // locally (CONTRACTS.md section 8); the key, the 401 lockout and the error envelope stay here.
 // `control` below keeps the routes that predate the console rebuild.
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (locked) throw new MgmtError(401, 'management key required');
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${currentKey()}`,
-      ...(init?.headers ?? {}),
-    },
-  });
+  // A key a header cannot carry never reaches the daemon: fetch throws on it before sending, and that
+  // throw read as `splice is not answering` on every page. A key pasted from rich text is the usual
+  // one (a smart quote, a zero-width space). The daemon's keys are printable ASCII, so the gate
+  // reopens and asks for it again (code review, 2026-09-24).
+  if (!HEADER_SAFE.test(currentKey())) {
+    noteUnauthorized();
+    throw new MgmtError(401, 'management key required');
+  }
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${currentKey()}`,
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    // A caller's own abort stays an abort; anything else thrown before a response is no answer.
+    if (init?.signal?.aborted) throw err;
+    throw new MgmtError(0, NOT_ANSWERING);
+  }
   if (res.status === 401) {
     locked = true;
     onUnauthorized?.();
@@ -248,9 +273,28 @@ export interface UsageWarn {
   reset: string | null;
 }
 
+/** One plan window as /api/usage writes it (UsagePayloads.window). Times are epoch SECONDS.
+ *  `observed_at` is when splice read the figure; the daemon serves it from the data-wire change
+ *  on, so an older daemon leaves it out. */
+export interface QuotaWindow {
+  used_pct: number;
+  resets_at: number | null;
+  observed_at?: number | null;
+}
+
+/** The head's plan windows (QuotaView): absent when the head tracks none. */
+export interface HeadQuota {
+  plan?: string;
+  five_hour?: QuotaWindow;
+  seven_day?: QuotaWindow;
+}
+
 export interface HeadUsage {
   output_tokens_5h: number;
   entries: number;
+  /** The plan's own windows, which `warn` does not read: warn is computed from the rate-limit
+   *  headers and the 5h token count only (UsageWarnPolicy.computeUsageWarn). */
+  quota?: HeadQuota;
   ratelimit: RatelimitState | null;
   warn: UsageWarn;
 }
@@ -274,12 +318,31 @@ export interface CompactRow {
   outcome?: string;
   chars?: number;
   ms?: number;
-  status?: number;
   error?: string;
+  /** The instructions the compaction ran under: `client` for the client's own, else a rule's
+   *  source label (StreamCompact.kt writes it from TurnMeta.compactionInstructionsSource). */
+  instructions_source?: string;
+}
+
+/** One head's compaction counts and the span of rows they came from (#226). `first_ts`/`last_ts`
+ *  are absent for a head with no rows: no rows, no span to claim. */
+export interface CompactHeadStats {
+  total: number;
+  by_outcome: Record<string, number>;
+  by_outcome_7d?: Record<string, number>;
+  first_ts?: number;
+  last_ts?: number;
 }
 
 export interface CompactPayload {
-  stats: { total: number; by_outcome: Record<string, number>; tail: CompactRow[] };
+  stats: {
+    total: number;
+    by_outcome: Record<string, number>;
+    tail: CompactRow[];
+    /** The last seven days among the counted rows; absent on a daemon older than #226. */
+    by_outcome_7d?: Record<string, number>;
+    heads?: Record<string, CompactHeadStats>;
+  };
 }
 
 export interface ProviderAuth {
@@ -290,6 +353,11 @@ export interface ProviderAuth {
   last_refresh?: string;
   auth_path?: string;
   refresh_latched?: string;
+  /** api-key heads: the variable the key is read from, and the key masked (`sk-f…ee94`). */
+  env_var?: string;
+  api_key_masked?: string;
+  /** The head's key_file, path only: read before the key store, after the variable. */
+  key_file?: string;
 }
 
 export type AuthPayload = Record<string, ProviderAuth>;

@@ -18,10 +18,10 @@ import { describe, expect, test } from 'vitest';
 import type { View } from '../src/features/views';
 import type { SessionRow } from '../src/entities/session';
 import type { TranscriptMessage } from '../src/entities/transcript';
-import { SessionsBoard } from '../src/pages/sessions';
+import { NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
 import { ProjectsBoard } from '../src/pages/projects';
 import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, windowOf } from '../src/pages/sessions/select';
-import { edgeOf, fieldsOf } from '../src/pages/sessions/strip';
+import { edgeOf, fieldsOf, headText, startedText } from '../src/pages/sessions/strip';
 import { Conversation } from '../src/widgets/conversation';
 import { FileView } from '../src/widgets/file-view';
 
@@ -154,7 +154,7 @@ describe('session strip', () => {
       pid: 42,
     });
     const fields = fieldsOf(bare, null, ['name', 'project', 'started', 'seen', 'peer']);
-    expect(fields.map((f) => f.value)).toEqual(['pid 42', 'n/r', 'n/r', 'n/r', 'n/r']);
+    expect(fields.map((f) => f.value)).toEqual(['pid 42', '–', '–', '–', '–']);
     // No basis word on an absent cell: the glyph is the whole statement (m1 design review B8).
     expect(fields.slice(1).every((f) => f.basis === undefined)).toBe(true);
     // The name a session falls back to is never empty either.
@@ -165,7 +165,7 @@ describe('session strip', () => {
     const fields = fieldsOf(session({ repo: { root: '/dev/atlas' } }), 'gs-backend-claude', ['project', 'peer']);
     expect(fields.map((f) => [f.label, f.value, f.basis])).toEqual([
       ['project', 'atlas', 'measured'],
-      ['peer', 'gs-backend-claude', 'measured'],
+      ['last hand-off', 'gs-backend-claude', 'measured'],
     ]);
   });
 
@@ -200,15 +200,43 @@ describe('sessions board', () => {
 
   test('the peer is unknown, and prints the absence glyph, until the board edges are read', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ session_id: 'a' })]) }));
-    expect(out).toContain('>n/r<');
+    expect(out).toContain('>–<');
     expect(out).not.toContain('unavailable');
   });
 
-  test('an empty registry names the route it read, and never a fixture', () => {
+  test('an empty registry says what fills it, in words and never a route, and never a fixture', () => {
     const out = render(h(SessionsBoard, { payload: payload([]) }));
-    expect(out).toContain('no sessions registered');
-    expect(out).toContain('/api/sessions');
+    expect(out).toContain('no sessions yet');
+    expect(out).not.toContain('/api/');
     expect(out).not.toContain('sample data');
+  });
+
+  test('sessions the daemon ties to no head are one group that says why, with no head to open', () => {
+    const out = render(h(SessionsBoard, { payload: payload([session({ head: 'unknown head' }), session({ session_id: 'b', head: 'claudex' })]) }));
+    expect(out).toContain('no splice head');
+    expect(out).toContain('splice did not start these sessions');
+    expect(out).not.toContain('head: unknown head');
+    expect(out).toContain('head: claudex');
+  });
+
+  test('a daemon that reports the route says which sessions splice did not start and which it could not read', () => {
+    const rows = [
+      session({ session_id: 'a', head: 'unknown head', route: 'direct' }),
+      session({ session_id: 'b', head: 'unknown head', route: 'direct' }),
+      session({ session_id: 'c', head: 'unknown head', route: 'unknown' }),
+    ];
+    expect(noHeadWhy(rows)).toBe('2 started with claude directly, not with a splice head; '
+      + '1 could not be read, so splice cannot tell which head started them');
+    expect(noHeadWhy([session({ head: 'unknown head' })])).toBe(NO_HEAD_WHY);
+    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('started directly');
+    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('no splice head');
+    expect(headText(session({ head: 'claudex', route: 'head' }))).toBe('claudex');
+  });
+
+  test('a session started on another day prints its date, and today only its time', () => {
+    const now = new Date(2026, 8, 24, 12, 0, 0);
+    expect(startedText(session({ started_at: new Date(2026, 8, 24, 9, 35, 29).getTime() }), now)).toBe('09:35:29');
+    expect(startedText(session({ started_at: new Date(2026, 8, 20, 9, 35, 29).getTime() }), now)).toBe('sep 20 09:35:29');
   });
 
   test('the headless note is behind a reveal, and a sample board says so', () => {
@@ -229,10 +257,10 @@ describe('projects board', () => {
     expect(out).not.toContain('sample data');
   });
 
-  test('an empty list names the route it read', () => {
+  test('an empty list says what fills it, never the route it read', () => {
     const out = render(h(ProjectsBoard, { payload: { projects: [] } }));
-    expect(out).toContain('no repositories seen');
-    expect(out).toContain('/api/projects');
+    expect(out).toContain('no projects yet');
+    expect(out).not.toContain('/api/');
   });
 
   test('a repo with no declared rates says so instead of costing zero', () => {
@@ -256,7 +284,7 @@ describe('projects board', () => {
         },
       }),
     );
-    expect(out).toContain('>n/r<');
+    expect(out).toContain('>–<');
     expect(out).not.toContain('no rates');
     expect(out).toContain('/dev/atlas');
   });
@@ -283,8 +311,10 @@ describe('conversation', () => {
     expect(out).toContain('/home/user/.claude/projects/x/s1.jsonl');
   });
 
-  test('a pending transcript names the row that will serve it', () => {
-    expect(render(h(Conversation, { sessionId: 's1', slice: { pending: 'V4-130' } }))).toContain('row V4-130');
+  test('a transcript this daemon does not serve says so, without a row id', () => {
+    const out = render(h(Conversation, { sessionId: 's1', slice: { pending: 'V4-130' } }));
+    expect(out).toContain('transcript unavailable');
+    expect(out).not.toContain('V4-130');
   });
 
   test('a finished transcript offers no load more', () => {
@@ -337,3 +367,18 @@ describe('file view', () => {
     expect(out).not.toContain('FILE-BODY-NOT-IN-MARKUP');
   });
 });
+
+describe('the session rack budget', () => {
+  const ALL = ['name', 'head', 'project', 'started', 'seen', 'peer'];
+  const width = (order: string[]) => fieldsOf(session({}), 'peer-session', order).reduce((sum, field) => sum + field.w, 0);
+
+  test('no view passes 122ch, the ones that print head included', () => {
+    // by team prints all six; at the widths the head-less view uses it measured 151ch
+    expect(width(ALL)).toBe(122);
+    expect(width(ALL.filter((key) => key !== 'head'))).toBe(122);
+    for (let drop = 0; drop < ALL.length; drop += 1) {
+      expect(width(ALL.filter((_, at) => at !== drop))).toBeLessThanOrEqual(122);
+    }
+  });
+});
+

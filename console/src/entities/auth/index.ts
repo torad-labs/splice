@@ -9,6 +9,7 @@ export {
   startAuthPolling,
   startLogin,
   switchAccount,
+  unpinAccount,
 } from './api';
 export { LOGIN_FLOWS, LOGIN_STATES, PENDING_AUTH_WRITES } from './model/types';
 export type {

@@ -35,10 +35,10 @@ export function chatOrder(messages: readonly TeamMessage[]): TeamMessage[] {
 
 export function TeamChat({ state }: { state: TeamChatState }) {
   let body;
-  if (state === null) body = <Empty text="reading the chat" source="GET /api/teams/{id}/chat" />;
-  else if ('pending' in state) body = <Empty text="no chat route" source={`${state.pending} pending`} />;
+  if (state === null) body = <Empty text="reading the chat" source="the messages this team's sessions send each other" />;
+  else if ('pending' in state) body = <Empty text="chat unavailable" source="this splice version does not serve team chat" />;
   else if ('error' in state) body = <Empty text="chat unreadable" source={state.error} />;
-  else if (state.messages.length === 0) body = <Empty text="no messages yet" source="GET /api/teams/{id}/chat" />;
+  else if (state.messages.length === 0) body = <Empty text="no messages yet" source="a message one of this team's sessions sends another shows here" />;
   else {
     body = (
       <ol className="myx-chat-rows">

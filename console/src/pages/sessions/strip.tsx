@@ -14,7 +14,7 @@ export interface Field {
   label: string;
   w: number;
   value: string;
-  /** Absent for a cell that carries no value: `n/r` is the whole statement, and the basis word
+  /** Absent for a cell that carries no value: `–` is the whole statement, and the basis word
    *  that used to sit beside it said the same thing twice (m1 design review B8). */
   basis?: Basis | undefined;
 }
@@ -54,13 +54,29 @@ const ABSENT = S.absent;
 //
 // Widths went to the two columns holding real names and away from the four holding tokens and
 // absences. No phrase was shortened and no absence renamed to buy the pixels.
-const COLUMNS: Record<string, { label: string; w: number }> = {
+//
+// The default view (by head) stopped printing `head`, which its bay label already names, so its
+// 29ch went back into the same 122: to `name` and `project`, the two real names, and to `peer`,
+// whose label is now `last hand-off` (13 characters) and which holds a session name or id.
+// A view that still prints `head` gets its 29ch back from the same three, so EVERY view is a subset
+// of one of the two tables below and none can pass 122: by team printed all six at the wide widths
+// and measured 151ch (code review, 2026-09-24), a custom view could do the same, and peer keeps 13ch
+// in both, the length of its label.
+type Columns = Record<string, { label: string; w: number }>;
+const WITHOUT_HEAD: Columns = {
+  name: { label: S.name, w: 42 },
+  project: { label: S.project, w: 30 },
+  started: { label: S.started, w: 17 },
+  seen: { label: S.seen, w: 17 },
+  peer: { label: S.peer, w: 16 },
+};
+const WITH_HEAD: Columns = {
   name: { label: S.name, w: 30 },
   head: { label: S.head, w: 29 },
   project: { label: S.project, w: 20 },
   started: { label: S.started, w: 17 },
-  seen: { label: S.seen, w: 17 },
-  peer: { label: S.peer, w: 9 },
+  seen: { label: S.seen, w: 13 },
+  peer: { label: S.peer, w: 13 },
 };
 
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
@@ -73,10 +89,14 @@ function basisProp(basis: Basis | undefined): { basis?: Basis } {
 const pad = (value: number): string => String(value).padStart(2, '0');
 
 /** HH:MM:SS of a session's start, or null when the client wrote no timestamp. */
-export function startedText(row: SessionRow): string | null {
+/** When a session started: the time alone today, and the date before it on any other day, so a
+ *  session from last week does not read as one from this morning. */
+export function startedText(row: SessionRow, now: Date = new Date()): string | null {
   if (row.started_at === null) return null;
   const at = new Date(row.started_at);
-  return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+  if (at.toDateString() === now.toDateString()) return time;
+  return `${at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()} ${time}`;
 }
 
 /** The last segment of a path, which is how a repo is named on a strip. */
@@ -98,6 +118,13 @@ export function projectText(row: SessionRow): string | null {
   return worktree === undefined ? baseOf(key) : `${baseOf(key)} ${baseOf(worktree)}`;
 }
 
+/** The head a session rides, or why it has none: started with `claude` directly (`not via
+ *  splice`), or not readable (`no splice head`). It printed `unknown head` for both. */
+export function headText(row: SessionRow): string {
+  if (row.head !== '' && row.head !== UNKNOWN_HEAD) return row.head;
+  return row.route === 'direct' ? S.direct : S.noHead;
+}
+
 /**
  * The strip's fields, in the view's own order. A value the daemon does not
  * report is `unknown` and prints the absence glyph, never a blank and never a
@@ -108,16 +135,17 @@ export function fieldsOf(row: SessionRow, peer: string | null, order: readonly s
   const project = projectText(row);
   const values: Record<string, { value: string; basis?: Basis }> = {
     name: { value: sessionLabel(row), basis: 'measured' },
-    head: { value: row.head === '' ? UNKNOWN_HEAD : row.head, basis: 'measured' },
+    head: { value: headText(row), basis: 'measured' },
     project: project === null ? { value: ABSENT } : { value: project, basis: 'measured' },
     started: started === null ? { value: ABSENT } : { value: started, basis: 'measured' },
     seen: row.updated_at === null ? { value: ABSENT } : { value: timeAgo(row.updated_at), basis: 'measured' },
     peer: peer === null ? { value: ABSENT } : { value: peer, basis: 'measured' },
   };
+  const columns = order.includes('head') ? WITH_HEAD : WITHOUT_HEAD;
   const fields: Field[] = [];
   for (const key of order) {
     const found = values[key];
-    const column = COLUMNS[key];
+    const column = columns[key];
     if (found === undefined || column === undefined) continue;
     fields.push({ key, label: column.label, w: column.w, value: found.value, ...basisProp(found.basis) });
   }

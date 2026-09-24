@@ -257,7 +257,27 @@
   background: var(--strip-ink);
   pointer-events: none;
 }
-.myx-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* THE FOCUS RING IS DRAWN INSIDE THE STRIP (S9). Outside it, 1px off the border, it was clipped by
+   the rack: `.myx-bay-rows` scrolls (overflow-x auto, overflow-y hidden) and a strip starts flush at
+   its left edge and, in a compact rack, runs to its right one, so both sides went and the 4px gap
+   let the next strip paint over the bottom. Measured on turns: of the four sides only the top
+   survived, a 2px line. Inset on the strip itself it is still lost on the left, because the holder
+   mark is absolutely positioned and a positioned child paints after its parent's outline (2 of 34
+   rows of the left side carried the full ring). So the ring is an outline on a last child that
+   sits over the padding box: it paints over the mark, the pin and the fields, and nothing outside
+   the strip can clip it. It stands one --hair in from the padding box, two from the border edge,
+   because a packed rack (the turns list, zero gap) paints the next strip's two outer rings over
+   this one's last two rows: flush with the padding box the bottom side kept 2 of 1997 columns. A
+   z-index cannot lift it there, since every virtual row is its own stacking context. */
+.myx-strip:focus-visible { outline: none; }
+.myx-strip:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: var(--hair);
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  pointer-events: none;
+}
 .myx-strip-fields {
   display: flex;
   align-items: stretch;
@@ -481,8 +501,13 @@
      container that offers none (an auto-height flex column, which is what every page sheet builds
      today) leave the bay exactly as it is. It cannot do more from here, because a box cannot know
      a height its parent never had; the parent half is the page sheets' and app.css's, and it is
-     reported rather than reached for. */
-  flex: 1 1 auto;
+     reported rather than reached for.
+     REVERSED FOR EVERY BAY (console review, 2026-09-24): once the root stopped scaling with the
+     window (49b1fe49b), a bay that grew into its room drew hundreds of pixels of empty ribs under
+     its last row -- projects' seven repos under a floor to the bottom of a 1080 frame, fleet's ten
+     heads under 1600px of it on a 2160 panel. That fix was fleet's alone; the bay now ends after
+     its last row on every page, and a page that holds more than fits scrolls. */
+  flex: 0 0 auto;
   min-height: 0;
   /* THE BAY IS ITS OWN PLANE (M1-35's census, bound here): `--bay` was measured in M1-13 and
      has had NO reader since -- this rule was the one that was supposed to read it and it named
@@ -849,6 +874,10 @@
   font-family: var(--font-label);
   font-size: var(--text-1);
   width: max-content;
+  /* Cut to its content, but never past its rack: an empty's text is a sentence, not a cell, so on
+     a phone it wraps inside the box instead of running under the rack's edge (S12, measured at 390:
+     accounts' "one login per claude head" ran 61px past the clip, compaction's rules empty 132). */
+  max-width: 100%;
   background: var(--strip);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
@@ -899,10 +928,13 @@
    the dark plane only, and a token swap on the class would have moved it rather than removed it
    (M1-52 measured that shape: their first cut moved `.myx-head-key` from 1.07 to 1.06).
    So the rules are PLANE-SCOPED: the strip already has its own ink vocabulary - --strip-ink and
-   --strip-ink-mute, the latter recorded as the comp's #6B685B darkened one step - and these two
-   rules print it. The room case above is untouched, which is what keeps the other 56 renders. */
+   --strip-ink-mute, the latter recorded as the comp's #6B685B darkened one step - and these
+   rules print it. The room case above is untouched, which is what keeps the other 56 renders. The
+   basis joined them when a Fault began printing a `stale` figure on its strip (2026-09-24): its
+   word was --ink-mute on strip paper, the unit's defect again. */
 .myx-strip .myx-fig-value { color: var(--strip-ink); }
 .myx-strip .myx-fig-unit { color: var(--strip-ink-mute); }
+.myx-strip .myx-fig-basis { color: var(--strip-ink-mute); }
 .myx-fig-unit {
   /* FIGURE: the unit beside a figure; it sits on the figure's baseline. */
   font-family: var(--font-figure);

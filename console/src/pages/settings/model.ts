@@ -3,18 +3,19 @@
 // ships with. No React, no stores, no network — every one of these is a function of its argument,
 // which is what lets the tests exercise the page's whole data story without a DOM.
 import type { View } from '@features/views';
+import { TOPOLOGY_CHOICES } from '@entities/topology';
 import { S } from './strings';
 
 /** The honest empties this page prints. Sentences, not labels, so they live here and not in the
  *  string table (CONTRACTS.md section 4), and each one names the thing that did not answer. */
 export const EMPTIES = {
-  noConfig: { text: 'no config from the daemon yet', source: 'GET /api/config' },
+  noConfig: { text: 'no config from the daemon yet', source: 'waiting for the daemon to answer' },
   noKnobs: { text: 'this view holds no knobs', source: 'the other view tabs' },
   noHeads: { text: 'no heads declared', source: 'splice.toml' },
-  topologyPending: { text: 'the console cannot read the file yet', source: 'V4-128 serves /api/topology' },
+  topologyPending: { text: 'splice.toml unavailable', source: 'this splice version does not serve splice.toml editing' },
   // V4-175: not "pending" any more. The route is served (V4-129), so the only absence left is the
   // one before the first poll answers, and it names the route rather than a row that closed.
-  claudeUnread: { text: 'the mode has not been read yet', source: 'GET /api/claude-head' },
+  claudeUnread: { text: 'the mode has not been read yet', source: 'waiting for the daemon to answer' },
   nothingChanged: { text: 'nothing changed yet', source: 'the loaded topology' },
 } as const;
 
@@ -22,7 +23,7 @@ export const EMPTIES = {
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'all', name: S.allKnobs, layout: 'rack', filter: {}, sort: null, group: null, fields: [] },
   { id: 'live', name: S.live, layout: 'rack', filter: { hot: 'true' }, sort: null, group: null, fields: [] },
-  { id: 'restart', name: S.restart, layout: 'rack', filter: { hot: 'false' }, sort: null, group: null, fields: [] },
+  { id: 'restart', name: S.restartView, layout: 'rack', filter: { hot: 'false' }, sort: null, group: null, fields: [] },
 ];
 
 export type TopologyLeaf = {
@@ -148,6 +149,87 @@ export function coerce(raw: string, reference: string | number | boolean): strin
   return raw;
 }
 
+/** How a topology value is edited: a switch, a picker over the daemon's own values, a number, a
+ *  line of text, or a list (an array of scalars, typed as one comma-separated line). */
+export type TopologyFieldKind = 'flag' | 'choice' | 'number' | 'text' | 'list';
+
+export interface TopologyField {
+  /** The key as the file spells it, inside its table: `port`, `share`. */
+  key: string;
+  /** The dotted path `setAtPath` writes: `heads.claudex.port`, `claude.share`. */
+  path: string;
+  kind: TopologyFieldKind;
+  value: string | number | boolean | readonly (string | number)[];
+  /** The daemon's values, for a `choice`. */
+  choices?: readonly string[];
+}
+
+export interface TopologyTable {
+  /** The table's dotted path: `heads.claudex`, `providers.xai.models[0]`. */
+  path: string;
+  fields: TopologyField[];
+}
+
+function isScalarList(value: unknown): value is (string | number)[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string' || typeof entry === 'number');
+}
+
+function fieldOf(
+  key: string,
+  path: string,
+  parent: string,
+  value: string | number | boolean | (string | number)[],
+  providers: readonly string[],
+): TopologyField {
+  if (Array.isArray(value)) return { key, path, kind: 'list', value };
+  if (typeof value === 'boolean') return { key, path, kind: 'flag', value };
+  // A head's provider names one of the file's own [providers.*] tables.
+  const choices = parent.startsWith('heads.') && key === 'provider'
+    ? providers
+    : TOPOLOGY_CHOICES[parent.endsWith('auth') && key === 'kind' ? 'auth.kind' : key];
+  if (choices !== undefined && typeof value === 'string') return { key, path, kind: 'choice', value, choices };
+  return { key, path, kind: typeof value === 'number' ? 'number' : 'text', value };
+}
+
+function pushTables(table: Record<string, unknown>, path: string, out: TopologyTable[], providers: readonly string[]): void {
+  const fields: TopologyField[] = [];
+  const children: [string, Record<string, unknown>][] = [];
+  for (const [key, value] of Object.entries(table)) {
+    const at = path === '' ? key : `${path}.${key}`;
+    if (isLeaf(value) || isScalarList(value)) fields.push(fieldOf(key, at, path, value, providers));
+    else if (isTable(value)) children.push([at, value]);
+    else if (Array.isArray(value)) {
+      value.forEach((entry, index) => {
+        if (isTable(entry)) children.push([`${at}[${index}]`, entry]);
+      });
+    }
+  }
+  if (fields.length > 0) out.push({ path, fields });
+  for (const [at, child] of children) pushTables(child, at, out, providers);
+}
+
+/**
+ * The document as the tables the file is written in, each with its own fields, in the file's order
+ * (console review, 2026-09-24). The form was one full-width box per scalar, labelled with its
+ * whole path and repeating `splice.toml / restart to apply` under every one: `claude.share` alone
+ * was ten boxes. A table with no values of its own (`heads`, `providers`) is only a heading for
+ * the tables under it, so it is not a table here.
+ */
+export function topologyTables(topology: Record<string, unknown>): TopologyTable[] {
+  const out: TopologyTable[] = [];
+  const providers = isTable(topology.providers) ? Object.keys(topology.providers) : [];
+  pushTables(topology, '', out, providers);
+  return out;
+}
+
+/** A list field's line back into the array it edits: comma-separated, blanks dropped, and numbers
+ *  kept as numbers when the list held numbers. */
+export function parseList(raw: string, reference: readonly (string | number)[]): (string | number)[] {
+  const numeric = reference.length > 0 && reference.every((entry) => typeof entry === 'number');
+  const items = raw.split(',').map((item) => item.trim()).filter((item) => item !== '');
+  return numeric ? items.map(Number).filter(Number.isFinite) : items;
+}
+
 /** The paths two documents disagree on, in stable order. This is the review before a write. */
 export function changedPaths(
   loaded: Record<string, unknown>,
@@ -221,6 +303,29 @@ export function toToml(topology: Record<string, unknown>): string {
   const lines: string[] = [];
   writeTable(topology, '', lines);
   return `${lines.join('\n')}\n`;
+}
+
+/**
+ * The document with one head's override of one knob set, or removed when `value` is null.
+ *
+ * `[heads.<head>.overrides]` holds knob values as TOML strings (`maxInflight = "100"`), the
+ * spelling the operator's own file uses and the daemon coerces per knob, so the value is written
+ * as its string form. Removing the last override removes the empty table with it, so a reset
+ * leaves the file as it was before the override existed. Copy-on-write, like setAtPath.
+ */
+export function withHeadOverride(
+  topology: Record<string, unknown>,
+  head: string,
+  key: string,
+  value: string | number | boolean | null,
+): Record<string, unknown> {
+  const heads = isTable(topology.heads) ? topology.heads : {};
+  const entry = isTable(heads[head]) ? heads[head] : {};
+  const kept = Object.entries(isTable(entry.overrides) ? entry.overrides : {}).filter(([name]) => name !== key);
+  const overrides: Record<string, unknown> = Object.fromEntries(value === null ? kept : [...kept, [key, String(value)]]);
+  const rest = Object.fromEntries(Object.entries(entry).filter(([name]) => name !== 'overrides'));
+  const nextEntry: Record<string, unknown> = Object.keys(overrides).length === 0 ? rest : { ...rest, overrides };
+  return { ...topology, heads: { ...heads, [head]: nextEntry } };
 }
 
 /** The knobs the active view shows. An unknown filter key shows everything, never nothing. */

@@ -72,18 +72,11 @@
   min-height: 0;
 }
 
-/* The bays share the rack area's height rather than stacking at their content height: this page
-   holds three groups, and the comp's rack is one column that reaches the floor. */
-.myx-sx-bays > .myx-bay {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
 /* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
    box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
    leftover ch is distributed across them, so the column grid is still the declared one and only the
    slack moves. That is the whole difference between bare paper and a full row. */
-.myx-sx-bays .myx-strip { width: 100%; }
+.myx-sx-bays .myx-strip { min-width: 100%; }
 /* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
    overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
    every row shape has the same cell count -- it does not, so the primitive now sets
@@ -146,4 +139,14 @@
    one place, for every page row; until it is hoisted there it is repeated here with this note. */
 @media (max-width: 1120px) {
   .myx-sx-board-open { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Why a group of sessions has no head: one quiet line above the rack, said once for the group. */
+.myx-sx-why {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--room-deep);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
 }

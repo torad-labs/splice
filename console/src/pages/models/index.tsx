@@ -152,7 +152,7 @@ export default function ModelsPage() {
 
   return (
     <>
-      {models.error === null ? null : <Fault message={models.error} />}
+      {models.error === null ? null : <Fault message={models.error} lastRead={sample === null ? models.lastUpdated : null} />}
       <ModelsBoard
         catalog={catalog}
         topology={sample === null && topology !== null && 'topology' in topology ? topology.topology : null}

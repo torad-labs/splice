@@ -41,10 +41,48 @@ describe('Strip', () => {
     expect(out).toContain('aria-label="head claude"');
   });
 
-  test('is keyboard reachable and opens as a button', () => {
-    const out = strip();
+  // S9: every strip used to be a tab stop and a "button", so 6 of the 8 stops on turns pressed
+  // nothing. The markup is one half; the handlers are read off the element Strip returns (it holds no
+  // hooks, so calling it is rendering it), which is the half a static render cannot show.
+  const element = (over: Partial<React.ComponentProps<typeof Strip>> = {}) =>
+    Strip({ edge: 'green', edgeLabel: 'ok', ariaLabel: 'head claude', children: null, ...over }) as React.ReactElement<{
+      onClick?: () => void;
+      onKeyDown?: (event: { key: string; preventDefault: () => void }) => void;
+    }>;
+
+  test('a strip that opens is keyboard reachable and opens as a button', () => {
+    const out = strip({ onOpen: () => undefined });
     expect(out).toContain('tabindex="0"');
     expect(out).toContain('role="button"');
+  });
+
+  test('a strip with nothing to open is no tab stop and no button, and keeps its name', () => {
+    const out = strip();
+    expect(out).not.toContain('tabindex');
+    expect(out).not.toContain('role="button"');
+    expect(out).toContain('role="group"');
+    expect(out).toContain('aria-label="head claude"');
+    expect(element().props.onKeyDown).toBeUndefined();
+    expect(element().props.onClick).toBeUndefined();
+  });
+
+  test('Enter and Space open an openable strip, and other keys do not', () => {
+    let opened = 0;
+    const { onKeyDown } = element({ onOpen: () => { opened += 1; } }).props;
+    const press = (key: string) => onKeyDown?.({ key, preventDefault: () => undefined });
+    press('Enter');
+    press(' ');
+    press('a');
+    expect(opened).toBe(2);
+  });
+
+  test('a struck strip keeps its stop but does not open', () => {
+    let opened = 0;
+    const struck = element({ struck: true, onOpen: () => { opened += 1; } }).props;
+    struck.onKeyDown?.({ key: 'Enter', preventDefault: () => undefined });
+    expect(struck.onClick).toBeUndefined();
+    expect(opened).toBe(0);
+    expect(strip({ struck: true, onOpen: () => undefined })).toContain('tabindex="0"');
   });
 
   test('cocked lifts the edge into attention and STILL prints the label', () => {
@@ -76,6 +114,19 @@ describe('Strip', () => {
     expect(out).not.toContain('aria-disabled');
     expect(out).not.toContain('myx-strip-strike');
     expect(out).not.toContain('myx-strip-selected');
+  });
+
+  // The ring used to stand 1px outside the strip, where the rack's scroller cut both sides and the
+  // next strip covered the bottom: on turns only the top survived. Measured in a browser (S9); what
+  // is pinned here is where it is drawn, inside the strip on a positioned last child.
+  test('the focus ring is drawn inside the strip, over its positioned mark', () => {
+    const ui = sheet('src/shared/ui/ui.css');
+    expect(declared(ui, '.myx-strip:focus-visible', 'outline')).toBe('none');
+    const ring = '.myx-strip:focus-visible::after';
+    expect(declared(ui, ring, 'position')).toBe('absolute');
+    expect(declared(ui, ring, 'outline')).toContain('var(--focus)');
+    expect(parseFloat(declared(ui, ring, 'outline-offset') ?? '0')).toBeLessThan(0);
+    expect(declared(ui, ring, 'pointer-events')).toBe('none');
   });
 });
 
@@ -157,8 +208,8 @@ describe('FieldBox', () => {
 
   test('says whether the change needs a restart, in words', () => {
     expect(box({ hot: true })).toContain('applies live');
-    expect(box({ hot: true })).not.toContain('restart to apply');
-    expect(box()).toContain('restart to apply');
+    expect(box({ hot: true })).not.toContain('applies on restart');
+    expect(box()).toContain('applies on restart');
   });
 
   test('is read-only until it is given somewhere to write', () => {

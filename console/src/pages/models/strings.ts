@@ -1,5 +1,7 @@
 // Every label this page prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
 // section 4, enforced by the label wall).
+import { ABSENT } from '@shared/lib';
+
 export const S = {
   title: 'models',
   byHead: 'by head',
@@ -7,25 +9,21 @@ export const S = {
   catalog: 'catalog',
   tiers: 'tiers',
   model: 'model',
-  slot: 'slot',
+  /** The Claude Code model tier (opus, sonnet, haiku, fable) a model answers for on this head. */
+  slot: 'tier',
   contextWindow: 'context window',
-  windowSource: 'window source',
+  windowSource: 'window from',
   rates: 'rates',
   rateInput: 'input',
   rateRead: 'cache read',
   rateWrite: 'cache write',
   rateOutput: 'output',
   pinned: 'pinned',
-  /** The edge state of a model a tier hands out by itself, against one the operator pinned by
-   *  hand. Both are inside the contract's 6ch edge budget (CONTRACTS.md section 2). */
-  slotted: 'auto',
   noSlot: 'none',
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
    *  which replaces `no rates` in every rate cell and `not declared` in a missing tier's model. */
-  absent: 'n/r',
+  absent: ABSENT,
   pinnedYes: 'pinned',
-  /** The edge of a tier no model fills: the tier is vacant, and the row is struck. */
-  undeclared: 'vacant',
   /** The edge of the opened model's rate strip. `none` and not `no rates` (8 characters) because
    *  the rate cells themselves print the absence glyph. */
   noRates: 'none',
@@ -45,7 +43,8 @@ export const S = {
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
 // These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
 // these meanings is how the console reached eleven phrasings for "nothing here".
-//   n/r        nobody reported a value for this cell. The default, and the comp's own glyph.
+//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
+//              default. It was `n/r`, which no reader could expand.
 //   none       the question was asked and its answer is nothing (no tier hands this model out).
 //   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
 //   unavailable  it exists and we cannot reach it.

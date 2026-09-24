@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headsReportingNone, nearestWindow } from '../src/entities/usage';
 import type { AuthPayload, UsagePayload } from '../src/shared/api';
-import { ConnectionCell, NoneCell, PendingRestartCell, WindowCell, healthOf } from '../src/widgets/rule';
+import { ConnectionCell, LINK_SILENT_MS, NoneCell, PendingRestartCell, WindowCell, healthOf } from '../src/widgets/rule';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -49,7 +49,7 @@ const auth: AuthPayload = {
  */
 function expectedWindowParts(payload: UsagePayload | null): string[] {
   const nearest = nearestWindow(payload, auth);
-  if (nearest === null) return ['no window reported'];
+  if (nearest === null) return ['no head reports a limit'];
   return [
     nearest.head,
     nearest.window,
@@ -65,16 +65,23 @@ describe('the rule window cell', () => {
 
   test('prints the nearest window the entity derives, for a fleet where one head is ahead', () => {
     const out = render(h(WindowCell, { usage: crowded, auth }));
-    expect(out).toContain('nearest window');
+    expect(out).toContain('closest limit');
+    expect(out).toContain('>used<');
     for (const part of expectedWindowParts(crowded)) expect(out).toContain(part);
     expect(out).toContain('74'); // the highest percentage wins, not the first head
     expect(out).not.toContain('>41<');
   });
 
+  test('the login method is not an account: a head with no account id prints none', () => {
+    // claude-grok wins at 74 and its auth card has `login: 'oauth'` and no masked id.
+    expect(nearestWindow(crowded, auth)?.account).toBeNull();
+    expect(render(h(WindowCell, { usage: crowded, auth }))).not.toContain('oauth');
+  });
+
   test('a fleet where nobody reports a window prints the absence, never a zero', () => {
     const out = render(h(WindowCell, { usage: quiet, auth }));
     for (const part of expectedWindowParts(quiet)) expect(out).toContain(part);
-    expect(out).toContain('no window reported');
+    expect(out).toContain('no head reports a limit');
     expect(out).not.toContain('>0<');
   });
 
@@ -114,18 +121,23 @@ describe('the rule connection cell', () => {
 
   test('a stream that has never delivered a frame says so, and never reads as an age', () => {
     const out = render(h(ConnectionCell, { status: 'live', lastFrameAt: null }));
-    expect(out).toContain('no frame yet');
+    expect(out).toContain('no events yet');
     expect(out).not.toContain('ago');
   });
 
-  test('the age of the last frame is stale past the console-wide fifteen seconds', () => {
-    const fresh = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() - 2_000 }));
-    expect(fresh).not.toContain('>stale<');
+  test('an old event on a link that still beats is not stale: a quiet daemon is not a dead one', () => {
+    // Walkthrough S13: the cell turned stale 15 s after the last EVENT, so every quiet, healthy
+    // stream read stale. The heartbeat is what says the link is alive.
+    const now = 1_790_000_000_000;
+    const quiet = render(h(ConnectionCell, { status: 'live', lastFrameAt: now - 120_000, lastBeatAt: now - 5_000, now }));
+    expect(quiet).not.toContain('>stale<');
+    expect(quiet).toContain('last event');
+    expect(quiet).toContain('2m ago');
 
-    const old = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() - 60_000 }));
-    expect(old).toContain('>stale<');
-    // The state word still says the stream is up: a quiet daemon is not a dead one.
-    expect(old).toContain('>live<');
+    const silent = render(h(ConnectionCell, { status: 'live', lastFrameAt: now - 120_000, lastBeatAt: now - LINK_SILENT_MS - 1, now }));
+    expect(silent).toContain('>stale<');
+    // The state word still says what the stream reports; the basis carries the doubt.
+    expect(silent).toContain('>live<');
   });
 });
 

@@ -37,6 +37,10 @@ export interface SessionRepo {
   reason?: string;
 }
 
+/** How the daemon read the session's start: through a head (`head`), with `claude` run directly
+ *  and no SPLICE=1 in its environment (`direct`), or not readable (`unknown`). */
+export type SessionRoute = 'head' | 'direct' | 'unknown';
+
 /** One registration, as /api/sessions returns it. */
 export interface SessionRow {
   pid: number | null;
@@ -56,6 +60,8 @@ export interface SessionRow {
   address: string | null;
   /** The head key that launched the session, or UNKNOWN_HEAD. Never absent on the wire. */
   head: string;
+  /** Why `head` is what it is (ProcessEnvironment.route). Absent from a daemon older than it. */
+  route?: SessionRoute;
   availability: SessionAvailability;
   /** PENDING V4-130. Absent until the daemon resolves it. */
   repo?: SessionRepo;

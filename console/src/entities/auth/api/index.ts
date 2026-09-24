@@ -1,4 +1,4 @@
-import { control, pendingOf, request } from '@shared/api';
+import { MgmtError, control, pendingOf, request } from '@shared/api';
 import type { AuthActionResult, PendingRoute } from '@shared/api';
 import { poll } from '@shared/lib';
 import { authActionStore, authStore } from '../model/store';
@@ -83,6 +83,27 @@ export function switchAccount(head: string, label: string): Promise<AuthActionOu
     { method: 'POST', body: JSON.stringify({ label }) },
     (result) => ({ action: 'switch', result }),
   );
+}
+
+/** DELETE /api/auth/{head}/switch — drop the head's pin, so the selector's own order picks again
+ *  from the next turn. Idempotent: ok whether or not an account was pinned. A daemon older than the
+ *  route answers 405 (the path exists for POST), which is the same fact as a 404 here: this version
+ *  cannot do it. */
+export async function unpinAccount(head: string): Promise<AuthActionOutcome | PendingRoute> {
+  try {
+    return await settle<SwitchPayload>(
+      `/api/auth/${segment(head)}/switch`,
+      { method: 'DELETE' },
+      (result) => ({ action: 'unpin', result }),
+    );
+  } catch (err) {
+    if (err instanceof MgmtError && err.status === 405) {
+      const pending = { pending: PENDING_AUTH_WRITES };
+      authActionStore.setData(pending);
+      return pending;
+    }
+    throw err;
+  }
 }
 
 /** POST /api/auth/{head}/login — start a device or browser login for a new account on this head.

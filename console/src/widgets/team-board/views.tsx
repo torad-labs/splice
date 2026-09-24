@@ -27,6 +27,7 @@ import {
 import type { TeamTurn, TeamViewData } from './model';
 import { S } from './strings';
 import './views.css';
+import { ABSENT } from '@shared/lib';
 
 /** The three bay widths of team-board-b as a grid track list, in the comp's own proportions. A
  *  team with another number of roles has no measured geometry, so its bays share the rack
@@ -34,8 +35,8 @@ import './views.css';
 const ROLE_TRACKS = '23.538fr 25.183fr 15.310fr';
 const tracksFor = (bays: number): string => (bays === 3 ? ROLE_TRACKS : `repeat(${Math.max(bays, 1)}, 1fr)`);
 
-const thousand = (value: number | null): string => (value === null ? 'n/r' : value.toLocaleString('en-US'));
-const money = (value: number | null): string => (value === null ? 'n/r' : `$${value.toFixed(3)}`);
+const thousand = (value: number | null): string => (value === null ? ABSENT : value.toLocaleString('en-US'));
+const money = (value: number | null): string => (value === null ? ABSENT : `$${value.toFixed(3)}`);
 
 /** HH:MM of an epoch, in UTC like every other stamp on the board (parts.tsx stamp). */
 const clock = (epochMs: number): string => new Date(epochMs).toISOString().slice(11, 16);
@@ -61,8 +62,8 @@ function SessionStrip({ member }: { member: TeamMemberRow }) {
     <WrapStrip edge={member.role === 'lead' ? 'green' : 'grey'} ariaLabel={`${member.name} session`}>
       <StripField w={0} fixed label={S.session} value={member.name} mono={false} />
       <StripField w={0} fixed label={S.head} value={member.head} mono={false} />
-      <StripField w={0} fixed label={S.model} value={member.model ?? 'n/r'} mono={false} />
-      <StripField w={0} fixed label={S.account} value={member.account ?? 'n/r'} mono={false} />
+      <StripField w={0} fixed label={S.model} value={member.model ?? ABSENT} mono={false} />
+      <StripField w={0} fixed label={S.account} value={member.account ?? ABSENT} mono={false} />
       {/* A window no provider reports is named as that, never as a zero or a dash. */}
       <StripField w={0} fixed label={S.window} value={member.window ?? 'not reported by provider'} mono={false} />
       <StripField w={0} fixed label={S.state} value={member.state} mono={false} />
@@ -76,7 +77,7 @@ function MemberCard({ board, member }: { board: TeamPayload; member: TeamMemberR
   const rows: [string, string][] = [
     [S.name, member.name],
     [S.head, member.head],
-    [S.model, member.model ?? 'n/r'],
+    [S.model, member.model ?? ABSENT],
     [S.repo, board.team.repo],
     [S.boundSlot, slot?.role ?? 'none'],
     [S.window, member.window ?? 'not reported by provider'],
@@ -104,7 +105,7 @@ function TurnsChart({ data }: { data: TeamViewData | null }) {
   if (data === null || data.lastHour.length === 0) {
     return (
       <ScopeInset title={`${S.turns} over the last hour`} basis="unavailable">
-        <Empty text="reading the turn log" source="GET /api/perf/turns" />
+        <Empty text="reading the turn log" source="this team's turns, from each head's perf log" />
       </ScopeInset>
     );
   }
@@ -210,7 +211,7 @@ export function TeamBoardByRole({ board, data = null, chat, feed }: {
 
         <aside className="myx-board-aside myx-role-aside">
           {focus === null
-            ? <Empty text="no session is bound" source="GET /api/teams" />
+            ? <Empty text="no session is bound" source="give one of this team's slots a session and it shows here" />
             : <MemberCard board={board} member={focus} />}
           <TurnsChart data={data} />
           {chat}
@@ -232,7 +233,7 @@ function TurnStrip({ turn }: { turn: TeamTurn }) {
       <StripField w={0} fixed label={S.duration} value={turn.duration} />
       <StripField w={0} fixed label={S.tokensIn} value={thousand(turn.input)} />
       <StripField w={0} fixed label={S.tokensOut} value={thousand(turn.output)} />
-      <StripField w={0} fixed label={S.total} value={turn.input === null || turn.output === null ? 'n/r' : thousand(turn.input + turn.output)} />
+      <StripField w={0} fixed label={S.total} value={turn.input === null || turn.output === null ? ABSENT : thousand(turn.input + turn.output)} />
     </WrapStrip>
   );
 }
@@ -269,7 +270,7 @@ function economicsEmpty(title: string, data: TeamViewData | null) {
     <div className="myx-board-panel">
       <h3 className="myx-board-panel-title">{title}</h3>
       {data === null
-        ? <Empty text="reading the economics" source="GET /api/teams/{id}/economics" />
+        ? <Empty text="reading the economics" source="what this team's turns cost" />
         : <Empty text="economics unreadable" source={'error' in data.economics ? data.economics.error : ''} />}
     </div>
   );
@@ -309,7 +310,7 @@ function CostPerRole({ data }: { data: TeamViewData | null }) {
       <p className="myx-board-panel-note">
         {`lifetime, joined by the daemon on the first ${SESSION_TAG_CHARS} characters of the session id`}
         {`, ${table.unattributed} turns with no session tag`}
-        {table.oldest === null ? ', no turn held yet' : `, oldest turn held ${clock(table.oldest)}`}
+        {table.oldest === null ? ', no turn held yet' : `, oldest turn held ${clock(table.oldest)} utc`}
       </p>
     </div>
   );

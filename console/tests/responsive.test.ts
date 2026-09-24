@@ -16,6 +16,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
+import { revealBy } from '../src/widgets/rail';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const sheet = (rel: string): string => readFileSync(path.join(HERE, '..', rel), 'utf8');
@@ -132,5 +133,87 @@ describe('the phone', () => {
   test('the walls can fail: the phone blocks are real text, not an empty match', () => {
     expect(phone('.myx-x { color: red; }')).toBe('');
     for (const block of [app, rail, rule, ui]) expect(block.length).toBeGreaterThan(40);
+  });
+});
+
+// S12, THE 390 WALKTHROUGH. Five things the phone got wrong, each measured in a browser at 390x844
+// before and after (the row's note carries the numbers). What is pinned here is the declaration or
+// the arithmetic that produced each fix, so a later row cannot drop one while every page renders.
+/** The declarations of the rule whose selector is exactly `selector`, at a line start. Comments go
+ *  first: a note that names the old value would otherwise read as the value. */
+function body(sheetText: string, selector: string): string {
+  const css = sheetText.replace(/\/\*[\s\S]*?\*\//g, '');
+  const at = css.search(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`, 'm'));
+  return at < 0 ? '' : css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+}
+
+describe('the phone at 390', () => {
+  test('an empty wraps its sentence inside the rack instead of running under its edge', () => {
+    expect(body(sheet('src/shared/ui/ui.css'), '.myx-empt')).toMatch(/max-width:\s*100%/);
+  });
+
+  test("team compose's fields shrink to the form", () => {
+    const css = sheet('src/features/team-compose/team-compose.css');
+    expect(body(css, '.myx-compose .myx-input')).toMatch(/min-width:\s*0/);
+    expect(body(css, '.myx-compose .myx-input')).toMatch(/max-width:\s*100%/);
+    expect(body(css, '.myx-compose .myx-input-box')).toMatch(/max-width:\s*100%/);
+  });
+
+  test("projects' cells never shrink below their ch: the strip is at least the bay, not exactly it", () => {
+    const css = sheet('src/pages/projects/projects.css');
+    expect(body(css, '.myx-px-bays .myx-strip')).toMatch(/min-width:\s*100%/);
+    expect(body(css, '.myx-px-bays .myx-strip')).not.toMatch(/(^|[;\s])width:/);
+    // the page rule that brought flex-shrink back over ui.css's `flex: 0 0 auto`
+    expect(body(css, '.myx-px-bays .myx-sfield')).toBe('');
+  });
+
+  // Every sheet on disk, not the seven pages that had it: a rack that pins its strips to exactly
+  // the bay squeezes nothing (ui.css's `flex: 0 0 auto` holds the cells) but lets the cells run past
+  // the strip's paper, measured at 390 on accounts (985px past), sessions (889), usage (697), models
+  // (610), doctor (486), compaction (476) and mcp (447). `min-width: 100%` fills the bay the same at
+  // 1440 and scrolls the rack on a phone.
+  const PINNED_OK: Record<string, string> = {
+    // A hand-off row spans the gutter between two bays, and its cells take `min-width: 0` so they
+    // shrink inside it: the exact width is the design, not a rack.
+    '.myx-board-role .myx-role-cross .myx-strip': 'a cross row spans the gutter; its cells shrink by design',
+  };
+  const pinnedStrips = (css: string): string[] => [...css.replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/([^{}]*\.myx-strip)\s*\{([^}]*)\}/g)]
+    .filter((m) => /(^|[;\s])width:\s*100%/.test(m[2]))
+    .map((m) => m[1].trim());
+
+  test('no rack pins its strips to exactly the bay, so no cell runs past its strip', () => {
+    const pinned = allSheets().flatMap((rel) => pinnedStrips(sheet(rel)).map((selector) => `${rel}: ${selector}`));
+    expect(pinned.filter((entry) => !Object.keys(PINNED_OK).some((ok) => entry.endsWith(ok)))).toEqual([]);
+  });
+
+  test('the pinned-strip scan can fail, and reads min-width as the fix it is', () => {
+    expect(pinnedStrips('.myx-x .myx-strip { width: 100%; }')).toEqual(['.myx-x .myx-strip']);
+    expect(pinnedStrips('.myx-x .myx-strip { min-width: 100%; }')).toEqual([]);
+    expect(pinnedStrips('/* .myx-x .myx-strip { width: 100%; } */')).toEqual([]);
+    const all = allSheets().flatMap((rel) => pinnedStrips(sheet(rel)));
+    expect(all, 'the one written exclusion is still in the tree, so the scan is reading real sheets').toContain(
+      Object.keys(PINNED_OK)[0],
+    );
+  });
+
+  test('the board footer scrolls with its board rather than sitting over the page', () => {
+    expect(body(sheet('src/widgets/team-board/board.css'), '.myx-board-footer')).not.toMatch(/position:\s*fixed/);
+  });
+
+  test('the rail brings an out-of-view tab to the middle and leaves a visible one alone', () => {
+    const box = { start: 0, size: 390 };
+    expect(revealBy(box, { start: 100, size: 80 })).toBe(0);
+    // doctor, measured at 390 before the fix: x 1016..1089 in a 0..390 rail
+    expect(revealBy(box, { start: 1016, size: 73 })).toBeCloseTo(1052.5 - 195);
+    // a tab behind the start comes back the other way
+    expect(revealBy(box, { start: -120, size: 60 })).toBe(-90 - 195);
+    // a tab cut by the edge is not in view
+    expect(revealBy(box, { start: 350, size: 80 })).toBe(390 - 195);
+  });
+
+  test('the walls can fail: a missing rule reads as empty, not as a pass', () => {
+    expect(body('.myx-x { color: red; }', '.myx-empt')).toBe('');
+    expect(body(sheet('src/shared/ui/ui.css'), '.myx-empt')).toMatch(/background/);
   });
 });

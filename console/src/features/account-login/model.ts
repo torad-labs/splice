@@ -88,13 +88,15 @@ export function next(state: LoginFlowState, event: LoginEvent): LoginFlowState {
 }
 
 /**
- * The honest empty a pending login route renders, as data. CONTRACTS.md section 8: a route the
- * daemon has not built names the v0.4.0 row that will serve it, so the operator learns why the
- * form is not there and which work item brings it.
+ * The honest empty a login route the daemon does not serve renders, as data: why the form is not
+ * there, in words. It named the campaign row that would serve the route (`row V4-132`), which told
+ * the operator nothing; only a daemon older than this console answers 404 here, since the console
+ * ships inside the daemon's jar (console review, 2026-09-24).
  */
-export function LOGIN_PENDING_EMPTY(row: string): { text: string; source: string } {
-  return { text: 'login not built', source: `row ${row}` };
-}
+export const LOGIN_PENDING_EMPTY = {
+  text: 'sign-in unavailable',
+  source: 'this splice version does not serve it; run splice login <head> instead',
+} as const;
 
 /** The line the operator reads back. Kept here rather than in the component so the wording for
  *  each step is testable, and so no step can silently lose its sentence. */

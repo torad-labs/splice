@@ -105,6 +105,6 @@ describe('the board-wide edges', () => {
       }),
     );
     expect(out).toContain('the activity stores are not wired into this control plane');
-    expect(out).toContain('>n/r<');
+    expect(out).toContain('>–<');
   });
 });

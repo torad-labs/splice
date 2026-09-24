@@ -73,10 +73,12 @@ interface Field {
 // now takes the share of the SAME budget that its content actually needs.
 //
 // Width went to `repo`, the only column holding a name, and away from the three counters and the
-// cost phrase. No phrase was shortened and no absence renamed to buy the pixels.
+// cost phrase. No phrase was shortened and no absence renamed to buy the pixels. The live-session
+// count's label went from `live` to `sessions` (console review, 2026-09-24), and its three extra
+// characters came out of `repo`.
 const COLUMNS: Record<string, { label: string; w: number }> = {
-  repo: { label: S.repo, w: 49 },
-  sessions: { label: S.sessions, w: 5 },
+  repo: { label: S.repo, w: 46 },
+  sessions: { label: S.sessions, w: 8 },
   teams: { label: S.teams, w: 8 },
   turns: { label: S.turns, w: 7 },
   cost: { label: S.cost, w: 21 },
@@ -168,7 +170,7 @@ function fixtureName(search: string): string | null {
 }
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
+export function ProjectsBoard({ payload, files = {}, sample, error = null, lastRead = null }: {
   payload: ProjectsPayload | null;
   /** Sample file payloads, keyed by project id: the capture fixture seam. */
   files?: Record<string, ProjectFilesPayload>;
@@ -176,6 +178,8 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
    *  marker and the sample chrome are the same value, so they cannot disagree. */
   sample?: string | undefined;
   error?: string | null;
+  /** When the rows on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
 }) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -189,10 +193,14 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
   return (
     <div className="myx-px">
       <header className="myx-page-head">
-        <h2 className="myx-page-title">{S.title}</h2>
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
+
+      {/* A read that fails after one landed keeps the rows and says so: the fault used to show only
+          while nothing had loaded, so a dead daemon's last list read as a live one. */}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
       {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
           carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
@@ -204,7 +212,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
       >
         <div className="myx-px-bays">
           {rows.length === 0 ? (
-            <Empty text="no repositories seen" source="/api/projects" />
+            <Empty text="no projects yet" source="a repo shows here once a session runs in it" />
           ) : (
             <Bay
               label={S.repos}
@@ -317,7 +325,8 @@ export default function ProjectsPage() {
       payload={fixture === null ? store.data : { projects: fixture.projects }}
       files={fixture?.files ?? {}}
       sample={sample?.name}
-      error={store.error}
+      error={fixture === null ? store.error : null}
+      lastRead={store.lastUpdated}
     />
   );
 }

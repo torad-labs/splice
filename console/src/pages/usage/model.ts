@@ -15,11 +15,15 @@ import { S } from './strings';
 
 /** Sentences, not labels (CONTRACTS.md section 4), so they live here beside the page. */
 export const EMPTIES = {
-  economics: { text: 'no economics from the daemon yet', source: 'GET /api/economics' },
-  catalogPending: { text: 'the console cannot read the catalog yet', source: 'V4-127 serves /api/models' },
-  noHeads: { text: 'no heads report economics', source: 'GET /api/economics' },
+  economics: { text: 'no usage from the daemon yet', source: 'waiting for the daemon to answer' },
+  catalogPending: { text: 'catalog unavailable', source: 'this splice version does not serve the model catalog' },
+  noHeads: { text: 'no head reports usage yet', source: 'a head reports once it has run a turn' },
   noModels: { text: 'this head declares no models', source: 'the topology' },
   noRows: { text: 'no turns in window', source: 'the hourly rollup' },
+  noPlan: {
+    text: 'no head reports plan limits',
+    source: "splice reads a head's plan windows from its provider's response headers and the usage poll",
+  },
 } as const;
 
 export const DEFAULT_VIEWS: readonly View[] = [

@@ -39,8 +39,23 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
 }
 
+/** What a cell prints when nobody reported a value for it: the en dash every table uses for "no
+ *  value". It was `n/r`, an abbreviation no reader could expand (console review, 2026-09-24).
+ *  One constant, so the next change of mind is one line and not eight copies. The other absence
+ *  words (none, unknown, unavailable, ineligible) are different facts and stay words. */
+export const ABSENT = '–';
+
 export function fmtInt(n: number): string {
   return new Intl.NumberFormat('en-US').format(n);
+}
+
+/** A byte count as a person reads it, in binary units: `512 B`, `1.5 KiB`, `54.1 MiB`. */
+export function fmtBytes(n: number): string {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return unit === 0 ? `${n} B` : `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
 export function fmtTokens(n: number): string {
@@ -59,6 +74,19 @@ export function fmtDurationS(totalSeconds: number): string {
   return `${s}s`;
 }
 
+/** A 0..1 share as a person reads it: `25%`, one decimal under ten so 2.4% is not 2%, and a floor
+ *  of `<0.1%` so a rare failure never reads as none. One copy: turns and compaction each kept their
+ *  own (code review, 2026-09-24). */
+export function fmtShare(share: number): string {
+  const value = share * 100;
+  if (value === 0) return '0%';
+  if (value < 0.1) return '<0.1%';
+  return `${value < 10 ? value.toFixed(1) : value.toFixed(0)}%`;
+}
+
+/** Month names as the console prints a date (`sep 21`), one table for every page that dates a row. */
+export const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as const;
+
 export function fmtMs(ms: number): string {
   if (ms >= 60_000) return fmtDurationS(ms / 1000);
   if (ms >= 1_000) return `${(ms / 1000).toFixed(1)}s`;
@@ -70,20 +98,48 @@ export function timeAgo(ts: number, now = Date.now()): string {
   if (delta < 5_000) return 'now';
   if (delta < 60_000) return `${Math.floor(delta / 1000)}s ago`;
   if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-  return `${Math.floor(delta / 3_600_000)}h ago`;
+  // Hours up to two days, then days: `50h ago` made the reader do the division.
+  if (delta < 172_800_000) return `${Math.floor(delta / 3_600_000)}h ago`;
+  return `${Math.floor(delta / 86_400_000)}d ago`;
 }
 
-/** Interval runner with immediate first tick; returns a stop function. */
+/** Interval runner with immediate first tick; returns a stop function.
+ *
+ *  A HIDDEN TAB DOES NOT TICK. Nobody reads a page in a background tab, and every poller on it kept
+ *  its full rate anyway (29 requests in 20 s, console walkthrough 2026-09-24), so while the document
+ *  is hidden the interval is cleared, and the tab coming back ticks at once and restarts it: the
+ *  reader never waits out an interval for data that went stale behind their back. The first tick
+ *  stays unconditional, so a page opened in a background tab still loads. Without a document (the
+ *  node test environment) it is the plain interval it always was. */
 export function poll(fn: () => void | Promise<void>, intervalMs: number): () => void {
+  const doc = typeof document === 'undefined' ? null : document;
   let stopped = false;
+  let id: ReturnType<typeof setInterval> | null = null;
   const tick = () => {
     if (stopped) return;
     void fn();
   };
+  const resume = () => {
+    if (id === null) id = setInterval(tick, intervalMs);
+  };
+  const pause = () => {
+    if (id !== null) clearInterval(id);
+    id = null;
+  };
+  const onVisibility = () => {
+    if (doc?.visibilityState === 'hidden') {
+      pause();
+    } else if (id === null) {
+      tick();
+      resume();
+    }
+  };
   tick();
-  const id = setInterval(tick, intervalMs);
+  if (doc?.visibilityState !== 'hidden') resume();
+  doc?.addEventListener('visibilitychange', onVisibility);
   return () => {
     stopped = true;
-    clearInterval(id);
+    pause();
+    doc?.removeEventListener('visibilitychange', onVisibility);
   };
 }

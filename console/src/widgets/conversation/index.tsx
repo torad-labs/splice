@@ -37,13 +37,13 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
 
   // A session with no transcript on disk is the daemon's answer, not a fault and not a missing route.
   if (slice === undefined && state.error === TRANSCRIPT_MISSING) {
-    return <Empty text="no transcript on disk" source="GET /api/sessions/{id}/transcript" />;
+    return <Empty text="no transcript on disk" source="claude code has not written this session's transcript yet, or it was removed" />;
   }
   if (slice === undefined && state.error !== null) return <Fault message={state.error} />;
   const data = slice ?? state.data;
   if (data === null) return null;
   if ('pending' in data) {
-    return <Empty text="transcript route not built yet" source="row V4-130" />;
+    return <Empty text="transcript unavailable" source="this splice version does not serve transcripts" />;
   }
 
   return (

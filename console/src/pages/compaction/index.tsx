@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import type { CompactPayload } from '@shared/api';
 import { startCompactPolling, startInstructionsPolling, useCompact, useInstructions } from '@entities/compact-stats';
+import { fetchHeads, useHeads } from '@entities/heads';
 import type { InstructionsState } from '@entities/compact-stats';
 import { Blank, Fault } from '@shared/controls';
 import { Bay, Reveal } from '@shared/ui';
@@ -42,16 +43,28 @@ export function wantsFixture(search: string): boolean {
 
 /** The law, in words. A sentence, so it lives here and not in the string table. */
 export const LAW_TEXT =
-  'compaction runs on the session own model and effort by law: pinning another model would move the '
-  + 'reasoning off the session and miss the backend prompt cache on the whole transcript, which is '
-  + 'the most expensive turn class there is. This page reads outcomes; it never offers a model.';
+  "Compaction always runs on the session's own model and effort. Sending it to another model would "
+  + "leave the session's reasoning behind and miss the provider's prompt cache on the whole "
+  + 'transcript, the most expensive request a session makes. So this page reports what each '
+  + 'compaction did and has no model setting.';
+
+/** No rule on any head, in the words the project detail uses for one repo (CLIENT_OWN). */
+export const NO_RULE = {
+  text: 'no compaction rules',
+  source: "claude code's own summary instructions apply; a rule goes under [compaction] in splice.toml",
+};
 
 /** The rules bay: a rule per strip, every head that could not be asked named in the daemon's
  *  words, and no rule at all said as what it means. */
-export function InstructionsBay({ instructions, error = null }: { instructions: InstructionsState | null; error?: string | null }) {
+export function InstructionsBay({ instructions, error = null, lastRead = null }: {
+  instructions: InstructionsState | null;
+  error?: string | null;
+  /** When the rules on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
+}) {
   return (
     <section className="myx-compaction-rules">
-      {error === null ? null : <Fault message={error} />}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
       {instructions?.unread.map((unread) => (
         <Fault key={unread.head} message={`${unread.head}: ${unread.reason}`} />
       ))}
@@ -62,7 +75,7 @@ export function InstructionsBay({ instructions, error = null }: { instructions: 
           : {
             count: instructions.rules.length,
             // No configured rule: the client's own compaction instructions stand on every head.
-            empty: { text: 'no rule configured: the client instructions stand', source: '[compaction] in splice.toml' },
+            empty: NO_RULE,
           })}
       >
         {instructions?.rules.map((rule) => (
@@ -78,13 +91,17 @@ export function InstructionsBay({ instructions, error = null }: { instructions: 
  * static render only ever sees a zustand store's initial state, so a board that read the store
  * could not be rendered from data by a test or a capture.
  */
-export function CompactionBoard({ payload, instructions = null, instructionsError = null, sample }: {
+export function CompactionBoard({ payload, instructions = null, instructionsError = null, instructionsRead = null, sample, labels }: {
   payload: CompactPayload | null;
   /** The rules in effect; null until read, and null behind a sample (no sample rules exist). */
   instructions?: InstructionsState | null;
   instructionsError?: string | null;
+  /** When the rules on screen were read. */
+  instructionsRead?: number | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
+  /** Head key to label, from /api/heads; the rack prints a key as itself until it arrives. */
+  labels?: ReadonlyMap<string, string>;
 }) {
   return (
     <div
@@ -99,8 +116,8 @@ export function CompactionBoard({ payload, instructions = null, instructionsErro
           also the page's whole reason to be here, so it is kept — one click away, and out of the
           rack's way. */}
       <Reveal label={S.law}>{<p className="myx-compaction-law">{LAW_TEXT}</p>}</Reveal>
-      {sample === undefined ? <InstructionsBay instructions={instructions} error={instructionsError} /> : null}
-      {payload === null ? <Blank strips={4} /> : <CompactFeed payload={payload} sample={sample !== undefined} />}
+      {sample === undefined ? <InstructionsBay instructions={instructions} error={instructionsError} lastRead={instructionsRead} /> : null}
+      {payload === null ? <Blank strips={4} /> : <CompactFeed payload={payload} sample={sample !== undefined} {...(labels === undefined ? {} : { labels })} />}
     </div>
   );
 }
@@ -109,7 +126,10 @@ export default function CompactionPage() {
   const { search } = useLocation();
   const compact = useCompact((state) => state);
   const instructions = useInstructions((state) => state);
+  const heads = useHeads((state) => state.data);
   useEffect(() => {
+    // Labels only: a head's label does not change while the page is open, so one read is enough.
+    void fetchHeads();
     const stops = [startCompactPolling(5000), startInstructionsPolling(15000)];
     return () => stops.forEach((stop) => stop());
   }, []);
@@ -143,12 +163,14 @@ export default function CompactionPage() {
 
   return (
     <>
-      {compact.error === null ? null : <Fault message={compact.error} />}
+      {compact.error === null ? null : <Fault message={compact.error} lastRead={sample === null ? compact.lastUpdated : null} />}
       <CompactionBoard
         payload={sample === null ? compact.data : sample.payload}
         instructions={instructions.data}
         instructionsError={instructions.error}
+        instructionsRead={instructions.lastUpdated}
         sample={sample?.name}
+        labels={new Map((heads ?? []).map((head) => [head.key, head.label]))}
       />
     </>
   );

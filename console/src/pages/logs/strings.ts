@@ -6,9 +6,13 @@ export const S = {
   title: 'logs',
   locked: 'console locked',
   sample: 'sample data',
-  tail: 'tail',
-  drawer: 'request drawer',
-  openDrawer: 'capture',
+  /** The tail-size choice and the bay it fills: how many of the log's last lines to read. */
+  tail: 'lines',
+  log: 'log',
+  drawer: 'request capture',
+  /** The tail restarted because the daemon rotated its log file. */
+  rotated: 'log rotated',
+  head: 'head',
   /** The tag and level filters. */
   tag: 'tag',
   level: 'level',

@@ -26,8 +26,10 @@ import {
 import type { AccountRow, AccountWindow } from '../src/entities/account';
 import { LOGIN_PENDING_EMPTY, IDLE, canStart, next, stepMessage } from '../src/features/account-login/model';
 import { AccountStrip, windowFieldLabel } from '../src/widgets/account-strip';
+import { refusalOf } from '../src/features/account-login';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from '../src/pages/accounts/model';
 import { dispositions } from '../src/pages/accounts/coverage';
+import { AccountsBoard, ApiKeyDetail, apiKeyHint } from '../src/pages/accounts';
 import { Empty } from '../src/shared/ui';
 import type { View } from '../src/features/views';
 
@@ -167,7 +169,7 @@ describe('not reported by provider', () => {
 
 describe('the selector order is printed, not implied', () => {
   test('the sentence is the daemon rule word for word', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned then primary then sticky then lowest 7-day used');
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then primary, then last used, then most weekly room');
   });
 });
 
@@ -257,22 +259,24 @@ describe('the login flow machine', () => {
 });
 
 describe('pending routes render an empty naming their row', () => {
-  test('the pooled empty names V4-132 and says what is missing', () => {
+  test('the pooled empty says what is missing and where the logins are instead', () => {
     const out = render(h(Empty, EMPTIES.pooledPending));
-    expect(out).toContain('pooled accounts not built');
-    expect(out).toContain('V4-132');
+    expect(out).toContain('account pools unavailable');
+    expect(out).not.toContain('V4-132');
   });
 
-  test('the login empty names its row too', () => {
-    const out = render(h(Empty, LOGIN_PENDING_EMPTY('V4-132')));
-    expect(out).toContain('login not built');
-    expect(out).toContain('V4-132');
+  test('the login empty says what to do instead, never a row id', () => {
+    const out = render(h(Empty, LOGIN_PENDING_EMPTY));
+    expect(out).toContain('sign-in unavailable');
+    expect(out).toContain('splice login');
+    expect(out).not.toContain('V4-132');
   });
 
-  test('the no-accounts empty names the source it looked in', () => {
+  test('the no-accounts empty says how to add one, never the route it read', () => {
     const out = render(h(Empty, EMPTIES.noAccounts));
-    expect(out).toContain('no accounts pooled');
-    expect(out).toContain('GET /api/accounts');
+    expect(out).toContain('no accounts yet');
+    expect(out).toContain('sign one in');
+    expect(out).not.toContain('/api/');
   });
 });
 
@@ -292,6 +296,42 @@ describe('what one strip prints', () => {
     expect(out).toContain('>5h<');
     expect(out).toContain(NOT_REPORTED);
     expect(out).toContain(NOT_REPORTED); // and it is PRINTED, not only labelled
+  });
+
+  test('every strip has the same cells whatever windows it reports, so the columns line up', () => {
+    // Walkthrough B3: a cell per reported window made a no-window row one cell short, and the
+    // account name landed under "resets".
+    const cells = (windows: AccountWindow[]) => (render(h(AccountStrip, {
+      account: account({ label: 'x', windows }),
+      isNext: false,
+      nextRule: '',
+      columns: ['provider', 'account', 'plan', 'heads', 'next'],
+      nowMs: NOW,
+    })).match(/class="myx-sfield/g) ?? []).length;
+    const none = cells([]);
+    expect(cells([window5h(40)])).toBe(none);
+    expect(cells([window5h(40), { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null }])).toBe(none);
+    expect(cells([
+      window5h(40),
+      { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' },
+      { seconds: DAY_7, used_percent: 70, reset_epoch_seconds: null, model: 'sonnet' },
+    ])).toBe(none);
+  });
+
+  test('the long track shows its fullest window under that window\'s own length', () => {
+    const out = render(h(AccountStrip, {
+      account: account({ label: 'g', windows: [
+        { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' },
+        { seconds: DAY_7, used_percent: 70, reset_epoch_seconds: null, model: 'sonnet' },
+      ] }),
+      isNext: false,
+      nextRule: '',
+      columns: [],
+      nowMs: NOW,
+    }));
+    expect(out).toContain('sonnet 7d');
+    expect(out).toContain('70%');
+    expect(out).toContain('>5h<'); // the empty short track still names its slot
   });
 
   test('the next target prints the rule that chose it', () => {
@@ -428,5 +468,55 @@ describe('the coverage manifest', () => {
     expect(byName.get('/api/accounts')).toBe('read-only');
     expect(byName.get('/api/auth')).toBe('read-only');
     expect(byName.get('/api/auth/{head}/switch')).toBe('editable');
+  });
+});
+
+describe('an account action that answered but did not happen says why', () => {
+  test('the daemon reason is read from a refresh, a switch and an edit, and a success is null', () => {
+    // Walkthrough S6: every action answered with nothing, so a refused one read as done.
+    expect(refusalOf({ ok: false, note: 'refresh token revoked' })).toBe('refresh token revoked');
+    expect(refusalOf({ action: 'switch', result: { ok: false, error: "unknown account label 'x'" } })).toBe("unknown account label 'x'");
+    expect(refusalOf({ ok: false })).toBe('the daemon refused it');
+    expect(refusalOf({ ok: true })).toBeNull();
+    expect(refusalOf({ action: 'switch', result: { ok: true } })).toBeNull();
+    expect(refusalOf(undefined)).toBeNull();
+  });
+});
+
+describe('the api-key heads have a bay of their own', () => {
+  test('each prints its variable and masked key, a missing key cocks, and nothing prints the key itself', () => {
+    const out = render(h(AccountsBoard, {
+      payload: { accounts: [] },
+      nowMs: NOW,
+      headRows: [
+        { head: 'openrouter', kind: 'api-key', present: true, masked: null, note: null, envVar: 'OPENROUTER_API_KEY', keyMasked: 'sk-o…ddfb' },
+        { head: 'claude-deepseek', kind: 'api-key', present: false, masked: null, note: null, envVar: 'DEEPSEEK_API_KEY' },
+      ],
+    }));
+    expect(out).toContain('api keys');
+    expect(out).toContain('OPENROUTER_API_KEY');
+    expect(out).toContain('sk-o…ddfb');
+    expect(out).toContain('DEEPSEEK_API_KEY');
+    expect(out).toContain('>missing<');
+  });
+
+  test('an opened api-key head gives the command that sets its key', () => {
+    const out = render(h(ApiKeyDetail, { row: { head: 'claude-deepseek', kind: 'api-key', present: false, masked: null, note: null, envVar: 'DEEPSEEK_API_KEY' } }));
+    expect(out).toContain('splice key set DEEPSEEK_API_KEY');
+    expect(out).toContain('no restart needed');
+  });
+
+  test('the hint follows the order the daemon reads a key in: variable, key_file, then the store', () => {
+    const base = { head: 'claude-or', kind: 'api-key', masked: null, note: null, envVar: 'OR_KEY' };
+    // a stored key is what a set replaces, and an exported variable still wins over it
+    expect(apiKeyHint({ ...base, present: true })).toContain('a OR_KEY exported where splice runs wins over it');
+    // a key_file is read before the store, so the head is sent to the file and offered no command
+    const filed = { ...base, present: true, keyFile: '/keys/or.txt' };
+    expect(apiKeyHint(filed)).toContain('replace the key in that file');
+    expect(render(h(ApiKeyDetail, { row: filed }))).not.toContain('splice key set');
+    // with the variable and the file both empty, the store is what the daemon reads next
+    const empty = { ...base, present: false, keyFile: '/keys/or.txt' };
+    expect(apiKeyHint(empty)).toContain('no key in OR_KEY or /keys/or.txt');
+    expect(render(h(ApiKeyDetail, { row: empty }))).toContain('splice key set OR_KEY');
   });
 });

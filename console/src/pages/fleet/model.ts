@@ -5,11 +5,12 @@ import { isExcluded, nextRuleOf } from '@entities/account';
 import type { AccountRow, SelectorRule } from '@entities/account';
 import { headAttention, providerFamily } from '@entities/heads';
 import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
-import type { HeadStatus } from '@shared/api';
+import type { HeadStatus, ProviderAuth } from '@shared/api';
 import type { View } from '@features/views';
 
 export interface HeadGroup {
-  key: string;
+  /** The provider family in the `by provider` view, and '' for the one bay of every other. */
+  key: ProviderFamily | '';
   heads: HeadStatus[];
 }
 
@@ -24,11 +25,12 @@ const SEVERITY: Record<HeadState, number> = {
   down: 7,
   unhealthy: 6,
   'version mismatch': 5,
-  'token missing': 5,
-  'token expired': 5,
+  'signed out': 5,
+  'key missing': 5,
+  'login expired': 5,
   'account excluded': 4,
-  'queue at max': 3,
-  'topology stale': 2,
+  'queue full': 3,
+  'restart needed': 2,
   ok: 0,
 };
 
@@ -49,9 +51,9 @@ export function arrangeHeads(
   view: View,
   signalsFor: (head: HeadStatus) => HeadSignals,
 ): HeadGroup[] {
-  const grouped = new Map<string, HeadStatus[]>();
+  const grouped = new Map<ProviderFamily | '', HeadStatus[]>();
   for (const head of heads) {
-    const key = view.group === 'provider' ? providerFamily(head.authKind) : '';
+    const key: ProviderFamily | '' = view.group === 'provider' ? providerFamily(head.authKind) : '';
     const bucket = grouped.get(key);
     if (bucket === undefined) grouped.set(key, [head]);
     else bucket.push(head);
@@ -154,18 +156,67 @@ export function poolNext(pool: readonly AccountRow[]): PoolNext | null {
  *  .isOAuth, AccountsRoute.fold). Every other kind is outside the join by the daemon's own rule. */
 const OAUTH_FAMILIES: ReadonlySet<ProviderFamily> = new Set<ProviderFamily>(['chatgpt', 'grok', 'kimi', 'muse']);
 
+/** What the opened head says about its state: the cause in a sentence, and the one step that
+ *  clears it, as a command to copy or a page to open. The strip's edge has room for one word; this
+ *  is where the word is explained (walkthrough S1, S2). */
+export interface CauseHelp {
+  text: string;
+  command?: string;
+  href?: string;
+  link?: string;
+}
+
+export function causeHelp(head: HeadStatus, cause: HeadState, auth: ProviderAuth | undefined): CauseHelp | null {
+  const logs = { href: `#/logs?head=${encodeURIComponent(head.key)}`, link: 'open log' };
+  switch (cause) {
+    case 'ok':
+      return null;
+    case 'down':
+      return { text: 'this head is not running; start it below' };
+    case 'unhealthy':
+      return { text: 'this head is running but failing its health check; its log says why', ...logs };
+    case 'version mismatch':
+      return { text: 'this head runs a different splice version than the daemon; restart it below' };
+    case 'signed out':
+      return { text: 'no login is saved for this head', href: '#/accounts', link: 'sign in on accounts' };
+    case 'key missing': {
+      // `splice key set` writes ~/.config/splice/keys.toml, and the next request reads it: no
+      // restart (KeyCommand.kt). An exported variable would need the daemon restarted to be seen.
+      const variable = auth?.env_var;
+      return variable === undefined
+        ? { text: 'this head has no api key; set one with splice key set' }
+        : { text: `no api key in ${variable}; set one with this command and the next request uses it, no restart needed`, command: `splice key set ${variable}` };
+    }
+    case 'login expired':
+      return {
+        text: auth?.refresh_latched === undefined
+          ? 'the login could not be refreshed; sign in again'
+          : `the login could not be refreshed (${auth.refresh_latched}); sign in again`,
+        href: '#/accounts',
+        link: 'sign in on accounts',
+      };
+    case 'account excluded':
+      return { text: 'the account this head would use next is excluded; the pool below says why and until when' };
+    case 'queue full':
+      return { text: 'every slot is busy and the queue is at its limit, so a new turn waits or is refused' };
+    case 'restart needed':
+      return { text: 'splice.toml changed since this head started; restart it below to apply the change' };
+  }
+}
+
 /**
- * What an opened head's pool section says when GET /api/accounts names no row for it. Three
+ * What an opened head's pool section says when GET /api/accounts names no row for it. Four
  * different facts, never one blank rack:
- *   - a Claude head is `client`: launch-time selected, one login, never a pool (the accounts page's
- *     own words for the same fact);
- *   - an api-key or local head has no OAuth login at all, so it has no pool and says which kind it is;
- *   - an OAuth head with no row is the route reporting nothing for it, and the empty names the route.
+ *   - a Claude head is `client`: it uses the Claude Code login it was started with, and never pools;
+ *   - an api-key head signs every request with its one key, so there is nothing to pool;
+ *   - a local head needs no login at all;
+ *   - an OAuth head with no row has no signed-in account yet, and the empty says where to add one.
  */
 export function poolEmpty(authKind: string): { text: string; source: string } {
   if (authKind === 'client') return EMPTIES.claudeLogin;
   if (OAUTH_FAMILIES.has(providerFamily(authKind))) return EMPTIES.noAccounts;
-  return { text: 'no oauth pool', source: `${authKind} head` };
+  if (authKind === 'api-key') return EMPTIES.apiKey;
+  return EMPTIES.local;
 }
 
 /**
@@ -173,15 +224,17 @@ export function poolEmpty(authKind: string): { text: string; source: string } {
  * its source (CONTRACTS.md section 8).
  */
 export const EMPTIES = {
-  /** The two field sources that are still rows: the catalog and the topology file. */
-  fields: { text: 'dialect and model not built', source: 'rows V4-127 V4-128' },
-  /** The pooled accounts while the store holds the route's pending marker: printed only when
-   *  GET /api/accounts answered 404 (entities/account maps that to V4-132), never unconditionally. */
-  pool: { text: 'account pool not built', source: 'row V4-132' },
-  noHeads: { text: 'no heads configured', source: 'GET /api/heads' },
-  claudeLogin: { text: 'launch-time selected, never a pool', source: 'one login per claude head' },
-  noAccounts: { text: 'no accounts reported', source: 'GET /api/accounts' },
+  /** The dialect and model columns while GET /api/topology or GET /api/models answers 404: only a
+   *  daemon older than this console does, since the console ships inside the daemon's jar. */
+  fields: { text: 'dialect and model unavailable', source: 'this splice version does not serve the topology or the model list' },
+  /** The pooled accounts while GET /api/accounts answers 404 (entities/account marks it pending). */
+  pool: { text: 'account pools unavailable', source: 'this splice version does not serve accounts' },
+  noHeads: { text: 'no heads yet', source: 'run splice setup in a terminal, then splice add for each further provider' },
+  claudeLogin: { text: 'one login, no pool', source: 'a claude head uses the claude code login it was started with' },
+  noAccounts: { text: 'no accounts signed in', source: 'sign one in on the accounts page' },
+  apiKey: { text: 'no account pool', source: 'an api-key head sends every request with its one key' },
+  local: { text: 'no account pool', source: 'this head needs no login' },
   /** A pool with labeled accounts and no next target: nothing is available, which is the state that
    *  fails the head's next turn in words naming the earliest reset. */
-  noneAvailable: { text: 'no account available', source: 'next_target on GET /api/accounts' },
+  noneAvailable: { text: 'no account available', source: 'every account is signed out, excluded or at its limit, so the next turn fails until one resets' },
 } as const;

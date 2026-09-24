@@ -15,17 +15,25 @@ export const S = {
   fault: 'fault',
   /** The single field a fault strip carries: the daemon's own message. */
   message: 'message',
+  /** What a fault prints before the age of the rows a failed read left on screen. */
+  lastRead: 'last read',
   /** What a Choice's box says while its rack is shut, and while it is open. */
   open: 'open',
   close: 'close',
   /** What a chosen option's holder edge prints: the mark is a line, and a line needs a word. */
   chosen: 'chosen',
+  /** The copy key's three words: its default label, what it prints once the value is on the
+   *  clipboard, and what it prints when there is no clipboard to put it on (plain http). */
+  copy: 'copy',
+  copied: 'copied',
+  copyByHand: 'copy by hand',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
 // These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
 // these meanings is how the console reached eleven phrasings for "nothing here".
-//   n/r        nobody reported a value for this cell. The default, and the comp's own glyph.
+//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
+//              default. It was `n/r`, which no reader could expand.
 //   none       the question was asked and its answer is nothing (no tier hands this model out).
 //   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
 //   unavailable  it exists and we cannot reach it.

@@ -15,8 +15,9 @@ export const dispositions: readonly Disposition[] = [
   // you already started changes nothing.
   { kind: 'route', name: '/api/auth/{head}/login', disposition: 'editable' },
   { kind: 'route', name: '/api/auth/{head}/login/{id}', disposition: 'read-only' },
-  // The manual pin. Editable, with the honest caveat printed on the strip: selection happens
-  // between turns, so this pins what comes next and moves nothing mid-turn.
+  // The manual pin (POST) and its release (DELETE, splice-lead's S6 route). Editable, with the
+  // honest caveat printed on the strip: selection happens between turns, so this pins what comes
+  // next and moves nothing mid-turn.
   { kind: 'route', name: '/api/auth/{head}/switch', disposition: 'editable' },
   // DELETE and PATCH on one pooled account: remove and relabel.
   { kind: 'route', name: '/api/auth/{kind}/accounts/{label}', disposition: 'editable' },

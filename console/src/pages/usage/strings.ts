@@ -1,11 +1,14 @@
 // Every label this page prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
 // section 4, enforced by the label wall). Sentences live in the component.
+import { ABSENT } from '@shared/lib';
+
 export const S = {
   title: 'usage',
   byHead: 'by head',
   byModel: 'by model',
   window: 'window',
   heads: 'heads',
+  head: 'head',
   models: 'models',
   burn: 'burn',
   tokens: 'tokens',
@@ -17,11 +20,29 @@ export const S = {
   amplification: 'in per out',
   perTurn: 'in per turn',
   wireDelta: 'wire delta',
-  ceiling: 'ceiling',
-  spent: 'spent',
-  exhaustion: 'exhaustion',
+  /** The head's token limit for the window, and what it has used against it. */
+  ceiling: 'limit',
+  spent: 'tokens used',
+  /** How long until the limit, at the rate the head is using tokens now. */
+  exhaustion: 'runs out in',
+  /** A head burning nothing against its limit. */
+  idle: 'not in use',
+  updated: 'updated',
   limited: 'rate limited',
   sample: 'sample data',
+  /** The plan limits rack: each head's own 5h and 7d plan windows. */
+  planLimits: 'plan limits',
+  plan: 'plan',
+  fiveUsed: '5h used',
+  fiveResets: '5h resets',
+  sevenUsed: '7d used',
+  sevenResets: '7d resets',
+  /** When splice last read the head's windows. */
+  read: 'read',
+  /** A window whose reset time passed after splice read it: the figure is from before the reset. */
+  alreadyReset: 'already reset',
+  stale: 'stale',
+  unknown: 'unknown',
   detail: 'head detail',
   openHead: 'open head',
   slot: 'slot',
@@ -42,13 +63,14 @@ export const S = {
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
    *  It replaces four phrasings this page used for one fact: `not reported`, `no turns` (twice),
    *  `no output`, `not declared`, `no rates` (twice) and the empty string. */
-  absent: 'n/r',
+  absent: ABSENT,
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
 // These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
 // these meanings is how the console reached eleven phrasings for "nothing here".
-//   n/r        nobody reported a value for this cell. The default, and the comp's own glyph.
+//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
+//              default. It was `n/r`, which no reader could expand.
 //   none       the question was asked and its answer is nothing (no tier hands this model out).
 //   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
 //   unavailable  it exists and we cannot reach it.

@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { backoffMs, parseFrames } from '../src/shared/lib/live';
 import type { EventFrame } from '../src/shared/lib/live';
-import { connect, disconnect, subscribe, subscribeAll } from '../src/entities/events';
+import { connect, disconnect, subscribe, subscribeAll, subscribeReopen } from '../src/entities/events';
 import { eventsStore } from '../src/entities/events/model/store';
 
 const frame = (id: number, kind: string, data: unknown): string =>
@@ -177,6 +177,26 @@ describe('connect', () => {
     expect(seen).toHaveLength(2);
     expect((seen[1].headers as Record<string, string>)['Last-Event-ID']).toBe('2');
     expect(eventsStore.get().status).toBe('live');
+  });
+
+  test('a reopened stream tells its listeners once, and the first open tells nobody', async () => {
+    // A daemon restart starts a new event log, so Last-Event-ID cannot replay what was sent while
+    // the stream was down: a store that follows events re-reads its route on this signal.
+    vi.useFakeTimers();
+    let calls = 0;
+    const open = openStream();
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(calls === 0 ? (calls++, closedStream([])) : open.body, { status: 200 })));
+    let reopened = 0;
+    const stop = subscribeReopen(() => { reopened += 1; });
+
+    connect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reopened).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(eventsStore.get().status).toBe('live');
+    expect(reopened).toBe(1);
+    stop();
   });
 
   test('a frame resets the backoff: the next reopen waits one second again', async () => {

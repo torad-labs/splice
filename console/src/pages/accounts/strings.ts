@@ -7,6 +7,13 @@ export const S = {
   title: 'accounts',
   bay: 'accounts',
   claudeBay: 'claude logins',
+  /** The heads that sign every request with one api key, read from a variable or keys.toml. */
+  keyBay: 'api keys',
+  head: 'head',
+  variable: 'variable',
+  key: 'key',
+  keySet: 'set',
+  keyMissing: 'missing',
   byProvider: 'by provider',
   nearest: 'nearest exhaustion',
   byHead: 'by head',
@@ -18,7 +25,7 @@ export const S = {
   heads: 'heads',
   next: 'next',
   /** Leads the selector's order, printed once above the provider racks. */
-  order: 'selector order',
+  order: 'next account is',
   /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
   close: 'close',
 } as const;

@@ -14,19 +14,21 @@ import { NOT_REPORTED } from '../src/entities/account';
 import type { AccountRow } from '../src/entities/account';
 import {
   ATTENTION_CAUSES,
+  EDGE_WORDS,
   headAttention,
   inflightText,
   liveTurnText,
   providerFamily,
   queueAtMax,
   NO_SIGNALS,
-  PROVIDER_MARK,
+  FAMILY_NAME,
 } from '../src/entities/heads';
 import type { HeadSignals } from '../src/entities/heads';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
-import { HeadStrip } from '../src/widgets/head-strip';
-import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
+import { HeadStrip, lastTurnText, providerText } from '../src/widgets/head-strip';
+import { EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
+import { ADD_COMMAND, AddHeadLine, CauseLine } from '../src/pages/fleet';
 import { Empty } from '../src/shared/ui';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
 import type { View } from '../src/features/views';
@@ -81,6 +83,7 @@ describe('one printed cause, and the worst one wins', () => {
       headAttention(head({ healthy: false }), signals()).cause,
       headAttention(head({ versionMatch: false }), signals()).cause,
       headAttention(head(), signals({ credentialPresent: false })).cause,
+      headAttention(head({ authKind: 'api-key' }), signals({ credentialPresent: false })).cause,
       headAttention(head(), signals({ refreshLatched: 'refresh failed' })).cause,
       headAttention(head(), signals({ accountExcluded: true })).cause,
       headAttention(head({ gate: gate({ queued: 4, max: 4 }) }), signals()).cause,
@@ -101,7 +104,7 @@ describe('one printed cause, and the worst one wins', () => {
 
   test('a missing credential outranks the weaker causes below it', () => {
     expect(headAttention(head(), signals({ credentialPresent: false, topologyStale: true })).cause)
-      .toBe('token missing');
+      .toBe('signed out');
   });
 
   test('a warning is amber and cocked, never red', () => {
@@ -109,14 +112,48 @@ describe('one printed cause, and the worst one wins', () => {
     expect(state.edge).toBe('amber');
     expect(state.cocked).toBe(true);
     expect(state.struck).toBe(false);
-    expect(state.label).toBe('version mismatch');
+    expect(state.label).toBe('mismatch');
+    expect(state.cause).toBe('version mismatch');
+  });
+
+  test('every edge word fits the 8ch edge whole', () => {
+    // Walkthrough S1: `account excluded` printed as `account…` and `signed out` as `signed o…`.
+    for (const word of Object.values(EDGE_WORDS)) expect(word.length).toBeLessThanOrEqual(8);
+  });
+
+  test('an api-key head with no credential is missing its key, not signed out, and says how to set it', () => {
+    const keyHead = head({ authKind: 'api-key' });
+    const state = headAttention(keyHead, signals({ credentialPresent: false }));
+    expect(state.cause).toBe('key missing');
+    expect(state.label).toBe('no key');
+    const help = causeHelp(keyHead, state.cause, { kind: 'api-key', login: 'manual', present: false, env_var: 'DEEPSEEK_API_KEY' });
+    expect(help?.command).toBe('splice key set DEEPSEEK_API_KEY');
+    expect(help?.text).toContain('DEEPSEEK_API_KEY');
+    // A login head keeps `signed out`, and its step is the accounts page.
+    const login = causeHelp(head(), headAttention(head(), signals({ credentialPresent: false })).cause, undefined);
+    expect(login?.href).toBe('#/accounts');
+  });
+
+  test('the opened head prints the command to copy, and the page to open', () => {
+    const keyed = renderToStaticMarkup(React.createElement(CauseLine, { help: { text: 'no api key in X', command: 'splice key set X' } }));
+    expect(keyed).toContain('splice key set X');
+    expect(keyed).toContain('>copy<');
+    const linked = renderToStaticMarkup(React.createElement(CauseLine, { help: { text: 'no login', href: '#/accounts', link: 'sign in on accounts' } }));
+    expect(linked).toContain('href="#/accounts"');
+    expect(renderToStaticMarkup(React.createElement(CauseLine, { help: null }))).toBe('');
+  });
+
+  test('every state but ok explains itself when the head is opened', () => {
+    for (const cause of [...ATTENTION_CAUSES, 'down'] as const) expect(causeHelp(head(), cause, undefined)?.text).toBeTruthy();
+    expect(causeHelp(head(), 'ok', undefined)).toBeNull();
+    expect(causeHelp(head(), 'unhealthy', undefined)?.href).toBe(`#/logs?head=${head().key}`);
   });
 
   test('an unhealthy head is the only red', () => {
-    for (const cause of ['version mismatch', 'queue at max', 'topology stale'] as const) {
+    for (const cause of ['version mismatch', 'queue full', 'restart needed'] as const) {
       const state = cause === 'version mismatch'
         ? headAttention(head({ versionMatch: false }), signals())
-        : cause === 'queue at max'
+        : cause === 'queue full'
           ? headAttention(head({ gate: gate({ queued: 4, max: 4 }) }), signals())
           : headAttention(head(), signals({ topologyStale: true }));
       expect(state.edge).not.toBe('red');
@@ -194,6 +231,59 @@ describe('nearest window text', () => {
   });
 });
 
+describe('plan windows count as limits', () => {
+  const NOW_MS = 1_790_000_000_000;
+  const nowS = NOW_MS / 1000;
+  const quiet = { level: 'ok' as const, pct: 0, source: 'none', reset: null };
+  const usage: UsagePayload = {
+    window_hours: 5,
+    warn_pct: 80,
+    warn_tokens_5h: 0,
+    heads: [
+      { key: 'splice', label: 'splice', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+        quota: { five_hour: { used_pct: 65, resets_at: nowS + 3600 }, seven_day: { used_pct: 65, resets_at: nowS + 86400 } } } },
+      { key: 'muse', label: 'muse', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+        quota: { seven_day: { used_pct: 99, resets_at: nowS - 60 } } } },
+      { key: 'grok', label: 'grok', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: { level: 'ok', pct: 40, source: 'ratelimit', reset: '6m0s' } } },
+      { key: 'dark', label: 'dark', usage: null },
+    ],
+  };
+
+  test('the rule bar names a plan window when warn reports none, and ties go to the sooner reset', () => {
+    const nearest = nearestWindow(usage, null, NOW_MS);
+    expect(nearest).toEqual({ head: 'splice', account: null, window: '5h', pct: 65, reset: 'in 1h 0m' });
+  });
+
+  test('a window whose reset passed is not a candidate: its 99% is from before the reset', () => {
+    const onlyMuse: UsagePayload = { ...usage, heads: usage.heads.filter((row) => row.key === 'muse') };
+    expect(nearestWindow(onlyMuse, null, NOW_MS)).toBeNull();
+    expect(headWindow(onlyMuse, 'muse', NOW_MS)).toEqual({ pct: null, level: 'none', reset: null });
+  });
+
+  test('a warn reading that copies a plan window is not offered twice, nor as a 5h window', () => {
+    // The warn fold: the daemon reports the 7d plan window as warn with source quota_7d and an ISO
+    // reset. The plan window already carries it with its real length and a readable reset.
+    const folded: UsagePayload = { ...usage, heads: [{ key: 'claudex', label: 'claudex', usage: {
+      output_tokens_5h: 0, entries: 0, ratelimit: null,
+      warn: { level: 'warn', pct: 85, source: 'quota_7d', reset: '2026-09-25T10:00:00Z' },
+      quota: { seven_day: { used_pct: 85, resets_at: nowS + 86400 } } } }] };
+    expect(nearestWindow(folded, null, NOW_MS)).toEqual({ head: 'claudex', account: null, window: '7d', pct: 85, reset: 'in 24h 0m' });
+    expect(headWindow(folded, 'claudex', NOW_MS)).toEqual({ pct: 85, level: 'warn', reset: 'in 24h 0m' });
+  });
+
+  test('a head tracking plan windows is not counted among heads without limits', () => {
+    expect(headsReportingNone(usage)).toBe(1); // only 'dark'
+  });
+
+  test('the fleet cell takes the fullest of warn and the live plan windows, at the daemon levels', () => {
+    expect(headWindow(usage, 'splice', NOW_MS)).toEqual({ pct: 65, level: 'ok', reset: 'in 1h 0m' });
+    expect(headWindow(usage, 'grok', NOW_MS)).toEqual({ pct: 40, level: 'ok', reset: '6m0s' });
+    const hot: UsagePayload = { ...usage, heads: [{ key: 'hot', label: 'hot', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+      quota: { seven_day: { used_pct: 98, resets_at: nowS + 60 } } } }] };
+    expect(headWindow(hot, 'hot', NOW_MS).level).toBe('critical');
+  });
+});
+
 describe('provider family', () => {
   test('maps each auth kind to its family', () => {
     expect(providerFamily('chatgpt-oauth')).toBe('chatgpt');
@@ -208,10 +298,12 @@ describe('provider family', () => {
     expect(providerFamily('something-new')).toBe('local');
   });
 
-  test('every family has a monochrome mark, and they are distinct', () => {
-    const marks = Object.values(PROVIDER_MARK);
-    expect(new Set(marks).size).toBe(marks.length);
-    for (const mark of marks) expect(mark).toMatch(/^[a-z]{2}$/);
+  test('every family prints a distinct name a person would say, and the key family reads api key', () => {
+    const names = Object.values(FAMILY_NAME);
+    expect(new Set(names).size).toBe(names.length);
+    expect(FAMILY_NAME.key).toBe('api key');
+    expect(providerText('api-key')).toBe('api key');
+    expect(providerText('chatgpt-oauth')).toBe('chatgpt');
   });
 });
 
@@ -243,9 +335,10 @@ describe('what one strip prints', () => {
     }
   });
 
-  test('the provider family prints as a monogram and as its name', () => {
+  test('the provider family prints as its name, with no monogram before it', () => {
     const out = strip();
-    expect(out).toContain('cg chatgpt');
+    expect(out).toContain('>chatgpt<');
+    expect(out).not.toContain('cg chatgpt');
   });
 
   test('the window prints its percentage, and not reported when there is none', () => {
@@ -267,7 +360,7 @@ describe('what one strip prints', () => {
 
   test('a cocked head prints its cause beside the edge', () => {
     const out = strip({ versionMatch: false });
-    expect(out).toContain('version mismatch');
+    expect(out).toContain('>mismatch<');
     expect(out).toContain('myx-edge-amber');
   });
 
@@ -280,6 +373,16 @@ describe('what one strip prints', () => {
     const busy = strip({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
     expect(busy).toContain('streaming');
     expect(liveTurnText(head())).toBeNull();
+  });
+
+  test('an idle head prints when its last turn was, from the perf summary, not a bare none', () => {
+    // gate.live is served empty, so this cell read `none` on every head, busy afternoon or not.
+    const now = Date.UTC(2026, 8, 24, 18, 0, 0);
+    expect(lastTurnText(head(), now - 3 * 3_600_000, now)).toBe('3h ago');
+    expect(lastTurnText(head(), null, now)).toBe('none');
+    expect(lastTurnText(head(), undefined, now)).toBe('–');
+    const busy = head({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
+    expect(lastTurnText(busy, now - 3 * 3_600_000, now)).toBe('streaming 1.5s');
   });
 
   test('inflightText with no gate prints nothing rather than a zero', () => {
@@ -344,16 +447,21 @@ describe('reading the pending topology', () => {
   });
 });
 
-describe('pending routes render an empty naming their row', () => {
-  test('the field empty names both rows it is waiting on', () => {
+describe('a route this daemon does not serve says so in words, not a row id', () => {
+  test('the field empty names what is missing and why', () => {
     const out = render(h(Empty, EMPTIES.fields));
-    expect(out).toContain('dialect and model not built');
-    expect(out).toContain('V4-127');
-    expect(out).toContain('V4-128');
+    expect(out).toContain('dialect and model unavailable');
+    expect(out).toContain('does not serve');
+    expect(out).not.toMatch(/V4-\d+|\/api\//);
   });
 
-  test('the pool empty names V4-132, for the one state that still reaches it: a 404 on the route', () => {
-    expect(render(h(Empty, EMPTIES.pool))).toContain('V4-132');
+  test('the pool empty, for the one state that still reaches it: a 404 on the route', () => {
+    expect(render(h(Empty, EMPTIES.pool))).toContain('does not serve accounts');
+  });
+
+  test('no fleet empty prints an api route or a campaign row', () => {
+    const all = [...Object.values(EMPTIES), ...['client', 'api-key', 'local-llama', 'grok-oauth'].map(poolEmpty)];
+    expect(all.filter((empty) => /V4-\d+|\/api\/|GET |row /.test(`${empty.text} ${empty.source}`))).toEqual([]);
   });
 
   // M4-02: POST /api/daemon/restart is served (ControlServer.kt:368), so the empty that said it was
@@ -405,19 +513,22 @@ describe('the opened head\'s account pool', () => {
     expect(poolOf([account({ heads: ['codex'] })], 'openrouter')).toEqual([]);
   });
 
-  test('an api-key head has no oauth pool and says so', () => {
-    const empty = poolEmpty('api-key');
-    expect(empty.text).toBe('no oauth pool');
-    expect(empty.source).toBe('api-key head');
+  test('an api-key head has no pool and says why', () => {
+    expect(poolEmpty('api-key')).toEqual(EMPTIES.apiKey);
+    expect(EMPTIES.apiKey.source).toContain('one key');
   });
 
-  test('a claude head is launch-time selected and never a pool', () => {
-    expect(poolEmpty('client').text).toBe('launch-time selected, never a pool');
+  test('a local head needs no login', () => {
+    expect(poolEmpty('something-local')).toEqual(EMPTIES.local);
   });
 
-  test('an oauth head the route reported nothing for names the route, not a missing pool', () => {
+  test('a claude head uses one login and never pools', () => {
+    expect(poolEmpty('client').text).toBe('one login, no pool');
+  });
+
+  test('an oauth head with no row says where to sign one in', () => {
     for (const kind of ['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']) {
-      expect(poolEmpty(kind)).toEqual({ text: 'no accounts reported', source: 'GET /api/accounts' });
+      expect(poolEmpty(kind)).toEqual({ text: 'no accounts signed in', source: 'sign one in on the accounts page' });
     }
   });
 });
@@ -445,7 +556,7 @@ describe('the next target is the daemon\'s own answer', () => {
       account({ label: 'zeta', windows: [sevenDay(0)] }),
       account({ label: 'beta', windows: [], next_target: true }),
     ];
-    expect(poolNext(pool)).toEqual({ label: 'beta', rule: 'lowest 7-day used' });
+    expect(poolNext(pool)).toEqual({ label: 'beta', rule: 'most weekly room' });
   });
 
   test('a target that is neither pinned, primary nor lowest was the sticky account', () => {
@@ -454,7 +565,7 @@ describe('the next target is the daemon\'s own answer', () => {
       account({ label: 'low', windows: [sevenDay(5)] }),
       account({ label: 'held', windows: [sevenDay(60)], next_target: true }),
     ];
-    expect(poolNext(pool)).toEqual({ label: 'held', rule: 'sticky' });
+    expect(poolNext(pool)).toEqual({ label: 'held', rule: 'last used' });
   });
 
   test('no flagged row has no next target, and neither does a single login', () => {
@@ -520,5 +631,20 @@ describe('the coverage manifest', () => {
     expect(byName.get('/api/heads/{head}/restart')).toBe('editable');
     expect(byName.get('/api/daemon/restart')).toBe('editable');
     expect(byName.get('/api/heads')).toBe('read-only');
+  });
+});
+
+describe('how a head joins the fleet', () => {
+  test('the page names the command that adds one, with a copy key, and no route', () => {
+    const markup = renderToStaticMarkup(React.createElement(AddHeadLine));
+    expect(ADD_COMMAND).toBe('splice add');
+    expect(markup).toContain(`>${ADD_COMMAND}<`);
+    expect(markup).toContain('>copy<');
+    expect(markup).not.toContain('/api/');
+  });
+
+  test('the empty fleet does not send the operator to a topology editor that cannot add a head', () => {
+    expect(EMPTIES.noHeads.source).not.toContain('topology');
+    expect(EMPTIES.noHeads.source).toContain('splice add');
   });
 });

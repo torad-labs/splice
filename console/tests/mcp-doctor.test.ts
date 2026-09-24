@@ -15,9 +15,10 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdict } from '../src/entities/doctor';
 import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
-import { MCP_HOST_KNOBS, MCP_RESTART, serverRows, upText } from '../src/entities/mcp';
+import { MCP_HOST_KNOBS, serverRows, upText } from '../src/entities/mcp';
 import type { McpPayload } from '../src/entities/mcp';
 import { budgetFor, budgetText, NO_BUDGET } from '../src/entities/budget';
+import { parseUsd } from '../src/features/budgets';
 import { canTest, desktopText, webhookText } from '../src/entities/alert';
 import type { AlertSettings } from '../src/entities/alert';
 import { CheckStrip } from '../src/pages/doctor';
@@ -25,14 +26,16 @@ import {
   EMPTIES as DOCTOR_EMPTIES,
   attentionCount,
   canSend,
+  collapseChecks,
   groupChecks,
+  logsHeadOf,
   playgroundNext,
   statusEdge,
   wantsAttention,
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
 import type { PlaygroundState } from '../src/pages/doctor/model';
-import { EMPTIES as MCP_EMPTIES, arrangeServers, hostLimits, stateEdge, stateLabel } from '../src/pages/mcp/model';
+import { EMPTIES as MCP_EMPTIES, RESPAWN_NOTE, arrangeServers, hostLimits, stateEdge, stateLabel } from '../src/pages/mcp/model';
 import { dispositions as mcpDispositions } from '../src/pages/mcp/coverage';
 import { dispositions as doctorDispositions } from '../src/pages/doctor/coverage';
 import { Empty } from '../src/shared/ui';
@@ -42,6 +45,13 @@ const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
 
 /** The daemon's own separator: a space, U+2014, then " fix: " (DoctorReportShape.kt:59). */
 const SEP = ` ${String.fromCharCode(0x2014)} fix: `;
+
+/** One check as the rack's row. */
+function rowOf(one: DoctorCheck) {
+  const [row] = collapseChecks([one]);
+  if (row === undefined) throw new Error(`no row for ${one.id}`);
+  return row;
+}
 
 function check(id: string, status: DoctorCheck['status'], detail: string): DoctorCheck {
   return { id, status, detail };
@@ -111,7 +121,7 @@ describe('every failing check carries its fix', () => {
   });
 
   test('the strip prints the check id, its status and its fix', () => {
-    const out = render(h(CheckStrip, { check: failing, selected: false, onOpen: () => undefined }));
+    const out = render(h(CheckStrip, { row: rowOf(failing), selected: false, onOpen: () => undefined }));
     expect(out).toContain('daemon/port');
     expect(out).toContain('>fail<');
     expect(out).toContain('splice doctor --json');
@@ -121,9 +131,57 @@ describe('every failing check carries its fix', () => {
   test('a check with no remedy prints the absence glyph rather than a blank cell', () => {
     // The sentence `no fix offered` moved to the opened check's own note, where a Doctor fix's
     // paragraph belongs; the rack cell carries the absence glyph (m1 design review B8).
-    const out = render(h(CheckStrip, { check: plain, selected: false, onOpen: () => undefined }));
-    expect(out).toContain('>n/r<');
+    const out = render(h(CheckStrip, { row: rowOf(plain), selected: false, onOpen: () => undefined }));
+    expect(out).toContain('>–<');
     expect(out).not.toContain('no fix offered');
+  });
+
+  test('the same finding on several heads is one row that counts them', () => {
+    // Live 2026-09-24: eleven `configuration/system-prompt:<head>` warnings with one fix filled
+    // the first screen of the rack.
+    const fix = 'set system_prompt_mode = "append"';
+    const rows = collapseChecks([
+      check('configuration/system-prompt:claudex', 'warn', `head 'claudex' replaces${SEP}${fix}`),
+      check('configuration/system-prompt:bonsai', 'warn', `head 'bonsai' replaces${SEP}${fix}`),
+      check('configuration/topology', 'ok', 'fine'),
+    ]);
+    expect(rows.map((row) => [row.label, row.members.length])).toEqual([
+      ['configuration/system-prompt (2)', 2], ['configuration/topology', 1],
+    ]);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+  });
+
+  test('checks sharing an id with no colon are one row that keeps every member', () => {
+    // Live 2026-09-24: eleven `installation/wrapper` checks, one per launcher. Keyed by id alone,
+    // ten were overwritten and the rack showed 1 row for 11 checks (walkthrough B1).
+    const checks = [
+      check('installation/wrapper', 'fail', `'claudex' missing${SEP}splice install`),
+      check('installation/wrapper', 'fail', `'claude-grok' missing${SEP}splice install`),
+      check('installation/wrapper', 'fail', `'claude-kimi' missing${SEP}splice install`),
+      check('installation/wrapper', 'ok', `'splice' present`),
+    ];
+    const rows = collapseChecks(checks);
+    expect(rows.map((row) => [row.label, row.members.length])).toEqual([
+      ['installation/wrapper (3)', 3], ['installation/wrapper', 1],
+    ]);
+    expect(rows.reduce((total, row) => total + row.members.length, 0)).toBe(checks.length);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+  });
+
+  test('checks whose fixes differ stay their own rows', () => {
+    const rows = collapseChecks([
+      check('configuration/local:a', 'warn', `down${SEP}start it`),
+      check('configuration/local:b', 'fail', `down${SEP}start it`),
+      check('configuration/wire-tap:a', 'warn', `on${SEP}remove overrides.wireTap from [heads.a]`),
+      check('configuration/wire-tap:b', 'warn', `on${SEP}remove overrides.wireTap from [heads.b]`),
+    ]);
+    expect(rows).toHaveLength(4);
+  });
+
+  test('a splice logs remedy names the head whose log the page can open', () => {
+    expect(logsHeadOf('splice logs --head claude-kimi --tail 50')).toBe('claude-kimi');
+    expect(logsHeadOf('splice restart')).toBeNull();
+    expect(logsHeadOf(null)).toBeNull();
   });
 
   test('warn and fail cock the strip; ok and info do not', () => {
@@ -140,16 +198,20 @@ describe('every failing check carries its fix', () => {
     expect(statusEdge('fail')).toBe('red');
   });
 
-  test('attention first puts the worst section at the top, by section keeps the alphabet', () => {
+  test('attention first lists every check that wants the operator before any that does not', () => {
+    // Walkthrough S14: sorted inside each section, configuration's ok rows sat above runtime's warns.
     const checks = [
+      check('configuration/a', 'warn', 'w'),
+      check('configuration/b', 'ok', 'fine'),
+      check('runtime/c', 'warn', 'w'),
       check('alpha/one', 'ok', 'fine'),
       check('zeta/two', 'fail', `broken${SEP}splice restart`),
     ];
-    const attention = groupChecks(checks, { sort: { field: 'status' } });
+    const order = groupChecks(checks, { sort: { field: 'status' } }).flatMap((group) => group.checks.map((one) => one.id));
+    expect(order).toEqual(['zeta/two', 'configuration/a', 'runtime/c', 'alpha/one', 'configuration/b']);
     const alpha = groupChecks(checks, { sort: null });
-    expect(attention[0]?.key).toBe('zeta');
-    expect(alpha[0]?.key).toBe('alpha');
-    expect(attentionCount(checks)).toBe(1);
+    expect(alpha.map((group) => group.key)).toEqual(['alpha', 'configuration', 'runtime', 'zeta']);
+    expect(attentionCount(checks)).toBe(3);
   });
 });
 
@@ -249,8 +311,11 @@ describe('the playground never persists a body', () => {
 describe('pending routes render an empty naming their row', () => {
   // M4-07: GET /api/upgrade is served and the version strip reads it, so its `not built` empty is
   // gone (tests/doctor-gate.test.ts pins the absence).
-  test('the doctor empty names V4-127', () => {
-    expect(render(h(Empty, DOCTOR_EMPTIES.noReport))).toContain('V4-127');
+  test('the doctor empties say what happened, never a row id or a route', () => {
+    for (const empty of Object.values(DOCTOR_EMPTIES)) {
+      expect(empty.source).not.toMatch(/V4-|\/api\//);
+    }
+    expect(render(h(Empty, DOCTOR_EMPTIES.noReport))).toContain('does not serve the doctor report');
   });
 
   // Body capture is served (/api/heads/{head}/capture, driven from the turns and logs drawers), so
@@ -266,18 +331,17 @@ describe('pending routes render an empty naming their row', () => {
     expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('playground');
   });
 
-  test('the mcp restart empty names the fact that there is no route, not a row', () => {
-    // There is no restart route to wait for: /mcp/{name} is the JSON-RPC transport, not a control.
-    // So the empty names the CLI, which is the only way to restart a hosted server today.
-    expect(MCP_RESTART.pending).toBe('no route; CLI only');
-    const out = render(h(Empty, { text: 'restart not built', source: MCP_RESTART.pending }));
-    expect(out).toContain('restart not built');
-    expect(out).toContain('CLI only');
+  test('where a restart control would stand, the page says what the host does on its own', () => {
+    // There is no restart route (/mcp/{name} is the JSON-RPC transport) and no CLI command restarts
+    // one server, so the old `restart not built / no route; CLI only` sent the reader nowhere.
+    // HostedServer.spawn respawns on the next call and backs off 5-60 s in a crash loop.
+    expect(RESPAWN_NOTE).toContain('starts again on its next call');
+    expect(RESPAWN_NOTE).not.toContain('CLI');
   });
 
-  test('the hosting-off and no-servers empties name their sources', () => {
-    expect(render(h(Empty, MCP_EMPTIES.hostingOff))).toContain('mcp_hosting');
-    expect(render(h(Empty, MCP_EMPTIES.noServers))).toContain('GET /api/mcp');
+  test('the hosting-off and no-servers empties say how to fill them, never a route', () => {
+    expect(render(h(Empty, MCP_EMPTIES.hostingOff))).toContain('mcp_hosting = true under [daemon]');
+    for (const empty of Object.values(MCP_EMPTIES)) expect(empty.source).not.toContain('/api/');
   });
 });
 
@@ -300,6 +364,8 @@ describe('the mcp host', () => {
   });
 
   test('an ineligible server is grey, not red: a decision is not a fault', () => {
+    // and its word says clients reach it themselves, not that something was refused
+    expect(stateLabel('ineligible')).toBe('direct');
     expect(stateEdge('ineligible')).toBe('grey');
     expect(stateEdge('hosted')).toBe('green');
   });
@@ -330,6 +396,22 @@ describe('budgets and alerts', () => {
     expect(budgetText(null)).toBe(NO_BUDGET);
     expect(budgetText({ head: 'a', daily_usd: null, action: 'warn' })).toBe(NO_BUDGET);
     expect(budgetText({ head: 'a', daily_usd: 4, action: 'warn' })).toBe('$4.00/day');
+  });
+
+  test('only an empty box clears a budget; a typo is refused and saves nothing', () => {
+    expect(parseUsd('')).toEqual({ ok: true, value: null });
+    expect(parseUsd('  ')).toEqual({ ok: true, value: null });
+    expect(parseUsd('$5')).toEqual({ ok: true, value: 5 });
+    expect(parseUsd('5.50')).toEqual({ ok: true, value: 5.5 });
+    expect(parseUsd('0')).toEqual({ ok: true, value: 0 });
+    // Walkthrough B2: `5$/day` read as "no budget" and deleted a $5 budget.
+    expect(parseUsd('5$/day')).toEqual({ ok: false });
+    expect(parseUsd('-3')).toEqual({ ok: false });
+    expect(parseUsd('$')).toEqual({ ok: false });
+    // Number() reads these as amounts; none is one a person typed as dollars
+    for (const typo of ['0x10', '0b11', '0o7', '1e3', 'Infinity', '5.5.5']) expect(parseUsd(typo), typo).toEqual({ ok: false });
+    expect(parseUsd('.5')).toEqual({ ok: true, value: 0.5 });
+    expect(parseUsd('12.')).toEqual({ ok: true, value: 12 });
   });
 
   test('a head absent from the payload has no budget', () => {

@@ -186,7 +186,7 @@ function windowUsedTextOf(row: AccountRow): string {
 
 describe('the selector order', () => {
   test('is printed as the sentence the daemon implements, the pin first', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned then primary then sticky then lowest 7-day used');
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then primary, then last used, then most weekly room');
   });
 
   /** Every row's rule in one pool, in order: null for each strip the daemon did not flag. */
@@ -208,28 +208,28 @@ describe('the selector order', () => {
     const primary = account({ label: 'primary', primary: true, available: false });
     const heavy = account({ label: 'heavy', windows: [window7d(80)] });
     const roomy = account({ label: 'roomy', next_target: true, windows: [window7d(5)] });
-    expect(rules([primary, heavy, roomy])).toEqual([null, null, 'lowest 7-day used']);
+    expect(rules([primary, heavy, roomy])).toEqual([null, null, 'most weekly room']);
   });
 
   test('a flagged account that is neither can only be the previous one, the sticky rule', () => {
     const primary = account({ label: 'primary', primary: true, available: false });
     const sticky = account({ label: 'sticky', next_target: true, windows: [window7d(80)] });
     const roomy = account({ label: 'roomy', windows: [window7d(5)] });
-    expect(rules([primary, sticky, roomy])).toEqual([null, 'sticky', null]);
+    expect(rules([primary, sticky, roomy])).toEqual([null, 'last used', null]);
   });
 
   test('the lowest is found inside the flagged account\'s own pool, never across pools', () => {
     // `other` rides another head with more room; the flagged account is still its own pool's lowest.
     const flagged = account({ label: 'mine', next_target: true, heads: ['codex-a'], windows: [window7d(40)] });
     const other = account({ label: 'other', heads: ['codex-b'], windows: [window7d(1)] });
-    expect(nextRuleOf(flagged, [flagged, other])).toBe('lowest 7-day used');
+    expect(nextRuleOf(flagged, [flagged, other])).toBe('most weekly room');
   });
 
   test('an account with no seven-day snapshot sorts as zero used, as the daemon does', () => {
     const fresh = account({ label: 'fresh', next_target: true, windows: [] });
     expect(sevenDayUsed(fresh)).toBe(0);
     const used = account({ label: 'used', windows: [window7d(40)] });
-    expect(rules([used, fresh])).toEqual([null, 'lowest 7-day used']);
+    expect(rules([used, fresh])).toEqual([null, 'most weekly room']);
   });
 
   test('a window present but unreported also sorts as zero, never as unavailable', () => {

@@ -1,7 +1,7 @@
 import { topologyStore } from './model/store';
 
 export { fetchTopology, saveTopology, startTopologyPolling } from './api';
-export { RUNTIME_KNOBS, TOPOLOGY_SCHEMA, validateTopology } from './model/schema';
+export { RUNTIME_KNOBS, TOPOLOGY_CHOICES, TOPOLOGY_SCHEMA, validateTopology } from './model/schema';
 export type { SchemaNode } from './model/schema';
 export { PENDING_TOPOLOGY, TOPOLOGY_PROVENANCE } from './model/types';
 export type {

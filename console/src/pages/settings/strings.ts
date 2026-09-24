@@ -4,7 +4,11 @@
 export const S = {
   title: 'settings',
   knobs: 'runtime knobs',
+  find: 'find a knob',
+  findHint: 'name or key',
   topology: 'topology',
+  /** A value written at the top of splice.toml, outside any table. */
+  topLevel: 'top level',
   claudeHead: 'claude head',
   mode: 'head mode',
   separate: 'separate',
@@ -23,6 +27,9 @@ export const S = {
   allKnobs: 'all knobs',
   live: 'applies live',
   restart: 'restart to apply',
+  /** The view of restart-only knobs, named as each knob in it says it (knob-form `applies on
+   *  restart`). `restart to apply` above is the instruction after splice.toml is written. */
+  restartView: 'applies on restart',
   sample: 'sample data',
   onPath: 'claude on path',
   shim: 'shim',
@@ -35,7 +42,8 @@ export const S = {
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
 // These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
 // these meanings is how the console reached eleven phrasings for "nothing here".
-//   n/r        nobody reported a value for this cell. The default, and the comp's own glyph.
+//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
+//              default. It was `n/r`, which no reader could expand.
 //   none       the question was asked and its answer is nothing (no tier hands this model out).
 //   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
 //   unavailable  it exists and we cannot reach it.

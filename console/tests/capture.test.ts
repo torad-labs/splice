@@ -128,7 +128,7 @@ describe('the request drawer', () => {
   test('capture running says so, and names the CLI as where bodies are read, since no route serves one', () => {
     const out = render(h(RequestDrawer, { capture: state({ running: wire({ enabled: true }) }), onSwitch: () => undefined }));
     expect(out).toContain(CAPTURE_ON);
-    expect(out).toContain('no daemon route serves captured bodies');
+    expect(out).toContain('read captured bodies with this command');
     expect(out).toContain('splice trace e2e-codex');
   });
 

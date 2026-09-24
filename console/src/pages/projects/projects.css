@@ -70,12 +70,14 @@
    on every strip. The ch width stops being a fixed box and becomes each cell's SHARE: the cells
    keep their declared ch as their basis and the leftover ch is distributed across them, so the
    column grid is still the declared one and only the slack moves. That is the whole difference
-   between bare paper and a full row. */
-.myx-px-bays .myx-strip { width: 100%; }
-.myx-px-bays .myx-sfield {
-  /* declared ch stays the basis; the slack is shared */
-  flex: 1 1 auto;
-}
+   between bare paper and a full row.
+   THE SLACK IS SHARED, NEVER THE DEFICIT (S12). This page kept `.myx-sfield { flex: 1 1 auto }`
+   after the other pages retired it (M1-93; strip-field.tsx sets flex-grow inline to the cell's own
+   ch), and its flex-shrink 1 undid ui.css's `flex: 0 0 auto`: on a 390 phone a 100%-wide strip
+   squeezed all 60 cells below their declared ch and printed `sessions` as `s…`, `teams` as `t…`.
+   So the strip is at LEAST the bay (min-width, over ui.css's max-content) and the cells never
+   shrink: a bay wider than the rack fills as before, and a narrower one scrolls the rack (B7). */
+.myx-px-bays .myx-strip { min-width: 100%; }
 
 .myx-px-detail {
   display: flex;

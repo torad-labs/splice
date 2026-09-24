@@ -69,3 +69,9 @@ export function checkFix(check: DoctorCheck): string | null {
   const at = check.detail.indexOf(FIX_SEPARATOR);
   return at === -1 ? null : check.detail.slice(at + FIX_SEPARATOR.length);
 }
+
+/** What the check found: its detail without the remedy, which a page prints on its own line. */
+export function checkFinding(check: DoctorCheck): string {
+  const at = check.detail.indexOf(FIX_SEPARATOR);
+  return at === -1 ? check.detail : check.detail.slice(0, at);
+}

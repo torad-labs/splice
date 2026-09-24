@@ -12,12 +12,12 @@
 // could not be tested or captured from data.
 import { useState } from 'react';
 import type { CompactPayload, CompactRow } from '@shared/api';
-import { fmtInt, fmtMs, timeAgo } from '@shared/lib';
+import { ABSENT, MONTHS, fmtInt, fmtMs, fmtShare, timeAgo } from '@shared/lib';
 import { Key } from '@shared/controls';
 import { Bay, HolderEdge, Strip, StripField } from '@shared/ui';
 import type { Edge } from '@shared/ui';
 import { cx } from '@shared/lib';
-import { S } from './strings';
+import { CLIENT_INSTRUCTIONS, OUTCOME_WORDS, S } from './strings';
 import './compact-feed.css';
 
 /** What an outcome MEANT, as the three states this world's holder edge has: a summary was produced,
@@ -43,6 +43,64 @@ export function edgeFor(outcome: string): Edge {
   return EDGE[stateOf(outcome)];
 }
 
+/** An outcome as a reader says it: the word for a name the daemon is known to write, and the
+ *  daemon's own spelling, underscores read as spaces, for a name this console has not met. */
+export function outcomeText(outcome: string): string {
+  return OUTCOME_WORDS[outcome] ?? outcome.replaceAll('_', ' ');
+}
+
+/** One outcome's part of all compactions, to one decimal under 10% so a rare failure still reads. */
+export function shareText(count: number, total: number): string {
+  return total <= 0 ? ABSENT : fmtShare(count / total);
+}
+
+/**
+ * THE LINE THE PAGE LEADS WITH: how the most recent compactions went, and since when (console
+ * review, 2026-09-24). The outcome totals are every row the daemon's stats file still holds, with
+ * no date on the payload, and the live file's 18% empty replies were all from before 2026-07-13:
+ * an operator read an old count as today's failure rate. The tail carries a time on every row, so
+ * its span is known and its failures are current.
+ */
+export function recentLine(tail: readonly CompactRow[]): string | null {
+  if (tail.length === 0) return null;
+  const since = new Date(Math.min(...tail.map((row) => row.ts)));
+  const failed = tail.filter((row) => stateOf(row.outcome ?? 'unknown') === 'fail').length;
+  return `last ${tail.length} compactions, since ${MONTHS[since.getMonth()]} ${since.getDate()}: `
+    + (failed === 0 ? 'none failed' : `${failed} failed`);
+}
+
+/**
+ * THE COUNTS THE OUTCOMES RACK SHOWS, and the line that dates the rest. A daemon with #226 sends the
+ * last seven days beside the counted rows, and the rack leads with those: the counted rows reach back
+ * to each head's oldest kept row, and on the live feed that was a July failure rate read as today's.
+ * The older count then prints as one dated line under the rack, from the heads' own `first_ts`. An
+ * older daemon sends neither, and the rack shows its counts as before, undated.
+ */
+export function outcomeCounts(stats: CompactPayload['stats']): {
+  counts: Record<string, number>;
+  total: number;
+  week: boolean;
+} {
+  const week = stats.by_outcome_7d;
+  if (week === undefined) return { counts: stats.by_outcome, total: stats.total, week: false };
+  return { counts: week, total: Object.values(week).reduce((sum, n) => sum + n, 0), week: true };
+}
+
+/** `since sep 21: 3,787 counted, 1,315 failed`, or null when the daemon does not date its counts. */
+export function countedLine(stats: CompactPayload['stats']): string | null {
+  if (stats.by_outcome_7d === undefined) return null;
+  const firsts = Object.values(stats.heads ?? {})
+    .map((head) => head.first_ts)
+    .filter((ts): ts is number => ts !== undefined);
+  if (firsts.length === 0 || stats.total === 0) return null;
+  const since = new Date(Math.min(...firsts));
+  const failed = Object.entries(stats.by_outcome)
+    .filter(([outcome]) => stateOf(outcome) === 'fail')
+    .reduce((sum, [, n]) => sum + n, 0);
+  return `since ${MONTHS[since.getMonth()]} ${since.getDate()}: ${fmtInt(stats.total)} counted, `
+    + (failed === 0 ? 'none failed' : `${fmtInt(failed)} failed`);
+}
+
 function eventKey(row: CompactRow, index: number): string {
   return `${row.head}-${row.ts}-${index}`;
 }
@@ -52,11 +110,15 @@ function eventKey(row: CompactRow, index: number): string {
  *  two lists checking each other, which is the shape §24 names and this campaign has paid for. */
 const OUTCOME = 26;
 const COUNT = 12;
+const SHARE = 10;
 const WHEN = 13;
 const HEAD = 18;
-const EVENT = 20;
-const CHARS = 13;
+const EVENT = 22;
+const CHARS = 15;
 const TOOK = 11;
+
+/** Where the empty racks point a reader who has never seen a compaction. */
+const NONE = { text: S.none, source: 'claude code compacts a session when its context fills; each one lands here' };
 
 /** A rack's column names, once, at the same ch widths as the cells they name — the `fields` row
  *  Bay has shipped since m1 and doctor already uses (m1 design review B9).
@@ -81,9 +143,26 @@ function ColumnNames({ columns }: { columns: readonly { w: number; label: string
   );
 }
 
-export function CompactFeed({ payload, sample = false }: { payload: CompactPayload; sample?: boolean }) {
+/** Which instructions a compaction ran under: a rule's source label as core wrote it, or the
+ *  client's own when no rule applied (the daemon writes `client` for that). */
+function instructionsText(source: string | undefined): string {
+  if (source === undefined) return ABSENT;
+  return source === 'client' ? CLIENT_INSTRUCTIONS : source;
+}
+
+export function CompactFeed({ payload, sample = false, labels = new Map() }: {
+  payload: CompactPayload;
+  sample?: boolean;
+  /** Head key to the label every other page prints (`bonsai` to `claude-bonsai`); a key with no
+   *  label prints as itself. */
+  labels?: ReadonlyMap<string, string>;
+}) {
   const [open, setOpen] = useState<string | null>(null);
-  const outcomes = Object.entries(payload.stats.by_outcome);
+  const nameOf = (key: string): string => labels.get(key) ?? key;
+  // Most common first: the daemon's map order put three failure kinds above the 65% that worked.
+  const shown = outcomeCounts(payload.stats);
+  const outcomes = Object.entries(shown.counts).sort(([, a], [, b]) => b - a);
+  const counted = countedLine(payload.stats);
   const tail = [...payload.stats.tail].reverse();
   const opened = tail.find((row, index) => eventKey(row, index) === open) ?? null;
 
@@ -100,17 +179,23 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
   // for the one error I already knew about. THE FILTER IS THE LESSON: a censored gate reads
   // clean, and the only reason this was caught is that another seat ran the same leg and read
   // ALL of it.
+  const recent = recentLine(payload.stats.tail);
   return (
     <div className={cx('myx-cfeed', opened !== null && 'myx-cfeed-open')}>
       <div className="myx-cfeed-bays">
+        {recent === null ? null : <p className="myx-cfeed-recent">{recent}</p>}
         <Bay
-          label={S.outcomes}
+          label={shown.week ? S.week : S.outcomes}
           count={outcomes.length}
           // The fixture's own mark (CONTRACTS.md section 4: a grey `sample data` edge in the bay
           // label). It used to ride as the closed detail column's empty, which M3-03 removed.
           {...(sample ? { actions: <HolderEdge state="grey" label={S.sample} /> } : {})}
-          empty={{ text: S.none, source: 'GET /api/compact' }}
-          fields={<ColumnNames columns={[{ w: OUTCOME, label: S.outcome }, { w: COUNT, label: S.count }]} />}
+          empty={NONE}
+          fields={(
+            <ColumnNames
+              columns={[{ w: OUTCOME, label: S.outcome }, { w: COUNT, label: S.count }, { w: SHARE, label: S.share }]}
+            />
+          )}
         >
           {/* THE TOTAL IS A SPAN, NOT A WIDE FIRST FIELD (M1-73). It is one value stated across
               the whole row, so it declares the two tracks this bay's outcome rows use -- w=26+w=12
@@ -121,29 +206,31 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
               already prints the word `total`, so the label was the same five characters twice on
               one row and a third time in the bay's own head (m1 design review B10). */}
           <Strip edge="grey" edgeLabel={S.total} ariaLabel={S.total}>
-            <StripField w={OUTCOME + COUNT} span={2} value={fmtInt(payload.stats.total)} />
+            <StripField w={OUTCOME + COUNT + SHARE} span={3} value={fmtInt(shown.total)} />
           </Strip>
           {outcomes.map(([outcome, count]) => (
             <Strip
               key={outcome}
               edge={edgeFor(outcome)}
               edgeLabel={S.state[stateOf(outcome)]}
-              ariaLabel={`${S.outcome} ${outcome}`}
+              ariaLabel={`${S.outcome} ${outcomeText(outcome)}`}
             >
               {/* NO PER-CELL LABELS: the bay prints its column names once, above the rack (B9).
                   Measured on this page before the change: every strip stood 63.8px tall and 42px
                   of that was the value -- 21.8px of every row, a third of it, spent reprinting
                   two words the rack states once. Seven rows here, six in the tail. */}
-              <StripField w={OUTCOME} value={outcome} mono={false} />
+              <StripField w={OUTCOME} value={outcomeText(outcome)} mono={false} />
               <StripField w={COUNT} value={fmtInt(count)} />
+              <StripField w={SHARE} value={shareText(count, shown.total)} />
             </Strip>
           ))}
         </Bay>
+        {counted === null ? null : <p className="myx-cfeed-recent myx-cfeed-counted">{counted}</p>}
 
         <Bay
           label={S.events}
           count={tail.length}
-          empty={{ text: S.none, source: 'GET /api/compact' }}
+          empty={NONE}
           fields={(
             <ColumnNames
               columns={[
@@ -166,14 +253,14 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
                 edgeLabel={S.state[stateOf(outcome)]}
                 selected={open === key}
                 onOpen={() => setOpen(open === key ? null : key)}
-                ariaLabel={`${S.openEvent} ${outcome}`}
+                ariaLabel={`${S.openEvent} ${outcomeText(outcome)}`}
               >
                 {/* NO PER-CELL LABELS: the bay prints its five column names once (B9). */}
                 <StripField w={WHEN} value={timeAgo(row.ts)} />
-                <StripField w={HEAD} value={row.head} mono={false} />
-                <StripField w={EVENT} value={outcome} mono={false} />
-                <StripField w={CHARS} value={row.chars === undefined ? '' : fmtInt(row.chars)} />
-                <StripField w={TOOK} value={row.ms === undefined ? '' : fmtMs(row.ms)} />
+                <StripField w={HEAD} value={nameOf(row.head)} mono={false} />
+                <StripField w={EVENT} value={outcomeText(outcome)} mono={false} />
+                <StripField w={CHARS} value={row.chars === undefined ? ABSENT : fmtInt(row.chars)} />
+                <StripField w={TOOK} value={row.ms === undefined ? ABSENT : fmtMs(row.ms)} />
               </Strip>
             );
           })}
@@ -195,11 +282,14 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
               edgeLabel={S.state[stateOf(opened.outcome ?? 'unknown')]}
               ariaLabel={S.detail}
             >
-              <StripField w={13} label={S.when} value={new Date(opened.ts).toISOString().slice(11, 19)} />
-              <StripField w={18} label={S.head} value={opened.head} mono={false} />
-              <StripField w={13} label={S.chars} value={opened.chars === undefined ? '' : fmtInt(opened.chars)} />
-              <StripField w={11} label={S.took} value={opened.ms === undefined ? '' : fmtMs(opened.ms)} />
-              <StripField w={11} label={S.status} value={opened.status ?? ''} />
+              {/* The reader's own clock: this printed the UTC time before (`toISOString`), which is
+                  hours off for anyone not in UTC and matched no other time on the page. */}
+              <StripField w={13} label={S.when} value={new Date(opened.ts).toTimeString().slice(0, 8)} />
+              <StripField w={18} label={S.head} value={nameOf(opened.head)} mono={false} />
+              <StripField w={22} label={S.outcome} value={outcomeText(opened.outcome ?? 'unknown')} mono={false} />
+              <StripField w={15} label={S.chars} value={opened.chars === undefined ? ABSENT : fmtInt(opened.chars)} />
+              <StripField w={11} label={S.took} value={opened.ms === undefined ? ABSENT : fmtMs(opened.ms)} />
+              <StripField w={22} label={S.instructions} value={instructionsText(opened.instructions_source)} mono={false} />
             </Strip>
             {opened.error === undefined ? null : (
               <p className="myx-cfeed-error" role="alert">{opened.error}</p>

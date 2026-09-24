@@ -63,7 +63,7 @@
    box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
    leftover ch is distributed across them, so the column grid is still the declared one and only the
    slack moves. Measured before this: the widest strip left 1011 px of bare bay to its right. */
-.myx-accounts-bays .myx-strip { width: 100%; }
+.myx-accounts-bays .myx-strip { min-width: 100%; }
 /* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
    overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
    every row shape has the same cell count -- it does not, so the primitive now sets
@@ -114,3 +114,27 @@
    (features/account-login), so every edge before it stays at its declared x and the strip still
    reaches the bay's right edge instead of ending in a slab of bare paper. */
 .myx-strip-fixed .myx-sfield { flex-grow: 0; }
+
+/* What opening an account offers: one quiet line under the selector's order. */
+.myx-accounts-hint {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+
+/* An opened api-key head: where its key comes from and the command that sets it. The command box
+   paints the strip's paper, so it takes the strip's ink, as the doctor's fix box does. */
+.myx-accounts-key { display: flex; flex-direction: column; gap: var(--space-2); }
+.myx-accounts-key-row { margin: var(--space-0); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.myx-accounts-key-name { font-family: var(--font-label); font-size: var(--text-2); color: var(--ink-strong); }
+.myx-accounts-key-command {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  color: var(--strip-ink);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}

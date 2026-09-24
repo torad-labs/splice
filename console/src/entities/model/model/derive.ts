@@ -20,3 +20,20 @@ export function slotTiers(head: HeadCatalog): SlotTier[] {
   }
   return MODEL_SLOTS.map((slot) => ({ slot, model: bySlot.get(slot) ?? null }));
 }
+
+/** Where a row's context window came from, in words. The daemon sends a LABEL it never expects the
+ *  console to parse (ModelsRoute.kt WINDOW_FROM_*), and the page printed it verbatim, so the
+ *  operator read `extra-window` and `default`. A value this map does not know prints as the daemon
+ *  sent it, dashes spaced, so a new daemon label still reads. */
+const WINDOW_SOURCE_WORDS: Record<string, string> = {
+  model: 'model catalog',
+  head: 'head setting',
+  rule: 'prefix rule',
+  'extra-window': 'extra window',
+  default: 'provider default',
+  unknown: 'unknown',
+};
+
+export function windowSourceText(source: string): string {
+  return WINDOW_SOURCE_WORDS[source] ?? source.replaceAll('-', ' ');
+}

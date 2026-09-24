@@ -12,14 +12,16 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { SELECTOR_ORDER_TEXT, nextRuleOf } from '@entities/account';
+import { familyName } from '@entities/heads';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { AccountActions, AccountLogin, HeadActions, HeadAuthStrip } from '@features/account-login';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Blank, Fault, Key } from '@shared/controls';
+import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
+import { ABSENT } from '@shared/lib';
+import { Blank, Copy, Fault, Key } from '@shared/controls';
 import { AccountStrip } from '@widgets/account-strip';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from './model';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
@@ -34,6 +36,14 @@ const POLL_MS = 15000;
 const CLOCK_MS = 30000;
 
 /** The three views this page ships with. `by provider` is first because it is the default. */
+/** What opening an account offers, said once, because nothing on a strip says it can be opened. */
+const OPEN_HINT = 'open an account to sign in another one to its pool, switch to it, relabel it or remove it';
+
+/** A group's bay label: a provider group prints the provider's name, not the auth kind's id. */
+function groupLabel(group: string | null, key: string): string {
+  return group === 'provider' ? familyName(key) : key;
+}
+
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-provider', name: S.byProvider, layout: 'bay', filter: {}, sort: null, group: 'provider', fields: [] },
   { id: 'nearest', name: S.nearest, layout: 'bay', filter: {}, sort: { field: 'exhaustion', dir: 'desc' }, group: null, fields: [] },
@@ -68,6 +78,88 @@ interface HeadRow {
   present: boolean;
   masked: string | null;
   note: string | null;
+  /** api-key heads: the variable the key is read from, and the key masked. */
+  envVar?: string | undefined;
+  keyMasked?: string | undefined;
+  keyFile?: string | undefined;
+}
+
+export function openKeyHeadKey(head: string): string {
+  return `key:${head}`;
+}
+
+/**
+ * The api-key heads (openrouter, deepseek, a local runtime), which no other rack lists: they are
+ * not OAuth, so GET /api/accounts never names them, and until this bay the console showed nowhere
+ * which variable a head reads its key from or whether it is set (console review, 2026-09-24).
+ */
+function ApiKeyBay({ rows, openKey, onOpen }: {
+  rows: readonly HeadRow[];
+  openKey: string | null;
+  onOpen: (key: string) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <Bay label={S.keyBay} count={rows.length} compact>
+      {rows.map((row) => (
+        <Strip
+          key={row.head}
+          edge={row.present ? 'green' : 'amber'}
+          edgeLabel={row.present ? S.keySet : S.keyMissing}
+          cocked={!row.present}
+          selected={openKey === openKeyHeadKey(row.head)}
+          onOpen={() => onOpen(openKeyHeadKey(row.head))}
+          ariaLabel={`${S.keyBay} ${row.head}`}
+        >
+          <StripField w={20} label={S.head} value={row.head} mono={false} />
+          <StripField w={24} label={S.variable} value={row.envVar ?? ABSENT} />
+          <StripField w={14} label={S.key} value={row.present ? (row.keyMasked ?? ABSENT) : S.keyMissing} />
+        </Strip>
+      ))}
+    </Bay>
+  );
+}
+
+/**
+ * Where an api-key head's key comes from, and how to set it. THE DAEMON READS THREE PLACES IN ORDER
+ * (ApiKeyAuthProvider.readKey): the variable in its own environment, then the head's key_file, then
+ * the key store `splice key set` writes. A stored key is the one a set replaces, so a head whose key
+ * is present is told which source wins over the store, and a head reading a key_file is sent to the
+ * file: a `splice key set` there writes a key the daemon never reads.
+ */
+export function apiKeyHint(row: HeadRow): string {
+  const variable = row.envVar;
+  if (variable === undefined) return 'this head signs every request with one api key';
+  if (row.keyFile !== undefined) {
+    return row.present
+      ? `this head reads its key from ${row.keyFile} unless ${variable} is set where splice runs; replace the key in that file`
+      : `no key in ${variable} or ${row.keyFile}; store one with this, and the next request uses it, no restart needed`;
+  }
+  return row.present
+    ? `this head signs every request with its ${variable} key; this replaces a stored key, and the next request uses it, but a ${variable} exported where splice runs wins over it until it is removed`
+    : `no key in ${variable}; set one with this, and the next request uses it, no restart needed`;
+}
+
+/** An opened api-key head: where its key comes from, and the command that sets it when a set would
+ *  reach the daemon. */
+export function ApiKeyDetail({ row }: { row: HeadRow }) {
+  const reachable = row.keyFile === undefined || !row.present;
+  const command = row.envVar === undefined || !reachable ? null : `splice key set ${row.envVar}`;
+  return (
+    <section className="myx-accounts-key">
+      <div className="myx-accounts-key-row">
+        <HolderEdge state={row.present ? 'green' : 'amber'} label={row.present ? S.keySet : S.keyMissing} />
+        <span className="myx-accounts-key-name">{row.head}</span>
+      </div>
+      <p className="myx-accounts-hint">{apiKeyHint(row)}</p>
+      {command === null ? null : (
+        <p className="myx-accounts-key-row">
+          <code className="myx-accounts-key-command">{command}</code>
+          <Copy value={command} />
+        </p>
+      )}
+    </section>
+  );
 }
 
 function HeadBay({ label, rows, openKey, onOpen }: {
@@ -119,19 +211,21 @@ function ClaudeBay({ rows, openKey, onOpen }: {
           onOpen={() => onOpen(openHeadKey(row.head))}
         />
       ))}
-      <Empty text="launch-time selected, never a pool" source="one login per claude head" />
+      <Empty text="one login per claude head" source="a claude head uses the claude code login it was started with, so it has no pool" />
     </Bay>
   );
 }
 
 /** The board, drawn from a payload it is handed rather than from the store, so a test can hand it
  *  pools (a static render only ever sees a store's initial state). */
-export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sample }: {
+export function AccountsBoard({ payload, headRows = [], nowMs, error = null, lastRead = null, sample }: {
   payload: AccountsState | null;
   /** Every head as GET /api/auth reports it: the fallback rack and the claude bay. */
   headRows?: readonly HeadRow[];
   nowMs: number;
   error?: string | null;
+  /** When the pools on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
 }) {
@@ -147,8 +241,11 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
   const groups = arrangeAccounts(accounts, active);
   const columns = columnsOf(active);
 
-  const pooledHeads = headRows.filter((row) => row.kind !== 'client');
+  // An api-key head has no login to pool or sign in; the key bay below is its place.
+  const pooledHeads = headRows.filter((row) => row.kind !== 'client' && row.kind !== 'api-key');
   const claudeHeads = headRows.filter((row) => row.kind === 'client');
+  const keyHeads = headRows.filter((row) => row.kind === 'api-key');
+  const openedKey = keyHeads.find((row) => openKeyHeadKey(row.head) === openKey) ?? null;
 
   const opened = accounts.find((account) => openAccountKey(account) === openKey) ?? null;
   const openedHead = opened === null && openKey?.startsWith('head:') === true
@@ -160,7 +257,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
   // aria-hidden and once on the content gate -- and the point of that decision is that the
   // exposure and the content CANNOT DESYNC because they are the same expression. With a compound
   // condition, writing it twice is how they drift, so it is named once and read twice.
-  const closed = opened === null && openedHead === null;
+  const closed = opened === null && openedHead === null && openedKey === null;
 
   return (
     <div
@@ -172,7 +269,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {error === null ? null : <Fault message={error} />}
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
       {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
 
@@ -198,10 +295,11 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
                 <span className="myx-accounts-order-label">{S.order}</span>
                 {SELECTOR_ORDER_TEXT}
               </p>
+              <p className="myx-accounts-hint">{OPEN_HINT}</p>
               {groups.map((group) => (
                 <Bay
                   key={group.key === '' ? S.bay : group.key}
-                  label={group.key === '' ? S.bay : group.key}
+                  label={group.key === '' ? S.bay : groupLabel(active.group, group.key)}
                   count={group.accounts.length}
                   compact
                 >
@@ -229,6 +327,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
           )}
 
           <ClaudeBay rows={claudeHeads} openKey={openKey} onOpen={toggle} />
+          <ApiKeyBay rows={keyHeads} openKey={openKey} onOpen={toggle} />
         </div>
 
         {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M2-24, the last page in the console
@@ -255,7 +354,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
               {opened !== null ? (
                 <>
                   {/* Relabel and remove act on a POOL; a single-login head has none. */}
-                  {opened.label !== null ? <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} /> : null}
+                  {opened.label !== null ? <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} /> : null}
                   {/* ONE AccountLogin, NOT TWO (M2-28, found while reading M2-24). This sat
                       outside the branch, and HeadActions renders its OWN AccountLogin
                       (account-login/index.tsx:305), so opening a HEAD drew the `add account`
@@ -265,6 +364,8 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
                 </>
               ) : openedHead !== null ? (
                 <HeadActions head={openedHead} />
+              ) : openedKey !== null ? (
+                <ApiKeyDetail row={openedKey} />
               ) : null}
             </>
           )}
@@ -294,6 +395,9 @@ export function AccountsPage() {
     present: auth.present,
     masked: auth.account_id_masked ?? null,
     note: auth.refresh_latched ?? null,
+    envVar: auth.env_var,
+    keyMasked: auth.api_key_masked,
+    keyFile: auth.key_file,
   }));
 
   return (
@@ -302,6 +406,7 @@ export function AccountsPage() {
       headRows={headRows}
       nowMs={nowMs}
       error={accountsResource.error}
+      lastRead={rows === null ? accountsResource.lastUpdated : null}
       sample={import.meta.env.DEV && rows !== null && fixture !== null ? fixture : undefined}
     />
   );

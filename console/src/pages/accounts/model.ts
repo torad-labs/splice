@@ -2,7 +2,7 @@
 // fixture is selected. Kept out of the component so both are testable without a renderer, and so
 // the sort rule below is pinned rather than eyeballed.
 import type { AccountRow } from '@entities/account';
-import { PENDING_ACCOUNTS, nearestWindow } from '@entities/account';
+import { nearestWindow } from '@entities/account';
 import type { View } from '@features/views';
 import { ACCOUNT_COLUMNS } from '@widgets/account-strip';
 import { S } from './strings';
@@ -19,8 +19,8 @@ export interface AccountGroup {
  */
 export const EMPTIES = {
   /** GET /api/accounts is still a row: the per-head auth cards above this are the real answer. */
-  pooledPending: { text: 'pooled accounts not built', source: `row ${PENDING_ACCOUNTS}` },
-  noAccounts: { text: 'no accounts pooled', source: 'GET /api/accounts' },
+  pooledPending: { text: 'account pools unavailable', source: 'this splice version does not serve them; each head above shows its own login' },
+  noAccounts: { text: 'no accounts yet', source: 'open a head to sign one in, or run splice login <head>' },
 } as const;
 
 /** The head-group key for an account no head is riding. Its own group rather than dropped: an

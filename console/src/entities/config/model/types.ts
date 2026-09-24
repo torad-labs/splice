@@ -33,4 +33,10 @@ export interface KnobDisposition {
   provenance: Provenance;
   /** Read from `restart_required_keys` on the payload, never from a hand list (FEATURES 2.2). */
   hot: boolean;
+  /** The value the daemon falls back to when no layer sets the knob (the payload's `defaults`
+   *  layer). What "changed" and "reset to default" are measured against. */
+  defaultValue: ConfigValue;
+  /** Heads whose `[heads.<key>.overrides]` in splice.toml set this knob. A value saved in the
+   *  global view outranks those overrides (FEATURES 2.2 precedence), so the row says so. */
+  overriddenBy: string[];
 }

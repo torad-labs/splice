@@ -19,8 +19,9 @@ import { inflightFrom, waterfall } from '../src/entities/perf';
 import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import { applyFilter, headOf, headsPresent, levelOf, levelsPresent, timeOf } from '../src/entities/logs';
 import type { LogFilter } from '../src/entities/logs';
-import { TurnsBoard } from '../src/pages/turns';
-import { LogsBoard } from '../src/pages/logs';
+import { IdleHeads, TurnsBoard } from '../src/pages/turns';
+import { shareText, stageRowsOf } from '../src/pages/turns/index';
+import { LogsBoard, unseenAfter } from '../src/pages/logs';
 import { itemsOf, selectionOf, windowOf } from '../src/pages/turns/select';
 import { edgeOfInflight, fieldsOf, inflightFieldsOf } from '../src/pages/turns/strip';
 import { barRows, totalOf } from '../src/widgets/waterfall/model';
@@ -133,9 +134,10 @@ describe('waterfall bars', () => {
 
   test('the chart prints every row it draws, so the bar survives grayscale', () => {
     const out = render(h(Waterfall, { row: turn() }));
-    expect(out).toContain('>queue<');
-    expect(out).toContain('>upstream<');
-    expect(out).toContain('>stream<');
+    // The same names as the stage table beside it (entities/perf STAGE_NAMES), not a second set.
+    expect(out).toContain('>waiting for slot<');
+    expect(out).toContain('>waiting on provider<');
+    expect(out).toContain('>streaming reply<');
     expect(out).toContain('30ms'); // the legend prints each row's span
     expect(out).toContain('myx-wf-svg');
   });
@@ -180,8 +182,8 @@ describe('in-flight turns', () => {
 describe('turn strips', () => {
   test('a row that lost telemetry says so in words, never with smaller numbers', () => {
     expect(fieldsOf(turn({ async_io_drops: 3 }), ['dropped'])[0].value).toBe('telemetry dropped');
-    expect(fieldsOf(turn({ async_io_drops: 0 }), ['dropped'])[0].value).toBe('n/r');
-    expect(fieldsOf(turn(), ['dropped'])[0].value).toBe('n/r');
+    expect(fieldsOf(turn({ async_io_drops: 0 }), ['dropped'])[0].value).toBe('–');
+    expect(fieldsOf(turn(), ['dropped'])[0].value).toBe('–');
   });
 
   test('a column the row does not carry is absent and says so in one glyph', () => {
@@ -189,8 +191,8 @@ describe('turn strips', () => {
     // B8): `- unavailable` was one fact in two sentences and read as a typo.
     const fields = fieldsOf(without(turn(), 'total', 'in_tokens'), ['total', 'tokensIn', 'head']);
     expect(fields.map((f) => [f.value, f.basis])).toEqual([
-      ['n/r', undefined],
-      ['n/r', undefined],
+      ['–', undefined],
+      ['–', undefined],
       ['claudex', 'measured'],
     ]);
   });
@@ -209,6 +211,26 @@ describe('turn views', () => {
     expect(selection.kind).toBe('table');
     if (selection.kind !== 'table') return;
     expect(itemsOf(selection).map((item) => item.kind)).toEqual(['row', 'row']);
+  });
+
+  test('the table and each group list the newest turn first, whatever order the rows arrived in', () => {
+    const table = selectionOf(rows, view(), T0);
+    if (table.kind !== 'table') throw new Error('expected the table');
+    expect(table.rows.map((row) => row.ts)).toEqual([T0 - 30_000, T0 - 60_000]);
+    const same = [turn({ ts: T0 - 90_000, outcome: 'ok' }), turn({ ts: T0 - 10_000, outcome: 'ok' })];
+    const grouped = selectionOf(same, view({ group: 'outcome' }), T0);
+    if (grouped.kind !== 'groups') throw new Error('expected groups');
+    expect(grouped.groups[0]?.rows.map((row) => row.ts)).toEqual([T0 - 10_000, T0 - 90_000]);
+  });
+
+  test('a row keeps its key when a newer turn lands above it, and two turns in one millisecond differ', () => {
+    const keys = (list: TurnRow[]) => itemsOf(selectionOf(list, view(), T0)).map((item) => item.key);
+    const before = keys(rows);
+    const after = keys([...rows, turn({ ts: T0 - 5_000 })]);
+    // the opened row is found by key on every poll; the new turn sits first and moves nobody's key
+    expect(after.slice(1)).toEqual(before);
+    const twins = keys([turn({ ts: T0 }), turn({ ts: T0 })]);
+    expect(new Set(twins).size).toBe(2);
   });
 
   test('a grouped view puts a band before each group, and no band for an empty one', () => {
@@ -241,27 +263,73 @@ describe('turns board', () => {
   const board = (over: Partial<React.ComponentProps<typeof TurnsBoard>> = {}) =>
     render(h(TurnsBoard, { inflight: [inflight()], landed: { inflight: [], landed: [turn()], unread: [] }, summary: null, capture: null, ...over }));
 
-  test('a route that does not exist renders the empty that names its row', () => {
+  test('a route this daemon does not serve says so in words, not a row id', () => {
     const out = board({ landed: { pending: 'V4-127' } });
-    expect(out).toContain('row V4-127');
+    expect(out).toContain('turn history unavailable');
+    expect(out).not.toContain('V4-127');
     expect(out).not.toContain('myx-tn-scroll');
   });
 
-  test('the summary bay renders what exists today, and an empty window says so', () => {
+  test('the summary names its window, prints readable units, and names the idle heads once', () => {
     const out = board({
       summary: {
         window: '24h',
         heads: [
           {
-            key: 'claudex', label: 'claudex', window: '24h', count: 0, empty: true, coverage_known: true,
-            clamped: true, covers_ms: HOUR,
+            key: 'claudex', label: 'claudex', window: '24h', count: 16, empty: false, coverage_known: true,
+            clamped: false, covers_ms: HOUR,
+            time_before_first_byte_ms: { count: 16, p50: 489, p95: 3192, max: 3192 },
+            total_ms: { count: 16, p50: 10_580, p95: 46_967, max: 46_967 },
+            failure_share: 0.25, cache_hit_ratio: 0.979, retries: 0, refreshes: 0, peak_inflight: 1, io_drops_in_window: 0,
           },
+          { key: 'claude-grok', label: 'claude-grok', window: '24h', count: 0, empty: true, coverage_known: true, clamped: true, covers_ms: HOUR },
+          { key: 'claude-kimi', label: 'claude-kimi', window: '24h', count: 0, empty: true, coverage_known: true, clamped: true, covers_ms: HOUR },
         ],
       },
     });
-    expect(out).toContain('no turns in window'); // the whole sentence, in the strip's aria-label
-    expect(out).toContain('>n/r<'); // no percentile was computed for an empty window
-    expect(out).toContain('>empty<'); // and the edge says the window has no rows
+    expect(out).toContain('summary 24h');
+    expect(out).toContain('>489ms<');
+    expect(out).toContain('>10.6s<');
+    expect(out).toContain('>25%<');
+    expect(out).toContain('>98%<');
+    // An idle head is named once and gets no strip of dashes: an empty window never reads as fast.
+    expect(out).toContain('no turns in 24h: claude-grok, claude-kimi');
+    expect(out).not.toContain('summary claude-grok');
+  });
+
+  test('a head is printed by its label everywhere on the page, not the key its rows carry', () => {
+    const out = board({
+      inflight: [],
+      landed: { inflight: [], landed: [turn({ head: 'bonsai' })], unread: [] },
+      summary: { window: '24h', heads: [{ key: 'bonsai', label: 'claude-bonsai', window: '24h', count: 0, empty: true, coverage_known: true, clamped: false, covers_ms: 0 }] },
+    });
+    // The tokens bay names it by label. The landed strips are virtualized, so a static render draws
+    // none; their cell is pinned through fieldsOf below.
+    expect(out).toContain('>claude-bonsai<');
+    expect(out).not.toContain('>bonsai<');
+    expect(fieldsOf(turn({ head: 'bonsai' }), ['head'], 'claude-bonsai')[0]?.value).toBe('claude-bonsai');
+    expect(fieldsOf(turn({ head: 'bonsai' }), ['head'])[0]?.value).toBe('bonsai');
+  });
+
+  test('time per stage is the difference between marks, never the marks added up', () => {
+    // Cumulative marks, ms since arrival: 2 ms of splice work, 7 queued, 100 waiting on the
+    // provider, 890 streaming, 1 closing. Summing the raw marks gave finish (1001) and stream end
+    // (1000) half of all time each.
+    const row = { head: 'h', outcome: 'ok', recv: 1, parse: 2, build: 3, gate: 10, headers: 100, first_byte: 110, first_frame: 111, first_delta: 120, stream_end: 1000, finish: 1001 } as TurnRow;
+    const stages = stageRowsOf([row, row]);
+    expect(stages.map((stage) => [stage.label, stage.perTurn, shareText(stage.share)])).toEqual([
+      ['splice work', 2, '0.2%'],
+      ['waiting for slot', 7, '0.7%'],
+      ['waiting on provider', 100, '10%'],
+      ['streaming reply', 890, '89%'],
+      ['closing', 1, '0.1%'],
+    ]);
+  });
+
+  test('a part no turn reached is not printed, and no rows is no stages', () => {
+    const failed = { head: 'h', outcome: 'upstream_error', recv: 1, parse: 2, build: 3, gate: 10 } as TurnRow;
+    expect(stageRowsOf([failed]).map((stage) => stage.label)).toEqual(['splice work', 'waiting for slot']);
+    expect(stageRowsOf([])).toEqual([]);
   });
 
   test('nothing in flight is an honest empty, not an empty bay', () => {
@@ -282,10 +350,12 @@ describe('log lines', () => {
     expect(out).toContain('myx-edge-red'); // the severity is also the edge, and the word is printed
   });
 
-  test('an unmarked line is grey and says it was not marked, never `info`', () => {
+  test('an unmarked line is grey and wordless, never `info`', () => {
+    // It printed `-` in a level column and `line` on its edge; the grey edge alone says unmarked.
     const out = render(h(LogLine, { line: '[2026-09-18 01:14:01] [claudex] turn latency=3052ms ok' }));
     expect(out).toContain('myx-edge-grey');
-    expect(out).toContain('>-<');
+    expect(out).not.toContain('>info<');
+    expect(out).not.toContain('>-<');
   });
 
   test('the filter model reads tags, levels and substrings', () => {
@@ -321,8 +391,37 @@ describe('logs board', () => {
 
   test('an empty tail names the path it read', () => {
     const out = board();
-    expect(out).toContain('no lines in this tail');
+    expect(out).toContain('no lines to show');
     expect(out).toContain('/home/user/.splice/logs/daemon.log');
+    expect(out, 'an empty rack gives guidance, not a route').not.toContain('/api/');
+  });
+
+  test('a filter box prints only when it has a choice to offer', () => {
+    // A head's own log carries one tag and, usually, no level: each box offered `all` and nothing.
+    expect(board()).not.toContain('>tag<');
+    expect(board()).not.toContain('>level<');
+    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>tag<');
+    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>level<');
+  });
+
+  test('a chosen filter keeps its box, and its value, after the lines that offered it scroll out', () => {
+    // level=error was picked, then the error lines left the tail: the filter still applies, so its
+    // box must stay, still saying error, for the reader to clear it.
+    const out = board({ filter: { ...NO_FILTER, level: 'error' }, levels: [] });
+    expect(out).toContain('>level<');
+    expect(out).toContain('>error<');
+    expect(board({ filter: { ...NO_FILTER, head: 'daemon' }, tags: ['claudex'] })).toContain('>tag<');
+  });
+
+  test('a paused count adds what arrived, and a rotation starts it over rather than adding the window', () => {
+    expect(unseenAfter(5, { appended: ['a', 'b'], reset: false }, false)).toBe(7);
+    expect(unseenAfter(5, { appended: Array.from({ length: 200 }, () => 'x'), reset: true }, false)).toBe(0);
+    expect(unseenAfter(5, { appended: ['a'], reset: false }, true)).toBe(0);
+  });
+
+  test('the new-lines count prints while paused and never while following', () => {
+    expect(board({ follow: true, appended: 200 })).not.toContain('new lines');
+    expect(board({ follow: false, appended: 12 })).toContain('new lines');
   });
 
   test('the drawer prints the tailed head\'s capture, and never another head\'s', () => {
@@ -339,5 +438,20 @@ describe('logs board', () => {
 
   test('a rotated tail says it restarted', () => {
     expect(board({ reset: true })).toContain('rotated');
+  });
+});
+
+describe('an idle head says when it last ran a turn', () => {
+  test('from the summary\'s last_ts, and never for a head that has none', () => {
+    const row = (key: string, last: number | null | undefined) => ({
+      key, label: key, window: '24h' as const, count: 0, empty: true, coverage_known: true, clamped: false, covers_ms: 0,
+      ...(last === undefined ? {} : { last_ts: last }),
+    });
+    const out = renderToStaticMarkup(h(IdleHeads, {
+      summary: { window: '24h', heads: [row('bonsai', Date.now() - 50 * 3_600_000), row('bonsai-vast', null), row('old', undefined)] },
+    }));
+    expect(out).toContain('bonsai (last 2d ago)');
+    expect(out).toContain('bonsai-vast (never)');
+    expect(out).toMatch(/old<|old,|old$/);
   });
 });

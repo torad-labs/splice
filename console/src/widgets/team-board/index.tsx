@@ -15,6 +15,7 @@ import type { TeamMemberRow, TeamPayload } from '@entities/team';
 import { BoardFooter, BoardHeader, MSG_COLS, MessageStrip } from './parts';
 import { S } from './strings';
 import './board.css';
+import { ABSENT } from '@shared/lib';
 
 // The board's other two views, re-exported so a page reads every view of the team through the
 // slice's one entry point (the boundaries rule in eslint.config.mjs).
@@ -95,12 +96,12 @@ const actRow = (index: number) => {
   return ACT_ROWS[index] ?? { top: last.top + (index - ACT_ROWS.length + 1) * 16.43, height: last.height };
 };
 
-const money = (value: number | null): string => (value === null ? 'n/r' : `$${value.toFixed(3)}`);
-const thousand = (value: number | null): string => (value === null ? 'n/r' : value.toLocaleString('en-US'));
+const money = (value: number | null): string => (value === null ? ABSENT : `$${value.toFixed(3)}`);
+const thousand = (value: number | null): string => (value === null ? ABSENT : value.toLocaleString('en-US'));
 /** A figure no route reports prints its absence, never a zero. */
-const text = (value: string | number | null): string | number => value ?? 'n/r';
-const pct = (value: number | null): string => (value === null ? 'n/r' : `${value}%`);
-const kb = (value: number | null): string => (value === null ? 'n/r' : `${value} k`);
+const text = (value: string | number | null): string | number => value ?? ABSENT;
+const pct = (value: number | null): string => (value === null ? ABSENT : `${value}%`);
+const kb = (value: number | null): string => (value === null ? ABSENT : `${value} k`);
 
 /** The session strips of one member: three printed lines, as the comp racks them.
  *  The edge follows the comp: the slot flagged lead prints green, every other
@@ -122,10 +123,10 @@ function MemberStrips({ member, line, cols }: {
       <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} first line`}>
         <StripField w={cols.l1[0]} label={N.name} value={member.name} mono={false} />
         <StripField w={cols.l1[1]} label={N.role} value={member.role} mono={false} />
-        <StripField w={cols.l1[2]} label={N.model} value={member.model ?? 'n/r'} mono={false} />
-        <StripField w={cols.l1[3]} label={N.account} value={member.account ?? 'n/r'} mono={false} />
-        <StripField w={cols.l1[4]} label={N.window} value={member.window ?? 'n/r'} />
-        <StripField w={cols.l1[5]} label={N.lastTurn} value={member.lastTurn ?? 'n/r'} />
+        <StripField w={cols.l1[2]} label={N.model} value={member.model ?? ABSENT} mono={false} />
+        <StripField w={cols.l1[3]} label={N.account} value={member.account ?? ABSENT} mono={false} />
+        <StripField w={cols.l1[4]} label={N.window} value={member.window ?? ABSENT} />
+        <StripField w={cols.l1[5]} label={N.lastTurn} value={member.lastTurn ?? ABSENT} />
         <StripField w={cols.l1[6]} label={N.state} value={member.state} mono={false} />
       </Strip>
     );
@@ -183,6 +184,14 @@ export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?:
         {/* the team header strip: five boxed fields, the team's own identity */}
         <BoardHeader board={board} />
 
+        {/* No member means no head bay, and the board's left side drew nothing at all: a team with no
+            bound session read as a broken page (walkthrough S17). */}
+        {bays.length === 0 ? (
+          <div className="myx-board-unbound">
+            <Empty text="no session is bound yet" source="pick a session for one of its slots in the editor under the board, and its head shows here" />
+          </div>
+        ) : null}
+
         {/* one bay per head, in the order the members run */}
         {bays.map((heads, index) => (
           <Bay
@@ -229,7 +238,7 @@ export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?:
             {board.messages.length === 0 ? (
               <Empty
                 text={unread.chat === undefined ? 'no messages today' : 'chat unreadable'}
-                source={unread.chat ?? 'GET /api/teams/{id}/chat'}
+                source={unread.chat ?? "a message one of this team's sessions sends another shows here"}
               />
             ) : null}
             {board.messages.map((message, index) => (
@@ -269,7 +278,7 @@ export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?:
             {board.activity.length === 0 ? (
               <Empty
                 text={unread.activity === undefined ? 'nothing sampled today' : 'activity unreadable'}
-                source={unread.activity ?? 'GET /api/teams/{id}/activity'}
+                source={unread.activity ?? "splice samples this team's sessions every 30 s"}
               />
             ) : null}
             {board.activity.map((entry, index) => (

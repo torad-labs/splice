@@ -16,8 +16,8 @@ export interface CompactionRuleView {
   chars: number | null;
 }
 
-/** A rule's length as printed: the live character count, `opt-out` for an empty text (the client's
- *  own instructions stand), and `unavailable` when the rule's file cannot be read (its source label
+/** A rule's length as printed: the live character count, `client default` for an empty text (the
+ *  client's own instructions stand), and `unavailable` when the rule's file cannot be read (its source label
  *  says so too). Zero is never printed as a length: it is a decision, not a size. */
 export function charsText(chars: number | null): string {
   if (chars === null) return S.unavailable;

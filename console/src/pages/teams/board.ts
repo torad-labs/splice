@@ -21,6 +21,7 @@ import type {
 } from '@entities/team';
 import { SESSION_TAG_CHARS, tokensIn } from '@widgets/team-board';
 import type { TeamHourPoint, TeamTurn, TeamViewData } from '@widgets/team-board';
+import { ABSENT } from '@shared/lib';
 
 const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
@@ -111,9 +112,9 @@ export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayl
     time: hhmm(message.at),
     from: members.find((m) => m.sessionId === message.from)?.name ?? message.from,
     to: (message.to_slot === null ? undefined : members.find((m) => m.slot === message.to_slot)?.name) ?? message.to,
-    packet: 'n/r',
+    packet: ABSENT,
     text: message.text ?? `text not read: ${message.missing_reason ?? 'no reason given'}`,
-    fromHead: message.from_head ?? 'n/r',
+    fromHead: message.from_head ?? ABSENT,
   }));
 }
 

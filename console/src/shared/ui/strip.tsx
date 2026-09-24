@@ -22,6 +22,12 @@ export function Strip({ edge, edgeLabel, cocked, struck, selected, onOpen, ariaL
   // cocked only ever lifts the edge INTO attention (amber), never out of it, so
   // a red edge stays red.
   const state: Edge = struck ? 'grey' : cocked ? (edge === 'red' ? 'red' : 'amber') : edge;
+  // A strip is a button only when it has something to open. A printed readout
+  // with no onOpen is a named group: no tab stop, no key handler, nothing a
+  // reader would be told to press (S9: 6 of the 8 tab stops on turns did nothing).
+  // A group and not a bare div because ARIA prohibits naming a generic element,
+  // and ariaLabel is the strip's name either way.
+  const pressable = onOpen !== undefined;
   // A struck strip is disabled: it stays focusable so the label is still
   // readable, but it does not open.
   const open = struck ? undefined : onOpen;
@@ -42,12 +48,12 @@ export function Strip({ edge, edgeLabel, cocked, struck, selected, onOpen, ariaL
         className,
       )}
       style={style}
-      tabIndex={0}
-      role="button"
+      tabIndex={pressable ? 0 : undefined}
+      role={pressable ? 'button' : 'group'}
       aria-label={ariaLabel}
       aria-disabled={struck}
       onClick={open}
-      onKeyDown={onKeyDown}
+      onKeyDown={pressable ? onKeyDown : undefined}
     >
       <HolderEdge state={state} label={edgeLabel} />
       <div className="myx-strip-fields">{children}</div>

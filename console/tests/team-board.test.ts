@@ -25,7 +25,7 @@ import {
 } from '../src/widgets/team-board';
 import { TeamChat, chatOrder } from '../src/widgets/team-chat';
 import { ActivityFeed, feedEmpty, feedOrder } from '../src/widgets/activity-feed';
-import { TeamCompose, bindSession, blankDraft, draftOf, setArchived, unbindSession, validateDraft } from '../src/features/team-compose';
+import { TeamCompose, bindSession, blankDraft, draftOf, optionsFor, setArchived, unbindSession, validateDraft } from '../src/features/team-compose';
 import { heroBoard, viewsBoard, viewsData } from '../src/pages/teams/fixtures/hero';
 import { teamsBodyFor } from '../src/pages/teams';
 
@@ -62,7 +62,7 @@ const COMP_WORDS: string[] = [
   'context left', 'scratchpad', 'workspace', 'branch', 'base', 'diff', 'checks',
   '35%', '12.8 k', '~/.../storefront-api', 'feature/gs-41', 'main', '+412 -37', 'pass',
   // the builder's three lines
-  'gs-backend-builder', 'builder', 'deepseek-flash', 'n/r', '13:58', 'building GS-41 done',
+  'gs-backend-builder', 'builder', 'deepseek-flash', '–', '13:58', 'building GS-41 done',
   'claude-deepseek', 's-5f3b8a11', '09:18:02', '4h 44m', '18', '93,274', '38,611', '$0.183',
   '8.1 k', '+289 -37',
   // bay labels
@@ -80,8 +80,9 @@ const COMP_WORDS: string[] = [
   'searching for fly_raw', 'rg -n "fly_raw"',
   '14:02:00', 'reading MANIFEST.toml', 'MANIFEST.toml',
   'messaging a peer session', 'to gs-backend-builder2',
-  // the footer
-  'team id:', 'team_7f2c1b4a', 'created:', '2025-05-22 09:12:33', 'updated:', '2025-05-22 14:02:05',
+  // the footer. The comp also printed `team id: team_…`; it is an internal key no page or command
+  // takes, and the walkthrough flagged it (S4), so the board prints when the team was made instead.
+  'created:', '2025-05-22 09:12:33', 'updated:', '2025-05-22 14:02:05',
 ];
 
 describe('the board renders the comp', () => {
@@ -105,11 +106,11 @@ describe('the board renders the comp', () => {
     expect(boardHtml).toContain('head: claude-deepseek');
   });
 
-  test('a figure no provider reports prints n/r rather than a zero', () => {
+  test('a figure no provider reports prints – rather than a zero', () => {
     const builder = heroBoard.members[1];
     expect(builder.window).toBeNull();
     expect(builder.contextLeftPct).toBeNull();
-    expect(boardHtml).toContain('n/r');
+    expect(boardHtml).toContain('–');
     // Read the cells, not the markup: the board's rows carry their own pitch in
     // a style attribute, and a row at the top of its rack is legitimately 0%.
     const values = [...boardHtml.matchAll(/myx-sfield-text">([^<]*)</g)].map((match) => match[1]);
@@ -118,17 +119,18 @@ describe('the board renders the comp', () => {
 });
 
 describe('what the page says when no board answered', () => {
-  test('a daemon older than the teams route gets the honest empty naming V4-131', () => {
+  test('a daemon older than the teams route says so in words, never a row id', () => {
     const pending = { pending: 'V4-131' };
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
-    expect(html).toContain('no teams route');
-    expect(html).toContain('V4-131 pending');
+    expect(html).toContain('teams unavailable');
+    expect(html).toContain('does not serve teams');
+    expect(html).not.toContain('V4-131');
   });
 
   test('before anything has answered, the page claims neither absence nor failure', () => {
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: null, board: null })));
     expect(html).toContain('reading teams');
-    expect(html).not.toContain('V4-131 pending');
+    expect(html).not.toContain('teams unavailable');
     expect(html).not.toContain('unreadable');
   });
 
@@ -142,13 +144,14 @@ describe('what the page says when no board answered', () => {
     const pending = pendingOf(new MgmtError(404, 'unknown route'), PENDING_TEAMS);
     expect(pending).toEqual({ pending: 'V4-131' });
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
-    expect(html).toContain('V4-131 pending');
+    expect(html).toContain('teams unavailable');
   });
 
   test('a daemon that answers with no teams is not dressed as a missing route', () => {
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: { teams: [] }, board: null })));
     expect(html).toContain('no teams yet');
-    expect(html).not.toContain('V4-131 pending');
+    expect(html).toContain('compose one below');
+    expect(html).not.toContain('teams unavailable');
   });
 
   test('the other two views draw the opened team, and a panel still being read says so', () => {
@@ -306,7 +309,7 @@ describe('the timeline', () => {
     expect(table.rows[0].input).toBe(1110);
     expect(table.total.cost).toBeNull();
     expect(unescapeHtml(renderToStaticMarkup(createElement(TeamTimeline, { board: viewsBoard, data: { ...viewsData, economics: cached } }))))
-      .toContain('n/r');
+      .toContain('–');
   });
 
   test('turns per slot reads the same tallies, and an open seat is a row with its own count', () => {
@@ -337,10 +340,11 @@ describe('the chat panel', () => {
     expect(html).not.toContain('GS-41 done, see ledger');
   });
 
-  test('a route that does not exist yet is not an empty chat', () => {
+  test('a route this daemon does not serve is not an empty chat, and says so without a row id', () => {
     const html = unescapeHtml(renderToStaticMarkup(createElement(TeamChat, { state: { pending: PENDING_TEAMS } })));
-    expect(html).toContain('no chat route');
-    expect(html).toContain('V4-131 pending');
+    expect(html).toContain('chat unavailable');
+    expect(html).not.toContain('V4-131');
+    expect(html).not.toContain('/api/');
   });
 });
 
@@ -423,7 +427,7 @@ describe('the activity feed', () => {
   test('nothing sampled and a client that stopped matching are different answers', () => {
     expect(feedEmpty({ activity: [], clientMatching: true })?.text).toBe('nothing sampled yet');
     expect(feedEmpty({ activity: [], clientMatching: false })?.text).toBe('client no longer matching');
-    expect(feedEmpty({ pending: PENDING_TEAMS })?.text).toBe('no activity route');
+    expect(feedEmpty({ pending: PENDING_TEAMS })?.text).toBe('activity unavailable');
     expect(feedEmpty(null)?.text).toBe('reading activity');
     expect(feedEmpty({ activity: viewsBoard.activity, clientMatching: true })).toBeNull();
   });
@@ -478,5 +482,34 @@ describe('the composer', () => {
     expect(existing).toContain('edit storefront-api');
     expect(existing).toContain('save team');
     expect(existing).not.toContain('create team');
+  });
+
+  test('a slot picks its head and its session from what the daemon lists, and nobody types an id', () => {
+    const heads = [{ value: 'claudex', label: 'claudex' }, { value: 'bonsai', label: 'claude-bonsai' }];
+    const sessions = [{ value: 'sid-1', label: 'gs-backend-builder' }];
+    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, { heads, sessions })));
+    expect(html).toContain('choose a head');
+    expect(html).toContain('open seat');
+    expect(html).not.toContain('>unbind<');
+    // With nothing listed (not loaded yet, or a fixture) the fields fall back to typing.
+    expect(unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, {})))).not.toContain('choose a head');
+  });
+
+  test('a slot keeps a value the list no longer has, so opening an old team rewrites nothing', () => {
+    const listed = [{ value: 'claudex', label: 'claudex' }];
+    const blank = { value: '', label: 'choose a head' };
+    expect(optionsFor(listed, 'claudex', blank)).toEqual([blank, ...listed]);
+    expect(optionsFor(listed, 'retired-head', blank)).toEqual([blank, ...listed, { value: 'retired-head', label: 'retired-head' }]);
+    expect(optionsFor(listed, '', blank)).toEqual([blank, ...listed]);
+  });
+});
+
+describe('a team with no bound session', () => {
+  test('the board says so where the head bays would be, instead of drawing nothing', () => {
+    // Walkthrough S17: a created team with 0 of 1 slots bound drew an empty left half.
+    const unbound = { ...heroBoard, members: [], messages: [], activity: [] };
+    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamBoard, { board: unbound })));
+    expect(html).toContain('no session is bound yet');
+    expect(html).not.toContain('/api/');
   });
 });

@@ -8,20 +8,20 @@
 // Nothing here is modal. A destructive action arms in place and disarms on its own, the way
 // ConfirmBtn did, because the brief rules out a dialog over the room.
 import { useEffect, useReducer, useState } from 'react';
-import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount } from '@entities/auth';
+import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount, unpinAccount } from '@entities/auth';
 import type { LoginStartPayload } from '@entities/auth';
 import { Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
 import { poll } from '@shared/lib';
+import { Copy } from '@shared/controls';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
 import type { LoginEvent } from './model';
-import { NOT_REPORTED } from '@entities/account';
+import { NOT_REPORTED, fetchAccounts } from '@entities/account';
+import { familyName } from '@entities/heads';
 import { S } from './strings';
 import './account-login.css';
 
 const POLL_MS = 2000;
 
-/** The row that owns the login routes. Printed by every pending empty rather than hidden. */
-const PENDING_ROW = 'V4-132';
 
 const LOGIN_STATUS = 'login-status';
 const LOGIN_START = 'login';
@@ -61,26 +61,6 @@ async function pollLogin(
   }
 }
 
-/** A copy affordance that admits when the clipboard is unavailable instead of silently doing
- *  nothing: a console served over plain http has no navigator.clipboard. */
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="myx-acct-btn"
-      onClick={() => {
-        void navigator.clipboard?.writeText(value).then(
-          () => setDone(true),
-          () => setDone(false),
-        );
-      }}
-    >
-      {done ? S.copied : label}
-    </button>
-  );
-}
-
 /** What the operator needs to finish a login somewhere else: the code and its link, or a URL. */
 function LoginTicket({ start }: { start: LoginStartPayload }) {
   if (start.flow === 'browser') {
@@ -89,7 +69,7 @@ function LoginTicket({ start }: { start: LoginStartPayload }) {
         {start.browser_url === undefined ? null : (
           <>
             <a className="myx-acct-link" href={start.browser_url}>{start.browser_url}</a>
-            <CopyButton value={start.browser_url} label={S.copy} />
+            <Copy value={start.browser_url} label={S.copy} />
           </>
         )}
       </div>
@@ -100,13 +80,13 @@ function LoginTicket({ start }: { start: LoginStartPayload }) {
       {start.user_code === undefined ? null : (
         <>
           <span className="myx-acct-code">{start.user_code}</span>
-          <CopyButton value={start.user_code} label={`${S.copy} ${S.code}`} />
+          <Copy value={start.user_code} label={`${S.copy} ${S.code}`} />
         </>
       )}
       {start.verification_uri === undefined ? null : (
         <>
           <a className="myx-acct-link" href={start.verification_uri}>{start.verification_uri}</a>
-          <CopyButton value={start.verification_uri} label={`${S.copy} ${S.link}`} />
+          <Copy value={start.verification_uri} label={`${S.copy} ${S.link}`} />
         </>
       )}
     </div>
@@ -127,8 +107,7 @@ export function AccountLogin({ head }: { head: string }) {
   }, [state.step, loginId, head]);
 
   if (state.step === 'pending') {
-    const empty = LOGIN_PENDING_EMPTY(state.note ?? PENDING_ROW);
-    return <Empty text={empty.text} source={empty.source} />;
+    return <Empty text={LOGIN_PENDING_EMPTY.text} source={LOGIN_PENDING_EMPTY.source} />;
   }
 
   const message = stepMessage(state);
@@ -165,24 +144,53 @@ export function AccountLogin({ head }: { head: string }) {
   );
 }
 
+/** The daemon's own reason when an action answered but did not happen: a refresh reports
+ *  `{ ok: false, note }` (AuthStatusRoutes' honesty contract), a switch or an edit `{ ok: false,
+ *  error }` inside the action's result. Null when it happened. */
+export function refusalOf(outcome: unknown): string | null {
+  if (outcome === null || typeof outcome !== 'object') return null;
+  const body = 'result' in outcome && outcome.result !== null && typeof outcome.result === 'object' ? outcome.result : outcome;
+  if (!('ok' in body) || body.ok !== false) return null;
+  const reason = ('error' in body && typeof body.error === 'string' ? body.error : null)
+    ?? ('note' in body && typeof body.note === 'string' ? body.note : null);
+  return reason ?? 'the daemon refused it';
+}
+
 /**
  * Everything that can be done TO one account. Each action is addressed the way its route is: a
  * switch and a refresh name a HEAD, because selection is per head and several heads can ride the
  * same login; remove and relabel name the KIND, because the pool belongs to the kind.
  */
-export function AccountActions({ kind, label, heads }: {
+export function AccountActions({ kind, label, heads, pinned = false }: {
   kind: string;
   label: string;
   heads: readonly string[];
+  /** The daemon pinned this account (a manual switch). Only then is there a pin to drop. */
+  pinned?: boolean;
 }) {
   const [nextLabel, setNextLabel] = useState(label);
   const [armed, setArmed] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; failed: boolean } | null>(null);
 
-  const run = (work: Promise<unknown>) => {
+  // Every action says what it did, and the accounts are read again at once: a switch used to answer
+  // with nothing, and the rack showed the pin only on the next 15 s poll (walkthrough S6). A route
+  // this daemon does not serve resolves to a pending marker, which is not a success.
+  const run = (work: Promise<unknown>, done: string | null = null) => {
     work.then(
-      () => setNote(null),
-      (err: unknown) => setNote(err instanceof Error ? err.message : String(err)),
+      (outcome) => {
+        if (outcome !== null && typeof outcome === 'object' && 'pending' in outcome) {
+          setNote({ text: 'this splice version cannot do that', failed: true });
+          return;
+        }
+        const refused = refusalOf(outcome);
+        if (refused !== null) {
+          setNote({ text: refused, failed: true });
+          return;
+        }
+        setNote(done === null ? null : { text: done, failed: false });
+        void fetchAccounts();
+      },
+      (err: unknown) => setNote({ text: err instanceof Error ? err.message : String(err), failed: true }),
     );
   };
 
@@ -195,10 +203,23 @@ export function AccountActions({ kind, label, heads }: {
 
       {heads.map((head) => (
         <div className="myx-acct-row" key={head}>
-          <button type="button" className="myx-acct-btn" onClick={() => run(switchAccount(head, label))}>
+          <button
+            type="button"
+            className="myx-acct-btn"
+            onClick={() => run(switchAccount(head, label), `${head} uses ${label} from its next turn; a turn already running keeps its account`)}
+          >
             {`${S.switch} ${head}`}
           </button>
-          <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head))}>
+          {pinned ? (
+            <button
+              type="button"
+              className="myx-acct-btn"
+              onClick={() => run(unpinAccount(head), `${head} goes back to the usual order from its next turn`)}
+            >
+              {`${S.unpin} ${head}`}
+            </button>
+          ) : null}
+          <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head), `${head}: login refreshed`)}>
             {`${S.refresh} ${head}`}
           </button>
         </div>
@@ -216,7 +237,7 @@ export function AccountActions({ kind, label, heads }: {
           type="button"
           className="myx-acct-btn"
           disabled={nextLabel.trim() === '' || nextLabel === label}
-          onClick={() => run(relabelAccount(kind, label, nextLabel.trim()))}
+          onClick={() => run(relabelAccount(kind, label, nextLabel.trim()), `renamed to ${nextLabel.trim()}`)}
         >
           {S.relabel}
         </button>
@@ -230,7 +251,7 @@ export function AccountActions({ kind, label, heads }: {
               className="myx-acct-btn myx-acct-btn-armed"
               onClick={() => {
                 setArmed(false);
-                run(removeAccount(kind, label));
+                run(removeAccount(kind, label), `${label} removed`);
               }}
             >
               {`${S.remove} ${label}`}
@@ -246,7 +267,7 @@ export function AccountActions({ kind, label, heads }: {
         )}
       </div>
 
-      {note === null ? null : <p className="myx-acct-note" role="alert">{note}</p>}
+      {note === null ? null : <p className="myx-acct-note" role={note.failed ? 'alert' : 'status'}>{note.text}</p>}
     </div>
   );
 }
@@ -278,7 +299,7 @@ export function HeadAuthStrip({ head, kind, present, masked, note, selected, onO
       {/* Widths are the CONTENT width plus the field's own inline padding (~2.5ch at --text-3):
           'chatgpt-oauth' is 13 characters and truncated in a 13ch box. */}
       <StripField w={16} fixed label={S.head} value={head} mono={false} />
-      <StripField w={16} fixed label={S.provider} value={kind} mono={false} />
+      <StripField w={16} fixed label={S.provider} value={familyName(kind)} mono={false} />
       <StripField w={20} fixed label={S.account} value={masked ?? NOT_REPORTED} mono={false} />
       {/* THE TRACK RENDERS EMPTY (M1-107), the fourth of four sites that made the FIELD vanish
           where twenty-two render it and fall back the value. An optional note is an empty cell in

@@ -9,25 +9,27 @@
 import { useEffect, useState } from 'react';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
-import { headAttention } from '@entities/heads';
+import { FAMILY_NAME, headAttention } from '@entities/heads';
 import { restartHead, startHead, startHeadsPolling, stopHead, useHeads } from '@entities/heads';
 import type { HeadSignals } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
-import type { KnobDisposition } from '@entities/config';
 import { startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import { headWindow, startUsagePolling, useUsage } from '@entities/usage';
+import { startPerfSummaryPolling, usePerfSummary } from '@entities/perf';
 import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { poll } from '@shared/lib';
 import type { HeadStatus } from '@shared/api';
-import { Bay, Empty, FieldBox, HolderEdge } from '@shared/ui';
-import { Blank, Fault, Key } from '@shared/controls';
+import { Bay, Empty, HolderEdge } from '@shared/ui';
+import { KnobReadout } from '@widgets/knob-form';
+import { Blank, Copy, Fault, Key } from '@shared/controls';
 import { ACCOUNT_COLUMNS, AccountStrip } from '@widgets/account-strip';
 import { HeadStrip, HEAD_COLUMNS } from '@widgets/head-strip';
-import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from './model';
+import { EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from './model';
+import type { CauseHelp } from './model';
 import { dispositions } from './coverage';
 import { S } from './strings';
 import './fleet.css';
@@ -40,6 +42,7 @@ const USAGE_MS = 5000;
 /** The accounts page's own cadence: windows move per turn, not per second. */
 const POOL_MS = 15000;
 const SLOW_MS = 30000;
+const LAST_TURN_MS = 60000;
 
 /** The three views this page ships with. `by head` is first because it is the default. */
 export const DEFAULT_VIEWS: readonly View[] = [
@@ -47,19 +50,6 @@ export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-provider', name: S.byProvider, layout: 'bay', filter: {}, sort: null, group: 'provider', fields: [] },
   { id: 'attention', name: S.attentionFirst, layout: 'bay', filter: {}, sort: { field: 'attention', dir: 'desc' }, group: null, fields: [] },
 ];
-
-/** One knob row inside the detail column: the value, its provenance layer, and whether saving it
- *  needs a restart. The provenance comes from the daemon's own layer map, never a guess. */
-function KnobRow({ knob }: { knob: KnobDisposition }) {
-  return (
-    <FieldBox
-      label={knob.key}
-      value={knob.value === null ? '' : String(knob.value)}
-      provenance={knob.provenance}
-      hot={knob.hot}
-    />
-  );
-}
 
 /** The lifecycle controls. Raw buttons for the same reason the accounts feature uses them: the old
  *  Btn/ConfirmBtn exports are what M2 exists to retire (CONTRACTS.md section 2). Stop and restart
@@ -121,6 +111,38 @@ function Lifecycle({ head }: { head: HeadStatus }) {
   );
 }
 
+/** Why the opened head is in the state its edge names, and the step that clears it. */
+export function CauseLine({ help }: { help: CauseHelp | null }) {
+  if (help === null) return null;
+  return (
+    <div className="myx-fleet-cause">
+      <p className="myx-fleet-note">{help.text}</p>
+      {help.command === undefined ? null : (
+        <p className="myx-fleet-cause-row">
+          <code className="myx-fleet-cause-command">{help.command}</code>
+          <Copy value={help.command} />
+        </p>
+      )}
+      {help.href === undefined ? null : <a className="myx-fleet-cause-link" href={help.href}>{help.link}</a>}
+    </div>
+  );
+}
+
+/** How a head joins the fleet. `splice add` signs in, checks the provider answers and writes the
+ *  head, and no route does that yet, so the page names the command; run bare it lists the providers
+ *  it knows (AddPrepare.usage). The settings topology edits heads that exist, it cannot add one. */
+export const ADD_COMMAND = 'splice add';
+
+export function AddHeadLine() {
+  return (
+    <div className="myx-fleet-add">
+      <span className="myx-fleet-note">another provider is added from a terminal</span>
+      <code className="myx-fleet-cause-command">{ADD_COMMAND}</code>
+      <Copy value={ADD_COMMAND} />
+    </div>
+  );
+}
+
 /** The key one account strip holds in the pool rack: the label within a pool, else the credential
  *  file a single login is joined on. */
 function poolKey(account: AccountRow): string {
@@ -145,7 +167,9 @@ function Pool({ head, payload, nowMs }: { head: HeadStatus; payload: AccountsSta
   return (
     <>
       {next !== null ? (
-        <p className="myx-fleet-note">{`${S.nextTarget} ${next.label}, ${next.rule}`}</p>
+        // The rule in brackets only when it is not the label itself: an account labelled `primary`
+        // chosen because it is primary printed `next target primary, primary` (walkthrough polish).
+        <p className="myx-fleet-note">{next.label === next.rule ? `${S.nextTarget} ${next.label}` : `${S.nextTarget} ${next.label} (${next.rule})`}</p>
       ) : pooled ? (
         <Empty text={EMPTIES.noneAvailable.text} source={EMPTIES.noneAvailable.source} />
       ) : null}
@@ -178,6 +202,8 @@ export function FleetPage() {
   const topologyResource = useTopology((state) => state);
   const modelsResource = useModels((state) => state);
   const accountsResource = useAccounts((state) => state);
+  // Only for each head's last turn (`last_ts`), which the summary carries whatever its window.
+  const summaryResource = usePerfSummary((state) => state);
 
   useEffect(() => {
     const stops = [
@@ -187,6 +213,9 @@ export function FleetPage() {
       startAuthPolling(SLOW_MS),
       startTopologyPolling(SLOW_MS),
       startModelsPolling(SLOW_MS),
+      // The summary is read only for each head's last turn, which prints to the minute, and one read
+      // costs the daemon ~300ms (measured 2026-09-24, against 14ms for /api/heads): once a minute.
+      startPerfSummaryPolling('24h', LAST_TURN_MS),
     ];
     return () => stops.forEach((stop) => stop());
   }, []);
@@ -248,7 +277,7 @@ export function FleetPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {headsResource.error === null ? null : <Fault message={headsResource.error} />}
+      {headsResource.error === null ? null : <Fault message={headsResource.error} lastRead={headsResource.lastUpdated} />}
       {headsResource.data === null ? <Blank strips={4} /> : null}
 
       <div className={opened === null ? 'myx-fleet-body' : 'myx-fleet-body myx-fleet-body-open'}>
@@ -259,7 +288,7 @@ export function FleetPage() {
             groups.map((group) => (
               <Bay
                 key={group.key === '' ? S.bay : group.key}
-                label={group.key === '' ? S.bay : group.key}
+                label={group.key === '' ? S.bay : FAMILY_NAME[group.key]}
                 count={group.heads.length}
                 compact
               >
@@ -269,9 +298,10 @@ export function FleetPage() {
                     head={head}
                     attention={headAttention(head, signalsFor(head))}
                     window={headWindow(usageResource.data, head.key)}
-                    account={auth?.[head.key]?.account_id_masked ?? auth?.[head.key]?.login ?? null}
+                    account={auth?.[head.key]?.account_id_masked ?? null}
                     dialect={dialectOf(topologyTable, head.key)}
                     model={catalogs?.find((entry) => entry.head === head.key)?.pinned_model ?? null}
+                    lastTs={summaryResource.data?.heads.find((row) => row.key === head.key)?.last_ts}
                     columns={columns}
                     selected={openKey === head.key}
                     onOpen={() => toggle(head.key)}
@@ -287,6 +317,7 @@ export function FleetPage() {
           {fieldsPending ? (
             <Empty text={EMPTIES.fields.text} source={EMPTIES.fields.source} />
           ) : null}
+          {heads.length === 0 ? null : <AddHeadLine />}
         </div>
 
         {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M1-116 rules collapse over the
@@ -322,6 +353,7 @@ export function FleetPage() {
                 <span className="myx-fleet-detail-name">{opened.label}</span>
                 <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
               </div>
+              <CauseLine help={causeHelp(opened, headAttention(opened, signalsFor(opened)).cause, auth?.[opened.key])} />
 
               <section className="myx-fleet-section">
                 <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>
@@ -337,13 +369,13 @@ export function FleetPage() {
                 {overrides.length === 0 ? (
                   <p className="myx-fleet-note">{S.noOverrides}</p>
                 ) : (
-                  overrides.map((knob) => <KnobRow key={knob.key} knob={knob} />)
+                  overrides.map((knob) => <KnobReadout key={knob.key} knob={knob} />)
                 )}
               </section>
 
               <section className="myx-fleet-section">
                 <h2 className="myx-fleet-section-title">{S.pool}</h2>
-                {accountsResource.error === null ? null : <Fault message={accountsResource.error} />}
+                {accountsResource.error === null ? null : <Fault message={accountsResource.error} lastRead={accountsResource.lastUpdated} />}
                 <Pool head={opened} payload={accountsResource.data} nowMs={nowMs} />
               </section>
             </>

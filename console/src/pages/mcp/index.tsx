@@ -8,13 +8,17 @@
 // default this page invented.
 import { useEffect, useState } from 'react';
 import { fetchConfig, knobDispositions, useConfig } from '@entities/config';
-import { MCP_RESTART, startMcpPolling, useMcp } from '@entities/mcp';
-import type { McpRow } from '@entities/mcp';
+import type { KnobDisposition } from '@entities/config';
+import { startMcpPolling, useMcp } from '@entities/mcp';
+import type { McpHostedServer, McpRow } from '@entities/mcp';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, FieldBox, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
+import type { Edge } from '@shared/ui';
+import { KnobReadout, knobLabel } from '@widgets/knob-form';
 import { Blank, Fault } from '@shared/controls';
-import { EMPTIES, arrangeServers, hostLimits, stateEdge, stateLabel, hosted } from './model';
+import { timeAgo } from '@shared/lib';
+import { EMPTIES, RESPAWN_NOTE, arrangeServers, hostLimits, stateEdge, stateLabel, hosted } from './model';
 import { dispositions } from './coverage';
 import { S } from './strings';
 import './mcp.css';
@@ -94,24 +98,40 @@ function ServerStrip({ row, selected, onOpen }: { row: McpRow; selected: boolean
 /** The four host limits, read-only with their provenance. A knob the running daemon does not carry
  *  prints its name with no value: the default lives in the daemon's own enum, and this page is not
  *  a second place for it. */
-function HostLimits({ heads }: { heads: readonly { key: string; knob: { value: string | number | boolean | null; provenance: string; hot: boolean } | null }[] }) {
+function HostLimits({ heads }: { heads: readonly { key: string; knob: KnobDisposition | null }[] }) {
   return (
     <section className="myx-mcp-section">
       <h2 className="myx-mcp-section-title">{S.limits}</h2>
       {heads.map(({ key, knob }) => (
         <div key={key}>
-          <FieldBox
-            label={key}
-            value={knob === null || knob.value === null ? '' : String(knob.value)}
-            provenance={knob === null ? 'default' : (knob.provenance as never)}
-            hot={knob?.hot ?? false}
-          />
-          {/* the box prints the knob's own restart verdict; the note speaks only for a knob the
-              daemon does not carry, which has no verdict to print */}
-          {knob === null ? <p className="myx-mcp-note">not carried by this daemon</p> : null}
+          {/* the readout prints the knob's own restart verdict; the note speaks only for a knob
+              the daemon does not carry, which has no verdict to print */}
+          {knob === null ? (
+            <p className="myx-mcp-note">{knobLabel(key)} is not carried by this daemon</p>
+          ) : (
+            <KnobReadout knob={knob} />
+          )}
         </div>
       ))}
+      <p className="myx-mcp-note">Change these in <a href="#/settings">settings</a>, under shared mcp servers.</p>
     </section>
+  );
+}
+
+/** A hosted server's process facts, two to a strip so each fits the detail column. */
+function DetailFacts({ server, edge }: { server: McpHostedServer; edge: Edge }) {
+  const at = (ms: number | undefined) => (ms === undefined ? S.absent : timeAgo(ms));
+  return (
+    <>
+      <Strip edge={edge} edgeLabel="" ariaLabel={S.pid}>
+        <StripField w={NARROW} label={S.pid} value={server.pid === undefined ? S.absent : String(server.pid)} />
+        <StripField w={NARROW} label={S.restarts} value={String(server.restarts)} />
+      </Strip>
+      <Strip edge={edge} edgeLabel="" ariaLabel={S.started}>
+        <StripField w={NARROW} label={S.started} value={at(server.started_at)} />
+        <StripField w={NARROW} label={S.activity} value={at(server.last_activity)} />
+      </Strip>
+    </>
   );
 }
 
@@ -143,7 +163,7 @@ export function McpPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {mcp.error === null ? null : <Fault message={mcp.error} />}
+      {mcp.error === null ? null : <Fault message={mcp.error} lastRead={mcp.lastUpdated} />}
       {payload === null && mcp.error === null ? <Blank strips={3} /> : null}
 
       <div className="myx-mcp-body">
@@ -170,39 +190,30 @@ export function McpPage() {
         </div>
 
         <aside className="myx-mcp-detail" aria-label={S.detail}>
+          {/* "select a server" only where there is one to select: with hosting off or no servers it
+              asked for a click the page could not take (walkthrough S16). */}
           {opened === null ? (
-            <Empty text={EMPTIES.noOpened.text} source={EMPTIES.noOpened.source} />
+            groups.some((group) => group.rows.length > 0)
+              ? <Empty text={EMPTIES.noOpened.text} source={EMPTIES.noOpened.source} />
+              : null
           ) : (
             <section className="myx-mcp-section">
               <div className="myx-mcp-head">
                 <HolderEdge state={stateEdge(opened.state)} label={stateLabel(opened.state)} />
                 <span className="myx-mcp-note">{opened.name}</span>
               </div>
-              <div className="myx-mcp-head">
-                <Strip edge={stateEdge(opened.state)} edgeLabel={stateLabel(opened.state)} ariaLabel={opened.name}>
-                  {/* THE RACK'S FIRST TRACK, DRAWN EMPTY (M1-73). This row is pid|restarts and has
-                      no name to print -- the opened server's name is on the line above it -- so it
-                      began at the SECOND track and its first field ended NARROW ch from the left,
-                      where every row above it ends WIDE (24). Measured: the first field edge spans
-                      87px across 18 strips. THE GRID BELONGS TO THE RACK AND NOT TO THE ROW: a row
-                      shape maps onto a SUBSET of the rack's tracks rather than declaring widths of
-                      its own, so a track this row has nothing to put in is drawn empty rather than
-                      skipped. That is what the comp of record does -- M1-12 measured its rules
-                      continuing below the last strip at a 31-32px pitch, a grid that exists
-                      independently of what is in it and keeps existing where there is nothing. */}
-                  <StripField w={WIDE} value="" />
-                  <StripField w={NARROW} label={S.pid} value={hosted(opened.server)?.pid === undefined ? S.absent : String(hosted(opened.server)?.pid)} />
-                  <StripField w={NARROW} label={S.restarts} value={String(hosted(opened.server)?.restarts ?? 0)} />
-                </Strip>
-              </div>
+              {/* THE DETAIL IS ITS OWN GRID, NOT THE RACK'S. It drew the rack's 24ch name track empty
+                  before pid and restarts (M1-73), and in a 24rem column that track pushed pid past
+                  the edge and restarts out of view (console review, 2026-09-24). It now carries what
+                  the rack does not: when the process started and when a session last called it. */}
+              {opened.server.eligible ? <DetailFacts server={opened.server} edge={stateEdge(opened.state)} /> : null}
               <p className="myx-mcp-note">
-                {opened.server.eligible ? (hosted(opened.server)?.last_error ?? S.absent) : opened.server.reason}
+                {opened.server.eligible ? (hosted(opened.server)?.last_error ?? S.noError) : opened.server.reason}
               </p>
-              {/* There is no restart route. Printed where a restart control would stand, as the
-                  honest empty the contract asks for, rather than a control that would 404 or speak
-                  JSON-RPC at the transport endpoint. It used to sit under the servers rack on every
-                  visit, a permanent strip about a control nobody had reached for. */}
-              <Empty text="restart not built" source={MCP_RESTART.pending} />
+              {/* There is no restart route, so where a restart control would stand the page says what
+                  the host does on its own. It printed `restart not built / no route; CLI only`,
+                  and no CLI command restarts one server. */}
+              {opened.server.eligible ? <p className="myx-mcp-note">{RESPAWN_NOTE}</p> : null}
             </section>
           )}
 

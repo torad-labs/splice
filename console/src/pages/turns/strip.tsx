@@ -13,7 +13,7 @@ export interface Field {
   label: string;
   w: number;
   value: string;
-  /** Absent for a cell that carries no value: `n/r` is the whole statement, and a basis word
+  /** Absent for a cell that carries no value: `–` is the whole statement, and a basis word
    *  beside it was a second sentence saying the same thing (m1 design review B8). */
   basis?: Basis | undefined;
 }
@@ -52,6 +52,15 @@ const COLUMNS: Record<string, { label: string; w: number }> = {
   dropped: { label: S.dropped, w: 22 },
 };
 
+/** The named columns of a view, in its order: the landed rack prints these ONCE, in a header that
+ *  sticks to the top of its scroller, and the rows print values only. */
+export function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
+  return order.flatMap((key) => {
+    const column = COLUMNS[key];
+    return column === undefined ? [] : [{ key, ...column }];
+  });
+}
+
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
  *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the
  *  controls follow with `busy?: boolean | undefined`). */
@@ -68,7 +77,7 @@ export function atText(ts: number | undefined): string | null {
   return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
-/** A number the row does not carry prints `n/r`, never a zero the daemon did not report. */
+/** A number the row does not carry prints `–`, never a zero the daemon did not report. */
 function measured(value: number | undefined, format: (n: number) => string): { value: string; basis?: Basis } {
   return value === undefined ? { value: S.absent } : { value: format(value), basis: 'measured' };
 }
@@ -80,12 +89,12 @@ function measured(value: number | undefined, format: (n: number) => string): { v
  * disk, so its numbers are short by an unknown amount. That row prints `telemetry dropped` in its
  * own column instead of quietly showing smaller figures.
  */
-export function fieldsOf(row: TurnRow, order: readonly string[]): Field[] {
+export function fieldsOf(row: TurnRow, order: readonly string[], headName: string = row.head): Field[] {
   const dropped = row.async_io_drops !== undefined && row.async_io_drops > 0;
   const at = atText(row.ts);
   const values: Record<string, { value: string; basis?: Basis }> = {
     time: at === null ? { value: S.absent } : { value: at, basis: 'measured' },
-    head: { value: row.head, basis: 'measured' },
+    head: { value: headName, basis: 'measured' },
     model: row.model === null ? { value: S.absent } : { value: row.model, basis: 'measured' },
     outcome: { value: row.outcome, basis: 'measured' },
     session: row.session === undefined ? { value: S.absent } : { value: row.session, basis: 'measured' },
@@ -116,10 +125,10 @@ export function fieldsOf(row: TurnRow, order: readonly string[]): Field[] {
 
 /** An in-flight turn has no outcome yet: the gate knows its phase and how long it has been there,
  *  so those are the only numbers it can honestly print. */
-export function inflightFieldsOf(turn: InflightTurn, order: readonly string[]): Field[] {
+export function inflightFieldsOf(turn: InflightTurn, order: readonly string[], headName: string = turn.head): Field[] {
   const values: Record<string, { value: string; basis?: Basis }> = {
     session: { value: turn.label, basis: 'measured' },
-    head: { value: turn.head, basis: 'measured' },
+    head: { value: headName, basis: 'measured' },
     phase: { value: turn.phase, basis: 'measured' },
     age: { value: fmtMs(turn.ageMs), basis: 'measured' },
     idle: { value: timeAgo(Date.now() - turn.idleMs), basis: 'measured' },
@@ -144,11 +153,13 @@ export function edgeOfInflight(turn: InflightTurn): Edge {
   return turn.idleMs > turn.streamIdleMs ? 'amber' : 'green';
 }
 
-export function TurnStrip({ row, selected, order, onOpen }: {
+export function TurnStrip({ row, selected, order, onOpen, headName = row.head }: {
   row: TurnRow;
   selected: boolean;
   order: readonly string[];
   onOpen: () => void;
+  /** The head's label, where the page knows it; the row carries the key. */
+  headName?: string;
 }) {
   return (
     <Strip
@@ -160,18 +171,32 @@ export function TurnStrip({ row, selected, order, onOpen }: {
       edgeLabel={row.outcome === 'ok' ? 'landed' : 'failed'}
       selected={selected}
       onOpen={onOpen}
-      ariaLabel={`${S.title} ${row.head} ${row.model ?? S.absent}`}
+      ariaLabel={`${S.title} ${headName} ${row.model ?? S.absent}`}
     >
-      {/* No label on a cell: the bay head prints the column names once for the whole rack
-          (CONTRACTS.md section 2, m1 design review B9). */}
-      {fieldsOf(row, order).map((field) => (
-        <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
+      {/* No label on a cell: the rack's sticky header prints the column names once (LandedNames),
+          where every virtualized row used to repeat all fourteen (console review, 2026-09-24). */}
+      {fieldsOf(row, order, headName).map((field) => (
+        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );
 }
 
-export function InflightStrip({ turn, order }: { turn: InflightTurn; order: readonly string[] }) {
+/** The landed rack's column names, once, at the widths and growth of the cells under them (the
+ *  same share rule as every other names row: see doctor's ColumnNames). */
+export function LandedNames({ order }: { order: readonly string[] }) {
+  return (
+    <div className="myx-tn-names" aria-hidden="true">
+      {columnsOf(order).map((column) => (
+        <span key={column.key} className="myx-tn-col" style={{ width: `${column.w}ch`, flexGrow: column.w }}>
+          <span className="myx-tn-col-name">{column.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function InflightStrip({ turn, order, headName = turn.head }: { turn: InflightTurn; order: readonly string[]; headName?: string }) {
   const state = edgeOfInflight(turn);
   return (
     <Strip
@@ -180,7 +205,7 @@ export function InflightStrip({ turn, order }: { turn: InflightTurn; order: read
       cocked={state === 'amber'}
       ariaLabel={`${S.inflight} ${turn.label}`}
     >
-      {inflightFieldsOf(turn, order).map((field) => (
+      {inflightFieldsOf(turn, order, headName).map((field) => (
         <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>

@@ -35,6 +35,7 @@ import {
   useSession,
   useSessionEdges,
   useSessionRegistry,
+  UNKNOWN_HEAD,
 } from '@entities/session';
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
@@ -51,13 +52,34 @@ const PAGE_ID = 'sessions';
 
 /** The four views this page ships. `by head` is the default and stands first. */
 const DEFAULT_VIEWS: View[] = [
-  { id: 'by-head', name: 'by head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'head', 'project', 'started', 'seen', 'peer'] },
-  { id: 'by-project', name: 'by project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'project', 'head', 'started', 'seen', 'peer'] },
+  // A grouped view does not repeat its group as a column: the bay's own label already names it.
+  { id: 'by-head', name: 'by head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'project', 'started', 'seen', 'peer'] },
+  { id: 'by-project', name: 'by project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'head', 'started', 'seen', 'peer'] },
   { id: 'by-team', name: 'by team', layout: 'rack', filter: {}, sort: null, group: 'team', fields: ['name', 'head', 'project', 'started', 'seen', 'peer'] },
   { id: 'timeline', name: 'timeline', layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['name', 'head', 'project', 'started', 'peer'] },
 ];
 
 const pad = (value: number): string => String(value).padStart(2, '0');
+
+/** Why a session has no head: splice did not start it, or the daemon could not read how it was
+ *  started. A sentence, so it lives here (CONTRACTS.md 4). It says only what the registry knows:
+ *  it used to add "so their turns do not pass through splice", and the walkthrough watched a
+ *  headless session's turn go through a head (S3); where a turn goes is the turns page's fact. */
+export const NO_HEAD_WHY = 'splice did not start these sessions, or could not tell which head did';
+
+/** Why a group of sessions has no head, from each row's route when the daemon reports one: a
+ *  session started with `claude` directly skips splice; one whose environment could not be read
+ *  may not. A daemon that reports no route keeps the sentence above, which covers both. */
+export function noHeadWhy(rows: readonly SessionRow[]): string {
+  const direct = rows.filter((row) => row.route === 'direct').length;
+  const unread = rows.filter((row) => row.route === 'unknown').length;
+  if (direct + unread === 0) return NO_HEAD_WHY;
+  const parts = [
+    direct === 0 ? null : `${direct} started with claude directly, not with a splice head`,
+    unread === 0 ? null : `${unread} could not be read, so splice cannot tell which head started them`,
+  ];
+  return parts.filter((part) => part !== null).join('; ');
+}
 
 /** The address of a hand-off's other end: a sent edge carries the one its call used; a received
  *  edge carries the sender's session id, so its address is the one the registry holds for it. */
@@ -69,7 +91,7 @@ function peerAddressOf(rows: readonly SessionRow[], edge: SessionEdgesPayload['e
 /** One hand-off, as a strip: which way it went, to whom, and when. */
 function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: readonly SessionRow[] }) {
   if (edges === null) return null;
-  if (edges.edges.length === 0) return <Empty text="no hand-offs recorded" source="/api/sessions/{id}/edges" />;
+  if (edges.edges.length === 0) return <Empty text="no hand-offs yet" source="a message this session sends to another, or gets from one, shows here" />;
   return (
     <>
       {[...edges.edges].sort((a, b) => b.at - a.at).map((edge) => (
@@ -89,7 +111,7 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: re
 }
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, sample }: {
+export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
   payload: SessionsPayload | null;
   /** The OPENED session's edges, for its hand-offs bay. */
   edges?: SessionEdgesPayload | null;
@@ -99,6 +121,8 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
   edgesError?: string | null;
   locked?: boolean;
   error?: string | null;
+  /** When the rows on screen were read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** True when a capture fixture is feeding this board, which the header prints. */
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
    *  marker and the sample chrome are the same value, so they cannot disagree. */
@@ -154,7 +178,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
   return (
     <div className="myx-sx">
       <header className="myx-page-head">
-        <h2 className="myx-page-title">{S.title}</h2>
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         <Reveal label={S.headless}>
           <p className="myx-sx-note">{payload?.note ?? S.registry}</p>
@@ -171,23 +195,33 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
         {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
       >
         <div className="myx-sx-bays">
+          {/* A registry read that fails after one landed keeps the rows and says so: the fault used
+              to show only while nothing had loaded, so a dead daemon's sessions read as live. */}
+          {error === null ? null : <Fault message={error} lastRead={lastRead} />}
           {/* An edges read that failed leaves every peer unknown, and says why: unwatched is not
               the same fact as "no hand-offs". */}
           {edgesError === null ? null : <Fault message={edgesError} />}
           {rows.length === 0 ? (
-            <Empty text="no sessions registered" source="/api/sessions" />
+            <Empty text="no sessions yet" source="a claude code session shows here once it starts" />
           ) : selection.kind === 'groups' ? (
-            selection.groups.map((group) => (
-              <Bay
-                key={group.key}
-                label={`${groupWord}: ${group.key}`}
-                count={group.count}
-                compact
-                actions={<a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a>}
-              >
-                {group.rows.map(strip)}
-              </Bay>
-            ))
+            selection.groups.map((group) => {
+              // The daemon's own word for a session it ties to no head. There is no head to open,
+              // and `head: unknown head` read as a fault in the console rather than a fact about
+              // how the session was started, so the bay says which and why.
+              const headless = by === 'head' && group.key === UNKNOWN_HEAD;
+              return (
+                <Bay
+                  key={group.key}
+                  label={headless ? S.noHead : `${groupWord}: ${group.key}`}
+                  count={group.count}
+                  compact
+                  {...(headless ? {} : { actions: <a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a> })}
+                >
+                  {headless ? <p key="why" className="myx-sx-why">{noHeadWhy(group.rows)}</p> : null}
+                  {group.rows.map(strip)}
+                </Bay>
+              );
+            })
           ) : (
             <>
               <div className="myx-sx-window">
@@ -329,7 +363,8 @@ export default function SessionsPage() {
       boardEdges={fixture === null ? boardEdges.data : null}
       edgesError={fixture === null ? boardEdges.error : null}
       locked={locked}
-      error={registry.error}
+      error={fixture === null ? registry.error : null}
+      lastRead={registry.lastUpdated}
       sample={sample?.name}
     />
   );

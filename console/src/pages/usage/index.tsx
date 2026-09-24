@@ -13,9 +13,10 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { useEconomics, startEconomicsPolling, burn, hitRate, perTurn, amplification, wireDelta, sum, within } from '@entities/economics';
-import type { EconomicsPayload, HeadEconomics } from '@shared/api';
-import { startModelsPolling, useModels, slotTiers } from '@entities/model';
+import type { EconomicsPayload, HeadEconomics, UsagePayload } from '@shared/api';
+import { startModelsPolling, useModels, slotTiers, windowSourceText } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
+import { useUsage } from '@entities/usage';
 import { useViews, ViewTabs } from '@features/views';
 // THE MOUNT M2-06 NEVER WROTE (M1-96). M2-07 shipped these two panels and its own title says the
 // mounting is "a one-line orchestrator note on M2-06 if it lands first"; M2-06 landed and the note
@@ -26,12 +27,13 @@ import { useViews, ViewTabs } from '@features/views';
 // budgets and neither imports the page.
 import { AlertsPanel } from '@features/alerts';
 import { BudgetsPanel } from '@features/budgets';
-import { cx, fmtInt, fmtTokens, timeAgo } from '@shared/lib';
+import { cx, fmtDurationS, fmtInt, fmtTokens, timeAgo } from '@shared/lib';
 import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
 import { TokenChart, CostChart, ByteChart, ToolChart, LimitedChart, WINDOWS } from '@widgets/scope-chart';
 import { dispositions } from './coverage';
 import { DEFAULT_VIEWS, EMPTIES, ratesFor, sortedHeads } from './model';
+import { PLAN_COLS, PlanBay } from './plan';
 import { S } from './strings';
 import './usage.css';
 
@@ -97,9 +99,9 @@ function hoursLeft(burnRate: number, ceiling: number | null, spent: number): str
   // the ceiling cell beside it already says so (m1 design review B8). `idle` is a real reading —
   // a ceiling with no burn against it — and stays.
   if (ceiling === null) return S.absent;
-  if (burnRate <= 0) return 'idle';
+  if (burnRate <= 0) return S.idle;
   const hours = Math.max(0, ceiling - spent) / burnRate;
-  return `${hours.toFixed(1)} h`;
+  return fmtDurationS(hours * 3600);
 }
 
 /** The rack's strip: what this head has spent and what is left, in one printed row. */
@@ -112,7 +114,9 @@ function HeadStrip({ head, now, selected, onOpen }: {
   const totals = sum(within(head.buckets, 168, now));
   const projection = burn(head, now);
   const edge = projection.fraction === null ? 'grey' : projection.fraction >= 1 ? 'red' : projection.fraction >= 0.8 ? 'amber' : 'green';
-  const label = projection.fraction === null ? 'no cap' : `${Math.round(projection.fraction * 100)}%`;
+  // A head with no limit has no share of one: the edge says so with the absence mark, the same
+  // mark its limit cell prints, where it said `no cap` in a word the columns never used.
+  const label = projection.fraction === null ? S.absent : `${Math.round(projection.fraction * 100)}%`;
 
   return (
     <Strip
@@ -216,7 +220,7 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               <StripField w={MODEL_COLS[0]} value={tier.slot} mono={false} />
               <StripField w={MODEL_COLS[1]} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
               <StripField w={MODEL_COLS[2]} value={tier.model === null || tier.model.context_window === null ? S.absent : fmtTokens(tier.model.context_window)} />
-              <StripField w={MODEL_COLS[3]} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
+              <StripField w={MODEL_COLS[3]} value={tier.model === null ? S.absent : windowSourceText(tier.model.context_window_source)} mono={false} />
               <StripField w={MODEL_COLS[4]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
               <StripField w={MODEL_COLS[5]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
             </Strip>
@@ -226,7 +230,7 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               <StripField w={MODEL_COLS[0]} value={S.noSlot} mono={false} />
               <StripField w={MODEL_COLS[1]} value={model.id} mono={false} />
               <StripField w={MODEL_COLS[2]} value={model.context_window === null ? S.absent : fmtTokens(model.context_window)} />
-              <StripField w={MODEL_COLS[3]} value={model.context_window_source} mono={false} />
+              <StripField w={MODEL_COLS[3]} value={windowSourceText(model.context_window_source)} mono={false} />
               <StripField w={MODEL_COLS[4]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.input)} />
               <StripField w={MODEL_COLS[5]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.output)} />
             </Strip>
@@ -237,8 +241,11 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
   );
 }
 
-export function UsageBoard({ payload, catalog, now, sample }: {
+export function UsageBoard({ payload, usage = null, usageError = null, catalog, now, sample }: {
   payload: EconomicsPayload | null;
+  /** /api/usage, for the plan limits rack. The rule bar polls it on every page. */
+  usage?: UsagePayload | null;
+  usageError?: string | null;
   catalog: ModelsPayload | PendingRoute | null;
   now: number;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
@@ -290,6 +297,25 @@ export function UsageBoard({ payload, catalog, now, sample }: {
         )
       ) : (
         <>
+          {/* No plan rack behind a sample: the fixture carries no /api/usage, and a rack fed nothing
+              is a skeleton that never resolves. */}
+          {sample !== undefined ? null : (
+          <PlanBay
+            usage={usage}
+            error={usageError}
+            now={now}
+            names={(
+              <ColumnNames
+                columns={[
+                  { w: PLAN_COLS[0], label: S.head }, { w: PLAN_COLS[1], label: S.plan },
+                  { w: PLAN_COLS[2], label: S.fiveUsed }, { w: PLAN_COLS[3], label: S.fiveResets },
+                  { w: PLAN_COLS[4], label: S.sevenUsed }, { w: PLAN_COLS[5], label: S.sevenResets },
+                  { w: PLAN_COLS[6], label: S.read },
+                ]}
+              />
+            )}
+          />
+          )}
           <Bay
             label={S.heads}
             count={heads.length}
@@ -297,7 +323,7 @@ export function UsageBoard({ payload, catalog, now, sample }: {
             fields={(
               <ColumnNames
                 columns={[
-                  { w: HEAD_COLS[0], label: S.heads }, { w: HEAD_COLS[1], label: S.spent },
+                  { w: HEAD_COLS[0], label: S.head }, { w: HEAD_COLS[1], label: S.spent },
                   { w: HEAD_COLS[2], label: S.ceiling }, { w: HEAD_COLS[3], label: S.exhaustion },
                   { w: HEAD_COLS[4], label: S.turns }, { w: HEAD_COLS[5], label: S.inTokens },
                   { w: HEAD_COLS[6], label: S.outTokens }, { w: HEAD_COLS[7], label: S.limited },
@@ -322,7 +348,7 @@ export function UsageBoard({ payload, catalog, now, sample }: {
             <div className="myx-usage-detail">
               <div className="myx-usage-row">
                 <span className="myx-usage-sub">{active.label}</span>
-                <span className="myx-usage-note">{`rollup ${timeAgo(payload.generated_at, now)}`}</span>
+                <span className="myx-usage-note">{`${S.updated} ${timeAgo(payload.generated_at, now)}`}</span>
               </div>
               <HeadCharts head={active} windowIndex={windowIndex} now={now} rates={ratesFor(catalog, active.key)} />
             </div>
@@ -351,6 +377,7 @@ export default function UsagePage() {
   const { search } = useLocation();
   const economics = useEconomics((state) => state);
   const models = useModels((state) => state);
+  const usage = useUsage((state) => state);
 
   useEffect(() => startEconomicsPolling(POLL_MS), []);
   useEffect(() => startModelsPolling(POLL_MS), []);
@@ -395,10 +422,13 @@ export default function UsagePage() {
 
   return (
     <>
-      {economics.error === null ? null : <Fault message={economics.error} />}
-      {models.error === null ? null : <Fault message={models.error} />}
+      {economics.error === null ? null : <Fault message={economics.error} lastRead={fixture === null ? economics.lastUpdated : null} />}
+      {models.error === null ? null : <Fault message={models.error} lastRead={fixture === null ? models.lastUpdated : null} />}
+      {usage.error === null || fixture !== null ? null : <Fault message={usage.error} lastRead={usage.lastUpdated} />}
       <UsageBoard
         payload={payload}
+        usage={fixture === null ? usage.data : null}
+        usageError={fixture === null ? usage.error : null}
         catalog={catalog}
         now={fixture === null ? Date.now() : payload === null ? 0 : payload.generated_at}
         sample={sample?.name}

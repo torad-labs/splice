@@ -15,24 +15,40 @@
 // The retry key is optional because most failures in this console are not retryable by a click
 // (the route is pending, the daemon is down); a fault that cannot be retried does not pretend it
 // can by offering a dead key.
+//
+// A FAILED READ OFTEN LEAVES ROWS ON SCREEN. A page keeps what its last good read returned (a
+// blank page tells the operator less than old rows do), and those rows kept every edge and figure
+// they were read with, so with the daemon down the fleet still printed its heads `ok` (console
+// walkthrough, 2026-09-24). `lastRead` is the time of that read, the store's `lastUpdated`: when
+// it is given, the fault says how old the rows under it are, as a figure on the `stale` basis.
 import type { CSSProperties, ReactNode } from 'react';
-import { Strip } from '@shared/ui';
+import { timeAgo } from '@shared/lib';
+import { Figure, Strip } from '@shared/ui';
 import { Key } from './key';
 import { S } from './strings';
 
-export function Fault({ message, onRetry, retryLabel, w = 72 }: {
+export function Fault({ message, lastRead = null, onRetry, retryLabel, w = 72 }: {
   /** The daemon's own words (SafeFailureText renders them), never a raw exception. */
   message: string;
+  /** When the rows still on screen were read (epoch ms), or null when the failed read left none. */
+  lastRead?: number | null;
   onRetry?: () => void;
   retryLabel?: ReactNode;
   /** The message's measure in `ch`, on the message's own face: the craft floor's 65-75ch band. */
   w?: number;
 }) {
+  const held = lastRead === null ? null : timeAgo(lastRead);
   return (
     <div className="myx-fault" role="alert">
-      <Strip edge="red" edgeLabel={S.fault} ariaLabel={message}>
+      <Strip edge="red" edgeLabel={S.fault} ariaLabel={held === null ? message : `${message}, ${S.lastRead} ${held}, stale`}>
         <span className="myx-fault-field" style={{ maxWidth: `${w}ch` } as CSSProperties}>
           <span className="myx-fault-message">{message}</span>
+          {held === null ? null : (
+            <span className="myx-fault-held">
+              <span>{S.lastRead}</span>
+              <Figure value={held} basis="stale" />
+            </span>
+          )}
         </span>
       </Strip>
       {onRetry === undefined ? null : (

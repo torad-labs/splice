@@ -6,7 +6,8 @@
 // widget's width (preserveAspectRatio="none"), and text inside such a viewBox would be stretched
 // with it. It is also what keeps the chart readable in grayscale: the rows are named in words.
 import { ScopeInset, Strip, StripField } from '@shared/ui';
-import { waterfall } from '@entities/perf';
+import { ABSENT } from '@shared/lib';
+import { STAGE_NAMES, waterfall } from '@entities/perf';
 import type { TurnRow } from '@entities/perf';
 import { barRows, totalOf } from './model';
 import { S } from './strings';
@@ -19,15 +20,16 @@ export { CAPTURE_AT_RESTART, CAPTURE_OFF, CAPTURE_ON, RequestDrawer } from './re
 const ROW_H = 18;
 const AXIS = 1000;
 
-/** 0 in, 0 out: a counter the row does not carry prints `-`, never a zero it did not report. */
+/** 0 in, 0 out: a counter the row does not carry prints the absence dash, never a zero it did not
+ *  report. */
 function count(value: number | undefined): string {
-  return value === undefined ? '-' : String(value);
+  return value === undefined ? ABSENT : String(value);
 }
 
 /** The counters FEATURES.md 4.3 puts beside the bar. */
 function counterFields(row: TurnRow): { key: string; label: string; value: string }[] {
   const tools = row.tools_eager === undefined && row.tools_deferred === undefined
-    ? '-'
+    ? ABSENT
     : `${row.tools_eager ?? 0} / ${(row.tools_eager ?? 0) + (row.tools_deferred ?? 0)}`;
   return [
     { key: 'retries', label: S.retries, value: count(row.retries) },
@@ -63,7 +65,7 @@ export function Waterfall({ row }: { row: TurnRow }) {
           height={rows.length * ROW_H}
           preserveAspectRatio="none"
           role="img"
-          aria-label={`${S.phases}: ${rows.map((r) => `${r.group} ${r.ms}ms`).join(', ')}`}
+          aria-label={`${S.phases}: ${rows.map((r) => `${STAGE_NAMES[r.group]} ${r.ms}ms`).join(', ')}`}
         >
           {rows.map((row_, index) => (
             <g key={row_.group}>
@@ -84,7 +86,7 @@ export function Waterfall({ row }: { row: TurnRow }) {
         <div className="myx-wf-legend">
           {rows.map((row_) => (
             <div className="myx-wf-legend-row" key={row_.group}>
-              <span className="myx-wf-legend-name">{S[row_.group]}</span>
+              <span className="myx-wf-legend-name">{STAGE_NAMES[row_.group]}</span>
               <span className="myx-wf-legend-ms">{row_.ms}ms</span>
             </div>
           ))}

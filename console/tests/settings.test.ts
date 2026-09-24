@@ -17,9 +17,10 @@ import { describe, expect, test } from 'vitest';
 import { knobDispositions } from '../src/entities/config';
 import { headRows, validateNewHead, withoutHead } from '../src/features/head-edit';
 import { KnobRack } from '../src/widgets/knob-form';
+import { SOURCE_LABELS } from '../src/widgets/knob-form/strings';
 import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
-import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, setAtPath, toToml, valueAtPath } from '../src/pages/settings/model';
+import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath } from '../src/pages/settings/model';
 import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
 import { KNOB_SOURCE, TOPOLOGY_SOURCES, parseKnobNames, parseSerialNames } from '../src/shared/coverage/denominator';
 
@@ -52,19 +53,21 @@ describe('settings: the knob form', () => {
     }
   });
 
-  test('each knob prints where its value came from', () => {
+  test('each knob prints where its value came from, in the operator\'s words', () => {
     for (const knob of knobs) {
       const row = rowOf(rack, knob.key);
-      expect(row, `${knob.key} row`).toContain(`>${knob.provenance}<`);
+      expect(row, `${knob.key} row`).toContain(`>${SOURCE_LABELS[knob.provenance]}<`);
     }
-    // The spread the fixture sets up, asserted by name so a mapping mistake cannot hide.
+    // The spread the fixture sets up, asserted by name so a mapping mistake cannot hide. The
+    // state file and the runtime layer are both what a save in the console writes, so they read
+    // alike; every other layer keeps a word of its own.
     expect(rowOf(rack, 'maxInflight')).toContain('>head override<');
-    expect(rowOf(rack, 'usageWarnPct')).toContain('>state file<');
-    expect(rowOf(rack, 'debug')).toContain('>env<');
-    expect(rowOf(rack, 'quotaPoll')).toContain('>patch<');
+    expect(rowOf(rack, 'usageWarnPct')).toContain('>set in console<');
+    expect(rowOf(rack, 'debug')).toContain('>environment<');
+    expect(rowOf(rack, 'quotaPoll')).toContain('>set in console<');
     // `port` is in the fixture's `[defaults]` layer, so it is the TOML layer and not the enum
     // default; `maxQueued` is in no layer at all, which is the only honest 'default'.
-    expect(rowOf(rack, 'port')).toContain('>defaults table<');
+    expect(rowOf(rack, 'port')).toContain('>splice.toml<');
     expect(rowOf(rack, 'maxQueued')).toContain('>default<');
   });
 
@@ -72,9 +75,9 @@ describe('settings: the knob form', () => {
     const live = knobs.filter((knob) => knob.hot).map((knob) => knob.key);
     expect(live).toEqual(['budgetDefaultAction', 'maxInflight', 'maxQueued', 'statuslineGitRoots']);
     expect(rack.split('applies live').length - 1).toBe(live.length);
-    expect(rack.split('restart to apply').length - 1).toBe(knobs.length - live.length);
+    expect(rack.split('applies on restart').length - 1).toBe(knobs.length - live.length);
     for (const key of live) expect(rowOf(rack, key)).toContain('applies live');
-    expect(rowOf(rack, 'port')).toContain('restart to apply');
+    expect(rowOf(rack, 'port')).toContain('applies on restart');
   });
 
   test('the live view shows the hot knobs and nothing else', () => {
@@ -98,10 +101,37 @@ describe('settings: the topology section', () => {
     }),
   );
 
-  test('every scalar of the document gets a field box', () => {
-    const leaves = flattenTopology(fixtureTopology);
-    expect(leaves.length).toBeGreaterThan(10);
-    for (const leaf of leaves) expect(section).toContain(leaf.path);
+  test('every value of the document gets a control, under its own table', () => {
+    const tables = topologyTables(fixtureTopology);
+    // The denominator comes from the document, not from the list: every leaf is in some table.
+    const fields = tables.flatMap((table) => table.fields);
+    const leafPaths = flattenTopology(fixtureTopology).map((leaf) => leaf.path.replace(/\[\d+\]$/, ''));
+    for (const path of leafPaths) expect(fields.map((field) => field.path), path).toContain(path);
+    for (const table of tables.filter((t) => t.path.includes('.'))) {
+      expect(section).toContain(table.path.slice(table.path.indexOf('.') + 1));
+    }
+  });
+
+  test('a list of values is one field, not a box per element', () => {
+    // claude.share was ten full-width boxes on the live file.
+    const share = topologyTables(fixtureTopology).flatMap((t) => t.fields).find((f) => f.path === 'claude.share');
+    expect(share?.kind).toBe('list');
+    expect(section).toContain('value="settings, mcps"');
+    expect(section).not.toContain('claude.share[0]');
+    expect(parseList('settings, mcps,, skills ', ['settings'])).toEqual(['settings', 'mcps', 'skills']);
+    expect(parseList('1, 2', [3])).toEqual([1, 2]);
+  });
+
+  test('a closed-set value is a picker over the daemon\'s values, and a boolean a switch', () => {
+    const fields = topologyTables(fixtureTopology).flatMap((t) => t.fields);
+    expect(fields.find((f) => f.path === 'providers.codex.dialect')?.kind).toBe('choice');
+    expect(fields.find((f) => f.path === 'providers.codex.auth.kind')?.choices).toContain('chatgpt-oauth');
+    expect(fields.find((f) => f.path === 'daemon.mcp_hosting')?.kind).toBe('flag');
+    expect(fields.find((f) => f.path === 'heads.claudex.port')?.kind).toBe('number');
+    // a head's provider picks from the file's own providers
+    expect(fields.find((f) => f.path === 'heads.claudex.provider')?.choices).toEqual(['codex']);
+    expect(section).toContain('role="combobox"');
+    expect(section).toContain('role="switch"');
   });
 
   test('a key the daemon does not parse is reported, with its path', () => {
@@ -109,16 +139,16 @@ describe('settings: the topology section', () => {
     expect(section).toContain('unknown key');
   });
 
-  test('a topology row prints the file as its provenance, not a config layer', () => {
-    // splice.toml is the seventh provenance name (CONTRACTS.md section 2). Before it existed these
-    // rows borrowed `defaults table`, which names the [defaults] layer of the runtime config — a
-    // different thing from a [heads.<key>] field read out of the topology file.
-    expect(section).toContain('splice.toml');
+  test('the file and its restart are said once for the section, not under every value', () => {
+    expect(section.split('~/.config/splice/splice.toml').length - 1).toBe(1);
+    expect(section).toContain('take effect after a daemon restart');
     expect(section).not.toContain('>defaults table<');
+    // once, on the stale-file edge this state sets, never once per value
+    expect(section.split('>restart to apply<').length - 1).toBe(1);
   });
 
   test('the backup note is printed before any write', () => {
-    expect(section).toContain('the daemon backs the file up first');
+    expect(section).toContain('backs up ~/.config/splice/splice.toml first');
   });
 
   test('a pending topology route names the row that will serve it', () => {
@@ -133,7 +163,8 @@ describe('settings: the topology section', () => {
         result: null,
       }),
     );
-    expect(pending).toContain('V4-128 serves /api/topology');
+    expect(pending).toContain('does not serve splice.toml editing');
+    expect(pending).not.toContain('V4-');
   });
 });
 
@@ -288,11 +319,12 @@ describe('settings: the Claude head modes', () => {
     expect(unwrapped).not.toContain('backup files');
   });
 
-  test('before the first poll answers, the empty names the route and not a closed row', () => {
+  test('before the first poll answers, the empty says it is waiting, naming no route and no row', () => {
     const unread = render(
       h(ClaudeModeSection, { state: null, result: null, onWrap: () => undefined, onUnwrap: () => undefined, busy: false }),
     );
-    expect(unread).toContain('GET /api/claude-head');
+    expect(unread).toContain('waiting for the daemon to answer');
+    expect(unread).not.toContain('/api/');
     expect(unread).not.toContain('V4-129');
   });
 });
@@ -313,8 +345,10 @@ describe('settings: the coverage manifest', () => {
     expect(new Set(topologyDeclared.map((entry) => entry.name))).toEqual(topologyNames);
     expect(new Set(dispositions.map((entry) => entry.name)).size).toBe(dispositions.length);
 
-    // The names the two FEATURES sections call read-only, and no others (15 since V4-170 added the
-    // third system prompt mode value, strip). KNOBS AND TOPOLOGY KEYS ONLY: the sentence this pin
+    // The names the two FEATURES sections call read-only, and no others: 7 since the settings copy
+    // pass (2026-09-24) found the four MCP host limits and the four ChatGPT/Grok login knobs were
+    // declared read-only while the rack edited them, and the daemon reads every one of them after a
+    // restart (15 before that). KNOBS AND TOPOLOGY KEYS ONLY: the sentence this pin
     // enforces is about those two vocabularies, and counting routes into it made the number answer
     // a different question than the one it is named for — V4-175 moved /api/claude-head off
     // `pending` onto a read-only status read and the arithmetic went red for a correct manifest.
@@ -323,7 +357,7 @@ describe('settings: the coverage manifest', () => {
     const readOnly = dispositions
       .filter((entry) => entry.kind !== 'route' && entry.disposition === 'read-only')
       .map((entry) => entry.name);
-    expect(readOnly).toHaveLength(17);
+    expect(readOnly).toHaveLength(9);
     for (const entry of dispositions) {
       if (entry.disposition === 'read-only' || entry.disposition === 'excluded') expect(entry.reason).toBeTruthy();
       if (entry.disposition === 'pending') expect(entry.where).toBeTruthy();

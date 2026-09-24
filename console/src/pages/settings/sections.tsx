@@ -3,14 +3,15 @@
 // Both are exported standalone rather than inlined into the page so the tests can render them
 // directly with a fixture payload — a page that reads the router cannot be static-rendered, and a
 // section that has to be reached through one would be untestable for no reason.
-import { Bay, Empty, FieldBox, Figure, HolderEdge, Reveal } from '@shared/ui';
-import { Confirm, Key } from '@shared/controls';
+import { useState } from 'react';
+import { Bay, Empty, Figure, HolderEdge, Reveal } from '@shared/ui';
+import { Choice, Confirm, Flag, Input, Key } from '@shared/controls';
 import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '@entities/claude-head';
 import { validateTopology } from '@entities/topology';
 import type { TopologyState, TopologyWriteResult } from '@entities/topology';
-import { TOPOLOGY_PROVENANCE } from '@features/head-edit';
 import { TomlEditor, TomlMerge } from '@widgets/toml-editor';
-import { changedPaths, coerce, EMPTIES, flattenTopology, setAtPath, toToml, valueAtPath } from './model';
+import { changedPaths, coerce, EMPTIES, parseList, setAtPath, topologyTables, toToml } from './model';
+import type { TopologyField, TopologyTable } from './model';
 import { S } from './strings';
 
 function PendingRoute({ state, empty }: { state: unknown; empty: { text: string; source: string } }) {
@@ -19,8 +20,57 @@ function PendingRoute({ state, empty }: { state: unknown; empty: { text: string;
   ) : null;
 }
 
+/** A list's line, edited as text and written back on leaving the box: parsing on every key would
+ *  eat the comma the operator just typed before the next item. */
+function ListInput({ field, onCommit }: { field: TopologyField; onCommit: (next: (string | number)[]) => void }) {
+  const items = field.value as readonly (string | number)[];
+  const [text, setText] = useState(items.join(', '));
+  return (
+    <span onBlur={() => onCommit(parseList(text, items))}>
+      <Input label={field.key} value={text} onChange={setText} w={Math.min(72, Math.max(24, text.length + 2))} placeholder="comma-separated" />
+    </span>
+  );
+}
+
+/** One value's control, chosen by what the value is. */
+function TopologyControl({ field, onChange }: { field: TopologyField; onChange: (value: unknown) => void }) {
+  if (field.kind === 'flag') {
+    return (
+      <span className="myx-topo-flag">
+        <span className="myx-topo-key">{field.key}</span>
+        <Flag on={field.value === true} onLabel="on" offLabel="off" ariaLabel={field.key} onChange={onChange} />
+      </span>
+    );
+  }
+  if (field.kind === 'choice') {
+    const current = String(field.value);
+    const values = field.choices?.includes(current) ? field.choices : [...(field.choices ?? []), current];
+    return <Choice label={field.key} value={current} options={values.map((value) => ({ value, label: value }))} onChange={onChange} w={24} />;
+  }
+  if (field.kind === 'list') {
+    return <ListInput key={(field.value as readonly unknown[]).join(',')} field={field} onCommit={onChange} />;
+  }
+  const text = String(field.value);
+  return (
+    <Input
+      label={field.key}
+      value={text}
+      numeric={field.kind === 'number'}
+      onChange={(raw) => onChange(coerce(raw, field.value as string | number))}
+      w={Math.min(72, Math.max(field.kind === 'number' ? 10 : 16, text.length + 2))}
+    />
+  );
+}
+
+/** The table's name under its group's bay: `claudex.overrides` under `heads`, nothing for the
+ *  group's own table (`daemon`), whose fields sit directly under the bay's label. */
+function tableTitle(table: TopologyTable, group: string): string {
+  return table.path === group ? '' : table.path.slice(group.length + 1);
+}
+
 /**
- * The document as forms, one field box per scalar, grouped by the table the key lives in.
+ * The document as forms: a bay per top-level table, a block per table inside it, and one control
+ * per value, a switch, a picker, a number, a line or a list.
  *
  * The validator's findings are shown BESIDE the draft rather than blocking the write: the daemon's
  * own writer re-validates and its refusal is the authority, so a console that refused first would
@@ -40,11 +90,10 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
   }
   if (draft === null) return null;
 
-  const leaves = flattenTopology(draft);
-  const groups = new Map<string, typeof leaves>();
-  for (const leaf of leaves) {
-    const head = leaf.path.split('.')[0];
-    groups.set(head, [...(groups.get(head) ?? []), leaf]);
+  const groups = new Map<string, TopologyTable[]>();
+  for (const table of topologyTables(draft)) {
+    const group = table.path.split(/[.[]/)[0] ?? '';
+    groups.set(group, [...(groups.get(group) ?? []), table]);
   }
 
   const changed = loaded === null ? [] : changedPaths(loaded, draft);
@@ -55,23 +104,22 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
       {/* FEATURES 4.7: "Backs the file up first." This is the sentence, not a label, so it lives
           here rather than in the string table (CONTRACTS.md section 4). */}
       <p className="myx-settings-note">
-        the daemon backs the file up first, writes it through the structured writer add-model uses,
-        and this console reads it back rather than keeping a copy of its own.
+        Writing backs up {state.path} first, then saves your changes with comments and layout kept.
+        Changes here take effect after a daemon restart.
       </p>
-      <p className="myx-settings-path">{state.path}</p>
       {state.stale ? <HolderEdge state="amber" label={S.restart} /> : null}
 
-      {[...groups.entries()].map(([head, group]) => (
-        <Bay key={head} label={head} count={group.length}>
-          {group.map((leaf) => (
-            <FieldBox
-              key={leaf.path}
-              label={leaf.path}
-              value={String(leaf.value)}
-              provenance={TOPOLOGY_PROVENANCE}
-              hot={false}
-              onChange={(raw) => onDraft(setDraftLeaf(draft, leaf.path, raw))}
-            />
+      {[...groups.entries()].map(([group, tables]) => (
+        <Bay key={group} label={group === '' ? S.topLevel : group} count={tables.length}>
+          {tables.map((table) => (
+            <section key={table.path} className="myx-topo-table" aria-label={table.path || S.topLevel}>
+              {tableTitle(table, group) === '' ? null : <h4 className="myx-topo-title">{tableTitle(table, group)}</h4>}
+              <div className="myx-topo-fields">
+                {table.fields.map((field) => (
+                  <TopologyControl key={field.path} field={field} onChange={(value) => onDraft(setAtPath(draft, field.path, value))} />
+                ))}
+              </div>
+            </section>
           ))}
         </Bay>
       ))}
@@ -108,12 +156,6 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
       )}
     </div>
   );
-}
-
-function setDraftLeaf(draft: Record<string, unknown>, path: string, raw: string): Record<string, unknown> {
-  const before = valueAtPath(draft, path);
-  const reference = typeof before === 'string' || typeof before === 'number' || typeof before === 'boolean' ? before : '';
-  return setAtPath(draft, path, coerce(raw, reference));
 }
 
 /**

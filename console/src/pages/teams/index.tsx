@@ -11,9 +11,11 @@
 // the hero gate vetoes ink the comp does not have, so the view switcher sits at the end of the
 // page's own flow: the first viewport is the comp, and the tabs are one scroll below it.
 import { useEffect, useState } from 'react';
+import type { ReactElement } from 'react';
 import { useLocation } from 'react-router';
 import { fetchTeamPanels, fetchTeams, isPending, useTeamPanels, useTeams } from '@entities/team';
-import { fetchSessions, useSessionRegistry } from '@entities/session';
+import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/session';
+import { fetchHeads, useHeads } from '@entities/heads';
 import { fetchPerfTurns, usePerfTurns } from '@entities/perf';
 import { ViewTabs, useViews, type View } from '@features/views';
 import { TeamBoard, TeamBoardByRole, TeamTimeline } from '@widgets/team-board';
@@ -23,7 +25,7 @@ import type { TeamChatState } from '@widgets/team-chat';
 import { ActivityFeed } from '@widgets/activity-feed';
 import type { ActivityFeedState } from '@widgets/activity-feed';
 import { TeamCompose, draftOf } from '@features/team-compose';
-import { Key } from '@shared/controls';
+import { Fault, Key } from '@shared/controls';
 import { poll } from '@shared/lib';
 import { Bay, Empty, Strip, StripField } from '@shared/ui';
 import type { TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
@@ -79,6 +81,8 @@ export interface TeamsBodyInput {
   view: string;
   teams: TeamsState | null;
   error?: string | null;
+  /** When the list behind a drawn board was read, which the fault prints as stale while `error` stands. */
+  lastRead?: number | null;
   /** The opened team's board: composed from the daemon's reads, or the dev fixture's. */
   board: TeamPayload | null;
   /** The board the by-role and timeline views draw when it is not `board` (the fixture's). */
@@ -91,24 +95,31 @@ export interface TeamsBodyInput {
   unread?: { chat?: string; activity?: string };
 }
 
-export function teamsBodyFor({ view, teams, error = null, board, views = null, viewData = null, chat = null, feed = null, unread = {} }: TeamsBodyInput) {
+export function teamsBodyFor({ view, teams, error = null, lastRead = null, board, views = null, viewData = null, chat = null, feed = null, unread = {} }: TeamsBodyInput) {
+  // A list read that fails after a board was drawn keeps the board and says so above it, with the
+  // age of what it shows; it used to keep it silently, so a dead daemon's team read as a live one.
+  // With nothing drawn, the empty below already names the failure.
+  const held = (drawn: ReactElement) => (error === null ? drawn : <><Fault message={error} lastRead={lastRead} />{drawn}</>);
   if (view === ROLE_VIEW || view === TIMELINE_VIEW) {
     const drawn = views ?? board;
     if (drawn === null) return liveEmpty(teams, error);
-    if (view === TIMELINE_VIEW) return <TeamTimeline board={drawn} data={viewData} />;
-    return <TeamBoardByRole board={drawn} data={viewData} chat={<TeamChat state={chat} />} feed={<ActivityFeed state={feed} />} />;
+    if (view === TIMELINE_VIEW) return held(<TeamTimeline board={drawn} data={viewData} />);
+    return held(<TeamBoardByRole board={drawn} data={viewData} chat={<TeamChat state={chat} />} feed={<ActivityFeed state={feed} />} />);
   }
-  if (board !== null) return <TeamBoard board={board} unread={unread} />;
+  if (board !== null) return held(<TeamBoard board={board} unread={unread} />);
   return liveEmpty(teams, error);
 }
+
+/** Where a first team comes from: the composer under the board. */
+const COMPOSE_BELOW = 'compose one below: name it, point it at a repo, and give each role a head';
 
 /** What the page says when no board answered: which of the four silences this is. */
 function liveEmpty(teams: TeamsState | null, error: string | null) {
   // The route itself is missing (a daemon older than V4-131): that is not the same answer as a
   // daemon that answers with no teams, and neither is a failure.
-  if (isPending(teams)) return <Empty text="no teams route" source={`${teams.pending} pending`} />;
-  if (teams === null) return <Empty text={error === null ? S.reading : S.unreadable} source={error ?? 'GET /api/teams'} />;
-  if (teams.teams.length === 0) return <Empty text={S.noTeams} source="GET /api/teams" />;
+  if (isPending(teams)) return <Empty text="teams unavailable" source="this splice version does not serve teams" />;
+  if (teams === null) return <Empty text={error === null ? S.reading : S.unreadable} source={error ?? 'the daemon has not answered yet'} />;
+  if (teams.teams.length === 0) return <Empty text={S.noTeams} source={COMPOSE_BELOW} />;
   return <Empty text={S.unreadable} source={error ?? 'the daemon did not answer'} />;
 }
 
@@ -137,7 +148,7 @@ export function TeamList({ teams, opened = null, onOpen }: {
       className="myx-teams-list"
       label={S.teams}
       count={teams.length}
-      empty={{ text: S.noTeams, source: 'GET /api/teams' }}
+      empty={{ text: S.noTeams, source: COMPOSE_BELOW }}
     >
       {teams.map((team) => (
         <Strip
@@ -151,7 +162,7 @@ export function TeamList({ teams, opened = null, onOpen }: {
           <StripField w={LIST_COLS[0]} label={S.name} value={team.name} mono={false} />
           <StripField w={LIST_COLS[1]} label={S.goal} value={team.goal} mono={false} />
           <StripField w={LIST_COLS[2]} label={S.repo} value={team.repo} mono={false} />
-          <StripField w={LIST_COLS[3]} label={S.slots} value={`${team.slots.length} slots, ${team.slots.filter((slot) => slot.session !== null).length} bound`} mono={false} />
+          <StripField w={LIST_COLS[3]} label={S.slots} value={`${team.slots.length} ${team.slots.length === 1 ? 'slot' : 'slots'}, ${team.slots.filter((slot) => slot.session !== null).length} bound`} mono={false} />
           <StripField w={LIST_COLS[4]} label={S.state} value={team.archived ? S.archived : S.live} mono={false} />
         </Strip>
       ))}
@@ -208,6 +219,15 @@ export function TeamsPage() {
   const teams = useTeams((state) => state);
   const panels = useTeamPanels((state) => state);
   const registry = useSessionRegistry((state) => state);
+  const heads = useHeads((state) => state.data);
+
+  // The composer picks a slot's head and session from what the daemon lists, so both are read once
+  // here; the live stream re-reads each when it changes (widgets/rule/wire.ts).
+  useEffect(() => {
+    if (fixture !== null) return;
+    void fetchHeads();
+    void fetchSessions();
+  }, [fixture]);
   const turns = usePerfTurns((state) => state);
 
   // The list is re-read on the panels' cadence, with or without a team open: a team or a binding
@@ -246,7 +266,8 @@ export function TeamsPage() {
   const body = teamsBodyFor({
     view: active.id,
     teams: teams.data,
-    error: teams.error,
+    error: fixture === null ? teams.error : null,
+    lastRead: teams.lastUpdated,
     board,
     views,
     viewData: sample !== null ? sample.data : live === null ? null : viewDataOf(live, rows, panels.data, now),
@@ -295,6 +316,10 @@ export function TeamsPage() {
           <TeamCompose
             key={editing?.id ?? 'new'}
             team={editing}
+            heads={(heads ?? []).map((head) => ({ value: head.key, label: head.label }))}
+            sessions={sessions
+              .filter((row) => row.session_id !== null && row.availability !== 'gone')
+              .map((row) => ({ value: row.session_id ?? '', label: sessionLabel(row) }))}
             answer={saved !== null && saved.team.id === editing?.id ? saved.answer : null}
             onSaved={(team, answer) => {
               setSaved({ team, answer });

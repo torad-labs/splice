@@ -16,6 +16,7 @@ export {
   overlap,
   tailOf,
   timeOf,
+  dateOf,
   LEVELS,
   NO_FILTER,
 } from './model/derive';

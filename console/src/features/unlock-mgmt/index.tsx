@@ -7,12 +7,24 @@
 // resolves the root itself and opens this console unlocked, so it is right on every install.
 import { useState } from 'react';
 import { unlock, useSession } from '@entities/session';
+import { Fault } from '@shared/controls';
 import { Btn, Field, Well } from '@shared/ui';
+
+/** What the gate says when the daemon answered the key it holds with a 401. */
+const REFUSED = 'that key was refused';
 
 export function UnlockMgmt() {
   const locked = useSession((s) => s.locked);
-  const [key, setKey] = useState('');
+  const refused = useSession((s) => s.refused);
   if (!locked) return null;
+  return <UnlockForm refused={refused} />;
+}
+
+/** The modal, drawn from the gate's state so a test can render it (a static render only ever sees
+ *  a store's initial state). It mounts with the lock, so a refused key comes back as an empty field
+ *  under the refusal rather than the rejected key still sitting in it. */
+export function UnlockForm({ refused }: { refused: boolean }) {
+  const [key, setKey] = useState('');
 
   return (
     <div className="myx-modal-scrim" role="dialog" aria-modal="true" aria-label="management key required">
@@ -22,6 +34,7 @@ export function UnlockMgmt() {
           <span className="myx-field-label">open it with</span>
           <Well>splice dashboard</Well>
         </div>
+        {refused ? <Fault message={REFUSED} /> : null}
         <form
           className="myx-unlock-form"
           onSubmit={(e) => {

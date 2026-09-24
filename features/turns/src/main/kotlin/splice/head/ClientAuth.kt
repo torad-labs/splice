@@ -17,12 +17,16 @@ import java.security.MessageDigest
 /** See [ClientAuth.forwardedClientHeaders]: the caller's credential plus the wire knobs it chose.
  *  Was `HeadDeps.FORWARDED_CLIENT_HEADERS` (an `internal val` in a public companion); same name,
  *  now file-scope and NARROWED to `private` — ClientAuth.kt is its only reader.
- *  FILE SCOPE ON PURPOSE: one shared immutable allowlist, read per client-auth turn. */
-private val FORWARDED_CLIENT_HEADERS: List<String> = listOf(
-    "Authorization",
-    "x-api-key",
-    "anthropic-version",
-    "anthropic-beta",
+ *  FILE SCOPE ON PURPOSE: one shared immutable allowlist, read per client-auth turn.
+ *
+ *  Each name maps to the Claude Code variable that writes it (v0.4.0 review round 2): when splice's
+ *  own key rides in one, that variable is what the operator unsets, and the refusal blamed
+ *  ANTHROPIC_AUTH_TOKEN for all four. One declaration, so a header cannot be forwarded unnamed. */
+private val FORWARDED_CLIENT_HEADERS: Map<String, String> = mapOf(
+    "Authorization" to "ANTHROPIC_AUTH_TOKEN",
+    "x-api-key" to "ANTHROPIC_API_KEY",
+    "anthropic-version" to "ANTHROPIC_CUSTOM_HEADERS",
+    "anthropic-beta" to "ANTHROPIC_CUSTOM_HEADERS",
 )
 
 /** The allowlisted names whose value is a COMMA-SEPARATED LIST, so repeated field lines are one
@@ -132,19 +136,23 @@ internal class ClientAuth(
      * an empty line ahead of the key pass the check and the key ride upstream.
      */
     private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
-        val forwardable = forwardedClientHeaders(call).values.flatMap { it.split(authDelimiterRe) }
-        if (forwardable.none { matchesInferenceToken(it) || matchesOperatorToken(it) }) return true
+        val carriers = forwardedClientHeaders(call).filterValues { value ->
+            value.split(authDelimiterRe).any { matchesInferenceToken(it) || matchesOperatorToken(it) }
+        }.keys
+        if (carriers.isEmpty()) return true
+        val headers = carriers.joinToString(", ")
+        val variables = carriers.map { FORWARDED_CLIENT_HEADERS.getValue(it) }.distinct().joinToString(" and ")
         deps.log(
             "[auth] refused a turn on a client-auth head that presented one of splice's own keys (the " +
-                "management key or the turn key) — " +
-                "ANTHROPIC_AUTH_TOKEN is set in the launching environment and shadowed the caller's own " +
+                "management key or the turn key) in $headers — " +
+                "$variables in the launching environment carried it and shadowed the caller's own " +
                 "credential; unset it (or launch from a clean shell) so this head can forward yours\n",
         )
         responses.respondUnauthorized(
             call,
             "splice's own keys (the management key and the turn key) are not upstream credentials — " +
-                "this head forwards your own " +
-                "Anthropic credential, so unset ANTHROPIC_AUTH_TOKEN in the environment that launched it",
+                "this head forwards your own Anthropic credential, so unset $variables in the " +
+                "environment that launched it (it put splice's key in $headers)",
         )
         return false
     }
@@ -169,7 +177,7 @@ internal class ClientAuth(
      *  upstream request. What rides is the caller's credential and the two Anthropic wire knobs it
      *  chose — exactly what Claude Code would have sent had it called the vendor directly. */
     fun forwardedClientHeaders(call: ApplicationCall): Map<String, String> =
-        FORWARDED_CLIENT_HEADERS.mapNotNull { name ->
+        FORWARDED_CLIENT_HEADERS.keys.mapNotNull { name ->
             forwardedValue(call, name)?.let { name to it }
         }.toMap()
 

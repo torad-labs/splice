@@ -48,25 +48,25 @@ internal object ResumeHook {
 
     /** [headKey] is the topology key LaunchSpecFactory passes — `[A-Za-z0-9_-]`, validated at load —
      *  and it lands inside a double-quoted URL, so it is written as is. */
-    fun script(target: ResumeHookTarget, headKey: String): String = buildString {
+    fun script(controlPort: Int, authHeaderFile: Path, headKey: String): String = buildString {
         appendLine("#!/usr/bin/env bash")
         appendLine("# NEW (splice, V4-169 / V4-183): on a session start or a `--resume` / `--continue` / /resume,")
         appendLine("# tell the daemon which session this head owns, so a later bare -c resumes this head's own")
         appendLine("# session and a resumed transcript is moved onto this head's model. Authenticates with the")
         appendLine("# daemon's 0600 turn-key header file; never blocks the session (exit 0 always).")
         appendLine("curl -sS -m $CURL_TIMEOUT_S -X POST \\")
-        appendLine("  -H ${shellSingleQuote("@${target.authHeaderFile}")} \\")
+        appendLine("  -H ${shellSingleQuote("@$authHeaderFile")} \\")
         appendLine("  -H 'Content-Type: application/json' --data-binary @- \\")
-        appendLine("  \"http://127.0.0.1:${target.controlPort}/hooks/resume/$headKey\" >/dev/null 2>&1 || true")
+        appendLine("  \"http://127.0.0.1:$controlPort/hooks/resume/$headKey\" >/dev/null 2>&1 || true")
         appendLine("exit 0")
     }
 
     private fun shellSingleQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     /** The hook additions for the materializer: two SessionStart entries on one script, matchers
-     *  "resume" and "startup". An install failure is said and the head launches without the hook —
-     *  the resume then costs the notice this hook removes, and the head's sessions go unrecorded
-     *  until the next launch, nothing more. */
+     *  "resume" and "startup". An install failure — a header file that cannot be written included —
+     *  is said and the head launches without the hook: the resume then costs the notice this hook
+     *  removes, and the head's sessions go unrecorded until the next launch, nothing more. */
     fun install(
         configDir: Path,
         target: ResumeHookTarget,
@@ -80,7 +80,10 @@ internal object ResumeHook {
                 // SAFE-RENDER-EXEMPT[2026-09-19]: an exec-bit probe on a directory we create — the failure names that directory, never file content
                 throw IOException("$configDir cannot execute a staged hook (${failure.message})")
             }
-            val script = HookScriptFiles.writeHookScript(configDir, RESUME_HOOK_SH, script(target, headKey), chmod)
+            // Written current HERE, per install: a header file removed since the last launch is back
+            // before the script naming it is, and a write that fails is this hook's logged failure.
+            val body = script(target.controlPort, target.authHeader.current(), headKey)
+            val script = HookScriptFiles.writeHookScript(configDir, RESUME_HOOK_SH, body, chmod)
             mapOf(
                 HookScriptFiles.SESSION_START to listOf(
                     HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = RESUME_SOURCE),

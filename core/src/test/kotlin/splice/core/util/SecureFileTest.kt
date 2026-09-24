@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URI
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -35,5 +37,20 @@ class SecureFileTest {
         val reason = SecureFile.ownerOnlyDirectory(procSelf)
 
         assertTrue(reason?.isNotBlank() == true, "the directory is not owner-only and the caller must be told")
+    }
+
+    // v0.4.0 review round 2: a filesystem that keeps no POSIX modes has nothing to hold, so the answer is
+    // null, as the KDoc promises. The branch that said so sat inside runCatchingCancellable's getOrElse,
+    // which never sees an UnsupportedOperationException — it passes through — so it threw instead.
+    // zipfs without enablePosixFileAttributes is such a filesystem, and ships with every JDK.
+    @Test
+    fun `a filesystem without POSIX modes answers null, never throws`(@TempDir tmp: Path) {
+        val zip = URI.create("jar:${tmp.resolve("state.zip").toUri()}")
+        FileSystems.newFileSystem(zip, mapOf("create" to "true")).use { fs ->
+            val logs = fs.getPath("/state/logs")
+
+            assertNull(SecureFile.ownerOnlyDirectory(logs))
+            assertTrue(Files.isDirectory(logs), "the directory is still made")
+        }
     }
 }

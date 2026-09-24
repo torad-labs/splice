@@ -120,7 +120,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "SseReaderTest" to Disposition("1 @ParameterizedTest expands to 6 cases (11 @Test + 6 = 17)", 17),
     // v0.4.0 review (PR #195): the resume hook is run with no ANTHROPIC_AUTH_TOKEN and with the
     // operator's own one in it, and must send the turn key from its header file either way.
-    "ResumeHookTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
+    "ResumeHookTest" to Disposition("1 @ParameterizedTest expands to 2 cases (5 @Test + 2 = 7)", 7),
 )
 
 // Modules whose test task is disabled BY CONFIGURATION, so no XML can exist. The reason is the

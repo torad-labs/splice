@@ -42,6 +42,11 @@
 # ProjectsLink.sweepLeftovers (an unlistable parent now logs), ResumeAcrossHeads (exceptionOrNull +
 # getOrDefault became one getOrElse). EXEMPT, each ignore naming where the null is consumed: the other
 # 31. Branch A also went STRUCTURAL (see its comment): one comment inside a chain had hidden a collapse.
+# WIDENED 2026-09-24 (v0.4.0 release, held to the 1.0 bar): the three dialects join. Excused as "pure
+# byte builders", but :dialects-openai-responses alone is 81 files with the stream controllers that
+# decide retries; measured with the file filter removed, all three carry ZERO findings, so this
+# closes the tree at no cost today and binds whatever they grow. Only :quality-compiler-plugin
+# (no Result path) stays outside.
 id: kt-no-silent-result-collapse
 language: kotlin
 severity: error
@@ -91,6 +96,9 @@ files:
   - integrations/providers/codex/src/main/**/*.kt
   - integrations/providers/openai/src/main/**/*.kt
   - integrations/providers/muse/src/main/**/*.kt
+  - integrations/dialects/anthropic/src/main/**/*.kt
+  - integrations/dialects/openai-chat/src/main/**/*.kt
+  - integrations/dialects/openai-responses/src/main/**/*.kt
   - integrations/claude-code/src/main/**/*.kt
   - integrations/mcp/src/main/**/*.kt
   - app/src/main/**/*.kt

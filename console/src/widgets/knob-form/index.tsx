@@ -94,7 +94,7 @@ export function KnobReadout({ knob }: { knob: KnobDisposition }) {
         <span className="myx-knob-label">{copy.label}</span>
         <code className="myx-knob-key">{knob.key}</code>
       </span>
-      {copy.locked === true ? <p className="myx-knob-summary">{copy.summary}</p> : null}
+      {copy.locked === true || copy.headOnly === true ? <p className="myx-knob-summary">{copy.summary}</p> : null}
       <span className="myx-knob-value">
         <span className="myx-knob-figure">{knob.value === null ? S.unset : String(knob.value)}</span>
         <ValueNote knobKey={knob.key} value={knob.value} />
@@ -104,7 +104,7 @@ export function KnobReadout({ knob }: { knob: KnobDisposition }) {
   );
 }
 
-export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wording }: {
+export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wording, perHead = false }: {
   disposition: KnobDisposition;
   /** Saved in this console session and not read by the running daemon yet. */
   pending: boolean;
@@ -115,6 +115,8 @@ export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wordin
   /** The words for "differs from the reference" and "go back to it", when the reference is not
    *  the daemon's default (a head's view measures against the global value). */
   wording?: Wording;
+  /** Whether saving writes one head's [heads.KEY.overrides], the only layer a head-only knob takes. */
+  perHead?: boolean;
 }) {
   const words = wording ?? DEFAULT_WORDING;
   const [draft, setDraft] = useState<string | null>(null);
@@ -124,7 +126,7 @@ export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wordin
   const dirty = draft !== null && !sameValue(parsed, disposition.value);
   const changed = !sameValue(disposition.value, disposition.defaultValue);
   const isFlag = typeof disposition.value === 'boolean' || typeof disposition.defaultValue === 'boolean';
-  if (copy.locked === true) return <KnobReadout knob={disposition} />;
+  if (copy.locked === true || (copy.headOnly === true && !perHead)) return <KnobReadout knob={disposition} />;
 
   const save = (value: ConfigValue) => {
     onSave(disposition.key, value);
@@ -195,7 +197,7 @@ export function knobMatches(key: string, query: string): boolean {
  * by the page's active view and finder; the widget groups and never hides anything on its own, so
  * what the operator sees is what the page asked for.
  */
-export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wording }: {
+export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wording, perHead = false }: {
   dispositions: readonly KnobDisposition[];
   /** Keys saved and not yet in force, for the row's holder edge. */
   pending: readonly string[];
@@ -204,6 +206,8 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wo
   /** Per knob: what saving it reaches, when that needs saying. */
   scopeNote?: (knob: KnobDisposition) => string | null;
   wording?: Wording;
+  /** Saving writes one head's overrides rather than the global PATCH (see KnobForm). */
+  perHead?: boolean;
 }) {
   const groups = GROUP_ORDER.map((group) => ({
     group,
@@ -227,6 +231,7 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wo
                 onSave={onSave}
                 scopeNote={scopeNote?.(disposition) ?? null}
                 {...(wording === undefined ? {} : { wording })}
+                perHead={perHead}
               />
             ))}
           </div>

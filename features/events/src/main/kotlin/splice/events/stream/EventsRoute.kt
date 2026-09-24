@@ -15,6 +15,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
 import io.ktor.server.response.respondBytesWriter
 import io.ktor.utils.io.writeStringUtf8
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
@@ -59,6 +60,8 @@ public class EventsRoute(private val bus: EventBus) {
     /** Frames until the subscriber closes. The timeout is not an idle timer that ends the stream —
      *  it writes a heartbeat comment and goes straight back to waiting, which is what `select`
      *  falling through to the next loop iteration gives us. */
+    // select's onTimeout is the heartbeat; kotlinx.coroutines still marks it experimental.
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun pump(channel: ReceiveChannel<ConsoleEvent>, write: SseWrite) {
         while (true) {
             val frame = select<String?> {

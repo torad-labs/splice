@@ -127,6 +127,14 @@
 # 2026-09-24 ce4ec143e installed on CI's gate of record: run 35942069747 (gate pass, headSha ce4ec143e), landed on feat/v0.4.0 by fast-forward from eefc2df63 (PR #186, the v0.4.0 security split). A launched session now holds a TURN key (HMAC-SHA256 of the mgmt key under splice:turn-access:v1, one derivation in core ScopedKey shared with McpAccessKey), never the management key; the statusline reads it from a 0600 header file and the resume hook from a process-substituted one, so no key sits in settings.json or in curl argv; the turn key opens head turns plus /statusline and /hooks/resume only (/wire and every /api route stay mgmt-only); both loopback listeners refuse a non-loopback Host (DNS rebinding) before routing; the state and logs dirs are held 0700. Jar sha256 b0548b22fa316f8f691ee6093523b7ff921bab3d419e2224dcc7bd81b735c8a1, built in a clean detached worktree at ce4ec143e (git status empty); open fd /proc/552128/fd/4 hashes the same; 10/10 heads ready. Backup ~/.local/share/splice/splice.jar.bak-2026-09-23-pre-ce4ec143. Live 19/19: a fresh launch plants a key that is not the mgmt key, the statusLine carries no key, the header file is 0600, the turn key is 401 on /api/status and /api/topology and 200 on /statusline, a foreign Host is 403 on the control plane and on a head, state and logs dirs 0700. ROTATION: the leaked key was already retired at 16:07 (moved to mgmt-key.leaked-2026-09-23, fresh key minted on restart); the retired key is in 8 transcripts and is now 401; the current key is in 0 transcripts (rg -f, proven on the 2 settings.json that still carry it inline). Residual, local only: 12 processes launched 16:07-20:36 hold the current key in ANTHROPIC_AUTH_TOKEN and 2 per-head settings.json carry it until their head next launches. BUILD TRAP (CLAUDE.md step 1 is being corrected by models): a git archive export placed inside the repo builds the PARENT checkout through tools/gate slot, because findRepoRoot walks up to the first .git; a detached worktree is clean and slot-compatible.
 # 2026-09-24 CLOSED the PENDING perf-archive check from the 679f1954 note, proven on the INSTALLED jar instead of waiting for claudex's roll. The live jar (sha256 6e56a575..., the open fd of splice pid 3621046) ran in a sandbox that shared nothing with the live daemon: env -i, its own HOME/user.home, CLAUDEX_STATE_DIR, config and ports, and a head on a dead upstream. probe-perf.jsonl was seeded with synthetic rows 60 bytes under JsonlSink's 64 MiB cap, next to a marked .1. One turn failed (HTTP 529) and still wrote its 270-byte perf row (TurnTelemetry.recordPerf, which every turn ending reaches). That rolled the 64 MiB generation to .1, and the marked old .1 was ARCHIVED to perf-archive/probe-perf.jsonl-20260924T045048Z (perfArchiveRetentionDays defaults to 90; the live splice.toml does not override it). Shown able to fail: the same seed and turn on the pre-feature jar (ae9db026..., splice.jar.bak-20260923-pre-53f9f06c0) DISCARDED the marked generation, leaving perf-archive empty. The live claudex files were untouched: claudex-perf.jsonl 66075401 B, .1 67108634 B. That .1 archives on claudex's next roll by the same code path.
 # 2026-09-24 2026-09-24 v0.4.0 review fixes (PR #195): feature-dev code-reviewer + pr-review-toolkit silent-failure-hunter over the key split at a0e2187e6; 8 findings verified against the code and fixed red-first, each test proven to fail with its fix mutated back out. Landed 3410a6ed4 by fast-forward on CI gate run 35961896318 (success on that exact sha). Installed: jar 1fae1125..0cd444c1a built in a detached worktree of 3410a6ed4, pid 502226, open-fd sha equals built sha, backup ~/.local/share/splice/splice.jar.bak-2026-09-24-pre-3410a6ed4. Live: 17/17 review checks (state root 0700, resume hook from the header file with no session env, Host refusals logged on control + client-auth head, blank-line smuggle refused by splice on claude-splice) and 19/19 key-split checks.
+# 2026-09-24 2026-09-24 INSTALLED ac559ca97 (PR #198, v0.4.0 review round 2: CR-1 served rows kept on resume, CR-2 shim-7 runs the CLI with -Djdk.console=java.base, SF-2..SF-8) on CI's gate of record: run 36019955734, gate pass, headSha ac559ca97; landed on feat/v0.4.0 by fast-forward from 7305d3a67. Jar built in a clean detached worktree at ac559ca97 (git status empty): sha256 87848c330e76216f35683f09c9e29dee0eba0be18bd371b52237a56b9a48be3f; unit pid 3630149, its open splice.jar fd hashes the same. Shim refreshed to shim-7 (atomic cp+mv). Backups ~/.local/share/splice/splice.jar.bak-2026-09-24-pre-ac559ca97 and splice-launch.bak-2026-09-24-pre-ac559ca97. Live 52/52: verify_live 19/19 (turn key planted, never the mgmt key; header file 0600; Host guard on control and head; state and logs 0700; 0 processes hold the mgmt key in ANTHROPIC_AUTH_TOKEN), verify_review 17/17, verify_round2 16/16 (doctor shows shim-7 current; a resume keeps a served row byte-identical and moves only a foreign one; x-api-key carrying the turn key is a 401 naming x-api-key and ANTHROPIC_API_KEY, and the log line names it).
+# 2026-09-24 2026-09-24 OPERATOR RULING on the version: v0.4.0 ships as 0.4.0 (asked, answered '0.4.0 now, 1.0 later'), and is held to the 1.0 bar ('LEt's do 0.4.0 but let's look at it as if it was 1.0.0'): a user-facing compatibility statement, an upgrade rehearsal from 0.3.2 with a receipt per published claim, zero compiler and lint warnings, walls closed over every shipped module, complete release text, and promotion readiness. The release milestone rows V4-192..V4-204 are that bar, split between splice-lead, claude-builder (V4-196, V4-197, V4-198a, V4-199) and the console seat (V4-201, V4-202).
+# 2026-09-24 INSTALLED a73563410 (PR #200, V4-197: TESTED_CLAUDE_CODE 2.1.281 with the docker e2e Dockerfile; the fresh e2e's `splice status` step reads the wordmark line, red since c6ee5eaec) on CI's gate of record: run 36021215087, gate pass, headSha a73563410; landed on feat/v0.4.0 by fast-forward. Jar built in a clean detached worktree at a73563410: sha256 fa98588a90b0c3edec9f46ce8d0478427b2106aaad2e7704bb46de4370c2a1ad; backup ~/.local/share/splice/splice.jar.bak-2026-09-24-pre-a73563410; splice.service restarted, pid 175369, sha256 of /proc/175369/fd/5 equals the built jar. /health ok, 10/10 heads, no clientVersionWarning under Claude Code 2.1.281. Fresh docker e2e 31/31 on that jar, receipt docker-20260924T155604Z, claudeCodeVersion = testedClaudeCodeVersion = 2.1.281.
+# 2026-09-24 V4-196 RECEIPTS (claude-builder, PR #204): tools/e2e/docker/upgrade.sh, driven by run.sh --upgrade-from vX.Y.Z, installs the published release with its own install.sh, runs a turn under it, pipes the candidate's install.sh into bash as the one-liner does (release base file://), and asserts every CHANGELOG upgrade claim as its own receipt step; inside.sh and upgrade.sh share tools/e2e/docker/lib.sh and lib.ts (no python: run.sh left the python burndown). v0.3.2 -> the 0.4.0 candidate (scratch 3eedff1d5 = bump 6543a28b6 over a73563410): UPGRADE E2E PASS 30/30, receipt upgrade-v0.3.2-20260924T155657Z; v0.3.1 -> the checkout's 0.3.2: 30/30, upgrade-v0.3.1-20260924T160138Z; both at Claude Code 2.1.281 = the pin. RED FIRST: nine mutations, one per claim check (M1 installer, M2 daemon left alone, M3 config bytes, M4 handover, M5 state-root key, M6 0.3.x session replay, M7 transcript, M8 rotation, M9 header 0600) turned exactly those nine steps red, 21/30. Claims, in the row's order: (1) the one-liner installs the candidate, checksums verified, wrappers linked PASS; (2) install.sh leaves the running daemon alone and the next launch replaces it (shim: 'replacing stale daemon 0.3.2 with 0.4.0', old pid gone, /health 0.4.0, the /proc fd jar = the candidate) PASS; (3) splice.toml and keys.toml byte-identical, the state root stays at ~/.claude-codex/state with the same mgmt key PASS (its mode tightens 0755 -> 0700; that wording is in #207); (4) a session launched under 0.3.2 keeps working with its env PASS; (5) after relaunch the session holds only the turn key, none in settings.json or the status line, <state>/turn-auth-header 0600 PASS; (6) rotation: `splice restart` alone refuses with the key deleted (it needs the key to stop the daemon, RestartCommand.stopKeyOrExplain), so the claim was corrected to the order that works (rm mgmt-key, stop the daemon, splice restart) and PASSES on that order: a fresh 0600 key, the old key refused, the next launch rewrites the header file and a turn runs; (7) releases/current -> 0.4.0 and releases/previous -> 0.3.2, whose jar is byte-identical to the one that ran PASS. Beyond the seven: the pre-upgrade transcript is byte-identical where the head reads it, and resumes on the candidate, appending after its bytes PASS. Not provable in docker, host-only: unit-first handover (no systemd user manager; the shim printed 'no splice.service on this machine'), and the literal GitHub download URL and attestation (offline, file:// base). Gate fix on the PR: StateDirAgreementTest's by-path pin follows resolve_state_dir into lib.sh (47742a8fa).
+# 2026-09-24 V4-199 RECEIPTS (claude-builder, PR #205): .github/workflows/e2e-docker.yml runs the fresh-machine docker e2e, then the V4-196 upgrade rehearsal from the newest published release that is not the candidate's own version, and uploads the receipts; it triggers on every PR into main and on feat/** pushes that touch the shim, install.sh, anything compiled into the jar, or the harness (actionlint and zizmor clean). On a NEW branch GitHub's path filter diffs only the head commit against its parent, so the job cannot fire on the PR head into feat; it fires when the fast-forward of feat/v0.4.0 diffs old tip..new tip. Proven on two scratch refs, deleted after: feat/e2e-proof-red (#205's head plus one planted failing step in inside.sh) run 36027729752 FAILURE, the planted step the only red (FRESH-MACHINE E2E FAIL 31/32; the upgrade step still ran, 30/30, under !cancelled()); feat/e2e-proof-clean (tree 2e0ce360f, identical to #205's head 3baa21d78) run 36027811748 SUCCESS, fresh 31/31 and upgrade v0.3.1 -> 0.3.2 30/30, Claude Code 2.1.281 = the pin, on GitHub's runner.
+# 2026-09-24 REATTESTED at f935ed81c (splice-lead): fc3e95a6e and f935ed81c appended three header lines by hand instead of through add-note (the a73563410 install, the V4-196 receipts, the V4-199 receipts), so the proof still named 68d32a28c's bytes and campaignCliSelftest failed on #214 (run 36028602276: ledger provenance mismatch). git diff 68d32a28c f935ed81c -- this file read: exactly those three comment lines, no row or law touched. The proof now binds 6b547b760b27; header receipts go through add-note from here on.
+# 2026-09-24 2026-09-24 installed 6922a29a3 (PR #202 fix/console-scale, fast-forwarded onto feat/v0.4.0 from 0a305b25d) on CI's gate of record: gate job run 36028042442 pass on head 6922a29a3. Built in a clean detached worktree; open-fd sha256 732d3904ae8d77e32142b072d2adf414807fecffa5d3826a8c97792ebea97362 equals the built jar; pid 3133973; backup ~/.local/share/splice/splice.jar.bak-2026-09-24-pre-6922a29a3.
+# 2026-09-24 REATTESTED on train/v040-1 (splice-lead): #214 and #216 each appended header notes through the CLI at the same place, and each proof named its own branch's bytes, so the merge conflicted on both files. The resolution keeps every line (#214's four, then #216's install note), and git diff origin/feat/v0.4.0 -- this file read exactly those five added lines, no row or law touched. The proof now binds the merged bytes.
 [campaign]
 id = "v0.4.0"
 title = "splice 0.4.0 — everything but the console: setup, drift warning, perf/sessions data, upgrade, doctor --json, compaction instructions, shared MCP hosting, local models, account pools, code-mode graduation"
@@ -6079,3 +6087,115 @@ verify = "bun tools/gate run && bun tools/release verify"
 # [2026-09-21] GATE OF RECORD + INSTALL at 6ace73ac (splice-astra), covering the 13 commits since d30797e1. Ladder green: GATE: PASS, gradle tier BUILD SUCCESSFUL in 11m29s over 384 tasks, campaign walls 0 blocking, oracle selftest green with its tampered-fixture and missing-jar red arms firing, post-slot release verify green through install.sh, the launch shim and the tag gate. First run in which :releaseTests executed, so tools/release's 57 arms are gate-covered rather than beside the gate. jar sha256 c89887f8a1adfe764c3374c96d80f97fdb669234f8a1307913bccd87b7c7b3fd, daemon pid 1089032 active/running, backup /home/marcos/.local/share/splice/splice.jar.bak-20260921-pre-6ace73ac. Verified against the OPEN fd /proc/1089032/fd/4: built jar, installed path and open fd hash identically. The step-6 probe now retries with a bound, because systemctl restart returns before the JVM has opened the jar and a single probe reports MISMATCH on a good install.
 # [2026-09-24] RECEIPT cmd="bun tools/gate run (CI gate job, run 35947287979, on 7fe90ad0c; the ladder carries the release rehearsal)" exit=0 tests=3886 touched=app/src/main/dist/bin/splice-launch,tools/release/index.ts,tools/gate/config/ladder.json tail="GATE: PASS; BUILD SUCCESSFUL in 18m 32s; tests = @Test methods in the landed tree"
 # [2026-09-24] CLOSED on the landed tree. The row's work (the checkers as :quality-architecture laws, the Node launch shim, tools/release replacing checks/oss and checks/release, the example config in app/src/main/resources) merged through #173 and #174. The checks/ root is gone, and the capability census records its last relocations. Its verify line (bun tools/gate run, which includes the release rehearsal) passed as CI's gate job on 7fe90ad0c, run 35947287979, the sha feat/v0.4.0 fast-forwarded to for LAYOUT-01. Earlier gates of record: d30797e1 and 6ace73ac (splice-astra), 6ec983e2.
+
+[[items]]
+id = "V4-192"
+phase = "release"
+title = "WARNINGS ARE ERRORS (0.4.0 held to the 1.0 bar): every main compileKotlin sets allWarningsAsErrors (build-logic splice.kotlin-common), and RETURN_VALUE_NOT_USED is an error in tests too; the five shipped warnings fixed at their cause (ConsistentCopyVisibility on InflightGate.Acquired, OptIn on EventsRoute/McpRoutes pump and TurnStreamer.driveDetachable, the decorative UNCHECKED_CAST suppress in splice.gate-ladder removed). fix/v040-release-polish 456d45ab1. Proof: a planted deprecated Thread.currentThread().id fails with 'warnings found and -Werror specified'."
+files = ["build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts"]
+status = "done"
+verify = "33 main compile tasks green; the planted deprecation fails compile"
+
+[[items]]
+id = "V4-193"
+phase = "release"
+title = "SILENT-COLLAPSE WALL COVERS THE DIALECTS: kt-no-silent-result-collapse globs integrations/dialects/{anthropic,openai-chat,openai-responses}/src/main; the rule-coverage exclusion narrows to quality-compiler-plugin only. fix/v040-release-polish 515c4ec57. Proof: rules --prove-coverage green, a planted collapse in a dialect fires."
+files = ["quality/rules/kotlin/kt-no-silent-result-collapse.yml", "tools/gate/config/rule-coverage-exclusions.toml"]
+status = "done"
+verify = "bun tools/gate rules --prove-coverage; planted collapse fires"
+
+[[items]]
+id = "V4-194"
+phase = "release"
+title = "POLISH: splice usage names add-model (539c3eba9); ActivityDays reads a rotated day's .1 generation first so a day past DAY_MAX_BYTES comes back whole (fbc8c3011, ActivityDaysRolledTest red first). Both new in 0.4.0, so neither needs its own CHANGELOG fix line; add-model gets an Added entry in V4-198."
+files = ["app/src/main/kotlin/splice/app/cli/Cli.kt", "core/src/main/kotlin/splice/core/storage/ActivityDays.kt"]
+status = "done"
+verify = "ActivityDaysRolledTest 2/2, red on the old read"
+
+[[items]]
+id = "V4-195"
+phase = "release"
+title = "COMPATIBILITY STATEMENT, user-facing: what 0.4.x keeps stable (splice.toml keys, CLI verbs and flags, wrapper command names, state and credential locations, the /v1 surface heads serve, doctor --json schema_version 1, /api/* fields the console reads, additive only) and what is not (log wording, console layout, internal state file formats, the Kotlin module API); the tested Claude Code version and what the drift warning means; .github/SECURITY.md supported versions (the latest release, not main) and the threat model (single-user; the boundary is the operator's Unix account)."
+files = ["README.md", ".github/SECURITY.md"]
+status = "in_flight"
+verify = "each stable item names the test that pins it (CONTRIBUTING.md's list: frozen /v1 oracle, WebuiContractTest, StatePaths header, the TOML keys)"
+
+[[items]]
+id = "V4-196"
+phase = "release"
+title = "UPGRADE REHEARSAL 0.3.2 -> candidate (claude-builder): tools/e2e/docker/upgrade.sh runs the candidate's install.sh one-liner over a live 0.3.2 install and asserts the seven CHANGELOG upgrade claims, one receipt step each (one-liner, stale-daemon handover on next launch, config/credentials/state root untouched, a 0.3.x session keeps working until relaunched, relaunch holds only the turn key, rotation by rm mgmt-key + splice restart, releases/previous -> 0.3.2). Unit-first handover is host-only (no systemd user manager in docker)."
+files = ["tools/e2e/docker/upgrade.sh"]
+status = "in_flight"
+verify = "every claim PASS on the bump+pin candidate; a claim that fails corrects the CHANGELOG text, never the check"
+
+[[items]]
+id = "V4-197"
+phase = "release"
+title = "CLAUDE CODE PIN 2.1.281 (claude-builder, PR #200): TESTED_CLAUDE_CODE 2.1.257 -> 2.1.281 (npm latest and next) with the docker e2e Dockerfile; inside.sh's splice status step reads the wordmark line (red since c6ee5eaec 2026-09-22). Fresh docker e2e 31/31, receipt claudeCodeVersion = testedClaudeCodeVersion = 2.1.281."
+files = ["core/src/main/kotlin/splice/core/Versions.kt", "tools/e2e/docker/Dockerfile", "tools/e2e/docker/inside.sh"]
+status = "done"
+verify = "docker e2e PASS 31/31; CI gate on the PR head"
+
+[[items]]
+id = "V4-198"
+phase = "release"
+title = "RELEASE TEXT: CHANGELOG cut as splice v0.4.0 (Highlights, Upgrading from 0.3.x, Security, Known limitations; the duplicate Changed merged; V4-169's entry corrected for CR-1 and the header-file bearer; add-model entry); README banner, pin example and upgrade-from-0.3.x line; the GitHub release body is that CHANGELOG section (release.yml body_path, prepended to the generated notes) and promotion-check fails a promotion whose version has no CHANGELOG section. The date in the header is set to promotion day at promotion."
+files = ["CHANGELOG.md", "README.md", ".github/workflows/release.yml", ".github/workflows/promotion-check.yml"]
+status = "in_flight"
+verify = "bun test tools/release; the section check fails on a version with no section"
+
+[[items]]
+id = "V4-198a"
+phase = "release"
+title = "VERSION BUMP 0.4.0 (claude-builder, PR #201): Versions.kt GATEWAY_VERSION, splice-launch SPLICE_GATEWAY_VERSION and package.json version move together, as promotion-check requires; without it a 0.4.0 candidate cannot replace a running 0.3.2 daemon (replaceStaleDaemon returns on version equality) and install.sh records no rollback previous."
+files = ["core/src/main/kotlin/splice/core/Versions.kt", "app/src/main/dist/bin/splice-launch", "package.json"]
+status = "done"
+verify = "bun test tools/release 58/58; CI gate on the PR head"
+
+[[items]]
+id = "V4-199"
+phase = "release"
+title = "E2E IN CI (claude-builder): the fresh-machine docker e2e and the V4-196 upgrade rehearsal run as CI jobs on the release line, so a red e2e (it was red 09-22 to 09-24 with nobody seeing it) fails a gate instead of waiting for a local run."
+files = [".github/workflows/"]
+status = "todo"
+verify = "the job runs on a PR head and goes red on a planted inside.sh failure"
+
+[[items]]
+id = "V4-200"
+phase = "release"
+title = "MILESTONE REVIEWS FOR THE 88 DONE ROWS: each milestone with done rows gets its one review on the landed sha (manifest review <P>), then verify-phase with the evidence; a rubber stamp is not a review, and a finding is a fix row of <P>-review."
+files = []
+status = "todo"
+verify = "ledger list shows 0 done rows in any delivered milestone"
+
+[[items]]
+id = "V4-201"
+phase = "release"
+title = "CONSOLE KEY IN THE PAGE WITHDRAWN (found by splice-lead on PR #199 296132a43, console seat reworking): ServedConsole printed mgmtKey.get() into the unguarded / and /dashboard, so any local process (another account over loopback, or a session's model running curl into its transcript) read the management key; ControlGuard checks only the Host header, which curl passes. Replacement, agreed with console: pages serve no key; splice dashboard writes a 0600 redirect file (SecureFile.writeAtomic0600) carrying #k=<key> and opens that file path (Jupyter's use_redirect_file pattern), the console reads and clears the fragment and stores the key."
+files = ["app/src/main/kotlin/splice/app/control/mount/ServedConsole.kt", "app/src/main/kotlin/splice/app/cli/status/DashboardCommand.kt"]
+status = "in_flight"
+verify = "curl http://127.0.0.1:3096/ and /dashboard carry no key (live); the redirect file is 0600; no argv holds the key"
+
+[[items]]
+id = "V4-202"
+phase = "release"
+title = "ESLINT-PLUGIN-BOUNDARIES v7 DEPRECATIONS in console/eslint.config.mjs (console seat): the mode option, element-types -> dependencies, no-unknown -> no-unknown-dependencies. Zero lint warnings is part of the 1.0 bar."
+files = ["console/eslint.config.mjs"]
+status = "todo"
+verify = "console lint prints no deprecation; a planted cross-layer import still fails"
+
+[[items]]
+id = "V4-203"
+phase = "release"
+title = "GRADLE 10 DEPRECATIONS: every :app:shadowJar build prints 'Deprecated Gradle features were used in this build, making it incompatible with Gradle 10' (seen on the ac559ca97 install build). Name each with --warning-mode all and fix at the cause, or record which plugin owns it."
+files = ["build-logic/"]
+status = "todo"
+verify = "--warning-mode fail on the gate's gradle tier"
+
+[[items]]
+id = "V4-204"
+phase = "release"
+title = "PROMOTION READINESS: merge main's four commits (two .gitleaksignore fingerprints, two Actions bumps) into feat/v0.4.0 as a merge with its own gate; resolve PR #157's conflicts and retitle it (the 'everything but the console' title is stale); then the main -> prod promotion PR per CONTRIBUTING's release section."
+files = []
+status = "todo"
+verify = "#157 MERGEABLE with gate pass on its head; promotion-check green"

@@ -43,12 +43,8 @@ const EDITABLE_KNOBS = [
   // console does with it. Both are ordinary PATCH-able knobs; their restart-required flag reaches
   // the page from `restart_required_keys`, never from here.
   'ACTIVITY_RETENTION_DAYS', 'ACTIVITY_STORE_HEADS',
-  // V4-173: the per-head upstream wire tap (0 = off). An ordinary restart-required knob a head
-  // reads at assembly; the console edits it like any other, and `splice doctor` warns while it is on.
-  'WIRE_TAP',
-  // V4-174: the per-head full request/response trace (off), its retention and body cap. Ordinary
-  // restart-required knobs a head reads at assembly; `splice doctor` warns while the trace is on.
-  'TRACE', 'TRACE_RETENTION_DAYS', 'TRACE_MAX_BODY_CHARS',
+  // V4-174: the trace's retention and body cap. Ordinary restart-required knobs; they turn nothing on.
+  'TRACE_RETENTION_DAYS', 'TRACE_MAX_BODY_CHARS',
   // V4-133 (console daemon table stakes): the budget default action fills a bare PUT /api/budgets
   // row and takes effect on the next PUT (no restart); the perf-archive retention days is ordinary
   // restart-required, read only once a head names an archiveDir. Both PATCH-able like any knob.
@@ -120,6 +116,11 @@ export const dispositions: readonly Disposition[] = [
   ...entries('knob', 'editable', EDITABLE_KNOBS),
   ...entries('knob', 'editable', MCP_KNOBS),
   ...entries('knob', 'editable', LEGACY_KNOBS),
+  // v0.4.0 prompt-review: the wire tap (V4-173) and the trace (V4-174) keep a head's whole
+  // conversations, so the daemon takes them from [heads.KEY.overrides] alone (Knob.headOnly) and
+  // refuses them in PATCH. A head's view writes exactly that table, so they are editable there and
+  // read-only in the global view (KnobCopy.headOnly).
+  ...entries('knob', 'read-only', ['WIRE_TAP', 'TRACE'], 'per head only, in [heads.KEY.overrides]'),
 
   ...entries('topology', 'editable', EDITABLE_TOPOLOGY),
   ...entries('topology', 'read-only', DIALECT_VALUES, 'a dialect value, chosen per provider'),

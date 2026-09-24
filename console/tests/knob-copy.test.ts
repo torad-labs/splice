@@ -126,6 +126,20 @@ describe('the knob row', () => {
     expect(html).not.toContain('<input');
   });
 
+  test('a head-only knob prints read-only in the global view and edits in a head\'s view', () => {
+    // The daemon refuses the wire tap and the trace in PATCH (Knob.headOnly, ConfigService.patch):
+    // a global control would be a save that always fails. A head's view writes [heads.KEY.overrides].
+    for (const key of ['wireTap', 'trace']) {
+      const disposition = knob({ key, value: key === 'trace' ? false : 0, defaultValue: key === 'trace' ? false : 0 });
+      const global = render(h(KnobForm, { disposition, pending: false, onSave: () => undefined }));
+      expect(global, key).not.toContain('<input');
+      expect(global, key).not.toContain('role="switch"');
+      expect(global, key).toContain('per head');
+      const perHead = render(h(KnobForm, { disposition, pending: false, onSave: () => undefined, perHead: true }));
+      expect(perHead, key).toMatch(/<input|role="switch"/);
+    }
+  });
+
   test('a value off its default says so and offers the way back', () => {
     const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 40, defaultValue: 12 }), pending: false, onSave: () => undefined }));
     expect(html).toContain('>changed<');

@@ -24,6 +24,7 @@ import splice.client.mcp.RepoMcpJsonReader
 import splice.control.mcp.GlobalMcpServers
 import splice.core.topology.DaemonConfig
 import splice.core.util.LogSink
+import splice.launch.LaunchSpec
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -88,11 +89,14 @@ internal class McpGlobalRead(
  *  and [global] the caller already constructed for the real hosting pipeline — the census asks
  *  McpSharing for the canonical home's actual plan rather than re-deriving eligibility, so it can
  *  never disagree with what the pipeline did; the four other readers only WIDEN what else is
- *  visible around that one rewritten file (this file's header). */
+ *  visible around that one rewritten file (this file's header). [heads] are the topology's launch
+ *  specs: a head whose policy shares mcps is a home the materializer writes, so the servers in it are
+ *  this daemon's copies and take the canonical plan's answer (v0.4.0 mcp review). */
 internal class McpInventoryWiring(
     home: Path,
     sharing: McpSharing,
     global: GlobalMcpServers,
+    heads: Collection<LaunchSpec>,
 ) {
     val inventory: McpInventory = McpInventory(
         readers = mapOf(
@@ -104,5 +108,6 @@ internal class McpInventoryWiring(
         ),
         canonicalGlobalFile = home.resolve(".claude.json"),
         canonicalPlan = McpGlobalPlan { sharing.plan(global()) },
+        materializedHomes = heads.filter { it.policy.sharesMcp() }.map { it.trees.own }.toSet(),
     )
 }

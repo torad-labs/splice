@@ -24,7 +24,10 @@
   align-items: flex-end;
   gap: var(--space-3) var(--space-4);
 }
-.myx-compose-lines { flex: 1 1 32ch; }
+/* The multi-line fields take a line of their own: at 32ch the features box fit beside name, repo
+   and goal at 1440 and, twice their height, pushed the three labels off the one baseline they
+   share. */
+.myx-compose-lines { flex: 1 1 100%; }
 .myx-compose-lines .myx-input-box { width: 100%; resize: vertical; font-family: var(--font-label); }
 .myx-compose-slots {
   display: flex;
@@ -59,7 +62,8 @@
   color: var(--strip-ink);
 }
 .myx-compose-problems-label { color: var(--strip-ink-mute); font-size: var(--text-1); }
-.myx-compose-problems ul { margin: 0; padding-inline-start: var(--space-4); }
+/* the reasons are printed lines on the paper, not a browser bullet list */
+.myx-compose-problems ul { margin: 0; padding: 0; list-style: none; }
 /* THE FLAG'S WORD TAKES THE PAPER'S INK HERE. A Flag is a key on --strip paper, and its holder
    edge's label inherits ui.css:196 (`.myx-edge-label { color: var(--ink) }`), the ROOM's light
    ink, so the printed state was near-invisible on the key in this form's capture. shared/controls

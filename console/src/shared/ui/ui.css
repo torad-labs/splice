@@ -28,10 +28,13 @@
   background: var(--strip);
   color: var(--strip-ink);
   cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
 }
 .myx-btn:hover { border-color: var(--hairline-strong); color: var(--strip-ink); }
-.myx-btn:active { transform: translateY(var(--hair)); }
+.myx-btn:active { transform: scale(0.97); }
 .myx-btn:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
 /* A primary key is the SAME printed key with the room's bright ink: the world has no second
    accent, and the vermilion this used to reach for is the one pigment the world forbids by name. */
@@ -88,6 +91,26 @@
 
 /* The error, skeleton, stale and meter rules left with ErrorNote, SkeletonRows, Stale and
    MeterBar (M3-04); no other file wrote any of their classes. */
+
+/* THE PAGE HEAD, one for every address (2026-09-23, console design pass). Twelve pages each wrote
+   their own: two title sizes and two weights, three alignments, four titles that kept the browser's
+   h1 margin and three pages that padded themselves inside the shell's own padding, so the title
+   jumped 30px down and 25px right between addresses. A page's head is its title and its view tabs,
+   on one baseline, at one place. */
+.myx-page-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.myx-page-title {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink-strong);
+}
 
 /* ============================================================
    THE STRIP BAY (v0.4.0). Strips on a rack: opaque paper, black ink, a
@@ -245,21 +268,26 @@
    overlapping" and the reason the racks stagger). It used to be a bare flex item, so the column
    was as wide as the label's text - and the label is data. Measured down one bay before this
    rule: first field at 397, 394, 407, 394, 407, 401, 401, 394 px, four origins in one rack.
-   The column is now the mark plus a fixed 6ch budget for the label; where the label is longer it
+   The column is now the mark plus a fixed 8ch budget for the label; where the label is longer it
    clips, and the field origin is identical on every strip in the bay. The budget is the m1
    review's state vocabulary (ok / warn / stale / struck, all of which fit) plus a little; the
    pages that pass a datum here are printing the word twice (B10) and the contract needs this ch
    count, not its word count. `flex: 0 0 auto` is half the fix: the column must not grow, and it
    must not shrink when the strip is wide. */
 .myx-strip > .myx-edge {
-  position: relative;
+  /* static, so the mark below positions against the strip itself and the edge box is free to sit
+     its word on the value row rather than centred on the whole strip (2026-09-23, console design
+     pass: the word floated between a strip's label row and its value row on every page). */
+  position: static;
   align-self: stretch;
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  /* The mark is absolute at the strip's edge; the label starts at the mark's own edge, which is
-     the measure the approved board had already hand-tuned in widgets/team-board. */
-  padding-inline-start: var(--space-4);
+  align-items: flex-end;
+  padding-block-end: calc(var(--sfield-pad-end, var(--space-4)) + var(--space-1));
+  padding-inline-end: var(--space-2);
+  /* The mark is absolute at the strip's edge; the word stands a --space-2 clear of it (it touched
+     the mark on every strip). */
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
 }
 /* THE MARK IS THE STRIP'S FULL HEIGHT, in every state (measured: the green mark spans rows
    208..270 of a strip at 208..269; the grey marks of the two strips below it span their strips the
@@ -275,7 +303,11 @@
 .myx-strip > .myx-edge .myx-edge-label {
   color: var(--strip-ink);
   /* The fixed budget the column is built on (B1). It clips rather than pushing the fields. */
-  width: 6ch;
+  /* 8ch holds every state word the pages print (unknown, signed in, pinned, hosted) whole: at 6ch
+     `unknown` printed as `unkn...` on accounts and doctor, and `signed in` broke onto two lines. */
+  width: 8ch;
+  line-height: 1.5;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -308,7 +340,7 @@
      below it). --space-2 --space-3 --space-4 is that shape: 4 + a 16.8 label line + the divider
      = 21.8 above, and 4 + a 24px value line + 12 = 40 below. */
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--sfield-pad-end, var(--space-4));
   background: var(--strip-field);
   border-inline-end: var(--hair) solid var(--strip-field-line);
   min-width: 0;
@@ -573,8 +605,10 @@
   /* A discrete plate, centered over the rack: the comp's measures 184px in a 430px bay, cut to
      its content. It grows on its own when a bay carries column labels (B9) or actions. */
   width: max-content;
-  margin-inline: auto;
-  padding: var(--space-2) var(--space-3);
+  margin: var(--space-3) auto 0;
+  /* the pins stand in their own margin at each end, clear of the word: they sat on its first
+     letter at 4.5px and read as selection handles (2026-09-23, console design pass) */
+  padding: var(--space-1) var(--space-6);
   /* E-1 and E-5 on the plate (M1-24). The plate is paper, so it takes the paper's own
      three-part edge -- measured across its left edge at comp y=155: 1px outline at L 0-5,
      1px shade at L 103-121, 1px lip at L 200-224, then the face at L 180-186. It is the
@@ -596,10 +630,10 @@
      room -- the log tail head's defect on the plate it was one fix away from. */
   color: var(--strip-ink);
   background-image:
-    radial-gradient(circle at 6px 6px, var(--strip-ink) 0 4.5px, transparent 4.5px),
-    radial-gradient(circle at calc(100% - 6px) 6px, var(--strip-ink) 0 4.5px, transparent 4.5px),
-    radial-gradient(circle at 6px calc(100% - 6px), var(--strip-ink) 0 4.5px, transparent 4.5px),
-    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), var(--strip-ink) 0 4.5px, transparent 4.5px);
+    radial-gradient(circle at 8px 30%, var(--strip-ink) 0 2.5px, transparent 3px),
+    radial-gradient(circle at calc(100% - 8px) 30%, var(--strip-ink) 0 2.5px, transparent 3px),
+    radial-gradient(circle at 8px 70%, var(--strip-ink) 0 2.5px, transparent 3px),
+    radial-gradient(circle at calc(100% - 8px) 70%, var(--strip-ink) 0 2.5px, transparent 3px);
   border: var(--hair) solid color-mix(in srgb, var(--plate) 76%, white);
   box-shadow:
     0 0 0 var(--hair) var(--plate-line),
@@ -642,8 +676,8 @@
   margin-inline-start: auto;
 }
 /* The rack's column names, printed once (B9). It starts where the cells start - past the edge
-   column, whose width is the mark plus the label's 6ch budget - and the font on this row is the
-   LABEL face at --text-1 on purpose, so that 6ch resolves to the same width the edge column
+   column, whose width is the mark plus the label's 8ch budget - and the font on this row is the
+   LABEL face at --text-1 on purpose, so that 8ch resolves to the same width the edge column
    budgets. The children are the page's own boxes, at the same ch widths as the cells. */
 .myx-bay-fields {
   display: flex;
@@ -651,7 +685,8 @@
   /* clipped to the bay and scrolled with the rack by Bay (M3-03): the names live outside the rows'
      scroller, so without this a rack wider than its bay printed them past the bay's edge */
   overflow: hidden;
-  padding-inline-start: calc(var(--space-4) + 6ch);
+  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2));
+  padding-block-start: var(--space-3);
   font-family: var(--font-label);
   font-size: var(--text-1);
   color: var(--ink-mute);
@@ -663,13 +698,33 @@
      has is --space-7 at 32. Above the first strip the comp measures 37px from the plate's bottom
      edge to the strip's top, of which the plate's own padding is 4; inline the strips start flush
      at the rail, which is what the comp's strip x 163 against the rail's edge at 163 says. */
-  gap: var(--space-7);
-  padding: var(--space-7) 0 var(--space-3);
+  /* 2026-09-23, console design pass: a 32px gap between every strip and 32px above the first put
+     a ten-head fleet on two screens and made every rack read as a column of separate cards. A
+     record rack (strips of different shapes, each carrying its own labels) keeps a visible floor
+     between slips; a compact rack (below) packs them the way the comp's activity bay does. */
+  gap: var(--space-5);
+  padding: var(--space-4) 0 var(--space-4);
   /* The rack scrolls (m1 review B7): the brief's own words are "strips keep fixed field widths in
      ch units and scroll inside their bay", and five page sheets carry a copy-pasted attempt at
      this rule. A strip is now width: max-content, so this is the box that has to move. */
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+/* THE COMPACT RACK: the comp's activity bay. A rack of homogeneous rows prints its column names on
+   the FIRST slip only and packs the rest a floor's breadth apart, so N heads read as N lines of one
+   instrument instead of N cards each repeating the same nine labels. Bay sets it when a page asks
+   for `compact` or passes `fields` (names printed once above the rows). */
+.myx-bay-compact .myx-bay-rows { gap: var(--space-2); }
+/* a compact rack is one table, so its slips run the bay's width; a rack wider than its bay still
+   scrolls, because this is a floor and not a width */
+.myx-bay-compact .myx-bay-rows > .myx-strip { min-width: 100%; }
+/* "after the first strip", not "after the first child": a rack may lead with a fault line (turns
+   names a head it could not read above its rows), and the first STRIP still carries the names. */
+.myx-bay-compact .myx-bay-rows > .myx-strip ~ .myx-strip .myx-sfield-label { display: none; }
+.myx-bay-compact .myx-bay-rows > .myx-strip ~ .myx-strip,
+.myx-strip:not(:has(.myx-sfield-label)) {
+  --sfield-pad-end: var(--space-2);
 }
 
 /* --- ScopeInset: a recessed chart frame with its own ground and grid. --- */
@@ -780,22 +835,26 @@
    bay is a strip that carries no data: the same paper, the same hairline, the same radius 0, cut
    to its content like every other strip, its text where a field's value sits and its source under
    it in the mute. It starts at the rack's own field origin - the font on this box is the LABEL
-   face at --text-1 on purpose, so the 6ch below resolves to the same width the edge column
-   budgets and the empty lines up with the columns above it. */
+   face at --text-1 on purpose, so the 8ch below resolves to the same width the edge column
+   budgets and the empty lines up with the columns above it. That gutter belongs to the rack: an
+   empty standing alone (a page with nothing to rack, an aside) has no columns to line up with, and
+   with it the text sat at the right of a box that was mostly blank. */
 .myx-empt {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   align-self: flex-start;
   margin: 0;
-  padding: var(--space-3);
-  padding-inline-start: calc(var(--space-4) + 6ch + var(--space-3));
+  padding: var(--space-3) var(--space-4);
   font-family: var(--font-label);
   font-size: var(--text-1);
   width: max-content;
   background: var(--strip);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
+}
+.myx-bay-rows > .myx-empt {
+  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2) + var(--space-3));
 }
 .myx-empt-text {
   /* FIGURE: an honest empty is printed words, not code, so it takes the display face. */

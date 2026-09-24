@@ -99,7 +99,7 @@ const PENDING: readonly PendingGroup[] = [
       'extra_windows',
       'window_rules',
       'default_context_window',
-      // topology/Topology.kt — HeadConfig
+      // topology/HeadConfig.kt — HeadConfig
       'discovery_prefix',
       'pinned_model',
       'context_window',

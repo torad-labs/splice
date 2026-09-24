@@ -210,7 +210,6 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               key={tier.slot}
               edge={tier.model === null ? 'grey' : 'green'}
               edgeLabel={tier.model === null ? S.undeclared : S.slotted}
-              struck={tier.model === null}
               ariaLabel={`${S.slot} ${tier.slot}`}
             >
               {/* NO PER-CELL LABELS: the bay prints its six column names once (B9). */}
@@ -258,8 +257,8 @@ export function UsageBoard({ payload, catalog, now, sample }: {
       className="myx-usage"
       {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
     >
-      <header className="myx-usage-head">
-        <h1 className="myx-usage-title">{S.title}</h1>
+      <header className="myx-page-head">
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>

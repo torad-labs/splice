@@ -21,7 +21,7 @@
   font-family: var(--font-label);
   font-size: var(--text-2);
   cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease-out);
+  transition: border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
 }
 
 /* HOVER LIFTS THE BOX LINE AND NOTHING ELSE (m1 design review D1). It used to cock an amber edge
@@ -132,7 +132,10 @@
    height by construction rather than by summing font sizes (m1 design review D7: the old formula
    came to 38px against a 52px strip, and every page jumped when data landed). No shimmer and no
    grey: paper, a hairline, and nothing printed on it. */
-.myx-blank-strip { width: auto; }
+/* Two classes, because `.myx-strip` (ui.css) declares `width: max-content` at the same weight and
+   loads after this sheet: the blank printed as four 24px stubs, one strip's edge wide, on every
+   page that was loading. */
+.myx-strip.myx-blank-strip { width: auto; }
 .myx-blank-strip .myx-sfield {
   flex: 1 1 auto;
   width: auto;

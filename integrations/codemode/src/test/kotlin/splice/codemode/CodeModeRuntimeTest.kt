@@ -29,6 +29,10 @@ import java.io.OutputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
+
+private const val REAP_WAIT_MS = 2_000L
+private const val REAP_POLL_NS = 10_000_000L
 
 class CodeModeRuntimeTest {
     private val testClasspath: String = checkNotNull(System.getProperty("codeMode.testClasspath"))
@@ -260,7 +264,7 @@ class CodeModeRuntimeTest {
             }
             startup.cancelAndJoin()
             child.onExit().get(1, TimeUnit.SECONDS)
-            assertTrue(!child.isAlive, "cancelled startup must reap the observed child")
+            assertTrue(reaped(child), "cancelled startup must reap the observed child")
 
             val replacement = runtime.start("return \"reaped\";", emptySet())
             assertEquals("reaped", completed(replacement.advance()).output)
@@ -291,7 +295,7 @@ class CodeModeRuntimeTest {
             }
             runtime.close()
             child.onExit().get(1, TimeUnit.SECONDS)
-            assertTrue(!child.isAlive)
+            assertTrue(reaped(child))
         } finally {
             startup.cancelAndJoin()
             runtime.close()
@@ -435,6 +439,20 @@ class CodeModeRuntimeTest {
     }
 
     private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(workerClasspath = testClasspath)
+
+    /** Whether [child], whose exit onExit() already reported, is gone from the process table. The
+     *  handle came from children(), so its onExit can be a NON-reaping wait (waitid WEXITED|WNOWAIT,
+     *  ProcessHandleImpl_unix.c) registered before builder.start() returned and the Process installed
+     *  its own reaping one: it completes while the worker is still a zombie, and Linux isAlive reads a
+     *  zombie as alive because os_getParentPidAndTimings skips /proc/<pid>/stat's state field. The
+     *  JDK's reaper collects it within milliseconds; PR #181's gate (run 35925066310) caught the
+     *  window. A worker close never killed still fails, and first: the 1-second onExit wait times out.
+     *  The loop polls the condition under a deadline; parkNanos is its backoff (kt-tests-no-wall-clock). */
+    private fun reaped(child: ProcessHandle): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(REAP_WAIT_MS)
+        while (child.isAlive && System.nanoTime() < deadline) LockSupport.parkNanos(REAP_POLL_NS)
+        return !child.isAlive
+    }
 
     private suspend fun twoCalls(runtime: JvmCodeModeRuntime) = runtime.start(
         """

@@ -98,12 +98,14 @@ public sealed class SessionAdoption {
 public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = TranscriptModelRewrite()) {
 
     /** Resolve `-r [sessionId]` for the head launching from [callingConfigDir], looking in every
-     *  other head's CLAUDE_CONFIG_DIR. [pinnedModel] is that head's model — the one its roster serves. */
+     *  other head's CLAUDE_CONFIG_DIR. [pinnedModel] is that head's model, and [served] its whole roster:
+     *  a row on a served model is left as it is (TranscriptModelRewrite). */
     public fun adopt(
         callingConfigDir: Path,
         otherConfigDirs: List<Path>,
         sessionId: String,
         pinnedModel: String,
+        served: Collection<String>,
         log: LogSink = LogSink(DaemonLog::write),
     ): SessionAdoption {
         // The id becomes a path component and reaches operator-facing text, so it is validated
@@ -115,9 +117,13 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         val own = findAllIn(callingConfigDir, sessionId, log).firstOrNull()
         val foreign = others.flatMap { dir -> findAllIn(dir, sessionId, log) }
         return when {
-            own != null -> SessionAdoption.HeadOwned(own.transcript, rewriteInPlace(own.transcript, pinnedModel, log))
+            own != null ->
+                SessionAdoption.HeadOwned(own.transcript, rewriteInPlace(own.transcript, pinnedModel, served, log))
             foreign.isEmpty() -> SessionAdoption.Absent(sessionId, (listOf(callingConfigDir) + others).map(::headName))
-            else -> copyIn(callingConfigDir, preferSameCwd(callingConfigDir, foreign, log), sessionId, pinnedModel, log)
+            else -> {
+                val chosen = preferSameCwd(callingConfigDir, foreign, log)
+                copyIn(callingConfigDir, chosen, sessionId, pinnedModel, served, log)
+            }
         }
     }
 
@@ -125,8 +131,8 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
      *  moved onto this head's model where it lies. Nothing else is at stake in a failure here (the
      *  session still resumes, on the head's default, with Claude Code's one-line notice), so it is
      *  said in the log and the launch goes on. */
-    private fun rewriteInPlace(transcript: Path, pinnedModel: String, log: LogSink): Int {
-        val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, pinnedModel) }
+    private fun rewriteInPlace(transcript: Path, pinnedModel: String, served: Collection<String>, log: LogSink): Int {
+        val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, pinnedModel, served) }
         outcome.exceptionOrNull()?.let { cause ->
             log(
                 "[resume] $transcript could not be moved onto $pinnedModel (${SafeFailureText.render(cause)}) — " +
@@ -174,6 +180,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         chosen: Located,
         sessionId: String,
         pinnedModel: String,
+        served: Collection<String>,
         log: LogSink,
     ): SessionAdoption {
         val targetDir = callingConfigDir.resolve(Keys.PROJECTS).resolve(chosen.cwdDir)
@@ -186,7 +193,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
             Files.copy(chosen.transcript, target, REPLACE_EXISTING)
             val sourceSubdir = chosen.transcript.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
-            rewriter.rewrite(target, pinnedModel)
+            rewriter.rewrite(target, pinnedModel, served)
         }
         copied.exceptionOrNull()?.let { cause ->
             return SessionAdoption.Refused(sessionId, chosen.headConfigDir, SafeFailureText.render(cause))

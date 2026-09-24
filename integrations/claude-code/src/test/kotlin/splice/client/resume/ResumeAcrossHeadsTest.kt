@@ -56,7 +56,7 @@ class ResumeAcrossHeadsTest {
         JsonScalars.str(Json.parseToJsonElement(row).jsonObject["message"] as? JsonObject, Keys.MODEL)
 
     private fun adoption(calling: Path, others: List<Path>, sessionId: String): SessionAdoption =
-        ResumeAcrossHeads().adopt(calling, others, sessionId, pinned, log = {})
+        ResumeAcrossHeads().adopt(calling, others, sessionId, pinned, listOf(pinned), log = {})
 
     @Test
     fun `a foreign session is copied in, its models follow the head, and the source is untouched`(@TempDir home: Path) {

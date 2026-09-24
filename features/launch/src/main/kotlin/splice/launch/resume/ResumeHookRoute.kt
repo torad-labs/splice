@@ -37,6 +37,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.launch.LaunchHead
 import splice.launch.LaunchHeads
+import splice.launch.LaunchSpec
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -80,7 +81,7 @@ public class ResumeHookRoute(
             hook.source != RESUME_SOURCE && hook.source != STARTUP_SOURCE ->
                 "the hook source is neither a startup nor a resume"
             !SESSION_ID_SHAPE.matches(hook.sessionId) -> "the session id is not a session id"
-            else -> located(managed, spec.trees.own, spec.pinnedModel, hook)
+            else -> located(managed, spec, hook)
         }
     }
 
@@ -92,7 +93,8 @@ public class ResumeHookRoute(
         val cwd: String = JsonScalars.str(hook, "cwd").orEmpty()
     }
 
-    private fun located(managed: LaunchHead, configDir: Path, pinnedModel: String, hook: ResumeCall): String? {
+    private fun located(managed: LaunchHead, spec: LaunchSpec, hook: ResumeCall): String? {
+        val configDir = spec.trees.own
         // 2026-09-21: a startup fires before Claude Code has written the session's first row, so the
         // transcript is a path that does not exist yet (measured: every startup hook since V4-183
         // landed was refused here, one second after its launch, and no head ever owned a session —
@@ -107,11 +109,14 @@ public class ResumeHookRoute(
         if (hook.cwd.isNotBlank()) {
             SessionOwnership(configDir, log = log).record(hook.sessionId, hook.cwd, transcript)
         }
-        return if (hook.source == RESUME_SOURCE) rewrite(managed, transcript, pinnedModel, hook.sessionId) else null
+        return if (hook.source == RESUME_SOURCE) rewrite(managed, transcript, spec, hook.sessionId) else null
     }
 
-    private fun rewrite(managed: LaunchHead, transcript: Path, pinnedModel: String, sessionId: String): String? {
-        val rewritten = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, pinnedModel) }
+    private fun rewrite(managed: LaunchHead, transcript: Path, spec: LaunchSpec, sessionId: String): String? {
+        val pinnedModel = spec.pinnedModel
+        val rewritten = Cancellables.runCatchingCancellable {
+            rewriter.rewrite(transcript, pinnedModel, spec.availableModelIds)
+        }
             .getOrElse { cause ->
                 return "session $sessionId could not be moved onto $pinnedModel (${SafeFailureText.render(cause)})"
             }

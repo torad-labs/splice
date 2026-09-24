@@ -47,7 +47,9 @@
 // (a raw ESC byte in one file, `\u001B` in the other — the SAME string), MILLIS_PER_SECOND
 // (1000L vs 1_000L), MS_PER_S, BYTE_MASK (0xFF vs 0xff) and TTL_MS as COLLISIONs. Normalisation
 // decodes \uXXXX escapes, drops digit separators and numeric type suffixes, lowercases hex digits
-// and collapses whitespace, so two spellings of one value are one value. A declaration's value may
+// and collapses whitespace, so two spellings of one value are one value. A hex literal is normalised
+// as ONE token, because its F and D are digits: the decimal suffix strip once read 0x1F and 0x1D as
+// the same `0x1`, which made two values under one name a COPY. A declaration's value may
 // continue onto the NEXT line and is read from there; an expression spanning three or more lines is
 // normalised as its first two.
 //
@@ -185,8 +187,11 @@ internal object ConstSingleSource {
         private val ROLE_MARKERS = setOf("DEFAULT", "THE", "VAL")
         private val UNICODE_ESCAPE = Regex("\\\\[uU]([0-9a-fA-F]{4})")
         private val DIGIT_SEPARATOR = Regex("(?<=[0-9])_(?=[0-9])")
-        private val NUMERIC_SUFFIX = Regex("(?<=[0-9])[LlFfDdUu]+\\b")
-        private val HEX = Regex("0[xX]([0-9a-fA-F]+)")
+
+        /** A hex literal WHOLE (its letters are digits, and its only suffixes are u and L), or a decimal
+         *  literal's suffix. One pass, so the suffix strip never reaches inside a hex token: run on its
+         *  own it ate the last digit of 0x1F and 0x1D alike, and lowercasing first left f and d to eat. */
+        private val NUMBER = Regex("\\b0[xX]([0-9a-fA-F_]+)[uU]?[lL]?\\b|(?<=[0-9])[LlFfDdUu]+\\b")
         private val WHITESPACE = Regex("\\s+")
         private val COMMENT_MARKER = Regex("^/\\*+|^\\*+/?|^//|\\*/$")
 
@@ -223,8 +228,9 @@ internal object ConstSingleSource {
             var text = stripLineComment(raw).trim().trimEnd(',')
             text = UNICODE_ESCAPE.replace(text) { it.groupValues[1].toInt(16).toChar().toString() }
             text = DIGIT_SEPARATOR.replace(text, "")
-            text = NUMERIC_SUFFIX.replace(text, "")
-            text = HEX.replace(text) { "0x" + it.groupValues[1].lowercase() }
+            text = NUMBER.replace(text) { match ->
+                match.groups[1]?.let { "0x" + it.value.replace("_", "").lowercase() }.orEmpty()
+            }
             return WHITESPACE.replace(text, " ").trim()
         }
 
@@ -770,6 +776,22 @@ class ConstSingleSourceLawTest {
                 audit(baseline("\"COLLISION SEAM_BOUND\": [\"$A_KT\", \"$B_KT\"]")),
                 "a recorded COLLISION is held",
             )
+        }
+    }
+
+    @Test
+    fun `the law can actually fail - a hex literal normalises as one token - V4-211`(@TempDir root: File) {
+        with(Tree(root)) {
+            // The decimal suffix strip ate a hex literal's last F or D, so two values read as one.
+            write(A_KT to dup("SEAM_MASK", "0x1F"), B_KT to dup("SEAM_MASK", "0x1D"))
+            assertHit(audit(baseline()), "GROWTH (COLLISION)", "SEAM_MASK") { "0x1F and 0x1D are two values" }
+
+            // ...and one value spelled three more ways stays one: case (which a reorder-only fix,
+            // lowercasing first, still ate), a digit separator, and the u/L suffix a hex literal takes.
+            for (spelling in listOf("0x1f" to "0x1F", "0xFF_FF" to "0xFFFF", "0xFFL" to "0xFF")) {
+                write(A_KT to dup("SEAM_MASK", spelling.first), B_KT to dup("SEAM_MASK", spelling.second))
+                assertHit(audit(baseline()), "GROWTH (COPY)", "SEAM_MASK") { "$spelling are one value" }
+            }
         }
     }
 

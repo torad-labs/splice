@@ -2256,3 +2256,5 @@ features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorAge.kt	0673
 core/src/test/kotlin/splice/core/usage/UsageWarnPlanTest.kt	7334651bc40c4bbc58e1f2cb18ae661079edc29e165b4914ba14a3a5029966ab	created		usage warn reads the plan windows (console review 2026-09-24)
 features/usage/src/test/kotlin/splice/usage/quota/UsageWarnPayloadTest.kt	ab95fb31b334c26d810a5c45e24f9da50fd6b2d1b5479c41004c23ce84e73726	created		usage warn reads the plan windows (console review 2026-09-24)
 features/models/src/test/kotlin/splice/models/roster/ModelsWindowSourceTest.kt	2444fa8779e9856bcc79f9783dab782f5b12dc9d8d5c9d78b539904c9e72accd	created		/api/models names a head-declared window as the head's (console review 2026-09-24)
+tools/gate/src/commands/attribution.ts	28bd6cedf6a7e9f5bb96720482ba405d1f36665823a50c67df799f9911c23961	created		no commit HEAD reaches carries a Claude attribution line (history rewrite 2026-09-24)
+tools/gate/test/attribution.test.ts	9d33fa06aeac5493ed25fd06152762b83c1e68c22c1a05898bb50b29a3992986	created		no commit HEAD reaches carries a Claude attribution line (history rewrite 2026-09-24)

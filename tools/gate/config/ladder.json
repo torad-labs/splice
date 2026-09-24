@@ -124,6 +124,11 @@
     },
     { "task": "prTitle", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
     {
+      "task": "attribution",
+      "why": "splice is public: no commit HEAD reaches carries a Claude-Session trailer, a claude.ai session URL, a Co-Authored-By for noreply@anthropic.com or a Generated-with-Claude-Code line. The whole history is scanned, not the PR's commits, because a branch cut from the pre-rewrite tip carries the old attributed commits back in; a shallow CI clone is deepened blobless first and an unreadable history fails.",
+      "command": ["bun", "tools/gate", "attribution"]
+    },
+    {
       "task": "secretScanAllowlist",
       "why": "Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.",
       "command": ["bun", "tools/gate", "allowlist", "--check"]

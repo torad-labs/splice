@@ -8,7 +8,7 @@
 // Nothing here is modal. A destructive action arms in place and disarms on its own, the way
 // ConfirmBtn did, because the brief rules out a dialog over the room.
 import { useEffect, useReducer, useState } from 'react';
-import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount } from '@entities/auth';
+import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount, unpinAccount } from '@entities/auth';
 import type { LoginStartPayload } from '@entities/auth';
 import { Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
 import { poll } from '@shared/lib';
@@ -161,10 +161,12 @@ export function refusalOf(outcome: unknown): string | null {
  * switch and a refresh name a HEAD, because selection is per head and several heads can ride the
  * same login; remove and relabel name the KIND, because the pool belongs to the kind.
  */
-export function AccountActions({ kind, label, heads }: {
+export function AccountActions({ kind, label, heads, pinned = false }: {
   kind: string;
   label: string;
   heads: readonly string[];
+  /** The daemon pinned this account (a manual switch). Only then is there a pin to drop. */
+  pinned?: boolean;
 }) {
   const [nextLabel, setNextLabel] = useState(label);
   const [armed, setArmed] = useState(false);
@@ -208,6 +210,15 @@ export function AccountActions({ kind, label, heads }: {
           >
             {`${S.switch} ${head}`}
           </button>
+          {pinned ? (
+            <button
+              type="button"
+              className="myx-acct-btn"
+              onClick={() => run(unpinAccount(head), `${head} goes back to the usual order from its next turn`)}
+            >
+              {`${S.unpin} ${head}`}
+            </button>
+          ) : null}
           <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head), `${head}: login refreshed`)}>
             {`${S.refresh} ${head}`}
           </button>

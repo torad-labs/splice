@@ -82,6 +82,7 @@ export const PENDING_AUTH_WRITES = 'V4-132';
 /** What the auth action store holds: the last write's outcome, tagged with which write it was. */
 export type AuthActionOutcome =
   | { action: 'switch'; result: SwitchPayload }
+  | { action: 'unpin'; result: SwitchPayload }
   | { action: 'login'; result: LoginStartPayload }
   | { action: 'login-status'; result: LoginStatusPayload }
   | { action: 'relabel'; result: AccountMutationPayload }

@@ -265,7 +265,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
               {opened !== null ? (
                 <>
                   {/* Relabel and remove act on a POOL; a single-login head has none. */}
-                  {opened.label !== null ? <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} /> : null}
+                  {opened.label !== null ? <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} /> : null}
                   {/* ONE AccountLogin, NOT TWO (M2-28, found while reading M2-24). This sat
                       outside the branch, and HeadActions renders its OWN AccountLogin
                       (account-login/index.tsx:305), so opening a HEAD drew the `add account`

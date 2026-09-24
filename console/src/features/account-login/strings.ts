@@ -9,6 +9,8 @@ export const S = {
   code: 'code',
   link: 'link',
   switch: 'switch',
+  /** Drops a manual switch's pin, so the selector's own order picks again. */
+  unpin: 'unpin',
   relabel: 'relabel',
   remove: 'remove',
   refresh: 'refresh',

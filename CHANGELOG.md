@@ -33,8 +33,9 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
 - **The installer leaves the running 0.3.x daemon alone.** The next `claude-<head>` launch
   replaces it: the launch shim sees the old version on `/health`, stops that daemon and starts
   0.4.0.
-- **Config, credentials and the state root are untouched.** An install made before 0.4.0 keeps
-  its state under `~/.claude-codex/state`, where it always was.
+- **Config and credentials are untouched, and the state root stays where it is.** An install
+  made before 0.4.0 keeps `~/.claude-codex/state` and its management key. 0.4.0 tightens that
+  directory to owner-only (0700).
 - **A session launched under 0.3.x keeps working until you relaunch it.** Its environment holds
   the management key, and that key still runs a turn. Relaunch each one to move it onto the turn
   key.

@@ -717,7 +717,7 @@ class RoleRegistryLawTest {
         val text = RoleRegistry.declarations().orEmpty()
         val config = shipped()
         assertEquals(emptyList<String>(), config.problems, "the shipped dispositions must parse")
-        assertEquals(26, config.entries.size, "one entry per shared signature")
+        assertEquals(27, config.entries.size, "one entry per shared signature")
         assertEquals(
             text.split("\n").count { it == "[[groups]]" },
             config.entries.size,
@@ -725,7 +725,7 @@ class RoleRegistryLawTest {
         )
         val names = config.entries.values.map { it.strings("names") }
         assertTrue(names.none { it == null }) { "every entry must declare an array of strings under `names`" }
-        assertEquals(105, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        assertEquals(107, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

@@ -18,8 +18,9 @@ import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.usage.perf.PerfRowsSource
-
-private const val DAY_MS = 86_400_000L
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 /** What every head's ledger shares, built once by [BudgetEnforcement]. */
 internal data class LedgerContext(
@@ -38,7 +39,7 @@ internal class BudgetLedger(
     private val context: LedgerContext,
 ) : HeadBudget {
     private val lock = Any()
-    private var today = DayTally(context.clock() / DAY_MS)
+    private var today = DayTally(utcDay(context.clock()))
 
     override fun admit(): BudgetBlock? {
         val limit = limit() ?: return null
@@ -74,11 +75,14 @@ internal class BudgetLedger(
 
     private fun reached(atMs: Long, limit: Double): Boolean = (seededTally(atMs)?.usd ?: 0.0) >= limit
 
+    /** The UTC day [atMs] falls on, as an epoch day: the boundary /api/projects draws for cost_today_usd. */
+    private fun utcDay(atMs: Long): Long = Instant.ofEpochMilli(atMs).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()
+
     /** Today's tally for [atMs], rolled forward on a new UTC day, or null for a row stamped on a day
      *  already gone (a turn that ended across midnight belongs to the day it was stamped). Called
      *  under [lock] only. */
     private fun tallyAt(atMs: Long): DayTally? {
-        val day = atMs / DAY_MS
+        val day = utcDay(atMs)
         if (day > today.day) today = DayTally(day)
         return today.takeIf { it.day == day }
     }
@@ -97,7 +101,7 @@ internal class BudgetLedger(
     /** The spend recorded on [day] before this daemon's boot. */
     private fun beforeBoot(day: Long): DayTally {
         val before = DayTally(day)
-        val dayStart = day * DAY_MS
+        val dayStart = LocalDate.ofEpochDay(day).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         if (context.bootMs <= dayStart) return before
         val window = Cancellables.runCatchingCancellable { rows.window(dayStart) }
             .onFailure { unread(it.toString()) }

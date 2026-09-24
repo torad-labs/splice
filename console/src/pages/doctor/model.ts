@@ -227,6 +227,5 @@ export function fixtureName(search: string, dev: boolean): string | null {
  */
 export const EMPTIES = {
   noReport: { text: 'doctor report not built', source: 'row V4-127' },
-  capture: { text: 'body capture not built', source: 'row V4-133' },
   noChecks: { text: 'no checks reported', source: 'GET /api/doctor' },
 } as const;

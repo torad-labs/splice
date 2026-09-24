@@ -31,7 +31,8 @@ interface Rack { label: string; names: { w: number; text: string }[]; rows: numb
  *  region that runs to the end of the markup sweeps in whatever the page draws below the rack --
  *  the measurement-reads-past-its-object defect this campaign has now made three times. */
 function racks(markup: string): Rack[] {
-  return markup.split('<section class="myx-bay"').slice(1).map((part) => {
+  // a bay's class list may carry a modifier (a compact rack is `myx-bay myx-bay-compact`)
+  return markup.split(/<section class="myx-bay[ "]/).slice(1).map((part) => {
     const head = /<span class="myx-bay-label">([^<]*)</.exec(part);
     const fields = /<div class="myx-bay-fields">([\s\S]*?)<\/div><div class="myx-bay-rows">/.exec(part);
     const rowsAt = part.indexOf('<div class="myx-bay-rows">');
@@ -41,8 +42,8 @@ function racks(markup: string): Rack[] {
       label: head === null ? '?' : head[1],
       names: fields === null ? [] : [...fields[1].matchAll(/width:(\d+)ch[^>]*>([^<]*)</g)]
         .map((m) => ({ w: Number(m[1]), text: m[2] })),
-      // SPLIT ON THE CLASS, NOT ON THE CLASS PLUS ITS CLOSING QUOTE: a struck row is
-      // `class="myx-strip myx-strip-struck"`, so the quoted form misses exactly the rows this
+      // SPLIT ON THE CLASS, NOT ON THE CLASS PLUS ITS CLOSING QUOTE: a modified row is
+      // `class="myx-strip myx-strip-selected"`, so the quoted form misses exactly the rows this
       // file exists to check and silently folds their cells into the previous row -- the first
       // run reported a twelve-cell strip in a six-column rack. The character class is the other
       // half: a bare prefix also matches `myx-strip-fields`, the strip's OWN inner box, and the
@@ -94,9 +95,12 @@ describe('the catalog rack is a grid, and its names are printed once', () => {
   });
 
   test('a vacant tier prints its slot and the absence glyph, never a shorter row', () => {
-    const struck = markup.split('<div class="myx-strip myx-strip-struck"').slice(1);
-    expect(struck.length).toBeGreaterThan(0);
-    for (const strip of struck) {
+    // A vacant tier is named by its edge word, not struck: striking is the verdict on an excluded
+    // or disabled row, and a line through every vacant slot read as a rendering fault.
+    const vacant = markup.split(/<div class="myx-strip[ "]/).slice(1)
+      .filter((strip) => strip.includes(`<span class="myx-edge-label">${S.undeclared}</span>`));
+    expect(vacant.length).toBeGreaterThan(0);
+    for (const strip of vacant) {
       const values = [...strip.slice(0, strip.indexOf('</div></div>') + 12)
         .matchAll(/<span class="myx-sfield-text">([^<]*)</g)].map((m) => m[1]);
       // Six values: the tier's own slot name, and `n/r` everywhere a model would have spoken.

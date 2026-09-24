@@ -8,18 +8,6 @@
   min-width: 0;
 }
 
-.myx-lg-head {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
+.myx-lg-head { align-items: flex-end; }
 
-.myx-lg-title {
-  margin: var(--space-0);
-  font-family: var(--font-label);
-  font-size: var(--text-5);
-  font-weight: 600;
-  color: var(--ink-strong);
-}
 

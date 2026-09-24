@@ -34,7 +34,7 @@ export function FieldBox({ label, value, provenance, hot, onChange }: {
         onChange={editable ? (event) => onChange(event.target.value) : undefined}
       />
       <span className="myx-fbox-prov">{provenance}</span>
-      <span className="myx-fbox-hot">{hot ? 'applies live' : 'restart to apply'}</span>
+      <span className="myx-fbox-hot">{hot ? 'applies live' : 'applies on restart'}</span>
     </label>
   );
 }

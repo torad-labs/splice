@@ -75,9 +75,9 @@ describe('settings: the knob form', () => {
     const live = knobs.filter((knob) => knob.hot).map((knob) => knob.key);
     expect(live).toEqual(['budgetDefaultAction', 'maxInflight', 'maxQueued', 'statuslineGitRoots']);
     expect(rack.split('applies live').length - 1).toBe(live.length);
-    expect(rack.split('restart to apply').length - 1).toBe(knobs.length - live.length);
+    expect(rack.split('applies on restart').length - 1).toBe(knobs.length - live.length);
     for (const key of live) expect(rowOf(rack, key)).toContain('applies live');
-    expect(rowOf(rack, 'port')).toContain('restart to apply');
+    expect(rowOf(rack, 'port')).toContain('applies on restart');
   });
 
   test('the live view shows the hot knobs and nothing else', () => {

@@ -16,7 +16,10 @@ export const S = {
   /** A picker's "not set" option: the daemon fills it with each model's own default. */
   modelDefault: 'model default',
   live: 'applies live',
-  restart: 'restart to apply',
+  /** A knob the daemon reads at start: a saved change takes effect when it restarts. Said as a
+   *  fact about the knob, beside `applies live`; `restart to apply` read as an order to restart
+   *  now, on a page (mcp) that had changed nothing. */
+  restart: 'applies on restart',
 } as const;
 
 /** Where a value came from, in the operator's words. The entity's provenance names are the

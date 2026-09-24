@@ -157,8 +157,8 @@ describe('FieldBox', () => {
 
   test('says whether the change needs a restart, in words', () => {
     expect(box({ hot: true })).toContain('applies live');
-    expect(box({ hot: true })).not.toContain('restart to apply');
-    expect(box()).toContain('restart to apply');
+    expect(box({ hot: true })).not.toContain('applies on restart');
+    expect(box()).toContain('applies on restart');
   });
 
   test('is read-only until it is given somewhere to write', () => {

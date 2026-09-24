@@ -190,8 +190,12 @@ export function McpPage() {
         </div>
 
         <aside className="myx-mcp-detail" aria-label={S.detail}>
+          {/* "select a server" only where there is one to select: with hosting off or no servers it
+              asked for a click the page could not take (walkthrough S16). */}
           {opened === null ? (
-            <Empty text={EMPTIES.noOpened.text} source={EMPTIES.noOpened.source} />
+            groups.some((group) => group.rows.length > 0)
+              ? <Empty text={EMPTIES.noOpened.text} source={EMPTIES.noOpened.source} />
+              : null
           ) : (
             <section className="myx-mcp-section">
               <div className="myx-mcp-head">

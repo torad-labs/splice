@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
     id("splice.kotlin-common")
     id("splice.module-law")
@@ -22,4 +24,15 @@ dependencies {
 // runtime classpath. :app's codeModePackagedTest hands the same property the shipped fat jar.
 tasks.test {
     systemProperty("codeMode.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
+}
+
+// The compiled runtime suite, for :app's codeModePackagedTest to rerun with the shipped fat jar as the
+// worker classpath: a language, global or service registration that shading adds or loses shows only
+// there. Before LAYOUT-01 the suite lived in :app and that task ran it directly.
+val packagedRuntimeTests: Configuration by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+}
+artifacts {
+    add(packagedRuntimeTests.name, tasks.named<KotlinCompile>("compileTestKotlin").flatMap { it.destinationDirectory })
 }

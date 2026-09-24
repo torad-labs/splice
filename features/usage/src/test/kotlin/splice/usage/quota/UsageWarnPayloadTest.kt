@@ -19,7 +19,7 @@ import splice.usage.UsageHead
 import splice.usage.UsageHeads
 import java.nio.file.Path
 
-class UsagePayloadsTest {
+class UsageWarnPayloadTest {
     @TempDir
     lateinit var tmp: Path
 

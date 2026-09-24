@@ -6,7 +6,6 @@ package splice.daemonclient
 
 import splice.core.config.ConfigService
 import splice.core.config.Knob
-import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
@@ -14,6 +13,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
+import splice.topology.TopologyStatePaths
 
 /** [errors] receives the one diagnostic a resolution can raise: an unreadable splice.toml. */
 public class DaemonSettings(private val errors: TerminalOutput) {
@@ -46,7 +46,7 @@ public class DaemonSettings(private val errors: TerminalOutput) {
             TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(envReader))
         }.getOrNull()
         val unit = ConfigService(
-            StatePaths(envReader = envReader),
+            TopologyStatePaths(envReader).of(topology),
             headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
             envReader = envReader,
         ).getConfig().supervisorUnit
@@ -59,7 +59,8 @@ public class DaemonSettings(private val errors: TerminalOutput) {
      *  reads the real process environment or state dir. */
     public fun controlPort(topology: Topology?, envReader: EnvReader): Int =
         ConfigService(
-            StatePaths(envReader = envReader),
+            // V4-109: the state config layer lives in the daemon's RESOLVED state dir.
+            TopologyStatePaths(envReader).of(topology),
             // No topology (fresh machine / broken TOML) still resolves through the layered config:
             // the old null-branch returned the hardcoded default, silently IGNORING the state
             // config.json and SPLICE_CONTROL_PORT layers — which both broke hermetic test rigs

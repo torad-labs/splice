@@ -7,12 +7,12 @@
 package splice.diagnostics.doctor
 
 import splice.core.config.ConfigService
-import splice.core.config.StatePaths
 import splice.core.model.UpstreamWindows
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.EnvReader
+import splice.topology.TopologyStatePaths
 import splice.upstream.local.LocalLiveProbe
 import splice.upstream.local.LocalModel
 import splice.upstream.local.LocalRowVerdict
@@ -34,7 +34,7 @@ internal fun interface HeadWindowOverride {
  *  exactly as it reaches boot. */
 internal class ConfigHeadWindowOverride(private val env: EnvReader) : HeadWindowOverride {
     override fun invoke(topology: Topology, headKey: String): Long? = ConfigService(
-        StatePaths(envReader = env),
+        TopologyStatePaths(env).of(topology),
         headOverrides = TopologyKnobLayer(topology).configOverrides(),
         perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
         envReader = env,

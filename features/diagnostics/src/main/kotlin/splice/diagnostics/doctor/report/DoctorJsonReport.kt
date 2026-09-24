@@ -22,6 +22,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.diagnostics.doctor.CheckStatus
+import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -34,7 +35,7 @@ internal class DoctorJsonReport(
     envReader: EnvReader = EnvReader(System::getenv),
     private val claudeVersion: ClaudeVersionRead,
     private val home: Path = Paths.get(System.getProperty("user.home")),
-    private val statePaths: StatePaths = StatePaths(envReader = envReader),
+    private val statePaths: StatePaths = TopologyStatePaths(envReader).current(),
     private val installPaths: InstallPaths = InstallPaths(envReader = envReader),
     private val redaction: DoctorRedaction = DoctorRedaction(
         home,

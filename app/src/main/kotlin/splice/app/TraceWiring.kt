@@ -6,9 +6,11 @@ package splice.app
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.head.trace.TraceCommand
+import splice.head.trace.TraceDirSource
 import splice.head.trace.TraceHeadSource
 import splice.head.trace.TraceHeads
 import splice.topology.TopologyLoader
+import splice.topology.TopologyStatePaths
 import java.io.IOException
 import java.nio.file.Files
 
@@ -17,6 +19,7 @@ internal object TraceWiring {
         output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),
         heads = TopologyTraceHeads(),
+        traceDirs = TraceDirSource { env -> TopologyStatePaths(env).current().traceDir },
     ).trace(args, EnvReader(System::getenv))
 }
 

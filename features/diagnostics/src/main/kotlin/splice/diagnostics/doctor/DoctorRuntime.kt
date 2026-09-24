@@ -10,6 +10,7 @@ import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
+import splice.topology.TopologyStatePaths
 
 /** The doctor runtime section as a constructed collaborator (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions). Stateless — DoctorCommand builds one and asks it; every
@@ -22,7 +23,7 @@ internal class DoctorRuntime {
      *  (last N turns), never lifetime totals. Fail-open at every hop: no daemon, no key, or an
      *  unreachable endpoint each degrade to one INFO row, never a crash and never a fabricated OK. */
     internal fun runtimeChecks(snapshot: DaemonSnapshot, envReader: EnvReader): List<DoctorCheck> {
-        val statePaths = StatePaths(envReader = envReader)
+        val statePaths = TopologyStatePaths(envReader).current()
         // Read the key ONCE (review #94, F154): the old guard-and-use double read raced key rotation —
         // a key emptying between reads threw checkNotNull, and `guarded` printed a FAIL row,
         // contradicting this section's own contract that an unreadable key degrades to INFO.

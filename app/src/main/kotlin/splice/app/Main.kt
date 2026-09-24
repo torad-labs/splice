@@ -10,14 +10,13 @@ import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.LockOutcome
 import splice.core.config.StatePaths
-import splice.core.topology.Topology
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.launch.install.InstallShim
 import splice.topology.TopologyLoader
-import java.nio.file.InvalidPathException
+import splice.topology.TopologyStatePaths
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.Security
@@ -68,32 +67,6 @@ internal class DaemonProcess {
 
     private val boundary = DaemonBoundary()
 
-    /** V4-109: the `[daemon].state_dir` override, resolved once the topology has parsed — the
-     *  behaviour the key promised and never had (it was parsed, echoed by the doctor, and read by
-     *  nothing). A value that cannot be used leaves the default in place rather than failing the
-     *  boot: the key was INERT before this row, so a value operators were free to write must not
-     *  become a startup failure now that it means something (NEVER-BELOW-STATUS-QUO). Blank is
-     *  treated as absent for the same reason. */
-    private fun statePathsFor(topology: Topology, fallback: StatePaths): StatePaths {
-        val declared = topology.daemon.stateDir?.takeIf { it.isNotBlank() } ?: return fallback
-        // An unusable declared state_dir falls back to the default BY DESIGN (the function's KDoc):
-        // a path the JVM cannot parse is dropped, not a swallowed failure, and the operator still
-        // sees the dropped override through the doctor row V4-110 adds. The named catch keeps the
-        // same disposition without runCatching swallowing a coroutine cancellation on this boot path.
-        //
-        // V4-122 item 7, the disposition this site owed: the parameter is `_` because the exception
-        // is DELIBERATELY not used — that is detekt's own allowance (allowedExceptionNameRegex) and
-        // this tree's idiom at 67 other sites, not a per-site suppression. Binding it to a name and
-        // then ignoring it would claim a use that does not exist, and @Suppress is refused by this
-        // repo's wall in favour of expressing the intent in the code.
-        val path = try {
-            Paths.get(declared)
-        } catch (_: InvalidPathException) {
-            return fallback
-        }
-        return StatePaths(baseOverride = path)
-    }
-
     internal fun runDaemon() {
         armShutdownOwnership()
         // The BOOTSTRAP state paths: the crash log needs a path before anything can throw, and
@@ -118,7 +91,9 @@ internal class DaemonProcess {
         // topology has parsed and then used by EVERY later step. The one visible consequence of
         // that ordering is stated rather than left to be discovered: an overriding daemon moves its
         // state but not the crash log, which the net already captured against the default.
-        val statePaths = statePathsFor(topology, bootstrapPaths)
+        // The same resolver every CLI reader of this state uses (TopologyStatePaths), so `splice
+        // restart`, doctor and logs look where this daemon writes.
+        val statePaths = TopologyStatePaths().of(topology)
         // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock);
         // a directory that stays open is logged once the logger below exists.
         val stateOpen = secureStateDirs(statePaths)

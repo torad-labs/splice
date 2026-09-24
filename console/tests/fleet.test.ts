@@ -20,11 +20,11 @@ import {
   providerFamily,
   queueAtMax,
   NO_SIGNALS,
-  PROVIDER_MARK,
+  FAMILY_NAME,
 } from '../src/entities/heads';
 import type { HeadSignals } from '../src/entities/heads';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
-import { HeadStrip } from '../src/widgets/head-strip';
+import { HeadStrip, providerText } from '../src/widgets/head-strip';
 import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
 import { Empty } from '../src/shared/ui';
@@ -101,7 +101,7 @@ describe('one printed cause, and the worst one wins', () => {
 
   test('a missing credential outranks the weaker causes below it', () => {
     expect(headAttention(head(), signals({ credentialPresent: false, topologyStale: true })).cause)
-      .toBe('token missing');
+      .toBe('signed out');
   });
 
   test('a warning is amber and cocked, never red', () => {
@@ -113,10 +113,10 @@ describe('one printed cause, and the worst one wins', () => {
   });
 
   test('an unhealthy head is the only red', () => {
-    for (const cause of ['version mismatch', 'queue at max', 'topology stale'] as const) {
+    for (const cause of ['version mismatch', 'queue full', 'restart needed'] as const) {
       const state = cause === 'version mismatch'
         ? headAttention(head({ versionMatch: false }), signals())
-        : cause === 'queue at max'
+        : cause === 'queue full'
           ? headAttention(head({ gate: gate({ queued: 4, max: 4 }) }), signals())
           : headAttention(head(), signals({ topologyStale: true }));
       expect(state.edge).not.toBe('red');
@@ -208,10 +208,12 @@ describe('provider family', () => {
     expect(providerFamily('something-new')).toBe('local');
   });
 
-  test('every family has a monochrome mark, and they are distinct', () => {
-    const marks = Object.values(PROVIDER_MARK);
-    expect(new Set(marks).size).toBe(marks.length);
-    for (const mark of marks) expect(mark).toMatch(/^[a-z]{2}$/);
+  test('every family prints a distinct name a person would say, and the key family reads api key', () => {
+    const names = Object.values(FAMILY_NAME);
+    expect(new Set(names).size).toBe(names.length);
+    expect(FAMILY_NAME.key).toBe('api key');
+    expect(providerText('api-key')).toBe('api key');
+    expect(providerText('chatgpt-oauth')).toBe('chatgpt');
   });
 });
 
@@ -243,9 +245,10 @@ describe('what one strip prints', () => {
     }
   });
 
-  test('the provider family prints as a monogram and as its name', () => {
+  test('the provider family prints as its name, with no monogram before it', () => {
     const out = strip();
-    expect(out).toContain('cg chatgpt');
+    expect(out).toContain('>chatgpt<');
+    expect(out).not.toContain('cg chatgpt');
   });
 
   test('the window prints its percentage, and not reported when there is none', () => {
@@ -344,16 +347,21 @@ describe('reading the pending topology', () => {
   });
 });
 
-describe('pending routes render an empty naming their row', () => {
-  test('the field empty names both rows it is waiting on', () => {
+describe('a route this daemon does not serve says so in words, not a row id', () => {
+  test('the field empty names what is missing and why', () => {
     const out = render(h(Empty, EMPTIES.fields));
-    expect(out).toContain('dialect and model not built');
-    expect(out).toContain('V4-127');
-    expect(out).toContain('V4-128');
+    expect(out).toContain('dialect and model unavailable');
+    expect(out).toContain('does not serve');
+    expect(out).not.toMatch(/V4-\d+|\/api\//);
   });
 
-  test('the pool empty names V4-132, for the one state that still reaches it: a 404 on the route', () => {
-    expect(render(h(Empty, EMPTIES.pool))).toContain('V4-132');
+  test('the pool empty, for the one state that still reaches it: a 404 on the route', () => {
+    expect(render(h(Empty, EMPTIES.pool))).toContain('does not serve accounts');
+  });
+
+  test('no fleet empty prints an api route or a campaign row', () => {
+    const all = [...Object.values(EMPTIES), ...['client', 'api-key', 'local-llama', 'grok-oauth'].map(poolEmpty)];
+    expect(all.filter((empty) => /V4-\d+|\/api\/|GET |row /.test(`${empty.text} ${empty.source}`))).toEqual([]);
   });
 
   // M4-02: POST /api/daemon/restart is served (ControlServer.kt:368), so the empty that said it was
@@ -405,19 +413,22 @@ describe('the opened head\'s account pool', () => {
     expect(poolOf([account({ heads: ['codex'] })], 'openrouter')).toEqual([]);
   });
 
-  test('an api-key head has no oauth pool and says so', () => {
-    const empty = poolEmpty('api-key');
-    expect(empty.text).toBe('no oauth pool');
-    expect(empty.source).toBe('api-key head');
+  test('an api-key head has no pool and says why', () => {
+    expect(poolEmpty('api-key')).toEqual(EMPTIES.apiKey);
+    expect(EMPTIES.apiKey.source).toContain('one key');
   });
 
-  test('a claude head is launch-time selected and never a pool', () => {
-    expect(poolEmpty('client').text).toBe('launch-time selected, never a pool');
+  test('a local head needs no login', () => {
+    expect(poolEmpty('something-local')).toEqual(EMPTIES.local);
   });
 
-  test('an oauth head the route reported nothing for names the route, not a missing pool', () => {
+  test('a claude head uses one login and never pools', () => {
+    expect(poolEmpty('client').text).toBe('one login, no pool');
+  });
+
+  test('an oauth head with no row says where to sign one in', () => {
     for (const kind of ['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']) {
-      expect(poolEmpty(kind)).toEqual({ text: 'no accounts reported', source: 'GET /api/accounts' });
+      expect(poolEmpty(kind)).toEqual({ text: 'no accounts signed in', source: 'sign one in on the accounts page' });
     }
   });
 });

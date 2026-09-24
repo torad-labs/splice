@@ -10,7 +10,7 @@ export {
   ATTENTION_CAUSES,
   NO_SIGNALS,
   PROVIDER_FAMILIES,
-  PROVIDER_MARK,
+  FAMILY_NAME,
 } from './model/derive';
 export type {
   AttentionCause,

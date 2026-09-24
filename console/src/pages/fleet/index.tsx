@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
-import { headAttention } from '@entities/heads';
+import { FAMILY_NAME, headAttention } from '@entities/heads';
 import { restartHead, startHead, startHeadsPolling, stopHead, useHeads } from '@entities/heads';
 import type { HeadSignals } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
@@ -246,7 +246,7 @@ export function FleetPage() {
             groups.map((group) => (
               <Bay
                 key={group.key === '' ? S.bay : group.key}
-                label={group.key === '' ? S.bay : group.key}
+                label={group.key === '' ? S.bay : FAMILY_NAME[group.key]}
                 count={group.heads.length}
                 compact
               >
@@ -256,7 +256,7 @@ export function FleetPage() {
                     head={head}
                     attention={headAttention(head, signalsFor(head))}
                     window={headWindow(usageResource.data, head.key)}
-                    account={auth?.[head.key]?.account_id_masked ?? auth?.[head.key]?.login ?? null}
+                    account={auth?.[head.key]?.account_id_masked ?? null}
                     dialect={dialectOf(topologyTable, head.key)}
                     model={catalogs?.find((entry) => entry.head === head.key)?.pinned_model ?? null}
                     columns={columns}

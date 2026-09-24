@@ -13,7 +13,8 @@ export const S = {
   attentionFirst: 'attention first',
   detail: 'head detail',
   lifecycle: 'lifecycle',
-  knobs: 'knobs',
+  /** The opened head's own values, the ones it sets over the global settings. */
+  knobs: 'own settings',
   pool: 'account pool',
   /** The pool's rack of account strips, under the section title above. */
   accounts: 'accounts',
@@ -23,7 +24,7 @@ export const S = {
   stop: 'stop',
   restart: 'restart',
   daemon: 'daemon',
-  noOverrides: 'no overrides',
+  noOverrides: 'uses global values',
   note: 'note',
   version: 'version',
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).

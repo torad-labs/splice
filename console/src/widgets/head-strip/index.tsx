@@ -10,10 +10,11 @@ import {
   inflightText,
   liveTurnText,
   providerFamily,
-  PROVIDER_MARK,
+  FAMILY_NAME,
 } from '@entities/heads';
-import type { HeadAttention, ProviderFamily } from '@entities/heads';
+import type { HeadAttention } from '@entities/heads';
 import type { HeadWindow } from '@entities/usage';
+import { ABSENT } from '@shared/lib';
 import { Strip, StripField } from '@shared/ui';
 import { S } from './strings';
 import './head-strip.css';
@@ -48,10 +49,9 @@ const WINDOW = 9;
 /** A turn prints a time or the word `none` (see NO_TURN). */
 const TURN = 8;
 
-/** The family as one printed field: the monogram, then the family's name. */
+/** The family as one printed field: its name. */
 export function providerText(authKind: string): string {
-  const family: ProviderFamily = providerFamily(authKind);
-  return `${PROVIDER_MARK[family]} ${family}`;
+  return FAMILY_NAME[providerFamily(authKind)];
 }
 
 /**
@@ -75,7 +75,8 @@ export function HeadStrip({ head, attention, window, account, dialect, model, co
   head: HeadStatus;
   attention: HeadAttention;
   window: HeadWindow;
-  /** The account behind the head, or null when the auth card names none. */
+  /** The account behind the head: its masked id, or null when the auth card names none. The
+   *  card's `login` is HOW the head signed in and is never printed as the account. */
   account: string | null;
   /** From the topology payload. Null while GET /api/topology is still a row (V4-128). */
   dialect: string | null;
@@ -116,7 +117,7 @@ export function HeadStrip({ head, attention, window, account, dialect, model, co
         <StripField w={MODEL} label={S.model} value={model ?? S.none} mono={false} />
       ) : null}
       {wanted.has('account') ? (
-        <StripField w={ACCOUNT} label={S.account} value={account ?? S.none} mono={false} />
+        <StripField w={ACCOUNT} label={S.account} value={account ?? ABSENT} mono={false} />
       ) : null}
       {wanted.has('inflight') ? (
         <StripField w={INFLIGHT} label={S.inflight} value={inflightText(head)} />

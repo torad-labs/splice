@@ -9,15 +9,18 @@ import { fmtMs } from '@shared/lib';
 import type { Edge } from '@shared/ui';
 
 /** Every condition that can cock a head's strip, in the order they are tested. The order is the
- *  severity order: the first cause that holds is the printed one. */
+ *  severity order: the first cause that holds is the printed one. Each is the word printed on the
+ *  strip, so each says what the operator sees rather than what the code checked: no credential on
+ *  disk is `signed out`, a latched refresh is `login expired`, a gate at its ceiling is `queue full`
+ *  and a topology the head has not reloaded is `restart needed` (console review, 2026-09-24). */
 export const ATTENTION_CAUSES = [
   'unhealthy',
   'version mismatch',
-  'token missing',
-  'token expired',
+  'signed out',
+  'login expired',
   'account excluded',
-  'queue at max',
-  'topology stale',
+  'queue full',
+  'restart needed',
 ] as const;
 
 export type AttentionCause = (typeof ATTENTION_CAUSES)[number];
@@ -78,11 +81,11 @@ export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNAL
   }
   const cause: AttentionCause | null =
     head.versionMatch === false ? 'version mismatch'
-      : signals.credentialPresent === false ? 'token missing'
-        : signals.refreshLatched !== null ? 'token expired'
+      : signals.credentialPresent === false ? 'signed out'
+        : signals.refreshLatched !== null ? 'login expired'
           : signals.accountExcluded ? 'account excluded'
-            : queueAtMax(head) ? 'queue at max'
-              : signals.topologyStale ? 'topology stale'
+            : queueAtMax(head) ? 'queue full'
+              : signals.topologyStale ? 'restart needed'
                 : null;
   if (cause === null) {
     return { edge: 'green', cocked: false, struck: false, label: 'ok', cause: 'ok' };
@@ -111,20 +114,19 @@ export function providerFamily(authKind: string): ProviderFamily {
 }
 
 /**
- * The monochrome mark a family prints beside its name.
- *
- * A two-letter monogram rather than a glyph: the world's strips are lettered, and a symbol set
- * would be an icon system smuggled in as text. It carries no color — the brief is explicit that
- * provider family is never a color, so this is the whole signal.
+ * The name a family prints. Words and no color: the brief is explicit that provider family is
+ * never a color. This replaced a two-letter monogram printed before the family id (`ak key`,
+ * `cg chatgpt`): the monogram repeated the word beside it, and the id `key` is not a provider
+ * anyone names, so the api-key family now reads `api key` (console review, 2026-09-24).
  */
-export const PROVIDER_MARK: Record<ProviderFamily, string> = {
-  chatgpt: 'cg',
-  grok: 'gk',
-  kimi: 'km',
-  muse: 'ms',
-  anthropic: 'an',
-  key: 'ak',
-  local: 'lo',
+export const FAMILY_NAME: Record<ProviderFamily, string> = {
+  chatgpt: 'chatgpt',
+  grok: 'grok',
+  kimi: 'kimi',
+  muse: 'muse',
+  anthropic: 'anthropic',
+  key: 'api key',
+  local: 'local',
 };
 
 /** A head's in-flight count as printed: `n/max`, or `n` when the gate reports no ceiling. */

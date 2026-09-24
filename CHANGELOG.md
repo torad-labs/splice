@@ -449,6 +449,28 @@
   only batching is the code-mode runner (a two-Read probe on `gpt-5.6-sol` ran in one round trip).
 
 ### Fixed
+- **Budgets warn and block (V4-133 review).** `PUT /api/budgets` stored a head's daily budget and
+  nothing on the turn path read it, so a `block` head kept serving turns. Each head now weighs its
+  turns against its budget per UTC day, priced from the model's rate card the way `/api/projects`
+  prices `cost_today_usd`, counting the spend an earlier daemon recorded that day. `block` refuses a
+  turn once the day's spend reaches the limit: a 403 `permission_error` naming the head, the spend,
+  the limit and the 00:00 UTC reset, with an `error:budget-blocked` perf row. `warn` tells the
+  operator once per day and per limit through the saved webhook (the test send's `{"text"}` body)
+  and a `[head][budget]` log line, and serves the turn. A turn on a model with no rate card is not
+  counted and is named in the log. The `desktop` alert flag still delivers nothing: the daemon has
+  no desktop and the console shows no notification.
+- **A wrapped `claude` launches (V4-129 review).** Wrap symlinks `claude` to the launch shim, the
+  shim asks for the head named `claude`, and no head carries that name, so every wrapped `claude`
+  got a 404 and exited until unwrap. While the wrap is in place `claude` launches the splice-owned
+  Claude head over the vanilla `~/.claude`, with the real binary the wrap recorded as `argv[0]`,
+  and never writes a stored splice login over the operator's own.
+- **`splice doctor` reports the state dir (V4-127 review).** The report now carries
+  `state_dir_usage`: size, file count, the oldest file (redacted, relative to the state dir) and
+  its age, and the entries it could not read. Symlinks are not followed.
+- **A far-behind event resume loses nothing, and ids arrive in order (V4-126 review).** Resuming
+  `/api/events` with a `Last-Event-ID` more than 256 events back dropped everything past the first
+  256 replayed, uncounted; a resumed subscription is now sized to hold its whole replay. The event
+  id is taken inside the bus lock, so ids reach every subscriber strictly increasing.
 - **Any head joins any session again (V4-168).** A session started on one head resumed on any
   other because every head's `projects` tree was the shared `~/.claude/projects` (V4-64). The
   2026-09-17 head-isolation change read the ruling — head configuration must never leak — as

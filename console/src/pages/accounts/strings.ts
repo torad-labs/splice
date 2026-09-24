@@ -7,6 +7,13 @@ export const S = {
   title: 'accounts',
   bay: 'accounts',
   claudeBay: 'claude logins',
+  /** The heads that sign every request with one api key, read from a variable or keys.toml. */
+  keyBay: 'api keys',
+  head: 'head',
+  variable: 'variable',
+  key: 'key',
+  keySet: 'set',
+  keyMissing: 'missing',
   byProvider: 'by provider',
   nearest: 'nearest exhaustion',
   byHead: 'by head',

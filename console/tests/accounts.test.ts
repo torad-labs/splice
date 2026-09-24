@@ -29,6 +29,7 @@ import { AccountStrip, windowFieldLabel } from '../src/widgets/account-strip';
 import { refusalOf } from '../src/features/account-login';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from '../src/pages/accounts/model';
 import { dispositions } from '../src/pages/accounts/coverage';
+import { AccountsBoard, ApiKeyDetail } from '../src/pages/accounts';
 import { Empty } from '../src/shared/ui';
 import type { View } from '../src/features/views';
 
@@ -479,5 +480,29 @@ describe('an account action that answered but did not happen says why', () => {
     expect(refusalOf({ ok: true })).toBeNull();
     expect(refusalOf({ action: 'switch', result: { ok: true } })).toBeNull();
     expect(refusalOf(undefined)).toBeNull();
+  });
+});
+
+describe('the api-key heads have a bay of their own', () => {
+  test('each prints its variable and masked key, a missing key cocks, and nothing prints the key itself', () => {
+    const out = render(h(AccountsBoard, {
+      payload: { accounts: [] },
+      nowMs: NOW,
+      headRows: [
+        { head: 'openrouter', kind: 'api-key', present: true, masked: null, note: null, envVar: 'OPENROUTER_API_KEY', keyMasked: 'sk-o…ddfb' },
+        { head: 'claude-deepseek', kind: 'api-key', present: false, masked: null, note: null, envVar: 'DEEPSEEK_API_KEY' },
+      ],
+    }));
+    expect(out).toContain('api keys');
+    expect(out).toContain('OPENROUTER_API_KEY');
+    expect(out).toContain('sk-o…ddfb');
+    expect(out).toContain('DEEPSEEK_API_KEY');
+    expect(out).toContain('>missing<');
+  });
+
+  test('an opened api-key head gives the command that sets its key', () => {
+    const out = render(h(ApiKeyDetail, { row: { head: 'claude-deepseek', kind: 'api-key', present: false, masked: null, note: null, envVar: 'DEEPSEEK_API_KEY' } }));
+    expect(out).toContain('splice key set DEEPSEEK_API_KEY');
+    expect(out).toContain('no restart needed');
   });
 });

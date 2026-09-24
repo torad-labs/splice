@@ -19,8 +19,9 @@ import { startAuthPolling, useAuth } from '@entities/auth';
 import { AccountActions, AccountLogin, HeadActions, HeadAuthStrip } from '@features/account-login';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Blank, Fault, Key } from '@shared/controls';
+import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
+import { ABSENT } from '@shared/lib';
+import { Blank, Copy, Fault, Key } from '@shared/controls';
 import { AccountStrip } from '@widgets/account-strip';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from './model';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
@@ -77,6 +78,71 @@ interface HeadRow {
   present: boolean;
   masked: string | null;
   note: string | null;
+  /** api-key heads: the variable the key is read from, and the key masked. */
+  envVar?: string | undefined;
+  keyMasked?: string | undefined;
+}
+
+export function openKeyHeadKey(head: string): string {
+  return `key:${head}`;
+}
+
+/**
+ * The api-key heads (openrouter, deepseek, a local runtime), which no other rack lists: they are
+ * not OAuth, so GET /api/accounts never names them, and until this bay the console showed nowhere
+ * which variable a head reads its key from or whether it is set (console review, 2026-09-24).
+ */
+function ApiKeyBay({ rows, openKey, onOpen }: {
+  rows: readonly HeadRow[];
+  openKey: string | null;
+  onOpen: (key: string) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <Bay label={S.keyBay} count={rows.length} compact>
+      {rows.map((row) => (
+        <Strip
+          key={row.head}
+          edge={row.present ? 'green' : 'amber'}
+          edgeLabel={row.present ? S.keySet : S.keyMissing}
+          cocked={!row.present}
+          selected={openKey === openKeyHeadKey(row.head)}
+          onOpen={() => onOpen(openKeyHeadKey(row.head))}
+          ariaLabel={`${S.keyBay} ${row.head}`}
+        >
+          <StripField w={20} label={S.head} value={row.head} mono={false} />
+          <StripField w={24} label={S.variable} value={row.envVar ?? ABSENT} />
+          <StripField w={14} label={S.key} value={row.present ? (row.keyMasked ?? ABSENT) : S.keyMissing} />
+        </Strip>
+      ))}
+    </Bay>
+  );
+}
+
+/** An opened api-key head: where its key comes from, and the one command that sets it. */
+export function ApiKeyDetail({ row }: { row: HeadRow }) {
+  const command = row.envVar === undefined ? null : `splice key set ${row.envVar}`;
+  return (
+    <section className="myx-accounts-key">
+      <div className="myx-accounts-key-row">
+        <HolderEdge state={row.present ? 'green' : 'amber'} label={row.present ? S.keySet : S.keyMissing} />
+        <span className="myx-accounts-key-name">{row.head}</span>
+      </div>
+      <p className="myx-accounts-hint">
+        {row.envVar === undefined
+          ? 'this head signs every request with one api key'
+          : row.present
+            ? `this head signs every request with the key in ${row.envVar}; to replace it, run this, and the next request uses the new key, no restart needed`
+            : `no key in ${row.envVar}; set one with this, and the next request uses it, no restart needed`}
+      </p>
+      {command === null ? null : (
+        <p className="myx-accounts-key-row">
+          <code className="myx-accounts-key-command">{command}</code>
+          <Copy value={command} />
+        </p>
+      )}
+    </section>
+  );
 }
 
 function HeadBay({ label, rows, openKey, onOpen }: {
@@ -156,8 +222,11 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
   const groups = arrangeAccounts(accounts, active);
   const columns = columnsOf(active);
 
-  const pooledHeads = headRows.filter((row) => row.kind !== 'client');
+  // An api-key head has no login to pool or sign in; the key bay below is its place.
+  const pooledHeads = headRows.filter((row) => row.kind !== 'client' && row.kind !== 'api-key');
   const claudeHeads = headRows.filter((row) => row.kind === 'client');
+  const keyHeads = headRows.filter((row) => row.kind === 'api-key');
+  const openedKey = keyHeads.find((row) => openKeyHeadKey(row.head) === openKey) ?? null;
 
   const opened = accounts.find((account) => openAccountKey(account) === openKey) ?? null;
   const openedHead = opened === null && openKey?.startsWith('head:') === true
@@ -169,7 +238,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
   // aria-hidden and once on the content gate -- and the point of that decision is that the
   // exposure and the content CANNOT DESYNC because they are the same expression. With a compound
   // condition, writing it twice is how they drift, so it is named once and read twice.
-  const closed = opened === null && openedHead === null;
+  const closed = opened === null && openedHead === null && openedKey === null;
 
   return (
     <div
@@ -239,6 +308,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
           )}
 
           <ClaudeBay rows={claudeHeads} openKey={openKey} onOpen={toggle} />
+          <ApiKeyBay rows={keyHeads} openKey={openKey} onOpen={toggle} />
         </div>
 
         {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M2-24, the last page in the console
@@ -275,6 +345,8 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
                 </>
               ) : openedHead !== null ? (
                 <HeadActions head={openedHead} />
+              ) : openedKey !== null ? (
+                <ApiKeyDetail row={openedKey} />
               ) : null}
             </>
           )}
@@ -304,6 +376,8 @@ export function AccountsPage() {
     present: auth.present,
     masked: auth.account_id_masked ?? null,
     note: auth.refresh_latched ?? null,
+    envVar: auth.env_var,
+    keyMasked: auth.api_key_masked,
   }));
 
   return (

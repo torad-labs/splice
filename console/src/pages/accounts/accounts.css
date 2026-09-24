@@ -122,3 +122,19 @@
   font-size: var(--text-2);
   color: var(--ink-mute);
 }
+
+/* An opened api-key head: where its key comes from and the command that sets it. The command box
+   paints the strip's paper, so it takes the strip's ink, as the doctor's fix box does. */
+.myx-accounts-key { display: flex; flex-direction: column; gap: var(--space-2); }
+.myx-accounts-key-row { margin: var(--space-0); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.myx-accounts-key-name { font-family: var(--font-label); font-size: var(--text-2); color: var(--ink-strong); }
+.myx-accounts-key-command {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  color: var(--strip-ink);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}

@@ -30,7 +30,6 @@ class UpstreamClientRateLimitTest {
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf())
         }
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 900_000L,
             maxRetries = 3,
             client = HttpClient(engine),
@@ -56,7 +55,6 @@ class UpstreamClientRateLimitTest {
         }
         val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 5_000L,
             maxRetries = 3,
             client = HttpClient(engine),

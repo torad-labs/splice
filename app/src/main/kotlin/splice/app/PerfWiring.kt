@@ -4,8 +4,8 @@
 package splice.app
 
 import splice.app.sources.PerfRowsFileSource
-import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
+import splice.topology.TopologyStatePaths
 import splice.usage.perf.HeadPerfRows
 import splice.usage.perf.PerfCommand
 
@@ -14,7 +14,7 @@ internal object PerfWiring {
         output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),
         rows = HeadPerfRows { head, env ->
-            val paths = StatePaths(envReader = env)
+            val paths = TopologyStatePaths(env).current()
             PerfRowsFileSource(paths.perfStatsFile(head), paths.perfArchiveDir)
         },
     )

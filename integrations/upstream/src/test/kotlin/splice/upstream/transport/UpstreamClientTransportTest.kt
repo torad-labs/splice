@@ -71,7 +71,6 @@ class UpstreamClientTransportTest {
         backoff: suspend (Int, Long) -> Unit = { _, _ -> },
         dnsBackoff: suspend (Int) -> Unit = { _ -> },
     ) = UpstreamClient(
-        firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 5_000,
         maxRetries = 3,
         client = HttpClient(engine),
@@ -323,7 +322,6 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val client = UpstreamClient(
-            firstByteTimeoutMs = 5_000,
             totalTimeoutMs = 1_000,
             maxRetries = 3,
             client = HttpClient(engine),

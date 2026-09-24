@@ -23,6 +23,7 @@ import splice.diagnostics.doctor.report.DoctorJsonReport
 import splice.diagnostics.doctor.report.DoctorReportOptions
 import splice.diagnostics.doctor.report.DoctorRun
 import splice.topology.TopologyLoader
+import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -68,7 +69,7 @@ public class DoctorCommand(
         }
         val run = collect(envReader, options.live)
         if (options.json) {
-            val report = DoctorJsonReport(envReader, claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) })
+            val report = jsonReport(envReader)
             return report.emit(run, options, output)
         }
         // The SAME palette the other two surfaces resolve, for the same reason: NO_COLOR is a
@@ -192,9 +193,16 @@ public class DoctorCommand(
         withLogs: Boolean = false,
     ): String {
         val run = collect(envReader, live)
-        val report = DoctorJsonReport(envReader, claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) })
+        val report = jsonReport(envReader)
         return report.jsonText(report.build(run, withLogs))
     }
+
+    /** Both JSON paths' report, over the state root the daemon itself resolves (V4-109). */
+    private fun jsonReport(envReader: EnvReader): DoctorJsonReport = DoctorJsonReport(
+        envReader,
+        claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) },
+        statePaths = TopologyStatePaths(envReader).current(),
+    )
 
     /** Every section, collected once; both renderings read this. */
     internal fun collect(envReader: EnvReader, live: Boolean = false): DoctorRun {

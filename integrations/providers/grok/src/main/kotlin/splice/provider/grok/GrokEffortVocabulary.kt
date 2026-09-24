@@ -4,7 +4,7 @@ package splice.provider.grok
 
 import splice.upstream.EffortVocabulary
 
-public class GrokEffortVocabulary : EffortVocabulary {
+internal class GrokEffortVocabulary : EffortVocabulary {
     override fun normalize(raw: String): String? = when (raw) {
         "max", "ultra", "ultracode", "extra_high", "extra-high", "extrahigh", XHIGH -> XHIGH
         "high", "heavy", "extended" -> "high"

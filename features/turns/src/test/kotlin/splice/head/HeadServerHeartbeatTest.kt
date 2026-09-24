@@ -79,7 +79,7 @@ class HeadServerHeartbeatTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 2),
                 gate = gate,
                 log = { lines += it },
                 // 15 silent ticks = one heartbeat. The TEST supplies the ticks (V4-139): the pinger is

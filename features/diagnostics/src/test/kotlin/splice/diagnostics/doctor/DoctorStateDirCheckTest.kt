@@ -1,5 +1,5 @@
 // NEW: V4-110 — the doctor row for a [daemon].state_dir that cannot be resolved to a path. The
-// boot fallback (Main.kt statePathsFor) drops such a value silently BY DESIGN; this row makes the
+// boot fallback (TopologyStatePaths.of) drops such a value silently BY DESIGN; this row makes the
 // drop visible, naming the value and the default used, and leaves the operator a next action.
 package splice.diagnostics.doctor
 
@@ -14,7 +14,7 @@ class DoctorStateDirCheckTest {
 
     @Test
     fun `an unusable state_dir warns and names both the value and the default`() {
-        // A NUL byte is the one character java.nio.file.Paths.get refuses; Main.kt falls back on it.
+        // A NUL byte is the one character java.nio.file.Paths.get refuses; TopologyStatePaths falls back on it.
         val declared = "\u0000"
         val row = stateDirRows(Topology(daemon = DaemonConfig(stateDir = declared))).single()
         assertEquals(CheckStatus.WARN, row.status)

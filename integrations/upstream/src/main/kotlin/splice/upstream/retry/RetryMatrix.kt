@@ -101,9 +101,10 @@ private val CAUSE_CEILINGS: Map<FailureCause, CauseCeiling> = mapOf(
         "a server-side fault, which is the class a retry can genuinely heal.",
     ),
     FailureCause.UPSTREAM_STATUS_4XX to CauseCeiling(
-        listOf(RetryLayer.L4_ACCOUNT_SWITCH),
-        "a 4xx is the upstream's verdict on the REQUEST, so identical bytes " +
-            "re-earn the identical answer and only a different account can change it.",
+        listOf(RetryLayer.L1_TRANSPORT, RetryLayer.L4_ACCOUNT_SWITCH),
+        "a status is not classified reliably enough to refuse a ~1.5s retry (a 403 seen as " +
+            "overload, a muse 400 that was our bug), so a 4xx takes the transport curve like every " +
+            "failure status (V4-62) and a different account is the next layer.",
     ),
     FailureCause.UPSTREAM_REPORTED to CauseCeiling(
         SEND_AGAIN,

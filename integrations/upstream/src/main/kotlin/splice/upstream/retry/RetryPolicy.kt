@@ -119,6 +119,8 @@ internal class RetryRules(private val maxRetries: Int) {
      *    too long" line — and every re-send only delays that. Measured live on the bonsai head at
      *    upstreamRetries=10: ten 1.4 MB re-sends, each re-tokenized by llama-server, 43 s before the
      *    client could compact.
+     *  - A CONTENT-POLICY REFUSAL named by the vendor's own code ([policyRefused]): the same bytes
+     *    are refused again, and the retry matrix entitles CONTENT_FILTERED to no layer.
      *
      * Same principle as Failure.deterministic, one layer down: that carve-out covers verdicts splice
      * computed with no upstream involved; these, verdicts whose answer cannot change. All of them are
@@ -128,8 +130,20 @@ internal class RetryRules(private val maxRetries: Int) {
         nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text) ->
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
         overflowed(failed) -> "is a context overflow (no retry: the same bytes overflow again)"
+        policyRefused(failed) -> "is a content-policy refusal (no retry: the same bytes are refused again)"
         else -> null
     }
+
+    /** V4-117 audit: a 4xx other than a rate limit whose vendor CODE names a policy refusal (the
+     *  classifier's CONTENT_FILTERED). Unlike a bare status, a code is the vendor's own verdict, and
+     *  the retry matrix entitles that cause to no layer at any phase; retrying it spent the curve on
+     *  an answer that could not change. Keyed the way [overflowed] is, so a 429 still reaches the
+     *  cooldown branch. */
+    private fun policyRefused(failed: RetryOutcome.Failed): Boolean =
+        failed.status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
+            failed.status != HttpStatus.TOO_MANY_REQUESTS &&
+            UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
+            FailureCause.CONTENT_FILTERED
 
     /** V4-167: a 4xx other than a rate limit, whose text says overflow. A 429 reading "too many tokens"
      *  is a per-minute token quota, which heals with time and must reach the cooldown branch; a 5xx is

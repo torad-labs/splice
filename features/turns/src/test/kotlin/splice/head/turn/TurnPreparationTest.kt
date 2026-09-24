@@ -127,7 +127,7 @@ class TurnPreparationTest {
     private fun preparedTurn(tmp: Path, layers: SystemPromptLayers, cwd: Path? = Paths.get(ROOT, "src")): BuiltTurn {
         val deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
             policy = HeadDeps.HeadPolicy(systemPrompt = layers),
             seams = HeadDeps.HeadSeams(

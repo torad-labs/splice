@@ -11,6 +11,7 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.topology.TopologyMessages
 import splice.core.util.EnvReader
+import splice.topology.TopologyStatePaths
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -42,7 +43,7 @@ internal class DoctorConfigChecks(
 
     /** V4-173: the row that keeps an opted-in wire tap visible on every run. */
     private val wireTaps = DoctorWireTapChecks()
-    private val traces = DoctorTraceChecks(StatePaths(envReader = env))
+    private val traces = DoctorTraceChecks(TopologyStatePaths(env).current())
 
     internal fun configurationChecks(
         topo: DoctorTopology,
@@ -96,7 +97,7 @@ internal class DoctorConfigChecks(
     }
 
     /** V4-110: a `[daemon].state_dir` the operator wrote but that cannot be resolved to a path. The
-     *  daemon's boot (Main.kt statePathsFor) falls back to the default state dir for such a value —
+     *  daemon's boot (TopologyStatePaths.of) falls back to the default state dir for such a value —
      *  BY DESIGN, not as a swallowed failure, but that fallback is silent at boot. This row makes it
      *  visible: it names the unusable value AND the default that was used instead, and gives the
      *  operator the next action. WARN, not FAIL: the configuration is legal and the daemon runs; the
@@ -131,7 +132,7 @@ internal class DoctorConfigChecks(
      *  WARN, not FAIL: the configuration is legal and the daemon runs; the setting is merely inert. */
     private fun ignoredSettingChecks(topology: Topology, configPath: Path): List<DoctorCheck> =
         ConfigService(
-            StatePaths(envReader = env),
+            TopologyStatePaths(env).of(topology),
             headOverrides = TopologyKnobLayer(topology).configOverrides(),
             perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
             envReader = env,

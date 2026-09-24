@@ -46,7 +46,7 @@ abstract class CodeModeBridgeTestSupport {
         clock: Clock = Clock.systemUTC(),
     ) = CodexCodeModeBridge(
         CodeModeBridgeConfig(
-            runtime,
+            { runtime },
             tempDir.resolve("bridge.json"),
             maxRecords = maxRecords,
             ttl = ttl,

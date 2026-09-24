@@ -38,8 +38,10 @@
 // contract even when no source file spells it, because the call site binds it by inference and a
 // name-based scan cannot see that. The signature read is the declaration's own header plus the
 // headers of its public MEMBERS — headers, not first lines, because a member whose parameter list
-// wraps hid its own types for a whole row. Both approximations are deliberate: over-justifying
-// costs a missed declaration, under-justifying cost five good ones.
+// wraps hid its own types for a whole row. Every `= expression` is cut out of each header first: a
+// default, an initializer or an expression body is not contract, and reading one as a use let a
+// const named only in a default go public under a green wall (V4-210). Both approximations are
+// deliberate: over-justifying costs a missed declaration, under-justifying cost five good ones.
 //
 // VIOLATIONS. GROWTH — a declaration no other module consumes that the baseline does not record —
 // is RED BY NAME on the commit that adds it. A SHRINK is RED too: a baseline entry that has stopped
@@ -108,20 +110,80 @@ private fun headerOf(lines: List<String>, at: Int): List<String> {
     return out
 }
 
+private const val OPENERS = "([{"
+private const val CLOSERS = ")]}"
+
 /** The text that carries a declaration's reachable type names: its own header, plus the headers of
  *  its PUBLIC members. A member's BODY is excluded, so a type named only inside a private member
  *  slips through and OVER-justifies; that direction is chosen deliberately. */
 private fun signatureOf(lines: List<String>, at: Int): String {
-    val out = headerOf(lines, at).toMutableList()
-    var index = at + maxOf(out.size, 1)
+    val own = headerOf(lines, at)
+    val out = mutableListOf(withoutDefaults(own.joinToString("\n")))
+    var index = at + maxOf(own.size, 1)
     while (index < lines.size) {
         if (PublicSurface.DECLARATION.containsMatchIn(lines[index])) break
         val member = if (PublicSurface.MEMBER.containsMatchIn(lines[index])) headerOf(lines, index) else emptyList()
-        out += member
+        if (member.isNotEmpty()) out += withoutDefaults(member.joinToString("\n"))
         // Past the member's own header, so its parameter lines are not re-read as members.
         index += maxOf(member.size, 1)
     }
     return out.joinToString("\n")
+}
+
+/** A header with every `= expression` cut out: a parameter's default, a property's initializer, an
+ *  expression body. None of them is contract. A caller binds a parameter's TYPE by inference and
+ *  never its default, and a default may name an `internal` const, which the compiler allows, so a
+ *  name met only after an `=` justifies nothing (V4-210: `x: Int = DEFAULT_X` read as a use, and the
+ *  two consts V4-150 made internal could go public again under a green wall). Cut per HEADER, never
+ *  over the joined signature, so an expression body cannot run on into the next member's types. */
+private fun withoutDefaults(header: String): String {
+    val out = StringBuilder()
+    var index = 0
+    while (index < header.length) {
+        if (header[index] == '=') {
+            index = endOfExpression(header, index + 1)
+        } else {
+            out.append(header[index])
+            index += 1
+        }
+    }
+    return out.toString()
+}
+
+/** Where the expression after an `=` ends: a `,` or an unmatched closer at its own depth, or the end
+ *  of its line once it has begun, so a default wrapped over lines is cut whole and the parameter
+ *  after it is kept. A string literal's `,` and `)` are not structure. */
+private fun endOfExpression(text: String, from: Int): Int {
+    var depth = 0
+    var begun = false
+    var quoted = false
+    for (index in from until text.length) {
+        val ch = text[index]
+        if (depth == 0 && ends(ch, begun, quoted)) return index
+        quoted = quotedAfter(ch, quoted)
+        if (!quoted) depth += nesting(ch)
+        begun = begun || !ch.isWhitespace()
+    }
+    return text.length
+}
+
+private fun ends(ch: Char, begun: Boolean, quoted: Boolean): Boolean = when {
+    ch == '\n' -> begun
+    quoted -> false
+    else -> ch == ',' || ch in CLOSERS
+}
+
+/** A Kotlin string literal never spans a line, so a stray quote in prose cannot hide the rest. */
+private fun quotedAfter(ch: Char, quoted: Boolean): Boolean = when (ch) {
+    '\n' -> false
+    '"' -> !quoted
+    else -> quoted
+}
+
+private fun nesting(ch: Char): Int = when (ch) {
+    in OPENERS -> 1
+    in CLOSERS -> -1
+    else -> 0
 }
 
 internal object PublicSurface {
@@ -556,6 +618,22 @@ class PublicSurfaceLawTest {
     }
 
     @Test
+    fun `the law can actually fail - a const named only in a public default is GROWTH - V4-210`(@TempDir root: File) {
+        with(Tree(root)) {
+            // The three shapes a default takes: closed by the parameter list's `)`, closed by a `,`,
+            // and wrapped over lines. The type declared AFTER them must still ride the closure.
+            write(LIB_STORE to DEFAULTED_STORE, OTHER_USE to STORE_USE)
+            val hits = audit(baseline())
+            for (id in listOf(SIZE_ID, BYTES_ID, LIMIT_ID)) {
+                assertHit(hits, "GROWTH", id) { "a const named only in a public default is not part of the contract" }
+            }
+            assertFalse(hits.any { HIDDEN_ID in it }) {
+                "the parameter after a stripped default is still signature, got: ${KotlinText.pyReprList(hits)}"
+            }
+        }
+    }
+
+    @Test
     fun `the law can actually fail - a shrink names the new number and the resource - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to API, OTHER_USE to USE)
@@ -653,6 +731,9 @@ class PublicSurfaceLawTest {
         const val LEAK_ID = ":lib fix.lib.SelftestLeak"
         const val HIDDEN_ID = ":lib fix.lib.Hidden"
         const val DELETED_ID = ":lib fix.lib.DeletedLongAgo"
+        const val SIZE_ID = ":lib fix.lib.DEFAULT_SIZE"
+        const val BYTES_ID = ":lib fix.lib.DEFAULT_BYTES"
+        const val LIMIT_ID = ":lib fix.lib.DEFAULT_LIMIT"
 
         const val API = "package fix.lib\npublic class Api\ninternal class Hidden\n"
         const val LEAK = "package fix.lib\npublic class SelftestLeak(val v: Int)\n"
@@ -673,6 +754,13 @@ class PublicSurfaceLawTest {
         /** The same, with the member's parameter list WRAPPED — the shape a first-line-only scan hides. */
         const val WRAPPED_STORE = "package fix.lib\n\npublic class Store {\n    public fun read(\n" +
             "        flag: Boolean,\n        hidden: Hidden,\n    ): Int = 0\n}\n\npublic class Hidden\n"
+
+        /** V4-150's two consts and V4-210's third, each named ONLY in a default of a consumed type. */
+        const val DEFAULTED_STORE = "package fix.lib\n\npublic const val DEFAULT_SIZE: Int = 16\n\n" +
+            "public const val DEFAULT_BYTES: Int = 8\n\npublic const val DEFAULT_LIMIT: Long = 30_000\n\n" +
+            "public class Store(size: Int = DEFAULT_SIZE) {\n    public data class Policy(\n" +
+            "        val bytes: Int = DEFAULT_BYTES,\n        val limit: Long = maxOf(\n            DEFAULT_LIMIT,\n" +
+            "            1L,\n        ),\n        val hidden: Hidden,\n    ) {\n    }\n}\n\npublic class Hidden\n"
 
         fun baseline(vararg entries: String, recorded: String = "2026-09-17"): String =
             """{"recorded": "$recorded", "offenders": [${entries.joinToString(", ") { "\"$it\"" }}]}"""

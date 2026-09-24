@@ -32,7 +32,6 @@ class UpstreamClientAmendTest {
     }
 
     private fun clientOver(engine: MockEngine, maxRetries: Int = 3) = UpstreamClient(
-        firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 5_000,
         maxRetries = maxRetries,
         client = HttpClient(engine),

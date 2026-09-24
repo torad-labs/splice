@@ -56,7 +56,7 @@ private class ContractFakeAuth : RefreshableAuthProvider {
 /** A real HeadServer over a mock upstream, with the shared cooldown the refusal path reads. */
 private class RefusalRig(tmp: Path) {
     val mock = MockChatGptUpstream()
-    val upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1)
+    val upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1)
     val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
 
     // The head binds port 0 and reports what it got: a fixed port BindExceptions on TIME_WAIT, and a

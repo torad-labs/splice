@@ -85,7 +85,7 @@ class HeadServerCompactionReplayTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 2),
                 gate = gate,
                 log = { lines += it },
             ),

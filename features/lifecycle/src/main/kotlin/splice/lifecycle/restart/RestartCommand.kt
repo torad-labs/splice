@@ -7,7 +7,6 @@ package splice.lifecycle.restart
 
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
-import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -18,6 +17,7 @@ import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.lifecycle.start.DaemonColdStart
 import splice.topology.TopologyLoader
+import splice.topology.TopologyStatePaths
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
@@ -91,7 +91,7 @@ public class RestartCommand(
      *  holds the old key in memory — so an operator following the message on the unreadable path
      *  was sent to fix the wrong thing, on a verb whose whole job is to stop a running daemon. */
     private fun stopKeyOrExplain(): String? {
-        val keyFile = StatePaths(envReader = env).mgmtKeyFile
+        val keyFile = TopologyStatePaths(env).current().mgmtKeyFile
         return when (val read = MgmtKeyFile().read(env)) {
             is MgmtKeyRead.Present -> read.key
             is MgmtKeyRead.Unreadable -> null.also {

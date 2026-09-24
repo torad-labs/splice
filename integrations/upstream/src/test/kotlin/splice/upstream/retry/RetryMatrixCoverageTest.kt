@@ -17,17 +17,61 @@
 // MODULE and this test source set is a friend of main, so the matrix is reachable either way.
 package splice.upstream.retry
 
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.WireType
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
+import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.clientOver
+import splice.upstream.transport.postOnce
+import java.util.concurrent.atomic.AtomicInteger
 
 class RetryMatrixCoverageTest {
+
+    // V4-117 audit: the matrix had no caller, and its 4XX cell said a 4xx gets no transport retry
+    // while the loop (V4-62) retries every failure status. A matrix is only true if it describes the
+    // loop, so each failed status runs through the REAL loop and the REAL classifier, and L1 in the
+    // cause's ceiling must match whether the loop sent the request again.
+    @Test
+    fun `L1 in the matrix is exactly what the retry loop does with a failed status`() = runTest {
+        val samples = listOf(
+            400 to "bad request",
+            403 to "forbidden",
+            404 to "not found",
+            422 to "unprocessable",
+            400 to """{"error":{"code":"invalid_prompt","message":"refused"}}""",
+            400 to """{"error":{"message":"prompt is too long: 300000 tokens > 200000 maximum"}}""",
+            500 to "boom",
+            501 to "not implemented",
+            503 to "busy",
+        )
+        val disagreements = samples.mapNotNull { (status, body) ->
+            val calls = AtomicInteger()
+            val engine = MockEngine {
+                calls.incrementAndGet()
+                respond(body, HttpStatusCode.fromValue(status), headersOf())
+            }
+            assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
+            val cause = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, status).cause
+            val entitled = RetryLayer.L1_TRANSPORT in RetryMatrix.of(cause, FailurePhase.CONNECT).layers
+            val retried = calls.get() > 1
+            "$status $cause: loop retried=$retried, matrix L1=$entitled".takeIf { retried != entitled }
+        }
+        assertEquals(emptyList<String>(), disagreements)
+    }
 
     @Test
     fun `every cause and phase pair answers with a written reason`() {

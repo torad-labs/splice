@@ -39,7 +39,6 @@ internal fun clientOver(
     capture: Capture = Capture(),
     clock: () -> Long = System::currentTimeMillis,
 ) = UpstreamClient(
-    firstByteTimeoutMs = 5_000,
     totalTimeoutMs = 5_000,
     maxRetries = 3,
     client = HttpClient(engine),

@@ -42,7 +42,7 @@ private class AdmissionTestAuth : RefreshableAuthProvider {
 // share the name `headDeps` and the import would collide with this declaration. It composes the same
 // bundles instead, which is all the fixture does anyway.
 private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
-    upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
+    upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
     inferenceToken = "test-inference-token",
     operatorToken = "test-operator-token",
     gate = InflightGate({ 1 }),

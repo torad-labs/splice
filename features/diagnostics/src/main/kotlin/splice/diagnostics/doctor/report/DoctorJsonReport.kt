@@ -34,7 +34,9 @@ internal class DoctorJsonReport(
     envReader: EnvReader = EnvReader(System::getenv),
     private val claudeVersion: ClaudeVersionRead,
     private val home: Path = Paths.get(System.getProperty("user.home")),
-    private val statePaths: StatePaths = StatePaths(envReader = envReader),
+    /** Resolved by the caller through TopologyStatePaths, so a declared `[daemon].state_dir` is the
+     *  root this report reads (V4-109). No default: a default here is the drift that row closed. */
+    private val statePaths: StatePaths,
     private val installPaths: InstallPaths = InstallPaths(envReader = envReader),
     private val redaction: DoctorRedaction = DoctorRedaction(
         home,

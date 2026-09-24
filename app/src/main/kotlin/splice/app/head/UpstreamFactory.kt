@@ -12,7 +12,6 @@ import splice.upstream.transport.UpstreamTransport
 
 internal class UpstreamFactory {
     internal fun upstreamFor(ctx: ProviderBuild, cfg: SpliceConfig, log: LogSink): UpstreamClient = UpstreamClient(
-        cfg.firstByteTimeoutMs,
         cfg.upstreamTimeoutMs,
         cfg.upstreamRetries,
         // CX-03: zstd request bodies — a TOML quirk, absent = plaintext. A quirk and
@@ -23,7 +22,7 @@ internal class UpstreamFactory {
         // hardcoded check compressed the oracle's bodies and crashed its vendored
         // mock's JSON.parse, which was the source of every leaked harness daemon.
         zstdRequestBody = ctx.providerCfg.quirks.zstdRequestBody == true,
-        client = UpstreamTransport().defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
+        client = UpstreamTransport().defaultClient(cfg.upstreamTimeoutMs, log),
         // V4-110 retry curve: read per head from the merged+normalized map (seeded with the Knob
         // defaults, so absent config keeps the generic 200ms/10s/±10% curve). The map is always
         // seeded, so `as Long` is safe.

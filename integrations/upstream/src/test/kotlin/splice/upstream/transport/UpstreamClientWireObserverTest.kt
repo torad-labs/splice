@@ -32,7 +32,6 @@ class UpstreamClientWireObserverTest {
     }
 
     private fun client(engine: MockEngine, maxRetries: Int = 3) = UpstreamClient(
-        firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 5_000,
         maxRetries = maxRetries,
         client = HttpClient(engine),

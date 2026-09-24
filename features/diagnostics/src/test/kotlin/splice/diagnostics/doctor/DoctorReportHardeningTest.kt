@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
+import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
@@ -56,7 +57,12 @@ class DoctorReportHardeningTest {
     private fun build(run: DoctorRun): JsonObject {
         val state = Files.createDirectories(tmp.resolve("state"))
         val env = mapOf("CLAUDEX_STATE_DIR" to state.toString(), "XDG_CONFIG_HOME" to tmp.resolve("config").toString())
-        val report = DoctorJsonReport(envReader = { env[it] }, claudeVersion = { "2.1.257" }, home = tmp)
+        val report = DoctorJsonReport(
+            envReader = { env[it] },
+            claudeVersion = { "2.1.257" },
+            home = tmp,
+            statePaths = StatePaths(envReader = { env[it] }),
+        )
         return report.build(run, withLogs = false)
     }
 

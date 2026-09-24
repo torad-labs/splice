@@ -119,7 +119,7 @@ class SlotPromptTurnTest {
     private fun turn(headMode: SystemPromptMode): Pair<BuiltTurn, Map<String, Long>> {
         val deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
             policy = HeadDeps.HeadPolicy(
                 systemPrompt = SystemPromptLayers(

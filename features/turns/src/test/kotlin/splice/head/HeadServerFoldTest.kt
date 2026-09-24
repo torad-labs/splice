@@ -102,7 +102,7 @@ class HeadServerFoldTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
                 log = {},
             ),
         )
@@ -230,7 +230,7 @@ class HeadServerFoldTest {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 20_000, maxRetries = 1),
+            upstream = UpstreamClient(totalTimeoutMs = 20_000, maxRetries = 1),
             gate = gate,
             log = log,
         ).copy(stores = headStores(tmp, suffix = "-cap")),
@@ -260,7 +260,7 @@ class HeadServerFoldTest {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 60_000, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 2),
             log = {},
         ).copy(stores = headStores(tmp, suffix = "-stall")),
     )

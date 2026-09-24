@@ -10,6 +10,7 @@ import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
+import splice.topology.TopologyStatePaths
 import java.nio.file.Path
 
 /** The doctor daemon section as a constructed collaborator (Kotlin style law, 2026-08-15: main
@@ -28,7 +29,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
         topology: Topology?,
         configPath: Path? = null,
     ): List<DoctorCheck> {
-        val statePaths = StatePaths(envReader = envReader)
+        val statePaths = TopologyStatePaths(envReader).of(topology)
         val expected = DaemonHealth().cliVersion()
         val daemon = when (val running = snapshot.healthVersion) {
             null -> DoctorCheck(CHECK_DAEMON, CheckStatus.INFO, "stopped (starts on first launch)")

@@ -220,7 +220,7 @@ class HeadServerLoadTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(firstByteTimeoutMs = 120_000, totalTimeoutMs = 200_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 200_000, maxRetries = 2),
                 gate = gate,
                 log = {},
             ),

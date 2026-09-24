@@ -75,7 +75,6 @@ class UpstreamClientRefreshChainTest {
     // maxRetries = 1 IS the assertion: exactly one normal attempt is budgeted, so a second request
     // can only go out if the refresh reissue costs nothing from that budget.
     private fun clientOver(engine: MockEngine) = UpstreamClient(
-        firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 5_000,
         maxRetries = 1,
         client = HttpClient(engine),

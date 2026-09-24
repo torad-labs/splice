@@ -127,7 +127,6 @@ class AccountTurnTimeoutTest {
         }
         val client = HttpClient(CIO)
         private val upstream = UpstreamClient(
-            firstByteTimeoutMs = 10_000L,
             totalTimeoutMs = 30_000L,
             maxRetries = 3,
             client = client,

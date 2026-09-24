@@ -102,6 +102,7 @@ class TraceCommandTest {
             output = TerminalOutput { out.appendLine(it) },
             errors = TerminalOutput { err.appendLine(it) },
             heads = source,
+            traceDirs = { StatePaths(envReader = it).traceDir },
         )
         return Triple(command.trace(args.toList(), env), out.toString(), err.toString())
     }
@@ -261,7 +262,7 @@ class TraceCommandTest {
 
     @Test
     fun `argument parsing`() {
-        val command = TraceCommand(TerminalOutput {}, TerminalOutput {}, heads)
+        val command = TraceCommand(TerminalOutput {}, TerminalOutput {}, heads) { StatePaths(envReader = it).traceDir }
         assertEquals(TraceOpts("kimi"), command.parseTraceArgs(listOf("kimi")))
         assertEquals(
             TraceOpts("kimi", last = 3, session = "s1", turn = "t1", json = true, purge = true),

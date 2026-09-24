@@ -5,7 +5,6 @@
 // these files (LAYOUT-01): app supplies the topology read and the two terminal streams.
 package splice.head.trace
 
-import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -31,6 +30,7 @@ public class TraceCommand(
     private val output: TerminalOutput,
     private val errors: TerminalOutput,
     private val heads: TraceHeadSource,
+    private val traceDirs: TraceDirSource,
 ) {
     private val rows = TraceRows()
     private val view = TraceView(output)
@@ -39,7 +39,7 @@ public class TraceCommand(
         val opts = parseTraceArgs(args)
             ?: return fail("unknown or malformed arguments ${args.joinToString(" ")}\n$TRACE_USAGE")
         if (!headExists(opts.head, envReader)) return false
-        val traceDir = StatePaths(envReader = envReader).traceDir
+        val traceDir = traceDirs.traceDir(envReader)
         return if (opts.purge) purge(opts.head, traceDir) else show(opts, traceDir)
     }
 

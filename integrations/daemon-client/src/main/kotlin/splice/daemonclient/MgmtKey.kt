@@ -3,10 +3,10 @@
 // that asks the daemon anything presents this key, so it lives with the daemon client.
 package splice.daemonclient
 
-import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 
 /** DR-174: the mgmt-key file as a reader actually found it — the same three-way distinction
@@ -45,7 +45,9 @@ public class MgmtKeyFile {
      *  writes the key and the path exists only once minted — a zero-byte file is a half-written
      *  mint, not a permissions problem. */
     public fun read(envReader: EnvReader): MgmtKeyRead {
-        val path = StatePaths(envReader = envReader).mgmtKeyFile
+        // V4-109: the daemon mints the key under its RESOLVED state dir, so a CLI reader resolves it
+        // the same way; StatePaths(envReader) alone ignored [daemon].state_dir.
+        val path = TopologyStatePaths(envReader).current().mgmtKeyFile
         val attempt = Cancellables.runCatchingCancellable { Files.readString(path).trim() }
         val failure = attempt.exceptionOrNull()
         if (failure != null) {

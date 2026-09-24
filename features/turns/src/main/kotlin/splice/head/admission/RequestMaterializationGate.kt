@@ -3,11 +3,14 @@ package splice.head.admission
 
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import splice.core.config.Knob
 import splice.head.turn.MaterializedRequest
 
-/** Default permits. Was `RequestMaterializationGate.DEFAULT_MAX_CONCURRENT` (a companion const);
- *  same package-visible name, now at file scope. */
-public const val DEFAULT_MAX_CONCURRENT: Int = 16
+/** Default permits. Was `RequestMaterializationGate.DEFAULT_MAX_CONCURRENT` (a companion const),
+ *  then a file-scope const of that name. `internal` (V4-210): its one reader is the constructor default
+ *  below, and a default is not contract, so nothing outside this module can bind it. It READS
+ *  Knob.MATERIALIZATION_PERMITS, whose own comment names this gate: the same 16, one source. */
+internal val defaultMaxConcurrent: Int = (Knob.MATERIALIZATION_PERMITS.default as Long).toInt()
 
 /**
  * Process-shared bound on requests concurrently being decoded and translated.
@@ -15,7 +18,7 @@ public const val DEFAULT_MAX_CONCURRENT: Int = 16
  * The turn gate bounds long-lived upstream work; this smaller gate bounds the short, allocation-
  * heavy phase that temporarily holds the raw UTF-8 body, Anthropic tree, and translated tree.
  */
-public class RequestMaterializationGate(maxConcurrent: Int = DEFAULT_MAX_CONCURRENT) {
+public class RequestMaterializationGate(maxConcurrent: Int = defaultMaxConcurrent) {
     private val semaphore = Semaphore(maxConcurrent.coerceAtLeast(1))
 
     // The CLASS is public because HeadDeps (public) carries one and :app constructs it; the LEASE

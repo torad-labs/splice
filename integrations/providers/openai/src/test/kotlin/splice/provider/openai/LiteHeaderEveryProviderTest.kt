@@ -4,7 +4,6 @@ package splice.provider.openai
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
@@ -15,7 +14,6 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.request.DefaultEffortVocabulary
 import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -59,8 +57,13 @@ class LiteHeaderEveryProviderTest {
     }
 
     @Test
-    fun `OpenAiQuirks uses the dialect DefaultEffortVocabulary`() {
-        assertTrue(OpenAiQuirks().defaultQuirks().effortVocabulary is DefaultEffortVocabulary)
+    fun `OpenAiQuirks uses the dialect's default effort vocabulary`() {
+        // Against the dialect's own default, not by type name: the vocabulary is internal to its
+        // module (V4-210), and a sibling's test is not a consumer that justifies publishing it.
+        assertEquals(
+            ResponsesQuirks(providerTag = "dialect-default").effortVocabulary::class,
+            OpenAiQuirks().defaultQuirks().effortVocabulary::class,
+        )
     }
 
     @Test

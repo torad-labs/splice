@@ -106,13 +106,15 @@ internal class CodexResponsesArm(
         if (ctx.providerCfg.codeModeEnabled) {
             CodexCodeModeBridge(
                 CodeModeBridgeConfig(
-                    runtime = JvmCodeModeRuntime(
-                        // V4-110: the three code-mode pool knobs are TOML quirks overlaid on the code
-                        // defaults — absent keeps today's 4 workers / 5s advance / 128MB heap.
-                        maxWorkers = ctx.providerCfg.quirks.codeModeWorkers ?: DEFAULT_MAX_WORKERS,
-                        advanceTimeoutMs = ctx.providerCfg.quirks.codeModeTimeoutMs ?: DEFAULT_ADVANCE_TIMEOUT_MS,
-                        heapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
-                    ),
+                    runtimes = {
+                        JvmCodeModeRuntime(
+                            // V4-110: the three code-mode pool knobs are TOML quirks overlaid on the code
+                            // defaults — absent keeps today's 4 workers / 5s advance / 128MB heap.
+                            maxWorkers = ctx.providerCfg.quirks.codeModeWorkers ?: DEFAULT_MAX_WORKERS,
+                            advanceTimeoutMs = ctx.providerCfg.quirks.codeModeTimeoutMs ?: DEFAULT_ADVANCE_TIMEOUT_MS,
+                            heapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
+                        )
+                    },
                     stateFile = statePaths.stateDir.resolve("${ctx.key}-code-mode.json"),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                 ),

@@ -3,6 +3,7 @@
 package splice.daemonclient
 
 import com.sun.net.httpserver.HttpServer
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -35,6 +36,28 @@ class DaemonClientTest {
         val diagnostic = errors.toString()
         assertTrue(diagnostic.contains("could not read $config"), diagnostic)
         assertTrue(diagnostic.contains("using default ports; a running daemon may appear stopped"), diagnostic)
+    }
+
+    // V4-109: the daemon honours [daemon].state_dir (DaemonProcess), so the CLI's key and port reads
+    // must resolve the same dir; `splice restart` found no key when they did not. The environment
+    // points at an EMPTY state dir, so a reader that ignores the topology finds nothing there, never
+    // the operator's real key.
+    @Test
+    fun `the CLI reads the key and the state port where a declared state_dir put them`(@TempDir tmp: Path) {
+        val declared = Files.createDirectories(tmp.resolve("declared"))
+        Files.writeString(declared.resolve("mgmt-key"), "planted-key")
+        Files.writeString(declared.resolve("config.json"), """{"controlPort": 47123}""")
+        val config = tmp.resolve("splice.toml")
+        Files.writeString(config, "[daemon]\nstate_dir = \"$declared\"\n")
+        val env = EnvReader { name ->
+            mapOf(
+                "SPLICE_CONFIG" to config.toString(),
+                "SPLICE_STATE_DIR" to Files.createDirectories(tmp.resolve("env-state")).toString(),
+            )[name]
+        }
+
+        assertEquals(MgmtKeyRead.Present("planted-key"), MgmtKeyFile().read(env))
+        assertEquals(47123, DaemonSettings(TerminalOutput {}).controlPort(env))
     }
 
     @Test

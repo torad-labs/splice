@@ -5,11 +5,11 @@
 // head-tag filter), so it works with the daemon STOPPED: no HTTP, no key.
 package splice.diagnostics.logs
 
-import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyStatePaths
 import java.nio.file.Files
 
 /** The `logs` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
@@ -18,7 +18,7 @@ public class LogsCommand(private val output: TerminalOutput, private val errors:
 
     public fun logs(args: List<String>, envReader: EnvReader): Boolean {
         val opts = parseLogsArgs(args) ?: return false
-        val statePaths = StatePaths(envReader = envReader)
+        val statePaths = TopologyStatePaths(envReader).current()
         val logFile = statePaths.logsDir.resolve("daemon.log")
         val source = LogFileSource(logFile, opts.head?.let { "[$it]" })
 

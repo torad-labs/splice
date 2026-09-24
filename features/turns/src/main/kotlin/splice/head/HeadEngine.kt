@@ -14,9 +14,7 @@
 package splice.head
 
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -33,10 +31,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.netty.channel.socket.SocketChannelConfig
-import splice.core.auth.LoopbackHost
-import splice.core.turn.ErrorType
 import splice.core.util.LogSink
-import splice.core.wire.ErrorEnvelope
 import splice.head.admission.HeadAdmission
 import splice.upstream.Provider
 import java.util.concurrent.atomic.AtomicBoolean
@@ -97,7 +92,8 @@ internal class HeadEngine(
             serverConfig {
                 module {
                     install(SSE)
-                    refuseForeignHosts()
+                    // v0.4.0: a DNS-rebinding page is refused before routing (ClientAuth.admitsHost).
+                    intercept(ApplicationCallPipeline.Plugins) { if (!clientAuth.admitsHost(call)) finish() }
                     routing {
                         get("/health") {
                             call.respondText(diagnostics.healthJson(this@HeadEngine.port), ContentType.Application.Json)
@@ -152,22 +148,6 @@ internal class HeadEngine(
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         boundPort = null
-    }
-
-    /** v0.4.0: a request naming a non-loopback Host is a DNS-rebinding page in the operator's browser
-     *  (see LoopbackHost). Refused before routing, so no route runs; Anthropic-shaped, so a client
-     *  that ever reaches it prints why. */
-    private fun Application.refuseForeignHosts() {
-        intercept(ApplicationCallPipeline.Plugins) {
-            if (!LoopbackHost.admits(call.request.headers[HttpHeaders.Host])) {
-                call.respondText(
-                    ErrorEnvelope.of(ErrorType.PERMISSION.wireName, LoopbackHost.FOREIGN_HOST_REFUSAL).toString(),
-                    ContentType.Application.Json,
-                    HttpStatusCode.Forbidden,
-                )
-                finish()
-            }
-        }
     }
 
     /** V4-173: the operator's view of what this head sent upstream. Management key only

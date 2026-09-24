@@ -12,6 +12,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
+import splice.core.auth.LoopbackHost
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 import splice.upstream.credentials.AccountResetText
@@ -80,6 +81,15 @@ internal class AdmissionResponses {
             errorBodyJson(INVALID_REQUEST_ERROR, message),
             ContentType.Application.Json,
             HttpStatusCode.RequestTimeout,
+        )
+    }
+
+    /** v0.4.0: the DNS-rebinding refusal (see ClientAuth.admitsHost) — before any route runs. */
+    suspend fun respondForeignHost(call: ApplicationCall) {
+        call.respondText(
+            errorBodyJson("permission_error", LoopbackHost.FOREIGN_HOST_REFUSAL),
+            ContentType.Application.Json,
+            HttpStatusCode.Forbidden,
         )
     }
 

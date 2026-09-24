@@ -74,8 +74,10 @@ internal class DaemonBoundary {
     // here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
     internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink {
         // v0.4.0: owner-only, and re-asserted each start (SecureFile.ownerOnlyDirectory): the dir is
-        // the boundary, so daemon.log and the per-head logs need no mode of their own.
-        Cancellables.runCatchingCancellable { SecureFile.ownerOnlyDirectory(logsDir) }
+        // the boundary, so daemon.log and the per-head logs need no mode of their own. A dir left
+        // open is said in the log itself, once the sink below exists.
+        val logsOpen = Cancellables.runCatchingCancellable { SecureFile.ownerOnlyDirectory(logsDir) }
+            .getOrElse { SafeFailureText.render(it) }
         val file = logsDir.resolve("daemon.log")
         val rolled = logsDir.resolve("daemon.log.1")
         var writer: java.io.Writer? = null
@@ -85,7 +87,7 @@ internal class DaemonBoundary {
                 System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}) — starting at 0\n")
             }
             .getOrDefault(0L)
-        return LogSink { msg ->
+        val sink = LogSink { msg ->
             val line = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
             AsyncFileIo.submit {
                 System.err.print(line)
@@ -118,7 +120,19 @@ internal class DaemonBoundary {
                 }
             }
         }
+        logsOpen?.let { sink(ownerOnlyRefusal(logsDir, it)) }
+        return sink
     }
+
+    /** v0.4.0: what splice owns of its state ([StatePaths.ownedDirs]) held owner-only BEFORE the first
+     *  write into it (the lock), and re-asserted on every start: a root an older splice or the umask
+     *  left 775 exposed every store in it to other local users. Returns one log line per directory
+     *  still open; the caller writes them once its logger exists, which is after the lock. */
+    internal fun secureStateDirs(statePaths: StatePaths): List<String> =
+        statePaths.ownedDirs.mapNotNull { dir -> SecureFile.ownerOnlyDirectory(dir)?.let { ownerOnlyRefusal(dir, it) } }
+
+    private fun ownerOnlyRefusal(dir: Path, why: String): String =
+        "[state] $dir could not be held owner-only ($why) — other local users can read what splice keeps there"
 
     /** JW-01: the last-resort boot net. Writes SYNCHRONOUSLY — the async file lane is a daemon
      *  thread that dies with the JVM, and this fires when the JVM is dying. No catch clause on the

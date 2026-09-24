@@ -59,22 +59,16 @@ class DaemonBootFailureTest {
     }
 
     @Test
-    fun `the net itself survives an unwritable logs dir`(@TempDir tmp: Path) {
-        // The handler must never throw out of a dying thread — a read-only logs dir degrades to
-        // the stderr copy alone.
+    fun `the net itself survives an unwritable daemon log`(@TempDir tmp: Path) {
+        // The handler must never throw out of a dying thread — a daemon.log it cannot write
+        // degrades to the stderr copy alone. The failure is a DIRECTORY where daemon.log belongs:
+        // a read-only logs dir no longer fails the write, because the net re-asserts the dir's
+        // owner-only mode (rwx for the owner) before writing, so that shape passed without ever
+        // reaching the failing write it was named for.
         val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
-        Files.createDirectories(statePaths.logsDir)
-        java.nio.file.attribute.PosixFilePermissions.fromString("r-x------").let {
-            Files.setPosixFilePermissions(statePaths.logsDir, it)
-        }
-        try {
-            process.bootFailureHandler(statePaths).uncaughtException(Thread.currentThread(), RuntimeException("x"))
-        } finally {
-            Files.setPosixFilePermissions(
-                statePaths.logsDir,
-                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
-            )
-        }
+        Files.createDirectories(statePaths.logsDir.resolve("daemon.log"))
+
+        process.bootFailureHandler(statePaths).uncaughtException(Thread.currentThread(), RuntimeException("x"))
         // reaching here without a throw IS the assertion
     }
 }

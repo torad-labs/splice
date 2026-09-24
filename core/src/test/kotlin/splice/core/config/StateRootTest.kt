@@ -250,4 +250,24 @@ class StateRootTest {
         assertEquals(root.resolve("claudex-compact-stats.jsonl"), paths.compactStatsFile("claudex"))
         assertEquals(root.resolve("state").resolve("mgmt-key"), paths.mgmtKeyFile)
     }
+
+    // v0.4.0 review: the daemon held state/ at 0700 and left the ROOT above it at the umask's 775,
+    // where the compact-stats files live at 664. splice owns the root whenever splice chose it; a
+    // state dir a caller named has a parent that is theirs (often $HOME), which splice never chmods.
+    @Test
+    fun `splice owns the root it chose and only the state dir of one it was given`(@TempDir home: Path) {
+        val default = StatePaths(envReader = NO_ENV, homeDir = home)
+        assertEquals(listOf(home.resolve(SPLICE_STATE_HOME), default.stateDir), default.ownedDirs)
+
+        val adoptedHome = Files.createDirectories(home.resolve("adopted-home"))
+        makeState(adoptedHome, LEGACY_STATE_HOME)
+        val adopted = StatePaths(envReader = NO_ENV, homeDir = adoptedHome)
+        assertEquals(StateDirOrigin.ADOPTED_LEGACY, adopted.origin)
+        assertEquals(listOf(adoptedHome.resolve(LEGACY_STATE_HOME), adopted.stateDir), adopted.ownedDirs)
+
+        val named = home.resolve("mine").resolve("state")
+        val fromEnv = StatePaths(envReader = envOf(STATE_DIR_ENV to named.toString()), homeDir = home)
+        assertEquals(listOf(named), fromEnv.ownedDirs, "a variable's parent is not splice's")
+        assertEquals(listOf(named), StatePaths(baseOverride = named, homeDir = home).ownedDirs)
+    }
 }

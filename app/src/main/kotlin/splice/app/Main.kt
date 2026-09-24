@@ -15,7 +15,6 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
-import splice.core.util.SecureFile
 import splice.launch.install.InstallShim
 import splice.topology.TopologyLoader
 import java.nio.file.InvalidPathException
@@ -120,10 +119,9 @@ internal class DaemonProcess {
         // that ordering is stated rather than left to be discovered: an overriding daemon moves its
         // state but not the crash log, which the net already captured against the default.
         val statePaths = statePathsFor(topology, bootstrapPaths)
-        // v0.4.0: the state root is owner-only BEFORE the first write into it (the lock), and
-        // re-asserted on every start: a root an older splice or the umask left 775 exposed every
-        // non-secret store in it (perf, client windows) to other local users.
-        SecureFile.ownerOnlyDirectory(statePaths.stateDir)
+        // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock);
+        // a directory that stays open is logged once the logger below exists.
+        val stateOpen = secureStateDirs(statePaths)
         val lock = DaemonLock(statePaths.daemonLockFile)
         val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
         val lockWait = DaemonLockWait()
@@ -149,6 +147,7 @@ internal class DaemonProcess {
         // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore
         // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
         DaemonLog.install(log)
+        stateOpen.forEach { log(it) }
         val shutdownSignal = CompletableDeferred<Unit>()
         InstallShim().shimStalenessWarning(EnvReader(System::getenv))?.let { log("$it\n") }
         val daemon = Daemon(
@@ -277,6 +276,8 @@ internal class DaemonProcess {
 
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         boundary.bootFailureHandler(statePaths)
+
+    internal fun secureStateDirs(statePaths: StatePaths): List<String> = boundary.secureStateDirs(statePaths)
 }
 
 // The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 57s — must stay BELOW the CLI's

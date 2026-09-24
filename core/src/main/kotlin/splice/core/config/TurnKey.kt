@@ -47,6 +47,7 @@ public class TurnKey(private val management: MgmtKey) {
     public fun headerFile(): Path {
         val path = management.keyFile.resolveSibling(TURN_AUTH_HEADER_FILE)
         val wanted = "Authorization: Bearer $value\n"
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: unreadable means rewrite; writeAtomic0600 below throws on a real failure
         val current = Cancellables.runCatchingCancellable { Files.readString(path) }.getOrNull()
         if (current != wanted) SecureFile.writeAtomic0600(path, wanted)
         return path

@@ -28,6 +28,8 @@ note: >
 files:
   - "**/src/main/**/*.kt"
   - "**/src/test/**/*.kt"
+  # 2026-09-24: shared fixtures are test code; LAYOUT-01 moved a checked test file into one.
+  - "**/src/testFixtures/**/*.kt"
 rule:
   kind: string_literal
   regex: "^\"(TooManyFunctions|LongMethod|LargeClass|CyclomaticComplexMethod|ComplexCondition|LongParameterList|ReturnCount|NestedBlockDepth|MagicNumber|MaxLineLength|TooGenericExceptionCaught|SwallowedException|StringLiteralDuplication|UnusedPrivateMember|UnusedPrivateProperty|UnusedParameter)\"$"

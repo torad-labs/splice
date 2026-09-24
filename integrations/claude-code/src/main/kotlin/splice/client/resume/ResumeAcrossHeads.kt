@@ -199,10 +199,9 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
             rewriter.rewrite(target, roster.pinned, roster.served)
         }
-        copied.exceptionOrNull()?.let { cause ->
+        val rewritten = copied.getOrElse { cause ->
             return SessionAdoption.Refused(sessionId, chosen.headConfigDir, SafeFailureText.render(cause))
         }
-        val rewritten = copied.getOrDefault(0)
         log(
             "[resume] adopted session $sessionId from ${chosen.headConfigDir} into $callingConfigDir " +
                 "($rewritten assistant rows rewritten to ${roster.pinned}); the source tree is untouched\n",

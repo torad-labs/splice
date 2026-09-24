@@ -37,6 +37,7 @@ public class ProjectMcpServersReader(private val homeParent: Path) : McpSourceRe
         val projects = json.topLevel(file)[Keys.PROJECTS] as? JsonObject ?: return emptyList()
         return projects.entries.flatMap { (pathText, meta) ->
             val servers = (meta as? JsonObject)?.get(Keys.MCP_SERVERS) as? JsonObject ?: return@flatMap emptyList()
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a key that is not a path registers its servers with no project path
             val projectPath = Cancellables.runCatchingCancellable { Path.of(pathText) }.getOrNull()
             json.registrations(McpSourceKind.PROJECT, file, projectPath, servers)
         }

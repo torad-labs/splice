@@ -33,6 +33,15 @@
 # that consumes the error: perf/PerfStats, usage/UsageRingFile size, usage/RateLimitStore,
 # wire/CollectingBlocks. STILL OUTSIDE the globs: :core (24 sites) and :providers-muse (2, MuseOAuth),
 # recorded on the V4-151 row as a followup; this widening does not close the tree.
+#
+# WIDENED 2026-09-24 (the LAYOUT-01 review): the tree is closed. :core, :providers-muse and
+# :integrations-claude-code are selected whole — the last carried ten reviewed ignores that suppressed
+# nothing once a move took it out of the globs. 34 NEW RED, all dispositioned in the same unit.
+# SURFACED: ClaudeLogins.materializeSelected (a selected login whose stored file cannot be read now
+# logs; LaunchService ignores the return, so the head silently started on its previous credential),
+# ProjectsLink.sweepLeftovers (an unlistable parent now logs), ResumeAcrossHeads (exceptionOrNull +
+# getOrDefault became one getOrElse). EXEMPT, each ignore naming where the null is consumed: the other
+# 31. Branch A also went STRUCTURAL (see its comment): one comment inside a chain had hidden a collapse.
 id: kt-no-silent-result-collapse
 language: kotlin
 severity: error
@@ -73,7 +82,7 @@ note: >
 files:
   - features/sessions/src/main/**/*.kt
   - features/models/src/main/**/*.kt
-  - core/src/main/kotlin/splice/core/terminal/CliStyle.kt
+  - core/src/main/**/*.kt
   - features/usage/src/main/**/*.kt
   - integrations/http/src/main/**/*.kt
   - integrations/upstream/src/main/**/*.kt
@@ -81,8 +90,9 @@ files:
   - integrations/providers/kimi/src/main/**/*.kt
   - integrations/providers/codex/src/main/**/*.kt
   - integrations/providers/openai/src/main/**/*.kt
+  - integrations/providers/muse/src/main/**/*.kt
+  - integrations/claude-code/src/main/**/*.kt
   - integrations/mcp/src/main/**/*.kt
-  - core/src/main/kotlin/splice/core/util/LogSafe.kt
   - app/src/main/**/*.kt
   - features/turns/src/main/**/*.kt
   - features/heads/src/main/**/*.kt
@@ -99,11 +109,17 @@ files:
   - features/events/src/main/**/*.kt
 rule:
   any:
-    # A. direct chain — the original wall, unchanged
+    # A. direct chain. Matched by STRUCTURE since 2026-09-24, not by `$RECV.getOrNull()`: a comment
+    # between the receiver and `.getOrNull()` is an extra child of the navigation_expression, and the
+    # pattern stopped matching — one explanatory comment inside the chain hid the collapse from the
+    # wall (measured on a scratch file; an ast-grep-ignore placed there went unused for that reason).
     - all:
-        - any:
-            - pattern: $RECV.getOrNull()
-            - pattern: $RECV.getOrDefault($$$ARGS)
+        - kind: call_expression
+        - has:
+            kind: navigation_expression
+            has:
+              kind: navigation_suffix
+              regex: "^\\.(getOrNull|getOrDefault)$"
         - has:
             stopBy: end
             regex: "\\brunCatching(Cancellable)?\\b"
@@ -119,6 +135,16 @@ rule:
             any:
               - pattern: $RECV.getOrNull()
               - pattern: $RECV.getOrDefault($$$ARGS)
+              # the same call with a comment inside the chain (see A); the receiver is the
+              # navigation's first child, bound to $RECV so the binding arm below still ties to it
+              - all:
+                  - kind: navigation_expression
+                  - has:
+                      nthChild: 1
+                      pattern: $RECV
+                  - has:
+                      kind: navigation_suffix
+                      regex: "^\\.(getOrNull|getOrDefault)$"
         - not:
             has:
               stopBy: end

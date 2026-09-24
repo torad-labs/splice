@@ -6,9 +6,9 @@ package splice.diagnostics.wire
 import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.ControlReply
 
-// why: the 5s budget JdkAddHttp gave this verb before it read through the daemon client; the ring of
+// why: the 10s budget JdkAddHttp gave this verb before it read through the daemon client; the ring of
 // bodies a head serves can be large, and ControlPlaneClient's 3s default was sized for shutdown answers.
-private const val WIRE_READ_TIMEOUT_MS = 5_000
+private const val WIRE_READ_TIMEOUT_MS = 10_000
 
 /** The one network seam of `splice wire`: a request to the head's own port under the management key,
  *  or null when nothing answers. The method rides along so a test pins the whole request. */

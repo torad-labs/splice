@@ -161,6 +161,7 @@ internal class ProjectsLink(
     fun link(globalProjects: Path, dst: Path, log: LogSink = LogSink(DaemonLog::write)) {
         if (!ensureGlobalProjects(globalProjects, log)) return
         if (dst.isSymbolicLink()) {
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable link is relinked below, and a failed relink logs its cause
             val target = Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull()
             if (target == globalProjects) {
                 sweepLeftovers(dst, globalProjects, log)
@@ -373,6 +374,11 @@ internal class ProjectsLink(
         val parent = dst.parent ?: return
         val leftovers = Cancellables.runCatchingCancellable {
             Files.newDirectoryStream(parent, ".${dst.fileName}$ASIDE_MARK*").use { stream -> stream.toList() }
+        }.onFailure { failure ->
+            log(
+                "[projects] leftover asides beside $dst NOT swept — $parent unlistable " +
+                    "(${SafeFailureText.render(failure)})\n",
+            )
         }.getOrDefault(emptyList())
         leftovers.filter { Files.isDirectory(it, NOFOLLOW_LINKS) }.forEach { sweepAside(it, globalProjects, log) }
     }

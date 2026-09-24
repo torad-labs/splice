@@ -24,6 +24,7 @@ public class QuotaJson {
         put("updated_at", snapshot.updatedAt)
     }.toString()
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: corrupt content is no snapshot until the next poll rewrites it (QuotaTracker.readFile)
     public fun decode(text: String): QuotaSnapshot? = Cancellables.runCatchingCancellable {
         val root = json.parseToJsonElement(text).jsonObject
         QuotaSnapshot(

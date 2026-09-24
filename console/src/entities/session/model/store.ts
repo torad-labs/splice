@@ -10,11 +10,15 @@ import type { BoardEdgesPayload, SessionEdgesPayload, SessionsPayload } from './
 export interface SessionState {
   locked: boolean;
   hasKey: boolean;
+  /** The 401 that locked the console answered a request that CARRIED a key: the daemon refused the
+   *  key, which is a different fact from never having been given one. Cleared by the next unlock. */
+  refused: boolean;
 }
 
 export const sessionStore = create<SessionState>(() => ({
   locked: false,
   hasKey: false,
+  refused: false,
 }));
 
 /** The registry. Not a PendingRoute union: /api/sessions exists (ControlServer.kt:154), so a 404

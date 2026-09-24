@@ -134,9 +134,10 @@ describe('waterfall bars', () => {
 
   test('the chart prints every row it draws, so the bar survives grayscale', () => {
     const out = render(h(Waterfall, { row: turn() }));
-    expect(out).toContain('>queue<');
-    expect(out).toContain('>upstream<');
-    expect(out).toContain('>stream<');
+    // The same names as the stage table beside it (entities/perf STAGE_NAMES), not a second set.
+    expect(out).toContain('>waiting for slot<');
+    expect(out).toContain('>waiting on provider<');
+    expect(out).toContain('>streaming reply<');
     expect(out).toContain('30ms'); // the legend prints each row's span
     expect(out).toContain('myx-wf-svg');
   });

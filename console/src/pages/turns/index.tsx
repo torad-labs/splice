@@ -26,6 +26,7 @@ import {
   usePerfSummary,
   usePerfTurns,
   waterfall,
+  STAGE_NAMES,
 } from '@entities/perf';
 import type {
   CaptureState,
@@ -114,13 +115,9 @@ function cell(value: number | undefined, format: (n: number) => string): { value
  *   - first_byte, first_frame, first_delta, total, ts, model, outcome, compact: ALREADY PRINTED,
  *     by the summary rack and the landed strips.
  */
-const STAGE_GROUPS: readonly { group: StageGroup; label: string }[] = [
-  { group: 'ingest', label: S.stageIngest },
-  { group: 'queue', label: S.stageQueue },
-  { group: 'upstream', label: S.stageUpstream },
-  { group: 'stream', label: S.stageStream },
-  { group: 'finish', label: S.stageFinish },
-];
+const STAGE_GROUPS: readonly { group: StageGroup; label: string }[] = (
+  ['ingest', 'queue', 'upstream', 'stream', 'finish'] as const
+).map((group) => ({ group, label: STAGE_NAMES[group] }));
 
 export interface StageRow {
   label: string;
@@ -328,7 +325,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
   return (
     <div className="myx-tn">
       <header className="myx-page-head">
-        <h2 className="myx-page-title">{S.title}</h2>
+        <h1 className="myx-page-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
         {selection.kind === 'timeline' ? (
           <>

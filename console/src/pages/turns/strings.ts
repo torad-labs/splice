@@ -17,12 +17,6 @@ export const S = {
   stage: 'stage',
   share: 'share',
   perTurn: 'per turn',
-  /** The five parts of a turn, in the order the time is spent (entities/perf StageGroup). */
-  stageIngest: 'splice work',
-  stageQueue: 'waiting for slot',
-  stageUpstream: 'waiting on provider',
-  stageStream: 'streaming reply',
-  stageFinish: 'closing',
   tokens: 'tokens',
   tokIn: 'in',
   tokCached: 'cached',

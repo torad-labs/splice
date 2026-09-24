@@ -45,10 +45,10 @@ describe("the launch shim", () => {
   // The inventory, so an arm cannot be dropped in a refactor without this number moving: the six
   // behavioural arms of launcher-test.sh (port, port precedence, stale replace, env-key injection,
   // JW-01, JW-04), UF-01 and UF-02, one UF-03 arm per selector the shim's unitDefaults() names, and
-  // UF-04 and UF-05.
+  // UF-04 and UF-05, and the CLI console arm (v0.4.0 review).
   test("the rehearsal is the script's arms, all of them", () => {
-    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2);
-    expect(ARM_NAMES.length).toBe(19);
+    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1);
+    expect(ARM_NAMES.length).toBe(20);
     expect(ARM_NAMES.filter((name) => name.startsWith("UF-03")).length).toBe(SELECTORS.length);
     for (const marker of ["JW-01", "JW-04", "UF-01", "UF-02", "UF-04", "UF-05"]) {
       expect(ARM_NAMES.some((name) => name.includes(marker)), `${marker} must still be an arm`).toBe(true);

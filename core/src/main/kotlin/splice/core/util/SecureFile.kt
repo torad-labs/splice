@@ -16,25 +16,35 @@ import java.nio.file.attribute.PosixFilePermissions
 public object SecureFile {
     private val OWNER_ONLY = PosixFilePermissions.fromString("rw-------")
     private val OWNER_ONLY_DIR = PosixFilePermissions.fromString("rwx------")
+    private val OPEN_TO_OTHERS = PosixFilePermissions.fromString("---rwxrwx")
 
     /**
      * V4-174: the DIRECTORY form of the same law, for a store whose every file carries private
      * content (a head's request/response trace). Owner-only (0700) from the instant the directory
      * exists, and re-asserted on every call, so a directory an operator recreated by hand, or that
      * a sweep emptied and a later write recreated, is never left at the umask's default. The files
-     * inside need no mode of their own: a directory nobody else can traverse is the boundary. On a
-     * non-POSIX filesystem the mode is best-effort and the directory still exists.
+     * inside need no mode of their own: a directory nobody else can traverse is the boundary.
+     *
+     * Returns null when the directory is owner-only afterwards, or when its filesystem keeps no
+     * POSIX modes at all (nothing to hold); otherwise WHY it is still open, for the caller to say.
+     * The answer is read off the mode the directory ends up with (v0.4.0 review): every chmod
+     * failure used to be discarded as "unsupported", which a Linux filesystem never is, so a
+     * refused chmod (a directory another account owns) left it open with nothing said, and a mount
+     * that accepts a chmod and keeps its own bits says nothing even when the call succeeds.
      */
-    public fun ownerOnlyDirectory(dir: Path) {
+    public fun ownerOnlyDirectory(dir: Path): String? {
         try {
             Files.createDirectories(dir, PosixFilePermissions.asFileAttribute(OWNER_ONLY_DIR))
         } catch (_: UnsupportedOperationException) {
             Files.createDirectories(dir)
         }
-        Cancellables.discard(
-            runCatching { Files.setPosixFilePermissions(dir, OWNER_ONLY_DIR) },
-            "POSIX perms unsupported on this filesystem — nothing to lock down",
-        )
+        return Cancellables.runCatchingCancellable {
+            Files.setPosixFilePermissions(dir, OWNER_ONLY_DIR)
+            val held = Files.getPosixFilePermissions(dir)
+            if (held.none { it in OPEN_TO_OTHERS }) null else "its mode stayed ${PosixFilePermissions.toString(held)}"
+        }.getOrElse { failure ->
+            if (failure is UnsupportedOperationException) null else SafeFailureText.render(failure)
+        }
     }
 
     /**

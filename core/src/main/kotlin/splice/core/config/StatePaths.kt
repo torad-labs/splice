@@ -169,6 +169,15 @@ public class StatePaths(
 
     public val rootDir: Path = stateDir.parent ?: stateDir
 
+    /** v0.4.0 review: the directories splice owns outright and holds owner-only, parent first. The
+     *  ROOT is one only when splice chose it ([StateDirOrigin.DEFAULT], [StateDirOrigin.ADOPTED_LEGACY]):
+     *  it holds the compact-stats files, which sat at 664 under a 775 root while state/ was 0700. A
+     *  state dir a caller or a variable named has a parent that is theirs, often `$HOME`. */
+    public val ownedDirs: List<Path> = listOfNotNull(
+        rootDir.takeIf { origin == StateDirOrigin.DEFAULT || origin == StateDirOrigin.ADOPTED_LEGACY },
+        stateDir,
+    )
+
     public val logsDir: Path = rootDir.resolve("logs")
 
     public val configFile: Path = stateDir.resolve("config.json")

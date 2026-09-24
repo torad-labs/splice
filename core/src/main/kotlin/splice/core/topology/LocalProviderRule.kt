@@ -13,5 +13,6 @@ public class LocalProviderRule {
         dialect == Dialect.OPENAI_CHAT && isLoopback(baseUrl)
 
     public fun isLoopback(baseUrl: String): Boolean =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a base URL that does not parse is not loopback
         runCatching { URI(baseUrl).host }.getOrNull()?.lowercase() in loopbackHosts
 }

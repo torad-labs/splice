@@ -130,6 +130,7 @@ public class KeyStore(
         if (failure == null || genuinelyAbsent) {
             warnedCorruptMtime.set(null)
         } else {
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: MTIME_UNREADABLE only keys the dedup; the warning below is logged either way
             val mtime = Cancellables.runCatchingCancellable {
                 Files.getLastModifiedTime(path)
             }.getOrDefault(MTIME_UNREADABLE)

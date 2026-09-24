@@ -318,10 +318,12 @@ describe('settings: the coverage manifest', () => {
     // enforces is about those two vocabularies, and counting routes into it made the number answer
     // a different question than the one it is named for — V4-175 moved /api/claude-head off
     // `pending` onto a read-only status read and the arithmetic went red for a correct manifest.
+    // 17 since v0.4.0 prompt-review: WIRE_TAP and TRACE are head-only (Knob.headOnly), so the daemon
+    // refuses them in PATCH and the page shows them read-only.
     const readOnly = dispositions
       .filter((entry) => entry.kind !== 'route' && entry.disposition === 'read-only')
       .map((entry) => entry.name);
-    expect(readOnly).toHaveLength(15);
+    expect(readOnly).toHaveLength(17);
     for (const entry of dispositions) {
       if (entry.disposition === 'read-only' || entry.disposition === 'excluded') expect(entry.reason).toBeTruthy();
       if (entry.disposition === 'pending') expect(entry.where).toBeTruthy();

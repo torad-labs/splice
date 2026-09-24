@@ -29,9 +29,10 @@ import java.io.OutputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 
 private const val REAP_WAIT_MS = 2_000L
-private const val REAP_POLL_MS = 10L
+private const val REAP_POLL_NS = 10_000_000L
 
 class CodeModeRuntimeTest {
     private val testClasspath: String = checkNotNull(System.getProperty("codeMode.testClasspath"))
@@ -445,10 +446,11 @@ class CodeModeRuntimeTest {
      *  its own reaping one: it completes while the worker is still a zombie, and Linux isAlive reads a
      *  zombie as alive because os_getParentPidAndTimings skips /proc/<pid>/stat's state field. The
      *  JDK's reaper collects it within milliseconds; PR #181's gate (run 35925066310) caught the
-     *  window. A worker close never killed still fails, and first: the 1-second onExit wait times out. */
+     *  window. A worker close never killed still fails, and first: the 1-second onExit wait times out.
+     *  The loop polls the condition under a deadline; parkNanos is its backoff (kt-tests-no-wall-clock). */
     private fun reaped(child: ProcessHandle): Boolean {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(REAP_WAIT_MS)
-        while (child.isAlive && System.nanoTime() < deadline) Thread.sleep(REAP_POLL_MS)
+        while (child.isAlive && System.nanoTime() < deadline) LockSupport.parkNanos(REAP_POLL_NS)
         return !child.isAlive
     }
 

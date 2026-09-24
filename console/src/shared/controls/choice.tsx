@@ -18,7 +18,7 @@
 // active option with wrap-around; Home and End jump; Enter and Space take the active one; Escape
 // closes and puts focus back on the box; Tab closes and moves on; a printable character jumps to
 // the first option whose text starts with what has been typed.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { cx } from '@shared/lib';
 import { HolderEdge } from '@shared/ui';
@@ -38,9 +38,7 @@ export function ChoiceList({ label, value, options, active, onPick, listId }: {
   options: readonly ChoiceOption[];
   active: number;
   onPick: (next: string) => void;
-  /** `| undefined` because Choice forwards its own optional id through, and this tree runs
-   *  exactOptionalPropertyTypes. */
-  listId?: string | undefined;
+  listId?: string;
 }) {
   return (
     <ul className="myx-choice-options" id={listId} role="listbox" aria-label={label}>
@@ -81,6 +79,11 @@ export function Choice({ label, value, options, onChange, w = 18, id, disabled, 
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // The box is named by its printed label whether or not the caller passes an id (S10: the logs
+  // head and lines boxes, the doctor playground and team compose passed none, and their comboboxes
+  // had no name at all). A caller's id still wins, so a page can point at the box.
+  const own = useId();
+  const base = id ?? own;
   const index = (at: string) => Math.max(0, options.findIndex((option) => option.value === at));
   const [active, setActive] = useState(() => index(value));
   const root = useRef<HTMLDivElement>(null);
@@ -173,7 +176,7 @@ export function Choice({ label, value, options, onChange, w = 18, id, disabled, 
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
-      <span className="myx-choice-label" id={id === undefined ? undefined : `${id}-label`}>
+      <span className="myx-choice-label" id={`${base}-label`}>
         {label}
       </span>
       <button
@@ -184,8 +187,8 @@ export function Choice({ label, value, options, onChange, w = 18, id, disabled, 
         style={{ width: `${w}ch` }}
         role="combobox"
         aria-expanded={open}
-        aria-controls={id === undefined ? undefined : `${id}-options`}
-        aria-labelledby={id === undefined ? undefined : `${id}-label`}
+        aria-controls={`${base}-options`}
+        aria-labelledby={`${base}-label`}
         aria-haspopup="listbox"
         disabled={disabled === true}
         onClick={() => (open ? close(true) : setOpen(true))}
@@ -203,7 +206,7 @@ export function Choice({ label, value, options, onChange, w = 18, id, disabled, 
           options={options}
           active={active}
           onPick={take}
-          listId={id === undefined ? undefined : `${id}-options`}
+          listId={`${base}-options`}
         />
       ) : null}
     </div>

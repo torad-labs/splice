@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import java.net.ServerSocket
 import java.nio.file.Path
@@ -23,7 +24,7 @@ class UpgradeInflightTest {
     fun `a refused connect is the only NoDaemon, a listener that does not answer is Unknown`(@TempDir tmp: Path) {
         val env = env(tmp)
         MgmtKey(StatePaths(baseOverride = tmp.resolve("state"))).get()
-        val free = ServerSocket(0).use { it.localPort }
+        val free = TestPorts.reserve()
         assertEquals(InflightRead.NoDaemon, JdkUpgradeInflight(env, port = free, connectTimeoutMs = 500)())
 
         ServerSocket(0).use { listener ->

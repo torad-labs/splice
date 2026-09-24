@@ -22,6 +22,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
+    testImplementation(testFixtures(project(":core")))
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
 }

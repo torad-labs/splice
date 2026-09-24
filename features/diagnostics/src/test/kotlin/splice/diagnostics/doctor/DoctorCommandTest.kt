@@ -7,9 +7,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.SHIM_VERSION
+import splice.core.testing.TestPorts
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -54,7 +54,7 @@ private fun env(tmp: Path, bin: Path, share: Path, extra: Map<String, String?> =
 // hermetic run — the port resolves via the fake env, StatePaths reads CLAUDEX_STATE_DIR.
 private fun hermetic(tmp: Path, extra: Map<String, String?> = emptyMap()): Map<String, String?> = mapOf(
     "CLAUDEX_STATE_DIR" to Files.createDirectories(tmp.resolve("state")).toString(),
-    "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+    "SPLICE_CONTROL_PORT" to TestPorts.reserve().toString(),
 ) + extra
 
 class DoctorCommandTest {
@@ -485,7 +485,7 @@ class DoctorWritableDirsTest {
                 "SPLICE_SHARE_DIR" to share.toString(),
                 "PATH" to bin.toString(),
                 "CLAUDEX_STATE_DIR" to state.toString(),
-                "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+                "SPLICE_CONTROL_PORT" to TestPorts.reserve().toString(),
                 "OPENROUTER_API_KEY" to "k",
             )
             val (ok, out) = runDoctor(env)
@@ -524,7 +524,7 @@ class DoctorWritableDirsTest {
                 share,
                 mapOf(
                     "CLAUDEX_STATE_DIR" to state.toString(),
-                    "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+                    "SPLICE_CONTROL_PORT" to TestPorts.reserve().toString(),
                     "OPENROUTER_API_KEY" to "k",
                 ),
             )
@@ -579,7 +579,7 @@ class DoctorTopologyLeakTest {
                 "SPLICE_SHARE_DIR" to Files.createDirectories(tmp.resolve("share")).toString(),
                 "PATH" to tmp.resolve("bin").toString(),
                 "CLAUDEX_STATE_DIR" to Files.createDirectories(tmp.resolve("state")).toString(),
-                "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+                "SPLICE_CONTROL_PORT" to TestPorts.reserve().toString(),
             ),
         )
         assertTrue(output.contains("does not parse"), output)

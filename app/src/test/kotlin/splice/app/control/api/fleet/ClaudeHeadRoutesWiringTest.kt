@@ -26,8 +26,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -194,23 +194,8 @@ class ClaudeHeadRoutesWiringTest {
     fun `after a wrap, launching through the wrapped claude command answers claude-splice over the vanilla dir`(
         @TempDir home: Path,
     ) {
-        val bin = Files.createDirectories(home.resolve("bin"))
-        val share = Files.createDirectories(home.resolve("share"))
         val realBinary = home.resolve("real-claude").also { it.writeText("#!/bin/sh\n") }
-        share.resolve("splice-launch").writeText("#!/usr/bin/env node\n")
-        Files.createSymbolicLink(bin.resolve("claude"), realBinary)
-        val materializer = ClaudeConfigMaterializer(home)
-        val launchService = LaunchService(
-            materializer,
-            wrap = WrappedHead(
-                home = home,
-                installPaths = InstallPaths(binOverride = bin, shareOverride = share),
-                stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json")),
-                materializer = materializer,
-            ),
-            claudeLogins = ClaudeLogins(storeDir = home.resolve("claude-logins")),
-        )
-        serveWired(home, launchService) { port, key ->
+        serveWired(home, hermeticLaunchService(home, realBinary)) { port, key ->
             val client = HttpClient(CIO) { expectSuccess = false }
             try {
                 val url = "http://127.0.0.1:$port"
@@ -236,7 +221,10 @@ class ClaudeHeadRoutesWiringTest {
                     "argv[0] is the real binary the wrap recorded, never the bare name the shim now holds",
                 )
                 val env = recipe.getValue("env").jsonObject
-                assertEquals(home.resolve(".claude").toString(), env.getValue("CLAUDE_CONFIG_DIR").jsonPrimitive.content)
+                assertEquals(
+                    home.resolve(".claude").toString(),
+                    env.getValue("CLAUDE_CONFIG_DIR").jsonPrimitive.content,
+                )
                 assertTrue(home.resolve(".claude/settings.json").exists(), "the vanilla dir is materialized")
                 assertFalse(
                     home.resolve(".claude-claude-splice").exists(),
@@ -246,5 +234,25 @@ class ClaudeHeadRoutesWiringTest {
                 client.close()
             }
         }
+    }
+
+    /** A LaunchService whose wrap lives entirely under [home]: `bin/claude` -> [realBinary], the launch
+     *  shim under `share`, the wrap state and `~/.claude` beside them. */
+    private fun hermeticLaunchService(home: Path, realBinary: Path): LaunchService {
+        val bin = Files.createDirectories(home.resolve("bin"))
+        val share = Files.createDirectories(home.resolve("share"))
+        share.resolve("splice-launch").writeText("#!/usr/bin/env node\n")
+        Files.createSymbolicLink(bin.resolve("claude"), realBinary)
+        val materializer = ClaudeConfigMaterializer(home)
+        return LaunchService(
+            materializer,
+            wrap = WrappedHead(
+                home = home,
+                installPaths = InstallPaths(binOverride = bin, shareOverride = share),
+                stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json")),
+                materializer = materializer,
+            ),
+            claudeLogins = ClaudeLogins(storeDir = home.resolve("claude-logins")),
+        )
     }
 }

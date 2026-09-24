@@ -216,7 +216,7 @@ before writing anything (the file parses, the credential is present, the endpoin
 models are listed where the dialect lists them; `--live` adds one short turn) and appends the two
 tables through a temp file and one rename, so a refused add leaves your file byte-identical.
 
-The dashboard and every control endpoint are bearer-guarded and loopback-only. A launched session never holds this key: it gets a turn key that opens only its head's turns and its own statusline and resume hook. `splice dashboard` prints the unlock key; it lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
+The dashboard and every control endpoint are bearer-guarded and loopback-only. A launched session never holds this key: it gets a turn key that opens only its head's turns and its own statusline and resume hook. `splice dashboard` opens the console already unlocked, handing the key to your browser through an owner-only file rather than a command line or an HTTP answer, and prints it only to a terminal. The key lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
 
 ### Plan usage in Claude Code
 

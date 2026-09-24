@@ -170,8 +170,8 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
      *  reason containing an escaped quote at the backslash and printed \n and \uXXXX literally at
      *  the terminal, while kotlinx.serialization and JsonScalars sat on the classpath. */
     private fun fieldOf(body: String, key: String): String? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-177 review): a body that is not a JSON object is a real, expected shape here (an HTML error page from something else bound to the port), and every caller CONSUMES the null with a named fallback — the status sentence, or "could not confirm".
         Cancellables.runCatchingCancellable { Json.parseToJsonElement(body).jsonObject }
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-177 review): a body that is not a JSON object is a real, expected shape here (an HTML error page from something else bound to the port), and every caller CONSUMES the null with a named fallback — the status sentence, or "could not confirm".
             .getOrNull()
             ?.let { JsonScalars.str(it, key) }
 }

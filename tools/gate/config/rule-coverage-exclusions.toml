@@ -53,19 +53,9 @@ sourceSets = ["test", "testFixtures"]
 date = "2026-09-20"
 reason = """
 Production-only walls: each grades what the shipped daemon does, and binds src/main by design. Test
-sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test) and
-kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in :quality-architecture.
-"""
-
-[[exclusion]]
-rule = "kt-no-quality-suppress"
-sourceSets = ["testFixtures"]
-date = "2026-09-20"
-reason = """
-The wall binds src/main and src/test but not src/testFixtures, so a @Suppress of a detekt structural
-rule in one of the four shared fixture files is not caught. A real gap, recorded rather than closed:
-widening a rule is a change to quality/rules/, not to this proof. Close it by adding
-`"**/src/testFixtures/**/*.kt"` to the rule's files: and deleting this row.
+sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test +
+testFixtures) and kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in
+:quality-architecture.
 """
 
 [[exclusion]]
@@ -191,27 +181,14 @@ below instead of excusing the entire core module.
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["integrations-claude-code", "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat", "quality-compiler-plugin"]
+modules = ["integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat", "quality-compiler-plugin"]
 sourceSets = ["main"]
 date = "2026-09-22"
 reason = """
 The wall binds Result consumption in backend, auth, process, and MCP-host paths. The dialects are
-pure byte builders, :integrations-claude-code consumes local filesystem Results outside that scope,
-and :quality-compiler-plugin is a compiler plugin. LAYOUT-01 moved LogSafe into :core; its exact
-relocated file is covered by the file-scope disposition below rather than excusing core wholesale.
-"""
-
-[[exclusion]]
-rule = "kt-no-silent-result-collapse"
-modules = ["integrations-providers-muse"]
-sourceSets = ["main"]
-date = "2026-09-20"
-reason = """
-:providers-muse is the ONE provider missing from this wall's files: list, which names :upstream,
-grok, kimi, codex and openai. An inconsistency in the rule, not a design: muse performs the same
-credential refresh the other four do. Recorded rather than closed — widening a rule is a change to
-quality/rules/, out of this stage's fence. Close it by adding `integrations/providers/muse/src/main/**/*.kt` to
-the rule and deleting this row.
+pure byte builders and :quality-compiler-plugin is a compiler plugin. :core, :integrations-claude-code
+and :providers-muse were excused here or beside this row until 2026-09-24, when the rule selected
+all three and every site in them was dispositioned (the rule's WIDENED 2026-09-24 note).
 """
 
 [[exclusion]]
@@ -314,18 +291,19 @@ goes, with no terminal frame to lose; no other module answers an HTTP stream.
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-json-scalars-single-source", "kt-log-escapes-caller-input",
-  "kt-no-runcatching-in-coroutine", "kt-no-silent-result-collapse", "kt-outcome-tag-single-source",
+  "kt-no-runcatching-in-coroutine", "kt-outcome-tag-single-source",
 ]
 modules = ["core"]
 sourceSets = ["main"]
 files = ["core/src/main/**/*.kt"]
 date = "2026-09-22"
 reason = """
-LAYOUT-01 moved LogSafe from daemon/control into core. These six walls selected its former
+LAYOUT-01 moved LogSafe from daemon/control into core. These five walls selected its former
 control-plane source path, so each now selects its exact core destination. No other core source came
 from those declared path scopes. This file disposition covers the remaining core sources only: the
 coverage proof credits file rows from each rule's lost-file set, so it cannot suppress a finding in
-the selected LogSafe destination.
+the selected LogSafe destination. (kt-no-silent-result-collapse was a sixth until 2026-09-24, when it
+began selecting all of core.)
 """
 
 [[exclusion]]
@@ -338,11 +316,14 @@ reason = """
 LAYOUT-01 moved four control-plane files into :features-turns: /api/compact (compact/CompactPayloads,
 compact/HeadCompactSource), /api/compaction/instructions (compaction/CompactionInstructionsRoute) and
 the capture switch (wire/CaptureRoutes). These three walls selected them under daemon/control, so each
-now selects their exact destinations. The rest of the turn engine keeps the disposition the 2026-09-22
-module rows gave it: its HTTP surface is the head server's, authenticated per head by ClientAuth.kt
-rather than the control plane's guarded(call); its log lines are turn telemetry, not audit records of
-operator input; and it reads JSON through the dialect codecs. The proof credits file rows only from
-each rule's lost-file set, so this row cannot suppress a finding in a selected destination.
+now selects their exact destinations. `splice trace` (trace/) came from app/cli/trace, which only
+kt-json-scalars-single-source selected, and that rule selects trace/ too: it reads trace records
+through JsonScalars, not the dialect codecs. The rest of the turn engine keeps the disposition the
+2026-09-22 module rows gave it: its HTTP surface is the head server's, authenticated per head by
+ClientAuth.kt rather than the control plane's guarded(call); its log lines are turn telemetry, not
+audit records of operator input; and it reads JSON through the dialect codecs. The proof credits file
+rows only from each rule's lost-file set, so this row cannot suppress a finding in a selected
+destination.
 """
 
 [[exclusion]]

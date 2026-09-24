@@ -13,9 +13,9 @@
 // The drain figure itself lives in :daemon-head (HeadServer.STOP_DRAIN_NS), which this module cannot
 // import, so it appears here as the documented bound the head budget must clear and is pinned at
 // its source by HeadServerStopDrainTest. Two tests, one ladder, each half checked where it is
-// visible — and if either number moves wrongly, ONE of the two reds. The CLI's three rungs took the
-// same shape when they moved to features/lifecycle (LAYOUT-01): documented bounds here, each pinned
-// at its declaration by lifecycle's StopRungBudgetTest.
+// visible — and if either number moves wrongly, ONE of the two reds. The CLI's three rungs are read
+// from their declarations in features/lifecycle through its StopRungPolls fixture, so a rung that moves
+// below the halt floor reds HERE, where both sides of the ordering are visible.
 package splice.app.cli.daemon
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -27,6 +27,7 @@ import splice.app.TEARDOWN_TAIL_GRACE_MS
 import splice.app.daemon.LOCK_POLL_INTERVAL_MS
 import splice.app.daemon.LOCK_WAIT_POLLS
 import splice.app.head.HEAD_STOP_BUDGET_MS
+import splice.lifecycle.StopRungPolls
 
 class DaemonStopBudgetTest {
 
@@ -45,11 +46,10 @@ class DaemonStopBudgetTest {
     private val lockWaitMs = LOCK_WAIT_POLLS * pollMs
 
     /** The CLI's rungs, owned by features/lifecycle since LAYOUT-01 (DaemonStop's graceful and SIGTERM
-     *  polls, DaemonLaunch's startup budget), which this module cannot import. Kept in step with those
-     *  constants by lifecycle's StopRungBudgetTest, which asserts each where it is declared. */
-    private val gracefulRungMs = 60_000L
-    private val spawnerMs = 62_000L
-    private val sigtermRungMs = 62_000L
+     *  polls, DaemonLaunch's startup budget), each computed from the count its verb polls against. */
+    private val gracefulRungMs = StopRungPolls.GRACEFUL * pollMs
+    private val spawnerMs = StopRungPolls.STARTUP * pollMs
+    private val sigtermRungMs = StopRungPolls.SIGTERM * pollMs
 
     /** The whole ladder in ONE assertion chain, so a reader sees the shape before the failures. */
     @Test

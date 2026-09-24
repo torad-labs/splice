@@ -67,6 +67,7 @@ public object ReasoningReplay {
     // foreign/garbled payloads pass through as null
     public fun decodeReasoningEnvelope(data: String?, log: LogSink = LogSink(DaemonLog::write)): JsonObject? {
         val parsed = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an undecodable envelope is dropped AND logged below (CMP-002)
             Cancellables.runCatchingCancellable {
                 val text = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
                 lenient.parseToJsonElement(text).jsonObject

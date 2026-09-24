@@ -12,6 +12,12 @@ valid:
     val list = mapOf("a" to 1)
     val w = list.getOrDefault("a", 0)
     val v = other.getOrNull()
+  # 2026-09-24: a comment inside a chain that DOES consume the failure stays compliant.
+  - |
+    val x = runCatching { read() }
+        // logged, then collapsed
+        .onFailure { log(it) }
+        .getOrNull()
 invalid:
   - 'val x = runCatchingCancellable { read() }.getOrNull()'
   - 'val y = runCatching { read() }.getOrDefault(false)'
@@ -23,3 +29,18 @@ invalid:
   - |
     var result = runCatching { read() }
     val token = result.getOrNull()
+  # 2026-09-24: a comment inside the chain used to hide the collapse from pattern A entirely.
+  - |
+    val x = runCatching { read() }
+        // not a number is fine here
+        .getOrNull()
+  - |
+    val y = runCatchingCancellable { read() }
+        /* default on any failure */
+        .getOrDefault(false)
+  # and from branch B's split form
+  - |
+    val result = runCatching { read() }
+    val token = result
+        // nothing to log
+        .getOrNull()

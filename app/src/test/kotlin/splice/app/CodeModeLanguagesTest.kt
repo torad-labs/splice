@@ -1,6 +1,6 @@
-// NEW: LAYOUT-01 — the shipped jar's half of the code-mode suite. The runtime's own tests live with
-// :integrations-codemode; what only :app can check is that the fat jar still carries both Truffle
-// languages, so this class and CodeModeBridgeRuntimeTest are what codeModePackagedTest reruns.
+// NEW: LAYOUT-01 — the regex arm of the code-mode suite, kept in :app because only the fat jar can lose
+// a Truffle language registration. codeModePackagedTest reruns it beside :integrations-codemode's
+// CodeModeRuntimeTest and CodeModeBridgeRuntimeTest, each with the shipped jar as the worker classpath.
 package splice.app
 
 import kotlinx.coroutines.runBlocking

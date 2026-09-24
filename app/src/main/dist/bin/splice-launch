@@ -278,7 +278,7 @@ async function replaceStaleDaemon() {
   if (HEALTH_JSON !== "") fail("splice: stale daemon did not stop within 10 seconds");
 }
 
-// UNIT-FIRST cold start (hostshield law, verify.sh "splice launcher must be UNIT-FIRST"). When the
+// UNIT-FIRST cold start (a host requirement: the supervising unit owns the daemon's process). When the
 // user unit exists, the daemon is started THROUGH it and this shim only waits for health. A raw
 // spawn from here runs the daemon inside the calling agent's scope, wins the startup lock and locks
 // splice.service out of its own port: the unit then loops "another splice daemon serves on :3096"

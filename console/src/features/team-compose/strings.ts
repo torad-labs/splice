@@ -16,11 +16,13 @@ export const S = {
   notLead: 'not lead',
   instructions: 'role instructions',
   session: 'session',
-  unbind: 'unbind',
+  /** The session choice that binds no session: the seat stays on the team, empty. */
   open: 'open seat',
+  /** What an unset head choice prints until one is picked. */
+  pickHead: 'choose a head',
   addSlot: 'add slot',
   removeSlot: 'remove slot',
   archived: 'archived',
-  live: 'live',
+  live: 'active',
   problems: 'before saving',
 } as const;

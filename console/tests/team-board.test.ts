@@ -25,7 +25,7 @@ import {
 } from '../src/widgets/team-board';
 import { TeamChat, chatOrder } from '../src/widgets/team-chat';
 import { ActivityFeed, feedEmpty, feedOrder } from '../src/widgets/activity-feed';
-import { TeamCompose, bindSession, blankDraft, draftOf, setArchived, unbindSession, validateDraft } from '../src/features/team-compose';
+import { TeamCompose, bindSession, blankDraft, draftOf, optionsFor, setArchived, unbindSession, validateDraft } from '../src/features/team-compose';
 import { heroBoard, viewsBoard, viewsData } from '../src/pages/teams/fixtures/hero';
 import { teamsBodyFor } from '../src/pages/teams';
 
@@ -118,17 +118,18 @@ describe('the board renders the comp', () => {
 });
 
 describe('what the page says when no board answered', () => {
-  test('a daemon older than the teams route gets the honest empty naming V4-131', () => {
+  test('a daemon older than the teams route says so in words, never a row id', () => {
     const pending = { pending: 'V4-131' };
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
-    expect(html).toContain('no teams route');
-    expect(html).toContain('V4-131 pending');
+    expect(html).toContain('teams unavailable');
+    expect(html).toContain('does not serve teams');
+    expect(html).not.toContain('V4-131');
   });
 
   test('before anything has answered, the page claims neither absence nor failure', () => {
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: null, board: null })));
     expect(html).toContain('reading teams');
-    expect(html).not.toContain('V4-131 pending');
+    expect(html).not.toContain('teams unavailable');
     expect(html).not.toContain('unreadable');
   });
 
@@ -142,13 +143,14 @@ describe('what the page says when no board answered', () => {
     const pending = pendingOf(new MgmtError(404, 'unknown route'), PENDING_TEAMS);
     expect(pending).toEqual({ pending: 'V4-131' });
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
-    expect(html).toContain('V4-131 pending');
+    expect(html).toContain('teams unavailable');
   });
 
   test('a daemon that answers with no teams is not dressed as a missing route', () => {
     const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: { teams: [] }, board: null })));
     expect(html).toContain('no teams yet');
-    expect(html).not.toContain('V4-131 pending');
+    expect(html).toContain('compose one below');
+    expect(html).not.toContain('teams unavailable');
   });
 
   test('the other two views draw the opened team, and a panel still being read says so', () => {
@@ -478,5 +480,24 @@ describe('the composer', () => {
     expect(existing).toContain('edit storefront-api');
     expect(existing).toContain('save team');
     expect(existing).not.toContain('create team');
+  });
+
+  test('a slot picks its head and its session from what the daemon lists, and nobody types an id', () => {
+    const heads = [{ value: 'claudex', label: 'claudex' }, { value: 'bonsai', label: 'claude-bonsai' }];
+    const sessions = [{ value: 'sid-1', label: 'gs-backend-builder' }];
+    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, { heads, sessions })));
+    expect(html).toContain('choose a head');
+    expect(html).toContain('open seat');
+    expect(html).not.toContain('>unbind<');
+    // With nothing listed (not loaded yet, or a fixture) the fields fall back to typing.
+    expect(unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, {})))).not.toContain('choose a head');
+  });
+
+  test('a slot keeps a value the list no longer has, so opening an old team rewrites nothing', () => {
+    const listed = [{ value: 'claudex', label: 'claudex' }];
+    const blank = { value: '', label: 'choose a head' };
+    expect(optionsFor(listed, 'claudex', blank)).toEqual([blank, ...listed]);
+    expect(optionsFor(listed, 'retired-head', blank)).toEqual([blank, ...listed, { value: 'retired-head', label: 'retired-head' }]);
+    expect(optionsFor(listed, '', blank)).toEqual([blank, ...listed]);
   });
 });

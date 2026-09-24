@@ -13,7 +13,8 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { fetchTeamPanels, fetchTeams, isPending, useTeamPanels, useTeams } from '@entities/team';
-import { fetchSessions, useSessionRegistry } from '@entities/session';
+import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/session';
+import { fetchHeads, useHeads } from '@entities/heads';
 import { fetchPerfTurns, usePerfTurns } from '@entities/perf';
 import { ViewTabs, useViews, type View } from '@features/views';
 import { TeamBoard, TeamBoardByRole, TeamTimeline } from '@widgets/team-board';
@@ -102,13 +103,16 @@ export function teamsBodyFor({ view, teams, error = null, board, views = null, v
   return liveEmpty(teams, error);
 }
 
+/** Where a first team comes from: the composer under the board. */
+const COMPOSE_BELOW = 'compose one below: name it, point it at a repo, and give each role a head';
+
 /** What the page says when no board answered: which of the four silences this is. */
 function liveEmpty(teams: TeamsState | null, error: string | null) {
   // The route itself is missing (a daemon older than V4-131): that is not the same answer as a
   // daemon that answers with no teams, and neither is a failure.
-  if (isPending(teams)) return <Empty text="no teams route" source={`${teams.pending} pending`} />;
-  if (teams === null) return <Empty text={error === null ? S.reading : S.unreadable} source={error ?? 'GET /api/teams'} />;
-  if (teams.teams.length === 0) return <Empty text={S.noTeams} source="GET /api/teams" />;
+  if (isPending(teams)) return <Empty text="teams unavailable" source="this splice version does not serve teams" />;
+  if (teams === null) return <Empty text={error === null ? S.reading : S.unreadable} source={error ?? 'the daemon has not answered yet'} />;
+  if (teams.teams.length === 0) return <Empty text={S.noTeams} source={COMPOSE_BELOW} />;
   return <Empty text={S.unreadable} source={error ?? 'the daemon did not answer'} />;
 }
 
@@ -137,7 +141,7 @@ export function TeamList({ teams, opened = null, onOpen }: {
       className="myx-teams-list"
       label={S.teams}
       count={teams.length}
-      empty={{ text: S.noTeams, source: 'GET /api/teams' }}
+      empty={{ text: S.noTeams, source: COMPOSE_BELOW }}
     >
       {teams.map((team) => (
         <Strip
@@ -208,6 +212,15 @@ export function TeamsPage() {
   const teams = useTeams((state) => state);
   const panels = useTeamPanels((state) => state);
   const registry = useSessionRegistry((state) => state);
+  const heads = useHeads((state) => state.data);
+
+  // The composer picks a slot's head and session from what the daemon lists, so both are read once
+  // here; the live stream re-reads each when it changes (widgets/rule/wire.ts).
+  useEffect(() => {
+    if (fixture !== null) return;
+    void fetchHeads();
+    void fetchSessions();
+  }, [fixture]);
   const turns = usePerfTurns((state) => state);
 
   // The list is re-read on the panels' cadence, with or without a team open: a team or a binding
@@ -295,6 +308,10 @@ export function TeamsPage() {
           <TeamCompose
             key={editing?.id ?? 'new'}
             team={editing}
+            heads={(heads ?? []).map((head) => ({ value: head.key, label: head.label }))}
+            sessions={sessions
+              .filter((row) => row.session_id !== null && row.availability !== 'gone')
+              .map((row) => ({ value: row.session_id ?? '', label: sessionLabel(row) }))}
             answer={saved !== null && saved.team.id === editing?.id ? saved.answer : null}
             onSaved={(team, answer) => {
               setSaved({ team, answer });

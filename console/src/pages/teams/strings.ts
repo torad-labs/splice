@@ -12,7 +12,7 @@ export const S = {
   slots: 'slots',
   state: 'state',
   archived: 'archived',
-  live: 'live',
+  live: 'active',
   newTeam: 'new team',
   edit: 'edit',
 } as const;

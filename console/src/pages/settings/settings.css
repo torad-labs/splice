@@ -138,3 +138,38 @@
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
+
+/* One topology table: a sheet of paper under its group's bay, its name, then its values in a
+   wrapping row. Paper so the controls' labels (strip ink) read, the same ground the knob rows use. */
+.myx-topo-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+}
+.myx-topo-title {
+  margin: 0;
+  font-family: var(--font-code);
+  font-size: var(--text-2);
+  font-weight: normal;
+  color: var(--strip-ink);
+}
+.myx-topo-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+}
+.myx-topo-flag {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.myx-topo-key {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}

@@ -7,6 +7,8 @@ export const S = {
   find: 'find a knob',
   findHint: 'name or key',
   topology: 'topology',
+  /** A value written at the top of splice.toml, outside any table. */
+  topLevel: 'top level',
   claudeHead: 'claude head',
   mode: 'head mode',
   separate: 'separate',

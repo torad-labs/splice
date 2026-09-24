@@ -10,6 +10,7 @@
 // Both are listed below, each in its own group, because the wall counts the first and the page
 // renders the second.
 import type { Disposition } from '@shared/coverage';
+import { TOPOLOGY_CHOICES } from '@entities/topology';
 
 type State = 'editable' | 'read-only';
 
@@ -105,8 +106,9 @@ const EDITABLE_TOPOLOGY = [
  * offer them as choices inside `dialect` and `system_prompt_mode`; there is nothing to set by
  * their own name, which is exactly what read-only means here.
  */
-const DIALECT_VALUES = ['openai-responses', 'openai-chat', 'anthropic-passthrough'] as const;
-const MODE_VALUES = ['append', 'replace', 'strip'] as const;
+// One list, the editor's: the picker and this wall read the same values (TOPOLOGY_CHOICES).
+const DIALECT_VALUES = TOPOLOGY_CHOICES.dialect ?? [];
+const MODE_VALUES = TOPOLOGY_CHOICES.system_prompt_mode ?? [];
 
 /** Retired in code (2026-09-05) but still PARSED, so a config carrying it fails loudly at load.
  *  The daemon's `QuirksConfig.init` refuses it by name; the console must not offer it. */

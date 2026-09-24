@@ -191,3 +191,15 @@ export function validateTopology(value: unknown): TopologyFinding[] {
   walk(value, TOPOLOGY_SCHEMA, '', out);
   return out;
 }
+
+/**
+ * The closed value sets a topology key takes, keyed by the key's name; the auth table's `kind` is
+ * `auth.kind`, since a bare `kind` means nothing else here. Each list is the daemon's own spelling:
+ * `Dialect` (TopologySchema.kt), `SystemPromptMode` (HeadSystemPrompt.kt) and `AuthKind`
+ * (AuthKind.kt). An editor offers these as a picker; the validator above stays the key check.
+ */
+export const TOPOLOGY_CHOICES: Readonly<Record<string, readonly string[]>> = {
+  dialect: ['openai-responses', 'openai-chat', 'anthropic-passthrough'],
+  system_prompt_mode: ['append', 'replace', 'strip'],
+  'auth.kind': ['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth', 'client', 'api-key'],
+};

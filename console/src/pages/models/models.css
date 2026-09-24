@@ -130,3 +130,13 @@
    the worst disagreement across all three bays is 1px, and the bare band is gone.
    Tried in the page before it was written, which is how the 301.9px was found at all. */
 .myx-models .myx-strip { width: 100%; }
+
+/* The tiers no model fills on this head, named once above the rack. */
+.myx-models-vacant {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--room-deep);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}

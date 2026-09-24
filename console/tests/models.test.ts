@@ -17,7 +17,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 
-import { MODEL_COLUMNS } from '../src/pages/models/components';
+import { MODEL_COLUMNS, vacantText } from '../src/pages/models/components';
 import { ModelsBoard } from '../src/pages/models';
 import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { S } from '../src/pages/models/strings';
@@ -94,19 +94,18 @@ describe('the catalog rack is a grid, and its names are printed once', () => {
     for (const bay of bays) expect(bay.names.map((name) => name.w)).toEqual(widths);
   });
 
-  test('a vacant tier prints its slot and the absence glyph, never a shorter row', () => {
-    // A vacant tier is named by its edge word, not struck: striking is the verdict on an excluded
-    // or disabled row, and a line through every vacant slot read as a rendering fault.
-    const vacant = markup.split(/<div class="myx-strip[ "]/).slice(1)
-      .filter((strip) => strip.includes(`<span class="myx-edge-label">${S.undeclared}</span>`));
-    expect(vacant.length).toBeGreaterThan(0);
-    for (const strip of vacant) {
+  test('the tiers no model fills are named on one line, and no strip is dashes alone', () => {
+    // FEATURES 4.8: the page says which tiers Claude Code will not get on a head. It said so with a
+    // strip of dashes per tier; it says it once, by name, and every strip left carries a model.
+    expect(markup).toContain('no model fills the fable tier here');
+    const strips = markup.split(/<div class="myx-strip[ "]/).slice(1);
+    for (const strip of strips) {
       const values = [...strip.slice(0, strip.indexOf('</div></div>') + 12)
         .matchAll(/<span class="myx-sfield-text">([^<]*)</g)].map((m) => m[1]);
-      // Six values: the tier's own slot name, and `–` everywhere a model would have spoken.
-      expect(values.length).toBe(MODEL_COLUMNS.length);
-      expect(values.filter((value) => value === S.absent).length).toBe(MODEL_COLUMNS.length - 1);
+      expect(values.filter((value) => value !== S.absent).length).toBeGreaterThan(1);
     }
+    expect(vacantText([])).toBeNull();
+    expect(vacantText(['opus', 'haiku'])).toContain('no model fills the opus, haiku tiers');
   });
 
   test('the wall can fail: a short row and a labelled cell are both reported by name', () => {

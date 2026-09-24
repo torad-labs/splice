@@ -202,15 +202,13 @@ describe('models page', () => {
     expect(markup).not.toContain('myx-strip');
   });
 
-  test('with a catalog the board draws a strip per tier, and an undeclared tier is a vacant one', () => {
+  test('with a catalog the board draws a strip per filled tier, and names the tier no model fills', () => {
     const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
     for (const head of fixtureCatalog.heads) expect(markup).toContain(head.head);
     expect(markup).toContain('gpt-5.6-sol');
-    // The vacant tier's edge prints its state and its model cell prints the absence glyph, with
-    // `–` where a model would be. It is not struck: a strike is the verdict on an excluded or
-    // disabled row, and a line through every vacant slot read as a rendering fault.
-    expect(markup).toContain('<span class="myx-edge-label">vacant</span>');
-    expect(markup).toContain('–');
+    // The vacant tier is named, never dropped, and nothing is struck: a strike is the verdict on an
+    // excluded or disabled row.
+    expect(markup).toContain('no model fills the fable tier');
     expect(markup.split('myx-strip-struck').length - 1).toBe(0);
   });
 

@@ -52,7 +52,9 @@ function ModelStrip({ model, slot, selected, onOpen }: {
   return (
     <Strip
       edge={unslotted ? 'grey' : 'green'}
-      edgeLabel={model.pinned ? S.pinnedYes : unslotted ? S.noSlot : S.slotted}
+      /* The edge carries the one state no column does, pinned; a tier's model and a model with no
+         tier said `auto` and `none` there, beside a tier column that already said which. */
+      edgeLabel={model.pinned ? S.pinnedYes : ''}
       selected={selected}
       onOpen={onOpen}
       ariaLabel={`${S.openModel} ${model.id}`}
@@ -76,7 +78,7 @@ function ModelStrip({ model, slot, selected, onOpen }: {
  *  value and nothing else. */
 function modelCell(model: CatalogModel, slot: string, key: string): string {
   if (key === 'model') return model.id;
-  if (key === 'slot') return slot;
+  if (key === 'slot') return slot === S.noSlot ? S.absent : slot;
   if (key === 'contextWindow') return model.context_window === null ? S.absent : fmtTokens(model.context_window);
   if (key === 'windowSource') return model.context_window_source;
   if (key === 'rateInput') return rateValue(model, (rates) => rates.input);
@@ -99,13 +101,27 @@ function ColumnNames() {
   );
 }
 
-/** One head's rack: its four tiers, then every model that fills no tier. */
+/** The tiers no model fills, said once as a sentence: which Claude Code tiers this head will not
+ *  serve, and where one is set. Null when every tier has a model. */
+export function vacantText(tiers: readonly string[]): string | null {
+  if (tiers.length === 0) return null;
+  return `no model fills the ${tiers.join(', ')} tier${tiers.length === 1 ? '' : 's'} here; set slot = "${tiers[0]}" on one of this head's models in splice.toml to fill one`;
+}
+
+/** One head's rack: the tiers no model fills, named on one line, then the models that fill a tier,
+ *  then every model that fills none.
+ *
+ *  The vacant tiers were four struck strips of dashes at the top of every rack (console review,
+ *  2026-09-24); FEATURES 4.8 asks the page to say which tiers Claude Code will not get, and a line
+ *  naming them says it without four rows of nothing. */
 export function HeadCatalogBay({ head, selected, onSelect }: {
   head: HeadCatalog;
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
   const unslotted = head.models.filter((model) => model.slot === null);
+  const tiers = slotTiers(head);
+  const vacant = vacantText(tiers.filter((tier) => tier.model === null).map((tier) => tier.slot));
   return (
     <Bay
       label={head.head}
@@ -113,33 +129,9 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
       empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
       fields={<ColumnNames />}
     >
-      {slotTiers(head).map((tier) => (
-        tier.model === null ? (
-          <Strip
-            key={tier.slot}
-            edge="grey"
-            edgeLabel={S.undeclared}
-            ariaLabel={`${S.slot} ${tier.slot}`}
-          >
-            {/* SIX CELLS, FOUR OF THEM THE ABSENCE GLYPH -- not two cells (M1-107: a view decides
-                what a cell SHOWS, never how many cells a row has). This row carried the first two
-                only, on the reading that two cells ARE what a missing model means, and measured at
-                1536 dark that ended the strip at x=553 in a rack whose other rows run to x=1137:
-                the bay stopped being a grid at the third column and the eye had nothing to read
-                down. The sibling rack on usage already renders all six with `–` for the same
-                vacant tiers, from the same data, so this is the tree's own answer and not a new
-                one. `–` is the right word by the vocabulary in strings.ts: nobody reported a
-                value for this cell, because there is no model here to report one. */}
-            {MODEL_COLUMNS.map((column) => (
-              <StripField
-                key={column.key}
-                w={column.w}
-                value={column.key === 'slot' ? tier.slot : S.absent}
-                {...(column.prose ? { mono: false } : {})}
-              />
-            ))}
-          </Strip>
-        ) : (
+      {vacant === null ? null : <p key="vacant" className="myx-models-vacant">{vacant}</p>}
+      {tiers.map((tier) => (
+        tier.model === null ? null : (
           <ModelStrip
             key={tier.model.id}
             model={tier.model}

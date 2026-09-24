@@ -198,16 +198,20 @@ describe('every failing check carries its fix', () => {
     expect(statusEdge('fail')).toBe('red');
   });
 
-  test('attention first puts the worst section at the top, by section keeps the alphabet', () => {
+  test('attention first lists every check that wants the operator before any that does not', () => {
+    // Walkthrough S14: sorted inside each section, configuration's ok rows sat above runtime's warns.
     const checks = [
+      check('configuration/a', 'warn', 'w'),
+      check('configuration/b', 'ok', 'fine'),
+      check('runtime/c', 'warn', 'w'),
       check('alpha/one', 'ok', 'fine'),
       check('zeta/two', 'fail', `broken${SEP}splice restart`),
     ];
-    const attention = groupChecks(checks, { sort: { field: 'status' } });
+    const order = groupChecks(checks, { sort: { field: 'status' } }).flatMap((group) => group.checks.map((one) => one.id));
+    expect(order).toEqual(['zeta/two', 'configuration/a', 'runtime/c', 'alpha/one', 'configuration/b']);
     const alpha = groupChecks(checks, { sort: null });
-    expect(attention[0]?.key).toBe('zeta');
-    expect(alpha[0]?.key).toBe('alpha');
-    expect(attentionCount(checks)).toBe(1);
+    expect(alpha.map((group) => group.key)).toEqual(['alpha', 'configuration', 'runtime', 'zeta']);
+    expect(attentionCount(checks)).toBe(3);
   });
 });
 

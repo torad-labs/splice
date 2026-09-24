@@ -279,9 +279,9 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
             report's own facts -- which the page was served and printed NOWHERE -- are a second
             table beside it.
             THE SECTION IS NOT LOST WITH THE BAYS. A check id IS "<section>/<name>", so the section
-            is printed in the first cell of every row, and `groupChecks` still decides the ORDER --
-            worst section first under `attention first`, alphabetical under `by section` -- which is
-            what both views' `group: 'section'` meant. The plates were the sections' only other job.
+            is printed in the first cell of every row, and `groupChecks` decides the ORDER -- worst
+            status first across every section under `attention first`, by section and alphabet
+            under `by section`. The plates were the sections' only other job.
             THE DETAIL COLUMN IS UNTOUCHED: it carries real content at rest (M1-112) and this row
             says so; nothing below the grid changed. */}
         <div className="myx-doc-bays">

@@ -55,16 +55,22 @@ export interface CheckGroup {
 }
 
 /**
- * The checks grouped by their id's section, which is what the id's prefix is for
- * ("daemon/port" is a `daemon` check).
+ * The checks in the order the active view reads them.
  *
- * The `attention first` view orders both the sections and the checks inside them by worst status,
- * so the thing that needs the operator is at the top of its rack and not buried under a wall of
- * green. `by section` keeps the alphabetical order instead, which is what an operator who knows
- * the check they are looking for wants.
+ * `attention first` is ONE list, worst status first and then by id: every check that wants the
+ * operator comes before any that does not. It used to sort inside each section and the sections by
+ * their worst check, so under a warn-led `configuration` section its ok rows sat above `runtime`'s
+ * warnings, and the sections were not labelled on screen to explain the order (walkthrough S14).
+ * The section is still the id's prefix, printed in every row's first cell.
+ *
+ * `by section` groups by that prefix ("daemon/port" is a `daemon` check), alphabetically, which is
+ * what an operator who knows the check they are looking for wants.
  */
 export function groupChecks(checks: readonly DoctorCheck[], view: { sort: { field: string } | null }): CheckGroup[] {
   const rank: Record<DoctorStatus, number> = { fail: 3, warn: 2, info: 1, ok: 0 };
+  if (view.sort?.field === 'status') {
+    return [{ key: 'attention', checks: [...checks].sort((l, r) => rank[r.status] - rank[l.status] || l.id.localeCompare(r.id)) }];
+  }
   const groups = new Map<string, DoctorCheck[]>();
   for (const check of checks) {
     const section = checkSection(check);
@@ -72,19 +78,9 @@ export function groupChecks(checks: readonly DoctorCheck[], view: { sort: { fiel
     if (bucket === undefined) groups.set(section, [check]);
     else bucket.push(check);
   }
-  const byAttention = view.sort?.field === 'status';
   return [...groups.entries()]
-    .map(([key, rows]) => ({
-      key,
-      checks: byAttention
-        ? [...rows].sort((l, r) => rank[r.status] - rank[l.status] || l.id.localeCompare(r.id))
-        : [...rows].sort((l, r) => l.id.localeCompare(r.id)),
-    }))
-    .sort((left, right) => {
-      if (!byAttention) return left.key.localeCompare(right.key);
-      const worst = (group: CheckGroup) => Math.max(...group.checks.map((check) => rank[check.status]));
-      return worst(right) - worst(left) || left.key.localeCompare(right.key);
-    });
+    .map(([key, rows]) => ({ key, checks: [...rows].sort((l, r) => l.id.localeCompare(r.id)) }))
+    .sort((left, right) => left.key.localeCompare(right.key));
 }
 
 /** One row of the checks rack: a check, or several that say the same thing about different heads. */

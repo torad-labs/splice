@@ -21,11 +21,12 @@ kotlin {
     }
 }
 
-// v0.4.0 release, held to the 1.0 bar: SHIPPED code compiles warning-free and stays that way. CI run
+// v0.4.0 release, held to the 1.0 bar: every source set compiles warning-free and stays that way. CI run
 // 35963713936 (66 compile tasks, none from cache) had four warnings in main sources, each fixed with its
-// documented annotation; a warning left standing hides the next real one. Test sources keep
-// warnings: the deprecations there are harness noise, not behaviour.
-tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin") {
+// documented annotation; a warning left standing hides the next real one. Test sources followed once
+// #211 cleared theirs (the Ktor readUTF8Line deprecation, redundant `!!`, an opt-in, two named
+// configurations): a test that compiles on a deprecated API is the next release's broken build.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions.allWarningsAsErrors.set(true)
 }
 

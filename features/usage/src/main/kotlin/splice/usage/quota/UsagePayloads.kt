@@ -10,11 +10,14 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.pool.AccountPoolJson
 import splice.core.config.ConfigService
+import splice.core.usage.PlanWindows
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
+import splice.core.util.WallClock
 import splice.usage.UsageHeads
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val KEY = "key"
 private const val LABEL = "label"
@@ -24,6 +27,8 @@ private const val USAGE_WINDOW_HOURS = 5
 public class UsagePayloads(
     private val heads: UsageHeads,
     private val config: ConfigService,
+    /** Decides which plan windows have already reset when warn reads them. */
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val accountJson = AccountPoolJson()
 
@@ -42,7 +47,9 @@ public class UsagePayloads(
                     val selectedQuota = pool?.selectedQuota() ?: usage.quota
                     val rlView = usage.ratelimit
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
-                    val warn = UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h)
+                    val plan = selectedQuota?.let { PlanWindows(it, clock().milliseconds.inWholeSeconds) }
+                    val warn =
+                        UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h, plan)
                     addJsonObject {
                         put(KEY, m.key)
                         put(LABEL, m.label)

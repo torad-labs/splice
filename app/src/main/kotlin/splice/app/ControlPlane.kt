@@ -26,6 +26,7 @@ import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpSharing
 import splice.client.resume.AuthHeaderFile
 import splice.client.resume.ResumeHookTarget
+import splice.client.wrap.WrappedHead
 import splice.configuration.topology.TopologyStale
 import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.McpHost
@@ -119,6 +120,14 @@ internal class ControlPlane(
             resumeHook = ResumeHookTarget(controlPort, AuthHeaderFile(TurnKey(mgmtKey)::headerFile)),
         )
 
+    /** The one LaunchService, over the daemon's home: its wrap (V4-129) writes and reads the SAME
+     *  home the materializer's DR-102 guard protects, so the vanilla dir wrap targets is the one
+     *  the guard refuses to every other head. */
+    private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
+        val materializer = materializer(home, sharing, controlPort)
+        return LaunchService(materializer, wrap = WrappedHead(home, materializer = materializer))
+    }
+
     internal fun cancelProbes() {
         probeScope.cancel()
     }
@@ -167,7 +176,7 @@ internal class ControlPlane(
             mgmtKey,
             dashboardHtml,
             log,
-            LaunchService(materializer(home, sharing, controlPort)),
+            launchService(home, sharing, controlPort),
             shutdownDaemon,
             failedHeads,
             headCount,

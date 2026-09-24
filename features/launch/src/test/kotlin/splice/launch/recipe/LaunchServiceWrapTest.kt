@@ -14,7 +14,10 @@ import org.junit.jupiter.api.Test
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudeLogins
 import splice.client.ClaudePolicy
+import splice.client.wrap.WrapState
 import splice.client.wrap.WrapStateRead
+import splice.client.wrap.WrapStateStore
+import splice.client.wrap.WrappedHead
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import java.nio.file.Files
@@ -82,6 +85,48 @@ class LaunchServiceWrapTest {
         val materialized = tmp.resolve(".claude-claude-splice/.credentials.json")
         assertTrue(materialized.exists())
         assertEquals("""{"accessToken":"the-selected-one"}""", materialized.readText())
+    }
+
+    /** V4-129 review. A launch THROUGH the wrapped `claude` runs the client-auth claude-splice head
+     *  over the operator's own ~/.claude — whose credential IS the operator's login. FEATURES.md 4.5
+     *  says the selected Claude login is materialized "never on a wrapped default head": writing it
+     *  there would overwrite the operator's real login with a splice-stored one. */
+    @Test
+    fun `a launch through the wrapped claude runs over the vanilla dir and never writes a login into it`() {
+        val home = tmp.resolve("wrapped-home").createDirectories()
+        val logins = ClaudeLogins(storeDir = tmp.resolve("claude-logins-wrapped"))
+        val source = tmp.resolve("source-session-wrapped").createDirectories()
+        source.resolve(".credentials.json").writeText("""{"accessToken":"a-splice-stored-login"}""")
+        logins.store("work", source)
+        logins.select("work")
+        val stateStore = WrapStateStore(file = tmp.resolve("wrapped-state/claude-head-wrap.json"))
+        stateStore.write(WrapState("/opt/claude/2.1.281", "/opt/claude/2.1.281", "/share/splice-launch", "", "", 0L))
+        val materializer = ClaudeConfigMaterializer(home)
+        val service = LaunchService(
+            materializer,
+            wrap = WrappedHead(home, stateStore = stateStore, materializer = materializer),
+            claudeLogins = logins,
+        )
+        val through = service.wrap.launchThrough("claude") ?: error("a wrap state is present: claude must resolve")
+
+        val recipe = service.launch(
+            spec("claude-splice", forwardClientAuth = true),
+            emptyList(),
+            dangerouslySkipPermissions = false,
+            wrapped = through,
+        )
+
+        assertEquals(home.resolve(".claude").toString(), recipe.env["CLAUDE_CONFIG_DIR"])
+        assertEquals("/opt/claude/2.1.281", recipe.argv.first())
+        assertTrue(
+            home.resolve(".claude/settings.json").exists(),
+            "the vanilla dir takes wrap's narrow materialization",
+        )
+        assertFalse(
+            home.resolve(".claude/.credentials.json").exists(),
+            "the operator's own ~/.claude login must never be overwritten by a stored splice login",
+        )
+        assertEquals(null, service.wrap.launchThrough("claudex"), "only the wrapped command resolves through wrap")
     }
 
     @Test

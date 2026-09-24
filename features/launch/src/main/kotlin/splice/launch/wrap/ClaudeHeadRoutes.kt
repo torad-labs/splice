@@ -31,8 +31,10 @@ import java.nio.file.Paths
 
 /** The one head wrap targets (app/src/main/resources/splice.example.toml:682-692): the splice-owned Claude head
  *  whose command is deliberately NOT `claude` (its own comment says why), so wrap borrows its
- *  already-assembled catalog/statusline/login wiring and retargets the write at the vanilla dir. */
-private const val CLAUDE_HEAD_KEY = "claude-splice"
+ *  already-assembled catalog/statusline/login wiring and retargets the write at the vanilla dir.
+ *  V4-129 review: internal, because a launch THROUGH the wrapped `claude` (LaunchRoutes) runs this
+ *  same head, and the two must never name different ones. */
+internal const val CLAUDE_HEAD_KEY = "claude-splice"
 
 public class ClaudeHeadRoutes(
     private val heads: LaunchHeads,

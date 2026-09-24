@@ -8,15 +8,21 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonArray
+import splice.client.wrap.WrappedLaunch
 import splice.core.topology.TopologyMessages
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
 import splice.launch.LaunchAudit
+import splice.launch.LaunchHead
 import splice.launch.LaunchHeads
 import splice.launch.LaunchReplies
+import splice.launch.wrap.CLAUDE_HEAD_KEY
 
 /** [cwd]: V4-183, the shim's working directory, absent from a shim older than shim-4. */
 private data class LaunchRequest(val extraArgs: List<String>, val dangerouslySkipPermissions: Boolean, val cwd: String?)
+
+/** The head one launch runs, and [wrapped] when it came through the wrapped `claude` (V4-129). */
+private data class Resolved(val head: LaunchHead, val wrapped: WrappedLaunch?)
 
 public class LaunchRoutes(
     private val heads: LaunchHeads,
@@ -37,7 +43,8 @@ public class LaunchRoutes(
             )
             return
         }
-        val target = targets.firstOrNull()
+        val resolved = resolve(key, targets)
+        val target = resolved?.head
         val spec = target?.spec
         if (spec == null || launchService == null) {
             val known = heads.all().joinToString(", ") { it.head.label }
@@ -71,11 +78,24 @@ public class LaunchRoutes(
                 // gate left the capture hook armed against a credential `splice key set` landed.
                 keyPresentNow = target.keyPresence.keyPresentNow(),
                 cwd = request.cwd,
+                wrapped = resolved.wrapped,
             ),
         )
         audit.launched(key, recipe.argv)
         if (recipe.warning != null) audit.warned(recipe.warning)
         call.respondText(launchResponse.launchRecipeJson(recipe), ContentType.Application.Json)
+    }
+
+    /** The head [key] launches, given its key/label [targets] (at most one — several were refused).
+     *
+     *  V4-129 review: a wrapped `claude` IS the launch shim, which names its head by its own basename
+     *  — `claude`, a name no head carries, so every wrapped `claude` 404'd until unwrap. While the
+     *  wrap is in place that name is the splice-owned Claude head over the vanilla ~/.claude
+     *  (WrappedHead.launchThrough); a head really keyed or labeled `claude` still wins. */
+    private fun resolve(key: String, targets: List<LaunchHead>): Resolved? {
+        targets.singleOrNull()?.let { return Resolved(it, wrapped = null) }
+        val wrapped = launchService?.wrap?.launchThrough(key) ?: return null
+        return heads.byKey(CLAUDE_HEAD_KEY)?.let { Resolved(it, wrapped) }
     }
 
     private suspend fun receiveLaunchRequest(call: ApplicationCall): LaunchRequest {

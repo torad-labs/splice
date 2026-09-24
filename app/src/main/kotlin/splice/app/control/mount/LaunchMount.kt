@@ -26,7 +26,12 @@ internal class LaunchMount(
 ) {
     private val launchHeads = LaunchHeadAdapter.heads(heads, resolver)
     private val launchRoutes = LaunchRoutes(launchHeads, launchService, LaunchHeadAdapter.audit(audit), JsonBody())
-    private val claudeHeadRoutes = ClaudeHeadRoutes(launchHeads)
+
+    // V4-129 review: the wrap routes act on the SAME wrap the launch route resolves a wrapped
+    // `claude` through (LaunchService.wrap), so what /api/claude-head/wrap writes is what /launch
+    // reads. A server built without a LaunchService launches nothing, and keeps the default wrap.
+    private val claudeHeadRoutes =
+        launchService?.let { ClaudeHeadRoutes(launchHeads, wrappedHead = it.wrap) } ?: ClaudeHeadRoutes(launchHeads)
 
     // V4-169: the SessionStart resume hook's receiving end — session-guarded like the statusline, and
     // reachable only from loopback, because the daemon binds there.

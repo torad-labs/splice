@@ -26,7 +26,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.ClaudeConfigMaterializer
-import splice.client.ClaudePolicy
 import splice.client.Keys
 import splice.client.MaterializeSpec
 import splice.client.SymlinkOp
@@ -108,7 +107,10 @@ private sealed class WrapPreflight {
     data class Refused(val reason: String) : WrapPreflight()
 }
 
-/** V4-129: wrap/unwrap orchestration — see file header for the two hazards this closes. */
+/** V4-129: wrap/unwrap orchestration — see file header for the two hazards this closes.
+ *
+ *  It is also the [WrapStateRead] every launch plants argv[0] from, so the fact wrap WRITES and the
+ *  fact a launch READS come from one object and one state file. */
 public class WrappedHead(
     private val home: Path,
     private val installPaths: InstallPaths = InstallPaths(),
@@ -116,10 +118,21 @@ public class WrappedHead(
     private val materializer: ClaudeConfigMaterializer = ClaudeConfigMaterializer(home),
     private val symlink: SymlinkOp = SymlinkOp { link, target -> Files.createSymbolicLink(link, target) },
     private val now: WallClock = WallClock(System::currentTimeMillis),
-) {
+) : WrapStateRead {
     private val commandPath: Path get() = installPaths.binDir.resolve(CLAUDE_COMMAND)
     private val shimPath: Path get() = installPaths.shareDir.resolve(SHIM_NAME)
     private val vanillaDir: Path get() = home.resolve(Keys.CLAUDE)
+
+    /** The real claude binary while wrap is in place (its state file is the proof), else null. */
+    override fun realBinaryPath(): String? = stateStore.read()?.realBinaryPath
+
+    /** V4-129 review: the launch a `/launch/<[command]>` makes THROUGH the wrapped default command,
+     *  or null. The shim takes its head from its own basename, so a wrapped `claude` posts
+     *  `/launch/claude` — a name no head carries, which 404'd every wrapped `claude` until unwrap.
+     *  Non-null exactly when [command] is `claude` AND the wrap state is present; the caller then
+     *  launches the splice-owned Claude head over [WrappedLaunch.configDir], the vanilla ~/.claude. */
+    public fun launchThrough(command: String): WrappedLaunch? =
+        if (command == CLAUDE_COMMAND && realBinaryPath() != null) WrappedLaunch(vanillaDir, materializer) else null
 
     public fun status(): ClaudeHeadStatus {
         val cmd = commandPath
@@ -129,11 +142,12 @@ public class WrappedHead(
             mode = if (wrapped) "wrapped" else "separate",
             resolvesTo = resolveCommand(cmd),
             shimPath = shim.toString(),
-            realBinaryPath = if (wrapped) stateStore.read()?.realBinaryPath else null,
+            realBinaryPath = if (wrapped) realBinaryPath() else null,
         )
     }
 
-    /** [spec] arrives from the caller with its own configDir/policy — both are OVERRIDDEN here: the
+    /** [spec] arrives from the caller with its own configDir/policy — both are OVERRIDDEN (by
+     *  [WrappedLaunch.materialize], the one place the vanilla dir's materialization is spelled): the
      *  vanilla dir is the only legal target for wrap, and the policy is fixed so settings.json's
      *  "global" layer (the very file about to be overwritten, once configDir == vanillaDir) is
      *  always carried forward, regardless of the source head's own share/isolate configuration. */
@@ -189,16 +203,12 @@ public class WrappedHead(
     }
 
     private fun performWrap(spec: MaterializeSpec, cmd: Path, shim: Path, ready: WrapPreflight.Ready): WrapResult {
-        val wrapSpec = spec.copy(
-            configDir = vanillaDir,
-            policy = ClaudePolicy(share = setOf(Keys.SETTINGS), isolate = emptySet()),
-        )
         val settingsBackup = backupPath(vanillaDir.resolve(Keys.SETTINGS))
         val claudeJsonBackup = backupPath(vanillaDir.resolve(Keys.CLAUDE_JSON))
         Files.createDirectories(vanillaDir)
         backup(vanillaDir.resolve(Keys.SETTINGS), settingsBackup)
         backup(vanillaDir.resolve(Keys.CLAUDE_JSON), claudeJsonBackup)
-        materializer.materializeWrap(wrapSpec)
+        WrappedLaunch(vanillaDir, materializer).materialize(spec)
         // State BEFORE the symlink swap — the safe crash ordering (file header).
         stateStore.write(
             WrapState(

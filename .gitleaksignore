@@ -35,6 +35,10 @@
 # the two literals that test PLANTS in a doctor report the redaction check refuses, to prove the
 # page renders nothing of it. Opened at the commit, values not copied here: each names itself as a
 # planted fixture and is used only inside that test. Credential-shaped on purpose, as DR-151's is.
+# 2026-09-24: app/.../DashboardKeyLineTest.kt KEY (d6d24563, PR #195) — a management-key-SHAPED
+# literal (32 hex, the digits 0-f twice) the test hands `splice dashboard`'s key line to prove it
+# never reaches output that is not a terminal. Opened at the commit: it is the only use, it grants
+# nothing, and a key of any other shape would not exercise the line the way the real one does.
 1574f46b22b2e76837a851d129f4280f82612db5:.dev/campaigns/manifest.py:generic-api-key:116
 2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
 2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
@@ -58,3 +62,4 @@
 89f11e1ff5c6a8c1c15fd87040a3204e122cc0c7:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
 a993fa8291f416a324ec47c6b8b0053ac56f6aaf:gateway/core/src/test/kotlin/console/v4131/TranscriptSentTextsTest.kt:generic-api-key:21
 b44913049fe38a3ea90d9e317ee17cd0ff74987e:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
+d6d2456351c7b44fe99b4f20f6136f78b9df3e92:app/src/test/kotlin/splice/app/cli/status/DashboardKeyLineTest.kt:generic-api-key:14

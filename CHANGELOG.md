@@ -86,6 +86,9 @@ that boundary: transcripts sent to providers, argv other accounts can read, and 
 origin.
 
 ### Known limitations
+- **Budget alerts reach the webhook, not the desktop.** A `warn` budget posts to the saved webhook
+  and writes the head's log. The `desktop` alert flag is saved and shown, but nothing turns it
+  into a desktop notification yet.
 - **A rate limit after text has streamed ends the turn on a head that cannot continue from a
   prefill.** A limit before any text restarts the turn on every head. Heads measured to resume
   (kimi, or any provider with `reanchor_prefill = true`) continue where they stopped. Muse answers

@@ -14,7 +14,6 @@ import { restartHead, startHead, startHeadsPolling, stopHead, useHeads } from '@
 import type { HeadSignals } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
-import type { KnobDisposition } from '@entities/config';
 import { startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import { headWindow, startUsagePolling, useUsage } from '@entities/usage';
@@ -23,7 +22,8 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { poll } from '@shared/lib';
 import type { HeadStatus } from '@shared/api';
-import { Bay, Empty, FieldBox, HolderEdge } from '@shared/ui';
+import { Bay, Empty, HolderEdge } from '@shared/ui';
+import { KnobReadout } from '@widgets/knob-form';
 import { Blank, Fault, Key } from '@shared/controls';
 import { ACCOUNT_COLUMNS, AccountStrip } from '@widgets/account-strip';
 import { HeadStrip, HEAD_COLUMNS } from '@widgets/head-strip';
@@ -47,19 +47,6 @@ export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-provider', name: S.byProvider, layout: 'bay', filter: {}, sort: null, group: 'provider', fields: [] },
   { id: 'attention', name: S.attentionFirst, layout: 'bay', filter: {}, sort: { field: 'attention', dir: 'desc' }, group: null, fields: [] },
 ];
-
-/** One knob row inside the detail column: the value, its provenance layer, and whether saving it
- *  needs a restart. The provenance comes from the daemon's own layer map, never a guess. */
-function KnobRow({ knob }: { knob: KnobDisposition }) {
-  return (
-    <FieldBox
-      label={knob.key}
-      value={knob.value === null ? '' : String(knob.value)}
-      provenance={knob.provenance}
-      hot={knob.hot}
-    />
-  );
-}
 
 /** The lifecycle controls. Raw buttons for the same reason the accounts feature uses them: the old
  *  Btn/ConfirmBtn exports are what M2 exists to retire (CONTRACTS.md section 2). Stop and restart
@@ -337,7 +324,7 @@ export function FleetPage() {
                 {overrides.length === 0 ? (
                   <p className="myx-fleet-note">{S.noOverrides}</p>
                 ) : (
-                  overrides.map((knob) => <KnobRow key={knob.key} knob={knob} />)
+                  overrides.map((knob) => <KnobReadout key={knob.key} knob={knob} />)
                 )}
               </section>
 

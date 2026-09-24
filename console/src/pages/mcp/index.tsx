@@ -8,11 +8,13 @@
 // default this page invented.
 import { useEffect, useState } from 'react';
 import { fetchConfig, knobDispositions, useConfig } from '@entities/config';
+import type { KnobDisposition } from '@entities/config';
 import { MCP_RESTART, startMcpPolling, useMcp } from '@entities/mcp';
 import type { McpRow } from '@entities/mcp';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, FieldBox, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
+import { KnobReadout, knobLabel } from '@widgets/knob-form';
 import { Blank, Fault } from '@shared/controls';
 import { EMPTIES, arrangeServers, hostLimits, stateEdge, stateLabel, hosted } from './model';
 import { dispositions } from './coverage';
@@ -94,23 +96,22 @@ function ServerStrip({ row, selected, onOpen }: { row: McpRow; selected: boolean
 /** The four host limits, read-only with their provenance. A knob the running daemon does not carry
  *  prints its name with no value: the default lives in the daemon's own enum, and this page is not
  *  a second place for it. */
-function HostLimits({ heads }: { heads: readonly { key: string; knob: { value: string | number | boolean | null; provenance: string; hot: boolean } | null }[] }) {
+function HostLimits({ heads }: { heads: readonly { key: string; knob: KnobDisposition | null }[] }) {
   return (
     <section className="myx-mcp-section">
       <h2 className="myx-mcp-section-title">{S.limits}</h2>
       {heads.map(({ key, knob }) => (
         <div key={key}>
-          <FieldBox
-            label={key}
-            value={knob === null || knob.value === null ? '' : String(knob.value)}
-            provenance={knob === null ? 'default' : (knob.provenance as never)}
-            hot={knob?.hot ?? false}
-          />
-          {/* the box prints the knob's own restart verdict; the note speaks only for a knob the
-              daemon does not carry, which has no verdict to print */}
-          {knob === null ? <p className="myx-mcp-note">not carried by this daemon</p> : null}
+          {/* the readout prints the knob's own restart verdict; the note speaks only for a knob
+              the daemon does not carry, which has no verdict to print */}
+          {knob === null ? (
+            <p className="myx-mcp-note">{knobLabel(key)} is not carried by this daemon</p>
+          ) : (
+            <KnobReadout knob={knob} />
+          )}
         </div>
       ))}
+      <p className="myx-mcp-note">Change these in Settings, under shared mcp servers.</p>
     </section>
   );
 }

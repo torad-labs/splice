@@ -60,14 +60,17 @@ const EDITABLE_KNOBS = [
   'SUPERVISOR_UNIT', 'MCP_SLICE',
 ] as const;
 
-/** FEATURES 4.11: "The four host knobs, read-only with the reason." They shape one McpHost read
- *  once at ControlPlane.start, and a console that offered an editor would be offering a no-op. */
+/** The four shared-MCP host limits. They shape one McpHost read once at ControlPlane.start, which
+ *  makes them restart-required like 47 other knobs, not read-only: the rack edits them and prints
+ *  "restart to apply", and the MCP page shows them and points here. (They were declared read-only
+ *  while the rack rendered them editable, so this file and the page disagreed.) */
 const MCP_KNOBS = ['MCP_IDLE_TIMEOUT_MS', 'MCP_MAX_SERVERS', 'MCP_REQUEST_TIMEOUT_MS', 'MCP_INITIALIZE_TIMEOUT_MS'] as const;
 
-/** FEATURES 2.2: "Some are legacy single-head knobs (grokPort, grokModel, xaiApiBase,
- *  chatgptApiBase)". They are superseded by the provider and head tables, so the console prints
- *  them with their provenance and sends the operator to the topology editor rather than letting a
- *  second, older source of truth look live. */
+/** The ChatGPT-login and Grok-login knobs. These were declared "legacy single-head, edit the
+ *  topology", which the daemon contradicts: HeadBuildInputs remaps EVERY ChatGPT-login and
+ *  Grok-login head and provider through CodexLegacyKnobs / GrokLegacyKnobs, which copy these
+ *  values OVER the port, pinned model and base URL the topology declares. The knob is the live
+ *  control and the topology field is the one that is never read, so the rack edits them. */
 const LEGACY_KNOBS = ['CHATGPT_API_BASE', 'GROK_PORT', 'GROK_MODEL', 'XAI_API_BASE'] as const;
 
 /** The topology keys the forms write (FEATURES 2.3). Every edit is boot-only, which is what the
@@ -115,8 +118,8 @@ const RETIRED_TOPOLOGY = ['compact_effort'] as const;
 
 export const dispositions: readonly Disposition[] = [
   ...entries('knob', 'editable', EDITABLE_KNOBS),
-  ...entries('knob', 'read-only', MCP_KNOBS, 'host limits, read once at start'),
-  ...entries('knob', 'read-only', LEGACY_KNOBS, 'legacy single-head, edit the topology'),
+  ...entries('knob', 'editable', MCP_KNOBS),
+  ...entries('knob', 'editable', LEGACY_KNOBS),
 
   ...entries('topology', 'editable', EDITABLE_TOPOLOGY),
   ...entries('topology', 'read-only', DIALECT_VALUES, 'a dialect value, chosen per provider'),

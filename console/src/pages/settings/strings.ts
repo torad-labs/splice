@@ -4,6 +4,8 @@
 export const S = {
   title: 'settings',
   knobs: 'runtime knobs',
+  find: 'find a knob',
+  findHint: 'name or key',
   topology: 'topology',
   claudeHead: 'claude head',
   mode: 'head mode',

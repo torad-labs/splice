@@ -17,6 +17,7 @@ import { describe, expect, test } from 'vitest';
 import { knobDispositions } from '../src/entities/config';
 import { headRows, validateNewHead, withoutHead } from '../src/features/head-edit';
 import { KnobRack } from '../src/widgets/knob-form';
+import { SOURCE_LABELS } from '../src/widgets/knob-form/strings';
 import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
 import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, setAtPath, toToml, valueAtPath } from '../src/pages/settings/model';
@@ -52,19 +53,21 @@ describe('settings: the knob form', () => {
     }
   });
 
-  test('each knob prints where its value came from', () => {
+  test('each knob prints where its value came from, in the operator\'s words', () => {
     for (const knob of knobs) {
       const row = rowOf(rack, knob.key);
-      expect(row, `${knob.key} row`).toContain(`>${knob.provenance}<`);
+      expect(row, `${knob.key} row`).toContain(`>${SOURCE_LABELS[knob.provenance]}<`);
     }
-    // The spread the fixture sets up, asserted by name so a mapping mistake cannot hide.
+    // The spread the fixture sets up, asserted by name so a mapping mistake cannot hide. The
+    // state file and the runtime layer are both what a save in the console writes, so they read
+    // alike; every other layer keeps a word of its own.
     expect(rowOf(rack, 'maxInflight')).toContain('>head override<');
-    expect(rowOf(rack, 'usageWarnPct')).toContain('>state file<');
-    expect(rowOf(rack, 'debug')).toContain('>env<');
-    expect(rowOf(rack, 'quotaPoll')).toContain('>patch<');
+    expect(rowOf(rack, 'usageWarnPct')).toContain('>set in console<');
+    expect(rowOf(rack, 'debug')).toContain('>environment<');
+    expect(rowOf(rack, 'quotaPoll')).toContain('>set in console<');
     // `port` is in the fixture's `[defaults]` layer, so it is the TOML layer and not the enum
     // default; `maxQueued` is in no layer at all, which is the only honest 'default'.
-    expect(rowOf(rack, 'port')).toContain('>defaults table<');
+    expect(rowOf(rack, 'port')).toContain('>splice.toml<');
     expect(rowOf(rack, 'maxQueued')).toContain('>default<');
   });
 
@@ -313,15 +316,17 @@ describe('settings: the coverage manifest', () => {
     expect(new Set(topologyDeclared.map((entry) => entry.name))).toEqual(topologyNames);
     expect(new Set(dispositions.map((entry) => entry.name)).size).toBe(dispositions.length);
 
-    // The names the two FEATURES sections call read-only, and no others (15 since V4-170 added the
-    // third system prompt mode value, strip). KNOBS AND TOPOLOGY KEYS ONLY: the sentence this pin
+    // The names the two FEATURES sections call read-only, and no others: 7 since the settings copy
+    // pass (2026-09-24) found the four MCP host limits and the four ChatGPT/Grok login knobs were
+    // declared read-only while the rack edited them, and the daemon reads every one of them after a
+    // restart (15 before that). KNOBS AND TOPOLOGY KEYS ONLY: the sentence this pin
     // enforces is about those two vocabularies, and counting routes into it made the number answer
     // a different question than the one it is named for — V4-175 moved /api/claude-head off
     // `pending` onto a read-only status read and the arithmetic went red for a correct manifest.
     const readOnly = dispositions
       .filter((entry) => entry.kind !== 'route' && entry.disposition === 'read-only')
       .map((entry) => entry.name);
-    expect(readOnly).toHaveLength(15);
+    expect(readOnly).toHaveLength(7);
     for (const entry of dispositions) {
       if (entry.disposition === 'read-only' || entry.disposition === 'excluded') expect(entry.reason).toBeTruthy();
       if (entry.disposition === 'pending') expect(entry.where).toBeTruthy();

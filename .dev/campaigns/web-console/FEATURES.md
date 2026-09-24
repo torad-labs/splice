@@ -79,9 +79,11 @@ Keys: `port`, `chatgptApiBase`, `codexAuthPath`, `pinnedModel`, `effort`, `summa
 `authCacheMs`, `debug`, `contextWindowOverride`, `grokPort`, `grokModel`, `xaiApiBase`,
 `grokAuthPath`, `controlPort`, `usageWarnPct`, `usageWarnTokens5h`, `statuslineGitRoots`.
 
-Some are legacy single-head knobs (`grokPort`, `grokModel`, `xaiApiBase`, `chatgptApiBase`); the
-console shows them with their provenance like any other and lets the coverage gate decide whether
-they are "editable" or "read-only with a reason".
+Some look like legacy single-head knobs (`grokPort`, `grokModel`, `xaiApiBase`, `chatgptApiBase`,
+and `port`, `pinnedModel`, `codexAuthPath` beside them), but they are live: `HeadBuildInputs` copies
+them OVER the port, pinned model and base URL the topology declares for every ChatGPT-login and
+Grok-login head (`CodexLegacyKnobs`, `GrokLegacyKnobs`). The console edits them like any other
+knob and says so on the row (corrected 2026-09-24, settings copy pass).
 
 ### 2.3 Topology (`~/.config/splice/splice.toml`, boot-only)
 
@@ -401,7 +403,7 @@ expect it; **only here** means no competing console can offer it.
 | Feature | Detail | Status | Origin |
 |---|---|---|---|
 | Hosted servers | Per server: eligible or why not, hosted, pid, sessions, streams, started, last activity, restarts, last error. | have | daemon |
-| Host limits | The four host knobs, read-only with the reason. | have | daemon |
+| Host limits | The four host knobs, shown with their source; edited in Settings (restart to apply). | have | daemon |
 
 ### 4.12 Doctor
 

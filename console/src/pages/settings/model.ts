@@ -223,6 +223,29 @@ export function toToml(topology: Record<string, unknown>): string {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * The document with one head's override of one knob set, or removed when `value` is null.
+ *
+ * `[heads.<head>.overrides]` holds knob values as TOML strings (`maxInflight = "100"`), the
+ * spelling the operator's own file uses and the daemon coerces per knob, so the value is written
+ * as its string form. Removing the last override removes the empty table with it, so a reset
+ * leaves the file as it was before the override existed. Copy-on-write, like setAtPath.
+ */
+export function withHeadOverride(
+  topology: Record<string, unknown>,
+  head: string,
+  key: string,
+  value: string | number | boolean | null,
+): Record<string, unknown> {
+  const heads = isTable(topology.heads) ? topology.heads : {};
+  const entry = isTable(heads[head]) ? heads[head] : {};
+  const kept = Object.entries(isTable(entry.overrides) ? entry.overrides : {}).filter(([name]) => name !== key);
+  const overrides: Record<string, unknown> = Object.fromEntries(value === null ? kept : [...kept, [key, String(value)]]);
+  const rest = Object.fromEntries(Object.entries(entry).filter(([name]) => name !== 'overrides'));
+  const nextEntry: Record<string, unknown> = Object.keys(overrides).length === 0 ? rest : { ...rest, overrides };
+  return { ...topology, heads: { ...heads, [head]: nextEntry } };
+}
+
 /** The knobs the active view shows. An unknown filter key shows everything, never nothing. */
 export function knobsForView<T extends { key: string; hot: boolean }>(
   dispositions: readonly T[],

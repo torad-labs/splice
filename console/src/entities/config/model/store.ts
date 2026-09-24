@@ -39,10 +39,11 @@ export function parseConfigInput(raw: string, reference: ConfigValue): ConfigVal
   return s;
 }
 
-/** JW-06: the head-selector roster — 'global' plus every override-carrying head, stable order.
- * Only heads that actually override anything are selectable; everything else IS the global view. */
-export function headOptions(perHead: Record<string, unknown> | undefined): string[] {
-  return ['global', ...Object.keys(perHead ?? {}).sort()];
+/** JW-06: the head-selector roster — 'global' plus every override-carrying head and every head
+ * the topology declares, stable order. A declared head with no overrides is selectable too:
+ * choosing it is how the operator gives it its first one. */
+export function headOptions(perHead: Record<string, unknown> | undefined, declared: readonly string[] = []): string[] {
+  return ['global', ...[...new Set([...Object.keys(perHead ?? {}), ...declared])].sort()];
 }
 
 /**
@@ -75,6 +76,32 @@ export function provenanceOf(
 }
 
 /**
+ * The value a head gets for `key` when it carries no override of its own: the strongest layer
+ * holding the key, the per-head layer left out. What "reset" in a head's view falls back to.
+ */
+export function globalValueOf(key: string, payload: ConfigPayload): ConfigValue {
+  const { layers } = payload;
+  let found: ConfigValue = null;
+  for (const layer of [layers.defaults, layers.toml, layers.file, layers.env, layers.runtime]) {
+    if (Object.hasOwn(layer, key)) found = layer[key] ?? null;
+  }
+  return found;
+}
+
+/**
+ * The layer that outranks a head's own override for `key`, if any. FEATURES 2.2 puts a value set
+ * in the console (the state file and the runtime layer) and the environment ABOVE
+ * `[heads.<key>.overrides]`, so while one of those holds the key, a head override is written but
+ * never read.
+ */
+export function shadowOfOverride(key: string, payload: ConfigPayload): 'console' | 'environment' | null {
+  const { layers } = payload;
+  if (Object.hasOwn(layers.env, key)) return 'environment';
+  if (Object.hasOwn(layers.file, key) || Object.hasOwn(layers.runtime, key)) return 'console';
+  return null;
+}
+
+/**
  * Every knob the daemon reports as effective, resolved into what Settings renders: its value, the
  * layer it came from, and whether saving a new value needs a restart.
  *
@@ -85,12 +112,15 @@ export function provenanceOf(
  */
 export function knobDispositions(payload: ConfigPayload, head?: string): KnobDisposition[] {
   const restart = new Set(payload.restart_required_keys);
+  const perHead = Object.entries(payload.layers.perHead);
   return Object.entries(payload.effective)
     .map(([key, value]) => ({
       key,
       value,
       provenance: provenanceOf(key, payload, head) ?? 'default',
       hot: !restart.has(key),
+      defaultValue: payload.layers.defaults[key] ?? null,
+      overriddenBy: perHead.filter(([, layer]) => Object.hasOwn(layer, key)).map(([name]) => name).sort(),
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }

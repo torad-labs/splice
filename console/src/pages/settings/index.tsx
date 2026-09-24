@@ -18,11 +18,15 @@ import { useLocation } from 'react-router';
 import {
   applyConfigPatch,
   fetchConfig,
+  globalValueOf,
   headOptions,
   knobDispositions,
+  markRestartPending,
+  shadowOfOverride,
   useConfig,
   useRestartPending,
 } from '@entities/config';
+import type { KnobDisposition } from '@entities/config';
 import type { ConfigPayload, ConfigValue } from '@shared/api';
 // `fetchClaudeHead` is not imported: the poll below runs it on its own first tick.
 import { startClaudeHeadPolling, unwrapClaudeHead, useClaudeHead, wrapClaudeHead } from '@entities/claude-head';
@@ -38,10 +42,10 @@ import { HeadAddForm, HeadEditRow, headRows } from '@features/head-edit';
 import { useViews, ViewTabs } from '@features/views';
 import { cx } from '@shared/lib';
 import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Blank, Fault } from '@shared/controls';
-import { KnobRack } from '@widgets/knob-form';
+import { Blank, Fault, Input } from '@shared/controls';
+import { HEAD_WORDING, KnobRack, knobMatches } from '@widgets/knob-form';
 import { dispositions } from './coverage';
-import { DEFAULT_VIEWS, EMPTIES, knobsForView } from './model';
+import { changedPaths, DEFAULT_VIEWS, EMPTIES, knobsForView, withHeadOverride } from './model';
 import { ClaudeModeSection, TopologySection } from './sections';
 import { S } from './strings';
 import './settings.css';
@@ -80,6 +84,7 @@ export function SettingsPage() {
   const pendingRestart = useRestartPending((state) => state.pending);
 
   const [head, setHead] = useState('global');
+  const [query, setQuery] = useState('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   const [writeResult, setWriteResult] = useState<TopologyWriteResult | null>(null);
@@ -145,13 +150,57 @@ export function SettingsPage() {
     if (loaded !== null && draft === null) setDraft(loaded);
   }, [loaded, draft]);
 
-  const knobs = configPayload === null ? [] : knobDispositions(configPayload, head === 'global' ? undefined : head);
-  const shown = knobsForView(knobs, views.active);
+  const perHeadView = head !== 'global';
+  const knobs: KnobDisposition[] = configPayload === null
+    ? []
+    : knobDispositions(configPayload, perHeadView ? head : undefined).map((knob) =>
+      // In a head's view "changed" means "differs from what every other head gets", and the way
+      // back is to drop the override, so the reference value is the global one.
+      perHeadView ? { ...knob, defaultValue: globalValueOf(knob.key, configPayload) } : knob);
+  const shown = knobsForView(knobs, views.active).filter((knob) => knobMatches(knob.key, query));
   const heads = headRows(draft ?? {});
 
-  const save = (key: string, value: ConfigValue) => {
+  // THE GLOBAL VIEW SAVES THROUGH PATCH, WHICH REACHES EVERY HEAD. The daemon has no per-head
+  // PATCH (ConfigRoutes.patchConfig: "no per-head fanout"), so a head's view used to send the same
+  // global PATCH while showing one head's values, and the saved value landed in the state file,
+  // which outranks every [heads.<key>.overrides] (FEATURES 2.2). A head's view now writes that
+  // head's override into splice.toml through the daemon's structured writer, which keeps every
+  // comment and untouched line; saving the global value drops the override instead.
+  const saveGlobal = (key: string, value: ConfigValue) => {
     setBusyKey(key);
-    void applyConfigPatch({ [key]: value }, head === 'global' ? undefined : head).finally(() => setBusyKey(null));
+    void applyConfigPatch({ [key]: value }).finally(() => setBusyKey(null));
+  };
+
+  const saveForHead = (key: string, value: ConfigValue) => {
+    if (loaded === null || configPayload === null) return;
+    const fallback = globalValueOf(key, configPayload);
+    const next = withHeadOverride(loaded, head, key, value === null || value === fallback ? null : value);
+    const hadEdits = draft !== null && changedPaths(loaded, draft).length > 0;
+    setBusyKey(key);
+    void saveTopology(next)
+      .then((result) => {
+        setWriteResult(result);
+        if (result.ok) markRestartPending([key]);
+        // Re-seed the topology form from the file just written, unless it holds edits of its own.
+        if (!hadEdits) setDraft(null);
+        return Promise.all([fetchTopology(), fetchConfig(head)]);
+      })
+      .catch((err: unknown) => setWriteResult({ ok: false, restart_required: true, findings: [{ path: '', message: err instanceof Error ? err.message : String(err) }] }))
+      .finally(() => setBusyKey(null));
+  };
+
+  /** What saving a knob reaches, when that is more than the knob on this row. */
+  const scopeNote = (knob: KnobDisposition): string | null => {
+    if (configPayload === null) return null;
+    if (perHeadView) {
+      const shadow = shadowOfOverride(knob.key, configPayload);
+      if (shadow === 'console') return 'A value set in the console for every head outranks this head\'s own. Reset it in the global view first.';
+      if (shadow === 'environment') return 'The environment sets this for every head, which outranks this head\'s own value.';
+      return null;
+    }
+    const by = knob.overriddenBy;
+    if (by.length === 0) return null;
+    return `${by.join(', ')} ${by.length === 1 ? 'sets its own value' : 'set their own values'} in splice.toml. A value saved here replaces ${by.length === 1 ? 'it' : 'them'}.`;
   };
 
   const writeTopology = () => {
@@ -201,7 +250,7 @@ export function SettingsPage() {
         <div className="myx-settings-row">
           {/* The rail's selector idiom: the active option prints a green holder edge and the rest
               a grey one, so which head these knobs describe is a printed word and not a colour. */}
-          {headOptions(configPayload?.layers.perHead).map((option) => (
+          {headOptions(configPayload?.layers.perHead, heads.map((row) => row.key)).map((option) => (
             <button
               key={option}
               type="button"
@@ -213,6 +262,13 @@ export function SettingsPage() {
             </button>
           ))}
         </div>
+        {/* What saving reaches in this view. A sentence, not a label (CONTRACTS.md section 4). */}
+        <p className="myx-settings-note">
+          {perHeadView
+            ? `Values saved here become ${head}'s own, written to its overrides in splice.toml. They take effect after a daemon restart.`
+            : 'Values saved here apply to every head. Pick a head above to give it a value of its own.'}
+        </p>
+        <Input label={S.find} value={query} onChange={setQuery} w={32} placeholder={S.findHint} />
         {configPayload === null ? <Blank strips={6} /> : null}
         {pendingRestart.length === 0 ? null : (
           <div className="myx-settings-row">
@@ -226,7 +282,14 @@ export function SettingsPage() {
           empty={{ text: EMPTIES.noKnobs.text, source: EMPTIES.noKnobs.source }}
         >
           {configPayload === null ? null : (
-            <KnobRack dispositions={shown} pending={pendingRestart} busyKey={busyKey} onSave={save} />
+            <KnobRack
+              dispositions={shown}
+              pending={pendingRestart}
+              busyKey={busyKey}
+              onSave={perHeadView ? saveForHead : saveGlobal}
+              scopeNote={scopeNote}
+              {...(perHeadView ? { wording: HEAD_WORDING } : {})}
+            />
           )}
         </Bay>
       </section>

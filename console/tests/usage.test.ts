@@ -23,6 +23,8 @@ import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
 import { ratesFor, sortedHeads } from '../src/pages/usage/model';
+import { planEdge, planRows, readText, windowCells } from '../src/pages/usage/plan';
+import type { UsagePayload } from '../src/shared/api';
 
 /** The first element, or a named failure: the strict preset forbids a non-null assertion, and a
  *  test that silently read `undefined` would assert nothing at all. */
@@ -166,6 +168,65 @@ describe('usage page', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: { pending: 'V4-127' }, now: FIXTURE_NOW }));
     expect(markup).toContain('no prices set');
     expect(markup).toContain('unavailable');
+  });
+});
+
+describe('plan limits', () => {
+  // The live shape of /api/usage on 2026-09-24, with times moved to NOW: `warn` said `none` for
+  // every one of these heads while the plan windows carried the figures.
+  const nowS = NOW / 1000;
+  const quiet = { level: 'ok' as const, pct: 0, source: 'none', reset: null };
+  const usage: UsagePayload = {
+    window_hours: 5,
+    warn_pct: 80,
+    warn_tokens_5h: 0,
+    heads: [
+      { key: 'claude-splice', label: 'claude-splice', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+        quota: { five_hour: { used_pct: 65, resets_at: nowS + 3600, observed_at: nowS - 120 }, seven_day: { used_pct: 15, resets_at: nowS + 5 * 86400 } } } },
+      { key: 'claude-muse', label: 'claude-muse', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+        quota: { five_hour: { used_pct: 0, resets_at: nowS - 6 * 86400 }, seven_day: { used_pct: 99, resets_at: nowS - 3 * 86400, observed_at: nowS - 4 * 86400 } } } },
+      { key: 'claudex', label: 'claudex', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+        quota: { plan: 'pro', seven_day: { used_pct: 50, resets_at: nowS + 2.5 * 86400 } } } },
+      { key: 'bonsai', label: 'bonsai', usage: { output_tokens_5h: 9, entries: 3, ratelimit: null, warn: quiet } },
+    ],
+  };
+
+  test('only the heads that track a plan window get a row, fullest live window first', () => {
+    expect(planRows(usage, NOW).map((row) => row.entry.key)).toEqual(['claude-splice', 'claudex', 'claude-muse']);
+  });
+
+  test('a window whose reset passed prints as reset, never as the figure from before it', () => {
+    const muse = planRows(usage, NOW).find((row) => row.entry.key === 'claude-muse');
+    expect(muse?.live).toBeNull();
+    expect(windowCells(muse?.windows[1], NOW)).toEqual({ used: 'unknown', resets: 'already reset' });
+    expect(planEdge(first(planRows(usage, NOW).filter((row) => row.entry.key === 'claude-muse')), 80)).toEqual({ edge: 'grey', label: 'stale' });
+  });
+
+  test('a live window prints its figure and how long until it resets', () => {
+    const splice = first(planRows(usage, NOW));
+    expect(windowCells(splice.windows[0], NOW)).toEqual({ used: '65%', resets: 'in 1h 0m' });
+    expect(windowCells(splice.windows[1], NOW)).toEqual({ used: '15%', resets: 'in 5d 0h' });
+    expect(planEdge(splice, 80)).toEqual({ edge: 'green', label: '65%' });
+    expect(readText(splice.windows, NOW)).toBe('2m ago');
+  });
+
+  test('a window the head does not track, and a reading with no time, print the absence mark', () => {
+    const claudex = planRows(usage, NOW).find((row) => row.entry.key === 'claudex');
+    expect(windowCells(claudex?.windows.find((window) => window.window === '5h'), NOW)).toEqual({ used: '–', resets: '–' });
+    expect(readText(claudex?.windows ?? [], NOW)).toBe('–');
+  });
+
+  test('the board draws the plan rack above the heads rack, with the plan name', () => {
+    const markup = render(h(UsageBoard, { payload: fixtureEconomics, usage, catalog: fixtureModels, now: NOW }));
+    expect(markup).toContain('plan limits');
+    expect(markup).toContain('already reset');
+    expect(markup).toContain('>pro<');
+    expect(markup.indexOf('plan limits')).toBeLessThan(markup.indexOf('tokens used'));
+  });
+
+  test('no head with a plan window is a named empty, not a blank rack', () => {
+    const none: UsagePayload = { ...usage, heads: usage.heads.filter((row) => row.key === 'bonsai') };
+    expect(render(h(UsageBoard, { payload: fixtureEconomics, usage: none, catalog: fixtureModels, now: NOW }))).toContain('no head reports plan limits');
   });
 });
 

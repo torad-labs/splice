@@ -20,6 +20,10 @@ export const EMPTIES = {
   noHeads: { text: 'no heads report economics', source: 'GET /api/economics' },
   noModels: { text: 'this head declares no models', source: 'the topology' },
   noRows: { text: 'no turns in window', source: 'the hourly rollup' },
+  noPlan: {
+    text: 'no head reports plan limits',
+    source: "splice reads a head's plan windows from its provider's response headers and the usage poll",
+  },
 } as const;
 
 export const DEFAULT_VIEWS: readonly View[] = [

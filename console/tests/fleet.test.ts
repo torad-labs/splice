@@ -194,6 +194,48 @@ describe('nearest window text', () => {
   });
 });
 
+describe('plan windows count as limits', () => {
+  const NOW_MS = 1_790_000_000_000;
+  const nowS = NOW_MS / 1000;
+  const quiet = { level: 'ok' as const, pct: 0, source: 'none', reset: null };
+  const usage: UsagePayload = {
+    window_hours: 5,
+    warn_pct: 80,
+    warn_tokens_5h: 0,
+    heads: [
+      { key: 'splice', label: 'splice', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+        quota: { five_hour: { used_pct: 65, resets_at: nowS + 3600 }, seven_day: { used_pct: 65, resets_at: nowS + 86400 } } } },
+      { key: 'muse', label: 'muse', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+        quota: { seven_day: { used_pct: 99, resets_at: nowS - 60 } } } },
+      { key: 'grok', label: 'grok', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: { level: 'ok', pct: 40, source: 'ratelimit', reset: '6m0s' } } },
+      { key: 'dark', label: 'dark', usage: null },
+    ],
+  };
+
+  test('the rule bar names a plan window when warn reports none, and ties go to the sooner reset', () => {
+    const nearest = nearestWindow(usage, null, NOW_MS);
+    expect(nearest).toEqual({ head: 'splice', account: null, window: '5h', pct: 65, reset: 'in 1h 0m' });
+  });
+
+  test('a window whose reset passed is not a candidate: its 99% is from before the reset', () => {
+    const onlyMuse: UsagePayload = { ...usage, heads: usage.heads.filter((row) => row.key === 'muse') };
+    expect(nearestWindow(onlyMuse, null, NOW_MS)).toBeNull();
+    expect(headWindow(onlyMuse, 'muse', NOW_MS)).toEqual({ pct: null, level: 'none', reset: null });
+  });
+
+  test('a head tracking plan windows is not counted among heads without limits', () => {
+    expect(headsReportingNone(usage)).toBe(1); // only 'dark'
+  });
+
+  test('the fleet cell takes the fullest of warn and the live plan windows, at the daemon levels', () => {
+    expect(headWindow(usage, 'splice', NOW_MS)).toEqual({ pct: 65, level: 'ok', reset: 'in 1h 0m' });
+    expect(headWindow(usage, 'grok', NOW_MS)).toEqual({ pct: 40, level: 'ok', reset: '6m0s' });
+    const hot: UsagePayload = { ...usage, heads: [{ key: 'hot', label: 'hot', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: quiet,
+      quota: { seven_day: { used_pct: 98, resets_at: nowS + 60 } } } }] };
+    expect(headWindow(hot, 'hot', NOW_MS).level).toBe('critical');
+  });
+});
+
 describe('provider family', () => {
   test('maps each auth kind to its family', () => {
     expect(providerFamily('chatgpt-oauth')).toBe('chatgpt');

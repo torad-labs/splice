@@ -13,9 +13,10 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { useEconomics, startEconomicsPolling, burn, hitRate, perTurn, amplification, wireDelta, sum, within } from '@entities/economics';
-import type { EconomicsPayload, HeadEconomics } from '@shared/api';
+import type { EconomicsPayload, HeadEconomics, UsagePayload } from '@shared/api';
 import { startModelsPolling, useModels, slotTiers } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
+import { useUsage } from '@entities/usage';
 import { useViews, ViewTabs } from '@features/views';
 // THE MOUNT M2-06 NEVER WROTE (M1-96). M2-07 shipped these two panels and its own title says the
 // mounting is "a one-line orchestrator note on M2-06 if it lands first"; M2-06 landed and the note
@@ -32,6 +33,7 @@ import { Blank, Fault } from '@shared/controls';
 import { TokenChart, CostChart, ByteChart, ToolChart, LimitedChart, WINDOWS } from '@widgets/scope-chart';
 import { dispositions } from './coverage';
 import { DEFAULT_VIEWS, EMPTIES, ratesFor, sortedHeads } from './model';
+import { PLAN_COLS, PlanBay } from './plan';
 import { S } from './strings';
 import './usage.css';
 
@@ -239,8 +241,10 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
   );
 }
 
-export function UsageBoard({ payload, catalog, now, sample }: {
+export function UsageBoard({ payload, usage = null, catalog, now, sample }: {
   payload: EconomicsPayload | null;
+  /** /api/usage, for the plan limits rack. The rule bar polls it on every page. */
+  usage?: UsagePayload | null;
   catalog: ModelsPayload | PendingRoute | null;
   now: number;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
@@ -292,6 +296,20 @@ export function UsageBoard({ payload, catalog, now, sample }: {
         )
       ) : (
         <>
+          <PlanBay
+            usage={usage}
+            now={now}
+            names={(
+              <ColumnNames
+                columns={[
+                  { w: PLAN_COLS[0], label: S.head }, { w: PLAN_COLS[1], label: S.plan },
+                  { w: PLAN_COLS[2], label: S.fiveUsed }, { w: PLAN_COLS[3], label: S.fiveResets },
+                  { w: PLAN_COLS[4], label: S.sevenUsed }, { w: PLAN_COLS[5], label: S.sevenResets },
+                  { w: PLAN_COLS[6], label: S.read },
+                ]}
+              />
+            )}
+          />
           <Bay
             label={S.heads}
             count={heads.length}
@@ -353,6 +371,7 @@ export default function UsagePage() {
   const { search } = useLocation();
   const economics = useEconomics((state) => state);
   const models = useModels((state) => state);
+  const usage = useUsage((state) => state.data);
 
   useEffect(() => startEconomicsPolling(POLL_MS), []);
   useEffect(() => startModelsPolling(POLL_MS), []);
@@ -401,6 +420,7 @@ export default function UsagePage() {
       {models.error === null ? null : <Fault message={models.error} />}
       <UsageBoard
         payload={payload}
+        usage={fixture === null ? usage : null}
         catalog={catalog}
         now={fixture === null ? Date.now() : payload === null ? 0 : payload.generated_at}
         sample={sample?.name}

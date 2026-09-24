@@ -30,6 +30,19 @@ export const S = {
   updated: 'updated',
   limited: 'rate limited',
   sample: 'sample data',
+  /** The plan limits rack: each head's own 5h and 7d plan windows. */
+  planLimits: 'plan limits',
+  plan: 'plan',
+  fiveUsed: '5h used',
+  fiveResets: '5h resets',
+  sevenUsed: '7d used',
+  sevenResets: '7d resets',
+  /** When splice last read the head's windows. */
+  read: 'read',
+  /** A window whose reset time passed after splice read it: the figure is from before the reset. */
+  alreadyReset: 'already reset',
+  stale: 'stale',
+  unknown: 'unknown',
   detail: 'head detail',
   openHead: 'open head',
   slot: 'slot',

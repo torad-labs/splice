@@ -248,9 +248,28 @@ export interface UsageWarn {
   reset: string | null;
 }
 
+/** One plan window as /api/usage writes it (UsagePayloads.window). Times are epoch SECONDS.
+ *  `observed_at` is when splice read the figure; the daemon serves it from the data-wire change
+ *  on, so an older daemon leaves it out. */
+export interface QuotaWindow {
+  used_pct: number;
+  resets_at: number | null;
+  observed_at?: number | null;
+}
+
+/** The head's plan windows (QuotaView): absent when the head tracks none. */
+export interface HeadQuota {
+  plan?: string;
+  five_hour?: QuotaWindow;
+  seven_day?: QuotaWindow;
+}
+
 export interface HeadUsage {
   output_tokens_5h: number;
   entries: number;
+  /** The plan's own windows, which `warn` does not read: warn is computed from the rate-limit
+   *  headers and the 5h token count only (UsageWarnPolicy.computeUsageWarn). */
+  quota?: HeadQuota;
   ratelimit: RatelimitState | null;
   warn: UsageWarn;
 }

@@ -249,6 +249,7 @@ class GrokProviderTest {
 private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
     upstream = UpstreamClient(5_000, 30_000, 2),
     inferenceToken = "test-inference-token",
+    operatorToken = "test-operator-token",
     gate = InflightGate({ 0 }),
     log = {},
     stores = HeadDeps.HeadStores(

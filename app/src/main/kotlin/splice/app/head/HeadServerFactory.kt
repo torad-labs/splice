@@ -10,6 +10,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
+import splice.core.config.TurnKey
 import splice.core.prompt.SystemPromptLayers
 import splice.core.topology.ProjectConfig
 import splice.core.util.LogSink
@@ -42,6 +43,9 @@ internal class HeadServerFactory(
 ) {
     private val upstreamFactory = UpstreamFactory()
 
+    // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
+    private val turnKey = TurnKey(mgmtKey)
+
     private val requestMaterializationGate = RequestMaterializationGate(materializationPermits())
 
     internal fun headServerFor(
@@ -58,7 +62,8 @@ internal class HeadServerFactory(
             listenPort = ctx.head.port,
             deps = HeadDeps(
                 upstream = upstreamFactory.upstreamFor(ctx, cfg, log),
-                inferenceToken = mgmtKey.get(),
+                inferenceToken = turnKey.get(),
+                operatorToken = mgmtKey.get(),
                 // NO DEFAULTS on these two bundles (V4-105 items 1 and 2): the NULLABILITY is the
                 // feature — a head may legitimately run without economics or quota, and the tests
                 // that decline them say so through ONE testFixtures builder — but a DEFAULT let a

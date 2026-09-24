@@ -85,6 +85,7 @@ public fun headDeps(
 ): HeadDeps = HeadDeps(
     upstream = upstream,
     inferenceToken = "test-inference-token",
+    operatorToken = "test-operator-token",
     gate = gate,
     log = log,
     stores = headStores(tmp),

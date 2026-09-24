@@ -116,6 +116,33 @@ describe("gate rules --stdin: the write-time wall", () => {
     }
   });
 
+  // A NESTED WORKTREE binds to its own tree. A session that started in the main checkout and then
+  // worked in .claude/worktrees/<wt> ran every edit against the MAIN checkout's root, so each rule's
+  // path globs saw `.claude/worktrees/<wt>/…`: an exemption stopped binding and a legal edit was
+  // blocked (2026-09-23: StatePaths.kt, the one file kt-state-paths-single-source exempts, refused).
+  // Both directions are pinned: the exemption binds, and a violation still blocks.
+  test("an edit inside a nested git worktree binds that worktree's globs", () => {
+    const wt = join(root, ".claude", "worktrees", "wt");
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(wt, ".git"), "gitdir: /nonexistent/.git/worktrees/wt\n", "utf8");
+    cpSync(join(root, "sgconfig.yml"), join(wt, "sgconfig.yml"));
+    cpSync(join(root, "quality", "rules"), join(wt, "quality", "rules"), { recursive: true });
+    const at = (rel: string, content: string): Record<string, unknown> => ({
+      tool_name: "Write",
+      tool_input: { file_path: join(wt, rel), content },
+      cwd: wt,
+    });
+    try {
+      expect(
+        runHook("pretooluse", at(L3_EXEMPT, VIOLATION)).decision,
+        "the sole emitter's exemption must bind inside the worktree",
+      ).toBeNull();
+      expect(expectBlock(runHook("pretooluse", at(L3_TARGET, VIOLATION)), "a violation in the worktree must block")).toContain(L3_RULE);
+    } finally {
+      rmSync(join(root, ".claude"), { recursive: true, force: true });
+    }
+  });
+
   test("edit clean passes and multiedit applies sequentially", () => {
     const target = join(root, "features/turns/src/main/kotlin/splice/gateway/head/Boot.kt");
     mkdirSync(dirname(target), { recursive: true });

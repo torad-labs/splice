@@ -46,6 +46,15 @@ export function planWindows(usage: HeadUsage | null, nowMs: number): PlanWindow[
   return out;
 }
 
+/** Whether a head's warn reading is its own signal (rate-limit headers, the 5h token count) and not
+ *  a copy of a plan window. From the warn fold on (splice-lead, 2026-09-24) the daemon may report a
+ *  plan window as `warn` with source `quota_5h` / `quota_7d` and an ISO reset; that reading is the
+ *  same window `planWindows` already offers with its real length and a readable reset, so it is not
+ *  offered twice (as a `5h` window whatever its length). */
+function warnIsOwn(head: HeadUsage): boolean {
+  return head.warn.source !== 'none' && !head.warn.source.startsWith('quota_');
+}
+
 /** How long until a window resets, as the rule bar prints it after `resets`. */
 export function resetsInText(resetsAt: number | null, nowMs: number): string | null {
   if (resetsAt === null) return null;
@@ -88,7 +97,7 @@ export function nearestWindow(
     const head = entry.usage;
     if (head === null) continue;
     const account = auth?.[entry.key]?.account_id_masked ?? null;
-    if (head.warn.source !== 'none') {
+    if (warnIsOwn(head)) {
       candidates.push({ head: entry.key, account, window: `${usage.window_hours}h`, pct: head.warn.pct, reset: head.warn.reset, order: 0 });
     }
     for (const plan of planWindows(head, nowMs)) {
@@ -152,7 +161,7 @@ export function headWindow(usage: UsagePayload | null, key: string, nowMs = Date
   const entry = usage?.heads.find((row) => row.key === key)?.usage ?? null;
   let best: HeadWindow = { pct: null, level: 'none', reset: null };
   if (entry === null || usage === null) return best;
-  if (entry.warn.source !== 'none') {
+  if (warnIsOwn(entry)) {
     best = { pct: entry.warn.pct, level: entry.warn.level, reset: entry.warn.reset };
   }
   for (const plan of planWindows(entry, nowMs)) {

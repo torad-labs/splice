@@ -223,6 +223,17 @@ describe('plan windows count as limits', () => {
     expect(headWindow(onlyMuse, 'muse', NOW_MS)).toEqual({ pct: null, level: 'none', reset: null });
   });
 
+  test('a warn reading that copies a plan window is not offered twice, nor as a 5h window', () => {
+    // The warn fold: the daemon reports the 7d plan window as warn with source quota_7d and an ISO
+    // reset. The plan window already carries it with its real length and a readable reset.
+    const folded: UsagePayload = { ...usage, heads: [{ key: 'claudex', label: 'claudex', usage: {
+      output_tokens_5h: 0, entries: 0, ratelimit: null,
+      warn: { level: 'warn', pct: 85, source: 'quota_7d', reset: '2026-09-25T10:00:00Z' },
+      quota: { seven_day: { used_pct: 85, resets_at: nowS + 86400 } } } }] };
+    expect(nearestWindow(folded, null, NOW_MS)).toEqual({ head: 'claudex', account: null, window: '7d', pct: 85, reset: 'in 24h 0m' });
+    expect(headWindow(folded, 'claudex', NOW_MS)).toEqual({ pct: 85, level: 'warn', reset: 'in 24h 0m' });
+  });
+
   test('a head tracking plan windows is not counted among heads without limits', () => {
     expect(headsReportingNone(usage)).toBe(1); // only 'dark'
   });

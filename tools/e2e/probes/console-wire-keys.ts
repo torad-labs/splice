@@ -642,7 +642,7 @@ async function boot(jar: string): Promise<Daemon> {
   const keyFile = join(home, ".splice/state/mgmt-key");
   const key = readFileSync(keyFile, "utf8").trim();
   try {
-    await seedTeam(base, key);
+    await seedTeam(base, key, home);
   } catch (err) {
     await stop();
     throw err;
@@ -652,15 +652,18 @@ async function boot(jar: string): Promise<Daemon> {
 
 /** A fresh daemon has no team, so every per-team read would have no id and stay UNEXERCISED. One
  *  team is created in the THROWAWAY home through the create route the console itself uses; the
- *  --control path never writes. */
-async function seedTeam(base: string, key: string): Promise<void> {
+ *  --control path never writes. The repo is a real directory inside that home: the create route
+ *  refuses a repo that does not exist (#236), and the home is removed with the daemon. */
+async function seedTeam(base: string, key: string, home: string): Promise<void> {
+  const repo = join(home, "wire-keys-repo");
+  mkdirSync(repo, { recursive: true });
   const res = await fetch(`${base}/api/teams`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": "console-wire-keys-seed" },
     body: JSON.stringify({
       name: "wire keys",
       goal: "give the per-team reads an id",
-      repo: "/tmp/console-wire-keys",
+      repo,
       slots: [{ id: "lead", role: "lead", head: "openrouter", lead: true, instructions: "seeded by the wire probe" }],
     }),
   });

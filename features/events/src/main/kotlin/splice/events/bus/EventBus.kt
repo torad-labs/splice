@@ -133,7 +133,8 @@ public sealed class ConsoleEvent {
 }
 
 /** One subscriber's view of the bus: a bounded channel the publisher fills without ever waiting,
- *  plus the count of what it had to drop to keep that promise. */
+ *  plus the count of what it had to drop to keep that promise. [capacity] is the live backlog, plus
+ *  the replay when the subscriber resumed (EventBus.subscribe). */
 internal class EventSubscription internal constructor(private val capacity: Int) {
     internal val channel: Channel<ConsoleEvent> = Channel(capacity)
     private val droppedCount = AtomicLong(0)
@@ -157,8 +158,9 @@ internal class EventSubscription internal constructor(private val capacity: Int)
     }
 }
 
-/** Fan-out with a replay ring. Every method that touches [subscribers] or the ring holds [lock];
- *  publishing never suspends, so the lock is only ever held for the length of a trySend loop. */
+/** Fan-out with a replay ring. Every method that touches [subscribers], the ring or the seq holds
+ *  [lock]; publishing never suspends, so the lock is only ever held for one event's construction
+ *  and a trySend loop. */
 /** Names the seam [EventBus.publish] takes: a raw `(Long) -> ConsoleEvent` said how many arguments
  *  arrive and nothing about what the thing is for, which is the unnamed transposable shape
  *  kt-no-lambda-seam forbids. The sequence number is the bus's, minted per publish, so a builder is
@@ -180,29 +182,35 @@ public class EventBus(private val backlog: Int = DEFAULT_BACKLOG) {
      *  one method that crosses the module boundary. `subscribe` and `unsubscribe` stay internal
      *  because only the route subscribes, which keeps a subscriber handle out of the public surface
      *  where nothing could do anything useful with it anyway. */
-    public fun publish(build: ConsoleEventBuild): ConsoleEvent {
-        val event = build(nextSeq.getAndIncrement())
+    public fun publish(build: ConsoleEventBuild): ConsoleEvent =
+        // THE SEQ IS MINTED UNDER THE LOCK THAT APPENDS IT (V4-126 review). Minted outside, two
+        // publishers could append in the reverse of their id order — the wire then carried id 2
+        // before id 1, and a client resuming from 2 never saw 1. Building inside is cheap by
+        // construction: every builder is a data-class constructor over values it already holds.
         synchronized(lock) {
+            val event = build(nextSeq.getAndIncrement())
             ring.addLast(event)
             while (ring.size > REPLAY_RING) ring.removeFirst()
             subscribers.forEach { it.offer(event) }
+            event
         }
-        return event
-    }
 
     /** Joins the stream. [lastEventId] replays what the client missed; null starts from now, which
      *  is the honest answer for a console that has never seen this stream. An id the ring can no
      *  longer cover replays everything it holds — the client is told it is behind by the seq of the
-     *  first event it receives, never silently given a hole. */
-    internal fun subscribe(lastEventId: Long? = null): EventSubscription {
-        val subscription = EventSubscription(backlog)
-        synchronized(lock) {
-            subscribers.add(subscription)
-            if (lastEventId != null) {
-                ring.filter { it.seq > lastEventId }.forEach { subscription.offer(it) }
-            }
-        }
-        return subscription
+     *  first event it receives, never silently given a hole.
+     *
+     *  THE REPLAY GETS ITS OWN ROOM (V4-126 review). It is written before the route drains anything,
+     *  so a backlog-sized channel kept the first [backlog] replayed events and dropped the rest — up
+     *  to 256 of a 512 ring, counted on a number that never reaches the wire. The channel is sized
+     *  to the replay PLUS the live backlog, so a resume inside the ring loses nothing and the replay
+     *  does not eat the headroom live events are promised. */
+    internal fun subscribe(lastEventId: Long? = null): EventSubscription = synchronized(lock) {
+        val replay = if (lastEventId == null) emptyList() else ring.filter { it.seq > lastEventId }
+        val subscription = EventSubscription(backlog + replay.size)
+        subscribers.add(subscription)
+        replay.forEach { subscription.offer(it) }
+        subscription
     }
 
     internal fun unsubscribe(subscription: EventSubscription) {

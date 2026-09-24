@@ -75,9 +75,8 @@ internal class DaemonBoundary {
     internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink {
         // v0.4.0: owner-only, and re-asserted each start (SecureFile.ownerOnlyDirectory): the dir is
         // the boundary, so daemon.log and the per-head logs need no mode of their own. A dir left
-        // open is said in the log itself, once the sink below exists.
-        val logsOpen = Cancellables.runCatchingCancellable { SecureFile.ownerOnlyDirectory(logsDir) }
-            .getOrElse { SafeFailureText.render(it) }
+        // open, or never made, is said in the log itself once the sink below exists.
+        val logsProblem = logsDirProblem(logsDir)
         val file = logsDir.resolve("daemon.log")
         val rolled = logsDir.resolve("daemon.log.1")
         var writer: java.io.Writer? = null
@@ -120,9 +119,22 @@ internal class DaemonBoundary {
                 }
             }
         }
-        logsOpen?.let { sink(ownerOnlyRefusal(logsDir, it)) }
+        logsProblem?.let(sink::invoke)
         return sink
     }
+
+    /** The line [persistentLogger] says about [logsDir], or null when the dir exists and is owner-only.
+     *  A dir that could not be MADE is its own sentence (v0.4.0 review round 2): it was reported as
+     *  "could not be held owner-only … other local users can read", an exposure that does not exist,
+     *  while the one that does went unsaid — no daemon.log is kept, so the lines reach stderr only. */
+    internal fun logsDirProblem(logsDir: Path): String? =
+        Cancellables.runCatchingCancellable { SecureFile.ownerOnlyDirectory(logsDir) }.fold(
+            onSuccess = { why -> why?.let { ownerOnlyRefusal(logsDir, it) } },
+            onFailure = { failure ->
+                "[daemon-log] $logsDir could not be created (${SafeFailureText.render(failure)}) — " +
+                    "no daemon.log is kept; log lines reach stderr only"
+            },
+        )
 
     /** v0.4.0: what splice owns of its state ([StatePaths.ownedDirs]) held owner-only BEFORE the first
      *  write into it (the lock), and re-asserted on every start: a root an older splice or the umask

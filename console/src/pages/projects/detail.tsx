@@ -106,7 +106,7 @@ export function ProjectDetail({ id, row }: { id: string; row?: ProjectRow | unde
 export const COMPACTION_UNWIRED = 'the daemon did not wire its compaction table';
 
 /** No rule applies anywhere in this repo: the client's own compaction instructions stand. */
-export const CLIENT_OWN = { text: 'no rule applies here: the client instructions stand', source: '[compaction] in splice.toml' };
+export const CLIENT_OWN = { text: 'no compaction rule here', source: "claude code's own summary instructions apply; a rule goes under [compaction] in splice.toml" };
 
 export type CompactionView =
   | { kind: 'unwired' }
@@ -148,7 +148,7 @@ export function ProjectStatusline({ id, row }: { id: string; row?: ProjectRow | 
   const data = useOpenRow(id, row);
   if (data === null) return null;
   const heads = statuslineFieldsOf(data);
-  if (heads.length === 0) return <Empty text="no heads configured" source="/api/projects/{id}" />;
+  if (heads.length === 0) return <Empty text="no heads yet" source="add one in settings, under topology" />;
   return heads.map((head) => (
     <Strip
       key={head.head}

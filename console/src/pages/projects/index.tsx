@@ -73,10 +73,12 @@ interface Field {
 // now takes the share of the SAME budget that its content actually needs.
 //
 // Width went to `repo`, the only column holding a name, and away from the three counters and the
-// cost phrase. No phrase was shortened and no absence renamed to buy the pixels.
+// cost phrase. No phrase was shortened and no absence renamed to buy the pixels. The live-session
+// count's label went from `live` to `sessions` (console review, 2026-09-24), and its three extra
+// characters came out of `repo`.
 const COLUMNS: Record<string, { label: string; w: number }> = {
-  repo: { label: S.repo, w: 49 },
-  sessions: { label: S.sessions, w: 5 },
+  repo: { label: S.repo, w: 46 },
+  sessions: { label: S.sessions, w: 8 },
   teams: { label: S.teams, w: 8 },
   turns: { label: S.turns, w: 7 },
   cost: { label: S.cost, w: 21 },
@@ -204,7 +206,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
       >
         <div className="myx-px-bays">
           {rows.length === 0 ? (
-            <Empty text="no repositories seen" source="/api/projects" />
+            <Empty text="no projects yet" source="a repo shows here once a session runs in it" />
           ) : (
             <Bay
               label={S.repos}

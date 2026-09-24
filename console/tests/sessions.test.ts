@@ -243,10 +243,10 @@ describe('projects board', () => {
     expect(out).not.toContain('sample data');
   });
 
-  test('an empty list names the route it read', () => {
+  test('an empty list says what fills it, never the route it read', () => {
     const out = render(h(ProjectsBoard, { payload: { projects: [] } }));
-    expect(out).toContain('no repositories seen');
-    expect(out).toContain('/api/projects');
+    expect(out).toContain('no projects yet');
+    expect(out).not.toContain('/api/');
   });
 
   test('a repo with no declared rates says so instead of costing zero', () => {

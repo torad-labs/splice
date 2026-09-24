@@ -16,7 +16,8 @@ export const S = {
   open: 'open project',
   /** The strip fields, in the order the view declares them. */
   repo: 'repo',
-  sessions: 'live',
+  /** How many sessions are running in the repo now. */
+  sessions: 'sessions',
   teams: 'teams',
   turns: 'turns',
   cost: 'cost',

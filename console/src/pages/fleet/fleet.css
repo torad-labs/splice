@@ -45,13 +45,6 @@
   .myx-fleet-body { transition: none; }
 }
 
-/* THE RACK ENDS AFTER ITS LAST ROW (2026-09-24, fixed root; this was M1-39's fill-the-room rule,
-   carried here by M1-44). Stretched to the window, the ten-head rack drew 1600px of empty ribs on a
-   2160 panel once the type stopped scaling with it: the floor had become most of the page. The
-   body still stretches (it holds the detail column), so the bay says it takes its content height
-   rather than the grow every bay carries from ui.css. */
-.myx-fleet-bays > .myx-bay { flex: 0 0 auto; }
-
 /* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
    width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value
    was 1120 on accounts and 1600 on fleet, doctor and mcp, measured when a bay CLIPPED its rack —

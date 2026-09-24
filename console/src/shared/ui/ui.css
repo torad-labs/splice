@@ -481,8 +481,13 @@
      container that offers none (an auto-height flex column, which is what every page sheet builds
      today) leave the bay exactly as it is. It cannot do more from here, because a box cannot know
      a height its parent never had; the parent half is the page sheets' and app.css's, and it is
-     reported rather than reached for. */
-  flex: 1 1 auto;
+     reported rather than reached for.
+     REVERSED FOR EVERY BAY (console review, 2026-09-24): once the root stopped scaling with the
+     window (49b1fe49b), a bay that grew into its room drew hundreds of pixels of empty ribs under
+     its last row -- projects' seven repos under a floor to the bottom of a 1080 frame, fleet's ten
+     heads under 1600px of it on a 2160 panel. That fix was fleet's alone; the bay now ends after
+     its last row on every page, and a page that holds more than fits scrolls. */
+  flex: 0 0 auto;
   min-height: 0;
   /* THE BAY IS ITS OWN PLANE (M1-35's census, bound here): `--bay` was measured in M1-13 and
      has had NO reader since -- this rule was the one that was supposed to read it and it named

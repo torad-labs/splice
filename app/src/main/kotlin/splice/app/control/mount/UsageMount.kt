@@ -65,7 +65,8 @@ internal class UsageMount(
         route.get("/api/alerts") { guard.guarded(call) { alertRoutes.read().send(call) } }
         route.put("/api/alerts") { guard.guarded(call) { alertRoutes.write(call.receiveText()).send(call) } }
         route.post("/api/alerts/test") { guard.guarded(call) { alertRoutes.test().send(call) } }
-        route.post("/statusline/{head}") { guard.guarded(call) { statuslineRoute.statusline(call) } }
-        route.get("/statusline/{head}") { guard.guarded(call) { statuslineRoute.statusline(call) } }
+        // A SESSION's statusline command calls these, so its turn key opens them (with the resume hook).
+        route.post("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
+        route.get("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
     }
 }

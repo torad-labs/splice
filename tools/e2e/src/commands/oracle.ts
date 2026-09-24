@@ -498,8 +498,8 @@ export function gradeUpstream(expected: Json[], observed: unknown[], sanctioned:
 }
 
 function post(port: number, body: Json, bearer: string, path = "/v1/messages"): Promise<{ status: number; sse: string }> {
-  // Bearer = the daemon's mgmt key: HeadServer.authorize gates local clients on it (launched
-  // wrappers receive it as ANTHROPIC_AUTH_TOKEN). NO x-claude-code-session-id on purpose — the
+  // Bearer = the daemon's mgmt key: HeadServer.authorize admits it for a turn beside the turn key
+  // launched wrappers receive as ANTHROPIC_AUTH_TOKEN (v0.4.0). NO x-claude-code-session-id on purpose — the
   // frozen fixtures carry no headers, so the cache-key fallback must reproduce (divergence note).
   return new Promise((res, rej) => {
     const req = http.request(

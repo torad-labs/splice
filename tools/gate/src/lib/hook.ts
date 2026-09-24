@@ -191,6 +191,22 @@ function logError(r: Roots, text: string): void {
   }
 }
 
+/** The tree a write binds to: the innermost git WORKTREE between the file and [rootResolved] that
+ *  carries its own sgconfig.yml, else [r] itself. A worktree under .claude/worktrees is a full
+ *  checkout whose gate scans it from ITS root, so its rules must see `core/...`, not
+ *  `.claude/worktrees/<wt>/core/...` — the prefix made every path glob miss, blocking a file its
+ *  rule exempts and exempting a file its rule scopes. The error log stays with the real repo. */
+function nestedWorktree(r: Roots, rootResolved: string, resolved: string): Roots {
+  let dir = dirname(resolved);
+  while (dir.startsWith(rootResolved + "/")) {
+    if (existsSync(join(dir, ".git")) && existsSync(join(dir, "sgconfig.yml"))) {
+      return { root: dir, sgconfig: join(dir, "sgconfig.yml"), errorLog: r.errorLog };
+    }
+    dir = dirname(dir);
+  }
+  return r;
+}
+
 function pretooluse(r: Roots, data: Record<string, unknown>): number {
   const tool = data.tool_name;
   if (typeof tool !== "string" || !WRITE_TOOLS.includes(tool)) return 0;
@@ -204,12 +220,13 @@ function pretooluse(r: Roots, data: Record<string, unknown>): number {
   if (resolved !== rootResolved && !resolved.startsWith(rootResolved + "/")) {
     return 0; // outside the repo — not this wall's jurisdiction
   }
-  const rel = resolved.slice(rootResolved.length + 1);
+  const tree = nestedWorktree(r, rootResolved, resolved);
+  const rel = resolved.slice(resolveProposed(tree.root).length + 1);
 
   const content = proposedContent(tool, toolInput, abs);
   if (content === null) return 0;
 
-  const matches = scanMirrored(r, rel, content); // infra failure throws → hook() fails closed
+  const matches = scanMirrored(tree, rel, content); // infra failure throws → hook() fails closed
   const errors = matches.filter((m) => m.severity === "error");
   const advisories = matches.filter((m) => m.severity !== "error");
   if (advisories.length > 0) {

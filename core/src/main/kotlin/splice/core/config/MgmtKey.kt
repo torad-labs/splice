@@ -6,6 +6,7 @@
 // failing daemon start. Reason: this is a single-user loopback daemon whose heads must come up —
 // refusing to boot bricks every head over a mgmt-plane blip, while a LOUD rotation costs one
 // dashboard re-auth and one line tells the operator exactly what happened and where the key is.
+// v0.4.0: a launched session never holds this key; it holds [TurnKey], derived from it.
 package splice.core.config
 
 import splice.core.auth.BearerScheme
@@ -17,6 +18,7 @@ import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.Path
 import java.security.MessageDigest
 import java.security.SecureRandom
 
@@ -33,6 +35,10 @@ public class MgmtKey(
     @Volatile
     public var mintedAtMs: Long? = null
         private set
+
+    /** Where this key lives, so [TurnKey] writes its header file beside it under the SAME state
+     *  root this instance was built with (a test's temp dir, never the operator's live one). */
+    internal val keyFile: Path get() = statePaths.mgmtKeyFile
 
     public fun get(): String = value
 

@@ -127,6 +127,21 @@ export function CauseLine({ help }: { help: CauseHelp | null }) {
   );
 }
 
+/** How a head joins the fleet. `splice add` signs in, checks the provider answers and writes the
+ *  head, and no route does that yet, so the page names the command; run bare it lists the providers
+ *  it knows (AddPrepare.usage). The settings topology edits heads that exist, it cannot add one. */
+export const ADD_COMMAND = 'splice add';
+
+export function AddHeadLine() {
+  return (
+    <div className="myx-fleet-add">
+      <span className="myx-fleet-note">another provider is added from a terminal</span>
+      <code className="myx-fleet-cause-command">{ADD_COMMAND}</code>
+      <Copy value={ADD_COMMAND} />
+    </div>
+  );
+}
+
 /** The key one account strip holds in the pool rack: the label within a pool, else the credential
  *  file a single login is joined on. */
 function poolKey(account: AccountRow): string {
@@ -299,6 +314,7 @@ export function FleetPage() {
           {fieldsPending ? (
             <Empty text={EMPTIES.fields.text} source={EMPTIES.fields.source} />
           ) : null}
+          {heads.length === 0 ? null : <AddHeadLine />}
         </div>
 
         {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M1-116 rules collapse over the

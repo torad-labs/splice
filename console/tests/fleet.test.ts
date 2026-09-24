@@ -28,7 +28,7 @@ import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/u
 import { HeadStrip, lastTurnText, providerText } from '../src/widgets/head-strip';
 import { EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
-import { CauseLine } from '../src/pages/fleet';
+import { ADD_COMMAND, AddHeadLine, CauseLine } from '../src/pages/fleet';
 import { Empty } from '../src/shared/ui';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
 import type { View } from '../src/features/views';
@@ -631,5 +631,20 @@ describe('the coverage manifest', () => {
     expect(byName.get('/api/heads/{head}/restart')).toBe('editable');
     expect(byName.get('/api/daemon/restart')).toBe('editable');
     expect(byName.get('/api/heads')).toBe('read-only');
+  });
+});
+
+describe('how a head joins the fleet', () => {
+  test('the page names the command that adds one, with a copy key, and no route', () => {
+    const markup = renderToStaticMarkup(React.createElement(AddHeadLine));
+    expect(ADD_COMMAND).toBe('splice add');
+    expect(markup).toContain(`>${ADD_COMMAND}<`);
+    expect(markup).toContain('>copy<');
+    expect(markup).not.toContain('/api/');
+  });
+
+  test('the empty fleet does not send the operator to a topology editor that cannot add a head', () => {
+    expect(EMPTIES.noHeads.source).not.toContain('topology');
+    expect(EMPTIES.noHeads.source).toContain('splice add');
   });
 });

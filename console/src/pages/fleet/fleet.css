@@ -183,6 +183,13 @@
   padding: var(--space-1) var(--space-2);
   overflow-wrap: anywhere;
 }
+.myx-fleet-add {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block-start: var(--space-3);
+}
 .myx-fleet-cause-link {
   font-family: var(--font-label);
   font-size: var(--text-2);

@@ -229,7 +229,7 @@ export const EMPTIES = {
   fields: { text: 'dialect and model unavailable', source: 'this splice version does not serve the topology or the model list' },
   /** The pooled accounts while GET /api/accounts answers 404 (entities/account marks it pending). */
   pool: { text: 'account pools unavailable', source: 'this splice version does not serve accounts' },
-  noHeads: { text: 'no heads yet', source: 'run splice setup, or add a head in settings under topology' },
+  noHeads: { text: 'no heads yet', source: 'run splice setup in a terminal, then splice add for each further provider' },
   claudeLogin: { text: 'one login, no pool', source: 'a claude head uses the claude code login it was started with' },
   noAccounts: { text: 'no accounts signed in', source: 'sign one in on the accounts page' },
   apiKey: { text: 'no account pool', source: 'an api-key head sends every request with its one key' },

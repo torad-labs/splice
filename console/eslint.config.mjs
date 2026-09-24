@@ -6,6 +6,14 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import boundaries from 'eslint-plugin-boundaries';
 
+// A slice's public door. Every cross-slice import must land on one (the v6
+// entry-point rule, folded into dependencies by eslint-plugin-boundaries v7).
+const DOOR = ['index.ts', 'index.tsx'];
+const through = (...type) => ({ to: { element: { type, fileInternalPath: DOOR } } });
+const sameSlice = (type) => ({
+  to: { element: { type, captured: { slice: '{{ from.element.captured.slice }}' } } },
+});
+
 export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.strict,
@@ -19,64 +27,57 @@ export default tseslint.config(
       'import/resolver': {
         typescript: { alwaysTryTypes: true, project: './tsconfig.json' },
       },
+      // The stylesheets at src/shared/ (tokens.css, fonts.css) are ignored, so a
+      // script file there matches no element and no-unknown-files refuses it.
       'boundaries/ignore': ['**/*.css'],
       'boundaries/elements': [
         // order matters: most specific first
-        { type: 'shared-api', pattern: 'src/shared/api', mode: 'folder' },
-        { type: 'shared', pattern: 'src/shared/*', mode: 'folder' },
-        { type: 'shared-root', pattern: 'src/shared/*.*', mode: 'file' },
-        { type: 'entities-api', pattern: 'src/entities/*/api', mode: 'folder', capture: ['slice'] },
-        { type: 'entities', pattern: 'src/entities/*', mode: 'folder', capture: ['slice'] },
-        { type: 'features', pattern: 'src/features/*', mode: 'folder' },
-        { type: 'widgets', pattern: 'src/widgets/*', mode: 'folder' },
-        { type: 'pages', pattern: 'src/pages/*', mode: 'folder' },
-        { type: 'app', pattern: 'src/app', mode: 'folder' },
+        { type: 'shared-api', pattern: 'src/shared/api' },
+        { type: 'shared', pattern: 'src/shared/*' },
+        { type: 'entities-api', pattern: 'src/entities/*/api', capture: ['slice'] },
+        { type: 'entities', pattern: 'src/entities/*', capture: ['slice'] },
+        { type: 'features', pattern: 'src/features/*' },
+        { type: 'widgets', pattern: 'src/widgets/*' },
+        { type: 'pages', pattern: 'src/pages/*' },
+        { type: 'app', pattern: 'src/app' },
       ],
     },
     rules: {
       // A file outside the architecture cannot exist.
       'boundaries/no-unknown-files': 'error',
-      'boundaries/no-unknown': 'error',
+      'boundaries/no-unknown-dependencies': 'error',
       // Strictly unidirectional layers. Same-layer cross-imports are denied by
       // omission (feature never imports feature, entity never imports entity —
-      // the ${slice} matcher permits only a slice's OWN api segment).
+      // the slice capture permits only a slice's OWN api segment).
       // shared-api appears ONLY in entities-api's allow list: the HTTP client
       // is unreachable from any view code (UI strictly via state).
-      'boundaries/element-types': ['error', {
+      // Slices own a public API: outside entities, every allow lands on a DOOR,
+      // so a deep import is a lint error. Entity-internal segment wiring
+      // (index ↔ model ↔ api within ONE slice) may address segment files by
+      // path; the layer and slice limits still hold there.
+      'boundaries/dependencies': ['error', {
         default: 'disallow',
-        rules: [
-          { from: 'app', allow: ['pages', 'widgets', 'features', 'entities', 'shared', 'shared-root'] },
-          { from: 'pages', allow: ['widgets', 'features', 'entities', 'shared'] },
-          { from: 'widgets', allow: ['features', 'entities', 'shared'] },
-          { from: 'features', allow: ['entities', 'shared'] },
-          { from: 'entities', allow: ['shared', ['entities-api', { slice: '${from.slice}' }]] },
-          { from: 'entities-api', allow: ['shared-api', 'shared', ['entities', { slice: '${from.slice}' }]] },
-          { from: 'shared', allow: ['shared'] },
-          { from: 'shared-api', allow: ['shared'] },
+        policies: [
+          { from: { element: { type: 'app' } }, allow: through('pages', 'widgets', 'features', 'entities', 'shared') },
+          { from: { element: { type: 'pages' } }, allow: through('widgets', 'features', 'entities', 'shared') },
+          { from: { element: { type: 'widgets' } }, allow: through('features', 'entities', 'shared') },
+          { from: { element: { type: 'features' } }, allow: through('entities', 'shared') },
+          { from: { element: { type: 'entities' } }, allow: [{ to: { element: { type: 'shared' } } }, sameSlice('entities-api')] },
+          {
+            from: { element: { type: 'entities-api' } },
+            allow: [{ to: { element: { type: ['shared-api', 'shared'] } } }, sameSlice('entities')],
+          },
+          { from: { element: { type: 'shared' } }, allow: through('shared') },
+          { from: { element: { type: 'shared-api' } }, allow: through('shared') },
           // Payload TYPES flow freely; the client VALUE stays locked to
           // entities-api (type-only imports carry no HTTP capability).
-          { from: ['entities', 'features', 'widgets', 'pages', 'app'], allow: ['shared-api'], importKind: 'type' },
+          {
+            from: { element: { type: ['features', 'widgets', 'pages', 'app'] } },
+            allow: { ...through('shared-api'), dependency: { kind: 'type' } },
+          },
+          { from: { element: { type: 'entities' } }, allow: { to: { element: { type: 'shared-api' } }, dependency: { kind: 'type' } } },
         ],
       }],
-      // Slices own a public API: deep imports are lint errors.
-      'boundaries/entry-point': ['error', {
-        default: 'disallow',
-        rules: [
-          { target: ['shared', 'shared-api'], allow: ['index.ts', 'index.tsx'] },
-          { target: ['shared-root'], allow: ['*.css'] },
-          { target: ['entities', 'features', 'widgets', 'pages', 'app'], allow: ['index.ts', 'index.tsx'] },
-          { target: ['entities-api'], allow: ['index.ts'] },
-        ],
-      }],
-    },
-  },
-  {
-    // entity-internal segment wiring (index ↔ model ↔ api within ONE slice)
-    // may address segment files by relative path; boundaries still gates every
-    // cross-slice and cross-layer import above.
-    files: ['src/entities/**/*.ts'],
-    rules: {
-      'boundaries/entry-point': 'off',
     },
   },
   {

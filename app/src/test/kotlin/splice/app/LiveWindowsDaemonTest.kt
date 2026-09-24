@@ -32,8 +32,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -45,9 +45,9 @@ class LiveWindowsDaemonTest {
     lateinit var tmp: Path
 
     private val client = HttpClient(CIO)
-    private val controlPort = freshPort()
-    private val headPort = freshPort()
-    private val upstreamPort = freshPort()
+    private val controlPort = TestPorts.reserve()
+    private val headPort = TestPorts.reserve()
+    private val upstreamPort = TestPorts.reserve()
 
     // local = false: the base_url is loopback, and this pin is about the wiring, not the runtime
     // question TopologyWindowsTest pins.

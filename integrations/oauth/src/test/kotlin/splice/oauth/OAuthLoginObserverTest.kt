@@ -19,8 +19,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
+import splice.core.testing.TestPorts
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
@@ -52,7 +52,7 @@ class OAuthLoginObserverTest {
     fun `an observed browser login reports the authorize URL through the observer, then completes on the callback`(
         @TempDir tmp: Path,
     ) {
-        val redirectPort = ServerSocket(0).use { it.localPort }
+        val redirectPort = TestPorts.reserve()
         val tokenServer = servingToken("""{"access_token":"tok_observed_browser"}""")
         val observer = RecordingObserver()
         val authorizeUrl = "http://127.0.0.1/unused?state=s1"

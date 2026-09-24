@@ -500,34 +500,6 @@ either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double
 """
 
 [[exclusion]]
-rule = "kt-tests-bind-port-zero"
-files = [
-  "features/turns/src/testFixtures/kotlin/splice/head/TestNet.kt",
-  "app/src/test/kotlin/splice/app/AuthDialectCompatibilityBootTest.kt",
-  "app/src/test/kotlin/splice/app/ClaudeHeadLiveProbeTest.kt",
-  "app/src/test/kotlin/splice/app/DaemonTest.kt",
-  "app/src/test/kotlin/splice/app/LiveWindowsDaemonTest.kt",
-  "app/src/test/kotlin/splice/app/MultiProviderDaemonTest.kt",
-  "app/src/test/kotlin/splice/app/e2e/ClaudeHeadDaemonE2ETest.kt",
-  "features/lifecycle/src/test/kotlin/splice/lifecycle/start/SupervisedStartTest.kt",
-  "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorCommandTest.kt",
-  "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorHeadChecksTest.kt",
-  "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorHeadKeyTest.kt",
-  "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorRuntimeSectionTest.kt",
-  "features/lifecycle/src/test/kotlin/splice/lifecycle/upgrade/UpgradeInflightTest.kt",
-  "app/src/test/kotlin/splice/app/probe/TurnPathProbeLoopTest.kt",
-  "integrations/oauth/src/test/kotlin/splice/oauth/OAuthLoginObserverTest.kt",
-]
-date = "2026-09-23"
-reason = """
-The rule's own dated census, reason by reason: TestNet is the lease's one definition; the six
-full-daemon boots render their ports into the topology before the daemon binds, and a head on port 0
-is rejected by design (CTL-005); seven files lease a port nobody may listen on for a
-connection-refused probe, so there is no bind to race; OAuthLoginObserverTest's login flow renders
-redirect_uri from the port before it binds the redirect listener.
-"""
-
-[[exclusion]]
 rule = "kt-head-sse-drains-on-exit"
 files = ["features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt"]
 date = "2026-09-23"

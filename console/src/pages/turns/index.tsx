@@ -295,6 +295,10 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
   const unread = landed !== null && !pending ? landed.unread : [];
   const stageRows = stageRowsOf(rows);
   const tokenRows = tokenRowsOf(rows);
+  // The rows carry the head KEY (`bonsai`); the summary and the fleet print its label
+  // (`claude-bonsai`), the name the operator launches it by. One name per head on the page.
+  const labels = new Map((summary?.heads ?? []).map((head) => [head.key, head.label]));
+  const nameOf = (key: string): string => labels.get(key) ?? key;
   const selection: Selection = selectionOf(rows, active, Date.now());
   const items = pending ? [] : itemsOf(selection);
   const open = items.find((item) => item.kind === 'row' && item.key === openKey);
@@ -351,7 +355,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
             empty={{ text: 'nothing in flight', source: 'a turn shows here while it runs' }}
           >
             {inflight.map((turn) => (
-              <InflightStrip key={`${turn.head}:${turn.label}`} turn={turn} order={INFLIGHT_FIELDS} />
+              <InflightStrip key={`${turn.head}:${turn.label}`} turn={turn} order={INFLIGHT_FIELDS} headName={nameOf(turn.head)} />
             ))}
           </Bay>
 
@@ -389,8 +393,8 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
             {...(pending ? {} : { count: tokenRows.length, empty: { text: NO_ROWS, source: LANDS_HERE } })}
           >
             {tokenRows.map((row) => (
-              <Strip key={row.head} edge="grey" edgeLabel="" ariaLabel={`${S.tokens} ${row.head}`}>
-                <StripField w={20} label={S.head} value={row.head} mono={false} />
+              <Strip key={row.head} edge="grey" edgeLabel="" ariaLabel={`${S.tokens} ${nameOf(row.head)}`}>
+                <StripField w={20} label={S.head} value={nameOf(row.head)} mono={false} />
                 <StripField w={11} label={S.tokIn} value={row.in.toLocaleString('en-US')} />
                 <StripField w={11} label={S.tokCached} value={row.cached.toLocaleString('en-US')} />
                 <StripField w={13} label={S.tokWrite} value={row.write.toLocaleString('en-US')} />
@@ -408,7 +412,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
             {/* A head whose turns could not be read is NAMED, in the daemon's words: the list below is
                 missing its rows, and a rack that silently lost a head reads exactly like one that
                 was idle. */}
-            {unread.map((head) => <Fault key={`${head.head}:${head.reason}`} message={`${head.head}: ${head.reason}`} />)}
+            {unread.map((head) => <Fault key={`${head.head}:${head.reason}`} message={`${nameOf(head.head)}: ${head.reason}`} />)}
             {pending ? (
               <Empty text="turn history unavailable" source="this splice version does not serve it" />
             ) : (
@@ -433,6 +437,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
                             selected={entry.key === openKey}
                             order={active.fields}
                             onOpen={() => setOpenKey(entry.key)}
+                            headName={nameOf(entry.row.head)}
                           />
                         )}
                       </div>
@@ -456,7 +461,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, captureError = 
           {open?.kind !== 'row' ? null : (
             <>
               <div className="myx-tn-detail-head">
-                <span className="myx-tn-detail-name">{`${open.row.head} ${open.row.model ?? S.absent}`}</span>
+                <span className="myx-tn-detail-name">{`${nameOf(open.row.head)} ${open.row.model ?? S.absent}`}</span>
                 <button type="button" className="myx-tn-close" onClick={() => setOpenKey(null)}>
                   {S.close}
                 </button>

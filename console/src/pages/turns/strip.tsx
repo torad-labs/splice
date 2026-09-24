@@ -89,12 +89,12 @@ function measured(value: number | undefined, format: (n: number) => string): { v
  * disk, so its numbers are short by an unknown amount. That row prints `telemetry dropped` in its
  * own column instead of quietly showing smaller figures.
  */
-export function fieldsOf(row: TurnRow, order: readonly string[]): Field[] {
+export function fieldsOf(row: TurnRow, order: readonly string[], headName: string = row.head): Field[] {
   const dropped = row.async_io_drops !== undefined && row.async_io_drops > 0;
   const at = atText(row.ts);
   const values: Record<string, { value: string; basis?: Basis }> = {
     time: at === null ? { value: S.absent } : { value: at, basis: 'measured' },
-    head: { value: row.head, basis: 'measured' },
+    head: { value: headName, basis: 'measured' },
     model: row.model === null ? { value: S.absent } : { value: row.model, basis: 'measured' },
     outcome: { value: row.outcome, basis: 'measured' },
     session: row.session === undefined ? { value: S.absent } : { value: row.session, basis: 'measured' },
@@ -125,10 +125,10 @@ export function fieldsOf(row: TurnRow, order: readonly string[]): Field[] {
 
 /** An in-flight turn has no outcome yet: the gate knows its phase and how long it has been there,
  *  so those are the only numbers it can honestly print. */
-export function inflightFieldsOf(turn: InflightTurn, order: readonly string[]): Field[] {
+export function inflightFieldsOf(turn: InflightTurn, order: readonly string[], headName: string = turn.head): Field[] {
   const values: Record<string, { value: string; basis?: Basis }> = {
     session: { value: turn.label, basis: 'measured' },
-    head: { value: turn.head, basis: 'measured' },
+    head: { value: headName, basis: 'measured' },
     phase: { value: turn.phase, basis: 'measured' },
     age: { value: fmtMs(turn.ageMs), basis: 'measured' },
     idle: { value: timeAgo(Date.now() - turn.idleMs), basis: 'measured' },
@@ -153,11 +153,13 @@ export function edgeOfInflight(turn: InflightTurn): Edge {
   return turn.idleMs > turn.streamIdleMs ? 'amber' : 'green';
 }
 
-export function TurnStrip({ row, selected, order, onOpen }: {
+export function TurnStrip({ row, selected, order, onOpen, headName = row.head }: {
   row: TurnRow;
   selected: boolean;
   order: readonly string[];
   onOpen: () => void;
+  /** The head's label, where the page knows it; the row carries the key. */
+  headName?: string;
 }) {
   return (
     <Strip
@@ -169,11 +171,11 @@ export function TurnStrip({ row, selected, order, onOpen }: {
       edgeLabel={row.outcome === 'ok' ? 'landed' : 'failed'}
       selected={selected}
       onOpen={onOpen}
-      ariaLabel={`${S.title} ${row.head} ${row.model ?? S.absent}`}
+      ariaLabel={`${S.title} ${headName} ${row.model ?? S.absent}`}
     >
       {/* No label on a cell: the rack's sticky header prints the column names once (LandedNames),
           where every virtualized row used to repeat all fourteen (console review, 2026-09-24). */}
-      {fieldsOf(row, order).map((field) => (
+      {fieldsOf(row, order, headName).map((field) => (
         <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
@@ -194,7 +196,7 @@ export function LandedNames({ order }: { order: readonly string[] }) {
   );
 }
 
-export function InflightStrip({ turn, order }: { turn: InflightTurn; order: readonly string[] }) {
+export function InflightStrip({ turn, order, headName = turn.head }: { turn: InflightTurn; order: readonly string[]; headName?: string }) {
   const state = edgeOfInflight(turn);
   return (
     <Strip
@@ -203,7 +205,7 @@ export function InflightStrip({ turn, order }: { turn: InflightTurn; order: read
       cocked={state === 'amber'}
       ariaLabel={`${S.inflight} ${turn.label}`}
     >
-      {inflightFieldsOf(turn, order).map((field) => (
+      {inflightFieldsOf(turn, order, headName).map((field) => (
         <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>

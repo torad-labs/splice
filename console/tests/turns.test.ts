@@ -212,6 +212,16 @@ describe('turn views', () => {
     expect(itemsOf(selection).map((item) => item.kind)).toEqual(['row', 'row']);
   });
 
+  test('the table and each group list the newest turn first, whatever order the rows arrived in', () => {
+    const table = selectionOf(rows, view(), T0);
+    if (table.kind !== 'table') throw new Error('expected the table');
+    expect(table.rows.map((row) => row.ts)).toEqual([T0 - 30_000, T0 - 60_000]);
+    const same = [turn({ ts: T0 - 90_000, outcome: 'ok' }), turn({ ts: T0 - 10_000, outcome: 'ok' })];
+    const grouped = selectionOf(same, view({ group: 'outcome' }), T0);
+    if (grouped.kind !== 'groups') throw new Error('expected groups');
+    expect(grouped.groups[0]?.rows.map((row) => row.ts)).toEqual([T0 - 10_000, T0 - 90_000]);
+  });
+
   test('a grouped view puts a band before each group, and no band for an empty one', () => {
     const selection = selectionOf(rows, view({ group: 'outcome' }), T0);
     const items = itemsOf(selection);
@@ -274,6 +284,20 @@ describe('turns board', () => {
     // An idle head is named once and gets no strip of dashes: an empty window never reads as fast.
     expect(out).toContain('no turns in 24h: claude-grok, claude-kimi');
     expect(out).not.toContain('summary claude-grok');
+  });
+
+  test('a head is printed by its label everywhere on the page, not the key its rows carry', () => {
+    const out = board({
+      inflight: [],
+      landed: { inflight: [], landed: [turn({ head: 'bonsai' })], unread: [] },
+      summary: { window: '24h', heads: [{ key: 'bonsai', label: 'claude-bonsai', window: '24h', count: 0, empty: true, coverage_known: true, clamped: false, covers_ms: 0 }] },
+    });
+    // The tokens bay names it by label. The landed strips are virtualized, so a static render draws
+    // none; their cell is pinned through fieldsOf below.
+    expect(out).toContain('>claude-bonsai<');
+    expect(out).not.toContain('>bonsai<');
+    expect(fieldsOf(turn({ head: 'bonsai' }), ['head'], 'claude-bonsai')[0]?.value).toBe('claude-bonsai');
+    expect(fieldsOf(turn({ head: 'bonsai' }), ['head'])[0]?.value).toBe('bonsai');
   });
 
   test('time per stage is the difference between marks, never the marks added up', () => {

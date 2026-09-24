@@ -61,9 +61,15 @@ export function selectionOf(rows: readonly TurnRow[], view: View, now: number): 
     const window = windowOf(view, now);
     return { kind: 'timeline', timeline: timelineOf(rows, window), window };
   }
+  // Newest first: the rows arrive oldest first (turns-wire keeps the last N), and a feed whose
+  // latest turn sits at the bottom of 200 rows made the operator scroll for the one they came for.
+  // The timeline keeps its axis order above; within a group the rows follow this order too.
+  // An undated row (a torn legacy line; the timeline lists these apart) sorts last.
+  const at = (row: TurnRow): number => (Number.isFinite(row.ts) ? row.ts : Number.NEGATIVE_INFINITY);
+  const newest = [...rows].sort((left, right) => at(right) - at(left));
   const by = groupByOf(view);
-  if (by === null) return { kind: 'table', rows: [...rows] };
-  return { kind: 'groups', groups: groupTurns(rows, by).map((g) => ({ key: g.key, count: g.count, rows: g.turns })) };
+  if (by === null) return { kind: 'table', rows: newest };
+  return { kind: 'groups', groups: groupTurns(newest, by).map((g) => ({ key: g.key, count: g.count, rows: g.turns })) };
 }
 
 /** One line of the virtualized list: either a row, or a band that names what follows it. */

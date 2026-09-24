@@ -74,7 +74,8 @@ class ResumeHookTest {
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(script)))
         val text = Files.readString(script)
         assertTrue(text.contains("http://127.0.0.1:$PORT/hooks/resume/codex"), text)
-        assertTrue(text.contains("-H '@${home.resolve("turn auth header")}'"), "reads the turn key's header file: $text")
+        val headerArg = "-H '@${home.resolve("turn auth header")}'"
+        assertTrue(text.contains(headerArg), "reads the turn key's header file: $text")
         assertFalse(text.contains("ANTHROPIC_AUTH_TOKEN"), "a client-auth head's session has no such variable")
         assertFalse(text.contains("Bearer [0-9a-f]{16}".toRegex()), "no bearer literal is written into the script")
         assertTrue(text.trimEnd().endsWith("exit 0"), "never blocks the session")

@@ -8,11 +8,41 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.prompt.SystemPromptMode
+import splice.core.topology.HeadConfig
+import splice.core.topology.Topology
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths
 
 class DoctorConfigChecksTest {
+
+    // V4-109: a key the operator wrote and did not get is a WARN that names it. Nothing pinned this
+    // row: deleting its call in configurationChecks left every doctor test green.
+    @Test
+    fun `an unknown key under defaults and an uncoercible head override each warn by name`() {
+        val head = HeadConfig(
+            provider = "p",
+            port = 1,
+            discoveryPrefix = "p--",
+            pinnedModel = "m",
+            overrides = mapOf("streamIdleMs" to "soon"),
+        )
+        val topology = Topology(defaults = mapOf("streamIdelMs" to "1000"), heads = mapOf("one" to head))
+
+        val rows = DoctorTestPorts.configChecks()
+            .configurationChecks(DoctorTopology.Parsed(topology), Paths.get("/tmp/splice.toml"))
+            .filter { "is ignored" in it.detail }
+
+        assertEquals(
+            listOf(
+                "setting 'streamIdelMs' is ignored — unknown key; the knob keeps its default",
+                "setting 'heads.one.streamIdleMs' is ignored — not a valid number; the knob keeps its default",
+            ),
+            rows.map { it.detail },
+        )
+        assertTrue(rows.all { it.status == CheckStatus.WARN }, rows.toString())
+        assertEquals("fix or remove 'streamIdelMs' in /tmp/splice.toml", rows.first().fix)
+    }
 
     @Test
     fun `a projects table with a per-head layer parses from TOML`(@TempDir tmp: Path) {

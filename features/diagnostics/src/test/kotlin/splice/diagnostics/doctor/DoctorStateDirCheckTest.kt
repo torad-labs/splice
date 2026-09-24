@@ -14,7 +14,7 @@ class DoctorStateDirCheckTest {
 
     @Test
     fun `an unusable state_dir warns and names both the value and the default`() {
-        // A NUL byte is the one character java.nio.file.Paths.get refuses; Main.kt falls back on it.
+        // A NUL byte is the one character java.nio.file.Paths.get refuses; TopologyStatePaths falls back on it.
         val declared = "\u0000"
         val row = stateDirRows(Topology(daemon = DaemonConfig(stateDir = declared))).single()
         assertEquals(CheckStatus.WARN, row.status)

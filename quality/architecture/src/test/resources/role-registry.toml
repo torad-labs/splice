@@ -385,6 +385,24 @@ names = [
 ]
 reason = """AddPrompter is INTERACTIVE and has a terminal-absent contract: it "answers a question with the operator's line, or [default] when there is no terminal", which is what makes `splice add --yes` non-interactive without a second code path. TokenPollForm is a pure encoder: the RFC 8628 token-poll request body (`client_id` + `device_code` + grant_type). A seam that may block on a human and a seam that formats bytes cannot share a type — the prompter wired into the device-flow poll loop would block on stdin nobody is watching, and the encoder wired into the wizard would answer every question with a form body."""
 
+# ── 2 names, (String, String) -> Unit ─────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String,String)->Unit"
+dated = "2026-09-24"
+names = [
+    "BudgetAlert",
+    "HeadAudit",
+]
+reason = """Two records of two different events, read by two different audiences. HeadAudit \
+(features/heads HeadContracts.kt) records a lifecycle request that already SUCCEEDED — (name, action) \
+is the head the caller named and what was done to it — as the control plane's audit line \
+(ControlAudit.headAction: `[control] head <key> -> <action>` in the daemon log). BudgetAlert \
+(features/usage budgets, V4-133) tells the OPERATOR that a `warn` budget was reached — (head, text) \
+is the head and the sentence to show — and its contract is that it returns at once, because it runs \
+on the turn path, and that it is best-effort. Swapped, a budget warning is logged as a `[control] head` \
+action that never happened (and the operator is never told), while every start/stop posts a \
+free-text line to the operator's webhook."""
+
 # ── 2 names, (Thread) -> Unit ─────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "(Thread)->Unit"

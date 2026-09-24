@@ -33,6 +33,9 @@ public enum class OutcomeTag(public val wire: String) {
     UNEXPECTED("error:unexpected"),
     RATE_LIMITED("error:rate-limited"),
     ALL_ACCOUNTS_EXHAUSTED("error:all-accounts-exhausted"),
+
+    /** V4-133 review: the head's daily spend budget is reached and its action is `block`. */
+    BUDGET_BLOCKED("error:budget-blocked"),
     AUTH_MISSING("error:auth-missing"),
     UPSTREAM_FAILED("error:upstream-failed"),
     UPSTREAM_FRAME_TOO_LARGE("error:upstream-frame-too-large"),

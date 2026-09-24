@@ -21,9 +21,11 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private const val INVALID_REQUEST_ERROR = "invalid_request_error"
+private const val PERMISSION_ERROR = "permission_error"
 
-/** The admission plane's response shapes: one owner for all five wire terminals a request can meet
- *  before a turn exists (400, 401, 408, 413, 529). No instance state; pure response shaping. */
+/** The admission plane's response shapes: one owner for every wire terminal a request can meet
+ *  before a turn exists (400, 401, 403, 408, 413, 429, 529). No instance state; pure response
+ *  shaping. */
 internal class AdmissionResponses {
     private val retryAfterFormat = DateTimeFormatter.ofPattern("EEE, dd MMM uuuu HH:mm:ss 'GMT'", Locale.US)
         .withZone(ZoneOffset.UTC)
@@ -87,7 +89,16 @@ internal class AdmissionResponses {
     /** v0.4.0: the DNS-rebinding refusal (see ClientAuth.admitsHost) — before any route runs. */
     suspend fun respondForeignHost(call: ApplicationCall) {
         call.respondText(
-            errorBodyJson("permission_error", LoopbackHost.FOREIGN_HOST_REFUSAL),
+            errorBodyJson(PERMISSION_ERROR, LoopbackHost.FOREIGN_HOST_REFUSAL),
+            ContentType.Application.Json,
+            HttpStatusCode.Forbidden,
+        )
+    }
+
+    /** V4-133 review: the head's `block` budget is reached (see HeadAdmission.refuseIfOverBudget). */
+    suspend fun respondBudgetBlocked(call: ApplicationCall, message: String) {
+        call.respondText(
+            errorBodyJson(PERMISSION_ERROR, message),
             ContentType.Application.Json,
             HttpStatusCode.Forbidden,
         )

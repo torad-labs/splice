@@ -5,6 +5,8 @@
 // is telemetry.
 package splice.head.turn
 
+import splice.core.budget.HeadBudget
+import splice.core.budget.NoHeadBudget
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
@@ -44,6 +46,10 @@ internal class TurnTelemetry(
      *  class directly; the one production site (TurnDriver) passes the head's own, and HeadEventsTest
      *  fails if a served turn stops reaching it. */
     private val events: HeadEvents = NoHeadEvents,
+    /** V4-133 review: the head's daily spend budget, told each turn's spend beside its perf row.
+     *  Defaulted like [events]; the one production site (TurnDriver) passes the head's own, and
+     *  HeadBudgetTest fails if a served turn stops reaching it. */
+    private val budget: HeadBudget = NoHeadBudget,
 ) {
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
@@ -89,6 +95,18 @@ internal class TurnTelemetry(
         events.turnEnded(rowTs.toString(), outcomeTag)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         recordEconomics(snap, rateLimited)
+        recordSpend(rowTs, drive.upstreamModel, snap.counters)
+    }
+
+    /** V4-133 review: the day's spend moves by THIS row — its own ts, model and counters, the same
+     *  facts a restarted daemon reads back from the file. Best-effort like [recordEconomics]: a
+     *  budget that throws must never fail the turn it is weighing. A local refusal writes no spend,
+     *  because it spent nothing. */
+    private fun recordSpend(rowTs: Long, model: String, counters: Map<String, Long>) {
+        Cancellables.discard(
+            Cancellables.runCatchingCancellable { budget.spent(rowTs, model, counters) },
+            "telemetry is best-effort; a turn must never fail on its budget",
+        )
     }
 
     /** Fold this turn into the hourly quota rollup. The perf snapshot is the single source for

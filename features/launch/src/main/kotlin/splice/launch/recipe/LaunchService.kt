@@ -19,10 +19,12 @@ import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
 import splice.client.wrap.WrapStateRead
-import splice.client.wrap.WrapStateStore
+import splice.client.wrap.WrappedHead
+import splice.client.wrap.WrappedLaunch
 import splice.core.util.EnvReader
 import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
+import java.nio.file.Paths
 import kotlin.math.max
 
 // Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small client window must not shrink the
@@ -41,14 +43,20 @@ public class LaunchService(
      *  composition root (ControlPlane) constructs LaunchService with a materializer alone, and a
      *  cross-head resume needs no daemon state — only the sibling config dirs the spec carries. */
     private val resumeAcrossHeads: ResumeAcrossHeads = ResumeAcrossHeads(),
+    /** V4-129 review: the daemon's ONE wrap of the default `claude` command. The /api/claude-head
+     *  routes act on this instance and the /launch route resolves a wrapped `claude` through it, so
+     *  the wrap that is written and the wrap a launch reads are one object over one home (ControlPlane
+     *  passes the daemon's). Carried here because LaunchService is the one launch object the control
+     *  server is handed; the default is the real home, exactly what ClaudeHeadRoutes defaulted to. */
+    public val wrap: WrappedHead = WrappedHead(Paths.get(System.getProperty("user.home")), materializer = materializer),
     /** V4-129: the real absolute claude binary when the default `claude` command is WRAPPED —
      *  app/src/main/dist/bin/splice-launch execs argv[0] by resolving it through PATH, and a wrapped `claude` on PATH
      *  IS the shim, so planting the bare [claudeBinary] string there would make EVERY head's launch
-     *  (not only a wrapped one) recurse into itself. Defaulted to a REAL reader (not a no-op) so this
-     *  self-protection holds from day one without ControlPlane needing to wire anything: the state
-     *  file this reads simply does not exist until wrap is used, at which point it reads null exactly
-     *  like today. Read PER LAUNCH, never cached — wrap/unwrap can flip between two requests. */
-    private val wrapState: WrapStateRead = WrapStateRead { WrapStateStore().read()?.realBinaryPath },
+     *  (not only a wrapped one) recurse into itself. Defaulted to [wrap], a REAL reader (not a no-op),
+     *  so this self-protection holds from day one: the state file it reads simply does not exist
+     *  until wrap is used, at which point it reads null exactly like today. Read PER LAUNCH, never
+     *  cached — wrap/unwrap can flip between two requests. */
+    private val wrapState: WrapStateRead = wrap,
     /** V4-129 (FEATURES.md 4.5): the splice-owned Claude head's selected login, materialized into its
      *  own config dir right before this launch's materialize() — launch-time selection, no mid-
      *  session switch. Gated on [LaunchSpec.forwardClientAuth] (the STRUCTURAL client-auth signal
@@ -74,30 +82,36 @@ public class LaunchService(
         keyPresentNow: Boolean = true,
         /** V4-183: the shim's working directory; null from a shim older than shim-4, which leaves -c unbounded. */
         cwd: String? = null,
+        /** V4-129 review: non-null when this launch came THROUGH the wrapped default `claude` command
+         *  ([WrappedHead.launchThrough]): the head then runs over the vanilla dir that launch names,
+         *  materialized through wrap's own narrow door (the DR-102 guard refuses that dir to
+         *  [ClaudeConfigMaterializer.materialize], by design). */
+        wrapped: WrappedLaunch? = null,
     ): LaunchRecipe {
-        val effective = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
+        val keyed = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
+        val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         val slots = aliasSlots(effective)
-        materializer.materialize(
-            MaterializeSpec(
-                configDir = effective.trees.own,
-                policy = effective.policy,
-                availableModelIds = effective.availableModelIds,
-                defaultModel = effective.pinnedModel,
-                modelOptionsCache = effective.modelOptionsCache,
-                statuslineCommand = effective.statuslineCommand,
-                loginCommand = effective.loginCommand,
-                signInLabel = effective.signInLabel,
-                signInViaBrowser = effective.signInViaBrowser,
-                tokenCapture = effective.tokenCapture,
-                advertiseKeySetup = effective.advertiseKeySetup,
-                loginOutcomeFile = effective.loginOutcomeFile,
-                headKey = effective.headKey,
-            ),
+        val materialize = MaterializeSpec(
+            configDir = effective.trees.own,
+            policy = effective.policy,
+            availableModelIds = effective.availableModelIds,
+            defaultModel = effective.pinnedModel,
+            modelOptionsCache = effective.modelOptionsCache,
+            statuslineCommand = effective.statuslineCommand,
+            loginCommand = effective.loginCommand,
+            signInLabel = effective.signInLabel,
+            signInViaBrowser = effective.signInViaBrowser,
+            tokenCapture = effective.tokenCapture,
+            advertiseKeySetup = effective.advertiseKeySetup,
+            loginOutcomeFile = effective.loginOutcomeFile,
+            headKey = effective.headKey,
         )
+        if (wrapped != null) wrapped.materialize(materialize) else materializer.materialize(materialize)
         // V4-129 (FEATURES.md 4.5): AFTER materialize (so the config dir exists) and BEFORE the
         // client ever reads it. A no-op on every head but the splice-owned Claude one — see
-        // [claudeLogins]'s KDoc for the gate.
-        if (effective.forwardClientAuth) claudeLogins.materializeSelected(effective.trees.own)
+        // [claudeLogins]'s KDoc for the gate — and "never on a wrapped default head": through the
+        // wrap the dir is the operator's own ~/.claude, whose credential IS their login.
+        if (effective.forwardClientAuth && wrapped == null) claudeLogins.materializeSelected(effective.trees.own)
         // V4-115 AFTER the materialize, never before: the materializer is what guarantees
         // <configDir>/projects is a REAL head-owned directory (ProjectsLink un-links one an earlier
         // launch pointed elsewhere). Copying first would write through the very link this row removes.

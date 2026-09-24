@@ -182,6 +182,32 @@ internal class HeadAdmission(
         return true
     }
 
+    /** V4-133 review: A REACHED `block` BUDGET REFUSES THE TURN HERE, for the reason the rate-limit
+     *  refusal below sits here: before a response is committed, while the status line is still ours.
+     *  The head's budget ([HeadDeps.HeadQuota.budget]) decides; this only answers for it.
+     *
+     *  403 permission_error, never 429: the refusal lasts until the UTC day turns, and a 429 invites
+     *  the client to retry into the same refusal. Claude Code does not retry a 403 and shows its
+     *  message, so the budget's own sentence — head, spend, limit, when it lifts — is what the
+     *  operator reads. Recorded BEFORE responding, like every local refusal (V4-55). A budget that
+     *  is not reached, or only warns, admits the turn and changes nothing on its path. */
+    private suspend fun refuseIfOverBudget(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: Admitted,
+        trace: TurnTrace?,
+    ): Boolean {
+        val block = deps.quotaBundle.budget.admit() ?: return false
+        driver.recordLocalRefusal(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace),
+        )
+        responses.respondBudgetBlocked(call, block.message)
+        return true
+    }
+
     /** A sentence, in the order a person needs it: what happened, that splice already tried, when
      *  to retry — and the provider's window as information, never as the instruction. Naming both
      *  horizons matters because they are different facts: a message carrying only the 120s hold
@@ -271,6 +297,7 @@ internal class HeadAdmission(
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.inbound?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
+        if (refuseIfOverBudget(call, prepared, admitted, trace)) return
         if (refuseIfRateLimited(call, prepared, admitted, trace)) return
         val account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
             null -> null

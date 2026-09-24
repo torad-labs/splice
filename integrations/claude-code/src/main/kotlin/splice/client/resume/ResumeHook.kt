@@ -9,10 +9,12 @@
 // daemon can record which head OWNS each session (SessionOwnership) and bound a later bare `-c` to
 // this head's own sessions. /clear and a compaction still never call: they start no session.
 //
-// NO SECRET IN THE SCRIPT: the session's own environment carries ANTHROPIC_AUTH_TOKEN, which is the
-// management bearer the launch recipe planted, so the script authenticates from its env and the file
-// holds two literals only — the control port and the head key. The operator's statusline command
-// carries the bearer inline in settings.json already; a 0700 script beside it does not need to.
+// NO SECRET IN THE SCRIPT, NONE IN ARGV: the session's own environment carries ANTHROPIC_AUTH_TOKEN,
+// the turn key the launch recipe planted (v0.4.0 — never the management key), so the script
+// authenticates from its env and the file holds two literals only — the control port and the head
+// key. The bearer reaches curl through a process-substituted header file written by bash's builtin
+// printf, because curl's argv is world-readable in /proc/<pid>/cmdline and an expanded `-H
+// "Authorization: Bearer $TOKEN"` put the key there for every local user to read.
 //
 // NEVER BLOCKS A SESSION: the script exits 0 whatever curl answers, bounded by its own -m and the
 // hook timeout, and the daemon answers 200 to everything it refuses (it logs the refusal instead).
@@ -53,7 +55,8 @@ internal object ResumeHook {
         appendLine("# session and a resumed transcript is moved onto this head's model. Authenticates with the")
         appendLine("# session's own ANTHROPIC_AUTH_TOKEN; never blocks the session (exit 0 always).")
         appendLine("[ -n \"\${ANTHROPIC_AUTH_TOKEN:-}\" ] || exit 0")
-        appendLine("curl -sS -m $CURL_TIMEOUT_S -X POST -H \"Authorization: Bearer \${ANTHROPIC_AUTH_TOKEN}\" \\")
+        appendLine("curl -sS -m $CURL_TIMEOUT_S -X POST \\")
+        appendLine("  -H @<(printf 'Authorization: Bearer %s\\n' \"\$ANTHROPIC_AUTH_TOKEN\") \\")
         appendLine("  -H 'Content-Type: application/json' --data-binary @- \\")
         appendLine("  \"http://127.0.0.1:$controlPort/hooks/resume/$headKey\" >/dev/null 2>&1 || true")
         appendLine("exit 0")

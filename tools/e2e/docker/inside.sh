@@ -414,9 +414,18 @@ bare = [v for v in slots if v in expected_rows]
 wrapped = [v for v in slots if v not in expected_rows]
 assert len(set(bare)) == len(bare), "two tiers carry one bare id, so /model draws that model twice: %r" % slots
 assert all(any(v.endswith("--" + m) for m in expected_rows) for v in wrapped), "a tier points outside the roster: %r" % slots
-assert shlex.split(statusline) == ["curl", "-sS", "-H", f"Authorization: Bearer {mgmt_key}",
-                                  "--data-binary", "@-", f"http://127.0.0.1:{control}/statusline/{head}"], \
-    "status line must post to this head with the management bearer"
+# v0.4.0: the session holds the TURN key, never the management key, and the status line reads it
+# from a 0600 header file, so neither settings.json nor curl's argv carries a key.
+turn_key = env.get("ANTHROPIC_AUTH_TOKEN", "")
+assert turn_key and turn_key != mgmt_key, "a gateway session must be planted the turn key, not the management key"
+assert mgmt_key not in statusline and turn_key not in statusline, "no key inline in the status line command"
+argv = shlex.split(statusline)
+assert argv[:3] == ["curl", "-sS", "-H"] and argv[3].startswith("@") and \
+    argv[4:] == ["--data-binary", "@-", f"http://127.0.0.1:{control}/statusline/{head}"], \
+    "status line must post to this head with the turn-key header file: %r" % argv
+header_file = argv[3][1:]
+assert open(header_file).read() == f"Authorization: Bearer {turn_key}\n", "header file carries the planted turn key"
+assert os.stat(header_file).st_mode & 0o777 == 0o600, "header file is owner-only"
 assert os.path.isfile(login_md), "no in-session /login command materialized"
 assert any("splice-login-hook" in c for c in hook_cmds), "no /login hook on UserPromptSubmit: %r" % hook_cmds
 EOF

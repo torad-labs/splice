@@ -11,6 +11,7 @@ import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.topology.Topology
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
@@ -30,6 +31,11 @@ internal class LaunchSpecFactory(
     private val mgmtKey: MgmtKey,
     private val buildInputs: HeadBuildInputs,
 ) {
+    // v0.4.0: the ONLY splice credential a launched session is handed. The management key opens the
+    // whole control plane, and a session's environment and settings.json are readable by every tool
+    // the model runs there, so neither may carry it (see [TurnKey]).
+    private val turnKey = TurnKey(mgmtKey)
+
     /**
      * [forwardClientAuth] is [ManagedHeadFactory]'s own `forwardClientAuth` — the STRUCTURAL read of
      * the wired credential (`wired.auth is ClientAuthProvider`), passed in rather than re-derived
@@ -85,7 +91,9 @@ internal class LaunchSpecFactory(
             // second hand-maintained number): the proxy's wall is the one that names the verdict.
             apiTimeoutMs = ctx.watchdog.totalCap.inWholeMilliseconds + CLIENT_TIMEOUT_GRACE_MS,
             modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
-            statuslineCommand = "curl -sS -H \"Authorization: Bearer ${mgmtKey.get()}\" " +
+            // The bearer rides in a 0600 header FILE curl reads (`-H @file`), never inline: an inline
+            // header sat in settings.json and in curl's argv, which /proc shows every local user.
+            statuslineCommand = "curl -sS -H ${shellSingleQuote("@${turnKey.headerFile()}")} " +
                 "--data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
             // materialized /login command + UserPromptSubmit hook route the user here. api-key
@@ -106,9 +114,11 @@ internal class LaunchSpecFactory(
             advertiseKeySetup = signIn.tokenCapture != null,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
-            inferenceToken = mgmtKey.get(),
+            inferenceToken = turnKey.get(),
         )
     }
+
+    private fun shellSingleQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     /** V4-130: each served head's CLAUDE_CONFIG_DIR/projects in topology order, for SessionProject's
      *  headless fallback, which searches them before its own vanilla default. Derived from the topology

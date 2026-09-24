@@ -16,6 +16,8 @@ package splice.head
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
@@ -90,6 +92,8 @@ internal class HeadEngine(
             serverConfig {
                 module {
                     install(SSE)
+                    // v0.4.0: a DNS-rebinding page is refused before routing (ClientAuth.admitsHost).
+                    intercept(ApplicationCallPipeline.Plugins) { if (!clientAuth.admitsHost(call)) finish() }
                     routing {
                         get("/health") {
                             call.respondText(diagnostics.healthJson(this@HeadEngine.port), ContentType.Application.Json)

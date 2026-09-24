@@ -213,6 +213,7 @@ public class ConfigService(
     private val discardStreakLogged = AtomicBoolean(false)
 
     private fun logFileLayerDiscard(cause: Throwable?) {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a null mtime falls to the streak guard below; the discard is logged either way
         val mtime = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(statePaths.configFile) }
             .getOrNull()
         if (mtime != null) {

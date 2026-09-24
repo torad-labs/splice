@@ -31,6 +31,7 @@ public class RepoMcpJsonReader(private val homeParent: Path) : McpSourceReader {
 
     private fun projectPaths(file: Path): List<Path> {
         val projects = json.topLevel(file)[Keys.PROJECTS] as? JsonObject ?: return emptyList()
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a key that is not a path names no repo to read
         return projects.keys.mapNotNull { Cancellables.runCatchingCancellable { Path.of(it) }.getOrNull() }
     }
 }

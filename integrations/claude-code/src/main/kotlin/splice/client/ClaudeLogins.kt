@@ -10,6 +10,9 @@ package splice.client
 
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,6 +46,7 @@ public class ClaudeLogins(
     /** The currently selected label, or null when nothing is selected OR the marker names a label
      *  that was since removed (a stale marker is not a selection). */
     public fun selected(): String? {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: no readable marker is "nothing selected" by contract (KDoc above)
         val marker = Cancellables.runCatchingCancellable { Files.readString(selectedFile()).trim() }.getOrNull()
         return marker?.takeIf { it.isNotEmpty() && it in labels() }
     }
@@ -60,6 +64,7 @@ public class ClaudeLogins(
             return ClaudeLoginResult.Refused("'$label' is not a valid login label (letters, digits, - or _ only)")
         }
         val source = sourceConfigDir.resolve(CREDENTIALS_FILE)
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: the null becomes the Refused below, which names the file
         val content = Cancellables.runCatchingCancellable { Files.readString(source) }.getOrNull()
         return if (content == null) {
             ClaudeLoginResult.Refused("no readable $source to store — sign in on this head first")
@@ -82,14 +87,22 @@ public class ClaudeLogins(
     }
 
     /** Launch-time materialization (called from LaunchService): copies the SELECTED login's stored
-     *  bytes into [targetConfigDir]/.credentials.json. No selection, or the selected file vanished
-     *  underneath it, is a silent no-op: a head with this feature never configured behaves exactly
-     *  as it did before this row landed. Returns whether a login was materialized. */
-    public fun materializeSelected(targetConfigDir: Path): Boolean {
+     *  bytes into [targetConfigDir]/.credentials.json. No selection is a silent no-op: a head with
+     *  this feature never configured behaves exactly as it did before this row landed. A selection
+     *  whose stored file cannot be read is LOGGED, because the head then starts on whatever
+     *  credential its config dir already holds, which is not the login the operator chose (the
+     *  caller does not read the return). Returns whether a login was materialized. */
+    public fun materializeSelected(targetConfigDir: Path, log: LogSink = LogSink(DaemonLog::write)): Boolean {
         val label = selected() ?: return false
-        val content = Cancellables.runCatchingCancellable {
-            Files.readString(storeDir.resolve("$label$CREDENTIALS_FILE"))
-        }.getOrNull() ?: return false
+        val stored = storeDir.resolve("$label$CREDENTIALS_FILE")
+        val content = Cancellables.runCatchingCancellable { Files.readString(stored) }
+            .onFailure { failure ->
+                log(
+                    "[logins] selected login '$label' NOT applied — $stored unreadable " +
+                        "(${SafeFailureText.render(failure)}); the head keeps its current credential\n",
+                )
+            }
+            .getOrNull() ?: return false
         SecureFile.writeAtomic0600(targetConfigDir.resolve(CREDENTIALS_FILE), content)
         return true
     }

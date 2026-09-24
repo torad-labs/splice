@@ -1,6 +1,8 @@
 // NEW: v0.4.0 FEATURES.md §1 — the `splice add` command line as data, and its parser. Split from
 // AddCommand.kt (concentration, 2026-09-13).
-package splice.app.cli.add
+package splice.configuration.add
+
+import splice.core.terminal.TerminalOutput
 
 /** One valued flag applied to the arguments so far. */
 internal fun interface FlagSetter {
@@ -61,8 +63,8 @@ internal class AddArgParser {
         return parsed
     }
 
-    fun usage(): Boolean {
-        println(
+    fun usage(output: TerminalOutput): Boolean {
+        output.line(
             "usage: splice add <profile> [--name NAME] [--base-url URL] [--model ID]... [--command CMD] " +
                 "[--live] [--yes]",
         )

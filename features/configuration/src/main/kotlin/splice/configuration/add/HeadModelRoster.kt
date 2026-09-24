@@ -2,7 +2,7 @@
 // finding structure on the TOML mask and splicing ids into `[heads.KEY].models` byte-preservingly —
 // separate from the add-model verb that prompts, plans and writes. AddModelVerb consumes it only
 // through the RosterEditor seam.
-package splice.app.cli.add
+package splice.configuration.add
 
 import splice.topology.TomlStructureMasker
 

@@ -3,7 +3,7 @@
 // starter models. The command asks the operator only for what a profile cannot know (a base URL
 // for a generic OpenAI-compatible endpoint, models where the profile ships none), and this class
 // renders the two TOML tables that are APPENDED to the operator's file, never merged into it.
-package splice.app.cli.add
+package splice.configuration.add
 
 import splice.core.model.ModelRates
 
@@ -38,39 +38,42 @@ internal data class AddModel(
     } ?: emptyList()
 }
 
-internal data class AddProfile(
-    val name: String,
-    val summary: String,
-    val dialect: String,
-    val authKind: String,
+/** One profile. What `splice setup` reads to tick a head — [name], [headKey], [authKind] — is public
+ *  (LAYOUT-01); the rest is this verb's, and only this module constructs one. */
+@ConsistentCopyVisibility
+public data class AddProfile internal constructor(
+    public val name: String,
+    internal val summary: String,
+    internal val dialect: String,
+    public val authKind: String,
     /** Null when the operator must supply it (`--base-url`). */
-    val baseUrl: String?,
+    internal val baseUrl: String?,
     /** Default provider AND head key; empty when the operator must name it (`--name`). */
-    val headKey: String,
+    public val headKey: String,
     /** Default wrapper command; empty means `claude-<key>`. */
-    val command: String,
-    val models: List<AddModel>,
+    internal val command: String,
+    internal val models: List<AddModel>,
     /** Extra provider lines, already valid TOML (a default vendor header, for one). */
-    val providerExtra: List<String> = emptyList(),
+    internal val providerExtra: List<String> = emptyList(),
 )
 
-internal class AddProfiles {
+public class AddProfiles {
 
     private val profiles = AddProfileCatalog().rows
 
-    fun find(name: String): AddProfile? = profiles.firstOrNull { it.name == name }
+    public fun find(name: String): AddProfile? = profiles.firstOrNull { it.name == name }
 
-    fun describe(): List<String> = profiles.map { "${it.name.padEnd(NAME_PAD)} ${it.summary}" }
+    internal fun describe(): List<String> = profiles.map { "${it.name.padEnd(NAME_PAD)} ${it.summary}" }
 
     /** Every profile `splice add` knows. The wizard ticks from this list, never a typed roster. */
-    fun catalog(): List<AddProfile> = profiles
+    public fun catalog(): List<AddProfile> = profiles
 
     /** The env var an api-key provider reads: the key upper-cased with dashes as underscores. */
-    fun apiKeyEnv(key: String): String = key.uppercase().replace('-', '_') + "_API_KEY"
+    public fun apiKeyEnv(key: String): String = key.uppercase().replace('-', '_') + "_API_KEY"
 
     /** One provider table and one head table for [key], appended verbatim; every value quoted.
      *  [profile] is the RESOLVED one: base URL, command and models already filled in by the command. */
-    fun toml(profile: AddProfile, key: String, port: Int): String {
+    internal fun toml(profile: AddProfile, key: String, port: Int): String {
         val models = profile.models
         val auth = if (profile.authKind == API_KEY) {
             """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""

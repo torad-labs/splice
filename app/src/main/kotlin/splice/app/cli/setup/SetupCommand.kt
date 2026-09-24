@@ -4,14 +4,14 @@
 // AddProfiles and installed by calling AddCommand; the wizard never writes those tables.
 package splice.app.cli.setup
 
+import splice.app.AddWiring
 import splice.app.InstallWiring
 import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
-import splice.app.cli.DaemonRestart
-import splice.app.cli.add.AddCommand
-import splice.app.cli.add.AddProfiles
-import splice.app.cli.add.DaemonUpProbe
 import splice.app.cli.auth.LoginCommand
+import splice.configuration.add.AddProfiles
+import splice.configuration.add.DaemonRestart
+import splice.configuration.add.DaemonUpProbe
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -39,7 +39,7 @@ internal class SetupCommand(
     private val env: EnvReader = EnvReader(System::getenv),
     private val profiles: AddProfiles = AddProfiles(),
     private val addProfile: ProfileAdd = ProfileAdd { name ->
-        AddCommand(restart = DaemonRestart { true }).add(listOf(name, "--yes"))
+        AddWiring.add(restart = DaemonRestart { true }).add(listOf(name, "--yes"), EnvReader(System::getenv))
     },
     private val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
     /** V4-175: the wrap call. Not a prompt — it CHANGES THE MACHINE, which is the line SetupPrompts

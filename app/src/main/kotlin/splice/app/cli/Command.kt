@@ -4,14 +4,13 @@
 package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
+import splice.app.AddWiring
 import splice.app.DoctorWiring
 import splice.app.InstallWiring
 import splice.app.LifecycleWiring
 import splice.app.ModelsWiring
 import splice.app.PerfWiring
 import splice.app.TraceWiring
-import splice.app.cli.add.AddCommand
-import splice.app.cli.add.AddModelVerb
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.setup.SetupCommand
@@ -65,12 +64,12 @@ public sealed class Command {
 
     /** v0.4.0 (FEATURES.md §1): `splice add <profile> [...]` — a second provider without editing TOML. */
     public data class Add(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { AddCommand().add(args) })
+        override fun run(): Int = outcomeExitCode(runBlocking { AddWiring.add().add(args, EnvReader(System::getenv)) })
     }
 
     /** V4-34: `splice add-model` — pick OpenRouter catalog rows through the prompt toolkit. */
     public data class AddModel(val args: List<String> = emptyList()) : Command() {
-        override fun run(): Int = outcomeExitCode(AddModelVerb().add(TopologyLoader.configPath()))
+        override fun run(): Int = outcomeExitCode(AddWiring.addModel().add(TopologyLoader.configPath()))
     }
 
     /** 2026-09-22: `splice models [provider]` — what each provider publishes, against splice.toml.

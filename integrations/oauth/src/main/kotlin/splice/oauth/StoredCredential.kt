@@ -9,7 +9,12 @@
 // NO NETWORK, NO REFRESH. This reads what is on disk. A token near expiry is the daemon's business;
 // a caller here reports the 401 it gets, which is the honest answer rather than a second refresh
 // implementation racing the daemon's.
-package splice.app.auth
+//
+// In integrations/oauth since LAYOUT-01, beside the account files and sign-in persistence that write
+// what it reads: `splice add` (features/configuration) and app's model discovery both ask it. The
+// model probe's adapter (StoredModelCredentials) stays in app, because the port it implements is the
+// models feature's and an integration never depends on a feature.
+package splice.oauth
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -21,7 +26,6 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.models.list.ModelCredentialSource
 import splice.provider.codex.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
 import splice.provider.kimi.KimiCredentialShape
@@ -32,16 +36,16 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
-internal class StoredCredential(private val json: Json = Json { ignoreUnknownKeys = true }) {
+public class StoredCredential(private val json: Json = Json { ignoreUnknownKeys = true }) {
 
     /** The credential file this provider's auth kind uses: what the operator named, else the kind's
      *  own default. Null for a kind that keeps nothing on disk (api-key, client). */
-    fun pathFor(provider: ProviderConfig): Path? =
+    public fun pathFor(provider: ProviderConfig): Path? =
         (provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind))
             ?.let { Paths.get(TopologyLoader.expandHome(it)) }
 
     /** The reader for one wire kind, or null when splice cannot judge that kind's file. */
-    fun shapeFor(kind: String): CredentialShape? = when (AuthKindRegistry.from(kind)) {
+    public fun shapeFor(kind: String): CredentialShape? = when (AuthKindRegistry.from(kind)) {
         AuthKind.ChatgptOAuth -> CodexCredentialShape()
         AuthKind.GrokOAuth -> GrokCredentialShape()
         AuthKind.KimiOAuth -> KimiCredentialShape()
@@ -52,12 +56,12 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
     /** The token stored for this provider that a request presents ([CredentialShape.presented] — the
      *  access token, or Muse's minted api_key), or null when there is no file, no shape for the kind,
      *  or no token inside. The value is returned, never printed — callers put it on a header. */
-    fun presentedToken(provider: ProviderConfig): String? =
+    public fun presentedToken(provider: ProviderConfig): String? =
         stored(provider)?.let { (shape, root) -> shape.presented(root) }?.takeIf { it.isNotBlank() }
 
     /** When the stored token expires, in epoch milliseconds, or null when there is no file, no shape
      *  for the kind, or no expiry the shape can read (Codex's comes from the access token's JWT `exp`). */
-    fun expiresAtMs(provider: ProviderConfig): Long? =
+    public fun expiresAtMs(provider: ProviderConfig): Long? =
         stored(provider)?.let { (shape, root) -> shape.material(root)?.expiresAtMs }
 
     /** This provider's credential file, parsed, with the shape that reads it; null when either is absent. */
@@ -83,22 +87,13 @@ internal class StoredCredential(private val json: Json = Json { ignoreUnknownKey
 
     /** The api-key this provider authenticates with: the environment first, then splice's own key
      *  store. Null for every other auth kind — an OAuth provider's token is [presentedToken]'s answer. */
-    fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
+    public fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
         if (!provider.auth.isApiKey) return null
         val envVar = provider.auth.effectiveApiKeyEnv(key)
         return env(envVar)?.takeIf { it.isNotBlank() } ?: KeyStore(KeyStorePath.defaultPath(env)).read(envVar)
     }
 
     /** The bearer to present for this provider, whichever way it authenticates. */
-    fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
+    public fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
         apiKey(provider, key, env) ?: presentedToken(provider)
-}
-
-/** The model probe's view of [StoredCredential]: the bearer a request presents and when it expires. */
-internal class StoredModelCredentials(private val stored: StoredCredential = StoredCredential()) :
-    ModelCredentialSource {
-    override fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =
-        stored.bearer(provider, key, env)
-
-    override fun expiresAtMs(provider: ProviderConfig): Long? = stored.expiresAtMs(provider)
 }

@@ -2,16 +2,15 @@
 // profile's own rows, or what the operator types in (TTY only), and what makes a row set refusable
 // (empty, quotes, a non-positive window, a repeated id). Split from AddPrepare.kt (concentration,
 // 2026-09-14).
-package splice.app.cli.add
+package splice.configuration.add
 
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
-import splice.terminal.KeyReader
 import splice.terminal.MultiSelectOutcome
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectOption
 import splice.terminal.SelectOutcome
 import splice.terminal.SelectPrompt
-import splice.terminal.TerminalMode
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,7 +23,7 @@ private const val WINDOW_ATTEMPTS = 3
 /** A TOML value `splice add` will write bare: no quote, no backslash, no control character. */
 internal val addValuePattern = Regex("[^\"\\\\\\p{Cntrl}]+")
 
-internal class AddModelRows(private val prompt: AddPrompter) {
+internal class AddModelRows(private val output: TerminalOutput, private val prompt: AddPrompter) {
 
     /** The catalog keys models by id, so a repeated id would keep only the last window (review 2026-09-14). */
     fun problem(models: List<AddModel>): String? {
@@ -66,24 +65,17 @@ internal class AddModelRows(private val prompt: AddPrompter) {
             val answer = prompt("context window for $id:", DEFAULT_WINDOW.toString())
             val window = answer.toLongOrNull()
             if (window != null && window > 0) return window
-            println("  context window for $id must be a positive integer (tokens), not '$answer'")
+            output.line("  context window for $id must be a positive integer (tokens), not '$answer'")
         }
         throw AddRefused("context window for $id must be a positive integer (tokens)")
     }
 }
 
-/** V4-34: add OpenRouter model rows through the prompt toolkit, never a hand-rolled readline. */
+/** V4-34: add OpenRouter model rows through the prompt toolkit, never a hand-rolled readline. The two
+ *  prompts come from app (AddWiring), which owns the terminal they read. */
 internal class AddModelVerb(
-    private val select: SelectPrompt = SelectPrompt(
-        KeyReader(System.`in`),
-        TerminalMode(),
-        System.out,
-    ),
-    private val multi: MultiSelectPrompt = MultiSelectPrompt(
-        KeyReader(System.`in`),
-        TerminalMode(),
-        System.out,
-    ),
+    private val select: SelectPrompt,
+    private val multi: MultiSelectPrompt,
     // The roster edit as a seam (the DR-66 StarterWrite precedent): the fail-closed re-parse below
     // is only testable on the production path if a test can hand write() a composition that does
     // not parse. Production always passes the real editor.

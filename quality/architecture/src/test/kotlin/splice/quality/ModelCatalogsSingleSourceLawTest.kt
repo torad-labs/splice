@@ -494,7 +494,7 @@ internal object ModelRosters {
 
 internal object ModelCatalogsSingleSource {
     const val EXAMPLE_REL = "app/src/main/resources/splice.example.toml"
-    const val CATALOG_IN_APP = "splice/app/cli/add/AddProfileCatalog.kt"
+    const val CATALOG_IN_CONFIGURATION = "splice/configuration/add/AddProfileCatalog.kt"
     const val STARTER_IN_TOPOLOGY = "splice/topology/TopologyLoader.kt"
 
     private const val PROVIDER_COLUMN = 12
@@ -519,9 +519,10 @@ internal object ModelCatalogsSingleSource {
     /** An example provider seen from a derived roster: its name and its declared windows. */
     private data class Target(val provider: String, val windows: Map<String, Long?>)
 
-    /** The three surfaces, resolved through the BUILD's map — `:app` and `:integrations-topology` wherever the build puts them. */
+    /** The three surfaces, resolved through the BUILD's map — `:features-configuration` and
+     *  `:integrations-topology` wherever the build puts them. */
     fun surfaces(map: ProjectMap): Surfaces {
-        val catalog = File(map.mainSources(":app"), CATALOG_IN_APP)
+        val catalog = File(map.mainSources(":features-configuration"), CATALOG_IN_CONFIGURATION)
         val starter = File(map.mainSources(":integrations-topology"), STARTER_IN_TOPOLOGY)
         return Surfaces(
             Surface(EXAMPLE_REL, File(map.root, EXAMPLE_REL)),
@@ -733,7 +734,7 @@ class ModelCatalogsSingleSourceLawTest {
     private class Tree(val root: File) {
         private val synthetic = ProjectMap.parse(
             root,
-            ":app=app;:core=core;:integrations-topology=integrations/topology",
+            ":features-configuration=features/configuration;:core=core;:integrations-topology=integrations/topology",
             setOf("build"),
         )
         val surfaces = ModelCatalogsSingleSource.surfaces(synthetic)
@@ -788,7 +789,7 @@ class ModelCatalogsSingleSourceLawTest {
                     "model-catalogs-single-source: app/src/main/resources/splice.example.toml is the SOURCE",
                     "  source   [xai         ]  2 rows  https://api.x.ai/v1",
                     "  source   [kimi        ]  1 rows  https://api.kimi.com/coding",
-                    "  app/src/main/kotlin/splice/app/cli/add/AddProfileCatalog.kt",
+                    "  features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt",
                     "    [grok        ]  1 rows  agrees with [xai]",
                     "    [kimi        ]  1 rows  agrees with [kimi]",
                     "    [api-key     ]  0 rows  no-roster (no base_url, no models)",

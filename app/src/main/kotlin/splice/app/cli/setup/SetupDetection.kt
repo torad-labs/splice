@@ -2,7 +2,7 @@
 package splice.app.cli.setup
 
 import splice.app.cli.AdminSupport
-import splice.app.cli.add.DaemonUpProbe
+import splice.configuration.add.DaemonUpProbe
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.EnvReader

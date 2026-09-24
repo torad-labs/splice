@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.configuration.add.AddRefused
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -111,6 +112,15 @@ class CliExitCodeTest {
         } finally {
             System.setProperty("user.home", savedHome)
         }
+    }
+
+    // From AddModelsTest when `splice add` moved to features/configuration (LAYOUT-01): the guard is
+    // the CLI's, so its arm stays with the CLI.
+    @Test
+    fun `a refused roster edit leaves the boundary an exit code, not a stack trace`() {
+        // Cli.guarded is the DR-99 boundary; AddRefused was outside its catch set, so a refusal
+        // reached the operator as a raw JVM trace.
+        assertEquals(1, Cli().guarded { throw AddRefused("head 'openrouter' cannot be edited") })
     }
 }
 

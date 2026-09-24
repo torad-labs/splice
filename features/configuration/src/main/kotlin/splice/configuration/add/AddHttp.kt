@@ -1,6 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §1 — the one network seam `splice add` uses for its checks, and its JDK
 // implementation. Split from AddChecks.kt (concentration, 2026-09-13).
-package splice.app.cli.add
+package splice.configuration.add
 
 import splice.core.util.Cancellables
 import java.net.URI

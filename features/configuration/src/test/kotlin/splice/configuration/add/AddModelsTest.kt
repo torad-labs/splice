@@ -13,7 +13,7 @@
 // shipped file rather than a stub that agrees with the test. The starter's provider table already
 // carries all ten catalog ids, which is why the `[[providers.KEY.models]]` emitter needed the
 // trimmed seed to be executed at all.
-package splice.app.cli.add
+package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -21,7 +21,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.Cli
 import splice.terminal.KeyReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
@@ -145,13 +144,6 @@ class AddModelsTest {
         val quoted = Files.readString(seed(dir)).replace(HEADER, """[heads."openrouter"]""")
         val added = HeadModelArray().withAdded(quoted, "openrouter", listOf(LUNA))
         assertTrue(rosterOf(added).contains(LUNA), "added id missing from the quoted head's roster")
-    }
-
-    @Test
-    fun `a refused roster edit leaves the boundary an exit code, not a stack trace`() {
-        // Cli.guarded is the DR-99 boundary; AddRefused was outside its catch set, so a refusal
-        // reached the operator as a raw JVM trace.
-        assertEquals(1, Cli().guarded { throw AddRefused("head 'openrouter' cannot be edited") })
     }
 
     // ---- V4-83 finding (2): fail closed — nothing is written that cannot be re-parsed ---------

@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.DaemonRestart
-import splice.app.cli.add.AddProfiles
+import splice.configuration.add.AddProfiles
+import splice.configuration.add.DaemonRestart
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
 import splice.core.topology.AuthConfig

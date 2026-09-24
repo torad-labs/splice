@@ -2,7 +2,7 @@
 // candidate TOML parses, the credential is present, the base URL answers, the chosen models are
 // listed where the dialect publishes a list — and the ONE optional live turn the operator can ask
 // for. Network goes through one seam so the command is tested without a socket.
-package splice.app.cli.add
+package splice.configuration.add
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -10,8 +10,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import splice.app.auth.StoredCredential
-import splice.app.cli.auth.CliSignIn
+import splice.accounts.status.CredentialPresence
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
@@ -20,6 +20,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.oauth.StoredCredential
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
@@ -37,9 +38,10 @@ internal sealed class ListedModels {
     data class Listed(val ids: List<String>) : ListedModels()
 }
 
-internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
+/** [output] takes the one line an unreadable credential file raises (CredentialPresence, DR-70). */
+internal class AddChecks(output: TerminalOutput, private val http: AddHttp = JdkAddHttp()) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val signIn = CliSignIn()
+    private val presence = CredentialPresence(output)
     private val credentialFile = AddCredentialFile(json)
     private val credentials = StoredCredential(json)
 
@@ -51,7 +53,7 @@ internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
         val kind = provider.auth.kind
         val problem = when {
             kind == AuthKind.Client.wire -> null
-            !signIn.credentialConfigured(key, provider, env) -> "no credential for '$key' ($kind)"
+            !presence.configured(key, provider, env) -> "no credential for '$key' ($kind)"
             AuthKindRegistry.isOAuth(kind) -> oauthPath(provider)?.let { credentialFile.problem(it, kind) }
             else -> null
         }

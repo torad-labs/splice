@@ -24,9 +24,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.core.util.Cancellables
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -72,9 +72,9 @@ class AuthDialectCompatibilityBootTest {
     private val client = HttpClient(CIO)
     private val logs = CopyOnWriteArrayList<String>()
     private lateinit var daemon: Daemon
-    private val controlPort = freshPort()
-    private val passthroughPort = freshPort()
-    private val strayPort = freshPort()
+    private val controlPort = TestPorts.reserve()
+    private val passthroughPort = TestPorts.reserve()
+    private val strayPort = TestPorts.reserve()
 
     // `stray` declares a registered kind on an incompatible dialect; assembly must reject this head
     // before the chat arm can silently reinterpret it as API-key auth.

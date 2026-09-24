@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.testing.TestPorts
 import splice.core.util.Cancellables
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
@@ -112,11 +113,7 @@ class TurnPathProbeLoopTest {
 
     @Test
     fun `nothing listening counts as failure - connection refused is not life`() {
-        val dead = ServerSocket(0).let {
-            val p = it.localPort
-            it.close()
-            p
-        }
+        val dead = TestPorts.reserve()
         val stalled = ConcurrentHashMap<String, Boolean>()
         val p = probe(dead, stalled)
         repeat(2) { p.tick() }

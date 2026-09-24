@@ -20,4 +20,6 @@ dependencies {
     implementation(project(":integrations-claude-code"))
     implementation(project(":features-launch"))
     implementation(libs.kotlinx.serialization.json)
+    // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
+    testImplementation(testFixtures(project(":core")))
 }

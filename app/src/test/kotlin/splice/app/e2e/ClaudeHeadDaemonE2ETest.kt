@@ -32,9 +32,9 @@ import splice.app.Daemon
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.core.util.Cancellables
 import splice.head.awaitListening
-import splice.head.freshPort
 import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -132,8 +132,8 @@ class ClaudeHeadDaemonE2ETest {
     private val client = HttpClient(CIO)
     private lateinit var daemon: Daemon
     private lateinit var mgmtKey: String
-    private val controlPort = freshPort()
-    private val headPort = freshPort()
+    private val controlPort = TestPorts.reserve()
+    private val headPort = TestPorts.reserve()
 
     @BeforeAll
     fun setUp() {

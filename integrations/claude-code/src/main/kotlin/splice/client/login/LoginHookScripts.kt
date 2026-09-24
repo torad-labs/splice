@@ -314,7 +314,14 @@ internal object LoginHookScripts {
             appendLine("    $origin nohup ${hook.loginCommand} >/dev/null 2>&1 &")
             appendLine("  fi")
             appendLine("  spawned=$d!")
-            appendLine("  sleep 0.3")
+            // Up to a second, in tenths, leaving as soon as the process is gone. One look after a
+            // fixed 0.3 s raced a loaded machine: a command that exits at once could still be
+            // starting when it was looked at, and was reported as opening the browser (CI coverage
+            // run 36036848391, LoginHookScriptSafetyTest, on a tree that passed at cf59c9122).
+            appendLine("  for _ in 1 2 3 4 5 6 7 8 9 10; do")
+            appendLine("    kill -0 \"${d}spawned\" 2>/dev/null || break")
+            appendLine("    sleep 0.1")
+            appendLine("  done")
             appendLine("  if ! kill -0 \"${d}spawned\" 2>/dev/null && ! wait \"${d}spawned\"; then")
             appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.DIED)))}")
             appendLine(EXIT)

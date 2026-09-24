@@ -13,10 +13,15 @@ import java.nio.file.Path
  *  control port says about a splice.toml that does not load. */
 public class AddVerb(output: TerminalOutput, errors: TerminalOutput, ports: AddPorts) {
     private val command = AddCommand(output, errors, AddChecks(output), ports)
+    private val runtime = RuntimeHeadAdd(output, command)
 
     /** True when the head was saved and is reachable as printed; false leaves splice.toml unchanged
      *  or names the restart that is still owed. */
     public suspend fun add(args: List<String>, env: EnvReader): Boolean = command.add(args, env)
+
+    /** `splice setup`'s local-model step: the head a runtime described, through the same checks, save
+     *  and restart as [add], with the placeholder key its unauthenticated endpoint needs. Same answer. */
+    public suspend fun addRuntime(head: RuntimeHead, env: EnvReader): Boolean = runtime.add(head, env)
 }
 
 /** `splice add-model`: OpenRouter catalog rows picked through [select] and [multi]. */

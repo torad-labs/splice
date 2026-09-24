@@ -29,6 +29,9 @@ internal data class AddCandidate(
     val provider: ProviderConfig,
     val models: List<String>,
     val args: AddArgs,
+    /** The resolved profile the tables were rendered from: its origin titles the run and its
+     *  listAuthoritative decides the models check. */
+    val resolved: AddProfile,
 )
 
 internal class AddPrepare(
@@ -41,11 +44,20 @@ internal class AddPrepare(
 
     fun candidate(args: AddArgs, env: EnvReader): AddCandidate? {
         val profile = args.profile?.let(profiles::find) ?: return usage()
+        val key = args.name ?: profile.headKey
+        val resolved = resolved(args, profile, key) ?: return null
+        return assembled(args, resolved, key, env)
+    }
+
+    /** A profile a local runtime DESCRIBED (RuntimeHeadAdd), already resolved: no flags to apply and
+     *  nothing to prompt for, then the same refusals, render and parse as a catalogue profile. */
+    fun described(profile: AddProfile, env: EnvReader): AddCandidate? =
+        assembled(AddArgs(profile = profile.name, yes = true), profile, profile.headKey, env)
+
+    private fun assembled(args: AddArgs, resolved: AddProfile, key: String, env: EnvReader): AddCandidate? {
         val path = TopologyLoader.configPath(env)
         val current = TopologyLoader.loadOrMaterialize(path)
         val existing = Files.readString(path).trimEnd('\n') + "\n"
-        val key = args.name ?: profile.headKey
-        val resolved = resolved(args, profile, key) ?: return null
         val problem = keyProblem(resolved, current, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
         val appended = if (problem == null) profiles.toml(resolved, key, nextPort(current)) else ""
         val parsed = if (problem == null) checks.parses(existing + appended) else Result.failure(AddRefused(problem))
@@ -61,6 +73,7 @@ internal class AddPrepare(
                     provider = topology.providers.getValue(key),
                     models = resolved.models.map { it.id },
                     args = args,
+                    resolved = resolved,
                 )
             },
             onFailure = { e ->

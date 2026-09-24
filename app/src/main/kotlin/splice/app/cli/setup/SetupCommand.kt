@@ -49,6 +49,8 @@ internal class SetupCommand(
      *  the hermetic environment this class already threads — one preselection change away from
      *  a test wrapping the developer's own ~/.claude. */
     private val wrapClaude: ClaudeWrap = DaemonClaudeWrap(env),
+    /** The optional local-model step (rig), on this class's env and restart. */
+    private val localModel: SetupLocalModel = SetupLocalModel(prompts, env, restart),
 ) {
     private val frame = prompts.frame
 
@@ -73,7 +75,9 @@ internal class SetupCommand(
         val picker = SetupHeads(profiles, prompts.pickHeads, addProfile, restart, prompts.hasConsole, env, frame)
         val heads = picker.offer(facts, path)
         val lane = lanes.ask(heads)
-        frame.note("Summary", summaryLines(start, path, bin, heads, lanes.summaryLine(lane)))
+        val local = localModel.offer(path)
+        val summary = summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) + localModel.summary(local)
+        frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) frame.cancel("not installing")
         prompts.spinner.start("Installing")
         val result = Cancellables.runCatchingBestEffort { runInstall() }
@@ -82,6 +86,7 @@ internal class SetupCommand(
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false
         lanes.apply(lane, picker.addAll(heads))?.let { println(it) }
+        localModel.install(local)
         val topology = TopologyLoader.loadOrMaterialize(path)
         val ok = signIn.signInPendingHeads(topology)
         signIn.printNextSteps(topology)

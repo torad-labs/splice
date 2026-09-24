@@ -3,6 +3,7 @@
 // the order stays its call: the head's layers first, then the slot text after them.
 package splice.head.turn
 
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.perf.TurnPerf
 import splice.core.prompt.EffectiveSystemPrompt
 import splice.core.prompt.SYSTEM_PROMPT_APPLIED
@@ -76,9 +77,15 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
 
     /** Whether [layer]'s own text is still in the finished [body]. Only an APPEND layer's text can be
      *  looked for there: a replace layer's text IS the field, and a strip layer's text is a pattern
-     *  list that was never on the wire — neither can be missing, so neither is ever un-placed. */
+     *  list that was never on the wire — neither can be missing, so neither is ever un-placed.
+     *  [body] is the SERIALISED request, so the text is looked for as the serialiser writes it: raw, a
+     *  newline, quote or backslash never matched and every multi-line append read as deleted (v0.4.0
+     *  prompt-review). */
     private fun survived(layer: EffectiveSystemPrompt, body: String): Boolean =
-        layer.mode != SystemPromptMode.APPEND || body.contains(layer.text)
+        layer.mode != SystemPromptMode.APPEND || body.contains(serialised(layer.text))
+
+    /** [text] as it appears inside a serialised JSON string: escaped, without its quotes. */
+    private fun serialised(text: String): String = JsonPrimitive(text).toString().removeSurrounding("\"")
 
     /** A strip layer can delete text an earlier APPEND layer placed, so an append whose text is no
      *  longer in the finished body did not reach the wire whatever the fold measured at the time.

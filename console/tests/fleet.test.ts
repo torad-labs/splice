@@ -456,7 +456,7 @@ describe('the next target is the daemon\'s own answer', () => {
       account({ label: 'zeta', windows: [sevenDay(0)] }),
       account({ label: 'beta', windows: [], next_target: true }),
     ];
-    expect(poolNext(pool)).toEqual({ label: 'beta', rule: 'lowest 7-day used' });
+    expect(poolNext(pool)).toEqual({ label: 'beta', rule: 'most weekly room' });
   });
 
   test('a target that is neither pinned, primary nor lowest was the sticky account', () => {
@@ -465,7 +465,7 @@ describe('the next target is the daemon\'s own answer', () => {
       account({ label: 'low', windows: [sevenDay(5)] }),
       account({ label: 'held', windows: [sevenDay(60)], next_target: true }),
     ];
-    expect(poolNext(pool)).toEqual({ label: 'held', rule: 'sticky' });
+    expect(poolNext(pool)).toEqual({ label: 'held', rule: 'last used' });
   });
 
   test('no flagged row has no next target, and neither does a single login', () => {

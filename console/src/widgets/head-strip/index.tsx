@@ -9,8 +9,7 @@ import type { HeadStatus } from '@shared/api';
 import {
   inflightText,
   liveTurnText,
-  providerFamily,
-  FAMILY_NAME,
+  familyName,
 } from '@entities/heads';
 import type { HeadAttention } from '@entities/heads';
 import type { HeadWindow } from '@entities/usage';
@@ -51,7 +50,7 @@ const TURN = 8;
 
 /** The family as one printed field: its name. */
 export function providerText(authKind: string): string {
-  return FAMILY_NAME[providerFamily(authKind)];
+  return familyName(authKind);
 }
 
 /**

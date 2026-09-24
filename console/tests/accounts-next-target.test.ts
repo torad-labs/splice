@@ -68,11 +68,11 @@ function board(accounts: AccountRow[]): string {
 describe('each pool carries its own next target, the daemon\'s', () => {
   test('two pools, each marked where its own next_target is, and nowhere else', () => {
     // The default view is one bay per kind, in payload order: codex-a's two strips, then codex-b's.
-    expect(nextCells(board(POOLS))).toEqual(['', 'pinned', '', 'lowest 7-day used']);
+    expect(nextCells(board(POOLS))).toEqual(['', 'pinned', '', 'most weekly room']);
   });
 
   test('the derivation the board reads names each pool\'s own rule', () => {
-    expect(POOLS.map((row) => nextRuleOf(row, POOLS))).toEqual([null, 'pinned', null, 'lowest 7-day used']);
+    expect(POOLS.map((row) => nextRuleOf(row, POOLS))).toEqual([null, 'pinned', null, 'most weekly room']);
   });
 
   test('an account the daemon did not flag carries no mark, whatever the console would have chosen', () => {
@@ -84,7 +84,7 @@ describe('each pool carries its own next target, the daemon\'s', () => {
 
 describe('the selector order is printed as the daemon walks it', () => {
   test('the pin first, then primary, then the previous account, then the lowest seven-day', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned then primary then sticky then lowest 7-day used');
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then primary, then last used, then most weekly room');
     expect(board(POOLS)).toContain(SELECTOR_ORDER_TEXT);
   });
 });

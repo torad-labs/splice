@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import { SELECTOR_ORDER_TEXT, nextRuleOf } from '@entities/account';
+import { familyName } from '@entities/heads';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
@@ -34,6 +35,14 @@ const POLL_MS = 15000;
 const CLOCK_MS = 30000;
 
 /** The three views this page ships with. `by provider` is first because it is the default. */
+/** What opening an account offers, said once, because nothing on a strip says it can be opened. */
+const OPEN_HINT = 'open an account to sign in another one to its pool, switch to it, relabel it or remove it';
+
+/** A group's bay label: a provider group prints the provider's name, not the auth kind's id. */
+function groupLabel(group: string | null, key: string): string {
+  return group === 'provider' ? familyName(key) : key;
+}
+
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-provider', name: S.byProvider, layout: 'bay', filter: {}, sort: null, group: 'provider', fields: [] },
   { id: 'nearest', name: S.nearest, layout: 'bay', filter: {}, sort: { field: 'exhaustion', dir: 'desc' }, group: null, fields: [] },
@@ -119,7 +128,7 @@ function ClaudeBay({ rows, openKey, onOpen }: {
           onOpen={() => onOpen(openHeadKey(row.head))}
         />
       ))}
-      <Empty text="launch-time selected, never a pool" source="one login per claude head" />
+      <Empty text="one login per claude head" source="a claude head uses the claude code login it was started with, so it has no pool" />
     </Bay>
   );
 }
@@ -198,10 +207,11 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, sam
                 <span className="myx-accounts-order-label">{S.order}</span>
                 {SELECTOR_ORDER_TEXT}
               </p>
+              <p className="myx-accounts-hint">{OPEN_HINT}</p>
               {groups.map((group) => (
                 <Bay
                   key={group.key === '' ? S.bay : group.key}
-                  label={group.key === '' ? S.bay : group.key}
+                  label={group.key === '' ? S.bay : groupLabel(active.group, group.key)}
                   count={group.accounts.length}
                   compact
                 >

@@ -11,6 +11,7 @@ export {
   NO_SIGNALS,
   PROVIDER_FAMILIES,
   FAMILY_NAME,
+  familyName,
 } from './model/derive';
 export type {
   AttentionCause,

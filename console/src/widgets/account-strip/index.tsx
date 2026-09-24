@@ -16,6 +16,7 @@ import {
   windowUsedText,
 } from '@entities/account';
 import type { AccountRow, AccountWindow } from '@entities/account';
+import { familyName } from '@entities/heads';
 import { Strip, StripField } from '@shared/ui';
 import { S } from './strings';
 import './account-strip.css';
@@ -77,7 +78,7 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
           one does. Measured on accounts: the first field edge spanned 120px across 12 scanlines,
           34px of it surviving after the four per-ROW sites were converted at the other end. The
           view still decides what it SHOWS; it no longer decides how many cells the row has. */}
-      <StripField w={COLUMN_WIDTH} label={S.provider} value={wanted.has('provider') ? account.kind : ''} mono={false} />
+      <StripField w={COLUMN_WIDTH} label={S.provider} value={wanted.has('provider') ? familyName(account.kind) : ''} mono={false} />
       <StripField w={COLUMN_WIDTH} label={S.account} value={wanted.has('account') ? (account.label ?? S.singleLogin) : ''} mono={false} />
       <StripField w={COLUMN_WIDTH} label={S.plan} value={wanted.has('plan') ? (account.plan ?? S.none) : ''} mono={false} />
 

@@ -114,3 +114,11 @@
    (features/account-login), so every edge before it stays at its declared x and the strip still
    reaches the bay's right edge instead of ending in a slab of bare paper. */
 .myx-strip-fixed .myx-sfield { flex-grow: 0; }
+
+/* What opening an account offers: one quiet line under the selector's order. */
+.myx-accounts-hint {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}

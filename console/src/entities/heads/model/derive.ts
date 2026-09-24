@@ -129,6 +129,12 @@ export const FAMILY_NAME: Record<ProviderFamily, string> = {
   local: 'local',
 };
 
+/** The provider name an auth kind prints as (`chatgpt-oauth` -> `chatgpt`, `api-key` -> `api
+ *  key`): every page that names a provider says it the same way. */
+export function familyName(authKind: string): string {
+  return FAMILY_NAME[providerFamily(authKind)];
+}
+
 /** A head's in-flight count as printed: `n/max`, or `n` when the gate reports no ceiling. */
 export function inflightText(head: HeadStatus): string {
   const gate = head.gate;

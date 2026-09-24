@@ -15,13 +15,12 @@ import { poll } from '@shared/lib';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
 import type { LoginEvent } from './model';
 import { NOT_REPORTED } from '@entities/account';
+import { familyName } from '@entities/heads';
 import { S } from './strings';
 import './account-login.css';
 
 const POLL_MS = 2000;
 
-/** The row that owns the login routes. Printed by every pending empty rather than hidden. */
-const PENDING_ROW = 'V4-132';
 
 const LOGIN_STATUS = 'login-status';
 const LOGIN_START = 'login';
@@ -127,8 +126,7 @@ export function AccountLogin({ head }: { head: string }) {
   }, [state.step, loginId, head]);
 
   if (state.step === 'pending') {
-    const empty = LOGIN_PENDING_EMPTY(state.note ?? PENDING_ROW);
-    return <Empty text={empty.text} source={empty.source} />;
+    return <Empty text={LOGIN_PENDING_EMPTY.text} source={LOGIN_PENDING_EMPTY.source} />;
   }
 
   const message = stepMessage(state);
@@ -278,7 +276,7 @@ export function HeadAuthStrip({ head, kind, present, masked, note, selected, onO
       {/* Widths are the CONTENT width plus the field's own inline padding (~2.5ch at --text-3):
           'chatgpt-oauth' is 13 characters and truncated in a 13ch box. */}
       <StripField w={16} fixed label={S.head} value={head} mono={false} />
-      <StripField w={16} fixed label={S.provider} value={kind} mono={false} />
+      <StripField w={16} fixed label={S.provider} value={familyName(kind)} mono={false} />
       <StripField w={20} fixed label={S.account} value={masked ?? NOT_REPORTED} mono={false} />
       {/* THE TRACK RENDERS EMPTY (M1-107), the fourth of four sites that made the FIELD vanish
           where twenty-two render it and fall back the value. An optional note is an empty cell in

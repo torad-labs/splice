@@ -21,12 +21,15 @@ export const NOT_REPORTED = 'unknown';
 
 /** The selector's real order (AccountPool.candidates, AccountPool.kt:179-186): the operator's pin,
  *  then primary, then the caller's previous account (the session's sticky one), then the lowest
- *  seven-day used. Each word is also the reason printed beside the account that rule chose. */
-export const SELECTOR_RULES = ['pinned', 'primary', 'sticky', 'lowest 7-day used'] as const;
+ *  seven-day used. Each is also the reason printed beside the account that rule chose, so each is
+ *  said the way the operator would say it: the session's sticky account is the one it `last used`,
+ *  and the lowest seven-day figure is the account with the `most weekly room` (console review,
+ *  2026-09-24; they printed `sticky` and `lowest 7-day used`). */
+export const SELECTOR_RULES = ['pinned', 'primary', 'last used', 'most weekly room'] as const;
 export type SelectorRule = (typeof SELECTOR_RULES)[number];
 
 /** The selector's order as one printed sentence, made from the rules so the two cannot disagree. */
-export const SELECTOR_ORDER_TEXT = SELECTOR_RULES.join(' then ');
+export const SELECTOR_ORDER_TEXT = SELECTOR_RULES.join(', then ');
 
 /** The window length the daemon calls the seven-day window, for the selector's third rule. */
 /** The daemon's slot boundary (Quota.kt FIVE_HOUR_SLOT_MAX_SECONDS): a provider window up to six
@@ -131,7 +134,7 @@ export function nextRuleOf(account: AccountRow, accounts: readonly AccountRow[])
     .filter((row): row is AccountRow & { label: string } =>
       row.available === true && row.label !== null && samePool(row, account))
     .sort((left, right) => sevenDayUsed(left) - sevenDayUsed(right) || byLabel(left.label, right.label))[0];
-  return lowest?.label === account.label ? 'lowest 7-day used' : 'sticky';
+  return lowest?.label === account.label ? 'most weekly room' : 'last used';
 }
 
 /** A window inside this much of its length is cocked: the operator wants the warning while there

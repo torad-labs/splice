@@ -167,7 +167,7 @@ describe('not reported by provider', () => {
 
 describe('the selector order is printed, not implied', () => {
   test('the sentence is the daemon rule word for word', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned then primary then sticky then lowest 7-day used');
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then primary, then last used, then most weekly room');
   });
 });
 
@@ -257,22 +257,24 @@ describe('the login flow machine', () => {
 });
 
 describe('pending routes render an empty naming their row', () => {
-  test('the pooled empty names V4-132 and says what is missing', () => {
+  test('the pooled empty says what is missing and where the logins are instead', () => {
     const out = render(h(Empty, EMPTIES.pooledPending));
-    expect(out).toContain('pooled accounts not built');
-    expect(out).toContain('V4-132');
+    expect(out).toContain('account pools unavailable');
+    expect(out).not.toContain('V4-132');
   });
 
-  test('the login empty names its row too', () => {
-    const out = render(h(Empty, LOGIN_PENDING_EMPTY('V4-132')));
-    expect(out).toContain('login not built');
-    expect(out).toContain('V4-132');
+  test('the login empty says what to do instead, never a row id', () => {
+    const out = render(h(Empty, LOGIN_PENDING_EMPTY));
+    expect(out).toContain('sign-in unavailable');
+    expect(out).toContain('splice login');
+    expect(out).not.toContain('V4-132');
   });
 
-  test('the no-accounts empty names the source it looked in', () => {
+  test('the no-accounts empty says how to add one, never the route it read', () => {
     const out = render(h(Empty, EMPTIES.noAccounts));
-    expect(out).toContain('no accounts pooled');
-    expect(out).toContain('GET /api/accounts');
+    expect(out).toContain('no accounts yet');
+    expect(out).toContain('sign one in');
+    expect(out).not.toContain('/api/');
   });
 });
 

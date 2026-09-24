@@ -7,6 +7,7 @@
 // import list at all.
 package splice.head
 
+import splice.core.budget.HeadBudget
 import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
@@ -112,6 +113,10 @@ public data class HeadDeps(
         val quota: QuotaTracker?,
         val accountPool: AccountPool?,
         val accountQuotas: Map<String, QuotaTracker>,
+        /** V4-133 review: the head's daily spend budget, which decides eligibility in USD the way
+         *  the trackers do in quota. No default, like every member of this bundle: a head built
+         *  without one says so ([splice.core.budget.NoHeadBudget]) rather than forgetting. */
+        val budget: HeadBudget,
     )
 
     /** The substitutable runtime seams. A test drives these instead of sleeping or reading a clock,

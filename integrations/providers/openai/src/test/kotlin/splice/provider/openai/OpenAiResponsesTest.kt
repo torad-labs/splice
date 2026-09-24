@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import splice.core.budget.NoHeadBudget
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -121,7 +122,7 @@ private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
         wireTap = null,
         trace = null,
     ),
-    quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap()),
+    quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget),
     seams = HeadDeps.HeadSeams(),
     policy = HeadDeps.HeadPolicy(),
 )

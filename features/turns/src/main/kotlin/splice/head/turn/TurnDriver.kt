@@ -56,6 +56,7 @@ internal class TurnDriver(
             deps.seams.clock,
             deps.stores.economicsStore,
             deps.seams.events,
+            deps.quotaBundle.budget,
         )
     private val health = HeadHealthCounters()
     private val failures = TurnFailures(provider)

@@ -106,6 +106,8 @@ internal class ControlPlane(
     internal val console = ConsoleEventPublisher(
         ConsoleWiring.activityStores(statePaths, config),
         slots = SlotInstructions(teams, ConsoleWiring.sessionAddress(statePaths)),
+        // V4-133 review: the budgets and alerts above, enforced on every head's turns (BudgetWiringPinTest).
+        budgets = ConsoleWiring.budgetEnforcement(statePaths, budgets, alerts, probeScope, log),
     )
 
     /** The daemon's one materializer: the real hook exec (V4-103), and the control port the resume hook

@@ -15,6 +15,8 @@
 // control where they land, or the fixture itself becomes the thing leaking files between tests.
 package splice.head
 
+import splice.core.budget.HeadBudget
+import splice.core.budget.NoHeadBudget
 import splice.core.model.ClientWindows
 import splice.core.util.LogSink
 import splice.head.compact.CompactStats
@@ -54,15 +56,17 @@ public fun headStores(
     trace = trace,
 )
 
-/** No quota and no pool: the shape a head that neither observes nor emits quota runs as. */
-public fun noQuota(): HeadDeps.HeadQuota = HeadDeps.HeadQuota(null, null, emptyMap())
+/** No quota, no pool and no budget: the shape a head that neither observes nor emits quota runs as. */
+public fun noQuota(): HeadDeps.HeadQuota = HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget)
 
-/** A quota bundle for a head that DOES have a pool, so a test can name the three together. */
+/** A quota bundle for a head that DOES have a pool, so a test can name the three together, or a
+ *  [budget] (V4-133 review) for a head whose turns a test wants weighed against one. */
 public fun quotaFor(
     quota: QuotaTracker?,
     pool: AccountPool?,
     quotas: Map<String, QuotaTracker> = emptyMap(),
-): HeadDeps.HeadQuota = HeadDeps.HeadQuota(quota, pool, quotas)
+    budget: HeadBudget = NoHeadBudget,
+): HeadDeps.HeadQuota = HeadDeps.HeadQuota(quota, pool, quotas, budget)
 
 /**
  * Head deps for a test. Every parameter is defaulted so a site names only what it overrides.

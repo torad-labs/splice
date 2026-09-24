@@ -6,6 +6,7 @@ package splice.app.head
 
 import splice.app.ConsoleEventPublisher
 import splice.app.provider.ProviderBuild
+import splice.core.budget.NoHeadBudget
 import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.Knob
@@ -85,6 +86,10 @@ internal class HeadServerFactory(
                     quota = stores.quota,
                     accountPool = stores.accountPool,
                     accountQuotas = stores.accountQuotas,
+                    // V4-133 review: this head's ledger, priced from its own catalog, from the
+                    // publisher's one enforcement over the daemon's budget store. Pinned by
+                    // BudgetWiringPinTest: without it the console's budgets are stored and ignored.
+                    budget = console?.budgets?.forHead(key, ctx.catalog) ?: NoHeadBudget,
                 ),
                 seams = seams(key),
                 policy = HeadDeps.HeadPolicy(

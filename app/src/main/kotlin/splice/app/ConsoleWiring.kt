@@ -32,10 +32,12 @@
 // four ports above do for their routes, so it lives beside them rather than in a package of its own.
 package splice.app
 
+import kotlinx.coroutines.CoroutineScope
 import splice.app.auth.ConsoleAccountsImpl
 import splice.app.console.DrainingRestartAdapter
 import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
+import splice.app.sources.PerfRowsFileSource
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
@@ -44,6 +46,7 @@ import splice.core.storage.ACTIVITY_DIRECTORY
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.util.EnvReader
+import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
@@ -64,9 +67,12 @@ import splice.sessions.teams.TEAMS_FILE
 import splice.sessions.teams.TeamStore
 import splice.topology.TopologyLoader
 import splice.usage.alerts.ALERTS_FILE
+import splice.usage.alerts.AlertDelivery
 import splice.usage.alerts.AlertStore
 import splice.usage.budgets.BUDGETS_FILE
+import splice.usage.budgets.BudgetEnforcement
 import splice.usage.budgets.BudgetStore
+import splice.usage.budgets.HeadPerfHistory
 
 internal object ConsoleWiring {
     internal fun wire(srv: ControlServer, topology: BootedTopology, discovered: HeadDiscoveredModels) {
@@ -132,6 +138,23 @@ internal object ConsoleWiring {
     internal fun alertStore(statePaths: StatePaths): AlertStore =
         AlertStore(statePaths.stateDir.resolve(ALERTS_FILE))
 
+    /** V4-133 review: the daemon's ONE budget enforcement, over the SAME stores the budget and alert
+     *  routes edit, so a PUT is enforced on the next turn with no restart. A `warn` alert is posted
+     *  on [scope] (the control plane's own, cancelled at stop); a budgeted head's spend from before
+     *  this boot is read from its perf files, archive included. */
+    internal fun budgetEnforcement(
+        statePaths: StatePaths,
+        budgets: BudgetStore,
+        alerts: AlertStore,
+        scope: CoroutineScope,
+        log: LogSink,
+    ): BudgetEnforcement = BudgetEnforcement(
+        budgets,
+        AlertDelivery(alerts, log, scope),
+        HeadPerfHistory { head -> PerfRowsFileSource(statePaths.perfStatsFile(head), statePaths.perfArchiveDir) },
+        log,
+    )
+
     /** V4-131: a session id to its SendMessage address, from the same registry /api/sessions reads (the
      *  home the state dir lives under, as ControlPlane.start derives it), for the slot text's lead line. */
     internal fun sessionAddress(statePaths: StatePaths): SessionAddress {
@@ -153,6 +176,9 @@ internal class ConsoleEventPublisher(
     /** V4-131: the team-slot resolver every head appends from. Carried here, beside the stores, because
      *  this is the one console object HeadServerFactory already receives for every head. */
     internal val slots: SlotInstructions? = null,
+    /** V4-133 review: the budgets the console saves, enforced. Each head's ledger comes from here for
+     *  the same reason [slots] does. Null (tests, tools) builds every head with no budget. */
+    internal val budgets: BudgetEnforcement? = null,
 ) {
     /** The bus GET /api/events streams from. ControlPlane assigns this exact instance to the
      *  ControlServer; nothing else constructs one for production. */

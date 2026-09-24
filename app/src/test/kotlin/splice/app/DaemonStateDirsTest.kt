@@ -19,8 +19,11 @@ class DaemonStateDirsTest {
 
     private fun mode(dir: Path): String = PosixFilePermissions.toString(Files.getPosixFilePermissions(dir))
 
-    private fun openDir(dir: Path): Path =
-        Files.createDirectories(dir).also { Files.setPosixFilePermissions(it, PosixFilePermissions.fromString("rwxrwxr-x")) }
+    private fun openDir(dir: Path): Path {
+        val created = Files.createDirectories(dir)
+        Files.setPosixFilePermissions(created, PosixFilePermissions.fromString("rwxrwxr-x"))
+        return created
+    }
 
     @Test
     fun `an open root splice chose and its state dir are tightened on start`(@TempDir home: Path) {

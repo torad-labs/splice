@@ -8,4 +8,4 @@ import java.nio.file.Path
  *  line (TurnKey.headerFile), which the hook hands to `curl -H @file`. The file, not the session's
  *  ANTHROPIC_AUTH_TOKEN: a client-auth head plants no such variable, so a hook reading it never
  *  called, and that head's sessions were never recorded. */
-public class ResumeHookTarget(public val controlPort: Int, public val authHeaderFile: Path)
+public data class ResumeHookTarget(public val controlPort: Int, public val authHeaderFile: Path)

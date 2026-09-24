@@ -30,7 +30,10 @@ public class ForeignHostLog(private val listener: String, private val log: LogSi
                 )
             }
         } else if (capped.compareAndSet(false, true)) {
-            log("[security] $listener has refused $MAX_NAMED_HOSTS foreign Hosts; more are refused without a line each\n")
+            log(
+                "[security] $listener has refused $MAX_NAMED_HOSTS foreign Hosts; more are refused " +
+                    "without a line each\n",
+            )
         }
     }
 }

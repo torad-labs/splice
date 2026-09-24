@@ -11,3 +11,6 @@ public enum class KnobKind { STRING, NUMBER, BOOL }
 // FILE SCOPE ON PURPOSE: one map and one list per process, never per Knob read.
 public val knobsByKey: Map<String, Knob> = Knob.entries.associateBy { it.key }
 public val restartRequiredKnobKeys: List<String> = Knob.entries.filter { it.restartRequired }.map { it.key }
+
+/** Knobs only [heads.KEY.overrides] may set (Knob.headOnly); every global layer drops them. */
+internal val headOnlyKnobKeys: Set<String> = Knob.entries.filter { it.headOnly }.map { it.key }.toSet()

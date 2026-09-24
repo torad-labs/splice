@@ -26,8 +26,9 @@
 // in 14 days were findings in files the blocked seat had not touched (another seat's move in
 // progress). It was the third of three instruments; this wall and the gate + CI are the two left.
 //
-// Deliberate rule exceptions go inline: `// ast-grep-ignore: <rule-id>` plus a justification;
-// ast-grep honors these in both the hook and the gate.
+// Deliberate rule exceptions go inline, as ast-grep's ignore comment naming the rule id plus a
+// justification; ast-grep honors these in both the hook and the gate. (Not spelled out here: this
+// comment would itself parse as a directive that suppresses nothing.)
 //
 // SPLICE_HOOK_ROOT exists for the hermetic test harness only (test/hook.test.ts). Redirecting it
 // to dodge policy is visible, auditable, and caught by the gate re-running the same rules on the

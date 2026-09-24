@@ -155,6 +155,7 @@ public class CompactionInstructions(
      *  unreadable disables the rule the way it would have at boot (review 2026-09-14). */
     private fun currentText(rule: Rule): String? {
         val file = rule.file ?: return rule.text
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable mtime only misses the cache; the read below logs its own failure
         val modified = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(file) }.getOrNull()
         synchronized(files) {
             val cached = files[file]
@@ -175,6 +176,7 @@ public class CompactionInstructions(
     /** The physical path when it exists (Claude Code records `getcwd`, which resolves symlinks), else
      *  the path as given. */
     private fun realPath(path: Path): Path =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: the path as given IS the documented fallback (KDoc above)
         Cancellables.runCatchingCancellable { path.toRealPath() }.getOrDefault(path)
 
     private fun projectRule(project: Path, model: String?): Rule? = projects.asSequence()
@@ -196,6 +198,7 @@ public class CompactionInstructions(
         return Cancellables.runCatchingCancellable { readFile(path) }
             .fold(
                 onSuccess = { text ->
+                    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: the file was just read; a null mtime only forces a re-read next time
                     val modified = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(path) }.getOrNull()
                     synchronized(files) { files[path] = FileText(modified, text) }
                     Rule(text, scope, "$source file:$path", path)

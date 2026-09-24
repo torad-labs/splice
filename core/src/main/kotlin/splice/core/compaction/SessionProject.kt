@@ -92,6 +92,7 @@ public class SessionProject(
             .firstOrNull()
     }
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a transcript Claude Code wrote that cannot be read names no cwd; projectFor records a retried miss
     private fun cwdFromTranscript(file: Path, sessionId: String): Path? = Cancellables
         .runCatchingCancellable {
             Files.newBufferedReader(file).useLines { lines ->
@@ -104,22 +105,27 @@ public class SessionProject(
         }
         .getOrNull()
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable registry entry names no project; projectFor records a retried miss
     private fun readJson(path: Path): JsonObject? = Cancellables
         .runCatchingCancellable { parseJson(Files.readString(path)) }
         .getOrNull()
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: text that is not a JSON object is data, not a failure; every caller skips it
     private fun parseJson(text: String): JsonObject? = Cancellables
         .runCatchingCancellable { json.parseToJsonElement(text).jsonObject }
         .getOrNull()
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a recorded cwd that is not a valid absolute path names no project
     private fun absolutePath(raw: String): Path? = Cancellables
         .runCatchingCancellable { Paths.get(raw).normalize().takeIf { it.isAbsolute } }
         .getOrNull()
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unresolvable dir is deduplicated by its normalized absolute path instead
     private fun realPath(dir: Path): Path = Cancellables
         .runCatchingCancellable { dir.toRealPath() }
         .getOrDefault(dir.toAbsolutePath().normalize())
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a missing or unlistable directory holds no candidates; projectFor records a retried miss
     private fun directoryEntries(path: Path): List<Path> = Cancellables
         .runCatchingCancellable { Files.newDirectoryStream(path).use { it.toList() } }
         .getOrDefault(emptyList())

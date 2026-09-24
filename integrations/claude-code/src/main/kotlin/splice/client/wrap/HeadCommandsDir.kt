@@ -106,6 +106,7 @@ internal object HeadCommandsDir {
         // rename so no reader ever sees the name absent. A staged-name collision (crashed attempt
         // debris, or a fault-injection double) fails BEFORE dst is touched.
         val alreadyCorrect = present && dst.isSymbolicLink() &&
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable link is not "already correct"; it is replaced below
             Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull() == src
         when {
             alreadyCorrect || (present && dst.isDirectory(NOFOLLOW_LINKS)) -> Unit

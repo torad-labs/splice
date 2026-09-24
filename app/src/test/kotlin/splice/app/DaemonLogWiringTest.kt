@@ -22,6 +22,7 @@ import splice.core.util.DaemonLog
 import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDateTime
 import kotlin.io.path.readText
 
@@ -48,6 +49,21 @@ class DaemonLogWiringTest {
         assertTrue(lines[0].endsWith("[a] caller that terminates its own line"), lines[0])
         assertTrue(lines[1].endsWith("[b] converted site, no terminator"), lines[1])
         assertTrue(lines[2].endsWith("[c] another converted site"), lines[2])
+    }
+
+    // v0.4.0: the logs dir is an owner-only boundary (SecureFile.ownerOnlyDirectory), so its files
+    // need no mode of their own. Under a 775 home and state root, daemon.log and the per-head logs
+    // sat at 664 for every local user to read. A dir an older splice or the umask left open is
+    // tightened on the next daemon start, not only when it is first created.
+    @Test
+    fun `the logs dir is owner-only, and an existing open one is tightened`(@TempDir tmp: Path) {
+        val fresh = tmp.resolve("fresh-logs")
+        process.persistentLogger(fresh)
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(fresh)))
+        val open = Files.createDirectories(tmp.resolve("open-logs"))
+        Files.setPosixFilePermissions(open, PosixFilePermissions.fromString("rwxrwxr-x"))
+        process.persistentLogger(open)
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(open)))
     }
 
     @Test

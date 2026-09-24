@@ -44,6 +44,7 @@ private class AdmissionTestAuth : RefreshableAuthProvider {
 private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
     upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
     inferenceToken = "test-inference-token",
+    operatorToken = "test-operator-token",
     gate = InflightGate({ 1 }),
     log = {},
     stores = headStores(tmp),

@@ -28,13 +28,13 @@ internal class LaunchMount(
     private val launchRoutes = LaunchRoutes(launchHeads, launchService, LaunchHeadAdapter.audit(audit), JsonBody())
     private val claudeHeadRoutes = ClaudeHeadRoutes(launchHeads)
 
-    // V4-169: the SessionStart resume hook's receiving end — mgmt-guarded like the statusline, and
+    // V4-169: the SessionStart resume hook's receiving end — session-guarded like the statusline, and
     // reachable only from loopback, because the daemon binds there.
     private val resumeHookRoute = ResumeHookRoute(launchHeads, log)
 
     fun register(route: Route) {
         route.post("/launch/{head}") { guard.guarded(call) { launchRoutes.launch(call) } }
-        route.post("/hooks/resume/{head}") { guard.guarded(call) { resumeHookRoute.resume(call) } }
+        route.post("/hooks/resume/{head}") { guard.guarded(call, Door.SESSION) { resumeHookRoute.resume(call) } }
         route.get("/api/claude-head") { guard.guarded(call) { claudeHeadRoutes.status(call) } }
         route.post("/api/claude-head/wrap") { guard.guarded(call) { claudeHeadRoutes.wrap(call) } }
         route.post("/api/claude-head/unwrap") { guard.guarded(call) { claudeHeadRoutes.unwrap(call) } }

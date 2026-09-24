@@ -17,12 +17,13 @@ export function stateEdge(state: McpState): Edge {
  *  section 2): a holder edge that clips its own state is worse than a shorter state.
  *
  *  `unused` and not `idle`, because nothing has asked for this server yet and "idle" would sound
- *  like it had run and stopped. `barred` and not `ineligible`, because the planner declining to
- *  host something is a decision by rule, not a fault — and its reason is printed beside it. */
+ *  like it had run and stopped. `direct` for a server splice does not share: each client reaches it
+ *  itself (an http server already serves many clients; a cwd-bound one is per session). It read
+ *  `barred`, which sounded like a fault on a server that works; the reason is printed beside it. */
 export function stateLabel(state: McpState): string {
   if (state === 'hosted') return 'hosted';
   if (state === 'idle') return 'unused';
-  return 'barred';
+  return 'direct';
 }
 
 /** A hosted server as the live half of its row, or null when it is not the hosted variant. */
@@ -67,7 +68,12 @@ export function hostLimits(dispositions: readonly KnobDisposition[]): { key: str
  * source (CONTRACTS.md section 8).
  */
 export const EMPTIES = {
-  hostingOff: { text: 'shared hosting off', source: '[daemon] mcp_hosting' },
-  noServers: { text: 'no mcp servers', source: 'GET /api/mcp' },
-  noOpened: { text: 'no server opened', source: 'click a strip' },
+  hostingOff: { text: 'mcp sharing is off', source: 'set mcp_hosting = true under [daemon] in splice.toml to run one copy of each server for every session' },
+  noServers: { text: 'no mcp servers', source: "the stdio servers in claude code's mcp settings show here, shared across sessions" },
+  noOpened: { text: 'select a server', source: 'its process, restarts and last error show here' },
 } as const;
+
+/** What happens to a hosted server that exits, in place of a restart control (no route restarts
+ *  one: /mcp/{name} is the JSON-RPC transport). HostedServer.spawn respawns on the next call and
+ *  backs off 5-60 s when it keeps crashing. */
+export const RESPAWN_NOTE = 'A server that exits starts again on its next call. One that keeps crashing waits up to a minute between tries.';

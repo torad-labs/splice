@@ -15,7 +15,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdict } from '../src/entities/doctor';
 import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
-import { MCP_HOST_KNOBS, MCP_RESTART, serverRows, upText } from '../src/entities/mcp';
+import { MCP_HOST_KNOBS, serverRows, upText } from '../src/entities/mcp';
 import type { McpPayload } from '../src/entities/mcp';
 import { budgetFor, budgetText, NO_BUDGET } from '../src/entities/budget';
 import { canTest, desktopText, webhookText } from '../src/entities/alert';
@@ -32,7 +32,7 @@ import {
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
 import type { PlaygroundState } from '../src/pages/doctor/model';
-import { EMPTIES as MCP_EMPTIES, arrangeServers, hostLimits, stateEdge, stateLabel } from '../src/pages/mcp/model';
+import { EMPTIES as MCP_EMPTIES, RESPAWN_NOTE, arrangeServers, hostLimits, stateEdge, stateLabel } from '../src/pages/mcp/model';
 import { dispositions as mcpDispositions } from '../src/pages/mcp/coverage';
 import { dispositions as doctorDispositions } from '../src/pages/doctor/coverage';
 import { Empty } from '../src/shared/ui';
@@ -266,18 +266,17 @@ describe('pending routes render an empty naming their row', () => {
     expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('playground');
   });
 
-  test('the mcp restart empty names the fact that there is no route, not a row', () => {
-    // There is no restart route to wait for: /mcp/{name} is the JSON-RPC transport, not a control.
-    // So the empty names the CLI, which is the only way to restart a hosted server today.
-    expect(MCP_RESTART.pending).toBe('no route; CLI only');
-    const out = render(h(Empty, { text: 'restart not built', source: MCP_RESTART.pending }));
-    expect(out).toContain('restart not built');
-    expect(out).toContain('CLI only');
+  test('where a restart control would stand, the page says what the host does on its own', () => {
+    // There is no restart route (/mcp/{name} is the JSON-RPC transport) and no CLI command restarts
+    // one server, so the old `restart not built / no route; CLI only` sent the reader nowhere.
+    // HostedServer.spawn respawns on the next call and backs off 5-60 s in a crash loop.
+    expect(RESPAWN_NOTE).toContain('starts again on its next call');
+    expect(RESPAWN_NOTE).not.toContain('CLI');
   });
 
-  test('the hosting-off and no-servers empties name their sources', () => {
-    expect(render(h(Empty, MCP_EMPTIES.hostingOff))).toContain('mcp_hosting');
-    expect(render(h(Empty, MCP_EMPTIES.noServers))).toContain('GET /api/mcp');
+  test('the hosting-off and no-servers empties say how to fill them, never a route', () => {
+    expect(render(h(Empty, MCP_EMPTIES.hostingOff))).toContain('mcp_hosting = true under [daemon]');
+    for (const empty of Object.values(MCP_EMPTIES)) expect(empty.source).not.toContain('/api/');
   });
 });
 
@@ -300,6 +299,8 @@ describe('the mcp host', () => {
   });
 
   test('an ineligible server is grey, not red: a decision is not a fault', () => {
+    // and its word says clients reach it themselves, not that something was refused
+    expect(stateLabel('ineligible')).toBe('direct');
     expect(stateEdge('ineligible')).toBe('grey');
     expect(stateEdge('hosted')).toBe('green');
   });

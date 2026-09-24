@@ -16,12 +16,13 @@ export const S = {
   sessions: 'sessions',
   streams: 'streams',
   started: 'started',
-  activity: 'activity',
+  activity: 'last call',
   restarts: 'restarts',
   error: 'error',
   reason: 'reason',
   limits: 'host limits',
-  restart: 'restart',
+  /** The detail's line for a hosted server that has not failed. */
+  noError: 'no errors',
   /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
    *  It replaces two phrasings this page used for one fact: `not running` in the rack and `none`
    *  in the detail. */

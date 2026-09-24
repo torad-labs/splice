@@ -24,7 +24,7 @@ import { fetchBudgets } from '../src/entities/budget';
 import { budgetsStore } from '../src/entities/budget/model/store';
 import { fetchAlerts, sendTestAlert } from '../src/entities/alert';
 import { alertsStore } from '../src/entities/alert/model/store';
-import { fetchMcp, MCP_RESTART } from '../src/entities/mcp';
+import { fetchMcp } from '../src/entities/mcp';
 import { mcpStore } from '../src/entities/mcp/model/store';
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
@@ -247,10 +247,6 @@ describe('pending routes', () => {
     const mcp = mcpStore.get().data;
     expect(mcp?.hosting).toBe(true);
     expect(mcp?.servers.fs).toMatchObject({ hosted: false, restarts: 3 });
-  });
-
-  test('restarting a hosted server has no route to call', () => {
-    expect(MCP_RESTART).toEqual({ pending: 'no route; CLI only' });
   });
 });
 

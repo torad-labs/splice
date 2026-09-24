@@ -2,7 +2,6 @@
 // (ControlServer.kt:161 -> McpHost.statusJson -> McpStatus.json). Eligibility comes straight from
 // the planner, so the console shows the same reasons the materializer acted on
 // (McpStatus.kt:1-3), and the live half is the state of each hosted child process.
-import type { PendingRoute } from '@shared/api';
 
 /** A server the planner will host. Everything past `eligible` is live state, and each live field is
  *  absent while the child is not running: a server that is eligible but not started reports
@@ -49,11 +48,3 @@ export interface McpPayload {
  *  @entities/config with their provenance like every other knob. Restating them here as constants
  *  would be a second source for four values that can be overridden. */
 
-/**
- * Restarting a hosted server, as FEATURES.md 4.11 would have it. There is NO route: measured
- * 2026-09-18, ControlServer.kt:162-164 are the MCP Streamable HTTP transport (POST/GET/DELETE on
- * /mcp/{name}), and FEATURES.md 2.8 reports restarts as the counter above. So the entity exposes
- * restart as this pending state and never calls one - a console that issued a POST at /mcp/{name}
- * would be speaking JSON-RPC initialize into the protocol endpoint, not restarting a child.
- */
-export const MCP_RESTART: PendingRoute = { pending: 'no route; CLI only' };

@@ -1,6 +1,5 @@
-// The MCP entity's HTTP segment: ONE read. There is no restart call to write, and the export that
-// says so lives in model/types.ts (MCP_RESTART) so a page can render the honest empty without a
-// function that looks like it might fire.
+// The MCP entity's HTTP segment: ONE read. There is no restart call to write: /mcp/{name} is the
+// JSON-RPC transport, and a hosted server that exits respawns on its next call (HostedServer.kt).
 import { request } from '@shared/api';
 import { poll } from '@shared/lib';
 import { mcpStore } from '../model/store';

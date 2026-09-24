@@ -26,7 +26,7 @@ export function mgmtKey(home = process.env.HOME) {
   return readFileSync(join(liveStateDir(home), 'mgmt-key'), 'utf8').trim();
 }
 
-/** Exported under the SAME NAME as checks/e2e/console-wire-keys.ts's copy so one wall can drive
+/** Exported under the SAME NAME as tools/e2e/probes/console-wire-keys.ts's copy so one wall can drive
  *  both: StateDirAgreementTest imports `liveStateDir` from every JS/TS copy it finds. */
 export function liveStateDir(home = process.env.HOME, env = process.env) {
   for (const name of ['SPLICE_STATE_DIR', 'CLAUDEX_STATE_DIR']) {

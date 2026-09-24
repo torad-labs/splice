@@ -310,7 +310,7 @@ function CostPerRole({ data }: { data: TeamViewData | null }) {
       <p className="myx-board-panel-note">
         {`lifetime, joined by the daemon on the first ${SESSION_TAG_CHARS} characters of the session id`}
         {`, ${table.unattributed} turns with no session tag`}
-        {table.oldest === null ? ', no turn held yet' : `, oldest turn held ${clock(table.oldest)}`}
+        {table.oldest === null ? ', no turn held yet' : `, oldest turn held ${clock(table.oldest)} utc`}
       </p>
     </div>
   );

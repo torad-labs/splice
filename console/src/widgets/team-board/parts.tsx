@@ -13,7 +13,7 @@ export const HEAD_COLS = [27.38, 39.41, 42.26, 21.31, 30.00];
 export const MSG_COLS = [5.48, 10.12, 2.26, 12.14, 4.41, 19.05];
 
 /** The stamp the comp prints: YYYY-MM-DD HH:MM:SS, in UTC so a capture reads the same on every
- *  machine. */
+ *  machine. The footer says `times in utc` once, since every other page prints local time. */
 export function stamp(epochMs: number): string {
   const at = new Date(epochMs);
   const pad = (n: number): string => String(n).padStart(2, '0');
@@ -39,6 +39,7 @@ export function BoardHeader({ board }: { board: TeamPayload }) {
 export function BoardFooter({ board }: { board: TeamPayload }) {
   return (
     <div className="myx-board-footer">
+      <span className="myx-board-footer-cell">{S.utcNote}</span>
       <span className="myx-board-footer-cell">{S.teamCreated} {stamp(board.team.created_epoch_millis)}</span>
       <span className="myx-board-footer-cell">{S.teamUpdated} {stamp(board.team.updated_epoch_millis)}</span>
     </div>

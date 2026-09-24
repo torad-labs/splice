@@ -184,6 +184,14 @@ export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?:
         {/* the team header strip: five boxed fields, the team's own identity */}
         <BoardHeader board={board} />
 
+        {/* No member means no head bay, and the board's left side drew nothing at all: a team with no
+            bound session read as a broken page (walkthrough S17). */}
+        {bays.length === 0 ? (
+          <div className="myx-board-unbound">
+            <Empty text="no session is bound yet" source="pick a session for one of its slots in the editor under the board, and its head shows here" />
+          </div>
+        ) : null}
+
         {/* one bay per head, in the order the members run */}
         {bays.map((heads, index) => (
           <Bay
@@ -230,7 +238,7 @@ export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?:
             {board.messages.length === 0 ? (
               <Empty
                 text={unread.chat === undefined ? 'no messages today' : 'chat unreadable'}
-                source={unread.chat ?? 'GET /api/teams/{id}/chat'}
+                source={unread.chat ?? "a message one of this team's sessions sends another shows here"}
               />
             ) : null}
             {board.messages.map((message, index) => (
@@ -270,7 +278,7 @@ export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?:
             {board.activity.length === 0 ? (
               <Empty
                 text={unread.activity === undefined ? 'nothing sampled today' : 'activity unreadable'}
-                source={unread.activity ?? 'GET /api/teams/{id}/activity'}
+                source={unread.activity ?? "splice samples this team's sessions every 30 s"}
               />
             ) : null}
             {board.activity.map((entry, index) => (

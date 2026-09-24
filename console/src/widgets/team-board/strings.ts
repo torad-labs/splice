@@ -57,6 +57,9 @@ export const S = {
   headLabel: 'head:',
   chatLabel: 'team chat',
   activityLabel: 'activity',
+  /** The board prints UTC (the chat is served one UTC day at a time) while every other page prints
+   *  local time, so the footer says so once (walkthrough S17). */
+  utcNote: 'times in utc',
   teamCreated: 'created:',
   teamUpdated: 'updated:',
   /** the by-role board and the timeline (comps team-board-b and team-board-c) */

@@ -779,3 +779,12 @@
   .myx-board-frame .myx-board-footer { font-size: var(--text-1); }
   .myx-board-frame .myx-board-footer { flex-wrap: wrap; row-gap: var(--space-1); column-gap: var(--space-4); padding: var(--space-2) var(--space-5); }
 }
+
+/* A team with no bound session has no head bay; the empty takes the two bays' place so the board's
+   left side does not read as a broken page (walkthrough S17). */
+.myx-board-unbound {
+  position: absolute;
+  left: 0.879%;
+  top: 8.174%;
+  width: 62.308%;
+}

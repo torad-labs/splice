@@ -503,3 +503,13 @@ describe('the composer', () => {
     expect(optionsFor(listed, '', blank)).toEqual([blank, ...listed]);
   });
 });
+
+describe('a team with no bound session', () => {
+  test('the board says so where the head bays would be, instead of drawing nothing', () => {
+    // Walkthrough S17: a created team with 0 of 1 slots bound drew an empty left half.
+    const unbound = { ...heroBoard, members: [], messages: [], activity: [] };
+    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamBoard, { board: unbound })));
+    expect(html).toContain('no session is bound yet');
+    expect(html).not.toContain('/api/');
+  });
+});

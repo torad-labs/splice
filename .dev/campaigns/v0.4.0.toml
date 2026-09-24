@@ -170,6 +170,7 @@
 # 2026-09-24 FOLLOW-UP: FOLLOWUP console (milestone review 2026-09-24): perf rows carry no head field (FEATURES.md:476), and /api/upgrade's latest is always null.
 # 2026-09-24 FOLLOW-UP: FOLLOWUP release (splice-lead 2026-09-24): the census (.dev/restructure/census.ts over capabilities.tsv) is no ladder leg, so #204 landed tools/e2e/docker/lib.sh, lib.ts and upgrade.sh unclaimed through a green gate; the train claimed them by hand. A gateTests arm or its own leg would make an unclaimed product path red.
 # 2026-09-24 FOLLOW-UP: FOLLOWUP release (splice-lead 2026-09-24): bun tools/gate ledger landed .dev/campaigns/v0.4.0.toml reads 173 NO RECEIPT (rows closed before the receipt protocol, verified by notes) and 19 NOT IN HISTORY (receipts naming bytes that moved in LAYOUT-01, e.g. V4-158 checks/config/python-burndown.json, now tools/gate/config). The check is no ladder leg and no V4-200 verify; re-receipting old rows at today's bytes would record a landing that did not happen, so the honest fix is a dated cutoff in the check (rows closed before receipts existed are exempt by name), not 173 new receipts.
+# 2026-09-24 INSTALLED cf59c9122 (train/v040-1, PR #219: #207 #208 #211 #199 #212 #201 #205 #204 #213 #218 #214 #216 plus the census claims, the dashboard text and test-source Werror) on CI's gate of record: run 36033408741, gate pass, headSha cf59c9122; feat/v0.4.0 fast-forwarded 6922a29a3 -> cf59c9122. Jar built in a clean detached worktree at cf59c9122 (git status empty): sha256 7d7c51344ffa3517772e97d3b1b2f5c148fd59c56e554ca469d5137908e77908; unit pid 2876013, its open splice.jar fd hashes the same. Shim refreshed to the 0.4.0 splice-launch (SPLICE_GATEWAY_VERSION 0.3.2 -> 0.4.0, sha256 95958f96…). Backups ~/.local/share/splice/splice.jar.bak-2026-09-24-pre-cf59c9122 and splice-launch.bak-2026-09-24-pre-cf59c9122. Live 52/52: verify_live 19/19, verify_review 17/17, verify_round2 16/16.
 [campaign]
 id = "v0.4.0"
 title = "splice 0.4.0 — everything but the console: setup, drift warning, perf/sessions data, upgrade, doctor --json, compaction instructions, shared MCP hosting, local models, account pools, code-mode graduation"
@@ -6164,16 +6165,18 @@ id = "V4-195"
 phase = "release"
 title = "COMPATIBILITY STATEMENT, user-facing: what 0.4.x keeps stable (splice.toml keys, CLI verbs and flags, wrapper command names, state and credential locations, the /v1 surface heads serve, doctor --json schema_version 1, /api/* fields the console reads, additive only) and what is not (log wording, console layout, internal state file formats, the Kotlin module API); the tested Claude Code version and what the drift warning means; .github/SECURITY.md supported versions (the latest release, not main) and the threat model (single-user; the boundary is the operator's Unix account)."
 files = ["README.md", ".github/SECURITY.md"]
-status = "in_flight"
+status = "done"
 verify = "each stable item names the test that pins it (CONTRIBUTING.md's list: frozen /v1 oracle, WebuiContractTest, StatePaths header, the TOML keys)"
+# [2026-09-24] RECEIPT cmd="bun tools/gate slot compat -- :app:test --tests splice.app.cli.CommandParserTest :integrations-topology:test --tests splice.topology.TopologyUnknownKeyTest; landed in #207 (gate run 36027504920 on e93a23386) and the train (gate run 36033408741 on cf59c9122)" exit=0 tests=4 touched=README.md,.github/SECURITY.md,app/src/test/kotlin/splice/app/cli/CommandParserTest.kt,integrations/topology/src/test/kotlin/splice/topology/TopologyUnknownKeyTest.kt,.dev/restructure/capabilities.tsv tail="README ## Compatibility names what 0.4.x keeps stable and the test that pins each: splice.toml keys (TopologyUnknownKeyTest, ExampleConfigTest), CLI verbs (CommandParserTest's frozen list), state paths (StatePaths), the frozen oracle, doctor schema_version 1, the console wire (WebuiContractTest); SECURITY supports the latest minor line and states the threat model"
 
 [[items]]
 id = "V4-196"
 phase = "release"
 title = "UPGRADE REHEARSAL 0.3.2 -> candidate (claude-builder): tools/e2e/docker/upgrade.sh runs the candidate's install.sh one-liner over a live 0.3.2 install and asserts the seven CHANGELOG upgrade claims, one receipt step each (one-liner, stale-daemon handover on next launch, config/credentials/state root untouched, a 0.3.x session keeps working until relaunched, relaunch holds only the turn key, rotation by rm mgmt-key + splice restart, releases/previous -> 0.3.2). Unit-first handover is host-only (no systemd user manager in docker)."
 files = ["tools/e2e/docker/upgrade.sh"]
-status = "in_flight"
+status = "done"
 verify = "every claim PASS on the bump+pin candidate; a claim that fails corrects the CHANGELOG text, never the check"
+# [2026-09-24] RECEIPT cmd="tools/e2e/docker/run.sh --upgrade-from v0.3.2 (candidate 3eedff1d5) and --upgrade-from v0.3.1 against 0.3.2" exit=0 tests=30 touched=tools/e2e/docker/upgrade.sh,tools/e2e/docker/lib.sh,tools/e2e/docker/lib.ts,tools/e2e/docker/inside.sh,tools/e2e/docker/run.sh,tools/e2e/docker/receipt-selftest.ts,tools/gate/config/python-burndown.json,features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/StateLayoutDoctorTest.kt tail="UPGRADE E2E PASS 30/30 (upgrade-v0.3.2-20260924T155657Z) and 30/30 (upgrade-v0.3.1-20260924T160138Z) at Claude Code 2.1.281; red first: 9 mutations M1..M9, one per claim, turned exactly those 9 steps red (21/30). Host-only, not provable in docker: the unit-first handover and the literal GitHub download URL + attestation. Landed #204 (head eeb7f3703) with the train cf59c9122."
 
 [[items]]
 id = "V4-197"
@@ -6188,8 +6191,9 @@ id = "V4-198"
 phase = "release"
 title = "RELEASE TEXT: CHANGELOG cut as splice v0.4.0 (Highlights, Upgrading from 0.3.x, Security, Known limitations; the duplicate Changed merged; V4-169's entry corrected for CR-1 and the header-file bearer; add-model entry); README banner, pin example and upgrade-from-0.3.x line; the GitHub release body is that CHANGELOG section (release.yml body_path, prepended to the generated notes) and promotion-check fails a promotion whose version has no CHANGELOG section. The date in the header is set to promotion day at promotion."
 files = ["CHANGELOG.md", "README.md", ".github/workflows/release.yml", ".github/workflows/promotion-check.yml"]
-status = "in_flight"
+status = "done"
 verify = "bun test tools/release; the section check fails on a version with no section"
+# [2026-09-24] RECEIPT cmd="bun test tools/release" exit=0 tests=63 touched=CHANGELOG.md,README.md,.github/CONTRIBUTING.md,.github/workflows/release.yml,tools/release/index.ts,tools/release/src/commands/notes.ts,tools/release/src/lib/changelog.ts,tools/release/test/changelog.test.ts,.dev/restructure/capabilities.tsv tail="63 pass 0 fail at cf59c9122; changelog.test.ts pins that the version the launch shim declares has its CHANGELOG section; release.yml publishes bun tools/release notes as the release body; landed in #207 and the train (gate run 36033408741 on cf59c9122)"
 
 [[items]]
 id = "V4-198a"
@@ -6206,6 +6210,7 @@ title = "E2E IN CI (claude-builder): the fresh-machine docker e2e and the V4-196
 files = [".github/workflows/"]
 status = "todo"
 verify = "the job runs on a PR head and goes red on a planted inside.sh failure"
+# [2026-09-24] LANDED with the train cf59c9122 (splice-lead, 2026-09-24): #205 (head 3baa21d78, by claude-builder) adds .github/workflows/e2e-docker.yml, the fresh-machine docker e2e then the upgrade rehearsal from the newest published release that is not the candidate's version. Proof: run 36027811748 SUCCESS on feat/e2e-proof-clean (tree 2e0ce360f = #205's head), fresh 31/31 + upgrade 30/30 at Claude Code 2.1.281; red first: run 36027729752 FAILURE with one planted step the only red (31/32); actionlint and zizmor clean. STATUS LEFT todo ON PURPOSE: the fence is apparatus only (.github/workflows/), so by the 2026-09-18 machinery ruling the receipt and the done flip belong to scout-campaign-mod; the orchestrator records the landing and does not route around that wall.
 
 [[items]]
 id = "V4-200"
@@ -6220,24 +6225,27 @@ id = "V4-201"
 phase = "release"
 title = "CONSOLE KEY IN THE PAGE WITHDRAWN (found by splice-lead on PR #199 296132a43, console seat reworking): ServedConsole printed mgmtKey.get() into the unguarded / and /dashboard, so any local process (another account over loopback, or a session's model running curl into its transcript) read the management key; ControlGuard checks only the Host header, which curl passes. Replacement, agreed with console: pages serve no key; splice dashboard writes a 0600 redirect file (SecureFile.writeAtomic0600) carrying #k=<key> and opens that file path (Jupyter's use_redirect_file pattern), the console reads and clears the fragment and stores the key."
 files = ["app/src/main/kotlin/splice/app/control/mount/ServedConsole.kt", "app/src/main/kotlin/splice/app/cli/status/DashboardCommand.kt"]
-status = "in_flight"
+status = "done"
 verify = "curl http://127.0.0.1:3096/ and /dashboard carry no key (live); the redirect file is 0600; no argv holds the key"
+# [2026-09-24] RECEIPT cmd="npm run gate (bun tools/gate run), CI run 36023475281 on 6ecbd5f96" exit=0 tests=869 touched=.dev/restructure/capabilities.tsv,app/src/main/kotlin/splice/app/cli/status/DashboardCommand.kt,app/src/test/kotlin/splice/app/cli/status/DashboardKeyLineTest.kt,app/src/test/kotlin/splice/app/control/ControlServerAccessTest.kt,console/e2e/console.spec.ts,console/src/app/app.css,console/src/entities/events/api/index.ts,console/src/entities/session/api/index.ts,console/src/features/unlock-mgmt/index.tsx,console/src/pages/fleet/fleet.css,console/src/shared/api/index.ts,console/src/shared/tokens.css,console/src/widgets/rule/rule.css,console/tests/launch-key.test.ts tail="GATE: PASS; console vitest 869/869; gradle BUILD SUCCESSFUL. ServedConsole removed; splice dashboard opens a 0600 redirect page carrying the key in the URL fragment; ControlServerAccessTest pins that / and /dashboard carry neither key. Landed #199 with the train cf59c9122."
 
 [[items]]
 id = "V4-202"
 phase = "release"
 title = "ESLINT-PLUGIN-BOUNDARIES v7 DEPRECATIONS in console/eslint.config.mjs (console seat): the mode option, element-types -> dependencies, no-unknown -> no-unknown-dependencies. Zero lint warnings is part of the 1.0 bar."
 files = ["console/eslint.config.mjs"]
-status = "todo"
+status = "done"
 verify = "console lint prints no deprecation; a planted cross-layer import still fails"
+# [2026-09-24] RECEIPT cmd="npm run gate (bun tools/gate run), CI run 36026575158 on 0cda935bc" exit=0 tests=884 touched=.dev/restructure/capabilities.tsv,console/eslint.config.mjs,console/tests/boundaries.test.ts tail="GATE: PASS; console vitest 884/884; gradle BUILD SUCCESSFUL. Landed #212 with the train cf59c9122."
 
 [[items]]
 id = "V4-203"
 phase = "release"
 title = "GRADLE 10 DEPRECATIONS: every :app:shadowJar build prints 'Deprecated Gradle features were used in this build, making it incompatible with Gradle 10' (seen on the ac559ca97 install build). Name each with --warning-mode all and fix at the cause, or record which plugin owns it."
 files = ["build-logic/"]
-status = "todo"
+status = "done"
 verify = "--warning-mode fail on the gate's gradle tier"
+# [2026-09-24] RECEIPT cmd="bun tools/gate slot werror-tests -- compileTestKotlin compileTestFixturesKotlin (every KotlinCompile allWarningsAsErrors, train cf59c9122)" exit=0 tests=0 touched=app/build.gradle.kts,integrations/codemode/build.gradle.kts,app/src/test/kotlin/splice/app/ConsoleEventProducersTest.kt,app/src/test/kotlin/splice/app/OneEventBusPinTest.kt,app/src/test/kotlin/splice/app/control/api/EventsRouteTest.kt,app/src/test/kotlin/splice/app/control/api/diagnostics/McpRoutesTest.kt,core/src/test/kotlin/splice/core/usage/QuotaHeadersTest.kt,features/events/src/test/kotlin/splice/events/bus/EventBusBackpressureTest.kt,features/usage/src/test/kotlin/splice/usage/quota/CodexQuotaProbeTest.kt,integrations/terminal/src/test/kotlin/splice/terminal/TerminalModeTest.kt,quality/architecture/src/test/kotlin/splice/quality/ModelCatalogsSingleSourceLawTest.kt,build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts tail="38 test and fixture compile tasks executed clean, none from cache; a planted redundant !! failed with 'warnings found and -Werror specified'; #211 (gate run 36025420983 on dd590540d) named the two configurations and cleared the test-source warnings, the train made them errors (cf59c9122, gate run 36033408741)"
 
 [[items]]
 id = "V4-204"

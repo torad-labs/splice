@@ -75,21 +75,18 @@ test('the page set comes from the source', () => {
   expect(PAGES, `no page directories under ${PAGES_DIR}`).toContain('fleet');
 });
 
-test('a console served by the daemon opens without asking for the key', async ({ page }) => {
-  // No init script: the key arrives in the page the daemon serves (ServedConsole), nowhere else.
-  await page.goto(`${env('CONSOLE_E2E_BASE')}/#/fleet`);
+test('the address splice dashboard opens unlocks the console and leaves no key behind', async ({ page }) => {
+  // The fragment is what DashboardCommand's redirect page sends the browser to; no init script.
+  const key = env('CONSOLE_E2E_KEY');
+  await page.goto(`${env('CONSOLE_E2E_BASE')}/#k=${encodeURIComponent(key)}`);
   await expect(page.locator('main')).toContainText(STACK.oauthHead);
   await expect(page.locator('main')).toContainText(STACK.keyHead);
-  expect(await page.getByText('management key required').count(), 'the served console asked for its key').toBe(0);
+  expect(await page.getByText('management key required').count(), 'the handed-over key did not unlock').toBe(0);
+  expect(page.url(), 'the key was left in the address').not.toContain(key);
+  expect(await page.evaluate((storage) => localStorage.getItem(storage), KEY_STORAGE), 'the key was not kept').toBe(key);
 });
 
-test('a page that carries no key falls back to the gate, and the pasted key unlocks it', async ({ page }) => {
-  // The page as an older daemon or the Vite dev server sends it: without the key the daemon prints.
-  await page.route(`${env('CONSOLE_E2E_BASE')}/`, async (route) => {
-    const response = await route.fetch();
-    const body = (await response.text()).replace(/<meta name="splice-mgmt-key"[^>]*>/, '');
-    await route.fulfill({ response, body });
-  });
+test('with no key handed over, the gate asks and the pasted key unlocks', async ({ page }) => {
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#/fleet`);
   await expect(page.getByText('management key required').first()).toBeVisible();
   await page.getByRole('textbox', { name: 'key' }).fill(env('CONSOLE_E2E_KEY'));

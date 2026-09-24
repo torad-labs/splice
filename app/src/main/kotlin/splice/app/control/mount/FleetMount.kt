@@ -7,6 +7,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import splice.app.control.DashboardPage
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlPayloads
 import splice.app.control.api.HeadResolver
@@ -22,7 +23,7 @@ internal class FleetMount(
     private val payloads: ControlPayloads,
     resolver: HeadResolver,
     audit: ControlAudit,
-    private val console: ServedConsole,
+    private val dashboardHtml: DashboardPage,
     private val guard: ControlGuard,
 ) {
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
@@ -32,8 +33,8 @@ internal class FleetMount(
         // Unauthenticated liveness probe: the launch shim polls this to tell a running
         // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.
         route.get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }
-        route.get("/") { console.respond(call) }
-        route.get("/dashboard") { console.respond(call) }
+        route.get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
+        route.get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
         route.get("/api/status") { guard.guarded(call) { ControlReplies.respond(call, payloads.statusJson()) } }
         route.get("/api/heads") { guard.guarded(call) { listHeads.handle(call) } }
         route.post("/api/heads/{head}/{action}") { guard.guarded(call) { headRoutes.headAction(call) } }

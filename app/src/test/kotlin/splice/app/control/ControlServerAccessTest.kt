@@ -11,12 +11,12 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -39,8 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger
 private val SESSION_ROWS = setOf("GET /statusline/{head}", "POST /statusline/{head}", "POST /hooks/resume/{head}")
 
 /** The rows that answer with no key at all: the liveness probe, and the dashboard page at both of its
- *  paths (FleetMount), which carries the key itself to the loopback browser that loads it
- *  (ServedConsole). */
+ *  paths (FleetMount), which asks for the key itself before it calls anything. */
 private val OPEN_ROWS = setOf("GET /health", "GET /", "GET /dashboard")
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -156,18 +155,17 @@ class ControlServerAccessTest {
         assertTrue(said.single().startsWith("[security] the control plane refused"), said.single())
     }
 
-    // 2026-09-24: the console never asks for the key. The page a loopback browser loads carries it,
-    // and only that page does: the arm above proves a rebinding Host never reaches the handler. The
-    // page cannot be framed by another site, and it is never written to the disk cache.
+    // 2026-09-24: the page never carries the key. Every local process, and every account on the box,
+    // reaches this route with a loopback Host (curl does), so a key in the page is a key for all of
+    // them. The console gets it from `splice dashboard`'s owner-only redirect page instead.
     @Test
-    fun `the console page served to a loopback Host carries the key and cannot be framed`() = runBlocking {
-        val response = client.get("http://127.0.0.1:$port/")
-        val page = response.bodyAsText()
-        assertTrue(page.contains("<head><meta name=\"splice-mgmt-key\" content=\"$mgmtKey\"><title>"), page)
-        assertEquals("no-store", response.headers[HttpHeaders.CacheControl])
-        assertEquals("DENY", response.headers["X-Frame-Options"])
-        assertEquals("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
-        assertTrue(client.get("http://127.0.0.1:$port/dashboard").bodyAsText().contains(mgmtKey), "both paths")
+    fun `the console page carries no key, at either of its paths`() = runBlocking {
+        for (path in listOf("/", "/dashboard")) {
+            val page = client.get("http://127.0.0.1:$port$path").bodyAsText()
+            assertTrue(page.contains("<title>splice</title>"), page)
+            assertFalse(page.contains(mgmtKey), "$path served the management key")
+            assertFalse(page.contains(turnKey), "$path served the turn key")
+        }
     }
 
     /** `/statusline/{key}/(method:POST)` — how the router renders a route — as `POST /statusline/{key}`. */

@@ -113,7 +113,7 @@ public class ClaudeConfigMaterializer(
                 spec.configDir,
                 spec.loginCommand,
                 spec.signInLabel,
-                globalCommands = if (shares(spec.policy, Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
+                globalCommands = if (spec.policy.shares(Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
                 viaBrowser = spec.signInViaBrowser,
                 tokenCapture = spec.tokenCapture,
                 loginOutcomeFile = spec.loginOutcomeFile,
@@ -140,7 +140,7 @@ public class ClaudeConfigMaterializer(
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache,
-            shareMcp = shares(spec.policy, Keys.MCPS),
+            shareMcp = spec.policy.sharesMcp(),
             local = localClaudeJson,
         )
         return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
@@ -201,21 +201,6 @@ public class ClaudeConfigMaterializer(
 
     private fun globalDir() = home.resolve(Keys.CLAUDE)
 
-    /**
-     * Does the policy share [item]? Alias-aware, so the friendly config vocabulary (settings,
-     * mcps, claude_md) matches the on-disk item names (settings.json, mcps, CLAUDE.md). isolate
-     * wins over share for any alias.
-     */
-    private fun shares(policy: ClaudePolicy, item: String): Boolean {
-        val aliases = when (item.lowercase()) {
-            Keys.SETTINGS -> setOf(Keys.SETTINGS, "settings")
-            "claude.md" -> setOf(Keys.CLAUDE_MD, "claude_md", "claude.md", "claudemd")
-            Keys.MCPS -> setOf(Keys.MCPS, "mcp")
-            else -> setOf(item)
-        }
-        return aliases.any { it in policy.share } && aliases.none { it in policy.isolate }
-    }
-
     // settings is merged (not linked); mcps arrive via .claude.json. Everything else that the
     // policy shares is symlinked from the operator's global dir — the two machine-generated trees
     // (sessions, projects) by migrate-then-link, everything operator-authored by a plain link.
@@ -224,7 +209,7 @@ public class ClaudeConfigMaterializer(
         // ONE dispatcher over sharedLinkItems, so that list stays the single source of what a head can
         // share: an item missing from it is not shared, whatever the policy says.
         for (item in sharedLinkItems.filter { it !in MERGED_ITEMS }) {
-            val shared = shares(policy, item)
+            val shared = policy.shares(item)
             val dst = configDir.resolve(item)
             when (item) {
                 // The transcript tree is the one item with a behaviour when NOT shared: the head still
@@ -327,7 +312,7 @@ public class ClaudeConfigMaterializer(
     ) {
         val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS)
-        val global = if (shares(spec.policy, Keys.SETTINGS)) {
+        val global = if (spec.policy.shares(Keys.SETTINGS)) {
             jsonReads.tolerant(globalDir().resolve(Keys.SETTINGS))
         } else {
             EMPTY_JSON

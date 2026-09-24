@@ -2,8 +2,9 @@
 // network. Importable solely from entity api segments (lint-enforced boundary;
 // an ast-grep wall additionally forbids fetch() anywhere else in console/src).
 // Served same-origin by the control server (spliced), which also hosts this
-// dashboard at /; the bearer key comes from the state root's mgmt-key
-// (`splice dashboard` prints it), pasted once by the operator.
+// dashboard at /; the bearer key is the state root's mgmt-key. `splice dashboard`
+// opens the console with it in the address's fragment (takeLaunchKey below), so
+// the operator never pastes it; the gate's paste is the fallback.
 
 const KEY_STORAGE = 'myx-mgmt-key';
 
@@ -15,12 +16,20 @@ export class MgmtError extends Error {
   }
 }
 
-export function getStoredKey(): string {
+function pastedKey(): string {
   try {
     return localStorage.getItem(KEY_STORAGE) ?? '';
   } catch {
     return '';
   }
+}
+
+/** The bearer every request carries, resolved on every call: the key handed over THIS session (by
+ *  `splice dashboard` or the gate), then the one kept from before. Module state as well as storage:
+ *  in a private window the key never reaches localStorage, and the event stream re-reading storage
+ *  alone sent an empty bearer. */
+export function currentKey(): string {
+  return sessionKey || pastedKey();
 }
 
 export function storeKey(key: string): void {
@@ -31,7 +40,7 @@ export function storeKey(key: string): void {
   locked = false; // re-arm the pollers; the next tick retries with the new key
 }
 
-let sessionKey = getStoredKey();
+let sessionKey = '';
 
 // While locked (last response was 401) requests short-circuit without touching
 // the network — no poller 401 spam behind the key gate. storeKey() re-arms.
@@ -39,6 +48,20 @@ let locked = false;
 
 type UnauthorizedListener = () => void;
 let onUnauthorized: UnauthorizedListener | null = null;
+
+/** The key `splice dashboard` hands the page it opens, as `#k=<key>`: a fragment never reaches the
+ *  daemon or a log, and the CLI writes it only into an owner-only redirect page (DashboardCommand).
+ *  Taken once at load, before the hash router reads the address, kept like a pasted key, and
+ *  replaced in the address so it is not left in view, in a copied link or in the tab's history
+ *  entry. The daemon never serves the key: every local process can read what it serves. */
+function takeLaunchKey(): void {
+  if (typeof location === 'undefined' || typeof history === 'undefined') return;
+  const handed = /^#k=([^&/]+)$/.exec(location.hash);
+  if (handed === null) return;
+  storeKey(decodeURIComponent(handed[1]));
+  history.replaceState(history.state, '', `${location.pathname}${location.search}#/`);
+}
+takeLaunchKey();
 export function bindUnauthorized(fn: UnauthorizedListener): void {
   onUnauthorized = fn;
 }
@@ -74,7 +97,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${sessionKey}`,
+      Authorization: `Bearer ${currentKey()}`,
       ...(init?.headers ?? {}),
     },
   });

@@ -40,7 +40,7 @@ private const val LEGACY_STATE_DIR_ENV = "CLAUDEX_STATE_DIR"
 private val REQUIRED = setOf(
     "app/src/main/dist/bin/splice-launch",
     "tools/e2e/src/commands/heads.ts",
-    "tools/e2e/docker/inside.sh",
+    "tools/e2e/docker/lib.sh",
     "tools/e2e/probes/console-wire-keys.ts",
 )
 

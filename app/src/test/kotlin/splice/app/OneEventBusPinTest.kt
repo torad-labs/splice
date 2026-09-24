@@ -23,7 +23,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -115,7 +115,7 @@ class OneEventBusPinTest {
                     header("Authorization", "Bearer $key")
                 }.execute { response ->
                     val channel = response.bodyAsChannel()
-                    check(channel.readUTF8Line() == ": open") { "the stream must open with its comment" }
+                    check(channel.readLine() == ": open") { "the stream must open with its comment" }
                     open.complete(Unit)
                     frameLines(channel)
                 }
@@ -128,10 +128,10 @@ class OneEventBusPinTest {
     /** The next frame's lines: blank lines and comments before it are skipped, the blank after ends it. */
     private suspend fun frameLines(channel: ByteReadChannel): List<String> {
         val lines = mutableListOf<String>()
-        var line = channel.readUTF8Line()
+        var line = channel.readLine()
         while (line != null && stillReading(lines.isEmpty(), line)) {
             if (line.isNotEmpty() && !line.startsWith(":")) lines.add(line)
-            line = channel.readUTF8Line()
+            line = channel.readLine()
         }
         return lines
     }

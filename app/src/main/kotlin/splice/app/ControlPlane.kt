@@ -38,6 +38,7 @@ import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.oauth.codex.CodexRefresh
@@ -156,7 +157,7 @@ internal class ControlPlane(
             endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
             bearer = McpAccessKey(mgmtKey::get),
         )
-        val mcpHost = mcpHost(home, sharing)
+        val mcpHost = mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })
         // V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). A
         // control plane built without one publishes the booted digest and compares bytes, as before.
         val running = topology.running
@@ -225,14 +226,14 @@ internal class ControlPlane(
      *  one would double the "malformed"/"unreadable" diagnostics on the same file. Split out of
      *  [start] to keep that budget; the census only WIDENS what `/api/mcp` can report, it never
      *  changes what [sharing] rewrites (see McpHostingWiring.kt's header). */
-    private fun mcpHost(home: Path, sharing: McpSharing): McpHost {
+    private fun mcpHost(home: Path, sharing: McpSharing, launchSpecs: List<LaunchSpec>): McpHost {
         val globalRead = McpGlobalRead(home, log)
         return McpHost(
             sharing,
             globalRead,
             config = mcpHostConfig(),
             log = log,
-            inventory = McpInventoryWiring(home, sharing, globalRead).inventory,
+            inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory,
         )
     }
 

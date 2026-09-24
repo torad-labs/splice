@@ -37,6 +37,7 @@ import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.head.usage.EconomicsBucket
 import splice.usage.economics.EconomicsRow
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.quota.HeadUsageSource
@@ -268,6 +269,18 @@ class WebuiContractTest {
         )
     }
 
+    /** v0.4.0 walls review (V4-98): the hop BEFORE the row. EconomicsStore sums into EconomicsBucket,
+     *  whose every sum has a default, and FileSources copies it into EconomicsRow by hand. A sum added to
+     *  the bucket and forgotten in the row compiles and never reaches the wire; the row has no defaults,
+     *  so the reverse drift is a compile error already. */
+    @Test
+    fun `every EconomicsBucket sum has its EconomicsRow field`() {
+        val bucket = declaredProperties(EconomicsBucket::class.java)
+        val row = declaredProperties(EconomicsRow::class.java)
+        assertEquals(emptySet<String>(), bucket - row, "EconomicsBucket sums the row (and so the wire) never carries")
+        assertEquals(emptySet<String>(), row - bucket, "EconomicsRow fields no EconomicsBucket sum feeds")
+    }
+
     /** The page bills on TOTAL input, so in_tokens and cached_tokens must stay SEPARATE fields.
      *  Pre-summing them upstream (or shipping only the uncached remainder) is the exact mistake
      *  that made a 90%-cached drain look safe — the wire must carry both, unreduced. */
@@ -301,17 +314,11 @@ private const val HEADS_KEY = "heads"
 // agreed with itself and could not fail for a field absent from both (§24). The denominator now
 // comes from the type.
 //
-// WHY EconomicsRow AND NOT EconomicsBucket, which the row asked for. Two blocking premises, both
-// recorded in the V4-98 ledger note:
-//   1. splice.head.usage.EconomicsBucket is NOT @Serializable, and neither is EconomicsRow, and
-//      EconomicsPayloads hand-builds the JSON with put(...) — so there is no
-//      `serializer().descriptor.elementNames` anywhere on this path to read.
-//   2. :daemon-control may not see :daemon-head (FileSources.kt:52 states that split as the reason the copy
-//      exists at all), so this test — a :daemon-control test — cannot name EconomicsBucket even if it
-//      were serializable.
-// EconomicsRow is the nearest correct denominator: it is :daemon-control's own vocabulary, it is what
-// EconomicsPayloads actually reads, and it is the type FileSources' copy targets, so a sum that
-// reaches the row but not the wire fails here BY NAME.
+// WHY EconomicsRow for the WIRE hop: it is what EconomicsPayloads reads, so a sum that reaches the row
+// but not the wire fails here BY NAME. The hop before it, EconomicsBucket -> EconomicsRow, has its own
+// test (`every EconomicsBucket sum has its EconomicsRow field`): since LAYOUT-01 this test lives in :app,
+// which sees :features-turns, so the old premise (a :daemon-control test could not name the bucket) is
+// gone, and the V4-98 ask is met with the same reflection.
 //
 // WHY JVM REFLECTION and not kotlin-reflect: :daemon-control declares no kotlin-reflect dependency, and
 // adding one to ship a field list is a production dependency bought for a test. A data class's
@@ -336,11 +343,14 @@ private val ECONOMICS_WIRE_RENAMES = mapOf(
     "upstreamBytes" to "upstream_req_bytes",
 )
 
+/** A data class's constructor properties: its non-synthetic, non-static declared fields. */
+private fun declaredProperties(type: Class<*>): Set<String> =
+    type.declaredFields.filterNot { it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers) }
+        .map { it.name }.toSet()
+
 /** [EconomicsRow]'s properties as the wire spells them. The denominator, from the type. */
 private fun economicsWireNames(): List<String> {
-    val properties = EconomicsRow::class.java.declaredFields
-        .filterNot { it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers) }
-        .map { it.name }
+    val properties = declaredProperties(EconomicsRow::class.java).toList()
     // A reflection call that yields nothing would make the bijection below pass only against an
     // empty wire; the assertion is the guard, but say so where the list is built.
     check(properties.isNotEmpty()) {

@@ -3,7 +3,7 @@
 // /health). Single daemon (P4): one version restarts every head together (documented change).
 package splice.core
 
-public const val GATEWAY_VERSION: String = "0.3.2"
+public const val GATEWAY_VERSION: String = "0.4.0"
 
 // The Claude Code release exercised by tools/e2e/docker. Its receipt records the version installed
 // inside the image and fails when that observation differs from this pin.

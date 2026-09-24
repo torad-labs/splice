@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -142,6 +143,8 @@ internal class TurnStreamer(
      *  up mid-lull, no write having failed) detaches the channel and returns; the drive runs on.
      *  The slot goes with the drive (TurnInputs.slotHandedOff): released when the upstream turn
      *  ends, whichever way, not when this call does. */
+    // CoroutineStart.ATOMIC is a delicate API, used for the reason the comment below gives.
+    @OptIn(DelicateCoroutinesApi::class)
     private suspend fun driveDetachable(drive: TurnDrive, inputs: TurnInputs, key: String, recording: FrameRecording) {
         replay.begin(key, recording)
         inputs.markHandedOff()

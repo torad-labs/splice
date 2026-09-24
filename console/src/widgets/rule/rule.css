@@ -77,8 +77,10 @@
   letter-spacing: -0.01em;
   color: var(--ink-strong);
 }
+/* The cells' floors are rem, the widths they rendered at 1440 when they were 19, 11 and 27 vw:
+   a share of the window put 700px of air between two clocks at 3840 (2026-09-24, fixed root). */
 .myx-rule-clocks {
-  min-width: 19vw;
+  min-width: 17rem;
   font-family: var(--font-figure);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
@@ -90,7 +92,7 @@
   color: var(--ink-mute);
 }
 .myx-rule-clock-word + .myx-rule-clock { margin-inline-start: var(--space-3); }
-.myx-rule-health { min-width: 11vw; }
+.myx-rule-health { min-width: 10rem; }
 .myx-rule-health .myx-edge-label { font-size: inherit; }
 .myx-rule-window {
   font-family: var(--font-figure);
@@ -115,13 +117,14 @@
   color: var(--ink);
 }
 /* The tail holds the no-window count and the two signals the comp never had (the live connection,
-   a pending restart). Its floor is the comp's 27% share; the count leads and the signals follow. */
+   a pending restart). Its floor is the comp's 27% share at 1440; the count leads and the signals
+   follow. */
 .myx-rule-tail {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-5);
-  min-width: 27vw;
+  min-width: 24rem;
   padding-inline: var(--space-5);
 }
 .myx-rule-tail > .myx-rule-cell {

@@ -1,0 +1,88 @@
+# The docker e2e in CI: a fresh machine (tools/e2e/docker/run.sh) and the upgrade rehearsal from the
+# newest published release (run.sh --upgrade-from), both offline inside the container against mock
+# upstreams, with the real Claude Code wrapper at the pinned version.
+#
+# Why this job exists: the fresh-machine e2e was red from 2026-09-22 to 2026-09-24 (a `splice status`
+# format change its assertion never followed) and nobody saw it, because nothing ran it. It runs on
+# every PR into main (the promotion PR), and on feat/** pushes that change what a user installs: the
+# launch shim, install.sh, anything compiled into the jar, or the harness itself. The console is
+# built into the jar too, but no step here exercises it, so console-only pushes do not trigger it.
+name: e2e-docker
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ['feat/**']
+    paths:
+      - 'app/src/main/dist/bin/splice-launch'
+      - 'install.sh'
+      - '**/src/main/**'
+      - '**/*.gradle.kts'
+      - 'gradle/**'
+      - 'build-logic/**'
+      - 'tools/e2e/docker/**'
+      - '.github/workflows/e2e-docker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-e2e:
+    runs-on: ubuntu-latest
+    # Measured locally: the jar ~5 min cold, the image ~2 min, the fresh run ~1.5 min, the upgrade
+    # rehearsal ~1 min. Twice that, rounded up.
+    timeout-minutes: 30
+    env:
+      # `gh release download` for the upgrade's from-release; read-only is enough for a public release.
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - name: install workspaces
+        run: bun install --frozen-lockfile
+      - name: build the fat jar
+        run: ./gradlew -q :app:shadowJar --no-daemon
+      - name: fresh machine
+        run: tools/e2e/docker/run.sh --jar app/build/libs/app-all.jar --shim app/src/main/dist/bin/splice-launch
+      # The newest published release that is not this candidate's own version: before a bump the
+      # candidate still says the last release's version, and an upgrade to the same version cannot
+      # replace the daemon (run.sh refuses it), so the rehearsal starts from the release before.
+      - name: upgrade rehearsal from the newest other release
+        if: ${{ !cancelled() }}
+        run: |
+          candidate="$(sed -nE 's/^const SPLICE_GATEWAY_VERSION = "([^"]+)";$/\1/p' app/src/main/dist/bin/splice-launch)"
+          from="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 \
+            --json tagName --jq '.[].tagName' | grep -vx "v$candidate" | head -1)"
+          if [ -z "$candidate" ] || [ -z "$from" ]; then
+            echo "::error::no candidate version ($candidate) or release to upgrade from ($from)"
+            exit 1
+          fi
+          echo "upgrade rehearsal: $from -> $candidate"
+          tools/e2e/docker/run.sh --no-build --upgrade-from "$from" \
+            --jar app/build/libs/app-all.jar --shim app/src/main/dist/bin/splice-launch
+      - name: keep the receipts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-docker-receipts
+          path: tools/e2e/receipts/
+          retention-days: 14
+          if-no-files-found: warn

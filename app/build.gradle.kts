@@ -19,7 +19,7 @@ plugins {
 }
 
 // :integrations-codemode's compiled runtime suite, rerun by codeModePackagedTest against the fat jar.
-val codeModeRuntimeTests: Configuration by configurations.creating {
+val codeModeRuntimeTests: Configuration = configurations.create("codeModeRuntimeTests") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }

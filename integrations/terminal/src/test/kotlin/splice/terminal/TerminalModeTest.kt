@@ -100,11 +100,11 @@ class TerminalModeTest {
         var removed = 0
         fun add(hook: Thread) {
             added += 1
-            check(hook.id >= 0)
+            check(hook.threadId() >= 0)
         }
         fun remove(hook: Thread) {
             removed += 1
-            check(hook.id >= 0)
+            check(hook.threadId() >= 0)
         }
     }
 }

@@ -14,7 +14,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -97,6 +97,7 @@ class McpRoutesTest {
             ),
             canonicalGlobalFile = censusHome.resolve(".claude.json"),
             canonicalPlan = McpGlobalPlan { sharing.plan(global) },
+            materializedHomes = emptySet(),
         )
         host = McpHost(sharing, { global }, log = { }, inventory = inventory)
         control = ControlServer(
@@ -207,11 +208,11 @@ class McpRoutesTest {
             assertEquals(HttpStatusCode.OK, response.status)
             assertTrue(response.headers["Content-Type"].orEmpty().startsWith("text/event-stream"))
             val body = response.bodyAsChannel()
-            assertEquals(": open", withTimeout(STREAM_WAIT_MS) { body.readUTF8Line() })
+            assertEquals(": open", withTimeout(STREAM_WAIT_MS) { body.readLine() })
             post(NOTIFY_MSG, session)
             val lines = mutableListOf<String>()
             while (lines.none { it.startsWith("data: ") } && lines.size < MAX_SSE_LINES) {
-                lines += withTimeout(STREAM_WAIT_MS) { body.readUTF8Line() } ?: break
+                lines += withTimeout(STREAM_WAIT_MS) { body.readLine() } ?: break
             }
             assertTrue(lines.any { it.startsWith("data: ") && it.contains("list_changed") }, lines.toString())
         }

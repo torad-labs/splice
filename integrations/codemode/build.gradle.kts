@@ -29,7 +29,7 @@ tasks.test {
 // The compiled runtime suite, for :app's codeModePackagedTest to rerun with the shipped fat jar as the
 // worker classpath: a language, global or service registration that shading adds or loses shows only
 // there. Before LAYOUT-01 the suite lived in :app and that task ran it directly.
-val packagedRuntimeTests: Configuration by configurations.creating {
+val packagedRuntimeTests: Configuration = configurations.create("packagedRuntimeTests") {
     isCanBeConsumed = true
     isCanBeResolved = false
 }

@@ -2,8 +2,27 @@
 
 ## Supported Versions
 
-splice is pre-1.0 (see `CONTRIBUTING.md` for the versioning policy). Only `main` is
-supported — there are no maintained release branches. Update to latest before reporting.
+Security fixes ship in the next release of the latest minor line (0.4.x today). Older lines
+get none, and there are no maintained release branches. Update to the latest release
+(`splice upgrade`) before reporting.
+
+## Threat model
+
+splice is a single-user daemon, and its security boundary is your Unix account.
+
+- **Everything listens on loopback.** The control plane and every head bind `127.0.0.1` and
+  refuse a request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]`, which closes DNS
+  rebinding from a browser page.
+- **Two keys.** The management key (`<state>/mgmt-key`, 0600) opens the whole control plane. A
+  launched session holds only a turn key, derived one-way from it. The turn key opens that
+  session's turns, its statusline and its resume hook.
+- **State is owner-only.** The state and log directories are 0700, and credentials are written
+  0600 from the instant they exist.
+- **Out of scope:** a process running as your own user. It can read `mgmt-key`, as it can read
+  your other credentials. So can anyone who can already run code as you, including a model
+  whose tools you let run commands. In scope: a key reaching a transcript, an argv or page
+  another account or origin can read, or another account on the machine getting past the
+  control plane's key.
 
 ## Reporting a Vulnerability
 

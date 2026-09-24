@@ -8,11 +8,17 @@
 // construction throws NAMING the missing kind, instead of a census quietly running four readers and
 // reporting a smaller number as if it were complete.
 //
+// A HEAD'S COPY IS THIS DAEMON'S OWN (v0.4.0 mcp review): ClaudeHomes hands the GLOBAL reader every
+// `~/.claude*` root, and each head that shares mcps is one of them, holding the canonical servers the
+// materializer rewrote into it at launch. Such a server takes the canonical plan's answer and a reason
+// naming the copy; only a root no head materializes is another identity's.
+//
 // "UNCLASSIFIED FAILS BY NAME": [disposition] is an exhaustive `when` over the closed McpSourceKind
 // enum with no `else` — a sixth kind fails the BUILD until every branch below names it, which is
 // stronger than a runtime report nobody reads.
 package splice.client.mcp
 
+import splice.client.Keys
 import java.nio.file.Path
 
 /** Why a registration is or is not shared-hosted. */
@@ -47,11 +53,17 @@ public fun interface McpGlobalPlan {
 
 public class McpInventory(
     private val readers: Map<McpSourceKind, McpSourceReader>,
-    /** The one GLOBAL file this daemon's materializer actually rewrites; every OTHER GLOBAL/PROJECT
-     *  file is a different Claude identity this daemon does not touch. */
+    /** The one GLOBAL file the materializer reads its servers from; a GLOBAL file outside
+     *  [materializedHomes] is a different Claude identity this daemon does not touch. */
     private val canonicalGlobalFile: Path,
     private val canonicalPlan: McpGlobalPlan,
+    /** The CLAUDE_CONFIG_DIR of every head whose `.claude.json` servers the materializer writes from
+     *  [canonicalGlobalFile] through the plan: each head whose policy shares mcps. No default: a
+     *  census built without the heads reports every copy this daemon wrote as another identity's. */
+    materializedHomes: Set<Path>,
 ) {
+    private val headCopies: Set<Path> = materializedHomes.map { normal(it.resolve(Keys.CLAUDE_JSON)) }.toSet()
+
     init {
         val missing = McpSourceKind.entries - readers.keys
         check(missing.isEmpty()) {
@@ -79,14 +91,33 @@ public class McpInventory(
     }
 
     private fun globalDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
-        reg.sourceFile != canonicalGlobalFile ->
-            McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.OTHER_HOME)
+        reg.sourceFile == canonicalGlobalFile -> canonicalDisposition(reg, plan)
+        normal(reg.sourceFile) in headCopies -> headCopyDisposition(reg, plan)
+        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.OTHER_HOME)
+    }
+
+    private fun canonicalDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
         plan.hosted.containsKey(reg.name) ->
             McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.MIGRATED)
         plan.passthrough.containsKey(reg.name) ->
             McpDispositioned(reg, McpDisposition.EXCLUDED, plan.passthrough.getValue(reg.name))
         else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE)
     }
+
+    private fun headCopyDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
+        plan.hosted.containsKey(reg.name) ->
+            McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.HEAD_COPY_MIGRATED)
+        plan.passthrough.containsKey(reg.name) -> McpDispositioned(
+            reg,
+            McpDisposition.EXCLUDED,
+            McpDispositionReasons.HEAD_COPY_AS_DECLARED + plan.passthrough.getValue(reg.name),
+        )
+        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.HEAD_COPY_NOT_CANONICAL)
+    }
+
+    /** One spelling per file: a head's config dir comes from the topology, a registration's path from a
+     *  directory listing, and the two meet only once both are absolute and normalised. */
+    private fun normal(path: Path): Path = path.toAbsolutePath().normalize()
 }
 
 /** The written reasons LAW [2026-09-18] asks for — one place so McpInventory's `when` stays a
@@ -109,6 +140,15 @@ internal object McpDispositionReasons {
     const val OTHER_HOME: String =
         "declared in a different Claude Code identity's .claude.json; this daemon's materializer reads only its own " +
             "canonical home, so this entry is not this daemon's to rewrite"
+    const val HEAD_COPY_MIGRATED: String =
+        "a splice head's copy of the canonical home's entry, which this daemon's materializer rewrote into " +
+            "that head at launch; it connects to the same shared process the canonical entry is hosted as"
+    const val HEAD_COPY_AS_DECLARED: String =
+        "a splice head's copy of the canonical home's entry, written into that head at launch and left as " +
+            "declared: "
+    const val HEAD_COPY_NOT_CANONICAL: String =
+        "in a splice head's materialized .claude.json but not among the canonical home's servers, the only " +
+            "ones hosting reads: added in that head after its launch, or left from an earlier canonical file"
     const val RACE: String =
         "read on a separate pass over the same file that disagreed with the plan just computed — most likely an " +
             "operator edit mid-census; recompute on the next call"

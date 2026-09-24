@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.daemonclient.MgmtKeyRead
 import splice.terminal.ConsolePresence
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 
 private const val KEY = "0123456789abcdef0123456789abcdef"
 
@@ -36,5 +38,21 @@ class DashboardKeyLineTest {
 
         assertTrue(piped.keyLine(MgmtKeyRead.Unreadable("permission denied")).orEmpty().contains("unreadable"))
         assertNull(piped.keyLine(MgmtKeyRead.Absent))
+    }
+
+    // 2026-09-24: the dashboard opens unlocked. The key reaches the browser through a redirect page
+    // the operator alone can read, in the address's fragment (which never reaches the daemon), so no
+    // HTTP answer and no argv ever carries it.
+    @Test
+    fun `the launch page hands the key over in the fragment, and only its owner can read it`() {
+        val dir = Files.createTempDirectory("dashboard-launch")
+
+        val page = DashboardCommand(ConsolePresence { false }).launchPage(dir, "http://127.0.0.1:3096", KEY)
+
+        assertEquals(dir.resolve(LAUNCH_PAGE), page)
+        val html = Files.readString(page)
+        assertTrue(html.contains("content=\"0;url=http://127.0.0.1:3096/#k=$KEY\""), html)
+        assertTrue(html.contains("<a href=\"http://127.0.0.1:3096/#k=$KEY\">"), html)
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(page))
     }
 }

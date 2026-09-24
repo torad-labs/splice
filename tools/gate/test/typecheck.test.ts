@@ -114,8 +114,10 @@ describe("typecheck wall", () => {
     }
   });
 
+  // Every program's tsc over the whole tree: 4.2 s of CPU and 7.9 s of wall at load 56 (2026-09-24),
+  // past bun's 5 s default, so the budget is stated rather than inherited.
   test("this repository: every tracked .ts is covered and no file is above its baseline", () => {
     const r = wall(layout().repoRoot);
     expect(r.problems).toEqual([]);
-  });
+  }, 60_000);
 });

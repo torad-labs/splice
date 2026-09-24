@@ -1,7 +1,7 @@
 // Two jobs in one slice: the management-key gate (initSession/unlock, the shell calls these) and
 // the Claude Code session registry with the message edges between its sessions (the Sessions page
 // calls those).
-import { bindUnauthorized, getStoredKey, request, storeKey } from '@shared/api';
+import { bindUnauthorized, currentKey, request, storeKey } from '@shared/api';
 import { poll } from '@shared/lib';
 import { boardEdgesStore, sessionEdgesStore, sessionRegistryStore, sessionStore } from '../model/store';
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionsPayload } from '../model/types';
@@ -13,7 +13,7 @@ function messageOf(err: unknown): string {
 /** Wire the 401 signal from the mgmt client into session state (app mount). */
 export function initSession(): void {
   bindUnauthorized(() => sessionStore.setState({ locked: true }));
-  sessionStore.setState({ hasKey: Boolean(getStoredKey()), locked: !getStoredKey() });
+  sessionStore.setState({ hasKey: Boolean(currentKey()), locked: !currentKey() });
 }
 
 /** Store the pasted management key and unlock; pollers retry on their next tick. */

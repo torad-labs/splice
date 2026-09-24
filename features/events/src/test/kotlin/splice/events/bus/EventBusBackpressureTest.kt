@@ -9,6 +9,7 @@
 // subscriber which IS draining loses nothing.
 package splice.events.bus
 
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -70,6 +71,7 @@ class EventBusBackpressureTest {
     }
 
     @Test
+    @OptIn(DelicateCoroutinesApi::class) // isClosedForReceive: the closed state IS the assertion
     fun `unsubscribing stops delivery and releases the subscriber`() {
         val bus = EventBus(TEST_BACKLOG)
         val subscription = bus.subscribe()

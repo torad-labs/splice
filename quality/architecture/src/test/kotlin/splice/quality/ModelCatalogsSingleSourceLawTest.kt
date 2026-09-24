@@ -255,7 +255,7 @@ internal object ModelRosters {
             val parts = match.groupValues[2].trim().split(".")
             val name = parts.getOrNull(1)
             val ofProviders = parts[0] == "providers" && name != null
-            if (!ofProviders || name == null) {
+            if (!ofProviders) {
                 provider = null
             } else if (parts.size == 2) {
                 provider = name

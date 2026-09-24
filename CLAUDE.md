@@ -16,9 +16,13 @@ jar the seat did not build and verify itself.
 
 The procedure, every time, in this order:
 
-1. Clean export of the exact sha, never the dirty worktree:
-   `git archive <sha> | tar -x -C <scratch>/export-<sha>`. The export exists to BUILD the jar from a
-   tree with no dirty edits; it cannot run the ladder (no `.git`, no `node_modules`).
+1. Clean build tree of the exact sha, never the dirty worktree:
+   `git worktree add --detach <scratch>/export-<sha> <sha>`, then confirm `git status` there is
+   empty before building. Not `git archive | tar`: an archive has no `.git`, and `bun tools/gate
+   slot` finds the repository by walking UP to the first `.git` (tools/gate/src/lib/repo.ts), so an
+   archive extracted inside a checkout silently builds THAT checkout instead (caught 2026-09-23: a
+   jar built from the main checkout that way). A detached worktree is its own root. It exists to
+   BUILD the jar; remove it with `git worktree remove` after the install.
 2. Gate of record is CI's `gate` job — `npm run gate` = `bun tools/gate run`, the WHOLE ladder —
    passing on the EXACT sha being landed and installed: `gh run view <run> --json
    headSha,conclusion` names that sha and `success`, or `gh pr checks <pr>` shows `gate pass` with

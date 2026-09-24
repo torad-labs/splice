@@ -26,6 +26,7 @@ import {
 import type { AccountRow, AccountWindow } from '../src/entities/account';
 import { LOGIN_PENDING_EMPTY, IDLE, canStart, next, stepMessage } from '../src/features/account-login/model';
 import { AccountStrip, windowFieldLabel } from '../src/widgets/account-strip';
+import { refusalOf } from '../src/features/account-login';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from '../src/pages/accounts/model';
 import { dispositions } from '../src/pages/accounts/coverage';
 import { Empty } from '../src/shared/ui';
@@ -466,5 +467,17 @@ describe('the coverage manifest', () => {
     expect(byName.get('/api/accounts')).toBe('read-only');
     expect(byName.get('/api/auth')).toBe('read-only');
     expect(byName.get('/api/auth/{head}/switch')).toBe('editable');
+  });
+});
+
+describe('an account action that answered but did not happen says why', () => {
+  test('the daemon reason is read from a refresh, a switch and an edit, and a success is null', () => {
+    // Walkthrough S6: every action answered with nothing, so a refused one read as done.
+    expect(refusalOf({ ok: false, note: 'refresh token revoked' })).toBe('refresh token revoked');
+    expect(refusalOf({ action: 'switch', result: { ok: false, error: "unknown account label 'x'" } })).toBe("unknown account label 'x'");
+    expect(refusalOf({ ok: false })).toBe('the daemon refused it');
+    expect(refusalOf({ ok: true })).toBeNull();
+    expect(refusalOf({ action: 'switch', result: { ok: true } })).toBeNull();
+    expect(refusalOf(undefined)).toBeNull();
   });
 });

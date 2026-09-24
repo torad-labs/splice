@@ -15,7 +15,7 @@ import { poll } from '@shared/lib';
 import { Copy } from '@shared/controls';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
 import type { LoginEvent } from './model';
-import { NOT_REPORTED } from '@entities/account';
+import { NOT_REPORTED, fetchAccounts } from '@entities/account';
 import { familyName } from '@entities/heads';
 import { S } from './strings';
 import './account-login.css';
@@ -144,6 +144,18 @@ export function AccountLogin({ head }: { head: string }) {
   );
 }
 
+/** The daemon's own reason when an action answered but did not happen: a refresh reports
+ *  `{ ok: false, note }` (AuthStatusRoutes' honesty contract), a switch or an edit `{ ok: false,
+ *  error }` inside the action's result. Null when it happened. */
+export function refusalOf(outcome: unknown): string | null {
+  if (outcome === null || typeof outcome !== 'object') return null;
+  const body = 'result' in outcome && outcome.result !== null && typeof outcome.result === 'object' ? outcome.result : outcome;
+  if (!('ok' in body) || body.ok !== false) return null;
+  const reason = ('error' in body && typeof body.error === 'string' ? body.error : null)
+    ?? ('note' in body && typeof body.note === 'string' ? body.note : null);
+  return reason ?? 'the daemon refused it';
+}
+
 /**
  * Everything that can be done TO one account. Each action is addressed the way its route is: a
  * switch and a refresh name a HEAD, because selection is per head and several heads can ride the
@@ -156,12 +168,27 @@ export function AccountActions({ kind, label, heads }: {
 }) {
   const [nextLabel, setNextLabel] = useState(label);
   const [armed, setArmed] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; failed: boolean } | null>(null);
 
-  const run = (work: Promise<unknown>) => {
+  // Every action says what it did, and the accounts are read again at once: a switch used to answer
+  // with nothing, and the rack showed the pin only on the next 15 s poll (walkthrough S6). A route
+  // this daemon does not serve resolves to a pending marker, which is not a success.
+  const run = (work: Promise<unknown>, done: string | null = null) => {
     work.then(
-      () => setNote(null),
-      (err: unknown) => setNote(err instanceof Error ? err.message : String(err)),
+      (outcome) => {
+        if (outcome !== null && typeof outcome === 'object' && 'pending' in outcome) {
+          setNote({ text: 'this splice version cannot do that', failed: true });
+          return;
+        }
+        const refused = refusalOf(outcome);
+        if (refused !== null) {
+          setNote({ text: refused, failed: true });
+          return;
+        }
+        setNote(done === null ? null : { text: done, failed: false });
+        void fetchAccounts();
+      },
+      (err: unknown) => setNote({ text: err instanceof Error ? err.message : String(err), failed: true }),
     );
   };
 
@@ -174,10 +201,14 @@ export function AccountActions({ kind, label, heads }: {
 
       {heads.map((head) => (
         <div className="myx-acct-row" key={head}>
-          <button type="button" className="myx-acct-btn" onClick={() => run(switchAccount(head, label))}>
+          <button
+            type="button"
+            className="myx-acct-btn"
+            onClick={() => run(switchAccount(head, label), `${head} uses ${label} from its next turn; a turn already running keeps its account`)}
+          >
             {`${S.switch} ${head}`}
           </button>
-          <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head))}>
+          <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head), `${head}: login refreshed`)}>
             {`${S.refresh} ${head}`}
           </button>
         </div>
@@ -195,7 +226,7 @@ export function AccountActions({ kind, label, heads }: {
           type="button"
           className="myx-acct-btn"
           disabled={nextLabel.trim() === '' || nextLabel === label}
-          onClick={() => run(relabelAccount(kind, label, nextLabel.trim()))}
+          onClick={() => run(relabelAccount(kind, label, nextLabel.trim()), `renamed to ${nextLabel.trim()}`)}
         >
           {S.relabel}
         </button>
@@ -209,7 +240,7 @@ export function AccountActions({ kind, label, heads }: {
               className="myx-acct-btn myx-acct-btn-armed"
               onClick={() => {
                 setArmed(false);
-                run(removeAccount(kind, label));
+                run(removeAccount(kind, label), `${label} removed`);
               }}
             >
               {`${S.remove} ${label}`}
@@ -225,7 +256,7 @@ export function AccountActions({ kind, label, heads }: {
         )}
       </div>
 
-      {note === null ? null : <p className="myx-acct-note" role="alert">{note}</p>}
+      {note === null ? null : <p className="myx-acct-note" role={note.failed ? 'alert' : 'status'}>{note.text}</p>}
     </div>
   );
 }

@@ -14,17 +14,13 @@
 // different states and the console must be able to show the gap.
 import type { PendingRoute } from '@shared/api';
 
+/** POST /api/auth/{head}/switch, as SwitchRoute.kt answers it: `ok`, and the reason when not. The
+ *  console typed a richer payload (head, to, from, reason, time) that the daemon never sent. The
+ *  pin is taken from the NEXT turn: a turn already streaming keeps its account (FEATURES 2.6), so
+ *  the console says "next turn", never "switched". */
 export interface SwitchPayload {
   ok: boolean;
-  head: string;
-  /** The account the NEXT turn takes. Selection is per turn and sticky per session and never
-   *  happens inside a turn (FEATURES 2.6), so this is a pin for what comes next — a turn already
-   *  streaming is not moved, and the console must not claim to have moved it. */
-  to: string;
-  /** The account in force before the pin, or null when the head had not selected yet. */
-  from: string | null;
-  reason: string;
-  at_epoch_millis: number;
+  error?: string;
 }
 
 export const LOGIN_FLOWS = ['device', 'browser'] as const;

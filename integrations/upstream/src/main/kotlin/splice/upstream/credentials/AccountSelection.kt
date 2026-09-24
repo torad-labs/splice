@@ -148,6 +148,9 @@ public data class AccountView(
      *  construction for why the projection carries it now. */
     val fiveHourWindowSeconds: Long? = null,
     val sevenDayWindowSeconds: Long? = null,
+    /** When this account's quota windows were observed, epoch SECONDS (the reset fields' unit), or
+     *  null when its tracker names no observation. */
+    val quotaObservedAtEpochSeconds: Long? = null,
 )
 
 /** One session's safe pool projection. */

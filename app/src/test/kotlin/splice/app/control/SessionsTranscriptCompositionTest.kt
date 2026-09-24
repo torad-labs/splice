@@ -18,6 +18,7 @@ import splice.client.transcript.TranscriptReader
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -39,7 +40,7 @@ class SessionsTranscriptCompositionTest {
         Files.writeString(dir.resolve("12.json"), """{"pid":12,"sessionId":"$HEADLESS","updatedAt":$TRANSCRIPT_AT}""")
         return SessionRegistry(
             sessionsDir = dir,
-            headOf = { pid -> "codex".takeIf { pid == 11L } },
+            routeOf = { pid -> if (pid == 11L) SessionRoute.Head("codex") else SessionRoute.Unknown },
             pidAlive = { true },
             clock = { TRANSCRIPT_AT },
         )

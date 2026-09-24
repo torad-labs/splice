@@ -3,8 +3,11 @@
 // head through ANTHROPIC_BASE_URL. Both are read from /proc/<pid>/environ, which only this user's own
 // processes expose. The file is STREAMED entry by entry: bytes are kept only while the entry can
 // still be one of those two keys, so a foreign entry (a credential) is skipped to its NUL byte by
-// byte and is never buffered and never decoded. A process splice did not launch is reported under
-// "unknown head" whatever its base URL says.
+// byte and is never buffered and never decoded. The reading is a SessionRoute, decided here because
+// only here is "the environment was read" known apart from "it could not be": a readable environment
+// without SPLICE=1 is DIRECT whatever its base URL says, a splice launch whose local port a head owns
+// is that HEAD, and everything else — unreadable, empty, or a splice launch no head can be found for —
+// is UNKNOWN.
 package splice.sessions.registry
 
 import splice.core.util.Cancellables
@@ -23,19 +26,23 @@ public class ProcessEnvironment(private val procRoot: Path = Paths.get("/proc"))
     private val localHead = Regex("^https?://127\\.0\\.0\\.1:(\\d+)")
     private val wanted = listOf("$SPLICE_MARKER=", "$BASE_URL=").map { it.toByteArray() }
 
-    /** The head port when splice's launcher started this process against a local head, else null. */
-    public fun spliceHeadPort(pid: Long): Int? {
-        val markers = markers(pid)
-        if (markers[SPLICE_MARKER] != "1") return null
-        return markers[BASE_URL]?.let { localHead.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+    /** How [pid] reaches its provider; [headOf] names the head listening on the local port it read. */
+    public fun route(pid: Long, headOf: HeadOfPort): SessionRoute {
+        val markers = markers(pid) ?: return SessionRoute.Unknown
+        if (markers[SPLICE_MARKER] != "1") return SessionRoute.Direct
+        val port = markers[BASE_URL]?.let { localHead.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        return port?.let(headOf::invoke)?.let(SessionRoute::Head) ?: SessionRoute.Unknown
     }
 
-    private fun markers(pid: Long): Map<String, String> {
+    /** The wanted entries, or null when the environment was not READ: the file could not be opened or
+     *  failed mid-stream (the entries seen so far are not the environment), or it held no byte at all
+     *  (the kernel's answer for a zombie), which is no evidence the process lacks SPLICE=1. */
+    private fun markers(pid: Long): Map<String, String>? {
         val scan = EnvironScan(wanted)
-        Cancellables.runCatchingCancellable {
+        val read = Cancellables.runCatchingCancellable {
             Files.newInputStream(procRoot.resolve(pid.toString()).resolve("environ")).use(scan::read)
         }
-        return scan.found
+        return scan.found.takeIf { read.isSuccess && scan.bytes > 0 }
     }
 }
 
@@ -49,10 +56,15 @@ private class EnvironScan(private val wanted: List<ByteArray>) {
     /** The wanted entries seen so far, key to value. */
     val found: MutableMap<String, String> = mutableMapOf()
 
+    /** Every byte the environment held, wanted or not: zero is an environment that was not there. */
+    var bytes: Long = 0L
+        private set
+
     fun read(input: InputStream) {
         val chunk = ByteArray(CHUNK)
         var n = input.read(chunk)
         while (n >= 0) {
+            bytes += n
             for (i in 0 until n) byte(chunk[i])
             n = input.read(chunk)
         }

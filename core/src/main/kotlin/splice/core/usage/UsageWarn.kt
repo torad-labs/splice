@@ -5,14 +5,21 @@
 package splice.core.usage
 
 import splice.core.config.Knob
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 public data class RateLimitState(
     val limitTokens: Long?,
     val remainingTokens: Long?,
     val resetTokens: String?,
+    /** Epoch millis of the round whose headers these are; null when the file predates the field. */
     val updatedAt: Long? = null,
-)
+) {
+    /** [updatedAt] in epoch SECONDS, the unit every quota `resets_at` carries, so the control plane
+     *  prints one observation encoding. Null when nothing names the observation. */
+    public val observedAtEpochSeconds: Long?
+        get() = updatedAt?.takeIf { it > 0L }?.let(TimeUnit.MILLISECONDS::toSeconds)
+}
 
 public data class UsageWarn(
     val level: String,

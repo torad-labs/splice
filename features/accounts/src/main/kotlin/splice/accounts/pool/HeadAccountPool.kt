@@ -54,11 +54,12 @@ public data class HeadAccountPoolView(
      *  instead of rendering empty bars. */
     public fun selectedQuota(): QuotaView? {
         val account = selectedAccount() ?: return null
+        val observed = account.quotaObservedAtEpochSeconds
         val fiveHour = account.fiveHourUsedPercent?.let { used ->
-            QuotaWindowView(used.toInt(), account.fiveHourResetEpochSeconds)
+            QuotaWindowView(used.toInt(), account.fiveHourResetEpochSeconds, observed)
         }
         val sevenDay = account.sevenDayUsedPercent?.let { used ->
-            QuotaWindowView(used.toInt(), account.sevenDayResetEpochSeconds)
+            QuotaWindowView(used.toInt(), account.sevenDayResetEpochSeconds, observed)
         }
         return if (fiveHour == null && sevenDay == null) null else QuotaView(fiveHour, sevenDay, account.plan)
     }
@@ -80,6 +81,8 @@ public data class HeadAccountView(
     /** V4-132: the window's own reported length in seconds (see [splice.upstream.credentials.AccountView]). */
     val fiveHourWindowSeconds: Long? = null,
     val sevenDayWindowSeconds: Long? = null,
+    /** When this account's windows were observed, epoch SECONDS (the reset fields' unit), or null. */
+    val quotaObservedAtEpochSeconds: Long? = null,
 )
 
 public data class HeadAccountSwitchView(

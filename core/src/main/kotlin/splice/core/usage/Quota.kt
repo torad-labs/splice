@@ -6,6 +6,8 @@
 // Codex plan calls its weekly window "primary").
 package splice.core.usage
 
+import java.util.concurrent.TimeUnit
+
 /** One rolling window as the provider reports it: how much is used, when it resets, how long it is. */
 public data class QuotaWindow(
     val usedPercent: Double,
@@ -22,6 +24,12 @@ public data class QuotaSnapshot(
     val updatedAt: Long = 0L,
 ) {
     public val isEmpty: Boolean get() = fiveHour == null && sevenDay == null
+
+    /** When both windows were observed, in epoch SECONDS — the unit [QuotaWindow.resetsAt] carries,
+     *  so a surface can print the pair side by side. Null when the snapshot names no observation: 0
+     *  is what a file written before `updated_at` decodes to, and it would read as 1970. */
+    public val observedAtEpochSeconds: Long?
+        get() = updatedAt.takeIf { it > 0L }?.let(TimeUnit.MILLISECONDS::toSeconds)
 }
 
 /** Sorts a provider's windows into the two slots by length: anything up to six hours is the

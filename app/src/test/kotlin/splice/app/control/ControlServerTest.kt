@@ -312,6 +312,8 @@ class ControlServerTest {
         assertEquals("false", codex["clamped"]?.jsonPrimitive?.content, "the files reach past the window")
         assertEquals("0.5", codex["failure_shares"]!!.jsonObject["error:upstream-failed"]?.jsonPrimitive?.content)
         assertEquals("100", codex["time_before_first_byte_ms"]!!.jsonObject["p50"]?.jsonPrimitive?.content)
+        val newest = (perfNow - HOUR_MS / 2).toString()
+        assertEquals(newest, codex["last_ts"]?.jsonPrimitive?.content, "the head's newest row, the turns' own ts")
         val hour = json.parseToJsonElement(authed("/api/perf/summary?window=1h")).jsonObject
         assertEquals("1", hour["heads"]!!.jsonArray.first().jsonObject["count"]?.jsonPrimitive?.content)
         val absent = json.parseToJsonElement(authed("/api/perf/summary")).jsonObject

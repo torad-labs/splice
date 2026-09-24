@@ -76,6 +76,7 @@ internal class HeadAccountPools {
                 authExclusionReason = account.authExclusionReason,
                 fiveHourWindowSeconds = account.fiveHourWindowSeconds,
                 sevenDayWindowSeconds = account.sevenDayWindowSeconds,
+                quotaObservedAtEpochSeconds = account.quotaObservedAtEpochSeconds,
             )
         },
         lastSwitch = view.lastSwitch?.let { switch ->

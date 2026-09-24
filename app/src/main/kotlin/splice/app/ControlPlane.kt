@@ -43,8 +43,8 @@ import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.oauth.codex.CodexRefresh
 import splice.sessions.prompt.SlotInstructions
-import splice.sessions.registry.HeadOfPid
 import splice.sessions.registry.ProcessEnvironment
+import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
@@ -180,7 +180,7 @@ internal class ControlPlane(
             mcpHost = mcpHost,
             sessions = SessionRegistry(
                 home.resolve(".claude").resolve("sessions"),
-                HeadOfPid { pid -> environment.spliceHeadPort(pid)?.let { port -> headOfPort(heads, port) } },
+                RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
             ),
             clientVersions = clientVersions,
         )

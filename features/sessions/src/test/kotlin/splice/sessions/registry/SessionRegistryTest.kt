@@ -33,7 +33,7 @@ class SessionRegistryTest {
         identity: PidIdentity = identity(),
     ) = SessionRegistry(
         sessionsDir = dir,
-        headOf = { pid -> if (pid == 11L) "claudex" else null },
+        routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Direct },
         pidAlive = { it in alive },
         pidStartedAt = { started[it] },
         clock = { now },
@@ -97,9 +97,14 @@ class SessionRegistryTest {
     fun `the head join applies to sessions that still exist and reads unknown otherwise`(@TempDir dir: Path) {
         write(dir, 11, """{"pid":11,"updatedAt":$now}""")
         write(dir, 12, """{"pid":12,"updatedAt":$now}""")
+        write(dir, 13, """{"pid":13,"updatedAt":$now}""")
         val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.pid }
         assertEquals("claudex", rows.getValue(11L).head)
+        assertEquals(SessionRoute.Head("claudex"), rows.getValue(11L).route)
         assertNull(rows.getValue(12L).head)
+        assertEquals(SessionRoute.Direct, rows.getValue(12L).route, "the reading is carried, not re-derived")
+        assertEquals(SessionRoute.Unknown, rows.getValue(13L).route, "a gone pid's environment is never read")
+        assertNull(rows.getValue(13L).head)
     }
 
     @Test
@@ -125,7 +130,7 @@ class SessionRegistryTest {
         write(dir, 0, """{"pid":0,"name":"zero","updatedAt":$now}""")
         write(dir, 41, """{"pid":-5,"name":"neg","updatedAt":$now}""")
         write(dir, 42, """{"pid":42,"name":"real","updatedAt":$now}""")
-        val rows = SessionRegistry(sessionsDir = dir, headOf = { null }, clock = { now }).read()
+        val rows = SessionRegistry(sessionsDir = dir, routeOf = { SessionRoute.Unknown }, clock = { now }).read()
         assertEquals(3, rows.size, "the default liveness probe tolerates every row")
         rows.filter { (it.pid ?: 0L) <= 0L }.forEach {
             assertEquals(SessionAvailability.GONE, it.availability, it.name)

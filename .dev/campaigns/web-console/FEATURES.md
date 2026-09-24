@@ -50,9 +50,9 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | `POST /api/daemon/shutdown` | stop the daemon | none |
 | `GET /api/config?head=` | effective config plus every layer, restart-required keys | config page |
 | `PATCH /api/config` | hot-apply runtime knobs, persist to state file | config page |
-| `GET /api/usage` | per head: 5h output tokens, ratelimit headers, quota windows (plan, 5h, 7d), warn level | fleet meter |
+| `GET /api/usage` | per head: 5h output tokens, ratelimit headers, quota windows (plan, 5h, 7d), warn level; every `usage.quota.<window>` and `usage.ratelimit` carries `observed_at` (epoch seconds, the `resets_at` encoding, null when unrecorded; added 2026-09-24) | fleet meter |
 | `GET /api/perf?tail=` | per head: p50, p95, max per perf field | none |
-| `GET /api/perf/summary?window=1h,24h,7d` | per head: windowed summary (v0.4.0) | none |
+| `GET /api/perf/summary?window=1h,24h,7d` | per head: windowed summary (v0.4.0), plus `last_ts`: the `ts` of the head's newest perf row whatever the window (epoch ms, the `/api/perf/turns` row encoding, null when none; added 2026-09-24) | none |
 | `GET /api/economics` | per head: hourly buckets of tokens, bytes, tool partition, rate limits (v0.4.0) | burn page |
 | `GET /api/auth` | per head: kind, present, masked account, last refresh, plus the account pool (v0.4.0) | auth cards, pool not shown |
 | `POST /api/auth/{head}/{refresh,login}` | refresh a token; login is "manual" for OAuth kinds | refresh button |
@@ -194,7 +194,9 @@ Source: `control/api/AuthRoutes.kt` on `feat/v0.4.0`.
 Source: `control/api/SessionsRoutes.kt`, `core/sessions/SessionRegistry`. Rows from
 `~/.claude/sessions/<pid>.json` joined to the head that launched them: `pid`, `session_id`,
 `name`, `kind`, `version`, `cwd`, `status`, `status_updated_at`, `started_at`, `updated_at`,
-`address`, `head` or "unknown head", `availability` (live, stale, gone). Headless `claude -p`
+`address`, `head` or "unknown head", `route` (`head`; `direct` when the environment was read and
+has no `SPLICE=1`; `unknown` when it could not be read or `SPLICE=1` names a port no head owns;
+added 2026-09-24), `availability` (live, stale, gone). Headless `claude -p`
 runs never register and the payload says so. Cross-head resume (`<head> -r <id>`) is a v0.4.0
 feature the console can explain but must not perform (§12 of the v0.4.0 list).
 

@@ -73,6 +73,18 @@ class QuotaHeadersTest {
         assertNull(codec.decode("{}"), "no windows is no snapshot")
     }
 
+    // /api/usage `observed_at`: the recorded observation in the unit `resets_at` uses, and no
+    // observation where the source names none — 0 is what a pre-`updated_at` file decodes to.
+    @Test
+    fun `the observation reads in epoch seconds, and a missing one is null, never 1970`() {
+        val observed = QuotaSnapshot(QuotaWindow(14.0, 1L, 18_000L), null, "pro", now + 999)
+        assertEquals(now / 1000, observed.observedAtEpochSeconds, "millis truncated to the reset's unit")
+        val legacy = QuotaJson().decode("""{"five_hour":{"used_percent":14.0}}""")!!
+        assertNull(legacy.observedAtEpochSeconds, "a file written before updated_at")
+        assertEquals(now / 1000, RateLimitState(1000, 100, "6m0s", now).observedAtEpochSeconds)
+        assertNull(RateLimitState(1000, 100, "6m0s").observedAtEpochSeconds, "a ratelimit file without updated_at")
+    }
+
     // ---- V4-51: the refusal variant, and the byte-identity that makes adding it safe -------------
 
     @Test

@@ -107,23 +107,29 @@ export function subjectOf(check: DoctorCheck): string {
 /**
  * THE SAME FINDING ONCE, NOT ONCE PER HEAD (console review, 2026-09-24). The live report carried
  * eleven `configuration/system-prompt:<head>` warnings with one identical fix, and they filled the
- * first screen of the rack. Checks collapse when they share a status, the id up to its colon, and
- * the fix word for word; a check whose fix names its head (`splice logs --head claudex`) stays its
- * own row, because its remedy differs. Order is the first member's.
+ * first screen of the rack. Checks collapse when they share a status, the id up to its colon (the
+ * whole id when it has none), and the fix word for word; a check whose fix names its head
+ * (`splice logs --head claudex`) stays its own row, because its remedy differs. Order is the first
+ * member's. The row's key is that grouping, so two rows never share one.
  */
 export function collapseChecks(checks: readonly DoctorCheck[]): CheckRow[] {
-  const rows = new Map<string, CheckRow>();
+  // The family is the id up to its colon, or the whole id when it has none. A colon-less id is a
+  // family too: the daemon sends one `installation/wrapper` per launcher (eleven live), and keying
+  // those by id alone overwrote ten of them, so the rack printed 1 row for 11 checks and the
+  // attention count disagreed with the rows under it (splice-lead's walkthrough, B1).
+  const rows = new Map<string, CheckRow & { family: string }>();
   for (const check of checks) {
     const colon = check.id.indexOf(':');
     const fix = checkFix(check);
-    const family = colon === -1 ? null : `${check.status}|${check.id.slice(0, colon)}|${fix ?? ''}`;
-    const row = family === null ? undefined : rows.get(family);
-    if (row === undefined) rows.set(family ?? `id|${check.id}`, { key: check.id, status: check.status, label: check.id, fix, members: [check] });
+    const family = colon === -1 ? check.id : check.id.slice(0, colon);
+    const key = `${check.status}|${family}|${fix ?? ''}`;
+    const row = rows.get(key);
+    if (row === undefined) rows.set(key, { key, family, status: check.status, label: check.id, fix, members: [check] });
     else row.members.push(check);
   }
-  return [...rows.values()].map((row) => row.members.length === 1
+  return [...rows.values()].map(({ family, ...row }) => row.members.length === 1
     ? row
-    : { ...row, label: `${row.key.slice(0, row.key.indexOf(':'))} (${row.members.length})` });
+    : { ...row, label: `${family} (${row.members.length})` });
 }
 
 /** The head a `splice logs --head <head>` remedy names, so the page can open that log itself. */

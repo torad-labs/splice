@@ -103,10 +103,19 @@ function OpenedCheck({ row }: { row: CheckRow }) {
         <HolderEdge state={statusEdge(row.status)} label={row.status} />
         <span className="myx-doc-note">{row.label}</span>
       </div>
-      {row.members.length > 1 ? (
-        <p className="myx-doc-note">{`on ${row.members.map(subjectOf).join(', ')}`}</p>
-      ) : null}
-      {first === undefined ? null : <p className="myx-doc-note">{checkFinding(first)}</p>}
+      {/* A family named by its ids' subjects (`configuration/system-prompt:<head>`) says which heads
+          and one finding; a family whose ids carry no subject (`installation/wrapper`, one per
+          launcher) differs only in its findings, so it lists each one. */}
+      {row.members.length > 1 && row.members.every((member) => member.id.includes(':')) ? (
+        <>
+          <p className="myx-doc-note">{`on ${row.members.map(subjectOf).join(', ')}`}</p>
+          {first === undefined ? null : <p className="myx-doc-note">{checkFinding(first)}</p>}
+        </>
+      ) : row.members.length > 1 ? (
+        <ul className="myx-doc-members">
+          {row.members.map((member, index) => <li key={index} className="myx-doc-note">{checkFinding(member)}</li>)}
+        </ul>
+      ) : first === undefined ? null : <p className="myx-doc-note">{checkFinding(first)}</p>}
       {row.fix === null ? (
         <p className="myx-doc-note">{S.noFix}</p>
       ) : (
@@ -248,7 +257,11 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
 
   const checks = shown?.checks ?? [];
   const rows = collapseChecks(groupChecks(checks, active).flatMap((group) => group.checks));
-  const opened = rows.find((row) => row.key === openKey) ?? null;
+  // The open key names a row by its grouping key, or by the id of a check inside it: a row's key is
+  // `status|family|fix`, which nothing outside this page knows, while a check id is what a report,
+  // a test or a link carries.
+  const opened = openKey === null ? null
+    : rows.find((row) => row.key === openKey) ?? rows.find((row) => row.members.some((member) => member.id === openKey)) ?? null;
 
   return (
     <div
@@ -303,7 +316,7 @@ export function DoctorBoard({ report, pending = null, error = null, upgrade = nu
                   <CheckStrip
                     key={row.key}
                     row={row}
-                    selected={openKey === row.key}
+                    selected={opened?.key === row.key}
                     onOpen={() => onToggle(row.key)}
                   />
                 ))}

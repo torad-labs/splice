@@ -18,6 +18,7 @@ import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
 import { MCP_HOST_KNOBS, serverRows, upText } from '../src/entities/mcp';
 import type { McpPayload } from '../src/entities/mcp';
 import { budgetFor, budgetText, NO_BUDGET } from '../src/entities/budget';
+import { parseUsd } from '../src/features/budgets';
 import { canTest, desktopText, webhookText } from '../src/entities/alert';
 import type { AlertSettings } from '../src/entities/alert';
 import { CheckStrip } from '../src/pages/doctor';
@@ -147,7 +148,24 @@ describe('every failing check carries its fix', () => {
     expect(rows.map((row) => [row.label, row.members.length])).toEqual([
       ['configuration/system-prompt (2)', 2], ['configuration/topology', 1],
     ]);
-    expect(rows[0]?.key).toBe('configuration/system-prompt:claudex');
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+  });
+
+  test('checks sharing an id with no colon are one row that keeps every member', () => {
+    // Live 2026-09-24: eleven `installation/wrapper` checks, one per launcher. Keyed by id alone,
+    // ten were overwritten and the rack showed 1 row for 11 checks (walkthrough B1).
+    const checks = [
+      check('installation/wrapper', 'fail', `'claudex' missing${SEP}splice install`),
+      check('installation/wrapper', 'fail', `'claude-grok' missing${SEP}splice install`),
+      check('installation/wrapper', 'fail', `'claude-kimi' missing${SEP}splice install`),
+      check('installation/wrapper', 'ok', `'splice' present`),
+    ];
+    const rows = collapseChecks(checks);
+    expect(rows.map((row) => [row.label, row.members.length])).toEqual([
+      ['installation/wrapper (3)', 3], ['installation/wrapper', 1],
+    ]);
+    expect(rows.reduce((total, row) => total + row.members.length, 0)).toBe(checks.length);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
   });
 
   test('checks whose fixes differ stay their own rows', () => {
@@ -374,6 +392,18 @@ describe('budgets and alerts', () => {
     expect(budgetText(null)).toBe(NO_BUDGET);
     expect(budgetText({ head: 'a', daily_usd: null, action: 'warn' })).toBe(NO_BUDGET);
     expect(budgetText({ head: 'a', daily_usd: 4, action: 'warn' })).toBe('$4.00/day');
+  });
+
+  test('only an empty box clears a budget; a typo is refused and saves nothing', () => {
+    expect(parseUsd('')).toEqual({ ok: true, value: null });
+    expect(parseUsd('  ')).toEqual({ ok: true, value: null });
+    expect(parseUsd('$5')).toEqual({ ok: true, value: 5 });
+    expect(parseUsd('5.50')).toEqual({ ok: true, value: 5.5 });
+    expect(parseUsd('0')).toEqual({ ok: true, value: 0 });
+    // Walkthrough B2: `5$/day` read as "no budget" and deleted a $5 budget.
+    expect(parseUsd('5$/day')).toEqual({ ok: false });
+    expect(parseUsd('-3')).toEqual({ ok: false });
+    expect(parseUsd('$')).toEqual({ ok: false });
   });
 
   test('a head absent from the payload has no budget', () => {

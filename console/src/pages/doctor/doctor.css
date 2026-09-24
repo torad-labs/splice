@@ -157,6 +157,15 @@
   overflow-y: auto;
 }
 
+.myx-doc-members {
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 .myx-doc-note {
   margin: var(--space-0);
   font-family: var(--font-label);

@@ -17,7 +17,7 @@ import { useState } from 'react';
 import type { ConfigValue } from '@shared/api';
 import { parseConfigInput } from '@entities/config';
 import type { KnobDisposition, Provenance } from '@entities/config';
-import { Flag, Key } from '@shared/controls';
+import { Choice, Flag, Key } from '@shared/controls';
 import { HolderEdge } from '@shared/ui';
 import { KNOB_COPY, unitText } from './copy';
 import type { KnobCopy, KnobGroup } from './copy';
@@ -28,6 +28,13 @@ export { KNOB_COPY, readableBytes, readableMs, unitText } from './copy';
 export type { KnobCopy, KnobGroup, KnobUnit } from './copy';
 
 const GROUP_ORDER = Object.keys(GROUP_LABELS) as KnobGroup[];
+
+/** A picker's options: the daemon's values, plus the current one when it is outside them (a value
+ *  written into splice.toml by hand), so the row never shows a choice it does not hold. */
+export function choiceOptions(choices: readonly string[], current: string): { value: string; label: string }[] {
+  const values = choices.includes(current) ? choices : [...choices, current];
+  return values.map((value) => ({ value, label: value === '' ? S.modelDefault : value }));
+}
 /** Inside a group, knobs keep the order copy.ts lists them in: the one an operator reaches for
  *  first leads, and a knob with no copy goes last. */
 const KNOB_ORDER = new Map(Object.keys(KNOB_COPY).map((key, at) => [key, at]));
@@ -86,6 +93,14 @@ function Source({ provenance, hot }: { provenance: Provenance; hot: boolean }) {
 }
 
 /** A knob printed, not edited: the fleet's per-head detail and the MCP host limits. */
+/** A read-only value as the rest of the rack prints it: a switch's value as on or off, not the
+ *  `false` the payload carries. */
+function readoutText(value: ConfigValue): string {
+  if (value === null) return S.unset;
+  if (typeof value === 'boolean') return value ? S.on : S.off;
+  return String(value);
+}
+
 export function KnobReadout({ knob }: { knob: KnobDisposition }) {
   const copy = copyOf(knob.key);
   return (
@@ -96,7 +111,7 @@ export function KnobReadout({ knob }: { knob: KnobDisposition }) {
       </span>
       {copy.locked === true || copy.headOnly === true ? <p className="myx-knob-summary">{copy.summary}</p> : null}
       <span className="myx-knob-value">
-        <span className="myx-knob-figure">{knob.value === null ? S.unset : String(knob.value)}</span>
+        <span className="myx-knob-figure">{readoutText(knob.value)}</span>
         <ValueNote knobKey={knob.key} value={knob.value} />
       </span>
       <Source provenance={knob.provenance} hot={knob.hot} />
@@ -150,6 +165,17 @@ export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wordin
             ariaLabel={copy.label}
             disabled={busy === true}
             onChange={(next) => setDraft(String(next))}
+          />
+        ) : copy.choices !== undefined ? (
+          <Choice
+            id={`knob-${disposition.key}`}
+            className="myx-knob-choice"
+            label={copy.label}
+            value={shownValue}
+            options={choiceOptions(copy.choices, shownValue)}
+            onChange={setDraft}
+            w={16}
+            disabled={busy === true}
           />
         ) : (
           <input

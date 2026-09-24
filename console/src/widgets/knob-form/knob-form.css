@@ -161,3 +161,14 @@
 .myx-knob-readout .myx-knob-value {
   margin-top: 0;
 }
+
+/* A picker's own label would print the knob's name a second time under the row's name; it stays
+   in the accessibility tree (the combobox is labelled by it) and leaves the page. */
+.myx-knob-choice .myx-choice-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

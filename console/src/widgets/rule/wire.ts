@@ -12,7 +12,7 @@
 //
 // Each entity declares its OWN kinds next to its store (entities/<x>/model/live.ts); this module
 // only binds them to the refetch, and it is the table below - not a doc - that a test reads.
-import { subscribe } from '@entities/events';
+import { subscribe, subscribeReopen } from '@entities/events';
 // The kind vocabulary is imported from the BUS, not from shared/lib/live: a widget may not
 // deep-import into the shared slice (the boundaries entry-point rule allows only its barrel), and
 // the events slice already re-exports these types as its public surface.
@@ -57,9 +57,13 @@ let active: Array<() => void> | null = null;
  */
 export function wireLive(): () => void {
   if (active === null) {
-    active = LIVE_BINDINGS.flatMap((binding) =>
-      binding.kinds.map((kind) => subscribe(kind, () => void binding.refetch())),
-    );
+    active = [
+      ...LIVE_BINDINGS.flatMap((binding) =>
+        binding.kinds.map((kind) => subscribe(kind, () => void binding.refetch())),
+      ),
+      // A reopened stream missed every event sent while it was down: re-read each entity once.
+      subscribeReopen(() => LIVE_BINDINGS.forEach((binding) => void binding.refetch())),
+    ];
   }
   const mine = active;
   return () => {

@@ -13,6 +13,8 @@ export const S = {
   on: 'on',
   off: 'off',
   unset: 'not set',
+  /** A picker's "not set" option: the daemon fills it with each model's own default. */
+  modelDefault: 'model default',
   live: 'applies live',
   restart: 'restart to apply',
 } as const;

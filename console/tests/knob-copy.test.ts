@@ -16,7 +16,7 @@ import { globalValueOf, headOptions, shadowOfOverride } from '../src/entities/co
 import { withHeadOverride } from '../src/pages/settings/model';
 import type { ConfigPayload } from '../src/shared/api';
 import { KNOB_SOURCE } from '../src/shared/coverage/denominator';
-import { HEAD_WORDING, KnobForm, KnobRack, knobMatches } from '../src/widgets/knob-form';
+import { HEAD_WORDING, KnobForm, KnobRack, choiceOptions, knobMatches } from '../src/widgets/knob-form';
 import { KNOB_COPY, readableBytes, readableMs, unitText } from '../src/widgets/knob-form/copy';
 import { GROUP_LABELS, KNOB_LABELS } from '../src/widgets/knob-form/strings';
 
@@ -138,6 +138,28 @@ describe('the knob row', () => {
       const perHead = render(h(KnobForm, { disposition, pending: false, onSave: () => undefined, perHead: true }));
       expect(perHead, key).toMatch(/<input|role="switch"/);
     }
+  });
+
+  test('a knob with a closed set of values is a picker, not a text box', () => {
+    // effort, summary, showReasoning, toolSurface, quotaPoll and budgetDefaultAction were free text
+    // over a handful of words the daemon reads; a typo saved as a value the daemon then ignored.
+    for (const key of ['effort', 'summary', 'showReasoning', 'toolSurface', 'quotaPoll', 'budgetDefaultAction']) {
+      const html = render(h(KnobForm, { disposition: knob({ key, value: 'auto', defaultValue: 'auto' }), pending: false, onSave: () => undefined }));
+      expect(html, key).toContain('role="combobox"');
+      expect(html, key).not.toContain('class="myx-knob-input"');
+    }
+  });
+
+  test('a read-only switch prints on or off, not the payload\'s true or false', () => {
+    const html = render(h(KnobForm, { disposition: knob({ key: 'mirrorReasoning', value: false, defaultValue: false }), pending: false, onSave: () => undefined }));
+    expect(html).toContain('>off<');
+    expect(html).not.toContain('>false<');
+  });
+
+  test('a picker keeps a hand-written value it does not list, and names the unset one', () => {
+    expect(choiceOptions(['auto', 'off'], 'auto').map((o) => o.value)).toEqual(['auto', 'off']);
+    expect(choiceOptions(['auto', 'off'], 'sometimes').map((o) => o.value)).toEqual(['auto', 'off', 'sometimes']);
+    expect(choiceOptions(['', 'high'], '')[0]).toEqual({ value: '', label: 'model default' });
   });
 
   test('a value off its default says so and offers the way back', () => {

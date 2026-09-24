@@ -25,6 +25,10 @@ export interface KnobCopy {
   /** Set only in a head's [heads.KEY.overrides] (Knob.headOnly): the daemon refuses it in PATCH,
    *  so the global view prints it and a head's view, which writes that table, edits it. */
   headOnly?: true;
+  /** The values the daemon reads, when the set is closed: the row is a picker, not a text box.
+   *  `''` is "not set", which the daemon fills with its default. Each list is the daemon's own
+   *  vocabulary, cited beside it. */
+  choices?: readonly string[];
 }
 
 export const KNOB_COPY: Record<string, KnobCopy> = {
@@ -100,14 +104,20 @@ export const KNOB_COPY: Record<string, KnobCopy> = {
   // reasoning
   effort: {
     group: 'reasoning',
-    summary: "How hard reasoning models think when Claude Code does not say. Leave empty to use each model's own default.",
+    // EffortVocabulary RUNGS (DefaultEffortVocabulary.kt); unset leaves each model its own default.
+    choices: ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+    summary: "How hard reasoning models think when Claude Code does not say. model default leaves each model its own.",
   },
   summary: {
     group: 'reasoning',
+    // SUMMARY_CANONICAL (ResponsesEffort.kt).
+    choices: ['auto', 'concise', 'detailed', 'none'],
     summary: 'How much of its reasoning an OpenAI-style model sends back: auto, concise or detailed.',
   },
   showReasoning: {
     group: 'reasoning',
+    // ConfigCoercion.normalizeShowReasoning folds every spelling into these three.
+    choices: ['text', 'thinking', 'off'],
     summary: 'How reasoning shows in Claude Code: text, thinking (as thinking blocks) or off.',
   },
   replayReasoning: {
@@ -150,12 +160,16 @@ export const KNOB_COPY: Record<string, KnobCopy> = {
   },
   toolSurface: {
     group: 'models',
+    // ConfigCoercion.offOrAuto: anything but off reads as auto.
+    choices: ['auto', 'off'],
     summary: "off sends every tool to every model up front. auto lets each provider's settings decide whether tools load on demand.",
   },
 
   // usage and budgets
   quotaPoll: {
     group: 'usage',
+    // ConfigCoercion.offOrAuto.
+    choices: ['auto', 'off'],
     summary: 'Subscription heads ask their provider how much of the plan is left. off stops that; the bars then update only from turns.',
   },
   quotaPollIntervalMs: {
@@ -175,6 +189,8 @@ export const KNOB_COPY: Record<string, KnobCopy> = {
   },
   budgetDefaultAction: {
     group: 'usage',
+    // BudgetStore.WARN / BudgetStore.BLOCK, the only two it stores.
+    choices: ['warn', 'block'],
     summary: 'What a new budget does when it is reached, if you do not choose: warn, or block new turns.',
   },
 

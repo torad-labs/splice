@@ -73,10 +73,14 @@ function basisProp(basis: Basis | undefined): { basis?: Basis } {
 const pad = (value: number): string => String(value).padStart(2, '0');
 
 /** HH:MM:SS of a session's start, or null when the client wrote no timestamp. */
-export function startedText(row: SessionRow): string | null {
+/** When a session started: the time alone today, and the date before it on any other day, so a
+ *  session from last week does not read as one from this morning. */
+export function startedText(row: SessionRow, now: Date = new Date()): string | null {
   if (row.started_at === null) return null;
   const at = new Date(row.started_at);
-  return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+  if (at.toDateString() === now.toDateString()) return time;
+  return `${at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()} ${time}`;
 }
 
 /** The last segment of a path, which is how a repo is named on a strip. */

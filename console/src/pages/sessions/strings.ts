@@ -7,12 +7,16 @@ import { ABSENT } from '@shared/lib';
 export const S = {
   title: 'sessions',
   locked: 'console locked',
-  headless: 'headless runs',
+  /** Opens the daemon's own note on what the list holds and what live, stale and gone mean. */
+  headless: 'about this list',
   registry: 'session registry',
   sample: 'sample data',
   detail: 'session detail',
   close: 'close',
   openHead: 'open head',
+  /** The group of sessions the daemon ties to no head: splice did not start them, or could not
+   *  tell which head did. Printed where `head: unknown head` was. */
+  noHead: 'no splice head',
   openProject: 'open project',
   openTeam: 'open team',
   conversation: 'conversation',
@@ -25,7 +29,8 @@ export const S = {
   team: 'team',
   started: 'started',
   seen: 'seen',
-  peer: 'peer',
+  /** The session this one last handed off to or heard from. */
+  peer: 'last hand-off',
   address: 'address',
   at: 'at',
   sent: 'sent',

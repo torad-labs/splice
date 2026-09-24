@@ -116,6 +116,7 @@
 .myx-tn-idle {
   margin: 0;
   padding: var(--space-2) var(--space-4);
+  background: var(--room-deep);
   font-family: var(--font-label);
   font-size: var(--text-2);
   color: var(--ink-mute);

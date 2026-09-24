@@ -35,6 +35,7 @@ import {
   useSession,
   useSessionEdges,
   useSessionRegistry,
+  UNKNOWN_HEAD,
 } from '@entities/session';
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
@@ -51,13 +52,18 @@ const PAGE_ID = 'sessions';
 
 /** The four views this page ships. `by head` is the default and stands first. */
 const DEFAULT_VIEWS: View[] = [
-  { id: 'by-head', name: 'by head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'head', 'project', 'started', 'seen', 'peer'] },
-  { id: 'by-project', name: 'by project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'project', 'head', 'started', 'seen', 'peer'] },
+  // A grouped view does not repeat its group as a column: the bay's own label already names it.
+  { id: 'by-head', name: 'by head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'project', 'started', 'seen', 'peer'] },
+  { id: 'by-project', name: 'by project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'head', 'started', 'seen', 'peer'] },
   { id: 'by-team', name: 'by team', layout: 'rack', filter: {}, sort: null, group: 'team', fields: ['name', 'head', 'project', 'started', 'seen', 'peer'] },
   { id: 'timeline', name: 'timeline', layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['name', 'head', 'project', 'started', 'peer'] },
 ];
 
 const pad = (value: number): string => String(value).padStart(2, '0');
+
+/** Why a session has no head: splice did not start it (it talks to its provider directly), or
+ *  the daemon could not read how it was started. A sentence, so it lives here (CONTRACTS.md 4). */
+export const NO_HEAD_WHY = 'splice did not start these sessions, or could not tell which head did, so their turns do not pass through splice';
 
 /** The address of a hand-off's other end: a sent edge carries the one its call used; a received
  *  edge carries the sender's session id, so its address is the one the registry holds for it. */
@@ -69,7 +75,7 @@ function peerAddressOf(rows: readonly SessionRow[], edge: SessionEdgesPayload['e
 /** One hand-off, as a strip: which way it went, to whom, and when. */
 function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: readonly SessionRow[] }) {
   if (edges === null) return null;
-  if (edges.edges.length === 0) return <Empty text="no hand-offs recorded" source="/api/sessions/{id}/edges" />;
+  if (edges.edges.length === 0) return <Empty text="no hand-offs yet" source="a message this session sends to another, or gets from one, shows here" />;
   return (
     <>
       {[...edges.edges].sort((a, b) => b.at - a.at).map((edge) => (
@@ -175,19 +181,26 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
               the same fact as "no hand-offs". */}
           {edgesError === null ? null : <Fault message={edgesError} />}
           {rows.length === 0 ? (
-            <Empty text="no sessions registered" source="/api/sessions" />
+            <Empty text="no sessions yet" source="a claude code session shows here once it starts" />
           ) : selection.kind === 'groups' ? (
-            selection.groups.map((group) => (
-              <Bay
-                key={group.key}
-                label={`${groupWord}: ${group.key}`}
-                count={group.count}
-                compact
-                actions={<a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a>}
-              >
-                {group.rows.map(strip)}
-              </Bay>
-            ))
+            selection.groups.map((group) => {
+              // The daemon's own word for a session it ties to no head. There is no head to open,
+              // and `head: unknown head` read as a fault in the console rather than a fact about
+              // how the session was started, so the bay says which and why.
+              const headless = by === 'head' && group.key === UNKNOWN_HEAD;
+              return (
+                <Bay
+                  key={group.key}
+                  label={headless ? S.noHead : `${groupWord}: ${group.key}`}
+                  count={group.count}
+                  compact
+                  {...(headless ? {} : { actions: <a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a> })}
+                >
+                  {headless ? <p key="why" className="myx-sx-why">{NO_HEAD_WHY}</p> : null}
+                  {group.rows.map(strip)}
+                </Bay>
+              );
+            })
           ) : (
             <>
               <div className="myx-sx-window">

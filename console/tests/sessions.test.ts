@@ -21,7 +21,7 @@ import type { TranscriptMessage } from '../src/entities/transcript';
 import { SessionsBoard } from '../src/pages/sessions';
 import { ProjectsBoard } from '../src/pages/projects';
 import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, windowOf } from '../src/pages/sessions/select';
-import { edgeOf, fieldsOf } from '../src/pages/sessions/strip';
+import { edgeOf, fieldsOf, startedText } from '../src/pages/sessions/strip';
 import { Conversation } from '../src/widgets/conversation';
 import { FileView } from '../src/widgets/file-view';
 
@@ -165,7 +165,7 @@ describe('session strip', () => {
     const fields = fieldsOf(session({ repo: { root: '/dev/atlas' } }), 'gs-backend-claude', ['project', 'peer']);
     expect(fields.map((f) => [f.label, f.value, f.basis])).toEqual([
       ['project', 'atlas', 'measured'],
-      ['peer', 'gs-backend-claude', 'measured'],
+      ['last hand-off', 'gs-backend-claude', 'measured'],
     ]);
   });
 
@@ -204,11 +204,25 @@ describe('sessions board', () => {
     expect(out).not.toContain('unavailable');
   });
 
-  test('an empty registry names the route it read, and never a fixture', () => {
+  test('an empty registry says what fills it, in words and never a route, and never a fixture', () => {
     const out = render(h(SessionsBoard, { payload: payload([]) }));
-    expect(out).toContain('no sessions registered');
-    expect(out).toContain('/api/sessions');
+    expect(out).toContain('no sessions yet');
+    expect(out).not.toContain('/api/');
     expect(out).not.toContain('sample data');
+  });
+
+  test('sessions the daemon ties to no head are one group that says why, with no head to open', () => {
+    const out = render(h(SessionsBoard, { payload: payload([session({ head: 'unknown head' }), session({ session_id: 'b', head: 'claudex' })]) }));
+    expect(out).toContain('no splice head');
+    expect(out).toContain('splice did not start these sessions');
+    expect(out).not.toContain('head: unknown head');
+    expect(out).toContain('head: claudex');
+  });
+
+  test('a session started on another day prints its date, and today only its time', () => {
+    const now = new Date(2026, 8, 24, 12, 0, 0);
+    expect(startedText(session({ started_at: new Date(2026, 8, 24, 9, 35, 29).getTime() }), now)).toBe('09:35:29');
+    expect(startedText(session({ started_at: new Date(2026, 8, 20, 9, 35, 29).getTime() }), now)).toBe('sep 20 09:35:29');
   });
 
   test('the headless note is behind a reveal, and a sample board says so', () => {

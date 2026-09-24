@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -49,10 +50,14 @@ private const val STATS_DEFAULT_TAIL = 50
 // ~256 KiB of trailing JSONL is plenty for the HUD window and bounds parse cost.
 private const val READ_TAIL_BYTES = 256 * 1024
 
+// The span the console leads with: what the last week of compactions did, as opposed to the whole tail.
+private const val RECENT_SPAN_MS = 7L * 24 * 60 * 60 * 1000
+
 public data class CompactStatsSummary(
     val total: Int,
     val byOutcome: Map<String, Int>,
     val tail: List<JsonObject>,
+    val span: CompactSpan? = null,
 )
 
 /** Compact outcome stats — the JSONL contract file the HUD and dashboard read. */
@@ -127,9 +132,19 @@ public class CompactStats(
             if (genuinelyAbsent) unreadableLogged.set(false)
             emptyList()
         }
-        val byOutcome = rows.groupingBy {
-            (it["outcome"] as? JsonPrimitive)?.content ?: "unknown"
-        }.eachCount()
-        return CompactStatsSummary(rows.size, byOutcome, rows.takeLast(tailN))
+        val byOutcome = rows.groupingBy(::outcomeOf).eachCount()
+        return CompactStatsSummary(rows.size, byOutcome, rows.takeLast(tailN), span(rows))
     }
+
+    /** The time the counted rows cover and the last seven days among them ([CompactSpan]); null when no
+     *  row carries a timestamp, since there is then no span to claim. */
+    private fun span(rows: List<JsonObject>): CompactSpan? {
+        val stamped = rows.mapNotNull { row -> (row["ts"] as? JsonPrimitive)?.longOrNull?.let { it to row } }
+        if (stamped.isEmpty()) return null
+        val since = clock() - RECENT_SPAN_MS
+        val recent = stamped.filter { (ts, _) -> ts >= since }.groupingBy { (_, row) -> outcomeOf(row) }.eachCount()
+        return CompactSpan(stamped.minOf { it.first }, stamped.maxOf { it.first }, recent)
+    }
+
+    private fun outcomeOf(row: JsonObject): String = (row["outcome"] as? JsonPrimitive)?.content ?: "unknown"
 }

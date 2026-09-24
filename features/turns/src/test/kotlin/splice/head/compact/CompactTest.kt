@@ -186,4 +186,27 @@ class CompactTest {
         assertEquals(2, summary.tail.size)
         assertTrue(summary.tail.last().toString().contains("empty_model"))
     }
+
+    // Console review 2026-09-24: the page showed 33% failed compactions, all of them 10-70 days old,
+    // because the counts carried no span. The summary now says which rows it counted and what the
+    // last seven days alone hold.
+    @Test
+    fun `the stats say which span their counts cover and what the last seven days hold`(@TempDir tmp: Path) {
+        val day = 86_400_000L
+        val now = 100 * day
+        var t = now - 10 * day
+        val stats = CompactStats(tmp.resolve("claudex-compact-stats.jsonl"), clock = { t })
+        stats.record(mapOf("outcome" to "empty_model"))
+        t = now - 2 * day
+        stats.record(mapOf("outcome" to "model_text"))
+        t = now - day
+        stats.record(mapOf("outcome" to "stream_error"))
+        t = now
+
+        val span = stats.read().span
+        assertEquals(now - 10 * day, span?.firstTs)
+        assertEquals(now - day, span?.lastTs)
+        assertEquals(mapOf("model_text" to 1, "stream_error" to 1), span?.recent)
+        assertEquals(null, CompactStats(tmp.resolve("none.jsonl"), clock = { now }).read().span)
+    }
 }

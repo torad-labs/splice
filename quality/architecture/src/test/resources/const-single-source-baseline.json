@@ -430,13 +430,11 @@
       "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt"
     ],
     "COPY MS_PER_MINUTE": [
-      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorProbeWrite.kt",
       "features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt",
       "features/usage/src/main/kotlin/splice/usage/perf/PerfSummary.kt"
     ],
     "COPY MS_PER_S": [
       "integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt",
-      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPoolText.kt",
       "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsPulse.kt",
@@ -548,10 +546,6 @@
     "COPY SYSTEM": [
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt"
-    ],
-    "COPY S_PER_MIN": [
-      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPoolText.kt",
-      "features/turns/src/main/kotlin/splice/head/turn/TurnProgressLine.kt"
     ],
     "COPY TAG_LEN": [
       "core/src/main/kotlin/splice/core/media/ImageHeaderProbe.kt",

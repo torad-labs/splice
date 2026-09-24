@@ -169,4 +169,24 @@ class DoctorReportHardeningTest {
         assertEquals(CheckStatus.WARN, unread.status)
         assertTrue(unread.detail.startsWith("perf file could not be read: rotated:"), unread.detail)
     }
+
+    // Console review 2026-09-24: the live doctor printed "last failure: 28710m ago". The age of the
+    // last failure reads in the largest whole unit, the wording `splice status` uses for a switch.
+    @Test
+    fun `the last failure's age reads in the largest whole unit`() {
+        val state = Files.createDirectories(tmp.resolve("state"))
+        val perf = state.resolve("codex-perf.jsonl")
+        val probe = DoctorProbeWrite(files = DoctorReportFiles(DoctorRedaction(tmp)))
+        val cases = mapOf(
+            20L * 86_400_000 + 60_000 to "20d ago",
+            5L * 3_600_000 + 60_000 to "5h ago",
+            3L * 60_000 + 5_000 to "3m ago",
+        )
+        cases.forEach { (age, words) ->
+            val ts = System.currentTimeMillis() - age
+            Files.writeString(perf, """{"ts":$ts,"outcome":"error:upstream-failed"}""" + "\n")
+            val row = probe.perfTailRow("codex", perf)
+            assertTrue(row.detail.contains("last failure: $words"), "$words: ${row.detail}")
+        }
+    }
 }

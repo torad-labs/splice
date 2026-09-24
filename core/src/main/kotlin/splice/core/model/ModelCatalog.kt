@@ -73,6 +73,11 @@ public data class ModelCatalog(
      *  FIELDS goes through [live]. Null = the windows above, fixed for this catalog's life, which is
      *  every catalog built outside the daemon's head assembly. */
     val liveWindows: LiveWindows? = null,
+    /** The head's own window (its `context_window`, or the contextWindowOverride knob) when it replaced
+     *  the provider's windows on every entry, rule and the default; null = the provider's numbers stand.
+     *  It exists so a reader can say WHERE a window came from (console review 2026-09-24: /api/models
+     *  labelled a head's 300k "model"). */
+    val headWindow: Long? = null,
 ) {
     init {
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
@@ -207,7 +212,8 @@ public data class ModelCatalog(
      *  changes. Every picker row keeps its id, label, description, rates and place, and takes the
      *  window [declared] gives the same id, or keeps its own when [declared] no longer lists it: a
      *  removed row is a roster change, and that stays a restart. The window-only ids, the prefix rules
-     *  and the default are [declared]'s whole. The result has no live source of its own. */
+     *  and the default are [declared]'s whole, and so is [headWindow], which says where they came from.
+     *  The result has no live source of its own. */
     public fun withWindowsOf(declared: ModelCatalog): ModelCatalog {
         val windows = declared.models.associate { it.id to it.contextWindow }
         return copy(
@@ -216,6 +222,7 @@ public data class ModelCatalog(
             windowRules = declared.windowRules,
             defaultContextWindow = declared.defaultContextWindow,
             liveWindows = null,
+            headWindow = declared.headWindow,
         )
     }
 

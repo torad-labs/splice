@@ -2235,3 +2235,4 @@ tools/gate/test/ledger-guard.test.ts	fbfe7ffa3086212cef86c767cdda546c65cd5b85103
 tools/e2e/docker/lib.sh	6b15b25ffc1d93e55de9dc864ad06eb58874d0f21e7aa7ff966162cc45e800d5	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
 tools/e2e/docker/lib.ts	00ab27780f3718459623d610a142fcf7b507353f0ecb64123fb72712131e96dd	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
 tools/e2e/docker/upgrade.sh	6bb1e27737fe135c76ed855cecfc8c160a645d2457565ecd0ae3c7f7f97faee6	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
+features/models/src/test/kotlin/splice/models/roster/ModelsWindowSourceTest.kt	2444fa8779e9856bcc79f9783dab782f5b12dc9d8d5c9d78b539904c9e72accd	created		/api/models names a head-declared window as the head's (console review 2026-09-24)

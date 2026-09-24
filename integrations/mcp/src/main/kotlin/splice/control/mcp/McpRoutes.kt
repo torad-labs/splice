@@ -13,6 +13,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.response.respondText
 import io.ktor.utils.io.writeStringUtf8
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
@@ -79,6 +80,8 @@ public class McpRoutes(private val host: McpHost) {
     }
 
     /** Notifications as SSE `message` events; a comment ping keeps the connection honest while idle. */
+    // select's onTimeout is the ping; kotlinx.coroutines still marks it experimental.
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun pump(channel: ReceiveChannel<String>, write: SseWrite) {
         while (true) {
             val frame = select<String?> {

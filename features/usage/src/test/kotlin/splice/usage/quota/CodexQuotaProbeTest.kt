@@ -97,8 +97,8 @@ class CodexQuotaProbeTest {
             captured,
         )
         val iAuth = order!!.indexOfFirst { it.equals("Authorization", ignoreCase = true) }
-        val iAccept = order!!.indexOfFirst { it.equals("Accept", ignoreCase = true) }
-        val iAcct = order!!.indexOfFirst { it.equals("ChatGPT-Account-Id", ignoreCase = true) }
+        val iAccept = order.indexOfFirst { it.equals("Accept", ignoreCase = true) }
+        val iAcct = order.indexOfFirst { it.equals("ChatGPT-Account-Id", ignoreCase = true) }
         assertTrue(iAuth >= 0 && iAccept > iAuth && iAcct > iAccept)
     }
 

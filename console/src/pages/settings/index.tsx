@@ -289,6 +289,7 @@ export function SettingsPage() {
               onSave={perHeadView ? saveForHead : saveGlobal}
               scopeNote={scopeNote}
               {...(perHeadView ? { wording: HEAD_WORDING } : {})}
+              perHead={perHeadView}
             />
           )}
         </Bay>

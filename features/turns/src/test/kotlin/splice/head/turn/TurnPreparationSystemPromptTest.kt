@@ -231,6 +231,35 @@ class TurnPreparationSystemPromptTest {
         assertEquals(1L, perf.counters["system_prompt_applied"], "only the strip changed the bytes that shipped")
     }
 
+    /** v0.4.0 prompt-review: the survival check looked for the layer's raw text in the SERIALISED body,
+     *  where a newline, quote or backslash is escaped, so a multi-line append (every file-backed prompt
+     *  keeps its trailing newline) read as deleted whenever any strip layer was in the fold. */
+    @Test
+    fun `a multi-line append a strip left alone is reported as applied`(
+        @TempDir tmp: Path,
+    ) {
+        val root = tmp.resolve("bot")
+        val layers = SystemPromptLayers(
+            HeadSystemPrompt(text = "Use tools.\nSay \"done\" at the end.\n", source = "head:kimi"),
+            projects = mapOf(
+                "\"$root\"" to ProjectConfig(
+                    systemPrompt = "^IMPORTANT: Assist with authorized security testing",
+                    systemPromptMode = SystemPromptMode.STRIP,
+                ),
+            ),
+        )
+        val request = PASSTHROUGH_REQUEST.replace(
+            """"text":"house rules"""",
+            """"text":"house rules\n\nIMPORTANT: Assist with authorized security testing.\n\nBe kind."""",
+        )
+
+        val (prepared, perf) = preparedWithPerf(preparation(tmp, passthroughProvider(), layers, cwd = root), request)
+
+        assertEquals("head:kimi append+project:$root strip", prepared.meta.systemPromptSource)
+        assertEquals("Use tools.\nSay \"done\" at the end.\n", prepared.meta.systemPrompt)
+        assertEquals(2L, perf.counters["system_prompt_applied"], "both layers changed the bytes that shipped")
+    }
+
     @Test
     fun `the prompt sits in the same position with the same bytes on a later turn`(
         @TempDir tmp: Path,

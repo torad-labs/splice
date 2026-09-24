@@ -35,4 +35,19 @@ class CommandParserTest {
             "the verb passes its arguments through untouched — the command owns their meaning",
         )
     }
+
+    // v0.4.0 compatibility statement (README "Compatibility"): the verbs a release ships are a contract
+    // until the next minor release names the break. Frozen here rather than read from the table, so a
+    // verb dropped from the table fails by name instead of vanishing from both sides. `daemon` and
+    // `start` never reach the parser (Main dispatches them). A new verb is additive and joins this list.
+    @Test
+    fun `every verb 0_4_0 ships still parses`() {
+        val shipped = listOf(
+            "setup", "add", "add-model", "models", "upgrade", "status", "sessions", "perf", "wire", "trace",
+            "restart", "dashboard", "login", "key", "logs", "install", "uninstall", "init", "doctor",
+            "version", "shim-version",
+        )
+        val lost = shipped.filter { parser.parse(arrayOf(it)) == null }
+        assertEquals(emptyList<String>(), lost, "verbs 0.4.0 shipped that no longer parse")
+    }
 }

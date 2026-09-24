@@ -22,6 +22,9 @@ export interface KnobCopy {
   /** The daemon forces the value whatever is saved (ConfigCoercion), so the row prints it and
    *  offers no control that would look like it does something. */
   locked?: true;
+  /** Set only in a head's [heads.KEY.overrides] (Knob.headOnly): the daemon refuses it in PATCH,
+   *  so the global view prints it and a head's view, which writes that table, edits it. */
+  headOnly?: true;
 }
 
 export const KNOB_COPY: Record<string, KnobCopy> = {
@@ -204,6 +207,7 @@ export const KNOB_COPY: Record<string, KnobCopy> = {
   // recording and history
   trace: {
     group: 'records',
+    headOnly: true,
     summary: 'Record every request, provider call and answer for a head, secrets removed. It keeps whole conversations: turn it on per head, only while investigating.',
   },
   traceRetentionDays: {
@@ -218,6 +222,7 @@ export const KNOB_COPY: Record<string, KnobCopy> = {
   },
   wireTap: {
     group: 'records',
+    headOnly: true,
     unit: 'count',
     summary: 'Keep this many recent requests to the provider in memory, for splice wire. 0 keeps none. Set it per head.',
   },

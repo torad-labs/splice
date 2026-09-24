@@ -91,7 +91,9 @@ action** — GitHub does the rest, no local command involved:
 
 1. Land a version-bump PR on `main` (all three sites move together: `Versions.kt`
    `GATEWAY_VERSION`, `app/src/main/dist/bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`), with
-   the `CHANGELOG.md` cut for the release.
+   the `CHANGELOG.md` cut for the release: a `## splice vX.Y.Z — theme - date` section. The gate
+   fails a bump without one (`tools/release/test/changelog.test.ts`), and that section is the body
+   of the GitHub release (`bun tools/release notes`).
 2. Open the promotion PR, base `prod`, head `main` — in the UI, or `npm run promote` which
    opens the same PR after a courtesy version preflight. `promotion-check` fails the PR before
    merge if the promoted version is already tagged (a promotion that would release nothing).

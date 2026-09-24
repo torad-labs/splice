@@ -19,7 +19,7 @@ import { inflightFrom, waterfall } from '../src/entities/perf';
 import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import { applyFilter, headOf, headsPresent, levelOf, levelsPresent, timeOf } from '../src/entities/logs';
 import type { LogFilter } from '../src/entities/logs';
-import { TurnsBoard } from '../src/pages/turns';
+import { IdleHeads, TurnsBoard } from '../src/pages/turns';
 import { shareText, stageRowsOf } from '../src/pages/turns/index';
 import { LogsBoard } from '../src/pages/logs';
 import { itemsOf, selectionOf, windowOf } from '../src/pages/turns/select';
@@ -388,5 +388,20 @@ describe('logs board', () => {
 
   test('a rotated tail says it restarted', () => {
     expect(board({ reset: true })).toContain('rotated');
+  });
+});
+
+describe('an idle head says when it last ran a turn', () => {
+  test('from the summary\'s last_ts, and never for a head that has none', () => {
+    const row = (key: string, last: number | null | undefined) => ({
+      key, label: key, window: '24h' as const, count: 0, empty: true, coverage_known: true, clamped: false, covers_ms: 0,
+      ...(last === undefined ? {} : { last_ts: last }),
+    });
+    const out = renderToStaticMarkup(h(IdleHeads, {
+      summary: { window: '24h', heads: [row('bonsai', Date.now() - 50 * 3_600_000), row('bonsai-vast', null), row('old', undefined)] },
+    }));
+    expect(out).toContain('bonsai (last 2d ago)');
+    expect(out).toContain('bonsai-vast (never)');
+    expect(out).toMatch(/old<|old,|old$/);
   });
 });

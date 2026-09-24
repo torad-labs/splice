@@ -17,6 +17,7 @@ import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@e
 import { startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import { headWindow, startUsagePolling, useUsage } from '@entities/usage';
+import { startPerfSummaryPolling, usePerfSummary } from '@entities/perf';
 import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
@@ -165,6 +166,8 @@ export function FleetPage() {
   const topologyResource = useTopology((state) => state);
   const modelsResource = useModels((state) => state);
   const accountsResource = useAccounts((state) => state);
+  // Only for each head's last turn (`last_ts`), which the summary carries whatever its window.
+  const summaryResource = usePerfSummary((state) => state);
 
   useEffect(() => {
     const stops = [
@@ -174,6 +177,7 @@ export function FleetPage() {
       startAuthPolling(SLOW_MS),
       startTopologyPolling(SLOW_MS),
       startModelsPolling(SLOW_MS),
+      startPerfSummaryPolling('24h', SLOW_MS),
     ];
     return () => stops.forEach((stop) => stop());
   }, []);
@@ -259,6 +263,7 @@ export function FleetPage() {
                     account={auth?.[head.key]?.account_id_masked ?? null}
                     dialect={dialectOf(topologyTable, head.key)}
                     model={catalogs?.find((entry) => entry.head === head.key)?.pinned_model ?? null}
+                    lastTs={summaryResource.data?.heads.find((row) => row.key === head.key)?.last_ts}
                     columns={columns}
                     selected={openKey === head.key}
                     onOpen={() => toggle(head.key)}

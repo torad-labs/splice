@@ -67,6 +67,9 @@ export interface PerfSummaryHead {
   time_before_first_byte_ms?: PerfStats;
   time_streaming_ms?: PerfStats;
   total_ms?: PerfStats;
+  /** Epoch ms of the head's newest turn in the store, whatever the window: null when it has never
+   *  run one, absent from a daemon older than the field (PerfSummary.json). */
+  last_ts?: number | null;
   /** Outcome tag -> turn count. A row whose outcome could not be parsed is filed under "?". */
   outcomes?: Record<string, number>;
   /** Failing turns over all turns, excluding both "ok" and the unattributed "?" tag. */

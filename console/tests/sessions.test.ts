@@ -18,10 +18,10 @@ import { describe, expect, test } from 'vitest';
 import type { View } from '../src/features/views';
 import type { SessionRow } from '../src/entities/session';
 import type { TranscriptMessage } from '../src/entities/transcript';
-import { SessionsBoard } from '../src/pages/sessions';
+import { NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
 import { ProjectsBoard } from '../src/pages/projects';
 import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, windowOf } from '../src/pages/sessions/select';
-import { edgeOf, fieldsOf, startedText } from '../src/pages/sessions/strip';
+import { edgeOf, fieldsOf, headText, startedText } from '../src/pages/sessions/strip';
 import { Conversation } from '../src/widgets/conversation';
 import { FileView } from '../src/widgets/file-view';
 
@@ -217,6 +217,20 @@ describe('sessions board', () => {
     expect(out).toContain('splice did not start these sessions');
     expect(out).not.toContain('head: unknown head');
     expect(out).toContain('head: claudex');
+  });
+
+  test('a daemon that reports the route says which sessions skipped splice and which it could not read', () => {
+    const rows = [
+      session({ session_id: 'a', head: 'unknown head', route: 'direct' }),
+      session({ session_id: 'b', head: 'unknown head', route: 'direct' }),
+      session({ session_id: 'c', head: 'unknown head', route: 'unknown' }),
+    ];
+    expect(noHeadWhy(rows)).toBe('2 started with claude directly, not a splice head, so their turns skip splice; '
+      + '1 could not be read, so splice cannot tell which head started them');
+    expect(noHeadWhy([session({ head: 'unknown head' })])).toBe(NO_HEAD_WHY);
+    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('not via splice');
+    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('no splice head');
+    expect(headText(session({ head: 'claudex', route: 'head' }))).toBe('claudex');
   });
 
   test('a session started on another day prints its date, and today only its time', () => {

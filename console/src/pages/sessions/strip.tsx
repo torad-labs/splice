@@ -107,6 +107,13 @@ export function projectText(row: SessionRow): string | null {
   return worktree === undefined ? baseOf(key) : `${baseOf(key)} ${baseOf(worktree)}`;
 }
 
+/** The head a session rides, or why it has none: started with `claude` directly (`not via
+ *  splice`), or not readable (`no splice head`). It printed `unknown head` for both. */
+export function headText(row: SessionRow): string {
+  if (row.head !== '' && row.head !== UNKNOWN_HEAD) return row.head;
+  return row.route === 'direct' ? S.direct : S.noHead;
+}
+
 /**
  * The strip's fields, in the view's own order. A value the daemon does not
  * report is `unknown` and prints the absence glyph, never a blank and never a
@@ -117,7 +124,7 @@ export function fieldsOf(row: SessionRow, peer: string | null, order: readonly s
   const project = projectText(row);
   const values: Record<string, { value: string; basis?: Basis }> = {
     name: { value: sessionLabel(row), basis: 'measured' },
-    head: { value: row.head === '' ? UNKNOWN_HEAD : row.head, basis: 'measured' },
+    head: { value: headText(row), basis: 'measured' },
     project: project === null ? { value: ABSENT } : { value: project, basis: 'measured' },
     started: started === null ? { value: ABSENT } : { value: started, basis: 'measured' },
     seen: row.updated_at === null ? { value: ABSENT } : { value: timeAgo(row.updated_at), basis: 'measured' },

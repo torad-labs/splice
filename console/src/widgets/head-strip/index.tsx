@@ -13,7 +13,7 @@ import {
 } from '@entities/heads';
 import type { HeadAttention } from '@entities/heads';
 import type { HeadWindow } from '@entities/usage';
-import { ABSENT } from '@shared/lib';
+import { ABSENT, timeAgo } from '@shared/lib';
 import { Strip, StripField } from '@shared/ui';
 import { S } from './strings';
 import './head-strip.css';
@@ -45,7 +45,7 @@ const INFLIGHT = 7;
 /** A window prints a percentage or the word `unknown`; an absent window says so in its own value,
  *  so the field carries no basis word beside it. */
 const WINDOW = 9;
-/** A turn prints a time or the word `none` (see NO_TURN). */
+/** A turn prints the live one's phase, how long ago the last one was, or `none` (see NO_TURN). */
 const TURN = 8;
 
 /** The family as one printed field: its name. */
@@ -70,7 +70,18 @@ export function windowText(head: HeadWindow): string {
   return head.pct === null ? NOT_REPORTED : `${head.pct}%`;
 }
 
-export function HeadStrip({ head, attention, window, account, dialect, model, columns, selected, onOpen }: {
+/** The last-turn cell: the turn in flight if there is one, else how long ago the head's newest turn
+ *  was (the perf summary's `last_ts`), `none` when it has never run one, and the absence glyph when
+ *  the daemon does not say. It read `none` on every head: its only source was `gate.live`, which
+ *  the daemon serves empty, so a head mid-afternoon with forty turns behind it said `none`. */
+export function lastTurnText(head: HeadStatus, lastTs: number | null | undefined, now = Date.now()): string {
+  const live = liveTurnText(head);
+  if (live !== null) return live;
+  if (lastTs === undefined) return ABSENT;
+  return lastTs === null ? NO_TURN : timeAgo(lastTs, now);
+}
+
+export function HeadStrip({ head, attention, window, account, dialect, model, lastTs, columns, selected, onOpen }: {
   head: HeadStatus;
   attention: HeadAttention;
   window: HeadWindow;
@@ -81,6 +92,8 @@ export function HeadStrip({ head, attention, window, account, dialect, model, co
   dialect: string | null;
   /** The head's pinned model. Null while GET /api/models is still a row (V4-127). */
   model: string | null;
+  /** The head's newest turn, epoch ms (perf summary `last_ts`); undefined when not reported. */
+  lastTs?: number | null | undefined;
   columns: readonly string[];
   selected?: boolean;
   onOpen?: () => void;
@@ -88,7 +101,7 @@ export function HeadStrip({ head, attention, window, account, dialect, model, co
   // An empty list means every column, the same convention `columnsOf` uses: a view that never
   // touched its fields must not render a strip with no fields in it.
   const wanted = new Set(columns.length === 0 ? HEAD_COLUMNS : columns);
-  const turn = liveTurnText(head);
+  const turn = lastTurnText(head, lastTs);
 
   return (
     <Strip
@@ -126,7 +139,7 @@ export function HeadStrip({ head, attention, window, account, dialect, model, co
 
       ) : null}
       {wanted.has('turn') ? (
-        <StripField w={TURN} label={S.turn} value={turn ?? NO_TURN} mono={false} />
+        <StripField w={TURN} label={S.turn} value={turn} mono={false} />
       ) : null}
     </Strip>
   );

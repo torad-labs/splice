@@ -29,6 +29,7 @@ export type {
   SessionEdge,
   SessionEdgesPayload,
   SessionRepo,
+  SessionRoute,
   SessionRow,
   SessionsPayload,
 } from './model/types';

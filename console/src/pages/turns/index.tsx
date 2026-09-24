@@ -42,7 +42,7 @@ import { useSession } from '@entities/session';
 import { RequestDrawer, Waterfall } from '@widgets/waterfall';
 import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { fmtMs } from '@shared/lib';
+import { fmtMs, timeAgo } from '@shared/lib';
 import type { Basis } from '@shared/ui';
 import { basisProp } from './strip';
 import { S } from './strings';
@@ -246,9 +246,16 @@ function SummaryStrip({ head }: { head: PerfSummaryHead }) {
   );
 }
 
+/** An idle head as the line names it, with when it last ran a turn when the daemon says
+ *  (`last_ts`): `bonsai (last 2d ago)`, `bonsai-vast (never)`. */
+function idleName(head: PerfSummaryHead): string {
+  if (head.last_ts === undefined) return head.label;
+  return head.last_ts === null ? `${head.label} (never)` : `${head.label} (last ${timeAgo(head.last_ts)})`;
+}
+
 /** The heads a window holds no turns for, named on one line: an absence said once, not per row. */
 export function IdleHeads({ summary }: { summary: PerfSummaryPayload }) {
-  const idle = summary.heads.filter((head) => head.empty).map((head) => head.label);
+  const idle = summary.heads.filter((head) => head.empty).map(idleName);
   if (idle.length === 0) return null;
   return <p className="myx-tn-idle">{`${S.noTurnsIn} ${summary.window}: ${idle.join(', ')}`}</p>;
 }

@@ -17,6 +17,8 @@ export const S = {
   /** The group of sessions the daemon ties to no head: splice did not start them, or could not
    *  tell which head did. Printed where `head: unknown head` was. */
   noHead: 'no splice head',
+  /** A session's head cell when it was started with `claude` directly, not through a head. */
+  direct: 'not via splice',
   openProject: 'open project',
   openTeam: 'open team',
   conversation: 'conversation',

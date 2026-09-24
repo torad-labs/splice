@@ -65,6 +65,20 @@ const pad = (value: number): string => String(value).padStart(2, '0');
  *  the daemon could not read how it was started. A sentence, so it lives here (CONTRACTS.md 4). */
 export const NO_HEAD_WHY = 'splice did not start these sessions, or could not tell which head did, so their turns do not pass through splice';
 
+/** Why a group of sessions has no head, from each row's route when the daemon reports one: a
+ *  session started with `claude` directly skips splice; one whose environment could not be read
+ *  may not. A daemon that reports no route keeps the sentence above, which covers both. */
+export function noHeadWhy(rows: readonly SessionRow[]): string {
+  const direct = rows.filter((row) => row.route === 'direct').length;
+  const unread = rows.filter((row) => row.route === 'unknown').length;
+  if (direct + unread === 0) return NO_HEAD_WHY;
+  const parts = [
+    direct === 0 ? null : `${direct} started with claude directly, not a splice head, so their turns skip splice`,
+    unread === 0 ? null : `${unread} could not be read, so splice cannot tell which head started them`,
+  ];
+  return parts.filter((part) => part !== null).join('; ');
+}
+
 /** The address of a hand-off's other end: a sent edge carries the one its call used; a received
  *  edge carries the sender's session id, so its address is the one the registry holds for it. */
 function peerAddressOf(rows: readonly SessionRow[], edge: SessionEdgesPayload['edges'][number]): string {
@@ -196,7 +210,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
                   compact
                   {...(headless ? {} : { actions: <a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a> })}
                 >
-                  {headless ? <p key="why" className="myx-sx-why">{NO_HEAD_WHY}</p> : null}
+                  {headless ? <p key="why" className="myx-sx-why">{noHeadWhy(group.rows)}</p> : null}
                   {group.rows.map(strip)}
                 </Bay>
               );

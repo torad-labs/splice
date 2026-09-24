@@ -24,7 +24,7 @@ import {
 } from '../src/entities/heads';
 import type { HeadSignals } from '../src/entities/heads';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
-import { HeadStrip, providerText } from '../src/widgets/head-strip';
+import { HeadStrip, lastTurnText, providerText } from '../src/widgets/head-strip';
 import { EMPTIES, arrangeHeads, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
 import { Empty } from '../src/shared/ui';
@@ -283,6 +283,16 @@ describe('what one strip prints', () => {
     const busy = strip({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
     expect(busy).toContain('streaming');
     expect(liveTurnText(head())).toBeNull();
+  });
+
+  test('an idle head prints when its last turn was, from the perf summary, not a bare none', () => {
+    // gate.live is served empty, so this cell read `none` on every head, busy afternoon or not.
+    const now = Date.UTC(2026, 8, 24, 18, 0, 0);
+    expect(lastTurnText(head(), now - 3 * 3_600_000, now)).toBe('3h ago');
+    expect(lastTurnText(head(), null, now)).toBe('none');
+    expect(lastTurnText(head(), undefined, now)).toBe('–');
+    const busy = head({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
+    expect(lastTurnText(busy, now - 3 * 3_600_000, now)).toBe('streaming 1.5s');
   });
 
   test('inflightText with no gate prints nothing rather than a zero', () => {

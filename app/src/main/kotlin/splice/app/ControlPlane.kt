@@ -24,6 +24,7 @@ import splice.app.provider.ProviderAssembly
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpSharing
+import splice.client.resume.AuthHeaderFile
 import splice.client.resume.ResumeHookTarget
 import splice.configuration.topology.TopologyStale
 import splice.control.mcp.APP_MCP_SLICE
@@ -107,14 +108,15 @@ internal class ControlPlane(
     )
 
     /** The daemon's one materializer: the real hook exec (V4-103), and the control port the resume hook
-     *  (V4-169) calls back on with the turn key's header file, written current here before any head
-     *  launches. Its own member so the start() budget holds and the call stays greppable. */
+     *  (V4-169) calls back on with the turn key's header file — handed over as its SOURCE, written
+     *  current by each install, so start() does no file I/O here. Its own member so the start()
+     *  budget holds and the call stays greppable. */
     private fun materializer(home: Path, sharing: McpSharing, controlPort: Int): ClaudeConfigMaterializer =
         DaemonMaterializer.build(
             home,
             sharing.rewrite(),
             hookExec = HookProcessExec.exec,
-            resumeHook = ResumeHookTarget(controlPort, TurnKey(mgmtKey).headerFile()),
+            resumeHook = ResumeHookTarget(controlPort, AuthHeaderFile(TurnKey(mgmtKey)::headerFile)),
         )
 
     internal fun cancelProbes() {

@@ -11,7 +11,12 @@
   height: 100%;
 }
 
-.myx-teams .myx-views {
+.myx-teams > .myx-views {
+  margin-top: var(--space-5);
+}
+
+/* The page's flow when no board is drawn (index.tsx): head, then the empty, then the composer. */
+.myx-teams > .myx-page-head + .myx-empt {
   margin-top: var(--space-5);
 }
 

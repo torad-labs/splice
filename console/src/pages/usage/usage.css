@@ -4,7 +4,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-5) var(--space-6);
 
 /* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44). The board stretches instead of
    starting at the top, the rack area takes the height that is left, and the bay takes the rack
@@ -36,18 +35,7 @@
    changes it, and watches nothing happen. Verified dead on this page by DOM probe
    before removal -- see the M1-93 note for the counts. */
 
-.myx-usage-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-usage-title {
-  font-size: var(--text-6);
-  color: var(--ink-strong);
-  font-weight: 500;
-}
 
 .myx-usage-windows {
   display: flex;

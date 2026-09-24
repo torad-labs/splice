@@ -57,7 +57,7 @@
   position: absolute;
   border-radius: 0;
 }
-.myx-board .myx-strip > .myx-edge { padding-inline-start: var(--space-4); }
+.myx-board .myx-strip > .myx-edge { padding-inline: var(--space-4) 0; }
 /* The board's strips carry no edge label -- the value beside the mark already
    says what the row is (design review B10) -- so the column's fixed 6ch budget
    for one would just push the comp's grid 42px to the right. */

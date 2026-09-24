@@ -4,21 +4,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-5) var(--space-6);
 }
 
-.myx-models-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
 
-.myx-models-title {
-  font-size: var(--text-6);
-  color: var(--ink-strong);
-  font-weight: 500;
-}
 
 /* THE RACK TAKES THE WHOLE WIDTH UNTIL A MODEL IS OPENED (M1-112, from M1-109's measurement and
    M1-102's remedy on fleet). The resting detail column measured a 432x784 dead region at 21.5% of

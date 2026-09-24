@@ -4,10 +4,12 @@
 // lives in src/lib/. The staging half is NOT here: `:app:stageRelease` is a Gradle task, because it
 // produces the published artifacts and Gradle is what knows when they are stale.
 //
-// Exit codes: 0 accepted / promoted / verified, 1 a check said no, 2 the CLI was asked for something
-// it does not have. A signalled child reports as a shell would (tools/gate/src/lib/status.ts).
+// Exit codes: 0 accepted / promoted / verified / notes printed, 1 a check said no, 2 the CLI was
+// asked for something it does not have. A signalled child reports as a shell would
+// (tools/gate/src/lib/status.ts).
 import { layout } from "../gate/src/lib/repo.ts";
 import { accept, usage as acceptUsage } from "./src/commands/accept.ts";
+import { notes, usage as notesUsage } from "./src/commands/notes.ts";
 import { promote, usage as promoteUsage } from "./src/commands/promote.ts";
 import { verify, usage as verifyUsage } from "./src/commands/verify.ts";
 
@@ -15,6 +17,7 @@ const { repoRoot } = layout();
 
 const VERBS = {
   accept: { usage: acceptUsage, exec: (argv: string[]) => accept(argv, repoRoot) },
+  notes: { usage: notesUsage, exec: (argv: string[]) => notes(argv, repoRoot) },
   promote: { usage: promoteUsage, exec: (argv: string[]) => promote(argv, repoRoot) },
   verify: { usage: verifyUsage, exec: (argv: string[]) => verify(argv, repoRoot) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;

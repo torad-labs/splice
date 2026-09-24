@@ -296,6 +296,42 @@ describe('what one strip prints', () => {
     expect(out).toContain(NOT_REPORTED); // and it is PRINTED, not only labelled
   });
 
+  test('every strip has the same cells whatever windows it reports, so the columns line up', () => {
+    // Walkthrough B3: a cell per reported window made a no-window row one cell short, and the
+    // account name landed under "resets".
+    const cells = (windows: AccountWindow[]) => (render(h(AccountStrip, {
+      account: account({ label: 'x', windows }),
+      isNext: false,
+      nextRule: '',
+      columns: ['provider', 'account', 'plan', 'heads', 'next'],
+      nowMs: NOW,
+    })).match(/class="myx-sfield/g) ?? []).length;
+    const none = cells([]);
+    expect(cells([window5h(40)])).toBe(none);
+    expect(cells([window5h(40), { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null }])).toBe(none);
+    expect(cells([
+      window5h(40),
+      { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' },
+      { seconds: DAY_7, used_percent: 70, reset_epoch_seconds: null, model: 'sonnet' },
+    ])).toBe(none);
+  });
+
+  test('the long track shows its fullest window under that window\'s own length', () => {
+    const out = render(h(AccountStrip, {
+      account: account({ label: 'g', windows: [
+        { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' },
+        { seconds: DAY_7, used_percent: 70, reset_epoch_seconds: null, model: 'sonnet' },
+      ] }),
+      isNext: false,
+      nextRule: '',
+      columns: [],
+      nowMs: NOW,
+    }));
+    expect(out).toContain('sonnet 7d');
+    expect(out).toContain('70%');
+    expect(out).toContain('>5h<'); // the empty short track still names its slot
+  });
+
   test('the next target prints the rule that chose it', () => {
     const out = render(h(AccountStrip, {
       account: account({ label: 'primary', primary: true }),

@@ -10,6 +10,9 @@ export const S = {
   next: 'next',
   resets: 'resets',
   window: 'window',
+  /** The two window tracks' names when the slot holds no window: the daemon's slot lengths. */
+  shortWindow: '5h',
+  longWindow: '7d',
   excluded: 'excluded',
   singleLogin: 'single login',
 } as const;

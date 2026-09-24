@@ -11,6 +11,7 @@ export {
   nextRuleOf,
   resetText,
   sevenDayUsed,
+  slotWindows,
   windowLengthText,
   windowUsedText,
   COCK_AT_PERCENT,

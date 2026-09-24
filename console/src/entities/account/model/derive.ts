@@ -49,6 +49,22 @@ export function windowLengthText(seconds: number): string {
   return `${seconds}s`;
 }
 
+/** The account's windows in the daemon's two slots: `short` up to six hours, `long` beyond. Each is
+ *  the slot's fullest window (a Claude account can carry several model-scoped long windows; the
+ *  detail lists every one), or null when the slot holds none. A rack prints one track per slot so
+ *  every row has the same cells: a row with one window and a row with none used to differ by a
+ *  cell, and the columns after them slid under the wrong names (walkthrough B3). */
+export function slotWindows(account: AccountRow): { short: AccountWindow | null; long: AccountWindow | null } {
+  const fullest = (windows: AccountWindow[]): AccountWindow | null => windows.reduce<AccountWindow | null>(
+    (held, next) => (held === null || (next.used_percent ?? -1) > (held.used_percent ?? -1) ? next : held),
+    null,
+  );
+  return {
+    short: fullest(account.windows.filter((window) => window.seconds <= FIVE_HOUR_SLOT_MAX_SECONDS)),
+    long: fullest(account.windows.filter((window) => window.seconds > FIVE_HOUR_SLOT_MAX_SECONDS)),
+  };
+}
+
 /**
  * The window closest to exhaustion, or null when the account reports no used figure at all.
  *

@@ -2,16 +2,16 @@
 // carries the numbers. Composed only from @shared/ui primitives, so the strip geometry, the
 // palette and the state gestures are the hero's and not this page's.
 //
-// The window fields are rendered from the account's OWN windows rather than from a fixed
-// five-hour/weekly pair. That is the point of the row: a provider that reports a 30-day period
-// gets a field reading 30d, and a window the provider does not report gets
-// "not reported by provider" instead of a zero.
+// The window cells sit in two fixed tracks, the daemon's two slots, but each is LABELLED from the
+// account's own window: a provider that reports a 30-day period gets a cell reading 30d in the long
+// track, and an account that reports no window says `unknown` instead of a zero.
 import {
   NOT_REPORTED,
   accountState,
   exclusionText,
   nearestWindow,
   resetText,
+  slotWindows,
   windowLengthText,
   windowUsedText,
 } from '@entities/account';
@@ -30,18 +30,26 @@ export type AccountColumn = (typeof ACCOUNT_COLUMNS)[number];
 const COLUMN_WIDTH = 16;
 const WINDOW_WIDTH = 12;
 
-/** The field id for one window. Stable, and unique per account: one account may carry two windows
- *  of the same length under different model scopes. */
-export function windowFieldId(window: AccountWindow): string {
-  return window.model === undefined
-    ? `window:${window.seconds}`
-    : `window:${window.seconds}:${window.model}`;
-}
-
 /** A window's field label: its reported length, prefixed by the model where one applies. */
 export function windowFieldLabel(window: AccountWindow): string {
   const length = windowLengthText(window.seconds);
   return window.model === undefined ? length : `${window.model} ${length}`;
+}
+
+/** One slot's cell: the window's used figure under its own length, or the slot's name over an
+ *  empty value when the provider reported no window there. */
+function WindowTrack({ window, fallback, empty }: { window: AccountWindow | null; fallback: string; empty: string }) {
+  if (window === null) return <StripField w={WINDOW_WIDTH} label={fallback} value={empty} mono={false} />;
+  return (
+    <StripField
+      w={WINDOW_WIDTH}
+      label={windowFieldLabel(window)}
+      value={windowUsedText(window)}
+      /* NOT AN ABSENCE PHRASE (M1-69): `unavailable` here is a BASIS member - it tells the reader
+         what kind of figure this is, and it is printed beside the figure it qualifies. */
+      basis={window.used_percent === null ? 'unavailable' : 'measured'}
+    />
+  );
 }
 
 export function AccountStrip({ account, isNext, nextRule, columns, nowMs, selected, onOpen }: {
@@ -59,6 +67,7 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
 }) {
   const state = accountState(account, nowMs);
   const nearest = nearestWindow(account);
+  const slots = slotWindows(account);
   const wanted = new Set(columns);
 
   return (
@@ -82,21 +91,13 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
       <StripField w={COLUMN_WIDTH} label={S.account} value={wanted.has('account') ? (account.label ?? S.singleLogin) : ''} mono={false} />
       <StripField w={COLUMN_WIDTH} label={S.plan} value={wanted.has('plan') ? (account.plan ?? S.none) : ''} mono={false} />
 
-      {account.windows.map((window) => (
-        <StripField
-          key={windowFieldId(window)}
-          w={WINDOW_WIDTH}
-          label={windowFieldLabel(window)}
-          value={windowUsedText(window)}
-          /* NOT AN ABSENCE PHRASE (M1-69): `unavailable` here is a BASIS member - it tells the reader
-         what kind of figure this is, and it is printed beside the figure it qualifies. The census
-         counts it because it is quoted. */
-      basis={window.used_percent === null ? 'unavailable' : 'measured'}
-        />
-      ))}
-      {account.windows.length === 0 ? (
-        <StripField w={WINDOW_WIDTH} label={S.window} value={NOT_REPORTED} mono={false} />
-      ) : null}
+      {/* TWO FIXED WINDOW TRACKS, one per daemon slot, each empty when its slot is: a cell per
+          reported window gave a row with one window one cell fewer than a row with two, and every
+          column after it slid under the next name (walkthrough B3). A track prints its window's
+          OWN length, so Grok's 30-day period still reads 30d. An account with no window at all
+          says so once, in the first track. */}
+      <WindowTrack window={slots.short} fallback={S.shortWindow} empty={account.windows.length === 0 ? NOT_REPORTED : ''} />
+      <WindowTrack window={slots.long} fallback={S.longWindow} empty="" />
 
       {/* THE TRACKS RENDER EMPTY (M1-107), sites seven to eleven. The block above this was a
           THREE-WAY -- excluded OR resets OR NEITHER, at two different widths (16ch and 12ch) --

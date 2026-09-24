@@ -53,19 +53,9 @@ sourceSets = ["test", "testFixtures"]
 date = "2026-09-20"
 reason = """
 Production-only walls: each grades what the shipped daemon does, and binds src/main by design. Test
-sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test) and
-kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in :quality-architecture.
-"""
-
-[[exclusion]]
-rule = "kt-no-quality-suppress"
-sourceSets = ["testFixtures"]
-date = "2026-09-20"
-reason = """
-The wall binds src/main and src/test but not src/testFixtures, so a @Suppress of a detekt structural
-rule in one of the four shared fixture files is not caught. A real gap, recorded rather than closed:
-widening a rule is a change to quality/rules/, not to this proof. Close it by adding
-`"**/src/testFixtures/**/*.kt"` to the rule's files: and deleting this row.
+sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test +
+testFixtures) and kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in
+:quality-architecture.
 """
 
 [[exclusion]]
@@ -338,11 +328,14 @@ reason = """
 LAYOUT-01 moved four control-plane files into :features-turns: /api/compact (compact/CompactPayloads,
 compact/HeadCompactSource), /api/compaction/instructions (compaction/CompactionInstructionsRoute) and
 the capture switch (wire/CaptureRoutes). These three walls selected them under daemon/control, so each
-now selects their exact destinations. The rest of the turn engine keeps the disposition the 2026-09-22
-module rows gave it: its HTTP surface is the head server's, authenticated per head by ClientAuth.kt
-rather than the control plane's guarded(call); its log lines are turn telemetry, not audit records of
-operator input; and it reads JSON through the dialect codecs. The proof credits file rows only from
-each rule's lost-file set, so this row cannot suppress a finding in a selected destination.
+now selects their exact destinations. `splice trace` (trace/) came from app/cli/trace, which only
+kt-json-scalars-single-source selected, and that rule selects trace/ too: it reads trace records
+through JsonScalars, not the dialect codecs. The rest of the turn engine keeps the disposition the
+2026-09-22 module rows gave it: its HTTP surface is the head server's, authenticated per head by
+ClientAuth.kt rather than the control plane's guarded(call); its log lines are turn telemetry, not
+audit records of operator input; and it reads JSON through the dialect codecs. The proof credits file
+rows only from each rule's lost-file set, so this row cannot suppress a finding in a selected
+destination.
 """
 
 [[exclusion]]

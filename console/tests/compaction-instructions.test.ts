@@ -102,9 +102,9 @@ describe('reading every head', () => {
 });
 
 describe('the rules bay', () => {
-  test('a length prints as a count, an opt-out as a decision, an unreadable file as unavailable', () => {
+  test('a length prints as a count, an empty rule as the client default, an unreadable file as unavailable', () => {
     expect(charsText(41)).toBe('41');
-    expect(charsText(0)).toBe('opt-out');
+    expect(charsText(0)).toBe('client default');
     expect(charsText(null)).toBe('unavailable');
   });
 
@@ -118,7 +118,8 @@ describe('the rules bay', () => {
 
   test('no rule says the client\'s instructions stand, and names where rules are declared', () => {
     const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules: [], unread: [] } }));
-    expect(out).toContain('no rule configured: the client instructions stand');
+    expect(out).toContain('no compaction rules');
+    expect(out).toContain('own summary instructions apply');
     expect(out).toContain('[compaction] in splice.toml');
   });
 

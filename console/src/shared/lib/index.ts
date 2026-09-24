@@ -85,7 +85,9 @@ export function timeAgo(ts: number, now = Date.now()): string {
   if (delta < 5_000) return 'now';
   if (delta < 60_000) return `${Math.floor(delta / 1000)}s ago`;
   if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-  return `${Math.floor(delta / 3_600_000)}h ago`;
+  // Hours up to two days, then days: `50h ago` made the reader do the division.
+  if (delta < 172_800_000) return `${Math.floor(delta / 3_600_000)}h ago`;
+  return `${Math.floor(delta / 86_400_000)}d ago`;
 }
 
 /** Interval runner with immediate first tick; returns a stop function. */

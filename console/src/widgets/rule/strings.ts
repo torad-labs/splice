@@ -22,5 +22,5 @@ export const S = {
   reconnecting: 'reconnecting',
   off: 'off',
   /** Beside a count: heads with no plan limit to report (a pay-per-token key has none). */
-  noneTail: 'report no limit',
+  noneTail: 'heads without limits',
 } as const;

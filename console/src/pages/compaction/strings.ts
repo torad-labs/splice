@@ -3,10 +3,10 @@
 export const S = {
   title: 'compaction',
   /** The reveal's label for the page's one explanation. */
-  law: 'why no model',
+  law: 'which model compacts',
   sample: 'sample data',
   /** The rules bay (GET /api/compaction/instructions). */
-  instructions: 'instructions',
+  instructions: 'compaction rules',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

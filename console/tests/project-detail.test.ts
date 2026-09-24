@@ -95,7 +95,7 @@ describe('what governs the repo', () => {
     const out = renderToStaticMarkup(h(ProjectCompaction, { id: row().id, row: row({ compaction: rules }) }));
     expect(out).toContain(`aria-label="instruction ${rule.source}"`);
     expect(out).toContain('>9<');
-    expect(out).toContain('opt-out');
+    expect(out).toContain('client default');
     expect(out).toContain('unavailable');
     expect(out, 'the project view has no per-head list for a rule').not.toContain('heads');
   });

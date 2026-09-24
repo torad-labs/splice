@@ -6,10 +6,10 @@ export const S = {
   instruction: 'instruction',
   scope: 'scope',
   source: 'source',
-  chars: 'chars',
+  chars: 'length',
   heads: 'heads',
   /** A rule whose text is empty: the client's own instructions stand. */
-  optOut: 'opt-out',
+  optOut: 'client default',
   /** A rule whose file cannot be read. */
   unavailable: 'unavailable',
 } as const;

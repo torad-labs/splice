@@ -1,22 +1,23 @@
 // Every label this widget prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall). Outcome names are DATA from the daemon, not labels, and
-// are printed as the daemon spells them.
+// section 4, enforced by the label wall). Outcome names are DATA from the daemon; the ones it is
+// known to write get words in OUTCOME_WORDS, and any other name prints as the daemon spells it.
 export const S = {
-  outcomes: 'compact outcomes',
-  events: 'compact events',
-  detail: 'event detail',
+  outcomes: 'outcomes',
+  events: 'recent compactions',
+  detail: 'compaction',
   total: 'total',
   count: 'count',
+  share: 'share',
   when: 'when',
   head: 'head',
   outcome: 'outcome',
-  chars: 'chars',
+  chars: 'summary length',
   took: 'took',
-  status: 'status',
+  instructions: 'instructions',
   error: 'error',
-  openEvent: 'open event',
+  openEvent: 'open compaction',
   sample: 'sample data',
-  none: 'no events recorded',
+  none: 'no compactions yet',
   live: 'live',
   /** THE HOLDER EDGE'S WORD, one per STATE and not one per outcome (m1 design review B10, ruled
    *  2026-09-18). The edge used to carry the outcome name itself, and `ui.css:349` gives the edge
@@ -41,3 +42,20 @@ export const S = {
   /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
   close: 'close',
 } as const;
+
+/** The daemon's outcome names in words (console review, 2026-09-24: the column printed
+ *  `tooled_no_text`). The set is the one the daemon writes (StreamPromote.kt, StreamCompact.kt,
+ *  PickedText.kt, OutcomeTag.EMPTY_MODEL) plus `upstream_error`, which older rows still carry. The
+ *  set stays open: a name missing here prints as the daemon spells it (`outcomeText`). */
+export const OUTCOME_WORDS: Readonly<Record<string, string>> = {
+  model_text: 'summary written',
+  model_thinking: 'summary from reasoning',
+  model_text_weak: 'weak summary',
+  tooled_no_text: 'tool call instead',
+  empty_model: 'empty reply',
+  stream_error: 'stream failed',
+  upstream_error: 'provider error',
+};
+
+/** The instructions a compaction ran under, when it ran under the client's own. */
+export const CLIENT_INSTRUCTIONS = 'client default';

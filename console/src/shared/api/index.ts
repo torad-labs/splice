@@ -274,8 +274,10 @@ export interface CompactRow {
   outcome?: string;
   chars?: number;
   ms?: number;
-  status?: number;
   error?: string;
+  /** The instructions the compaction ran under: `client` for the client's own, else a rule's
+   *  source label (StreamCompact.kt writes it from TurnMeta.compactionInstructionsSource). */
+  instructions_source?: string;
 }
 
 export interface CompactPayload {

@@ -13,7 +13,7 @@ import { describe, expect, test } from 'vitest';
 import { costOf, sum, within } from '../src/entities/economics';
 import { slotTiers } from '../src/entities/model';
 import type { HeadCatalog } from '../src/entities/model';
-import { CompactFeed, edgeFor, stateOf } from '../src/widgets/compact-feed';
+import { CompactFeed, edgeFor, outcomeText, shareText, stateOf } from '../src/widgets/compact-feed';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
 import { CompactionBoard } from '../src/pages/compaction';
 import { fixtureCompact } from '../src/pages/compaction/fixtures/compaction';
@@ -178,11 +178,32 @@ describe('compaction page', () => {
     expect(edgeFor('something_new')).toBe('amber');
   });
 
-  test('the feed draws a strip per outcome and a strip per event', () => {
+  test('the feed draws a strip per outcome and a strip per event, each outcome in words', () => {
     const markup = render(h(CompactFeed, { payload: fixtureCompact }));
-    for (const outcome of Object.keys(fixtureCompact.stats.by_outcome)) expect(markup).toContain(outcome);
+    for (const outcome of Object.keys(fixtureCompact.stats.by_outcome)) {
+      expect(markup).toContain(`>${outcomeText(outcome)}<`);
+      expect(markup, `the daemon's spelling ${outcome} is not what a reader sees`).not.toContain(`>${outcome}<`);
+    }
     expect(markup).toContain(String(fixtureCompact.stats.total));
     expect(markup).toContain('myx-strip');
+    expect(markup, 'an empty rack gives guidance, not a route').not.toContain('/api/');
+  });
+
+  test('an outcome the daemon is known to write reads in words, and a new one in its own spelling', () => {
+    // The live feed on 2026-09-24 carried exactly these six names across 3,786 compactions.
+    expect(['model_text', 'model_thinking', 'tooled_no_text', 'empty_model', 'stream_error', 'upstream_error'].map(outcomeText))
+      .toEqual(['summary written', 'summary from reasoning', 'tool call instead', 'empty reply', 'stream failed', 'provider error']);
+    // The set is open: a name this console has not met still prints, never as a blank cell.
+    expect(outcomeText('something_new')).toBe('something new');
+  });
+
+  test('an outcome\'s share of all compactions keeps a rare failure visible', () => {
+    // Live 2026-09-24: 666 empty replies, 567 broken streams and 3 reasoning summaries of 3,786.
+    expect(shareText(666, 3786)).toBe('18%');
+    expect(shareText(567, 3786)).toBe('15%');
+    expect(shareText(3, 3786)).toBe('<0.1%');
+    expect(shareText(20, 3786)).toBe('0.5%');
+    expect(shareText(1, 0)).toBe('–');
   });
 
   test('the page states the law that compaction runs on the session own model, behind a reveal', () => {
@@ -190,8 +211,8 @@ describe('compaction page', () => {
     // an honest empty or a Doctor fix, so the sentence is one click away and is not in the DOM
     // until it is asked for (the primitive's own contract).
     const markup = render(h(CompactionBoard, { payload: fixtureCompact }));
-    expect(markup).toContain('why no model');
-    expect(markup).not.toContain('own model and effort by law');
+    expect(markup).toContain('which model compacts');
+    expect(markup).not.toContain('own model and effort');
   });
 });
 
@@ -340,7 +361,7 @@ describe('a rack of like rows prints its column names once', () => {
     // Law 34's shape: if the boards rendered nothing, every assertion below would pass vacuously
     // and the suite would report that no rack repeats its labels. The denominator is named first.
     const all = boards.flatMap(([, markup]) => racks(markup));
-    expect(all.map((rack) => rack.label)).toEqual(['compact outcomes', 'compact events', 'heads']);
+    expect(all.map((rack) => rack.label)).toEqual(['outcomes', 'recent compactions', 'heads']);
     expect(all.every((rack) => rack.rows.length > 0)).toBe(true);
   });
 
@@ -398,10 +419,10 @@ describe('a rack of like rows prints its column names once', () => {
 // The edge label has a fixed 6ch budget that CLIPS (ui.css:349, B1, deliberate), and the feed was
 // passing it the daemon's outcome name — so `model_summary` and `model_fallback` both printed
 // `mode…` on adjacent rows: one label, two outcomes, and the full name already two cells to the
-// right (m1 design review B10). A per-outcome word is not available and that is a fact about the
-// payload rather than a preference: `by_outcome` is `Record<string, number>`, so the outcome set
-// is open and the console cannot enumerate it. The STATE set is closed because `stateOf` computes
-// it, which is what makes three words enough and what this wall pins.
+// right (m1 design review B10). The edge cannot carry a per-outcome word: `by_outcome` is
+// `Record<string, number>`, so the outcome set is open, and the cell beside it already names the
+// outcome (in words since 2026-09-24). The STATE set is closed because `stateOf` computes it,
+// which is what makes three words enough and what this wall pins.
 describe('the compaction edge states what happened, in a word that fits its column', () => {
   const WORDS = ['ok', 'warn', 'fail'];
 

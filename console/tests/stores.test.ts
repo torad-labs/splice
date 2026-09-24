@@ -51,5 +51,7 @@ describe('formatters', () => {
     expect(timeAgo(now - 1000, now)).toBe('now');
     expect(timeAgo(now - 30_000, now)).toBe('30s ago');
     expect(timeAgo(now - 120_000, now)).toBe('2m ago');
+    expect(timeAgo(now - 39 * 3_600_000, now)).toBe('39h ago');
+    expect(timeAgo(now - 50 * 3_600_000, now)).toBe('2d ago');
   });
 });

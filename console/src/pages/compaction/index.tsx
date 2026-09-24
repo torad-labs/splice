@@ -42,9 +42,16 @@ export function wantsFixture(search: string): boolean {
 
 /** The law, in words. A sentence, so it lives here and not in the string table. */
 export const LAW_TEXT =
-  'compaction runs on the session own model and effort by law: pinning another model would move the '
-  + 'reasoning off the session and miss the backend prompt cache on the whole transcript, which is '
-  + 'the most expensive turn class there is. This page reads outcomes; it never offers a model.';
+  "Compaction always runs on the session's own model and effort. Sending it to another model would "
+  + "leave the session's reasoning behind and miss the provider's prompt cache on the whole "
+  + 'transcript, the most expensive request a session makes. So this page reports what each '
+  + 'compaction did and has no model setting.';
+
+/** No rule on any head, in the words the project detail uses for one repo (CLIENT_OWN). */
+export const NO_RULE = {
+  text: 'no compaction rules',
+  source: "claude code's own summary instructions apply; a rule goes under [compaction] in splice.toml",
+};
 
 /** The rules bay: a rule per strip, every head that could not be asked named in the daemon's
  *  words, and no rule at all said as what it means. */
@@ -62,7 +69,7 @@ export function InstructionsBay({ instructions, error = null }: { instructions: 
           : {
             count: instructions.rules.length,
             // No configured rule: the client's own compaction instructions stand on every head.
-            empty: { text: 'no rule configured: the client instructions stand', source: '[compaction] in splice.toml' },
+            empty: NO_RULE,
           })}
       >
         {instructions?.rules.map((rule) => (

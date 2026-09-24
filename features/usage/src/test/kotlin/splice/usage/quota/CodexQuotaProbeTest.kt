@@ -1,5 +1,5 @@
 // NEW: Codex usage body fixtures (live 2026-09-02) and the exact GET header map.
-package splice.app.quota
+package splice.usage.quota
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine

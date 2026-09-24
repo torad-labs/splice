@@ -1,5 +1,5 @@
 // NEW: Kimi usage probe — GET <base>/v1/usages. Owns the URL, header map, and body parser.
-package splice.app.quota
+package splice.usage.quota
 
 import io.ktor.client.HttpClient
 import kotlinx.serialization.json.JsonArray

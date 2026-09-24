@@ -16,9 +16,6 @@ import splice.app.auth.SignInPlanner
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
-import splice.app.quota.CodexQuotaProbe
-import splice.app.quota.MuseMintProbe
-import splice.app.quota.QuotaProbe
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -36,6 +33,7 @@ import splice.core.usage.QuotaHeaderRead
 import splice.core.util.LogSink
 import splice.head.usage.QuotaTracker
 import splice.oauth.OAuthAccountFiles
+import splice.usage.quota.QuotaProbe
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -228,7 +226,9 @@ class ManagedHeadFactoryQuotaPollTest {
             backgroundScope,
             StartQuotaPoller { _, probe, _, _ -> chatgptProbes += probe },
         ).assembleHead(build(chatgptPaths, quotaPoll = "auto"), controlPort = 3098)
-        assertTrue(chatgptProbes.single() is CodexQuotaProbe)
+        // The probe classes are internal to features/usage (LAYOUT-01); the class NAME still pins that
+        // the head's own auth kind reached the dispatch, which a bare non-null would not.
+        assertEquals("CodexQuotaProbe", chatgptProbes.single()::class.simpleName)
 
         val musePaths = StatePaths(baseOverride = tmp.resolve("muse-probe"))
         val museProbes = mutableListOf<QuotaProbe>()
@@ -237,7 +237,7 @@ class ManagedHeadFactoryQuotaPollTest {
             backgroundScope,
             StartQuotaPoller { _, probe, _, _ -> museProbes += probe },
         ).assembleHead(museBuild(musePaths), controlPort = 3106)
-        assertTrue(museProbes.single() is MuseMintProbe)
+        assertEquals("MuseMintProbe", museProbes.single()::class.simpleName)
     }
 
     private fun assertCodexRound(tracker: QuotaTracker) {

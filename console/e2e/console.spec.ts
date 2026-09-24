@@ -75,7 +75,21 @@ test('the page set comes from the source', () => {
   expect(PAGES, `no page directories under ${PAGES_DIR}`).toContain('fleet');
 });
 
-test('the management key unlocks the console', async ({ page }) => {
+test('a console served by the daemon opens without asking for the key', async ({ page }) => {
+  // No init script: the key arrives in the page the daemon serves (ServedConsole), nowhere else.
+  await page.goto(`${env('CONSOLE_E2E_BASE')}/#/fleet`);
+  await expect(page.locator('main')).toContainText(STACK.oauthHead);
+  await expect(page.locator('main')).toContainText(STACK.keyHead);
+  expect(await page.getByText('management key required').count(), 'the served console asked for its key').toBe(0);
+});
+
+test('a page that carries no key falls back to the gate, and the pasted key unlocks it', async ({ page }) => {
+  // The page as an older daemon or the Vite dev server sends it: without the key the daemon prints.
+  await page.route(`${env('CONSOLE_E2E_BASE')}/`, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(/<meta name="splice-mgmt-key"[^>]*>/, '');
+    await route.fulfill({ response, body });
+  });
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#/fleet`);
   await expect(page.getByText('management key required').first()).toBeVisible();
   await page.getByRole('textbox', { name: 'key' }).fill(env('CONSOLE_E2E_KEY'));

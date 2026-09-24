@@ -1,4 +1,6 @@
-// Key gate: the management bearer key is pasted once and kept in localStorage.
+// Key gate, the FALLBACK: a console served by the daemon carries its key (ServedConsole) and never
+// shows this. It shows under the Vite dev server, on an older daemon, or after the key rotated under an
+// open page; the pasted key is kept in localStorage.
 // The hint below names the VERB, not a path: V4-177 made the state root install-dependent
 // (~/.splice/state, or a pre-0.4 ~/.claude-codex/state adopted in place, or SPLICE_STATE_DIR),
 // and this modal is pre-auth so it cannot ask the daemon which one it is. `splice dashboard`

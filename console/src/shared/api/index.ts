@@ -2,10 +2,12 @@
 // network. Importable solely from entity api segments (lint-enforced boundary;
 // an ast-grep wall additionally forbids fetch() anywhere else in console/src).
 // Served same-origin by the control server (spliced), which also hosts this
-// dashboard at /; the bearer key comes from the state root's mgmt-key
-// (`splice dashboard` prints it), pasted once by the operator.
+// dashboard at /; the bearer key is the state root's mgmt-key, which the daemon
+// prints into the page it serves (ServedConsole), so a served console never asks.
 
 const KEY_STORAGE = 'myx-mgmt-key';
+/** The meta element the daemon prints the key into (app/control/mount/ServedConsole.kt). */
+const KEY_META = 'splice-mgmt-key';
 
 export class MgmtError extends Error {
   status: number;
@@ -15,12 +17,31 @@ export class MgmtError extends Error {
   }
 }
 
-export function getStoredKey(): string {
+/** The key the daemon printed into the page it served: every load from the daemon carries the
+ *  current key. Absent under the Vite dev server and on a daemon older than ServedConsole, where
+ *  the key pasted into the gate is the fallback. */
+function servedKey(): string {
+  if (typeof document === 'undefined') return '';
+  return document.querySelector<HTMLMetaElement>(`meta[name="${KEY_META}"]`)?.content.trim() ?? '';
+}
+
+function pastedKey(): string {
   try {
     return localStorage.getItem(KEY_STORAGE) ?? '';
   } catch {
     return '';
   }
+}
+
+/** Read once: the meta is in the page's static head, present before this module runs. */
+const SERVED_KEY = servedKey();
+
+/** The bearer every request carries, resolved on every call: a key pasted THIS session first (the
+ *  served one is stale once the gate had to ask), then the served key, then the one pasted before.
+ *  The pasted key is module state as well as storage: in a private window it never reaches
+ *  localStorage, and the event stream re-reading storage alone sent an empty bearer. */
+export function currentKey(): string {
+  return sessionKey || SERVED_KEY || pastedKey();
 }
 
 export function storeKey(key: string): void {
@@ -31,7 +52,7 @@ export function storeKey(key: string): void {
   locked = false; // re-arm the pollers; the next tick retries with the new key
 }
 
-let sessionKey = getStoredKey();
+let sessionKey = '';
 
 // While locked (last response was 401) requests short-circuit without touching
 // the network — no poller 401 spam behind the key gate. storeKey() re-arms.
@@ -74,7 +95,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${sessionKey}`,
+      Authorization: `Bearer ${currentKey()}`,
       ...(init?.headers ?? {}),
     },
   });

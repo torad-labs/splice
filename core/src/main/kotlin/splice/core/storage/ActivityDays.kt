@@ -41,7 +41,9 @@ public const val ACTIVITY_DIRECTORY: String = "activity"
 private const val DAY_MAX_BYTES = 512L shl 20
 
 /** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
-private val DAY_SIBLINGS = listOf("", ".lock", ".1")
+/** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
+private const val ROLLED_SUFFIX = ".1"
+private val DAY_SIBLINGS = listOf("", ".lock", ROLLED_SUFFIX)
 
 public class ActivityDays(
     private val dir: Path,
@@ -87,7 +89,7 @@ public class ActivityDays(
         val oldest = oldestKept(day(clock()))
         return days().filter { (date, _) -> !date.isBefore(oldest) }
             .asSequence()
-            .flatMap { (_, file) -> readLines(file).asSequence() }
+            .flatMap { (_, file) -> (readRolled(file) + readLines(file)).asSequence() }
     }
 
     /** Deletes day files older than the retention window, relative to [today]. */
@@ -132,6 +134,13 @@ public class ActivityDays(
         ?.groupValues?.get(1)
         // ast-grep-ignore: kt-no-silent-result-collapse -- a name that matches the pattern but is not a calendar date is not one of this store's files
         ?.let { Cancellables.runCatchingCancellable { LocalDate.parse(it) }.getOrNull() }
+
+    /** The day's rotated older half, read BEFORE the live file so the day comes back whole and in order
+     *  (v0.4.0 release: the read skipped it, so a day that rotated started halfway, unsaid). */
+    private fun readRolled(file: Path): List<String> {
+        val rolled = file.resolveSibling("${file.fileName}$ROLLED_SUFFIX")
+        return if (Files.exists(rolled)) readLines(rolled) else emptyList()
+    }
 
     private fun readLines(file: Path): List<String> =
         // ast-grep-ignore: kt-no-silent-result-collapse -- an unreadable day file is left out of the view rather than failing the whole read; the file is still on disk for the operator

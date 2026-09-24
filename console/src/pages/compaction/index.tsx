@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import type { CompactPayload } from '@shared/api';
 import { startCompactPolling, startInstructionsPolling, useCompact, useInstructions } from '@entities/compact-stats';
+import { fetchHeads, useHeads } from '@entities/heads';
 import type { InstructionsState } from '@entities/compact-stats';
 import { Blank, Fault } from '@shared/controls';
 import { Bay, Reveal } from '@shared/ui';
@@ -85,13 +86,15 @@ export function InstructionsBay({ instructions, error = null }: { instructions: 
  * static render only ever sees a zustand store's initial state, so a board that read the store
  * could not be rendered from data by a test or a capture.
  */
-export function CompactionBoard({ payload, instructions = null, instructionsError = null, sample }: {
+export function CompactionBoard({ payload, instructions = null, instructionsError = null, sample, labels }: {
   payload: CompactPayload | null;
   /** The rules in effect; null until read, and null behind a sample (no sample rules exist). */
   instructions?: InstructionsState | null;
   instructionsError?: string | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
+  /** Head key to label, from /api/heads; the rack prints a key as itself until it arrives. */
+  labels?: ReadonlyMap<string, string>;
 }) {
   return (
     <div
@@ -107,7 +110,7 @@ export function CompactionBoard({ payload, instructions = null, instructionsErro
           rack's way. */}
       <Reveal label={S.law}>{<p className="myx-compaction-law">{LAW_TEXT}</p>}</Reveal>
       {sample === undefined ? <InstructionsBay instructions={instructions} error={instructionsError} /> : null}
-      {payload === null ? <Blank strips={4} /> : <CompactFeed payload={payload} sample={sample !== undefined} />}
+      {payload === null ? <Blank strips={4} /> : <CompactFeed payload={payload} sample={sample !== undefined} {...(labels === undefined ? {} : { labels })} />}
     </div>
   );
 }
@@ -116,7 +119,10 @@ export default function CompactionPage() {
   const { search } = useLocation();
   const compact = useCompact((state) => state);
   const instructions = useInstructions((state) => state);
+  const heads = useHeads((state) => state.data);
   useEffect(() => {
+    // Labels only: a head's label does not change while the page is open, so one read is enough.
+    void fetchHeads();
     const stops = [startCompactPolling(5000), startInstructionsPolling(15000)];
     return () => stops.forEach((stop) => stop());
   }, []);
@@ -156,6 +162,7 @@ export default function CompactionPage() {
         instructions={instructions.data}
         instructionsError={instructions.error}
         sample={sample?.name}
+        labels={new Map((heads ?? []).map((head) => [head.key, head.label]))}
       />
     </>
   );

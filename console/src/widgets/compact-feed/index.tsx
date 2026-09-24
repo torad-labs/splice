@@ -123,8 +123,15 @@ function instructionsText(source: string | undefined): string {
   return source === 'client' ? CLIENT_INSTRUCTIONS : source;
 }
 
-export function CompactFeed({ payload, sample = false }: { payload: CompactPayload; sample?: boolean }) {
+export function CompactFeed({ payload, sample = false, labels = new Map() }: {
+  payload: CompactPayload;
+  sample?: boolean;
+  /** Head key to the label every other page prints (`bonsai` to `claude-bonsai`); a key with no
+   *  label prints as itself. */
+  labels?: ReadonlyMap<string, string>;
+}) {
   const [open, setOpen] = useState<string | null>(null);
+  const nameOf = (key: string): string => labels.get(key) ?? key;
   // Most common first: the daemon's map order put three failure kinds above the 65% that worked.
   const outcomes = Object.entries(payload.stats.by_outcome).sort(([, a], [, b]) => b - a);
   const tail = [...payload.stats.tail].reverse();
@@ -220,7 +227,7 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
               >
                 {/* NO PER-CELL LABELS: the bay prints its five column names once (B9). */}
                 <StripField w={WHEN} value={timeAgo(row.ts)} />
-                <StripField w={HEAD} value={row.head} mono={false} />
+                <StripField w={HEAD} value={nameOf(row.head)} mono={false} />
                 <StripField w={EVENT} value={outcomeText(outcome)} mono={false} />
                 <StripField w={CHARS} value={row.chars === undefined ? ABSENT : fmtInt(row.chars)} />
                 <StripField w={TOOK} value={row.ms === undefined ? ABSENT : fmtMs(row.ms)} />
@@ -248,7 +255,7 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
               {/* The reader's own clock: this printed the UTC time before (`toISOString`), which is
                   hours off for anyone not in UTC and matched no other time on the page. */}
               <StripField w={13} label={S.when} value={new Date(opened.ts).toTimeString().slice(0, 8)} />
-              <StripField w={18} label={S.head} value={opened.head} mono={false} />
+              <StripField w={18} label={S.head} value={nameOf(opened.head)} mono={false} />
               <StripField w={22} label={S.outcome} value={outcomeText(opened.outcome ?? 'unknown')} mono={false} />
               <StripField w={15} label={S.chars} value={opened.chars === undefined ? ABSENT : fmtInt(opened.chars)} />
               <StripField w={11} label={S.took} value={opened.ms === undefined ? ABSENT : fmtMs(opened.ms)} />

@@ -250,6 +250,14 @@ describe('compaction page', () => {
     expect(markup, 'an empty rack gives guidance, not a route').not.toContain('/api/');
   });
 
+  test('the event rack names a head by its label, and a head with no label by its key', () => {
+    const labels = new Map([['claudex', 'claude-codex']]);
+    const markup = render(h(CompactFeed, { payload: fixtureCompact, labels }));
+    expect(markup).toContain('>claude-codex<');
+    expect(markup, 'a labelled head prints its label, never its key').not.toContain('>claudex<');
+    expect(markup, 'a head the map does not name keeps its key').toContain('>claude-splice<');
+  });
+
   test('an outcome the daemon is known to write reads in words, and a new one in its own spelling', () => {
     // The live feed on 2026-09-24 carried exactly these six names across 3,786 compactions.
     expect(['model_text', 'model_thinking', 'tooled_no_text', 'empty_model', 'stream_error', 'upstream_error'].map(outcomeText))

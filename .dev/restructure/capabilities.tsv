@@ -2231,3 +2231,4 @@ tools/release/src/lib/changelog.ts	b2598a35f4c52931257524b881eeda957ac99195d9cfd
 tools/release/src/commands/notes.ts	054aeac5b8b33e596aa07a3e3995cb9202ccc9fc4213c2285b8c4b0229138a44	created		the release body from the version's CHANGELOG section, and the gate that a version bump carries one (V4-198)
 tools/release/test/changelog.test.ts	174fae7dc7ce59abe25864ecb0ac3cdff0524ac9b99d6758602a2dac459f8d98	created		the release body from the version's CHANGELOG section, and the gate that a version bump carries one (V4-198)
 core/src/test/kotlin/splice/core/config/ConfigHeadOnlyKnobsTest.kt	9c83cb121073496c5ef178e4c94ec3f2a9e9ea56115652f37e081669a15ee3fb	created		the trace and the wire tap are set per head only (v0.4.0 prompt-review)
+tools/gate/test/ledger-guard.test.ts	fbfe7ffa3086212cef86c767cdda546c65cd5b85103afbb16846de7bf25e9ae9	created		the campaign-ledger guard driven through its PreToolUse entry (v0.4.0 tooling review)

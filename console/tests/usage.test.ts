@@ -159,12 +159,12 @@ describe('usage page', () => {
     expect(markup).toContain('measured');
     expect(markup).toContain('estimated');
     // Cost is priced because the catalog carries the pinned model rates.
-    expect(markup).not.toContain('no rates declared');
+    expect(markup).not.toContain('no prices set');
   });
 
   test('with no catalog there is no dollar figure, and the inset says so rather than printing zero', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: { pending: 'V4-127' }, now: FIXTURE_NOW }));
-    expect(markup).toContain('no rates declared');
+    expect(markup).toContain('no prices set');
     expect(markup).toContain('unavailable');
   });
 });

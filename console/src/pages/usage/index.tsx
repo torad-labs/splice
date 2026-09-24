@@ -26,7 +26,7 @@ import { useViews, ViewTabs } from '@features/views';
 // budgets and neither imports the page.
 import { AlertsPanel } from '@features/alerts';
 import { BudgetsPanel } from '@features/budgets';
-import { cx, fmtInt, fmtTokens, timeAgo } from '@shared/lib';
+import { cx, fmtDurationS, fmtInt, fmtTokens, timeAgo } from '@shared/lib';
 import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
 import { TokenChart, CostChart, ByteChart, ToolChart, LimitedChart, WINDOWS } from '@widgets/scope-chart';
@@ -97,9 +97,9 @@ function hoursLeft(burnRate: number, ceiling: number | null, spent: number): str
   // the ceiling cell beside it already says so (m1 design review B8). `idle` is a real reading —
   // a ceiling with no burn against it — and stays.
   if (ceiling === null) return S.absent;
-  if (burnRate <= 0) return 'idle';
+  if (burnRate <= 0) return S.idle;
   const hours = Math.max(0, ceiling - spent) / burnRate;
-  return `${hours.toFixed(1)} h`;
+  return fmtDurationS(hours * 3600);
 }
 
 /** The rack's strip: what this head has spent and what is left, in one printed row. */
@@ -112,7 +112,9 @@ function HeadStrip({ head, now, selected, onOpen }: {
   const totals = sum(within(head.buckets, 168, now));
   const projection = burn(head, now);
   const edge = projection.fraction === null ? 'grey' : projection.fraction >= 1 ? 'red' : projection.fraction >= 0.8 ? 'amber' : 'green';
-  const label = projection.fraction === null ? 'no cap' : `${Math.round(projection.fraction * 100)}%`;
+  // A head with no limit has no share of one: the edge says so with the absence mark, the same
+  // mark its limit cell prints, where it said `no cap` in a word the columns never used.
+  const label = projection.fraction === null ? S.absent : `${Math.round(projection.fraction * 100)}%`;
 
   return (
     <Strip
@@ -297,7 +299,7 @@ export function UsageBoard({ payload, catalog, now, sample }: {
             fields={(
               <ColumnNames
                 columns={[
-                  { w: HEAD_COLS[0], label: S.heads }, { w: HEAD_COLS[1], label: S.spent },
+                  { w: HEAD_COLS[0], label: S.head }, { w: HEAD_COLS[1], label: S.spent },
                   { w: HEAD_COLS[2], label: S.ceiling }, { w: HEAD_COLS[3], label: S.exhaustion },
                   { w: HEAD_COLS[4], label: S.turns }, { w: HEAD_COLS[5], label: S.inTokens },
                   { w: HEAD_COLS[6], label: S.outTokens }, { w: HEAD_COLS[7], label: S.limited },
@@ -322,7 +324,7 @@ export function UsageBoard({ payload, catalog, now, sample }: {
             <div className="myx-usage-detail">
               <div className="myx-usage-row">
                 <span className="myx-usage-sub">{active.label}</span>
-                <span className="myx-usage-note">{`rollup ${timeAgo(payload.generated_at, now)}`}</span>
+                <span className="myx-usage-note">{`${S.updated} ${timeAgo(payload.generated_at, now)}`}</span>
               </div>
               <HeadCharts head={active} windowIndex={windowIndex} now={now} rates={ratesFor(catalog, active.key)} />
             </div>

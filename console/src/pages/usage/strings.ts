@@ -8,6 +8,7 @@ export const S = {
   byModel: 'by model',
   window: 'window',
   heads: 'heads',
+  head: 'head',
   models: 'models',
   burn: 'burn',
   tokens: 'tokens',
@@ -19,9 +20,14 @@ export const S = {
   amplification: 'in per out',
   perTurn: 'in per turn',
   wireDelta: 'wire delta',
-  ceiling: 'ceiling',
-  spent: 'spent',
-  exhaustion: 'exhaustion',
+  /** The head's token limit for the window, and what it has used against it. */
+  ceiling: 'limit',
+  spent: 'tokens used',
+  /** How long until the limit, at the rate the head is using tokens now. */
+  exhaustion: 'runs out in',
+  /** A head burning nothing against its limit. */
+  idle: 'not in use',
+  updated: 'updated',
   limited: 'rate limited',
   sample: 'sample data',
   detail: 'head detail',

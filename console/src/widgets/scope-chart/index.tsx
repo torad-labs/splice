@@ -12,7 +12,7 @@
 import type { EconomicsBucket } from '@shared/api';
 import { costOf, sum } from '@entities/economics';
 import type { CostRates } from '@entities/economics';
-import { fmtInt, fmtTokens } from '@shared/lib';
+import { fmtBytes, fmtInt, fmtTokens } from '@shared/lib';
 import { ScopeInset, StripField } from '@shared/ui';
 import { limitedRows, peakMax, peakOf, tokenRows, byteRows, toolRows, totalOf, windowHours } from './model';
 import type { ChartWindow, HourRow } from './model';
@@ -174,7 +174,7 @@ export function ByteChart({ buckets, window, now }: {
   return (
     <ScopeInset title={`${S.bytes} ${window.label}`} basis="measured">
       <StackedBars rows={rows} series={BYTES} ariaLabel={S.bytes} mode="group" />
-      <Legend rows={rows} series={BYTES} format={(value) => fmtInt(value)} />
+      <Legend rows={rows} series={BYTES} format={fmtBytes} />
     </ScopeInset>
   );
 }

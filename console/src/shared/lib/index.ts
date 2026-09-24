@@ -49,6 +49,15 @@ export function fmtInt(n: number): string {
   return new Intl.NumberFormat('en-US').format(n);
 }
 
+/** A byte count as a person reads it, in binary units: `512 B`, `1.5 KiB`, `54.1 MiB`. */
+export function fmtBytes(n: number): string {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return unit === 0 ? `${n} B` : `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
 export function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 10_000) return `${Math.round(n / 1000)}k`;

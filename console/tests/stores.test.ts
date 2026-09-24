@@ -1,6 +1,6 @@
 // Resource store cell: the loading/data/error state machine views subscribe to.
 import { describe, expect, test } from 'vitest';
-import { createResource, fmtMs, fmtTokens, timeAgo } from '../src/shared/lib';
+import { createResource, fmtBytes, fmtMs, fmtTokens, timeAgo } from '../src/shared/lib';
 
 describe('createResource', () => {
   test('loading only flags before first data; data clears error', () => {
@@ -28,6 +28,13 @@ describe('createResource', () => {
 });
 
 describe('formatters', () => {
+  test('fmtBytes reads in binary units, one decimal under ten', () => {
+    expect(fmtBytes(512)).toBe('512 B');
+    expect(fmtBytes(1536)).toBe('1.5 KiB');
+    expect(fmtBytes(56_691_878)).toBe('54 MiB');
+    expect(fmtBytes(5 * 1024 ** 3)).toBe('5.0 GiB');
+  });
+
   test('fmtTokens scales', () => {
     expect(fmtTokens(950)).toBe('950');
     expect(fmtTokens(1500)).toBe('1.5k');

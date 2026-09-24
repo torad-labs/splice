@@ -44,7 +44,7 @@ class QuotaHeadersTest {
         )
         val snapshot = headers.fromUpstream(read(upstream))!!
         assertEquals(14.0, snapshot.fiveHour!!.usedPercent, 1e-9)
-        assertEquals(1_788_010_000L, snapshot.fiveHour!!.resetsAt)
+        assertEquals(1_788_010_000L, snapshot.fiveHour.resetsAt)
         assertEquals(42.0, snapshot.sevenDay!!.usedPercent, 1e-9)
         assertEquals(now, snapshot.updatedAt)
         val relayed = headers.forClient(snapshot)

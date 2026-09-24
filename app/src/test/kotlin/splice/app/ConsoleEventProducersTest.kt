@@ -19,7 +19,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -168,7 +168,7 @@ class ConsoleEventProducersTest {
                 header("Authorization", "Bearer $key")
             }.execute { response ->
                 val channel = response.bodyAsChannel()
-                check(channel.readUTF8Line() == ": open") { "the stream must open with its comment" }
+                check(channel.readLine() == ": open") { "the stream must open with its comment" }
                 open.complete(Unit)
                 List(count) { readFrame(channel) }
             }
@@ -182,12 +182,12 @@ class ConsoleEventProducersTest {
      *  ends it. */
     private suspend fun readFrame(channel: ByteReadChannel): Frame {
         val fields = mutableMapOf<String, String>()
-        var line = channel.readUTF8Line()
+        var line = channel.readLine()
         while (line != null && stillReading(fields.isEmpty(), line)) {
             if (line.isNotEmpty() && !line.startsWith(":")) {
                 fields[line.substringBefore(": ")] = line.substringAfter(": ")
             }
-            line = channel.readUTF8Line()
+            line = channel.readLine()
         }
         check(fields.isNotEmpty()) { "the stream ended before a frame" }
         return Frame(

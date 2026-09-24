@@ -169,6 +169,7 @@
 # 2026-09-24 FOLLOW-UP: FOLLOWUP console/V4-130 (milestone review 2026-09-24): the JWT, bearer and sk- redaction shapes have no test arm.
 # 2026-09-24 FOLLOW-UP: FOLLOWUP console (milestone review 2026-09-24): perf rows carry no head field (FEATURES.md:476), and /api/upgrade's latest is always null.
 # 2026-09-24 FOLLOW-UP: FOLLOWUP release (splice-lead 2026-09-24): the census (.dev/restructure/census.ts over capabilities.tsv) is no ladder leg, so #204 landed tools/e2e/docker/lib.sh, lib.ts and upgrade.sh unclaimed through a green gate; the train claimed them by hand. A gateTests arm or its own leg would make an unclaimed product path red.
+# 2026-09-24 FOLLOW-UP: FOLLOWUP release (splice-lead 2026-09-24): bun tools/gate ledger landed .dev/campaigns/v0.4.0.toml reads 173 NO RECEIPT (rows closed before the receipt protocol, verified by notes) and 19 NOT IN HISTORY (receipts naming bytes that moved in LAYOUT-01, e.g. V4-158 checks/config/python-burndown.json, now tools/gate/config). The check is no ladder leg and no V4-200 verify; re-receipting old rows at today's bytes would record a landing that did not happen, so the honest fix is a dated cutoff in the check (rows closed before receipts existed are exempt by name), not 173 new receipts.
 [campaign]
 id = "v0.4.0"
 title = "splice 0.4.0 — everything but the console: setup, drift warning, perf/sessions data, upgrade, doctor --json, compaction instructions, shared MCP hosting, local models, account pools, code-mode graduation"

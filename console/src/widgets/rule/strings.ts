@@ -21,6 +21,8 @@ export const S = {
   live: 'live',
   reconnecting: 'reconnecting',
   off: 'off',
+  /** Before the age of the last event the stream delivered. */
+  lastEvent: 'last event',
   /** Beside a count: heads with no plan limit to report (a pay-per-token key has none). */
   noneTail: 'heads without limits',
 } as const;

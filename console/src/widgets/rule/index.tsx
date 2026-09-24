@@ -88,25 +88,40 @@ export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: 
   );
 }
 
+/** How long the link may be silent before it is in doubt: the daemon writes a heartbeat after
+ *  15 s with nothing to send (EventsRoute.kt HEARTBEAT_MS), so a healthy quiet link goes up to 15 s
+ *  between bytes, and 35 s without one is a missed heartbeat plus margin. */
+export const LINK_SILENT_MS = 35_000;
+
 /**
  * How the live connection is doing, beside health: green while a stream is open, amber while it is
  * between attempts, grey when there is none (no management key yet, or a stale one).
  *
- * The age of the last FRAME is printed beside it, and its BASIS carries the distinction the age
- * alone cannot: a quiet daemon and a dead stream both leave an old frame behind, and only the
- * state word tells them apart. The basis turns `stale` at the same 15 s the console uses
- * everywhere else, so an old number never reads as a fresh one.
+ * Beside it, when something last HAPPENED: the age of the last event. That age alone cannot say
+ * whether the link is alive, because a quiet daemon sends no events for minutes; the heartbeat
+ * does. So the age turns `stale` only when the link itself has gone silent past LINK_SILENT_MS. It
+ * used to turn stale 15 s after the last event, which called every quiet, healthy stream stale
+ * (walkthrough S13).
  */
-export function ConnectionCell({ status, lastFrameAt }: { status: ConnectionStatus; lastFrameAt: number | null }) {
+export function ConnectionCell({ status, lastFrameAt, lastBeatAt = null, now = Date.now() }: {
+  status: ConnectionStatus;
+  lastFrameAt: number | null;
+  lastBeatAt?: number | null;
+  now?: number;
+}) {
   const edge = status === 'live' ? 'green' : status === 'reconnecting' ? 'amber' : 'grey';
   const word = status === 'live' ? S.live : status === 'reconnecting' ? S.reconnecting : S.off;
+  const silent = lastBeatAt !== null && now - lastBeatAt > LINK_SILENT_MS;
   return (
     <p className="myx-rule-cell myx-rule-connection">
       <HolderEdge state={edge} label={word} />
       {lastFrameAt === null ? (
         <span className="myx-rule-absent">no events yet</span>
       ) : (
-        <Figure value={timeAgo(lastFrameAt)} basis={Date.now() - lastFrameAt < 15_000 ? 'measured' : 'stale'} />
+        <>
+          <span className="myx-rule-word">{S.lastEvent}</span>
+          <Figure value={timeAgo(lastFrameAt, now)} basis={silent ? 'stale' : 'measured'} />
+        </>
       )}
     </p>
   );
@@ -211,7 +226,7 @@ export function Rule() {
             8.4 points clear. The connection signal is the daemon's live state and belongs beside
             `daemon ok` by meaning, but that cell's 10% slot is 154 px and already carries the
             health word — there is no room there. */}
-        <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} />
+        <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} lastBeatAt={connection.lastBeatAt} />
 
         <PendingRestartCell pending={pendingRestart} />
       </div>

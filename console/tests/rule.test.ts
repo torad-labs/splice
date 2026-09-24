@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headsReportingNone, nearestWindow } from '../src/entities/usage';
 import type { AuthPayload, UsagePayload } from '../src/shared/api';
-import { ConnectionCell, NoneCell, PendingRestartCell, WindowCell, healthOf } from '../src/widgets/rule';
+import { ConnectionCell, LINK_SILENT_MS, NoneCell, PendingRestartCell, WindowCell, healthOf } from '../src/widgets/rule';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -125,14 +125,19 @@ describe('the rule connection cell', () => {
     expect(out).not.toContain('ago');
   });
 
-  test('the age of the last frame is stale past the console-wide fifteen seconds', () => {
-    const fresh = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() - 2_000 }));
-    expect(fresh).not.toContain('>stale<');
+  test('an old event on a link that still beats is not stale: a quiet daemon is not a dead one', () => {
+    // Walkthrough S13: the cell turned stale 15 s after the last EVENT, so every quiet, healthy
+    // stream read stale. The heartbeat is what says the link is alive.
+    const now = 1_790_000_000_000;
+    const quiet = render(h(ConnectionCell, { status: 'live', lastFrameAt: now - 120_000, lastBeatAt: now - 5_000, now }));
+    expect(quiet).not.toContain('>stale<');
+    expect(quiet).toContain('last event');
+    expect(quiet).toContain('2m ago');
 
-    const old = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() - 60_000 }));
-    expect(old).toContain('>stale<');
-    // The state word still says the stream is up: a quiet daemon is not a dead one.
-    expect(old).toContain('>live<');
+    const silent = render(h(ConnectionCell, { status: 'live', lastFrameAt: now - 120_000, lastBeatAt: now - LINK_SILENT_MS - 1, now }));
+    expect(silent).toContain('>stale<');
+    // The state word still says what the stream reports; the basis carries the doubt.
+    expect(silent).toContain('>live<');
   });
 });
 

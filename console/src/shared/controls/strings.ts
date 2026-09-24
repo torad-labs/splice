@@ -20,6 +20,11 @@ export const S = {
   close: 'close',
   /** What a chosen option's holder edge prints: the mark is a line, and a line needs a word. */
   chosen: 'chosen',
+  /** The copy key's three words: its default label, what it prints once the value is on the
+   *  clipboard, and what it prints when there is no clipboard to put it on (plain http). */
+  copy: 'copy',
+  copied: 'copied',
+  copyByHand: 'copy by hand',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

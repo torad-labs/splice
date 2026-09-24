@@ -6,7 +6,6 @@ export const S = {
   start: 'start login',
   cancel: 'cancel',
   copy: 'copy',
-  copied: 'copied',
   code: 'code',
   link: 'link',
   switch: 'switch',

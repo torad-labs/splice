@@ -12,6 +12,7 @@ import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogi
 import type { LoginStartPayload } from '@entities/auth';
 import { Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
 import { poll } from '@shared/lib';
+import { Copy } from '@shared/controls';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
 import type { LoginEvent } from './model';
 import { NOT_REPORTED } from '@entities/account';
@@ -60,26 +61,6 @@ async function pollLogin(
   }
 }
 
-/** A copy affordance that admits when the clipboard is unavailable instead of silently doing
- *  nothing: a console served over plain http has no navigator.clipboard. */
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="myx-acct-btn"
-      onClick={() => {
-        void navigator.clipboard?.writeText(value).then(
-          () => setDone(true),
-          () => setDone(false),
-        );
-      }}
-    >
-      {done ? S.copied : label}
-    </button>
-  );
-}
-
 /** What the operator needs to finish a login somewhere else: the code and its link, or a URL. */
 function LoginTicket({ start }: { start: LoginStartPayload }) {
   if (start.flow === 'browser') {
@@ -88,7 +69,7 @@ function LoginTicket({ start }: { start: LoginStartPayload }) {
         {start.browser_url === undefined ? null : (
           <>
             <a className="myx-acct-link" href={start.browser_url}>{start.browser_url}</a>
-            <CopyButton value={start.browser_url} label={S.copy} />
+            <Copy value={start.browser_url} label={S.copy} />
           </>
         )}
       </div>
@@ -99,13 +80,13 @@ function LoginTicket({ start }: { start: LoginStartPayload }) {
       {start.user_code === undefined ? null : (
         <>
           <span className="myx-acct-code">{start.user_code}</span>
-          <CopyButton value={start.user_code} label={`${S.copy} ${S.code}`} />
+          <Copy value={start.user_code} label={`${S.copy} ${S.code}`} />
         </>
       )}
       {start.verification_uri === undefined ? null : (
         <>
           <a className="myx-acct-link" href={start.verification_uri}>{start.verification_uri}</a>
-          <CopyButton value={start.verification_uri} label={`${S.copy} ${S.link}`} />
+          <Copy value={start.verification_uri} label={`${S.copy} ${S.link}`} />
         </>
       )}
     </div>

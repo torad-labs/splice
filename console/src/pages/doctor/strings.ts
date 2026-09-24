@@ -21,7 +21,6 @@ export const S = {
   latest: 'latest',
   rollback: 'rollback',
   copy: 'copy fix',
-  copied: 'copied',
   fix: 'fix',
   detail: 'check detail',
   playground: 'playground',

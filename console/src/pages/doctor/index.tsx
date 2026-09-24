@@ -16,7 +16,7 @@ import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Bay, Empty, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
-import { Blank, Choice, Fault, Input } from '@shared/controls';
+import { Blank, Choice, Copy, Fault, Input } from '@shared/controls';
 import {
   EMPTIES, attentionCount, canSend, collapseChecks, gateReport, groupChecks, logsHeadOf, playgroundNext, reportFacts,
   statusEdge, subjectOf, wantsAttention, IDLE_PLAYGROUND,
@@ -51,23 +51,6 @@ export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'attention-first', name: 'attention first', layout: 'bay', filter: {}, sort: { field: 'status', dir: 'desc' }, group: 'section', fields: [] },
   { id: 'by-section', name: 'by section', layout: 'bay', filter: {}, sort: null, group: 'section', fields: [] },
 ];
-
-/** A copy affordance that admits when the clipboard is unavailable instead of silently doing
- *  nothing: a console served over plain http has no navigator.clipboard. */
-function CopyFix({ command }: { command: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="myx-doc-btn"
-      onClick={() => {
-        void navigator.clipboard?.writeText(command).then(() => setDone(true), () => setDone(false));
-      }}
-    >
-      {done ? S.copied : S.copy}
-    </button>
-  );
-}
 
 export function CheckStrip({ row, selected, onOpen }: { row: CheckRow; selected: boolean; onOpen: () => void }) {
   return (
@@ -121,7 +104,7 @@ function OpenedCheck({ row }: { row: CheckRow }) {
       ) : (
         <div className="myx-doc-row">
           <code className="myx-doc-fix">{row.fix}</code>
-          <CopyFix command={row.fix} />
+          <Copy value={row.fix} label={S.copy} />
           {logsHead === null ? null : <a className="myx-doc-btn" href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLogs}</a>}
         </div>
       )}

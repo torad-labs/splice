@@ -79,6 +79,12 @@ internal class AddRefusalText {
         is AddWritten.Unreadable -> "$path could not be read again (${r.detail}), so nothing was saved."
     }
 
+    /** add-model's sentence for the same refusal, one for both surfaces: it names no flag and no step. */
+    fun modelStale(path: String, r: AddWritten.Refused): String = when (r) {
+        AddWritten.Changed -> "$path changed while add-model was open, so nothing was saved; add the models again."
+        is AddWritten.Unreadable -> "$path could not be read again (${r.detail}), so nothing was saved."
+    }
+
     private fun cliModels(p: AddModelProblem): String = when (p) {
         AddModelProblem.None -> "no models: pass --model <id>:<context_window> (repeatable)"
         AddModelProblem.Quoted -> "model ids must not contain quotes"

@@ -85,6 +85,9 @@ export type Fix =
   | { kind: 'copy'; command: string }
   /** A remedy the report's redaction reached: printed with why, never offered to copy. */
   | { kind: 'masked'; command: string }
+  /** A fix the daemon runs itself (V4-220 item 4): run from here, its command beside it to copy
+   *  (or printed with why, when masked). */
+  | { kind: 'doctor-fix'; id: string; command: string; masked: boolean }
   | { kind: 'open'; href: string; label: string };
 
 export interface Need {
@@ -276,8 +279,16 @@ function doctorNeeds(checks: readonly DoctorCheck[], saidFor: ReadonlySet<string
     head: null,
     subject: row.label,
     finding: [...new Set(row.members.map(checkFinding))].join('; '),
-    fix: row.fix === null ? open('#/doctor', S.openDoctor) : { kind: fixMasked(row.fix) ? 'masked' : 'copy', command: row.fix },
+    fix: doctorFix(row.fix, row.fixId),
   }));
+}
+
+/** A doctor row's one fix: the daemon runs it, or its command is copied (printed when masked), or,
+ *  with no remedy in the row, Doctor is where to look. */
+function doctorFix(command: string | null, id: string | null): Fix {
+  if (command === null) return open('#/doctor', S.openDoctor);
+  if (id !== null) return { kind: 'doctor-fix', id, command, masked: fixMasked(command) };
+  return { kind: fixMasked(command) ? 'masked' : 'copy', command };
 }
 
 // ---- the list --------------------------------------------------------------------------------

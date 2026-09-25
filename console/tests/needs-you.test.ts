@@ -16,6 +16,7 @@ import type { GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
 import { FixCell, NeedsYouBoard, needsOf, readingOf } from '../src/pages/needs-you';
 import type { NeedInputs, Read } from '../src/pages/needs-you';
 import { H, S } from '../src/pages/needs-you/strings';
+import { S as FIX_WORDS } from '../src/features/doctor-fix/strings';
 import { clockText } from '../src/widgets/rule';
 
 const NOW = 1_790_000_000_000;
@@ -246,6 +247,17 @@ describe('the doctor', () => {
     const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
     expect(html).toContain(H.masked);
     expect(html).not.toContain('>Copy<');
+  });
+
+  test('a fix the daemon can run itself is run from the item, its command printed beside the key', () => {
+    // V4-220 item 4: the wrapper rows carry fix_id install_all, which POST /api/doctor/fix/{id} runs.
+    const checks: DoctorCheck[] = [{ id: 'installation/wrapper', status: 'fail', detail: `'claudex' missing${SEP}splice install --all`, fix_id: 'install_all' }];
+    const [need] = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW).needs;
+    expect(need.fix).toEqual({ kind: 'doctor-fix', id: 'install_all', command: 'splice install --all', masked: false });
+    const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
+    expect(html).toContain('>splice install --all</code>');
+    expect(html).toContain('>Copy<');
+    expect(html).toContain(`>${FIX_WORDS.run}<`);
   });
 
   test('a head\'s sign-in check is said once, on the head', () => {

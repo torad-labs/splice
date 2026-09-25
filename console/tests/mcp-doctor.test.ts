@@ -19,7 +19,8 @@ import { budgetFor } from '../src/entities/budget';
 import { BudgetRefusals, BudgetsPanel, cellNote, parseUsd } from '../src/features/budgets';
 import { canTest } from '../src/entities/alert';
 import type { AlertSettings } from '../src/entities/alert';
-import { DoctorBoard } from '../src/pages/doctor';
+import { DoctorBoard, FixLine } from '../src/pages/doctor';
+import { S as FIX_WORDS } from '../src/features/doctor-fix/strings';
 import {
   EMPTIES as DOCTOR_EMPTIES,
   MARK as DOCTOR_MARK,
@@ -184,6 +185,21 @@ describe('every failing check carries its fix', () => {
     ]);
     expect(rows.reduce((total, row) => total + row.members.length, 0)).toBe(checks.length);
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+  });
+
+  test('a row carries the fix the daemon can run itself, and the detail offers it beside the copy', () => {
+    // V4-220 item 4: `fix_id` names a fix POST /api/doctor/fix/{id} runs (install_all today).
+    const [wrappers, port] = collapseChecks([
+      { ...check('installation/wrapper', 'fail', `'claudex' missing${SEP}splice install --all`), fix_id: 'install_all' },
+      { ...check('installation/wrapper', 'fail', `'claude-grok' missing${SEP}splice install --all`), fix_id: 'install_all' },
+      check('daemon/port', 'warn', `taken${SEP}lsof -iTCP:3099 -sTCP:LISTEN`),
+    ]);
+    expect([wrappers.fixId, port.fixId]).toEqual(['install_all', null]);
+    const offered = renderToStaticMarkup(React.createElement(FixLine, { fix: wrappers.fix, fixId: wrappers.fixId }));
+    expect(offered).toContain(`>${FIX_WORDS.run}<`);
+    expect(offered).toContain('Copy');
+    const text = renderToStaticMarkup(React.createElement(FixLine, { fix: port.fix, fixId: port.fixId }));
+    expect(text).not.toContain(FIX_WORDS.run);
   });
 
   test('checks whose fixes differ stay their own rows', () => {

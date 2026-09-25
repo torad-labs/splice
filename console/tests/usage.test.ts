@@ -15,6 +15,7 @@ import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windo
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
 import { fmtUsd, perHour, ratesFor, sortedHeads } from '../src/pages/usage/model';
+import type { AccountRow } from '../src/entities/account';
 import { PlanBay, planRows, readText, windowCells, windowTone } from '../src/pages/usage/plan';
 import type { UsagePayload } from '../src/shared/api';
 
@@ -233,11 +234,11 @@ describe('plan limits', () => {
   };
 
   test('only the heads that track a plan window get a row, fullest live window first', () => {
-    expect(planRows(usage, NOW).map((row) => row.entry.key)).toEqual(['claude-splice', 'claudex', 'claude-muse']);
+    expect(planRows(usage, [], NOW).map((row) => row.key)).toEqual(['claude-splice', 'claudex', 'claude-muse']);
   });
 
   test('a window whose reset passed prints as reset, never as the figure from before it', () => {
-    const muse = planRows(usage, NOW).find((row) => row.entry.key === 'claude-muse');
+    const muse = planRows(usage, [], NOW).find((row) => row.key === 'claude-muse');
     expect(muse?.live).toBeNull();
     expect(windowCells(muse?.windows[1], NOW)).toEqual({ used: 'Unknown', resets: 'Already reset' });
     // the card prints the reset in words and draws an empty meter, never the 99% from before it
@@ -248,7 +249,7 @@ describe('plan limits', () => {
   });
 
   test('a live window prints its figure and how long until it resets', () => {
-    const splice = first(planRows(usage, NOW));
+    const splice = first(planRows(usage, [], NOW));
     expect(windowCells(splice.windows[0], NOW)).toEqual({ used: '65%', resets: 'in 1h 0m' });
     expect(windowCells(splice.windows[1], NOW)).toEqual({ used: '15%', resets: 'in 5d 0h' });
     expect(windowTone(65, 80)).toBe('neutral');
@@ -257,9 +258,32 @@ describe('plan limits', () => {
   });
 
   test('a window the head does not track, and a reading with no time, print the absence mark', () => {
-    const claudex = planRows(usage, NOW).find((row) => row.entry.key === 'claudex');
+    const claudex = planRows(usage, [], NOW).find((row) => row.key === 'claudex');
     expect(windowCells(claudex?.windows.find((window) => window.window === '5h'), NOW)).toEqual({ used: '–', resets: '–' });
     expect(readText(claudex?.windows ?? [], NOW)).toBe('–');
+  });
+
+  // THE SAME SOURCE RULE AS THE STATUS STRIP (features/nearest-limit): /api/usage reports a pooled
+  // head's SELECTED account only, so the demo stack printed claudex 21% here under a strip naming
+  // `work` at 64%. A head that rides account rows reads every account from them, each named.
+  test('a pooled head is one card per account, read from the rows and named, never its selected login alone', () => {
+    const login = (label: string, fiveHour: number, sevenDay: number): AccountRow => ({
+      kind: 'chatgpt-oauth', label, single_login: false, credential_path: null, plan: 'pro', primary: label === 'primary',
+      selected: false, available: true, pinned: false, next_target: false, credential_present: true,
+      observed_at_epoch_seconds: nowS - 60, heads: ['claudex'],
+      windows: [
+        { seconds: 18_000, used_percent: fiveHour, reset_epoch_seconds: nowS + 3600 },
+        { seconds: 604_800, used_percent: sevenDay, reset_epoch_seconds: nowS + 3 * 86400 },
+      ],
+    });
+    const rows = planRows(usage, [login('primary', 38, 21), login('work', 12, 64)], NOW);
+    const claudex = rows.filter((row) => row.head === 'claudex');
+    expect(claudex.map((row) => [row.account, row.live?.pct])).toEqual([['work', 64], ['primary', 38]]);
+    // the head's own /api/usage card (its selected login's 50%) is not drawn beside the rows
+    expect(rows.some((row) => row.key === 'claudex')).toBe(false);
+    const markup = render(h(PlanBay, { usage, accounts: [login('work', 12, 64)], now: NOW }));
+    expect(markup).toContain('aria-label="Plan limits claudex work"');
+    expect(markup).toContain('>64%<');
   });
 
   test('the board draws the plan rack above the heads rack, with the plan name', () => {

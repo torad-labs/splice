@@ -42,8 +42,6 @@ export const S = {
   planLimits: 'Plan limits',
   /** When splice last read the head's windows. */
   read: 'Read',
-  fiveWindow: '5h window',
-  sevenWindow: '7d window',
   cacheRead: 'Cache read',
   share: 'Share',
   /** A window whose reset time passed after splice read it: the figure is from before the reset. */
@@ -85,6 +83,8 @@ export const U = {
   turns: 'turns',
   unpriced: 'unpriced',
   resets: 'Resets',
+  /** After a window's reported length: `5h window`, `30d window`. */
+  window: 'window',
   lastDay: 'last 24h',
 } as const;
 

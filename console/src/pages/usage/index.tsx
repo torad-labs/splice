@@ -17,6 +17,8 @@ import { useEconomics, startEconomicsPolling, burn, hitRate, perTurn, amplificat
 import type { EconomicsPayload, HeadEconomics, UsagePayload } from '@shared/api';
 import { startModelsPolling, useModels, slotTiers, windowSourceText } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
+import { useAccounts } from '@entities/account';
+import type { AccountRow } from '@entities/account';
 import { useUsage } from '@entities/usage';
 import { useViews, ViewTabs } from '@features/views';
 // THE MOUNT M2-06 NEVER WROTE (M1-96). M2-07 shipped these two panels and its own title says the
@@ -169,10 +171,12 @@ function ModelBay({ catalog }: { catalog: ModelsPayload | PendingRoute }) {
   );
 }
 
-export function UsageBoard({ payload, usage = null, usageError = null, catalog, now, sample }: {
+export function UsageBoard({ payload, usage = null, accounts = [], usageError = null, catalog, now, sample }: {
   payload: EconomicsPayload | null;
   /** /api/usage, for the plan limits. The status strip polls it on every page. */
   usage?: UsagePayload | null;
+  /** Every account row, for the plan limits of a pooled head. The status strip polls it too. */
+  accounts?: readonly AccountRow[];
   usageError?: string | null;
   catalog: ModelsPayload | PendingRoute | null;
   now: number;
@@ -287,7 +291,7 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
         <>
           {/* No plan limits behind a sample: the fixture carries no /api/usage, and a section fed
               nothing is a skeleton that never resolves. */}
-          {sample !== undefined ? null : <PlanBay usage={usage} error={usageError} now={now} />}
+          {sample !== undefined ? null : <PlanBay usage={usage} accounts={accounts} error={usageError} now={now} />}
 
           <Section title={S.totals}>
             <StatRow>
@@ -374,6 +378,7 @@ export default function UsagePage() {
   const economics = useEconomics((state) => state);
   const models = useModels((state) => state);
   const usage = useUsage((state) => state);
+  const pools = useAccounts((state) => state.data);
 
   useEffect(() => startEconomicsPolling(POLL_MS), []);
   useEffect(() => startModelsPolling(POLL_MS), []);
@@ -424,6 +429,7 @@ export default function UsagePage() {
       <UsageBoard
         payload={payload}
         usage={fixture === null ? usage.data : null}
+        accounts={fixture === null && pools !== null && 'accounts' in pools ? pools.accounts : []}
         usageError={fixture === null ? usage.error : null}
         catalog={catalog}
         now={fixture === null ? Date.now() : payload === null ? 0 : payload.generated_at}

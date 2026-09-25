@@ -6457,3 +6457,19 @@ verify = "rig-lead's fresh-container run of splice setup's GPU step against rig 
 # [2026-09-25] RE-RUN on rig 0.1.5 (rig-lead, splice 48c74af5f, fresh ubuntu:22.04, GPU 1 with the desktop holding 2,721 MiB), no hand start: NOT YET A PASS, and the stop is rig's. Fixed by 0.1.5: rig chose the desktop tier (-c 262144 -np 1) and started the unit itself, /health 200, unit active. New rig failure: the image has no ss (iproute2), so rig's port-owner check read nothing and up refused with ':8099 is held by no process ss can name'. Splice's side held: it added no head and setup exited 0. The fix is rig-dev #80, shipping as rig 0.1.6: the owner read from /proc, no external tool. rig-lead re-runs on a fresh container once 0.1.6 is latest. The refusal still printed the journalctl hint because 48c74af5f predates #248; the next run is on f75c3312e or later.
 # [2026-09-25] HOLD (operator direction relayed by rig-lead 2026-09-25): 0.4.0 is not finalized on rig 0.1.6. The closing no-hand-start receipt runs on the rig release that carries rig-attention's engine work: rig-dev #29 (merged), the FA KV-range PR, the host-side PR, -bs if its A/B holds, and what is being carried over from QGRE, shipping as one engine pin move in rig 0.1.7 or later. It runs on splice's then-current feat tip. State at the hold: rig 0.1.6 is latest and reads the port owner from /proc, so an image without iproute2 starts the head; a fresh container with splice f75c3312e (jar 9a49049b, installed by install.sh, no ss) is staged. The row stays in_flight.
 # [2026-09-25] splice-lead: #254 corrects setup's download size from 'about 8 GB' to about 9 GB (the question, the Summary line, README and CHANGELOG), from rig-lead's measurement on rig 0.1.6: the model is 8.1 GB (7.66 GB source pack plus the 0.45 GB MTP head) and the engine 0.87 GB (a 55 MB prebuilt plus cudart and cuBLAS). The 17.4 GB of free disk rig's room check requires keeps 'about 18 GB'. SetupLocalModelTest: 3 of 27 red on the old text, 27/27 green after.
+
+[[items]]
+id = "V4-216"
+phase = "release"
+title = "A daemon restart never costs a compaction: stop drains in-flight compact turns to completion inside Claude Code's own 600 s cap, and every finished recording persists under the state root so the retry after a restart is replayed with no second upstream run (splice-cpo 2026-09-25: 25 forced stops and 10 cancelled compactions since 09-18; last replay 09-19)"
+files = ["features/turns/src/main/kotlin/splice/head/HeadServer.kt", "features/turns/src/main/kotlin/splice/head/compaction/CompactionReplay.kt"]
+status = "todo"
+verify = "red first: stop mid-compaction, start again, byte-identical retry served with no upstream turn; DaemonStopBudgetTest/DrainBudgetTest ladder updated; live: one restart during a real compaction, then 'compaction answer replayed' on the retry"
+
+[[items]]
+id = "V4-217"
+phase = "release"
+title = "Release install and splice upgrade work without gh: sha256 against sha256sums.txt always runs and a tampered sums file or jar still refuses; the attestation is verified whenever gh is present and authed, and otherwise the install continues and prints the one command that verifies provenance later; README and CHANGELOG match (splice-cpo 2026-09-25, Show HN)"
+files = ["install.sh", "README.md", "CHANGELOG.md"]
+status = "todo"
+verify = "red first: installer acceptance with gh absent and with gh unauthenticated fail today and pass after; tampered sums refuses in both; authed gh still verifies; one fresh ubuntu:22.04 container with no gh installs from an https release base"

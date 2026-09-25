@@ -143,7 +143,7 @@ class SetupLocalModelTest {
         )
         assertFalse(step(prompts = prompts).offer(home.resolve("splice.toml")))
         val question = asked.single()
-        val parts = listOf(CARD, "~/.local/share/rig", "bonsai-2-27b", "about 8 GB", "about 18 GB of disk")
+        val parts = listOf(CARD, "~/.local/share/rig", "bonsai-2-27b and its engine", "about 9 GB", "about 18 GB of disk")
         for (part in parts + "serves it on this machine") {
             assertTrue(part in question, "'$part' missing from: $question")
         }
@@ -170,7 +170,7 @@ class SetupLocalModelTest {
     fun `chosen, the Summary carries one line naming the download`() {
         val summary = step().summary(true)
         assertEquals(1, summary.size, summary.toString())
-        val named = listOf("about 8 GB", "about 18 GB of disk", "claude-bonsai")
+        val named = listOf("about 9 GB", "about 18 GB of disk", "claude-bonsai")
         assertTrue(named.all { it in summary.single() }, summary.toString())
     }
 
@@ -203,7 +203,7 @@ class SetupLocalModelTest {
         )
         assertEquals(expected, events)
         val summary = chrome.substring(chrome.indexOf("Summary"))
-        assertTrue("Local model:" in summary && "about 8 GB" in summary, chrome.toString())
+        assertTrue("Local model:" in summary && "about 9 GB" in summary, chrome.toString())
     }
 
     /** Every question answered yes, `codex` ticked, each answer recorded in [events]. */

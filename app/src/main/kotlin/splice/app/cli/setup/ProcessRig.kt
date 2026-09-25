@@ -2,7 +2,7 @@
 // Nothing here decides anything: each call hands back the exit code and both streams, and the
 // local-model step (SetupLocalModel) reads them against rig's contract.
 //
-// BOUNDED where it can be, and `rig up` is the one call that is not: it downloads ~8 GB and may
+// BOUNDED where it can be, and `rig up` is the one call that is not: it downloads ~9 GB and may
 // compile llama.cpp for 5-20 minutes, and it narrates every step on stderr, so the operator watches
 // it move and Ctrl-C stops it (rig exits 130 on SIGINT). A deadline there would kill a healthy
 // download on a slow link. Every other call answers in seconds, and a hang there must not hang the

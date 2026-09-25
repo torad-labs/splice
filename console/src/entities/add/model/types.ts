@@ -92,3 +92,28 @@ export interface AddChecksFailed {
   error: string;
   checks: AddCheck[];
 }
+
+/** One OpenRouter head, and the catalogue models its roster does not reach yet (AddViews.offers). A
+ *  model in the provider table but not in a head's `models = [...]` roster is still on offer: the
+ *  roster is what the head serves. */
+export interface AddModelOffer {
+  head: string;
+  provider: string;
+  models: AddModel[];
+}
+
+/** GET /api/add-model: the splice.toml the offers were read from, and every OpenRouter head's offer
+ *  in the file's order. */
+export interface AddModelOffers {
+  path: string;
+  heads: AddModelOffer[];
+}
+
+/** POST /api/add-model's answer (AddViews.added): the ids that reached the head's roster, the file
+ *  written, and the restart that makes them reachable. */
+export interface AddModelsAdded {
+  path: string;
+  head: string;
+  added: string[];
+  restart: AddRestart;
+}

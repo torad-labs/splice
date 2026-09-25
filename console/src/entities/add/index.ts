@@ -1,9 +1,12 @@
-export { discardAdd, fetchAddProfiles, openAdd, readAdd, saveAdd, signInAdd, verifyAdd } from './api';
+export { addModels, discardAdd, fetchAddModelOffers, fetchAddProfiles, openAdd, readAdd, saveAdd, signInAdd, verifyAdd } from './api';
 export type {
   AddAsk,
   AddCheck,
   AddChecksFailed,
   AddModel,
+  AddModelOffer,
+  AddModelOffers,
+  AddModelsAdded,
   AddProfile,
   AddProfilesPayload,
   AddRequest,

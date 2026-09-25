@@ -2,7 +2,7 @@
 // `{error}` whose status says which kind; a verify or save the checks refused is a 409 that also
 // carries the rows, returned here as a value because the rows are the answer, not a fault.
 import { MgmtError, request } from '@shared/api';
-import type { AddChecksFailed, AddProfile, AddProfilesPayload, AddRequest, AddView } from '../model/types';
+import type { AddChecksFailed, AddModelOffers, AddModelsAdded, AddProfile, AddProfilesPayload, AddRequest, AddView } from '../model/types';
 
 function path(id: string, step = ''): string {
   return `/api/add/${encodeURIComponent(id)}${step}`;
@@ -61,4 +61,17 @@ export function saveAdd(id: string): Promise<{ view: AddView } | { failed: AddCh
 /** DELETE /api/add/{id}: close an add that will not be saved. */
 export async function discardAdd(id: string): Promise<void> {
   await request<{ discarded: string }>(path(id), { method: 'DELETE' });
+}
+
+/** GET /api/add-model (AddModelRoutes.kt): each OpenRouter head with the catalogue models it does not
+ *  reach yet. A splice.toml that does not load is a 409 whose sentence names the file. */
+export async function fetchAddModelOffers(): Promise<AddModelOffers> {
+  return request<AddModelOffers>('/api/add-model');
+}
+
+/** POST /api/add-model: [ids] onto [head]'s roster, then the restart that makes them reachable. A
+ *  refusal rejects with the daemon's one sentence (400 no ids, 404 no such head, 409 an id not on offer
+ *  any more or a file that changed under the write, 503 unwired). */
+export async function addModels(head: string, ids: readonly string[]): Promise<AddModelsAdded> {
+  return request<AddModelsAdded>('/api/add-model', { method: 'POST', body: JSON.stringify({ head, models: ids }) });
 }

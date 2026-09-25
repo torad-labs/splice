@@ -87,7 +87,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 **Actions.**
 
 - Open a model
-- Add a model (V4-220)
+- Add a model
 - Compare the declared models with what each provider publishes (V4-239)
 
 ## needs-you

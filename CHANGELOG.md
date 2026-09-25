@@ -611,6 +611,10 @@ origin.
   no provider, so the first log call printed three `SLF4J(W): No SLF4J providers were found` lines
   on the user's terminal, during every `splice add` sign-in. The no-op provider now ships beside it,
   and a test fails if the fat jar loses it again.
+- **A sign-in finished in an old tab says so.** A browser sign-in completed in a tab from an earlier
+  attempt carries that attempt's state, and splice rightly ignores it, but it used to do so without a
+  word: the pane sat silent until the 300-second timeout. The pane and the tab's page now say the
+  sign-in came from an earlier attempt and to finish it in the newest tab.
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

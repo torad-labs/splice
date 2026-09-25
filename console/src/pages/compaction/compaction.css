@@ -6,18 +6,6 @@
 .myx-cp .myx-sec + .myx-sec { margin-block-start: 0; }
 .myx-cp .myx-stats { margin-block-end: 0; }
 
-/* A figure beside the bar that draws it against the largest of its column. */
-.myx-cp-bar { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-.myx-cp-bar .myx-meter { flex: 1; min-width: var(--space-7); }
-.myx-cp-figure {
-  flex: none;
-  min-width: 4.5em;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  text-align: end;
-  color: var(--fg-muted);
-}
-
 .myx-cp-heads { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 
 .myx-cp-board {

@@ -18,12 +18,12 @@ import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { Blank, Fault } from '@shared/controls';
 import { ABSENT, fmtInt, fmtMs, fmtShare, timeAgo } from '@shared/lib';
 import {
-  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, Sparkline, StackedBar, Stat, StatRow,
+  Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Section, Sparkline, StackedBar, Stat, StatRow,
 } from '@shared/ui';
-import type { Column, Tone } from '@shared/ui';
+import type { Column } from '@shared/ui';
 import { dispositions } from './coverage';
 import {
-  failedOf, headRows, medianOf, outcomeCounts, outcomeParts, outcomeRows, outcomeText, seriesOf, shareText, stateOf, TONE,
+  failedOf, headRows, medianOf, outcomeCounts, outcomeParts, outcomeRows, outcomeText, ratio, seriesOf, shareText, stateOf, TONE,
 } from './model';
 import type { HeadOutcomes } from './model';
 import { H, S, U } from './strings';
@@ -43,29 +43,12 @@ export function wantsFixture(search: string): boolean {
   return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;
 }
 
-/** A figure beside the bar that draws it against the largest of its column. A bar that stands for
- *  a state takes the state's colour; the word beside it in the row still says it. */
-function BarFigure({ value, max, label, text, tone = 'neutral' }: {
-  value: number;
-  max: number;
-  label: string;
-  text: string;
-  tone?: Tone;
-}) {
-  return (
-    <span className="myx-cp-bar">
-      <Meter value={max <= 0 ? 0 : value / max} tone={tone} label={label} />
-      <span className="myx-cp-figure">{text}</span>
-    </span>
-  );
-}
-
 /** A rule's length: a bar against the longest rule, `Client default` for an empty rule (the
  *  client's own instructions stand), `Unavailable` when the daemon could not read the file. */
 function lengthCell(rule: InstructionRule, longest: number) {
   if (rule.chars === null) return <Badge tone="warn" quiet>{S.unavailable}</Badge>;
   if (rule.chars === 0) return <Badge tone="neutral" quiet>{S.clientDefault}</Badge>;
-  return <BarFigure value={rule.chars} max={longest} label={`${S.length} ${rule.source}`} text={fmtInt(rule.chars)} />;
+  return <Meter value={ratio(rule.chars, longest)} tone="neutral" label={`${S.length} ${rule.source}`} figure={fmtInt(rule.chars)} />;
 }
 
 /** The rules in effect: one row per configured rule, every head that could not be asked named with
@@ -107,27 +90,14 @@ function eventKey(row: CompactRow, index: number): string {
 
 /** The opened compaction: every field the row carries, the error text included, because the point
  *  of the tail is the one that went wrong. */
-function EventDetail({ row, onClose }: { row: CompactRow; onClose: () => void }) {
-  const outcome = row.outcome ?? 'unknown';
-  return (
-    <DetailPanel
-      title={<HeadMark head={row.head} />}
-      label={S.detail}
-      status={<Badge tone={TONE[stateOf(outcome)]}>{outcomeText(outcome)}</Badge>}
-      onClose={onClose}
-      closeLabel={S.close}
-    >
-      <KeyValue
-        rows={[
-          [S.when, timeAgo(row.ts)],
-          [S.took, row.ms === undefined ? ABSENT : fmtMs(row.ms)],
-          [S.summary, row.chars === undefined ? ABSENT : `${fmtInt(row.chars)} ${U.chars}`],
-          [S.instructions, row.instructions_source === 'client' ? S.clientDefault : row.instructions_source ?? ABSENT],
-          [S.error, row.error ?? ABSENT],
-        ]}
-      />
-    </DetailPanel>
-  );
+function eventFacts(row: CompactRow): [string, string][] {
+  return [
+    [S.when, timeAgo(row.ts)],
+    [S.took, row.ms === undefined ? ABSENT : fmtMs(row.ms)],
+    [S.summary, row.chars === undefined ? ABSENT : `${fmtInt(row.chars)} ${U.chars}`],
+    [S.instructions, row.instructions_source === 'client' ? S.clientDefault : row.instructions_source ?? ABSENT],
+    [S.error, row.error ?? ABSENT],
+  ];
 }
 
 /** The recent compactions, one row each, newest first; a failure takes the danger tint. */
@@ -152,13 +122,15 @@ function RecentSection({ tail }: { tail: readonly CompactRow[] }) {
       label: S.summary,
       width: '24%',
       cell: ({ row }) => (row.chars === undefined ? ABSENT : (
-        <BarFigure value={row.chars} max={maxChars} label={S.summary} text={fmtInt(row.chars)} />
+        <Meter value={ratio(row.chars, maxChars)} tone="neutral" label={S.summary} figure={fmtInt(row.chars)} />
       )),
     },
     {
       key: 'took',
       label: S.took,
-      cell: ({ row }) => (row.ms === undefined ? ABSENT : <BarFigure value={row.ms} max={maxMs} label={S.took} text={fmtMs(row.ms)} />),
+      cell: ({ row }) => (row.ms === undefined ? ABSENT : (
+        <Meter value={ratio(row.ms, maxMs)} tone="neutral" label={S.took} figure={fmtMs(row.ms)} />
+      )),
     },
   ];
   return (
@@ -175,7 +147,18 @@ function RecentSection({ tail }: { tail: readonly CompactRow[] }) {
             selectedKey={openKey}
             rowTone={({ row }) => (stateOf(row.outcome ?? 'unknown') === 'fail' ? 'danger' : null)}
           />
-          {open === null ? null : <EventDetail row={open} onClose={() => setOpenKey(null)} />}
+          {/* Unmounted at rest: no track and no empty panel until a row is opened. */}
+          {open === null ? null : (
+            <DetailPanel
+              title={<HeadMark head={open.head} />}
+              label={S.detail}
+              status={<Badge tone={TONE[stateOf(open.outcome ?? 'unknown')]}>{outcomeText(open.outcome ?? 'unknown')}</Badge>}
+              onClose={() => setOpenKey(null)}
+              closeLabel={S.close}
+            >
+              <KeyValue rows={eventFacts(open)} />
+            </DetailPanel>
+          )}
         </div>
       )}
     </Section>
@@ -198,7 +181,7 @@ function OutcomesSection({ stats }: { stats: CompactPayload['stats'] }) {
       key: 'share',
       label: S.share,
       cell: ({ outcome, count }) => (
-        <BarFigure value={count} max={total} label={`${S.share} ${outcomeText(outcome)}`} text={shareText(count, total)} tone={TONE[stateOf(outcome)]} />
+        <Meter value={ratio(count, total)} tone={TONE[stateOf(outcome)]} label={`${S.share} ${outcomeText(outcome)}`} figure={shareText(count, total)} />
       ),
     },
     { key: 'count', label: S.count, width: '14%', align: 'end', mono: true, cell: ({ count }) => fmtInt(count) },
@@ -248,7 +231,7 @@ function Figures({ stats }: { stats: CompactPayload['stats'] }) {
       <Stat
         label={week ? S.week : S.counted}
         value={fmtInt(total)}
-        sub={<StackedBar parts={outcomeParts(counts)} label={S.outcomes} format={fmtInt} />}
+        chart={<StackedBar parts={outcomeParts(counts)} label={S.outcomes} format={fmtInt} />}
       />
       <Stat
         label={S.failed}
@@ -258,13 +241,13 @@ function Figures({ stats }: { stats: CompactPayload['stats'] }) {
       <Stat
         label={S.took}
         value={ms === null ? ABSENT : fmtMs(ms)}
-        sub={<Sparkline values={seriesOf(stats.tail, 'ms')} label={S.took} format={fmtMs} />}
+        chart={<Sparkline values={seriesOf(stats.tail, 'ms')} label={S.took} format={fmtMs} />}
       />
       <Stat
         label={S.summary}
         value={chars === null ? ABSENT : fmtInt(chars)}
         {...(chars === null ? {} : { unit: U.chars })}
-        sub={<Sparkline values={seriesOf(stats.tail, 'chars')} label={S.summary} format={fmtInt} />}
+        chart={<Sparkline values={seriesOf(stats.tail, 'chars')} label={S.summary} format={fmtInt} />}
       />
       {/* Beside a dated week, every row the stats files still hold, undated: its own tile and its
           own split, so an old failure rate never reads as this week's. */}
@@ -272,7 +255,7 @@ function Figures({ stats }: { stats: CompactPayload['stats'] }) {
         <Stat
           label={S.counted}
           value={fmtInt(stats.total)}
-          sub={<StackedBar parts={outcomeParts(stats.by_outcome)} label={S.counted} format={fmtInt} />}
+          chart={<StackedBar parts={outcomeParts(stats.by_outcome)} label={S.counted} format={fmtInt} />}
         />
       ) : null}
     </StatRow>
@@ -300,12 +283,8 @@ export function CompactionBoard({ payload, instructions = null, instructionsErro
     <div className="myx-cp" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
       <PageHeader
         title={S.title}
-        actions={(
-          <>
-            {sample === undefined ? null : <Badge tone="neutral">{S.sample}</Badge>}
-            <InfoTip text={H.model} label={S.aboutModel} side="bottom" />
-          </>
-        )}
+        info={{ text: H.model, label: S.aboutModel }}
+        {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}
       />
       {payload === null ? <Blank strips={4} /> : none ? <Empty text={S.none} source={H.none} /> : (
         <>

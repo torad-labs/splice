@@ -42,6 +42,11 @@ export function outcomeCounts(stats: CompactPayload['stats']): { counts: Record<
   return { counts: week, total: Object.values(week).reduce((sum, n) => sum + n, 0), week: true };
 }
 
+/** A value against the largest of its column, 0 when the column is empty, for a meter. */
+export function ratio(value: number, max: number): number {
+  return max <= 0 ? 0 : value / max;
+}
+
 /** How many of some counts failed. */
 export function failedOf(counts: Readonly<Record<string, number>>): number {
   return Object.entries(counts).filter(([outcome]) => stateOf(outcome) === 'fail').reduce((sum, [, n]) => sum + n, 0);

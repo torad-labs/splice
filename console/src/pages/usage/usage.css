@@ -4,7 +4,13 @@
 .myx-usage { display: grid; gap: var(--space-7); }
 .myx-usage .myx-ph { margin-block-end: 0; }
 .myx-usage .myx-sec + .myx-sec { margin-block-start: 0; }
-.myx-usage .myx-stats { margin-block-end: 0; }
+.myx-usage .myx-stats { margin-block-end: 0; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+
+/* a figure's last day beside it, hour by hour */
+.myx-usage-trend { display: grid; gap: var(--space-1); justify-items: end; width: 6rem; }
+.myx-usage-trend .myx-spark { height: 1.75rem; }
+.myx-usage-trend-note { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-subtle); }
+.myx-usage .myx-stat-sub { display: flex; align-items: center; gap: var(--space-1); }
 
 /* ---------- plan cards ---------- */
 .myx-plans {
@@ -42,7 +48,8 @@
 }
 .myx-plan-warn .myx-plan-pct { color: var(--warn); }
 .myx-plan-danger .myx-plan-pct { color: var(--danger); }
-.myx-plan-resets { margin: 0; font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-plan-resets { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-plan-glyph { flex: none; font-size: var(--text-3); }
 
 /* ---------- a head's share of the window, in its colour ---------- */
 .myx-usage-share { display: flex; align-items: center; gap: var(--space-3); }
@@ -50,7 +57,7 @@
   flex: 1;
   height: var(--space-2);
   border-radius: var(--radius-full);
-  background: var(--bg-active);
+  background: var(--track);
   overflow: hidden;
 }
 .myx-usage-share-fill { display: block; height: 100%; border-radius: inherit; background: var(--hue); }
@@ -81,6 +88,7 @@
   border-radius: var(--radius-3);
 }
 .myx-usage-read .myx-kv dd { font-family: var(--font-mono); text-align: end; }
+.myx-usage-read .myx-stack-wrap { margin-block-end: var(--space-4); }
 .myx-usage-note { font-size: var(--text-1); color: var(--fg-subtle); }
 
 .myx-usage-panels {

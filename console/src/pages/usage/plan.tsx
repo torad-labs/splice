@@ -9,6 +9,7 @@
 // window from a turn's response headers or the usage poll, so a head that has not run since its
 // window reset still holds the figure from before it (claude-muse read 99% of a 7d window that had
 // reset 3.7 days earlier, live /api/usage 2026-09-24).
+import { TimerIcon } from '@phosphor-icons/react/dist/csr/Timer';
 import { HeadMark } from '@entities/control-status';
 import { planLevel, planWindows, resetsInText } from '@entities/usage';
 import type { PlanWindow } from '@entities/usage';
@@ -17,8 +18,7 @@ import { ABSENT, timeAgo } from '@shared/lib';
 import { Badge, Empty, Meter, Section } from '@shared/ui';
 import type { Tone } from '@shared/ui';
 import { Blank } from '@shared/controls';
-import { EMPTIES } from './model';
-import { S } from './strings';
+import { H, S, U } from './strings';
 
 interface PlanRow {
   entry: HeadUsageEntry;
@@ -73,7 +73,9 @@ function WindowFigure({ label, window, warnPct, now }: { label: string; window: 
       <p className="myx-plan-pct">{cells.used}</p>
       <Meter value={window === undefined || window.stale ? 0 : window.pct / 100} tone={tone} label={`${label} ${cells.used}`} />
       <p className="myx-plan-resets">
-        {window === undefined ? ABSENT : window.stale ? S.alreadyReset : `${S.resets} ${cells.resets}`}
+        {window === undefined ? ABSENT : window.stale ? S.alreadyReset : (
+          <><TimerIcon className="myx-plan-glyph" aria-label={U.resets} />{cells.resets}</>
+        )}
       </p>
     </div>
   );
@@ -108,7 +110,7 @@ export function PlanBay({ usage, error = null, now }: {
   return (
     <Section title={S.planLimits} count={rows.length}>
       {rows.length === 0 ? (
-        <Empty text={EMPTIES.noPlan.text} source={EMPTIES.noPlan.source} />
+        <Empty text={S.noPlan} source={H.noPlan} />
       ) : (
         <div className="myx-plans">
           {rows.map((row) => <PlanCard key={row.entry.key} row={row} warnPct={usage.warn_pct} now={now} />)}

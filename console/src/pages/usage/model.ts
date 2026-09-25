@@ -1,4 +1,4 @@
-// The usage page's pure half: which rate card prices a head, the honest empties, and the two views.
+// The usage page's pure half: which rate card prices a head, the hourly series, and the two views.
 //
 // WHY THE COST SIDE IS SOMETIMES EMPTY. The dollars on this page are the daemon's exact token counts
 // multiplied by a rate card the operator declared in the topology — and the ONLY route that serves a
@@ -8,23 +8,11 @@
 // and this page keeps that answer instead of improving on it.
 import type { ModelsPayload, PendingRoute } from '@entities/model';
 import type { View } from '@features/views';
-import type { CostRates } from '@entities/economics';
+import { costOf, sum } from '@entities/economics';
+import type { CostRates, Totals } from '@entities/economics';
 import type { HeadEconomics } from '@shared/api';
-import type { HourRow } from '@widgets/scope-chart';
+import { windowHours } from '@widgets/scope-chart';
 import { S } from './strings';
-
-/** Sentences, not labels (CONTRACTS.md section 4), so they live here beside the page. */
-export const EMPTIES = {
-  economics: { text: 'no usage from the daemon yet', source: 'waiting for the daemon to answer' },
-  catalogPending: { text: 'catalog unavailable', source: 'this splice version does not serve the model catalog' },
-  noHeads: { text: 'no head reports usage yet', source: 'a head reports once it has run a turn' },
-  noModels: { text: 'this head declares no models', source: 'the topology' },
-  noRows: { text: 'no turns in window', source: 'the hourly rollup' },
-  noPlan: {
-    text: 'no head reports plan limits',
-    source: "splice reads a head's plan windows from its provider's response headers and the usage poll",
-  },
-} as const;
 
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-head', name: S.byHead, layout: 'bay', filter: {}, sort: null, group: null, fields: [] },
@@ -51,18 +39,35 @@ export function sortedHeads(heads: readonly HeadEconomics[]): HeadEconomics[] {
 }
 
 /**
- * The one-line read of a window, used under each head's charts. Every value here is a sum the
- * daemon already computed; the page derives ratios and prints them, never a new measurement.
+ * One figure per hour of the last [hours], oldest first, summed across [heads]. An hour no head
+ * wrote a bucket for reads 0: the rollup writes no bucket for an idle hour, so zero is a reading,
+ * not a gap. [read] turns one head's hour into the figure, so cost can price each head by its own
+ * card.
  */
-export function windowSummary(rows: readonly HourRow[]): { peak: number; busiest: number } {
-  let peak = 0;
-  let busiest = 0;
-  for (const row of rows) {
-    const total = row.values.fresh ?? 0 + (row.values.cached ?? 0) + (row.values.write ?? 0);
-    if (total > peak) {
-      peak = total;
-      busiest = row.at;
-    }
-  }
-  return { peak, busiest };
+export function perHour(
+  heads: readonly HeadEconomics[],
+  hours: number,
+  now: number,
+  read: (head: HeadEconomics, totals: Totals) => number,
+): number[] {
+  const byHour = heads.map((head) => ({ head, found: new Map(head.buckets.map((bucket) => [bucket.hour, bucket])) }));
+  return windowHours(hours, now).map((at) => byHour.reduce((held, { head, found }) => {
+    const bucket = found.get(at);
+    return bucket === undefined ? held : held + read(head, sum([bucket]));
+  }, 0));
+}
+
+/** A head's cost for [totals] at its own rate card, or 0 when it has none: an unpriced head is
+ *  left out of the sum (the page says so), never priced at a guess. */
+export function pricedCost(rates: ReadonlyMap<string, CostRates | null>) {
+  return (head: HeadEconomics, totals: Totals): number => {
+    const card = rates.get(head.key) ?? null;
+    return card === null ? 0 : costOf(totals, card);
+  };
+}
+
+/** Dollars at the precision a figure that small needs: cents from a dollar up, a tenth of a cent
+ *  below it. */
+export function fmtUsd(usd: number): string {
+  return `$${usd >= 1 ? usd.toFixed(2) : usd.toFixed(3)}`;
 }

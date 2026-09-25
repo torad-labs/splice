@@ -30,14 +30,14 @@ import { AlertsPanel } from '@features/alerts';
 import { BudgetsPanel } from '@features/budgets';
 import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { cx, fmtDurationS, fmtInt, fmtShare, fmtTokens, timeAgo } from '@shared/lib';
-import { Badge, DataTable, Empty, KeyValue, PageHeader, Section, Segmented, Stat, StatRow } from '@shared/ui';
+import { Badge, DataTable, Empty, InfoTip, KeyValue, PageHeader, Ring, Section, Segmented, Sparkline, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
 import { TokenChart, CostChart, ByteChart, ToolChart, LimitedChart, WINDOWS } from '@widgets/scope-chart';
 import { dispositions } from './coverage';
-import { DEFAULT_VIEWS, EMPTIES, ratesFor, sortedHeads } from './model';
+import { DEFAULT_VIEWS, fmtUsd, perHour, pricedCost, ratesFor, sortedHeads } from './model';
 import { PlanBay } from './plan';
-import { S } from './strings';
+import { H, S, U } from './strings';
 import './usage.css';
 
 export { dispositions };
@@ -47,6 +47,9 @@ const PAGE_ID = 'usage';
 
 
 const POLL_MS = 30000;
+
+/** The trend beside each figure: the last day, hour by hour, whatever window the figures sum. */
+const TREND_HOURS = 24;
 
 /** The name this page accepts in the hash query, declared HERE and not in the fixture module: a
  *  static import of that module — even for one constant — is a dependency edge the bundler
@@ -91,7 +94,6 @@ function HeadCharts({ head, windowIndex, now, rates }: {
 }) {
   const chartWindow = WINDOWS[windowIndex];
   const totals = sum(within(head.buckets, chartWindow.hours, now));
-  const read = hitRate(totals);
   const per = perTurn(totals);
   const amp = amplification(totals);
   const delta = wireDelta(totals);
@@ -105,16 +107,22 @@ function HeadCharts({ head, windowIndex, now, rates }: {
         <ToolChart buckets={head.buckets} window={chartWindow} now={now} />
         <LimitedChart buckets={head.buckets} window={chartWindow} now={now} />
       </div>
-      {/* The cache hit rate is a DIAGNOSTIC and the page says so: a 90%-cached prompt bills in
-          full, so a high number here is not safety and must never be read as one. */}
-      <Section title={`${head.label} ${S.tokens}`} className="myx-usage-read">
+      {/* The input split is where the plan's meter goes. The cache read part is a DIAGNOSTIC and
+          its tip says so: the plan meters cached input too, so a large grey part is not safety. */}
+      <Section title={S.inTokens} meta={fmtTokens(totals.inTokens)} info={{ text: H.cacheRead, label: S.cacheRead }} className="myx-usage-read">
+        <StackedBar
+          label={S.inTokens}
+          legend
+          format={fmtTokens}
+          parts={[
+            { key: 'fresh', label: S.fresh, value: Math.max(0, totals.inTokens - totals.cachedTokens - totals.cacheWriteTokens), mark: 'series-1' },
+            { key: 'cached', label: S.cached, value: totals.cachedTokens, mark: 'series-2' },
+            { key: 'write', label: S.cacheWrite, value: totals.cacheWriteTokens, mark: 'series-3' },
+          ]}
+        />
         <KeyValue
           rows={[
-            [S.inTokens, fmtTokens(totals.inTokens)],
-            [S.cached, fmtTokens(totals.cachedTokens)],
-            [S.cacheWrite, fmtTokens(totals.cacheWriteTokens)],
             [S.outTokens, fmtTokens(totals.outTokens)],
-            [S.cacheRead, read === null ? S.absent : `${Math.round(read * 100)}%`],
             [S.perTurn, per === null ? S.absent : fmtTokens(Math.round(per))],
             [S.amplification, amp === null ? S.absent : amp.toFixed(1)],
             [S.wireDelta, delta === null ? S.absent : fmtInt(Math.round(delta))],
@@ -129,9 +137,9 @@ type Tier = ReturnType<typeof slotTiers>[number];
 type ModelRow = { slot: string; model: Tier['model'] };
 
 /** The model table: what each declared model would cost, from the catalog, one run per head. */
-function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; empty: string }) {
+function ModelBay({ catalog }: { catalog: ModelsPayload | PendingRoute }) {
   const hueOf = useHues();
-  if ('pending' in catalog) return <Empty text={empty} source={EMPTIES.catalogPending.source} />;
+  if ('pending' in catalog) return <Empty text={S.noCatalog} source={H.noCatalog} />;
   const columns: Column<ModelRow>[] = [
     { key: 'slot', label: S.slot, width: '10%', cell: (row) => row.slot },
     { key: 'model', label: S.models, width: '30%', primary: true, cell: (row) => row.model?.id ?? S.absent },
@@ -150,7 +158,7 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
       ...head.models.filter((model) => model.slot === null).map((model) => ({ slot: S.noSlot, model })),
     ],
   }));
-  if (groups.length === 0) return <Empty text={EMPTIES.noModels.text} source={EMPTIES.noModels.source} />;
+  if (groups.length === 0) return <Empty text={S.noModels} source={H.noModels} />;
   return (
     <DataTable
       columns={columns}
@@ -187,13 +195,26 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
   const allTokens = all.inTokens + all.outTokens;
   const read = hitRate(all);
 
+  // Cost prices each head by its own rate card; a head with none is left out and counted, never
+  // priced at zero.
+  const priceOf = pricedCost(new Map(heads.map((head) => [head.key, ratesFor(catalog, head.key)])));
+  const unpriced = perHead.filter(({ head, totals }) => totals.turns > 0 && ratesFor(catalog, head.key) === null).length;
+  const cost = perHead.reduce((held, { head, totals }) => held + priceOf(head, totals), 0);
+  const priced = perHead.some(({ head }) => ratesFor(catalog, head.key) !== null);
+  const trend = (values: number[], label: string, format: (value: number) => string) => (
+    <span className="myx-usage-trend">
+      <Sparkline values={values} label={`${label}, ${U.lastDay}`} format={format} />
+      <span className="myx-usage-trend-note" aria-hidden="true">{U.lastDay}</span>
+    </span>
+  );
+
   type HeadRow = (typeof perHead)[number];
   const columns: Column<HeadRow>[] = [
-    { key: 'head', label: S.head, width: '18%', primary: true, cell: ({ head }) => <HeadMark head={head.key}>{head.label}</HeadMark> },
+    { key: 'head', label: S.head, width: '16%', primary: true, cell: ({ head }) => <HeadMark head={head.key}>{head.label}</HeadMark> },
     {
       key: 'share',
       label: S.share,
-      width: '16%',
+      width: '14%',
       cell: ({ totals }) => {
         const share = allTokens === 0 ? 0 : (totals.inTokens + totals.outTokens) / allTokens;
         return (
@@ -204,15 +225,23 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
         );
       },
     },
-    { key: 'turns', label: S.turns, width: '8%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.turns) },
-    { key: 'in', label: S.inTokens, width: '10%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.inTokens) },
-    { key: 'out', label: S.outTokens, width: '10%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.outTokens) },
-    { key: 'spent', label: S.spent, width: '10%', align: 'end', mono: true, cell: ({ head }) => fmtTokens(burn(head, now).spent) },
-    { key: 'limit', label: S.ceiling, width: '9%', align: 'end', mono: true, cell: ({ head }) => (head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)) },
+    {
+      key: 'trend',
+      label: S.trend,
+      width: '12%',
+      cell: ({ head }) => (
+        <Sparkline values={perHour([head], TREND_HOURS, now, (_, totals) => totals.turns)} label={`${head.label} ${S.trend}, ${U.lastDay}`} mark="hue" />
+      ),
+    },
+    { key: 'turns', label: S.turns, width: '7%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.turns) },
+    { key: 'in', label: S.inTokens, width: '9%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.inTokens) },
+    { key: 'out', label: S.outTokens, width: '9%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.outTokens) },
+    { key: 'spent', label: S.spent, width: '9%', align: 'end', mono: true, cell: ({ head }) => fmtTokens(burn(head, now).spent) },
+    { key: 'limit', label: S.ceiling, width: '8%', align: 'end', mono: true, cell: ({ head }) => (head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)) },
     {
       key: 'runs-out',
       label: S.exhaustion,
-      width: '11%',
+      width: '9%',
       align: 'end',
       mono: true,
       cell: ({ head }) => {
@@ -220,7 +249,7 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
         return hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent);
       },
     },
-    { key: 'limited', label: S.limited, width: '8%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.rateLimited) },
+    { key: 'limited', label: S.limited, width: '7%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.rateLimited) },
   ];
 
   return (
@@ -230,6 +259,7 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
     >
       <PageHeader
         title={S.title}
+        info={{ text: H.about, label: S.about }}
         actions={(
           <>
             {sample === undefined ? null : <Badge tone="neutral">{S.sample}</Badge>}
@@ -251,7 +281,7 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
         catalog === null ? (
           <Blank strips={4} />
         ) : (
-          <ModelBay catalog={catalog} empty={EMPTIES.catalogPending.text} />
+          <ModelBay catalog={catalog} />
         )
       ) : (
         <>
@@ -259,18 +289,48 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
               nothing is a skeleton that never resolves. */}
           {sample !== undefined ? null : <PlanBay usage={usage} error={usageError} now={now} />}
 
-          <Section title={`${S.tokens} ${chartWindow.label}`}>
+          <Section title={S.totals} meta={chartWindow.label}>
             <StatRow>
-              <Stat label={S.tokens} value={fmtTokens(allTokens)} sub={`${fmtTokens(all.inTokens)} in, ${fmtTokens(all.outTokens)} out`} />
-              <Stat label={S.turns} value={fmtInt(all.turns)} sub={`${heads.length} ${S.heads}`} />
-              <Stat label={S.cacheRead} value={read === null ? S.absent : `${Math.round(read * 100)}%`} sub={`${fmtTokens(all.cachedTokens)} ${S.cached}`} />
-              <Stat label={S.limited} value={fmtInt(all.rateLimited)} {...(all.rateLimited > 0 ? { tone: 'warn' as const } : {})} sub={S.turns} />
+              <Stat
+                label={S.tokens}
+                value={fmtTokens(allTokens)}
+                figure={trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.inTokens + totals.outTokens), S.tokens, fmtTokens)}
+                chart={(
+                  <StackedBar
+                    label={S.tokens}
+                    legend
+                    format={fmtTokens}
+                    parts={[
+                      { key: 'in', label: S.inTokens, value: all.inTokens, mark: 'series-1' },
+                      { key: 'out', label: S.outTokens, value: all.outTokens, mark: 'series-3' },
+                    ]}
+                  />
+                )}
+              />
+              <Stat
+                label={S.turns}
+                value={fmtInt(all.turns)}
+                figure={trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.turns), S.turns, fmtInt)}
+              />
+              <Stat
+                label={S.cost}
+                value={priced ? fmtUsd(cost) : S.absent}
+                figure={trend(perHour(heads, TREND_HOURS, now, priceOf), S.cost, fmtUsd)}
+                {...(unpriced === 0 ? {} : { sub: <>{`${unpriced} ${U.unpriced}`}<InfoTip text={H.unpriced} label={S.unpricedWhy} /></> })}
+              />
+              <Stat
+                label={S.cacheRead}
+                value={read === null ? S.absent : `${Math.round(read * 100)}%`}
+                {...(read === null ? {} : { figure: <Ring value={read} label={S.cacheRead}>{''}</Ring> })}
+                sub={<>{`${fmtTokens(all.cachedTokens)} ${U.cached}`}<InfoTip text={H.cacheRead} label={S.cacheRead} /></>}
+              />
+              <Stat label={S.limited} value={fmtInt(all.rateLimited)} {...(all.rateLimited > 0 ? { tone: 'warn' as const } : {})} sub={U.turns} />
             </StatRow>
           </Section>
 
           <Section title={S.heads} count={heads.length}>
             {heads.length === 0 ? (
-              <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} />
+              <Empty text={S.noUsage} source={H.noUsage} />
             ) : (
               <DataTable
                 columns={columns}

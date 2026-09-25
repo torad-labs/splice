@@ -21,6 +21,9 @@
   the default `claude` command); per-head system prompts, including a `strip` mode; custom
   compaction instructions; shared MCP hosting.
 - **Code mode is out of beta** and on by default for ChatGPT.
+- **Teams.** Sessions on different heads, say Claude and GPT-6 Astra, work one goal: each gets
+  its role and the lead's address in its prompt, and the console's board shows their hand-offs,
+  activity and cost per role.
 
 ### Upgrading from 0.3.x
 0.3.x has no `splice upgrade`. Re-run the installer pinned to this release:
@@ -185,6 +188,19 @@ origin.
   `claude-splice`'s config dir at session launch only — no mid-session switch, one login per head at
   a time; splice never reads the bytes or calls Anthropic with them. `splice doctor` reports the
   mode.
+- **Teams: sessions on different heads work one goal from one board (V4-131).** The console's
+  Teams page composes a team: a name, a repo, a goal and role slots, each with a role, a head, an
+  optional lead flag, its own instructions and a bound session or an open seat. From its next
+  turn, every bound session's system prompt carries its team, its role, the team goal, the slot's
+  instructions and where to reach the lead. The text is appended after the head's own prompt, even
+  on a `replace` head, and an edit applies on the next turn with no restart; that turn cannot hit
+  the prompt cache, and its perf row says so. The board shows each member by head (model, window,
+  last turn, turns, tokens, estimated cost), the team chat (the `SendMessage` hand-offs between
+  members that passed through splice, each message's text read from the sender's own transcript),
+  the members' activity sampled every 30 seconds, and lifetime turns, tokens and dollars per role
+  and slot (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
+  are archived, never deleted. A plain `claude` session can hold a slot, but its own messages
+  don't pass through splice, so the chat shows only what it receives.
 - **The console can sign accounts in, switch, remove and relabel them, from one joined view
   (V4-132).** `POST /api/auth/{head}/login` starts a device or browser login off the request that
   asked for it and answers immediately with a login id; `GET /api/auth/{head}/login/{id}` polls it

@@ -420,20 +420,29 @@ class SetupCommandTest {
         @Test
         fun `console preticks profiles whose credential is already on disk`(@TempDir home: Path) {
             var initial = emptySet<String>()
+            val prompts = SetupPrompts(
+                hasConsole = { true },
+                pickHeads = HeadPicker { _, selected ->
+                    initial = selected
+                    MultiSelectOutcome.Chosen(emptyList())
+                },
+            )
             withHome(home) {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
-                        prompts = SetupPrompts(
-                            hasConsole = { true },
-                            pickHeads = HeadPicker { _, selected ->
-                                initial = selected
-                                MultiSelectOutcome.Chosen(emptyList())
-                            },
-                        ),
+                        prompts = prompts,
                         loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth", "muse-oauth")) },
                         addProfile = ProfileAdd { error("empty tick must not add") },
+                        // A console run reaches the local-model offer; left at its default it would
+                        // spawn the real nvidia-smi. No card here, so it is never asked.
+                        localModel = SetupLocalModel(
+                            prompts,
+                            EnvReader { null },
+                            DaemonRestart { true },
+                            gpu = GpuProbe { emptyList() },
+                        ),
                     ).setup()
                 }
             }

@@ -55,6 +55,14 @@ public data class AddProfile internal constructor(
     internal val models: List<AddModel>,
     /** Extra provider lines, already valid TOML (a default vendor header, for one). */
     internal val providerExtra: List<String> = emptyList(),
+    /** What added the row, named in its TOML comment and the verb's title. A catalogue row is added
+     *  by `splice add <name>`; a runtime-described row (RuntimeHeadAdd) is not in this catalogue, so
+     *  naming a verb that cannot reproduce it would send the operator to a command that fails. */
+    internal val origin: String = "splice add $name",
+    /** Whether the endpoint's model list decides the models check. False for a server that answers
+     *  ANY model id (llama-server lists a file path, not the id a row sends): there an unlisted row
+     *  is trusted and reported as such, the rule LocalRuntimeProbe applies at boot. */
+    internal val listAuthoritative: Boolean = true,
 )
 
 public class AddProfiles {
@@ -82,7 +90,7 @@ public class AddProfiles {
         }
         val provider = listOf(
             "",
-            "# Added by `splice add ${profile.name}`.",
+            "# Added by `${profile.origin}`.",
             "[providers.$key]",
             "dialect = \"${profile.dialect}\"",
             "base_url = \"${profile.baseUrl.orEmpty()}\"",

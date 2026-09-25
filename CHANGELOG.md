@@ -102,6 +102,17 @@ origin.
   and the status line say so once.
 
 ### Added
+- **`splice setup` can hand an NVIDIA card to rig.** On Linux x86_64 with a card nvidia-smi can
+  name, an interactive setup asks (default no) whether to run a local model through
+  [rig](https://github.com/torad-labs/rig): rig installs into `~/.local/share/rig`, downloads
+  bonsai-2-27b (about 7 GB), builds the engine for the card and serves it on 127.0.0.1. Setup then
+  adds a `bonsai` head (`claude-bonsai`) through `splice add`'s own checks, atomic save and restart,
+  from what `rig describe` reports: its base URL, its advertised window, and its server facts as
+  quirks (`reasoning_effort` off where the server rejects it, `slot_affinity` where it pins slots).
+  The endpoint takes no key, so `BONSAI_API_KEY` in keys.toml gets a placeholder, only when absent.
+  A headless setup never offers it, a configured `bonsai` is left alone, and a rig failure is said
+  in plain words (rig's exit codes mapped, its last stderr lines shown) without failing the rest of
+  setup.
 - **The project page says what governs the repo.** `GET /api/projects/{id}` (and each row of the
   list) now carries `compaction`, the rules a compaction in that repo resolves to in the daemon's own
   precedence (core's `CompactionInstructions.rulesFor`: a project rule shadows the model and global

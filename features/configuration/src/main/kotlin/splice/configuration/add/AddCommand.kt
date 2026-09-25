@@ -40,7 +40,17 @@ internal class AddCommand(
     suspend fun add(args: List<String>, env: EnvReader): Boolean {
         val parsed = AddArgParser().parse(args) ?: return AddArgParser().usage(output)
         val candidate = prepare.candidate(parsed, env) ?: return false
-        val title = "${BOLD}splice add ${candidate.args.profile}$RESET"
+        return added(candidate, env)
+    }
+
+    /** A head a local runtime described (RuntimeHeadAdd): no command line, the same everything else. */
+    suspend fun addDescribed(profile: AddProfile, env: EnvReader): Boolean {
+        val candidate = prepare.described(profile, env) ?: return false
+        return added(candidate, env)
+    }
+
+    private suspend fun added(candidate: AddCandidate, env: EnvReader): Boolean {
+        val title = "$BOLD${candidate.resolved.origin}$RESET"
         output.line("$title $DIM— '${candidate.key}' as $CYAN${candidate.command}$RESET")
         val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
         if (!ok) output.line("${YELLOW}nothing written$RESET — ${candidate.path} is unchanged")
@@ -63,7 +73,7 @@ internal class AddCommand(
         val results = listOf(
             checks.credential(c.key, c.provider, env),
             checks.reachable(c.provider.baseUrl),
-            checks.modelsListed(c.models, checks.listedModels(c.provider, c.key, env)),
+            checks.modelsListed(c.models, checks.listedModels(c.provider, c.key, env), c.resolved.listAuthoritative),
         ) + listOfNotNull(if (live) checks.liveTurn(c.provider, c.key, c.models.first(), env) else null)
         results.forEach { r ->
             val glyph = if (r.ok) "$GREEN✓$RESET" else "$RED✗$RESET"

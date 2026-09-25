@@ -92,21 +92,27 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
         onFailure = { ListedModels.Unreadable("$url did not answer with a model list") },
     )
 
-    fun modelsListed(models: List<String>, listed: ListedModels): AddCheck = when (listed) {
-        is ListedModels.Absent ->
-            AddCheck(MODELS_CHECK, true, "no model list on ${listed.dialect}; ${models.size} row(s) trusted")
-        is ListedModels.Unreadable ->
-            AddCheck(MODELS_CHECK, false, "${listed.detail} — the model list could not be checked")
-        is ListedModels.Listed -> {
-            val missing = models.filterNot { it in listed.ids }
-            val shown = listed.ids.take(LISTED_SHOWN)
-            if (missing.isEmpty()) {
-                AddCheck(MODELS_CHECK, true, "all ${models.size} row(s) listed by the endpoint")
-            } else {
-                AddCheck(MODELS_CHECK, false, "not listed by the endpoint: $missing (it lists $shown)")
+    /** [authoritative] false is a server that answers any model id: its list still has to ANSWER
+     *  (an unreadable one fails as before), but an unlisted row is trusted and said to be. */
+    fun modelsListed(models: List<String>, listed: ListedModels, authoritative: Boolean = true): AddCheck =
+        when (listed) {
+            is ListedModels.Absent ->
+                AddCheck(MODELS_CHECK, true, "no model list on ${listed.dialect}; ${models.size} row(s) trusted")
+            is ListedModels.Unreadable ->
+                AddCheck(MODELS_CHECK, false, "${listed.detail} — the model list could not be checked")
+            is ListedModels.Listed -> {
+                val missing = models.filterNot { it in listed.ids }
+                val shown = listed.ids.take(LISTED_SHOWN)
+                when {
+                    missing.isEmpty() ->
+                        AddCheck(MODELS_CHECK, true, "all ${models.size} row(s) listed by the endpoint")
+                    authoritative ->
+                        AddCheck(MODELS_CHECK, false, "not listed by the endpoint: $missing (it lists $shown)")
+                    else ->
+                        AddCheck(MODELS_CHECK, true, "$missing trusted: the server answers any model id (lists $shown)")
+                }
             }
         }
-    }
 
     /** ONE short turn, only when asked. openai-chat with a splice-held key speaks plain HTTP here; every
      *  other pair is refused at parse time (AddPrepare), so reaching this branch without a bearer is a

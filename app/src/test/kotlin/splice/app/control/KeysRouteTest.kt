@@ -112,7 +112,7 @@ class KeysRouteTest {
     }
 
     @Test
-    fun `a stored key is the one its head reads, and the value never comes back or reaches a log`() = runBlocking {
+    fun `a stored key is the one its head reads, and the value never comes back or reaches a log`() = runBlocking<Unit> {
         awaitPort()
         val secret = "sk-test-" + UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID()
 
@@ -142,7 +142,7 @@ class KeysRouteTest {
     }
 
     @Test
-    fun `a key the daemon's environment sets reads as shadowed, never as applied`() = runBlocking {
+    fun `a key the daemon's environment sets reads as shadowed, never as applied`() = runBlocking<Unit> {
         awaitPort()
         val put = send("PUT", "/api/keys/$SHADOWED", """{"value":"sk-test-${UUID.randomUUID()}"}""")
         assertEquals(HttpStatusCode.OK, put.status, put.bodyAsText())
@@ -151,7 +151,7 @@ class KeysRouteTest {
     }
 
     @Test
-    fun `refusals carry their reason and the status that matches`() = runBlocking {
+    fun `refusals carry their reason and the status that matches`() = runBlocking<Unit> {
         awaitPort()
         val badName = send("PUT", "/api/keys/lower_case", """{"value":"x"}""")
         assertRefused(badName, HttpStatusCode.BadRequest, "not an environment variable name")
@@ -165,7 +165,7 @@ class KeysRouteTest {
     }
 
     @Test
-    fun `an unreadable store refuses the write and keeps what it holds`() = runBlocking {
+    fun `an unreadable store refuses the write and keeps what it holds`() = runBlocking<Unit> {
         awaitPort()
         Files.createDirectories(store.path.parent)
         Files.writeString(store.path, "$STORED = \"kept\"\n")
@@ -184,7 +184,7 @@ class KeysRouteTest {
     }
 
     @Test
-    fun `the key routes are the management key's`() = runBlocking {
+    fun `the key routes are the management key's`() = runBlocking<Unit> {
         awaitPort()
         val anonymous = client.put("$url/api/keys/$STORED") { setBody("""{"value":"x"}""") }
         assertEquals(HttpStatusCode.Unauthorized, anonymous.status)

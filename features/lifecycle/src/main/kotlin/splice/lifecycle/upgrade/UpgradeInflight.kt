@@ -45,7 +45,7 @@ internal sealed class InflightRead {
 }
 
 /** A compaction in flight on [head], [ageMs] since its slot was taken. */
-internal data class CompactionSlot(val head: String, val ageMs: Long)
+public data class CompactionSlot(val head: String, val ageMs: Long)
 
 internal fun interface UpgradeInflight {
     operator fun invoke(): InflightRead

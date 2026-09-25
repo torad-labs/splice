@@ -8,6 +8,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.util.WallClock
+
+private const val ANSWERED_AT = 1_790_000_000_000L
 
 class ClientAuthProviderTest {
 
@@ -27,6 +30,51 @@ class ClientAuthProviderTest {
         assertEquals("client", described.kind)
         assertEquals("claude-splice", described.fields["head"])
         assertEquals("inbound request", described.fields["source"])
+    }
+
+    // V4-220 item 6b: before any forwarded turn is answered splice cannot know, and says so.
+    @Test
+    fun `a head no forwarded turn was answered on is unverified, not missing`() = runTest {
+        val described = provider.describe()
+        assertEquals(CredentialVerdict.Unverified, described.verdict)
+        assertTrue(described.present, "unverified is not known to be missing")
+    }
+
+    @Test
+    fun `a 401 is the forwarded login rejected, dated`() = runTest {
+        val clocked = ClientAuthProvider("claude-splice", WallClock { ANSWERED_AT })
+        clocked.upstreamAnswered(401, success = false)
+        val described = clocked.describe()
+        assertEquals(CredentialVerdict.Rejected(ANSWERED_AT), described.verdict)
+        assertFalse(described.present)
+    }
+
+    @Test
+    fun `a success is the forwarded login accepted, dated`() = runTest {
+        val clocked = ClientAuthProvider("claude-splice", WallClock { ANSWERED_AT })
+        clocked.upstreamAnswered(401, success = false)
+        clocked.upstreamAnswered(200, success = true)
+        assertEquals(CredentialVerdict.Accepted(ANSWERED_AT), clocked.describe().verdict)
+        assertTrue(clocked.describe().present)
+    }
+
+    // A 403 is a valid login refused a resource; a 429, a 5xx or a 400 is about the turn, not the login.
+    @Test
+    fun `an answer that says nothing about the login leaves the last verdict standing`() = runTest {
+        val clocked = ClientAuthProvider("claude-splice", WallClock { ANSWERED_AT })
+        clocked.upstreamAnswered(200, success = true)
+        listOf(403, 429, 500, 400).forEach { status -> clocked.upstreamAnswered(status, success = false) }
+        assertEquals(CredentialVerdict.Accepted(ANSWERED_AT), clocked.describe().verdict)
+    }
+
+    @Test
+    fun `the verdict reads back off its wire words`() {
+        assertEquals(CredentialVerdict.Rejected(ANSWERED_AT), CredentialVerdict.of("rejected", ANSWERED_AT))
+        assertEquals(CredentialVerdict.Accepted(ANSWERED_AT), CredentialVerdict.of("accepted", ANSWERED_AT))
+        assertEquals(CredentialVerdict.Unverified, CredentialVerdict.of("unverified", null))
+        assertEquals(CredentialVerdict.Held, CredentialVerdict.of("held", null))
+        assertEquals(null, CredentialVerdict.of("rejected", null), "a dated verdict without its date")
+        assertEquals(null, CredentialVerdict.of(null, null))
     }
 
     @Test

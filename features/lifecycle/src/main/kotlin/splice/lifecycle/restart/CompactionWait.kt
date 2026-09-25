@@ -39,7 +39,7 @@ internal class CompactionWait(
                 output.line("splice: could not see compactions in flight (${read.reason}); restarting without waiting")
                 return
             }
-            val pending = (read as? InflightRead.Count)?.compactions.orEmpty().filter { it.ageMs < capMs }
+            val pending = waitingIn(read)
             if (pending.isEmpty()) return
             if (start.elapsedNow() >= cap) {
                 val after = cap.inWholeSeconds
@@ -50,6 +50,13 @@ internal class CompactionWait(
             Thread.sleep(pollMs)
         }
     }
+
+    /** The compactions a restart waits for right now: each one younger than [capMs] (V4-220: the
+     *  daemon's own restart reads this once to decide between draining now and waiting). */
+    fun waiting(): List<CompactionSlot> = waitingIn(inflight())
+
+    private fun waitingIn(read: InflightRead): List<CompactionSlot> =
+        (read as? InflightRead.Count)?.compactions.orEmpty().filter { it.ageMs < capMs }
 
     private fun describe(slots: List<CompactionSlot>): String {
         val noun = if (slots.size == 1) "compaction" else "compactions"

@@ -160,6 +160,9 @@ describe('usage page', () => {
     // Cost is priced because the catalog carries the pinned model rates, and drawn hour by hour.
     expect(markup).not.toContain('No prices set');
     expect(markup).toContain('aria-label="Cost per hour"');
+    // The legend names the dollars as the inset does: an estimate, never money spent.
+    expect(markup).toMatch(/myx-swatch-spent"[^>]*><\/span><span>Estimated cost<\/span>/);
+    expect(markup).not.toContain('>Spent<');
   });
 
   test('with no catalog there is no dollar figure, and the inset says so rather than printing zero', () => {

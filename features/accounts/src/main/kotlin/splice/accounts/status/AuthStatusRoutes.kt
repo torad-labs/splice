@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
+import splice.accounts.CredentialVerdictJson
 import splice.accounts.pool.AccountPoolJson
 import splice.core.auth.RefreshableAuthProvider
 
@@ -20,8 +21,10 @@ public class AuthStatusRoutes(
     private val resolver: AccountHeadResolver,
 ) {
     // PORT-OF server/src/control/api.mjs auth payload @ pre-public-port-baseline: keyed by head (Node hardcodes
-    // `codex`; multi-head keys each), value = {kind, login, present, ...describe fields}. The webui
+    // `codex`; multi-head keys each), value = {kind, login, present, verdict, ...describe fields}. The webui
     // AuthPayload reads every configured head. login = automated for oauth, manual for api-key.
+    // V4-220 item 6b: verdict = {state, at_epoch_ms?}; state is `held` for a credential splice holds,
+    // and for a forwarded one (auth.kind = client) what upstream last said: unverified, accepted, rejected.
     public suspend fun authJson(): String {
         val described = heads.values.map { head ->
             Triple(head, head.auth.describe(), head.accountAuth?.descriptions().orEmpty())
@@ -32,6 +35,7 @@ public class AuthStatusRoutes(
                     put("kind", description.kind)
                     put("login", if (description.kind.contains("oauth")) "automated" else "manual")
                     put("present", description.present)
+                    CredentialVerdictJson().write(this, description.verdict)
                     description.fields.forEach { (key, value) -> put(key, value) }
                     head.pool?.view(null)?.let { pool ->
                         AccountPoolJson().write(this, pool, accountAuth)

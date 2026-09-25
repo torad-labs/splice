@@ -203,8 +203,8 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
   const priced = perHead.some(({ head }) => ratesFor(catalog, head.key) !== null);
   const trend = (values: number[], label: string, format: (value: number) => string) => (
     <span className="myx-usage-trend">
-      <Sparkline values={values} label={`${label}, ${U.lastDay}`} format={format} />
       <span className="myx-usage-trend-note" aria-hidden="true">{U.lastDay}</span>
+      <Sparkline values={values} label={`${label}, ${U.lastDay}`} format={format} />
     </span>
   );
 
@@ -294,7 +294,7 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
               <Stat
                 label={S.tokens}
                 value={fmtTokens(allTokens)}
-                figure={trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.inTokens + totals.outTokens), S.tokens, fmtTokens)}
+                trend={trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.inTokens + totals.outTokens), S.tokens, fmtTokens)}
                 chart={(
                   <StackedBar
                     label={S.tokens}
@@ -310,12 +310,12 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
               <Stat
                 label={S.turns}
                 value={fmtInt(all.turns)}
-                figure={trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.turns), S.turns, fmtInt)}
+                trend={trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.turns), S.turns, fmtInt)}
               />
               <Stat
                 label={S.cost}
                 value={priced ? fmtUsd(cost) : S.absent}
-                {...(priced ? { figure: trend(perHour(heads, TREND_HOURS, now, priceOf), S.cost, fmtUsd) } : {})}
+                {...(priced ? { trend: trend(perHour(heads, TREND_HOURS, now, priceOf), S.cost, fmtUsd) } : {})}
                 {...(unpriced === 0 ? {} : { sub: <>{`${unpriced} ${U.unpriced}`}<InfoTip text={H.unpriced} label={S.unpricedWhy} /></> })}
               />
               <Stat

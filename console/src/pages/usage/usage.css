@@ -6,9 +6,9 @@
 .myx-usage .myx-sec + .myx-sec { margin-block-start: 0; }
 .myx-usage .myx-stats { margin-block-end: 0; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
 
-/* a figure's last day beside it, hour by hour */
-.myx-usage-trend { display: grid; gap: var(--space-1); justify-items: end; width: 6rem; }
-.myx-usage-trend .myx-spark { height: 1.75rem; }
+/* a figure's last day, hour by hour, at the end of its label's line */
+.myx-usage-trend { display: inline-flex; align-items: center; gap: var(--space-3); }
+.myx-usage-trend .myx-spark { width: 4.5rem; height: 1.25rem; }
 .myx-usage-trend-note { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-subtle); }
 .myx-usage .myx-stat-sub { display: flex; align-items: center; gap: var(--space-1); }
 

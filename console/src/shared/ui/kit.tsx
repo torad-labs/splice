@@ -252,7 +252,7 @@ export function Badge({ tone, children, quiet = false }: { tone: Tone; children:
 }
 
 /** A number that is the point of its tile: a small label over a large figure, and one line under. */
-export function Stat({ label, value, unit, sub, tone, chart, figure }: {
+export function Stat({ label, value, unit, sub, tone, chart, figure, trend }: {
   label: string;
   value: ReactNode;
   unit?: string;
@@ -262,10 +262,14 @@ export function Stat({ label, value, unit, sub, tone, chart, figure }: {
   chart?: ReactNode;
   /** A shape beside the figure, such as a ring. */
   figure?: ReactNode;
+  /** A small shape at the end of the label's line, such as the last day's trend: it takes no
+   *  width from the figure, which a sparkline beside it cut to `175....` in a narrow tile. */
+  trend?: ReactNode;
 }) {
+  const name = <p className="myx-stat-label">{label}</p>;
   return (
     <div className={cx('myx-stat', tone !== undefined && `myx-stat-${tone}`, figure !== undefined && 'myx-stat-figured')}>
-      <p className="myx-stat-label">{label}</p>
+      {trend === undefined ? name : <div className="myx-stat-head">{name}<div className="myx-stat-trend">{trend}</div></div>}
       <p className="myx-stat-value">
         {value}
         {unit === undefined ? null : <span className="myx-stat-unit">{unit}</span>}

@@ -273,6 +273,9 @@
   min-width: 0;
 }
 .myx-stat-label { margin: 0; font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
+/* a trend at the end of the label's line: the figure below keeps the tile's whole width */
+.myx-stat-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.myx-stat-trend { flex: none; }
 .myx-stat-value {
   margin: var(--space-3) 0 0;
   font-size: var(--text-7);

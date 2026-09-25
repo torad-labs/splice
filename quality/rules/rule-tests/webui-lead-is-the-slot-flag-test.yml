@@ -1,0 +1,13 @@
+id: webui-lead-is-the-slot-flag
+valid:
+  - 'const focus = board.members.find((m) => m.lead);'
+  - 'const lead = slot.lead;'
+  - "const label = slot.role === 'reviewer' ? 'reviews' : slot.role;"
+  - "const named = slot.role;"
+invalid:
+  - "const focus = board.members.find((m) => m.role === 'lead');"
+  - 'const focus = board.members.find((m) => m.role === "lead");'
+  - "const lead = slot.role == 'lead';"
+  - "const rest = members.filter((m) => m.role !== 'lead');"
+  - "const lead = 'lead' === slot.role;"
+  - "const lead = ({ role }: { role: string }) => role === 'lead';"

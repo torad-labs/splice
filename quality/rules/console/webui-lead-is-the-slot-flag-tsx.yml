@@ -1,0 +1,27 @@
+# tsx variant of webui-lead-is-the-slot-flag: the three sites #257 fixed were .tsx (views.tsx, index.tsx).
+id: webui-lead-is-the-slot-flag-tsx
+language: tsx
+severity: error
+message: "The lead is the slot's lead flag (TeamSlot.lead / TeamMemberRow.lead), never a role named 'lead'."
+note: |
+  Read member.lead or slot.lead. A role is free text in compose, so a role-name check misses a
+  lead slot named 'architect' and marks a slot whose role happens to be 'lead'.
+files:
+  - console/src/**/*.tsx
+rule:
+  kind: binary_expression
+  all:
+    - has:
+        field: operator
+        regex: '^(===|!==|==|!=)$'
+    - has:
+        kind: string
+        regex: '^[''"]lead[''"]$'
+    - has:
+        any:
+          - kind: identifier
+            regex: '^role$'
+          - kind: member_expression
+            has:
+              field: property
+              regex: '^role$'

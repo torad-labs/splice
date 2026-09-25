@@ -286,14 +286,14 @@ export function pickModel(catalog: string, cheapRe: string): { model: string; wh
 /**
  * The bearer a tier-1 probe presents to a head, or a refusal when it must not be probed.
  *
- * SAFETY (HD-15): a client-auth head holds NO splice credential. ClientAuth.authorize()
- * short-circuits to true for it (`if (deps.forwardClientAuth) return true`) and
- * ClientAuth.forwardedClientHeaders copies the inbound Authorization header VERBATIM to the
- * vendor, via TurnPreparation. Both live in splice/gateway/head/ClientAuth.kt. Presenting
- * $MGMT there would ship the daemon's own 32-byte management key to api.anthropic.com — and
- * ClientAuthProvider.allowRefreshAfterFailure is false (ClientAuthProvider.kt:38), so it surfaces
- * as a bare 401 that reads like a product bug. Such a head is probed ONLY with a real caller
- * credential, or not at all.
+ * SAFETY (HD-15): a client-auth head holds NO splice credential. ClientAuth.authorize lets its
+ * callers through and ClientAuth.forwardedClientHeaders copies the inbound Authorization header
+ * VERBATIM to the vendor, via TurnPreparation (both in features/turns, splice.head.ClientAuth).
+ * Presenting $MGMT there shipped the daemon's own 32-byte management key to api.anthropic.com; the
+ * head now refuses a turn carrying splice's own keys (ClientAuth.allowUnlessOwnKey), so the probe
+ * gets a 401 instead — and ClientAuthProvider.allowRefreshAfterFailure is false, so that 401
+ * surfaces bare and reads like a product bug. Cited by symbol, never by line: the line numbers went
+ * stale. Such a head is probed ONLY with a real caller credential, or not at all.
  * ALLOWLIST, not a blocklist. `authKind !== "client"` recognized exactly one dangerous value and
  * treated every other string as safe, including strings nobody has verified — a gate that fails
  * OPEN, eight lines below discovery's own law that guessing is what leaks the key. authKind is

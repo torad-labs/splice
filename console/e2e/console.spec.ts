@@ -127,13 +127,30 @@ for (const frame of FRAMES) {
       await open(page, name);
       await page.waitForTimeout(SETTLE_MS);
       const read = await page.evaluate(() => {
-        const content = [...document.querySelectorAll('.myx-console-page *')]
-          .map((element) => element.getBoundingClientRect())
-          .filter((rect) => rect.width > 0 && rect.height > 0);
+        // WHAT IS DRAWN, NOT THE BOXES IT IS LAID OUT IN: every visible text run's glyph boxes and
+        // every svg, img and canvas, clamped to the window. The element-box extent scored 88.9% on
+        // every page at 3840, a doctor of four empty cards included, so it could not fail on content.
+        const root = document.querySelector('.myx-console-page');
+        const drawn: DOMRect[] = [];
+        if (root !== null) {
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+            if ((node.textContent ?? '').trim() === '' || node.parentElement === null) continue;
+            const style = getComputedStyle(node.parentElement);
+            if (style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            drawn.push(...[...range.getClientRects()].filter((rect) => rect.width > 1 && rect.height > 1));
+          }
+          for (const element of root.querySelectorAll('svg, img, canvas')) {
+            const rect = element.getBoundingClientRect();
+            if (rect.width > 1 && rect.height > 1) drawn.push(rect);
+          }
+        }
         const cell = document.querySelector('.myx-dt tbody td');
         return {
-          left: Math.min(...content.map((rect) => rect.left)),
-          right: Math.max(...content.map((rect) => rect.right)),
+          left: Math.max(0, Math.min(...drawn.map((rect) => rect.left))),
+          right: Math.min(window.innerWidth, Math.max(...drawn.map((rect) => rect.right))),
           body: parseFloat(getComputedStyle(document.body).fontSize),
           cell: cell === null ? null : parseFloat(getComputedStyle(cell).fontSize),
         };

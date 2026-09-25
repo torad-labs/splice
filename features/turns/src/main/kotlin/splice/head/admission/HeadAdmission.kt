@@ -16,6 +16,7 @@ import splice.core.util.WallClock
 import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.turn.Preparation
+import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
@@ -88,10 +89,17 @@ internal class HeadAdmission(
     }
 
     private suspend fun serve(call: ApplicationCall, prepared: Preparation, admitted: Admitted) {
+        // V4-213: the slot was taken before the body was read; once the turn is prepared it names
+        // itself on the gate's live list (describe), led by its session's tag. A replay is always a
+        // compaction retry.
         when (prepared) {
             is Preparation.Rejected -> responses.respondInvalidRequest(call, prepared.message)
-            is Preparation.Local -> driver.answerLocally(call, prepared)
+            is Preparation.Local -> {
+                admitted.slot.describe(prepared.model, compact = false, tag(prepared.sessionId))
+                driver.answerLocally(call, prepared)
+            }
             is Preparation.Replay -> {
+                admitted.slot.describe(prepared.model, compact = true, tag(prepared.sessionId))
                 // A retry following a compaction still in flight is not an admission: the drive it
                 // follows holds a slot already (TurnStreamer.driveDetachable), so this one goes
                 // back before the wait — else one compaction counts twice against the gate for
@@ -101,6 +109,8 @@ internal class HeadAdmission(
                 driver.replay(call, prepared)
             }
             is Preparation.Ready -> {
+                val meta = prepared.built.meta
+                admitted.slot.describe(meta.upstreamModel, meta.compact, tag(meta.sessionId))
                 // V4-165: the turn ends when its admission slot is released — here on a refusal or
                 // an attached drive, inside TurnStreamer for a detached one. One registration
                 // covers every exit, because the slot already has to be released on each of them.
@@ -109,6 +119,9 @@ internal class HeadAdmission(
             }
         }
     }
+
+    /** The session's short tag on a live row: the width the perf line prints (SESSION_TAG_CHARS). */
+    private fun tag(sessionId: String?): String? = sessionId?.take(SESSION_TAG_CHARS)
 
     /** V4-50: A RATE-LIMITED TURN IS REFUSED HERE, BEFORE A RESPONSE IS COMMITTED — which is the
      *  whole point, and why this could never be fixed by rewording anything.

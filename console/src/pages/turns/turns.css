@@ -34,6 +34,9 @@
   border-radius: var(--radius-3);
   font-size: var(--text-2);
 }
+/* the turns the gates count and the daemon does not list */
+.myx-tn-unlisted { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-4) 0 0; }
+
 /* a daemon that lists its live turns puts their table under the tiles */
 .myx-tn-gates + * { margin-block-start: var(--space-5); }
 

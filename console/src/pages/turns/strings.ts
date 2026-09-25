@@ -43,6 +43,7 @@ export const S = {
   outcome: 'Outcome',
   session: 'Session',
   slots: 'Slots in use',
+  unlistedWhy: 'About unlisted turns',
   phase: 'Phase',
   age: 'Age',
   idle: 'Idle',
@@ -80,6 +81,7 @@ export const H = {
   noTurns: 'Turns land here as the heads serve them.',
   historyUnavailable: 'This splice version does not serve turn history.',
   stalled: "Idle past its head's stream idle limit: hung, or still reasoning.",
+  unlisted: 'This daemon counts turns in flight but does not list them yet.',
   stages: 'The average landed turn below, in its parts, per head.',
   tokens: 'The landed turns below; the strong grey is priced in full.',
 } as const;
@@ -89,5 +91,6 @@ export const U = {
   idle: 'idle hours',
   retries: 'retries',
   queued: 'queued',
+  unlisted: 'not listed',
   last: 'last',
 } as const;

@@ -185,6 +185,12 @@ describe('in-flight turns', () => {
     expect(out).toContain('>1 queued<');
     expect(out).toContain('>2<'); // no limit: the count alone, no pips
     expect(out).not.toContain('Nothing in flight');
+    // five counted, none listed: the page says the list is short, never that nothing runs
+    expect(out).toContain('>5 not listed<');
+    const listed = render(h(TurnsBoard, { slots, inflight: [inflight(), inflight({ label: 'b' })], landed: null, summary: null, capture: null }));
+    expect(listed).toContain('>3 not listed<');
+    const idle = render(h(TurnsBoard, { slots: slotsFrom([head('x', {})]), inflight: [], landed: null, summary: null, capture: null }));
+    expect(idle).not.toContain('not listed');
   });
 
   test('a listed live turn past its head idle limit is stalled, and says so', () => {

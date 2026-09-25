@@ -49,7 +49,7 @@ import { useHeads, startHeadsPolling } from '@entities/heads';
 import { HeadMark } from '@entities/control-status';
 import { useSession } from '@entities/session';
 import { RequestDrawer, TurnWaterfall } from '@widgets/waterfall';
-import { Badge, DataTable, DetailPanel, Empty, KeyValue, Legend, Meter, PageHeader, Section, StackedBar } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { fmtMs, fmtShare, fmtTokens, timeAgo } from '@shared/lib';
@@ -368,6 +368,8 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, cap
     ? selection.timeline.buckets.filter((bucket) => bucket.rows.length === 0).length
     : 0;
   const ran = summary?.heads.filter((head) => !head.empty) ?? [];
+  const counted = slots.reduce((held, head) => held + head.inflight, 0);
+  const unlisted = Math.max(0, counted - inflight.length);
   const tokenRows = tokenRowsOf(rows);
   const tokenScale = Math.max(0, ...tokenRows.map((row) => row.in));
 
@@ -404,9 +406,17 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, cap
           page printed its last summary and stage times as if they were live, and no fault at all. */}
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
-      <Section title={S.inflight} count={Math.max(inflight.length, slots.reduce((held, head) => held + head.inflight, 0))}>
+      <Section title={S.inflight} count={Math.max(inflight.length, counted)}>
         {slots.length === 0 && inflight.length === 0 ? <Empty text={S.nothingInFlight} source={H.nothingInFlight} /> : null}
         {slots.length === 0 ? null : <Gates slots={slots} />}
+        {/* The gates count turns the daemon does not list (HeadStatus.kt writes the list empty, row
+            V4-213): said as a count of unlisted turns, never as "nothing in flight". */}
+        {unlisted > 0 ? (
+          <p className="myx-tn-unlisted">
+            <Badge tone="neutral">{`${unlisted} ${U.unlisted}`}</Badge>
+            <InfoTip text={H.unlisted} label={S.unlistedWhy} />
+          </p>
+        ) : null}
         {inflight.length === 0 ? null : (
           <DataTable
             columns={inflightColumns(nameOf)}

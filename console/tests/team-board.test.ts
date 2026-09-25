@@ -253,6 +253,32 @@ describe('the sample team stays out of a production bundle', () => {
   });
 });
 
+describe('a chat not read yet is unknown, never an empty day (Hitstop, 2026-09-25)', () => {
+  const unread: TeamPayload = { ...sampleBoard, messages: null, activity: null };
+
+  test('the Messages figure prints the absence glyph, not 0 today', () => {
+    const stats = render(createElement(TeamStats, { board: unread, data: sampleData }));
+    expect(stats).toContain('<p class="myx-stat-label">Messages</p><p class="myx-stat-value">–</p>');
+    expect(stats).not.toContain('>0<span class="myx-stat-unit">today');
+    // read, the same figure counts
+    expect(render(createElement(TeamStats, { board: sampleBoard, data: sampleData }))).toMatch(/myx-stat-value">3<span class="myx-stat-unit">today/);
+  });
+
+  test('the hand-offs track holds the absence glyph and no ticks', () => {
+    const html = render(createElement(TeamTimeline, { board: unread, data: sampleData }));
+    expect(html).toContain('aria-label="Hand-offs: –"');
+    expect(html).toContain('myx-tt-unread');
+    expect(html).not.toContain('myx-tt-msg');
+  });
+
+  test("a seat's last message is unknown, not None", () => {
+    const lead = seatsOf(unread)[0];
+    const html = render(createElement(SeatDetail, { board: unread, seat: lead }));
+    expect(html).not.toContain('13:58');
+    expect(html).toMatch(/Last message<\/dt><dd[^>]*>–</);
+  });
+});
+
 describe("the day's timeline", () => {
   const html = render(createElement(TeamTimeline, { board: sampleBoard, data: sampleData }));
 

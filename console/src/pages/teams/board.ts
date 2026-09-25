@@ -107,8 +107,10 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
  * string. The daemon has no packet for a message (`packet_note` says why), and a text it could not
  * read prints the reason it gave.
  */
-export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayload | null): TeamMessage[] {
-  if (chat === null) return [];
+export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayload | null): TeamMessage[] | null {
+  // Unread is not none (Hitstop, 2026-09-25): an empty list here printed "Messages 0 today" for the
+  // first moment of every open, and the lanes took it as their first read.
+  if (chat === null) return null;
   return chat.messages.map((message) => ({
     at: message.at,
     time: hhmm(message.at),
@@ -120,9 +122,9 @@ export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayl
   }));
 }
 
-/** The day's activity samples, each under its member's name. */
-export function activityOf(members: readonly TeamMemberRow[], activity: TeamActivityPayload | null): TeamActivity[] {
-  if (activity === null) return [];
+/** The day's activity samples, each under its member's name; null while they have not been read. */
+export function activityOf(members: readonly TeamMemberRow[], activity: TeamActivityPayload | null): TeamActivity[] | null {
+  if (activity === null) return null;
   return activity.entries.map((entry) => ({
     time: hhmmss(entry.at),
     member: members.find((m) => m.sessionId === entry.session)?.name ?? entry.session,

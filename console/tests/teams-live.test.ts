@@ -163,7 +163,7 @@ describe('the messages and the activity', () => {
   const members = membersOf(TEAM, SESSIONS, ECONOMICS, NOW);
 
   test('the sender resolves by session and the recipient by slot; a stranger keeps its own string', () => {
-    const messages = messagesOf(members, CHAT);
+    const messages = messagesOf(members, CHAT) ?? [];
     expect(messages.map((m) => [m.time, m.from, m.to, m.fromHead])).toEqual([
       [hhmm(NOW - 600_000), 'lead-seat', 'bbbbbbbb-2222', 'claude'],
       [hhmm(NOW - 300_000), 'cccccccc-9999', 'someone-else', '–'],
@@ -171,10 +171,16 @@ describe('the messages and the activity', () => {
   });
 
   test('a text the daemon could not read prints its reason, and no packet is invented', () => {
-    const messages = messagesOf(members, CHAT);
+    const messages = messagesOf(members, CHAT) ?? [];
     expect(messages[0].text).toBe('build it');
     expect(messages[1].text).toBe('text not read: no transcript for the sender in ~/.claude/projects');
     expect(messages.every((m) => m.packet === '–')).toBe(true);
+  });
+
+  test('a chat or an activity not read yet is null, never an empty day (Hitstop, 2026-09-25)', () => {
+    expect(messagesOf(members, null)).toBeNull();
+    expect(activityOf(members, null)).toBeNull();
+    expect(messagesOf(members, { ...CHAT, messages: [] })).toEqual([]);
   });
 
   test('a sample lands under its member', () => {
@@ -183,7 +189,7 @@ describe('the messages and the activity', () => {
 
   test("panels answered for ANOTHER team are not this team's", () => {
     const board = boardOf(TEAM, SESSIONS, { ...PANELS, teamId: 'team-2' }, NOW);
-    expect(board.messages).toEqual([]);
+    expect(board.messages).toBeNull();
     expect(board.members[0].turns).toBeNull();
     expect(viewDataOf(board, [], [], { ...PANELS, teamId: 'team-2' }, NOW)).toBeNull();
     expect(panelStates(board, { ...PANELS, teamId: 'team-2' }).chat).toBeNull();

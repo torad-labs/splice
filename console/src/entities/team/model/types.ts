@@ -232,8 +232,10 @@ export interface TeamActivity {
 export interface TeamPayload {
   team: TeamRow;
   members: TeamMemberRow[];
-  messages: TeamMessage[];
-  activity: TeamActivity[];
+  /** Null while the day's chat has not been read: unread is not "no messages". */
+  messages: TeamMessage[] | null;
+  /** Null while the day's activity has not been read. */
+  activity: TeamActivity[] | null;
   /** True when the sender's next turn is a cold cache after an instructions edit. */
   coldCacheHint?: boolean;
 }

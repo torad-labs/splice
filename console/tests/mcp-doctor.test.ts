@@ -386,13 +386,13 @@ describe('budgets and alerts', () => {
 
   test('a refusal prints whole on its own line under the table; the save cell holds only Saved', () => {
     // The review capture of 2026-09-25 cut the daemon's refusal to "daily_usd 90…" in the cell.
-    const reason = 'daily_usd 900 for claudex is past the 500 cap in splice.toml';
+    const reason = "The daily cap can't be negative."; // the daemon's own words (BudgetStore, #275)
     expect(cellNote('Saved')).toBe('Saved');
     expect(cellNote(reason)).toBeNull();
     expect(cellNote(undefined)).toBeNull();
     const out = renderToStaticMarkup(h(BudgetRefusals, { heads: ['claudex', 'claude-grok'], notes: { claudex: reason, 'claude-grok': 'Saved' } }));
     expect(out.match(/class="myx-bud-refusal" role="status"/g)?.length).toBe(1);
-    expect(out).toContain(`<span>${reason}</span>`);
+    expect(out).toContain(`<span>${reason.replace(/'/g, '&#x27;')}</span>`); // static markup escapes the apostrophe
     expect(out).toContain('claudex');
     expect(out).not.toContain('Saved');
     // a box as wide as its placeholder and its padding: w is the box's width in ch, padding included

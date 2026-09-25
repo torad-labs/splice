@@ -80,6 +80,15 @@
   border-radius: var(--radius-1);
 }
 .myx-tt-grid { position: absolute; top: 0; bottom: 0; width: var(--hair); background: var(--line); }
+/* The hand-offs track while the chat is unread: the absence glyph, not an empty track. */
+.myx-tt-unread {
+  position: absolute;
+  inset-inline-start: var(--space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+}
 /* A turn is a bar from its start as long as it ran, never thinner than a mark can be seen. */
 .myx-tt-turn {
   position: absolute;

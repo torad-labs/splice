@@ -122,8 +122,8 @@ function liveEmpty(teams: TeamsState | null, error: string | null, onNew?: () =>
 export function panelStates(board: TeamPayload, panels: TeamPanels | null): { chat: TeamChatState; feed: ActivityFeedState } {
   if (panels === null || panels.teamId !== board.team.id) return { chat: null, feed: null };
   return {
-    chat: 'error' in panels.chat ? { error: panels.chat.error } : { messages: board.messages },
-    feed: 'error' in panels.activity ? { error: panels.activity.error } : { activity: board.activity, clientMatching: true },
+    chat: 'error' in panels.chat ? { error: panels.chat.error } : board.messages === null ? null : { messages: board.messages },
+    feed: 'error' in panels.activity ? { error: panels.activity.error } : board.activity === null ? null : { activity: board.activity, clientMatching: true },
   };
 }
 
@@ -308,7 +308,10 @@ export function TeamsPage() {
   const live = open === null ? null : boardOf(open, sessions, panels.data, now);
   const board = fixture ?? live;
   const states = fixture !== null
-    ? { chat: { messages: fixture.messages }, feed: { activity: fixture.activity, clientMatching: true } }
+    ? {
+      chat: fixture.messages === null ? null : { messages: fixture.messages },
+      feed: fixture.activity === null ? null : { activity: fixture.activity, clientMatching: true as const },
+    }
     : live === null ? { chat: null, feed: null } : panelStates(live, panels.data);
 
   const listed = fixture !== null ? [fixture.team] : list;

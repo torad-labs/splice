@@ -20,7 +20,7 @@
 // counted and logged, never failed, so the gate does not fight a branch already in flight.
 // Everything else is NOT pending and is expected to be red today; it must go green over time, by
 // fixing the copy, never by widening PENDING or softening the checker.
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
@@ -167,6 +167,24 @@ describe('copy wall — dispositions', () => {
     const missing = Object.keys(PENDING).filter((prefix) => {
       const full = path.join(consoleRoot, prefix);
       return !existsSync(full) || !statSync(full).isDirectory();
+    });
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('every page says what it is for, beside its title', () => {
+  // Hitstop, 2026-09-25: the tip was on 8 pages and missing on Fleet, Accounts, MCP, Logs and Doctor.
+  // The denominator is the pages directory, so a page added without one fails here by name.
+  const pagesDir = fileURLToPath(new URL('../src/pages', import.meta.url));
+  const pages = readdirSync(pagesDir).filter((name) => existsSync(path.join(pagesDir, name, 'index.tsx')));
+
+  test('each page header carries its info tip', () => {
+    expect(pages.length).toBeGreaterThanOrEqual(13);
+    const missing = pages.filter((name) => {
+      const source = readFileSync(path.join(pagesDir, name, 'index.tsx'), 'utf8');
+      const header = /<PageHeader\b[\s\S]*?>/.exec(source)?.[0] ?? '';
+      // the text may be the daemon's own note (Sessions); the label is always the page's word
+      return !/\binfo=\{\{ text: [^}]+, label: S\.\w+ \}\}/.test(header);
     });
     expect(missing).toEqual([]);
   });

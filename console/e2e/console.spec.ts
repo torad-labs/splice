@@ -168,6 +168,34 @@ test('turns lists the turn the stack drove through a real head', async ({ page }
   await expect(page.locator('main')).toContainText(STACK.oauthHead);
 });
 
+test('the in-flight table holds exactly the turns the gate lists, twins included, as they end', async ({ page }) => {
+  // Marlin and Hitstop, 2026-09-25: a session's parallel turns share its label, the table keyed its
+  // rows by head and label, and React kept the rows of turns that had ended: 10 streaming rows under
+  // a gate holding 4. The rows it kept were twins left behind when an OLDER turn ahead of them
+  // ended, so the daemon's answer is rewritten here to hold one turn and two twins, then the twins.
+  const TWIN = 'c3d5e7a0 grok-4.6';
+  let labels = ['e5b7a0c4 grok-build-latest', TWIN, TWIN];
+  await page.route('**/api/heads', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { heads: { gate: Record<string, unknown> | null }[] };
+    const head = body.heads.find((entry) => entry.gate !== null);
+    if (head?.gate != null) {
+      head.gate = {
+        ...head.gate,
+        inflight: labels.length,
+        live: labels.map((label, at) => ({ label, compact: false, phase: 'streaming', age_ms: 9_000 - at * 1_000, idle_ms: 20 })),
+      };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'turns');
+  const rows = page.getByRole('table', { name: 'In flight', exact: true }).locator('tbody tr');
+  await expect(rows).toHaveCount(3, { timeout: 15_000 });
+  labels = [TWIN, TWIN];
+  await expect(rows, 'the turn that ended must leave the table, and its twins stay two').toHaveCount(2, { timeout: 15_000 });
+  await expect(rows.filter({ hasText: 'grok-build-latest' })).toHaveCount(0);
+});
+
 /** Picks `option` in the `nth` picker named `label` inside `scope`: the Choice is a combobox named by
  *  its printed label, and its rack is a listbox of options named by their text (shared/controls). */
 async function pick(scope: Locator, label: string, option: string, nth = 0): Promise<void> {

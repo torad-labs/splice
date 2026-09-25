@@ -594,6 +594,10 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **A sign-in finished in an old tab says so.** A browser sign-in completed in a tab from an earlier
+  attempt carries that attempt's state, and splice rightly ignores it, but it used to do so without a
+  word: the pane sat silent until the 300-second timeout. The pane and the tab's page now say the
+  sign-in came from an earlier attempt and to finish it in the newest tab.
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

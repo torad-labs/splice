@@ -159,14 +159,6 @@ describe('the phone at 390', () => {
     expect(body(css, '.myx-compose .myx-input-box')).toMatch(/max-width:\s*100%/);
   });
 
-  test("projects' cells never shrink below their ch: the strip is at least the bay, not exactly it", () => {
-    const css = sheet('src/pages/projects/projects.css');
-    expect(body(css, '.myx-px-bays .myx-strip')).toMatch(/min-width:\s*100%/);
-    expect(body(css, '.myx-px-bays .myx-strip')).not.toMatch(/(^|[;\s])width:/);
-    // the page rule that brought flex-shrink back over ui.css's `flex: 0 0 auto`
-    expect(body(css, '.myx-px-bays .myx-sfield')).toBe('');
-  });
-
   // Every sheet on disk, not the seven pages that had it: a rack that pins its strips to exactly
   // the bay squeezes nothing (ui.css's `flex: 0 0 auto` holds the cells) but lets the cells run past
   // the strip's paper, measured at 390 on accounts (985px past), sessions (889), usage (697), models

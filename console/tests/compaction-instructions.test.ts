@@ -104,14 +104,14 @@ describe('reading every head', () => {
 describe('the rules bay', () => {
   test('a length prints as a count, an empty rule as the client default, an unreadable file as unavailable', () => {
     expect(charsText(41)).toBe('41');
-    expect(charsText(0)).toBe('client default');
-    expect(charsText(null)).toBe('unavailable');
+    expect(charsText(0)).toBe('Client default');
+    expect(charsText(null)).toBe('Unavailable');
   });
 
   test('prints one strip per rule, labelled by its source, with its length and heads', () => {
     const rules = mergeInstructions([{ head: 'e2e-codex', wire: CODEX }, { head: 'e2e-codex-solo', wire: SOLO }]);
     const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules, unread: [] } }));
-    expect(out).toContain('aria-label="instruction model:e2e-model"');
+    expect(out).toContain('aria-label="Instruction model:e2e-model"');
     expect(out).toContain('>31<');
     expect(out).toContain('e2e-codex e2e-codex-solo');
   });

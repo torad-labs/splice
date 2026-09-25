@@ -99,6 +99,7 @@
 .myx-dt tbody tr + tr td { border-top: var(--hair) solid var(--line); }
 .myx-dt .myx-dt-end { text-align: end; }
 .myx-dt .myx-dt-mono { font-family: var(--font-mono); font-size: var(--text-2); }
+.myx-dt td.myx-dt-break { white-space: normal; overflow-wrap: anywhere; }
 .myx-dt .myx-dt-primary { color: var(--fg); font-weight: 500; }
 
 /* An openable table: the primary cell's button stretches over its row. */
@@ -372,7 +373,7 @@
   cursor: pointer;
 }
 .myx-panel-close:hover { background: var(--bg-hover); color: var(--fg); }
-.myx-panel-body { padding: var(--space-5); overflow: auto; display: grid; gap: var(--space-6); align-content: start; }
+.myx-panel-body { padding: var(--space-5); overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); align-content: start; }
 .myx-panel-body .myx-sec + .myx-sec { margin-block-start: 0; }
 
 /* ---------- key / value ---------- */

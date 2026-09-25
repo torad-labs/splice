@@ -258,12 +258,12 @@ describe('projects board', () => {
     const out = render(h(ProjectsBoard, { payload: null, error: 'HTTP 404' }));
     expect(out).toContain('HTTP 404');
     expect(out).not.toContain('V4-131');
-    expect(out).not.toContain('sample data');
+    expect(out).not.toContain('>Sample<');
   });
 
   test('an empty list says what fills it, never the route it read', () => {
     const out = render(h(ProjectsBoard, { payload: { projects: [] } }));
-    expect(out).toContain('no projects yet');
+    expect(out).toContain('No projects yet');
     expect(out).not.toContain('/api/');
   });
 
@@ -350,7 +350,7 @@ describe('file view', () => {
         },
       }),
     );
-    expect(empty).toContain('client memory is switched off');
+    expect(empty).toContain('Client memory off');
     expect(empty).toContain('/home/user/.claude/projects/x/memory');
   });
 
@@ -366,7 +366,7 @@ describe('file view', () => {
       }),
     );
     expect(out).toContain('/repo/CLAUDE.md');
-    expect(out).toContain('>repo<'); // a head-less file belongs to the repo, and says so
+    expect(out).toContain('>Repo<'); // a head-less file belongs to the repo, and says so
     expect(out).toContain('myx-reveal-btn');
     expect(out).not.toContain('FILE-BODY-NOT-IN-MARKUP');
   });

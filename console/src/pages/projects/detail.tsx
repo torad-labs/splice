@@ -1,32 +1,27 @@
-// The opened project's own row: GET /api/projects/{id}, read while its detail is open.
+// The opened project: its own row (GET /api/projects/{id}), read while its detail is open, and what
+// governs the repo from that same row.
 //
-// The list strip already carries these counts, and the detail reads them again on purpose: the
-// detail route is the daemon's answer for THIS root alone (ProjectsRoutes.project), it moves while
-// the detail is open, and a root the daemon no longer knows is a 404 whose sentence the operator
-// should read rather than a strip that silently stops updating. It also carries what the rack has
-// no column for: the day the counts start at, which the daemon sends rather than letting the
-// console guess a boundary.
+// The list already carries these counts, and the detail reads them again on purpose: the detail
+// route is the daemon's answer for THIS root alone (ProjectsRoutes.project), it moves while the
+// detail is open, and a root the daemon no longer knows is a 404 whose sentence the operator should
+// read rather than a row that silently stops updating. It also carries what the table has no column
+// for: the day the counts start at, which the daemon sends rather than letting the console guess a
+// boundary. Until that read lands, the list's own row for the same id stands in: it is the same
+// shape (ProjectView.row), never another project's answer.
 //
-// Below it, what governs the repo, from the same row: the compaction rules a compaction here resolves
-// to and, per head, the trusted root its statusline probes the repo under. Both read the row this
-// detail polls; neither starts a read of its own.
+// Below it, what governs the repo: the compaction rules a compaction here resolves to and, per head,
+// the trusted root its statusline probes the repo under. Both are pure over the row, so a test
+// renders them from data.
 import { useEffect } from 'react';
+import { HeadMark } from '@entities/control-status';
 import { startProjectPolling, useProject } from '@entities/project';
-import type { ProjectCompactionRule, ProjectRow } from '@entities/project';
+import type { ProjectCompactionRule, ProjectRow, ProjectStatuslineRoot, TrustedRootEntry } from '@entities/project';
+import { CompactionRules } from '@widgets/compaction-rule';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
-import { Empty, Strip, StripField } from '@shared/ui';
-import type { Basis } from '@shared/ui';
-import { CompactionRuleStrip } from '@widgets/compaction-rule';
-import { S } from './strings';
-
-export interface DetailField {
-  key: string;
-  label: string;
-  w: number;
-  value: string;
-  basis?: Basis | undefined;
-}
+import { Badge, DataTable, Empty } from '@shared/ui';
+import type { Column } from '@shared/ui';
+import { H, S } from './strings';
 
 /** The UTC day the daemon counted (ProjectsRoutes: "TODAY IS THE UTC DAY"), printed as that day
  *  and that zone, so it never reads as the reader's local midnight. */
@@ -34,131 +29,86 @@ export function dayText(dayStart: number): string {
   return `${new Date(dayStart).toISOString().slice(0, 10)} UTC`;
 }
 
-/** The detail's two strips, from the row the detail route answered. Pure, so a test reads them. */
-export function detailFieldsOf(row: ProjectRow, now = Date.now()): { counts: DetailField[]; today: DetailField[] } {
-  return {
-    counts: [
-      { key: 'live', label: S.liveSessions, w: 13, value: String(row.live_sessions), basis: 'measured' },
-      { key: 'teams', label: S.teams, w: 8, value: String(row.teams), basis: 'measured' },
-      { key: 'turns', label: S.turnsToday, w: 12, value: String(row.turns_today), basis: 'measured' },
-    ],
-    today: [
-      // Declared rates make a dollar figure an estimate; no rates is the absence of a card, never $0.
-      row.cost_today_usd === null
-        ? { key: 'cost', label: S.costToday, w: 16, value: S.absent }
-        : { key: 'cost', label: S.costToday, w: 16, value: `$${row.cost_today_usd.toFixed(2)}`, basis: 'estimated' },
-      { key: 'day', label: S.dayStart, w: 16, value: dayText(row.day_start), basis: 'measured' },
-      row.last_activity === null
-        ? { key: 'last', label: S.last, w: 12, value: S.absent }
-        : { key: 'last', label: S.last, w: 12, value: timeAgo(row.last_activity, now), basis: 'measured' },
-    ],
-  };
+/** USD, two places; null when no head that ran here declares rates, which is no figure, never $0. */
+export function costText(usd: number | null): string {
+  return usd === null ? S.absent : `$${usd.toFixed(2)}`;
 }
 
-function Field({ field }: { field: DetailField }) {
-  return (
-    <StripField
-      w={field.w}
-      label={field.label}
-      value={field.value}
-      {...(field.basis === undefined ? {} : { basis: field.basis })}
-    />
-  );
+/** The opened project's activity, as label and value pairs. Pure, so a test reads them. */
+export function detailRowsOf(row: ProjectRow, now = Date.now()): [string, string][] {
+  return [
+    [S.running, String(row.live_sessions)],
+    [S.teams, String(row.teams)],
+    [S.turns, String(row.turns_today)],
+    [S.cost, costText(row.cost_today_usd)],
+    [S.day, dayText(row.day_start)],
+    [S.last, row.last_activity === null ? S.absent : timeAgo(row.last_activity, now)],
+  ];
 }
 
-/**
- * `row` is the fixture seam (CONTRACTS.md section 4): a capture passes the sample row straight in
- * and nothing is read. Otherwise the row is polled while this is mounted, and only a row for THIS
- * id is shown: the previous project's answer never stands in while the new one is in flight.
- */
-export function ProjectDetail({ id, row }: { id: string; row?: ProjectRow | undefined }) {
+/** The opened project's row: the sample's own when a fixture fed the page (nothing is read), else
+ *  the detail route's answer for THIS id, polled while it is open, else the list's row for it. */
+export function useOpenProject(open: ProjectRow | null, sample: boolean): {
+  row: ProjectRow | null;
+  error: string | null;
+  lastRead: number | null;
+} {
   const state = useProject((s) => s);
+  const id = open?.id ?? null;
+  useEffect(() => (id === null || sample ? undefined : startProjectPolling(id)), [id, sample]);
+  if (open === null || sample) return { row: open, error: null, lastRead: null };
+  const read = state.data !== null && state.data.id === open.id ? state.data : null;
+  return { row: read ?? open, error: state.error, lastRead: state.lastUpdated };
+}
 
-  useEffect(() => (row === undefined ? startProjectPolling(id) : undefined), [id, row]);
-
-  const data = row ?? (state.data !== null && state.data.id === id ? state.data : null);
-  const error = row === undefined ? state.error : null;
-  if (data === null) return error === null ? null : <Fault message={error} />;
-  const fields = detailFieldsOf(data);
-  return (
-    <>
-      {error === null ? null : <Fault message={error} lastRead={state.lastUpdated} />}
-      <Strip
-        edge={data.live_sessions > 0 ? 'green' : 'grey'}
-        edgeLabel={data.live_sessions > 0 ? S.running : S.quiet}
-        ariaLabel={`${S.activity} ${data.root}`}
-      >
-        {fields.counts.map((field) => <Field key={field.key} field={field} />)}
-      </Strip>
-      <Strip edge="grey" edgeLabel={S.day} ariaLabel={`${S.day} ${data.root}`}>
-        {fields.today.map((field) => <Field key={field.key} field={field} />)}
-      </Strip>
-    </>
-  );
+/** Something is running in the repo now, or nothing is. */
+export function StateBadge({ row }: { row: ProjectRow }) {
+  return row.live_sessions > 0 ? <Badge tone="ok" quiet>{S.busy}</Badge> : <Badge tone="neutral" quiet>{S.quiet}</Badge>;
 }
 
 // ── what governs the repo (FEATURES.md 4.14: "its compaction scope and the effective instructions,
 // the statusline roots entry") ───────────────────────────────────────────────────────────────────
-
-/** Said when the daemon never wired its compaction table: the row's `compaction` is null, which is
- *  the daemon's failure to report, not "no rule" — printing no rule there would be a confident false
- *  negative about instructions the daemon may be compacting with. */
-export const COMPACTION_UNWIRED = 'the daemon did not wire its compaction table';
-
-/** No rule applies anywhere in this repo: the client's own compaction instructions stand. */
-export const CLIENT_OWN = { text: 'no compaction rule here', source: "claude code's own summary instructions apply; a rule goes under [compaction] in splice.toml" };
 
 export type CompactionView =
   | { kind: 'unwired' }
   | { kind: 'client' }
   | { kind: 'rules'; rules: ProjectCompactionRule[] };
 
-/** The three different facts the row's `compaction` can carry, kept apart. */
+/** The three different facts the row's `compaction` can carry, kept apart: no table wired is the
+ *  daemon's failure to report, and printing "no rule" there would be a confident false negative. */
 export function compactionViewOf(row: ProjectRow): CompactionView {
   if (row.compaction === null) return { kind: 'unwired' };
   return row.compaction.length === 0 ? { kind: 'client' } : { kind: 'rules', rules: row.compaction };
 }
 
-/** A head's statusline entry as printed. `none` is the asked-and-nothing answer: the repo lies
- *  outside every trusted root of that head, so its statusline shows no branch here. */
-export function statuslineFieldsOf(row: ProjectRow): { head: string; root: string; entry: string }[] {
-  return row.statusline_roots.map((entry) => ({
-    head: entry.head,
-    root: entry.root ?? S.none,
-    entry: entry.entry ?? S.none,
-  }));
+export function ProjectCompaction({ row }: { row: ProjectRow }) {
+  const view = compactionViewOf(row);
+  if (view.kind === 'unwired') return <Fault message={H.unwired} />;
+  if (view.kind === 'client') return <Empty text={S.noRule} source={H.clientOwn} />;
+  return <CompactionRules rules={view.rules} />;
 }
 
-/** The row ProjectDetail polls, for THIS id only: these sections start no read of their own. */
-function useOpenRow(id: string, row: ProjectRow | undefined): ProjectRow | null {
-  const state = useProject((s) => s);
-  return row ?? (state.data !== null && state.data.id === id ? state.data : null);
-}
+/** The entry of a head's trusted set that covers the repo, in words: the home directory, the temp
+ *  directory, or a root the operator listed in `statuslineGitRoots`. */
+const ENTRY: Record<TrustedRootEntry, string> = { home: S.home, tmp: S.tmp, statuslineGitRoots: S.gitRoots };
 
-export function ProjectCompaction({ id, row }: { id: string; row?: ProjectRow | undefined }) {
-  const data = useOpenRow(id, row);
-  if (data === null) return null;
-  const view = compactionViewOf(data);
-  if (view.kind === 'unwired') return <Fault message={COMPACTION_UNWIRED} />;
-  if (view.kind === 'client') return <Empty text={CLIENT_OWN.text} source={CLIENT_OWN.source} />;
-  return view.rules.map((rule) => <CompactionRuleStrip key={`${rule.scope}:${rule.source}`} rule={rule} />);
-}
-
-export function ProjectStatusline({ id, row }: { id: string; row?: ProjectRow | undefined }) {
-  const data = useOpenRow(id, row);
-  if (data === null) return null;
-  const heads = statuslineFieldsOf(data);
-  if (heads.length === 0) return <Empty text="no heads yet" source="add one in settings, under topology" />;
-  return heads.map((head) => (
-    <Strip
-      key={head.head}
-      edge={head.root === S.none ? 'grey' : 'green'}
-      edgeLabel={head.root === S.none ? S.untrusted : S.trusted}
-      ariaLabel={`${S.statusline} ${head.head}`}
-    >
-      <StripField w={14} label={S.head} value={head.head} mono={false} />
-      <StripField w={44} label={S.root} value={head.root} />
-      <StripField w={18} label={S.entry} value={head.entry} mono={false} />
-    </Strip>
-  ));
+/** One entry per head: the root that covers the repo and, as a badge, which trusted entry it is,
+ *  or that none covers it and the statusline shows no branch here. */
+export function ProjectStatusline({ row }: { row: ProjectRow }) {
+  if (row.statusline_roots.length === 0) {
+    return <Empty text={S.noHeads} source={H.noHeads} action={<a href="#/settings">{S.settings}</a>} />;
+  }
+  const columns: Column<ProjectStatuslineRoot>[] = [
+    { key: 'head', label: S.head, width: '30%', cell: (entry) => <HeadMark head={entry.head} /> },
+    { key: 'root', label: S.root, mono: true, wrap: true, cell: (entry) => entry.root ?? S.absent },
+    {
+      key: 'trust',
+      label: S.trust,
+      width: '28%',
+      cell: (entry) => (entry.root === null || entry.entry === null
+        ? <Badge tone="neutral" quiet>{S.untrusted}</Badge>
+        : <Badge tone="ok" quiet>{ENTRY[entry.entry]}</Badge>),
+    },
+  ];
+  return <DataTable columns={columns} rows={row.statusline_roots} rowKey={(entry) => entry.head} label={S.statusline} />;
 }

@@ -79,8 +79,19 @@ export interface Column<T> {
   align?: 'start' | 'end';
   /** Figures and identifiers: tabular numerals in the mono face. */
   mono?: boolean;
+  /** A value that must be read whole, such as a path an operator opens: it breaks onto more lines
+   *  rather than clipping to an ellipsis. */
+  wrap?: boolean;
   /** The row's name cell: stronger ink, and when the table opens rows it carries the open control. */
   primary?: boolean;
+}
+
+/** The shown columns, each given its weight's share of 100%: a table whose columns depend on the
+ *  view (a head column only when grouped by role) still fills its width exactly, and never mixes a
+ *  rem width with a percent one, which overflowed a narrowed board and crushed its name column. */
+export function weightedColumns<T>(columns: readonly Column<T>[], weights: Readonly<Record<string, number>>): Column<T>[] {
+  const sum = columns.reduce((held, column) => held + (weights[column.key] ?? 0), 0);
+  return columns.map((column) => ({ ...column, width: `${(((weights[column.key] ?? 0) / sum) * 100).toFixed(2)}%` }));
 }
 
 /** A titled run of rows in a DataTable: a board grouped by head, by project, or by hour. */
@@ -139,6 +150,7 @@ export function DataTable<T>({ columns, rows, groups, rowKey, label, onOpen, ope
           const cellClass = cx(
             column.align === 'end' && 'myx-dt-end',
             column.mono === true && 'myx-dt-mono',
+            column.wrap === true && 'myx-dt-break',
             column.primary === true && 'myx-dt-primary',
           );
           if (column.primary === true && onOpen !== undefined) {

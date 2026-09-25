@@ -15,7 +15,7 @@ import { UNLISTED } from '@entities/team';
 import type { TeamPayload, TeamSlot } from '@entities/team';
 import {
   Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, Pips, Reveal, Section, Sparkline, StackedBar,
-  Stat, StatRow,
+  Stat, StatRow, weightedColumns,
 } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
 import { cx, fmtInt, fmtMs, fmtTokens } from '@shared/lib';
@@ -159,12 +159,6 @@ const WEIGHTS: Record<string, number> = {
   name: 14, role: 9, head: 11, model: 10, window: 6, state: 11, turns: 5, tokens: 14, cost: 6.5, last: 6.5, checks: 7,
 };
 
-/** The shown columns, each given its weight's share of 100%. */
-function widths<T>(columns: Column<T>[]): Column<T>[] {
-  const sum = columns.reduce((held, column) => held + (WEIGHTS[column.key] ?? 0), 0);
-  return columns.map((column) => ({ ...column, width: `${(((WEIGHTS[column.key] ?? 0) / sum) * 100).toFixed(2)}%` }));
-}
-
 /** A seat's name: its member's, or its numbered role when it is open. */
 const seatName = (board: TeamPayload, seat: Seat): string => seat.member?.name ?? roleName(board.team.slots, seat.slot);
 
@@ -198,7 +192,7 @@ export function TeamMembers({ board, by }: { board: TeamPayload; by: 'head' | 'r
     { key: 'last', label: S.lastTurn, mono: true, cell: (seat) => seat.member?.lastTurn ?? S.absent },
     { key: 'checks', label: S.checks, cell: (seat) => <ChecksBadge checks={seat.member?.checks ?? null} /> },
   ];
-  const columns = widths(opened === null ? all : all.filter((column) => OPEN_KEYS.has(column.key)));
+  const columns = weightedColumns(opened === null ? all : all.filter((column) => OPEN_KEYS.has(column.key)), WEIGHTS);
 
   const groups: RowGroup<Seat>[] = seatGroups(board, by).map((group) => ({
     key: group.key,

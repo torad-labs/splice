@@ -342,26 +342,29 @@ test('projects opens the stack repository with the detail its own route reports'
   const response = await read;
   expect(response.status(), 'GET /api/projects/{id}').toBe(200);
   const row = (await response.json()) as { turns_today: number };
-  const detail = page.getByRole('complementary', { name: 'project detail' });
+  const detail = page.getByRole('complementary', { name: 'Project detail' });
+  // The heading prints the root with the home directory as `~`; the stack's repo is under /tmp.
   await expect(detail).toContainText(repo);
   // Two registered sessions work in the repository. Today's turns are the sender's: the stack's
   // hand-off, plus the one the teams journey drives when it runs first, so the count printed is the
   // one this read returned, and at least the hand-off.
-  await expect(detail).toContainText(/live sessions\s*2/);
+  await expect(detail).toContainText(/Sessions running\s*2/);
   expect(row.turns_today, 'the sender\'s hand-off is a turn in this repository today').toBeGreaterThanOrEqual(1);
-  await expect(detail).toContainText(new RegExp(`turns today\\s*${row.turns_today}(?!\\d)`));
-  await expect(detail).toContainText(/cost today\s*–/);
+  await expect(detail).toContainText(new RegExp(`Turns today\\s*${row.turns_today}(?!\\d)`));
+  await expect(detail).toContainText(/Cost today\s*–/);
   await expect(detail).toContainText(`${repo}/CLAUDE.md`);
   // What governs the repo (FEATURES.md 4.14), from the same row: the stack's project rule for this
   // repo shadows its model and global rules here, so it is the only one listed; and every head's
   // statusline probes the repo under the daemon's HOME, the stack's temp home.
-  const rule = (source: string) => detail.getByRole('group', { name: `instruction ${source}` });
+  const rules = detail.getByRole('table', { name: 'Compaction rules' });
+  const rule = (source: string) => rules.getByRole('row').filter({ has: page.getByRole('cell', { name: source, exact: true }) });
   await expect(rule(`project:${repo}`)).toContainText(String(STACK.compactProject.length));
   await expect(rule('global')).toHaveCount(0);
   await expect(rule(`model:${STACK.model}`)).toHaveCount(0);
-  const statusline = detail.getByRole('group', { name: `statusline roots ${STACK.oauthHead}`, exact: true });
+  const statusline = detail.getByRole('table', { name: 'Statusline roots' }).getByRole('row')
+    .filter({ has: page.getByText(STACK.oauthHead, { exact: true }) });
   await expect(statusline).toContainText(dirname(repo));
-  await expect(statusline).toContainText(/entry\s*home/);
+  await expect(statusline).toContainText('Home');
   expect(faults.pageErrors, 'opening a project threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });

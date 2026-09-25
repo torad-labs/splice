@@ -409,7 +409,9 @@ tool_name_cap = 64
 [[providers.muse.models]]
 id = "muse-spark-1.3[1m]"
 label = "Muse Spark 1.3"
-# EXACTLY 1e6 — Claude Code hardcodes 1e6 for any id matching /\[1m\]/i.
+# EXACTLY 1e6 — Claude Code hardcodes 1e6 for any id matching /\[1m\]/i. Meta publishes no window;
+# measured 2026-09-25 (V4-229): api.meta.ai served a 1,010,789-token prompt by its own count, so 1e6
+# is under the real ceiling. A cold prompt that size met three 504s before the cached retry served.
 context_window = 1000000
 [[providers.muse.models]]
 id = "muse-spark-1.2[1m]"

@@ -17,12 +17,8 @@ import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import splice.core.topology.AuthKind
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
 import splice.daemonclient.DaemonSettings
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 internal const val ADD_PAD = 11
 
@@ -36,6 +32,7 @@ internal class AddCommand(
 ) {
     private val prepare = AddPrepare(output, checks, ports.prompt)
     private val settings = DaemonSettings(errors)
+    private val texts = AddRefusalText()
 
     suspend fun add(args: List<String>, env: EnvReader): Boolean {
         val parsed = AddArgParser().parse(args) ?: return AddArgParser().usage(output)
@@ -70,11 +67,7 @@ internal class AddCommand(
     private fun verified(c: AddCandidate, env: EnvReader): Boolean {
         val asked = !c.args.yes && confirm("Run one short live turn against '${c.key}' now?", default = false)
         val live = c.args.live || asked
-        val results = listOf(
-            checks.credential(c.key, c.provider, env),
-            checks.reachable(c.provider.baseUrl),
-            checks.modelsListed(c.models, checks.listedModels(c.provider, c.key, env), c.resolved.listAuthoritative),
-        ) + listOfNotNull(if (live) checks.liveTurn(c.provider, c.key, c.models.first(), env) else null)
+        val results = checks.all(c, live, env)
         results.forEach { r ->
             val glyph = if (r.ok) "$GREEN✓$RESET" else "$RED✗$RESET"
             output.line("  $glyph ${r.name.padEnd(ADD_PAD)} ${r.detail}")
@@ -82,28 +75,17 @@ internal class AddCommand(
         return results.all { it.ok }
     }
 
-    /** The only write: a sibling temp file, then ONE rename — the previous file is intact until then.
-     *  The candidate was built from [AddCandidate.existing]; a sign-in and the checks ran since, so the
-     *  file is read again first and a change in between (an editor, a second `splice add`) refuses the
-     *  write instead of being overwritten by a rename. A file that cannot be read again (deleted,
-     *  replaced by something unreadable) is refused the same way: the candidate was built from a file
-     *  that existed, so a rename that recreated it would write stale content (review 2026-09-14). */
+    /** The only write (AddWrite): the file re-read first, then one rename. */
     private fun save(c: AddCandidate): Boolean {
-        // Normalized the way the candidate's `existing` was (one trailing newline), or a config saved
-        // without one would be "changed" on every run and never written (review 2026-09-14).
-        val stale = Cancellables.runCatchingCancellable { Files.readString(c.path).trimEnd('\n') + "\n" }.fold(
-            onSuccess = { if (it == c.existing) null else "changed while this add was running — rerun" },
-            onFailure = { "could not be read again (${SafeFailureText.render(it)}) — nothing written" },
-        )
-        if (stale != null) {
-            output.line("  $RED✗$RESET ${"saved".padEnd(ADD_PAD)} ${c.path} $stale")
-            return false
+        val label = "saved".padEnd(ADD_PAD)
+        return when (val written = AddWrite().write(c)) {
+            is AddWritten.Refused -> false.also {
+                output.line("  $RED✗$RESET $label ${c.path} ${texts.cliStale(written)}")
+            }
+            AddWritten.Written -> true.also {
+                output.line("  $GREEN✓$RESET $label ${c.path} (+[providers.${c.key}], +[heads.${c.key}])")
+            }
         }
-        val tmp = c.path.resolveSibling(c.path.fileName.toString() + ".add-${ProcessHandle.current().pid()}.tmp")
-        Files.writeString(tmp, c.existing + c.appended)
-        Files.move(tmp, c.path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        output.line("  $GREEN✓$RESET ${"saved".padEnd(ADD_PAD)} ${c.path} (+[providers.${c.key}], +[heads.${c.key}])")
-        return true
     }
 
     /** True when the head is reachable as printed: not running (comes up on first launch), restarted,
@@ -132,11 +114,10 @@ internal class AddCommand(
     }
 
     private fun linkWrapper(c: AddCandidate, env: EnvReader) {
-        val link = Cancellables.runCatchingCancellable { ports.install(c.key, env) }
-        val linked = link.getOrElse { false }
-        if (!linked) {
+        val link = AddWrapperLink(ports.install).link(c.key, env)
+        if (link is AddLinked.NotLinked) {
             val fix = "${CYAN}splice install ${c.key}$RESET"
-            val why = link.exceptionOrNull()?.let { " (${SafeFailureText.render(it)})" }.orEmpty()
+            val why = link.why?.let { " ($it)" }.orEmpty()
             output.line("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked$why — run: $fix")
         }
     }

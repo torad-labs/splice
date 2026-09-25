@@ -45,6 +45,14 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
     private val credentialFile = AddCredentialFile(json)
     private val credentials = StoredCredential(json)
 
+    /** Every check an add runs before it writes, in the order they print; [live] adds the one turn.
+     *  V4-220: one list for the CLI and the console, so neither can save past a check the other runs. */
+    fun all(c: AddCandidate, live: Boolean, env: EnvReader): List<AddCheck> = listOf(
+        credential(c.key, c.provider, env),
+        reachable(c.provider.baseUrl),
+        modelsListed(c.models, listedModels(c.provider, c.key, env), c.resolved.listAuthoritative),
+    ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), env) else null)
+
     /** The candidate file must parse as a topology before anyone is asked to sign in. */
     fun parses(text: String): Result<Topology> = Cancellables.runCatchingCancellable { TopologyLoader.parse(text) }
 
@@ -99,7 +107,7 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             is ListedModels.Absent ->
                 AddCheck(MODELS_CHECK, true, "no model list on ${listed.dialect}; ${models.size} row(s) trusted")
             is ListedModels.Unreadable ->
-                AddCheck(MODELS_CHECK, false, "${listed.detail} — the model list could not be checked")
+                AddCheck(MODELS_CHECK, false, "${listed.detail}; the model list could not be checked")
             is ListedModels.Listed -> {
                 val missing = models.filterNot { it in listed.ids }
                 val shown = listed.ids.take(LISTED_SHOWN)

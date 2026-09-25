@@ -3,8 +3,10 @@
 // prompter stays here, beside the stdin it reads.
 package splice.app
 
+import splice.app.auth.AddSignInSessions
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
+import splice.configuration.add.AddConsole
 import splice.configuration.add.AddLogin
 import splice.configuration.add.AddModelsVerb
 import splice.configuration.add.AddPorts
@@ -15,6 +17,10 @@ import splice.configuration.add.DaemonUpProbe
 import splice.configuration.add.WrapperInstall
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
+import splice.launch.install.InstallCommand
 import splice.terminal.KeyReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
@@ -35,6 +41,20 @@ internal object AddWiring {
             prompt = ConsolePrompter(),
         ),
     )
+
+    /** V4-220 item 3: `splice add` as the console runs it — its own sign-in sessions, the wrapper linked
+     *  by the install verb with its lines in the daemon log, and this process's environment, the one
+     *  the daemon's heads read their keys and files through. */
+    fun console(log: LogSink): AddConsole {
+        val lines = TerminalOutput { line -> log("[control] add: ${LogSafe.str(line)}\n") }
+        val install = InstallCommand(lines, lines)
+        return AddConsole(
+            signIn = AddSignInSessions(),
+            install = WrapperInstall { key, env -> install.install(key, env) },
+            env = EnvReader(System::getenv),
+            output = lines,
+        )
+    }
 
     fun addModel(): AddModelsVerb = AddModelsVerb(
         SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out),

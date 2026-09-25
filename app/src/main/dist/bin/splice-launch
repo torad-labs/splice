@@ -411,7 +411,7 @@ function warnings() {
   if (wantShim !== "" && wantShim !== SPLICE_SHIM_VERSION) {
     warn(
       `splice: WARNING — installed launch shim (${process.argv[1]}) is stale (marker=${SPLICE_SHIM_VERSION}, ` +
-        `daemon expects=${wantShim}). Run: splice install (or ./install.sh) to refresh it.`,
+        `daemon expects=${wantShim}). Run ./install.sh from a checkout, or re-run the release installer, to refresh it.`,
     );
   }
   // JW-04, same non-fatal shape: topology loads once by design, so an edited splice.toml is inert

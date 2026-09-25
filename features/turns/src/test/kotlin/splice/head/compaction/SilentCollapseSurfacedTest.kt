@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.TurnPrice
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.head.compact.CompactStats
@@ -29,14 +30,14 @@ class SilentCollapseSurfacedTest {
     @Test
     fun `a corrupt economics file degrades to empty and says so`() {
         val file = dir.resolve("economics.json").also { Files.writeString(it, "{not json") }
-        assertEquals(emptyList<Any>(), EconomicsStore(file, WallClock { 0L }, sink).read())
+        assertEquals(emptyList<Any>(), EconomicsStore(file, TurnPrice(null), WallClock { 0L }, sink).read())
         assertEquals(1, lines.size, "one trace for the unreadable history: $lines")
         assertTrue(lines.single().contains("[economics]"), lines.single())
     }
 
     @Test
     fun `an absent economics file is a quiet first run`() {
-        EconomicsStore(dir.resolve("economics.json"), WallClock { 0L }, sink).read()
+        EconomicsStore(dir.resolve("economics.json"), TurnPrice(null), WallClock { 0L }, sink).read()
         assertEquals(emptyList<String>(), lines)
     }
 

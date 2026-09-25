@@ -11,6 +11,7 @@ import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.diagnostics.doctor.DoctorCommand
+import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.LocalRuntimeTransport
 
 internal object DoctorWiring {
@@ -30,4 +31,8 @@ internal object DoctorWiring {
 
     /** The console's /api/doctor body: the `--json` report under the daemon's own environment. */
     fun consoleJson(): String = console.reportJson(EnvReader(System::getenv))
+
+    /** V4-220 item 4: the fixes the console runs, over the SAME doctor and environment [consoleJson]
+     *  reports from, so a fix and the rows that asked for it resolve every path alike. */
+    fun fixes(): DoctorFixes = DoctorFixes(console, EnvReader(System::getenv))
 }

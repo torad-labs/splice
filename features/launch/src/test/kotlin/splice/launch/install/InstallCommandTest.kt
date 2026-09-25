@@ -192,17 +192,22 @@ class InstallCommandTest {
         }
     }
 
+    // V4-220 item 4: the remedy named is one that WRITES the shim. `splice install` only links wrappers
+    // onto the shim already there (InstallLinker), so a warning naming it left the shim as stale as it was.
+    private fun refreshedByReinstall(warning: String): Boolean =
+        warning.contains("./install.sh") && !warning.contains("splice install")
+
     @Test
     fun `shimStalenessWarning warns when the marker is stale or missing`(@TempDir home: Path) {
         withHome(home) {
             writeShim(home, "#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = \"shim-0\";\n")
             val stale = InstallShim().shimStalenessWarning(env = noEnv)
-            assertTrue(stale != null && stale.contains("STALE") && stale.contains("splice install"))
+            assertTrue(stale != null && stale.contains("STALE") && refreshedByReinstall(stale), stale)
         }
         withHome(home) {
             writeShim(home, "#!/usr/bin/env bash\necho no marker here\n")
             val missing = InstallShim().shimStalenessWarning(env = noEnv)
-            assertTrue(missing != null && missing.contains("STALE") && missing.contains("splice install"))
+            assertTrue(missing != null && missing.contains("STALE") && refreshedByReinstall(missing), missing)
         }
     }
 

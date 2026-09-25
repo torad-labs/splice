@@ -28,8 +28,8 @@ import java.nio.file.Path
 
 /** What happens, in the words the question and the Summary both use. */
 private const val WHAT_HAPPENS =
-    "rig installs into ~/.local/share/rig, downloads $RIG_HEAD and its engine (about 9 GB; about 18 GB of disk in all) " +
-        "and serves it on this machine"
+    "rig installs into ~/.local/share/rig, downloads $RIG_HEAD and its engine " +
+        "(about 9 GB; about 18 GB of disk in all) and serves it on this machine"
 
 private const val RETRY = "retry by hand: rig up $RIG_HEAD, then splice setup again"
 

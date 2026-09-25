@@ -143,7 +143,13 @@ class SetupLocalModelTest {
         )
         assertFalse(step(prompts = prompts).offer(home.resolve("splice.toml")))
         val question = asked.single()
-        val parts = listOf(CARD, "~/.local/share/rig", "bonsai-2-27b and its engine", "about 9 GB", "about 18 GB of disk")
+        val parts = listOf(
+            CARD,
+            "~/.local/share/rig",
+            "bonsai-2-27b and its engine",
+            "about 9 GB",
+            "about 18 GB of disk",
+        )
         for (part in parts + "serves it on this machine") {
             assertTrue(part in question, "'$part' missing from: $question")
         }

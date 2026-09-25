@@ -121,6 +121,20 @@ export interface RowGroup<T> {
   rows: readonly T[];
 }
 
+/** Each row's React key: its own key, with an ordinal from the second twin on. Two rows under one
+ *  key made React keep a row whose item was gone: the in-flight table named each turn by its head
+ *  and session label, a session's parallel turns share both, and it drew 10 streaming rows while the
+ *  gate held 4 (Marlin and Hitstop, 2026-09-25). The caller's key still selects; only React's is made
+ *  unique, so no table can hold a row its data no longer has, whatever its caller keys by. */
+export function reactKeys(keys: readonly string[]): string[] {
+  const seen = new Map<string, number>();
+  return keys.map((key) => {
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    return count === 1 ? key : `${key}\u0000${count}`;
+  });
+}
+
 /**
  * A table: one header row of column names, then one row per item, or one titled run of rows per
  * group. When `onOpen` is given, the primary cell holds a button that opens the row and stretches
@@ -151,13 +165,13 @@ export function DataTable<T>({ columns, rows, groups, rowKey, label, onOpen, ope
   const runs: readonly RowGroup<T>[] = groups ?? [{ key: '', title: null, rows: rows ?? [] }];
   const grouped = groups !== undefined;
 
-  const row = (item: T) => {
+  const row = (item: T, reactKey: string) => {
     const key = rowKey(item);
     const selected = key === selectedKey;
     const tone = rowTone?.(item) ?? null;
     const hue = rowHue?.(item) ?? null;
     return (
-      <tr key={key} className={cx(selected && 'myx-dt-selected', tone !== null && `myx-dt-tone-${tone}`, hue !== null && `myx-dt-hued ${hue}`)}>
+      <tr key={reactKey} className={cx(selected && 'myx-dt-selected', tone !== null && `myx-dt-tone-${tone}`, hue !== null && `myx-dt-hued ${hue}`)}>
         {columns.map((column) => {
           const content = column.cell(item);
           const cellClass = cx(
@@ -205,23 +219,26 @@ export function DataTable<T>({ columns, rows, groups, rowKey, label, onOpen, ope
             ))}
           </tr>
         </thead>
-        {runs.map((run) => (
-          <tbody key={run.key} className={cx(grouped && 'myx-dt-run', run.hue !== undefined && `myx-dt-hued ${run.hue}`)}>
-            {grouped ? (
-              <tr className="myx-dt-group">
-                <th scope="rowgroup" colSpan={columns.length}>
-                  <span className="myx-dt-group-head">
-                    <span className="myx-dt-group-title">{run.title}</span>
-                    {run.count === undefined ? null : <span className="myx-dt-group-count">{run.count}</span>}
-                    {run.actions === undefined ? null : <span className="myx-dt-group-actions">{run.actions}</span>}
-                  </span>
-                  {run.note === undefined ? null : <span className="myx-dt-group-note">{run.note}</span>}
-                </th>
-              </tr>
-            ) : null}
-            {run.rows.map(row)}
-          </tbody>
-        ))}
+        {runs.map((run) => {
+          const keys = reactKeys(run.rows.map(rowKey));
+          return (
+            <tbody key={run.key} className={cx(grouped && 'myx-dt-run', run.hue !== undefined && `myx-dt-hued ${run.hue}`)}>
+              {grouped ? (
+                <tr className="myx-dt-group">
+                  <th scope="rowgroup" colSpan={columns.length}>
+                    <span className="myx-dt-group-head">
+                      <span className="myx-dt-group-title">{run.title}</span>
+                      {run.count === undefined ? null : <span className="myx-dt-group-count">{run.count}</span>}
+                      {run.actions === undefined ? null : <span className="myx-dt-group-actions">{run.actions}</span>}
+                    </span>
+                    {run.note === undefined ? null : <span className="myx-dt-group-note">{run.note}</span>}
+                  </th>
+                </tr>
+              ) : null}
+              {run.rows.map((item, at) => row(item, keys[at] ?? rowKey(item)))}
+            </tbody>
+          );
+        })}
       </table>
     </div>
   );

@@ -14,6 +14,7 @@ import splice.app.control.ManagedHead
 import splice.app.control.api.ControlPayloads
 import splice.core.util.LogSink
 import splice.lifecycle.restart.CompactionsInFlight
+import splice.lifecycle.restart.DaemonRestarts
 import splice.lifecycle.restart.DaemonRoutes
 import splice.lifecycle.restart.RestartAfterCompactions
 import splice.lifecycle.restart.ShutdownDaemon
@@ -38,7 +39,10 @@ internal class LifecycleMount(
         }
     }
     private val restart = RestartAfterCompactions(compactions, LifecycleScope(ProcessDispatchers().background()), log)
-    private val daemonRoutes = DaemonRoutes(restart)
+
+    /** The daemon's ONE restart decision and wait; AddMount's save takes its restart through it too. */
+    internal val restarts = DaemonRestarts(restart)
+    private val daemonRoutes = DaemonRoutes(restarts)
     private val upgradeRoute = UpgradeRoute()
 
     fun register(route: Route) {

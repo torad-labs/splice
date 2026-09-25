@@ -20,6 +20,6 @@ public object SafeFailureText {
         is java.io.InterruptedIOException,
         is java.io.EOFException,
         -> failure.toString()
-        else -> "failure (message withheld — may quote file bytes)"
+        else -> "failure (message withheld: it may quote file bytes)"
     }
 }

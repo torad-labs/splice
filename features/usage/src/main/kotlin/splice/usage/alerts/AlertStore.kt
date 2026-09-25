@@ -56,9 +56,10 @@ public class AlertStore(private val file: Path) {
 
     private fun validate(settings: AlertSettings) {
         val url = settings.webhookUrl ?: return
-        if (url.isBlank()) throw AlertRefusal("webhook_url must be null to clear it, not blank")
+        if (url.isBlank()) throw AlertRefusal("The webhook URL can't be blank; clear the field to remove it.")
         if (!url.startsWith("https://") && !url.startsWith("http://")) {
-            throw AlertRefusal("webhook_url must be an http(s) URL, was '$url'")
+            // The URL is not echoed: a webhook often carries its secret in the path, and this reaches the console.
+            throw AlertRefusal("The webhook URL must start with https:// or http://.")
         }
     }
 

@@ -70,7 +70,7 @@ internal class DoctorAuth(output: TerminalOutput) {
         return DoctorCheck(
             "auth",
             CheckStatus.WARN,
-            "$key signs in with the ${kind.nativeApp}'s own credential file ($file) — " +
+            "$key signs in with the ${kind.nativeApp}'s own credential file ($file), so " +
                 "a token refresh by either side signs the other out",
             fix = "remove `file` from [providers.$providerKey] auth in splice.toml, then: splice login $key",
         )
@@ -86,7 +86,7 @@ internal class DoctorAuth(output: TerminalOutput) {
         }
 
     // api-key heads read the EFFECTIVE env var (explicit auth.env OR the derived <KEY>_API_KEY default
-    // the daemon wires) so a derived-default head always gets an `export` fix, never the OAuth dead-end;
+    // the daemon wires) so a derived-default head always gets a `splice key set` fix, never the OAuth dead-end;
     // OAuth heads keep a null env var so they read as "signed in"/"login" and skip the split-brain probe.
     private fun headAuthOf(
         key: String,

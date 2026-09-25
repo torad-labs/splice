@@ -43,7 +43,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         return DoctorCheck(
             headKey,
             CheckStatus.WARN,
-            "every account is out ($at) — $detail",
+            "every account is out ($at): $detail",
             "splice login $headKey --label <name>",
         )
     }

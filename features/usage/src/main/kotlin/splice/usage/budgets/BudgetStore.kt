@@ -74,6 +74,8 @@ public class BudgetStore(private val file: Path) {
 
     // Split one row at a time (ThrowsCount: max 2 throws per function) — each check named rather
     // than folded into one wide function with four.
+    // Each reason is printed by the console under the row it refused (V4-220): UI words, one sentence,
+    // and never the head the row already names.
     private fun validate(budgets: List<Budget>) {
         budgets.forEach { budget ->
             requireHead(budget)
@@ -84,23 +86,25 @@ public class BudgetStore(private val file: Path) {
     }
 
     private fun requireHead(budget: Budget) {
-        if (budget.head.isBlank()) throw BudgetRefusal("a budget needs a head")
+        if (budget.head.isBlank()) throw BudgetRefusal("Every budget needs a head.")
     }
 
     private fun requireValidAction(budget: Budget) {
         if (budget.action in BudgetActions.VALID) return
-        val allowed = BudgetActions.VALID
-        throw BudgetRefusal("${budget.head}: action must be one of $allowed, was '${budget.action}'")
+        val allowed = BudgetActions.VALID.joinToString(" or ")
+        throw BudgetRefusal("The action must be $allowed, not '${budget.action}'.")
     }
 
     private fun requireNonNegativeBudget(budget: Budget) {
         val dailyUsd = budget.dailyUsd
-        if (dailyUsd != null && dailyUsd < 0) throw BudgetRefusal("${budget.head}: daily_usd must not be negative")
+        if (dailyUsd != null && dailyUsd < 0) throw BudgetRefusal("The daily cap can't be negative.")
     }
 
     private fun requireNoDuplicateHeads(budgets: List<Budget>) {
         val duplicates = budgets.groupBy { it.head }.filterValues { it.size > 1 }.keys
-        if (duplicates.isNotEmpty()) throw BudgetRefusal("duplicate head(s) in one write: ${duplicates.sorted()}")
+        if (duplicates.isEmpty()) return
+        val repeated = duplicates.sorted().joinToString()
+        throw BudgetRefusal("Each head can have only one budget (more than one for $repeated).")
     }
 
     private fun write(budgets: List<Budget>) {

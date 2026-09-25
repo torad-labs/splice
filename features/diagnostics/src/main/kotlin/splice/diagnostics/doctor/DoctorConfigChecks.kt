@@ -23,7 +23,7 @@ private const val REPLACE_FIX =
 /** V4-172: a strip layer's value is a REGEX LIST, so REPLACE_FIX's advice would ship the patterns
  *  upstream as prompt text. The remedy for a strip layer is to stop stripping or to narrow it. */
 internal const val STRIP_FIX =
-    "remove the layer to leave the client's field untouched, or narrow the pattern list — a strip " +
+    "remove the layer to leave the client's field untouched, or narrow the pattern list; a strip " +
         "layer's value is regexes, never prompt text, so it cannot be reused under append"
 
 internal enum class CheckStatus { OK, INFO, WARN, FAIL }
@@ -68,7 +68,7 @@ internal class DoctorConfigChecks(
             val summary = DoctorCheck(
                 CHECK_TOPOLOGY,
                 CheckStatus.OK,
-                "$configPath — ${topology.heads.size} head(s): $heads",
+                "$configPath, ${topology.heads.size} head(s): $heads",
             )
             val brokenRefs = topology.heads.filterValues { it.provider !in topology.providers }.map { (key, head) ->
                 DoctorCheck(
@@ -116,7 +116,7 @@ internal class DoctorConfigChecks(
             DoctorCheck(
                 CHECK_TOPOLOGY,
                 CheckStatus.WARN,
-                "setting 'state_dir' = '$declared' is not a usable path — the daemon uses the " +
+                "setting 'state_dir' = '$declared' is not a usable path, so the daemon uses the " +
                     "default state dir '$fallback' instead",
                 "fix state_dir in $configPath (a usable absolute or relative path) or remove it to " +
                     "keep the default",
@@ -140,7 +140,7 @@ internal class DoctorConfigChecks(
             DoctorCheck(
                 CHECK_TOPOLOGY,
                 CheckStatus.WARN,
-                "setting '$where' is ignored — $why; the knob keeps its default",
+                "setting '$where' is ignored ($why); the knob keeps its default",
                 "fix or remove '$where' in $configPath",
             )
         }
@@ -164,12 +164,12 @@ internal class DoctorConfigChecks(
                 "system-prompt:$key",
                 CheckStatus.WARN,
                 if (head.systemPromptMode == SystemPromptMode.REPLACE) {
-                    "head '$key' sets system_prompt_mode = \"replace\" — the client's own system field is " +
+                    "head '$key' sets system_prompt_mode = \"replace\": the client's own system field is " +
                         "substituted, and Claude Code ships its entire operating instruction set in that " +
                         "field, so this head runs as a bare model with tools attached"
                 } else {
-                    "head '$key' sets system_prompt_mode = \"strip\" — the client's own system field is " +
-                        "edited on every turn: each paragraph a pattern matches is removed, and what is " +
+                    "head '$key' sets system_prompt_mode = \"strip\": the client's own system field is " +
+                        "edited on every turn; each paragraph a pattern matches is removed, and what is " +
                         "removed is yours to own (V4-171)"
                 },
                 if (head.systemPromptMode == SystemPromptMode.REPLACE) REPLACE_FIX else STRIP_FIX,

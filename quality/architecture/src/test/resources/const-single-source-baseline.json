@@ -336,7 +336,6 @@
     ],
     "COPY HTTP_OK": [
       "integrations/oauth/src/main/kotlin/splice/oauth/OAuthCallbackPage.kt",
-      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/AccountPools.kt",
       "features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt",
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt",

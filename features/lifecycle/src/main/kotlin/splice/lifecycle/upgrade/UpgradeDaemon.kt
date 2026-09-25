@@ -72,7 +72,8 @@ internal class UpgradeDaemon(
         return idle(read)
     }
 
-    private fun idle(read: InflightRead): Boolean = read is InflightRead.NoDaemon || read == InflightRead.Count(0)
+    private fun idle(read: InflightRead): Boolean =
+        read is InflightRead.NoDaemon || (read as? InflightRead.Count)?.turns == 0
 
     private fun describe(read: InflightRead): String = when (read) {
         is InflightRead.Count -> "${read.turns} turn(s) in flight; restarting when they finish"

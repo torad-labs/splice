@@ -85,14 +85,18 @@ public sealed class Command {
                 TerminalOutput(::println),
                 TerminalOutput(System.err::println),
                 EnvReader(System::getenv),
-                VersionedRestart { LifecycleWiring.restart(it) },
+                // The upgrade waited for every turn itself (or was told --now): no second wait here.
+                VersionedRestart { LifecycleWiring.restart(it, waitForCompactions = false) },
             )
             return outcomeExitCode(verb.upgrade(args))
         }
     }
 
     public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
-    public data object Restart : Command() { override fun run(): Int = outcomeExitCode(LifecycleWiring.restart()) }
+    /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */
+    public data class Restart(val now: Boolean = false) : Command() {
+        override fun run(): Int = outcomeExitCode(LifecycleWiring.restart(waitForCompactions = !now))
+    }
     public data object Dashboard : Command() {
         override fun run(): Int = outcomeExitCode(DashboardCommand().dashboard())
     }

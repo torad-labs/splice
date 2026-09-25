@@ -22,6 +22,7 @@ import splice.core.model.ClientWindows
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
+import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
@@ -143,6 +144,7 @@ internal class ManagedHeadFactory(
         accountQuotas = accountQuotas,
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),
+        compactionRecordings = FileCompactionRecordings(statePaths.compactionRecordingsDir(ctx.key), log),
     )
 
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the

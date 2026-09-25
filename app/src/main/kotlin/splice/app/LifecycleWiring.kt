@@ -17,9 +17,9 @@ internal object LifecycleWiring {
     private val jar = RunningJar(AdminSupport::selfJar)
 
     /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
-     *  upgrade just activated. */
-    fun restart(expectedVersion: String = GATEWAY_VERSION): Boolean =
-        RestartCommand(output, errors, EnvReader(System::getenv), jar).restart(expectedVersion)
+     *  upgrade just activated. [waitForCompactions] false skips V4-216's wait (`--now`, upgrade). */
+    fun restart(expectedVersion: String = GATEWAY_VERSION, waitForCompactions: Boolean = true): Boolean =
+        RestartCommand(output, errors, EnvReader(System::getenv), jar).restart(expectedVersion, waitForCompactions)
 
     fun ensureDaemon(port: Int): Boolean =
         DaemonColdStart(output, errors, EnvReader(System::getenv), jar).ensureDaemon(port)

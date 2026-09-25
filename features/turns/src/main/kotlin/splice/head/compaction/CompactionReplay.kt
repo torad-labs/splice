@@ -10,6 +10,8 @@
 // upstream request body, which is what "the same compaction" means on the wire — a retry that
 // differs (a message arrived in between) simply runs upstream as before. Only compactions whose
 // client actually left are kept; a compaction delivered to its client has no retry to serve.
+// V4-216: a finished answer is also written to [recordings] and read back through it on a miss, so
+// the retry finds it after a daemon restart; without a store (null) the replay is memory-only.
 package splice.head.compaction
 
 import splice.core.turn.TurnMeta
@@ -19,8 +21,9 @@ import splice.head.wire.FrameRecording
 import java.security.MessageDigest
 
 internal class CompactionReplay(
+    private val recordings: CompactionRecordings? = null,
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
-    private val ttlMs: Long = DEFAULT_TTL_MS,
+    private val ttlMs: Long = RECORDING_TTL_MS,
     private val capacity: Int = DEFAULT_CAPACITY,
 ) {
     private data class Entry(val recording: FrameRecording, val startedAtMs: Long)
@@ -53,22 +56,37 @@ internal class CompactionReplay(
 
     /** The drive ended. [keep] is the caller's verdict — the client was gone AND the terminal
      *  ended cleanly (TurnTerminal.endedCleanly); anything else would replay a truncated or failed
-     *  stream to the retry, so it is dropped. A recording a newer begin() replaced is left alone. */
+     *  stream to the retry, so it is dropped. A recording a newer begin() replaced is left alone.
+     *  A kept one is stored under the lock, so a replay consumed meanwhile cannot leave a file behind. */
     fun finish(key: String, recording: FrameRecording, keep: Boolean) {
         synchronized(lock) {
             val superseded = entries[key]?.recording !== recording
             if (!superseded && !keep) entries.remove(key)
+            if (!superseded && keep) recordings?.save(key, recording.frames())
         }
     }
 
     fun lookup(key: String): FrameRecording? = synchronized(lock) {
         sweep()
-        entries[key]?.recording
+        entries[key]?.recording ?: restored(key)
     }
 
     /** A delivered replay has served its purpose; a second identical request runs upstream. */
     fun consumed(key: String) {
-        synchronized(lock) { entries.remove(key) }
+        synchronized(lock) {
+            entries.remove(key)
+            recordings?.remove(key)
+        }
+    }
+
+    /** An answer a previous process kept: complete and whole by construction (only those are saved). */
+    private fun restored(key: String): FrameRecording? {
+        val frames = recordings?.load(key) ?: return null
+        val recording = FrameRecording()
+        frames.forEach(recording::append)
+        recording.complete(whole = true)
+        entries[key] = Entry(recording, clock())
+        return recording
     }
 
     // Past capacity, a settled recording goes before one still in flight: begin() inserts at the
@@ -90,5 +108,4 @@ internal class CompactionReplay(
             .joinToString("") { "%02x".format(it) }
 }
 
-private const val DEFAULT_TTL_MS = 2 * 60 * 60 * 1000L
 private const val DEFAULT_CAPACITY = 32

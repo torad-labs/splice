@@ -1,9 +1,10 @@
 // NEW: v0.4.0 FEATURES.md §5 — the daemon's in-flight count as `splice upgrade` reads it — the sum
 // of every head's gate.inflight on /api/heads, with the mgmt key. Split from UpgradeDaemon.kt
-// (concentration, 2026-09-13).
+// (concentration, 2026-09-13). V4-216: `splice restart` reads it too, for the compact slots alone.
 package splice.lifecycle.upgrade
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -29,12 +30,17 @@ private const val HTTP_OK = 200
 
 /** What one read of the in-flight count established: a number, a proven absence of any daemon
  *  (nothing to wait for), or nothing at all — a missing key, a timeout, a 401, a body without every
- *  head's gate.inflight. Unknown is never zero: an upgrade that cannot see the turns waits or refuses. */
+ *  head's gate.inflight. Unknown is never zero: an upgrade that cannot see the turns waits or refuses.
+ *  [Count.compactions] are the turns among them that are compactions (V4-213's live rows), which a
+ *  restart waits for; a daemon that lists no live rows has none to show. */
 internal sealed class InflightRead {
-    data class Count(val turns: Int) : InflightRead()
+    data class Count(val turns: Int, val compactions: List<CompactionSlot> = emptyList()) : InflightRead()
     data object NoDaemon : InflightRead()
     data class Unknown(val reason: String) : InflightRead()
 }
+
+/** A compaction in flight on [head], [ageMs] since its slot was taken. */
+internal data class CompactionSlot(val head: String, val ageMs: Long)
 
 internal fun interface UpgradeInflight {
     operator fun invoke(): InflightRead
@@ -85,9 +91,16 @@ internal class JdkUpgradeInflight(
         val missing = heads.filterIndexed { i, _ -> counts[i] == null }
             .map { JsonScalars.str(it, "key") ?: "?" }
         return if (missing.isEmpty()) {
-            InflightRead.Count(counts.sumOf { it ?: 0 })
+            InflightRead.Count(counts.sumOf { it ?: 0 }, heads.flatMap(::compactions))
         } else {
             InflightRead.Unknown("no in-flight count for head(s) $missing")
         }
+    }
+
+    private fun compactions(head: JsonObject): List<CompactionSlot> {
+        val live = (head["gate"] as? JsonObject)?.get("live") as? JsonArray ?: return emptyList()
+        return live.mapNotNull { it as? JsonObject }
+            .filter { JsonScalars.str(it, "compact") == "true" }
+            .map { CompactionSlot(JsonScalars.str(head, "key") ?: "?", JsonScalars.long(it, "age_ms") ?: 0) }
     }
 }

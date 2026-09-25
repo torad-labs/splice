@@ -1,0 +1,60 @@
+// NEW: V4-216 (2026-09-25) — `splice restart` lets a compaction in flight finish before the stop.
+//
+// A compaction is the one turn a restart must not cut. It runs for minutes; its client (Claude Code)
+// gives it 600 s and then retries the same bytes; and the daemon keeps its answer for that retry
+// (CompactionReplay, FileCompactionRecordings), but only once the compaction has finished. The stop's
+// own drain is 45 s inside a unit that allows 90 in all, so the wait comes BEFORE the stop: the daemon
+// keeps serving, no head closes admission, and ordinary turns never hold a restart. A slot is waited
+// for until it reaches the client's 600 s, and the whole wait is held to the same 600 s, so new
+// compactions arriving meanwhile cannot hold a restart forever. `--now` skips it.
+package splice.lifecycle.restart
+
+import splice.core.terminal.TerminalOutput
+import splice.lifecycle.upgrade.CompactionSlot
+import splice.lifecycle.upgrade.InflightRead
+import splice.lifecycle.upgrade.UpgradeInflight
+
+private const val POLL_MS = 2_000L
+private const val CAP_MS = 600_000L
+private const val NANOS_PER_MS = 1_000_000L
+private const val MS_PER_S = 1_000L
+private const val S_PER_MIN = 60L
+
+internal class CompactionWait(
+    private val output: TerminalOutput,
+    private val inflight: UpgradeInflight,
+    private val pollMs: Long = POLL_MS,
+    private val capMs: Long = CAP_MS,
+) {
+    /** Returns once no compaction younger than [capMs] is in flight, or [capMs] has passed. A read
+     *  that cannot see the slots is said and not waited on: the restart is what fixes a daemon too
+     *  sick to answer /api/heads. */
+    fun await() {
+        val start = System.nanoTime()
+        while (true) {
+            val read = inflight()
+            if (read is InflightRead.Unknown) {
+                output.line("splice: could not see compactions in flight (${read.reason}); restarting without waiting")
+                return
+            }
+            val pending = (read as? InflightRead.Count)?.compactions.orEmpty().filter { it.ageMs < capMs }
+            if (pending.isEmpty()) return
+            if ((System.nanoTime() - start) / NANOS_PER_MS >= capMs) {
+                output.line("splice: ${describe(pending)} still running after ${capMs / MS_PER_S}s; restarting anyway")
+                return
+            }
+            output.line("splice: waiting for ${describe(pending)}")
+            Thread.sleep(pollMs)
+        }
+    }
+
+    private fun describe(slots: List<CompactionSlot>): String {
+        val noun = if (slots.size == 1) "compaction" else "compactions"
+        return "${slots.size} $noun (${slots.joinToString("; ") { "${it.head}, ${age(it.ageMs)} in" }})"
+    }
+
+    private fun age(ms: Long): String {
+        val s = ms / MS_PER_S
+        return if (s < S_PER_MIN) "${s}s" else "${s / S_PER_MIN}m${s % S_PER_MIN}s"
+    }
+}

@@ -5,6 +5,7 @@ package splice.app.head
 
 import splice.core.model.ClientWindows
 import splice.head.compact.CompactStats
+import splice.head.compaction.CompactionRecordings
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
@@ -29,4 +30,6 @@ internal data class HeadStores(
     /** V4-174: the head's opt-in full trace; null is off. No default (the V4-105 law on the gateway
      *  twin): the one construction site decides from the head's own config, never by omission. */
     val trace: TraceStore?,
+    /** V4-216: the head's kept compaction answers, which outlive a daemon restart. */
+    val compactionRecordings: CompactionRecordings,
 )

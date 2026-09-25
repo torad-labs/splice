@@ -81,6 +81,7 @@ internal class HeadServerFactory(
                     // every other head's bodies unkept.
                     wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) },
                     trace = stores.trace,
+                    compactionRecordings = stores.compactionRecordings,
                 ),
                 quotaBundle = HeadDeps.HeadQuota(
                     quota = stores.quota,

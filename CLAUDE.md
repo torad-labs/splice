@@ -46,7 +46,7 @@ The procedure, every time, in this order:
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.
 4. Atomic install: `cp` the built jar to a sibling path in the same directory, then `mv` it over
    `splice.jar`.
-5. `systemctl --user restart splice.service`.
+5. `splice restart`.
 6. Verify the OPEN file, not the path: sha256 of the jar fd under `/proc/<pid>/fd/` equals the
    built jar's sha256. Print both beside the result in one command block.
 7. One ledger note naming the sha, the CI run, the pid, and the backup path. Announce "gradle busy"

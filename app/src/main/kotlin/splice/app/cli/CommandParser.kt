@@ -51,7 +51,7 @@ private val verbs: Map<String, CommandFactory> = mapOf(
     "models" to CommandFactory { a -> Command.Models(a.drop(1)) },
     "upgrade" to CommandFactory { a -> Command.Upgrade(a.drop(1)) },
     "status" to CommandFactory { Command.Status },
-    "restart" to CommandFactory { Command.Restart },
+    "restart" to CommandFactory { a -> Command.Restart(now = "--now" in a.drop(1)) },
     "dashboard" to CommandFactory { Command.Dashboard },
     "key" to CommandFactory { a -> Command.Key(a.drop(1)) },
     "logs" to CommandFactory { a -> Command.Logs(a.drop(1)) },

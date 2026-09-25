@@ -93,6 +93,7 @@ public sealed class Command {
     }
 
     public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
+
     /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */
     public data class Restart(val now: Boolean = false) : Command() {
         override fun run(): Int = outcomeExitCode(LifecycleWiring.restart(waitForCompactions = !now))

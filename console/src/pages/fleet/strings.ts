@@ -22,8 +22,7 @@ export const S = {
   refreshError: 'Refresh error',
   nearestLimit: 'Nearest limit',
   aboutFirstByte: 'About first byte',
-  addHead: 'Add head',
-  aboutAdd: 'About adding heads',
+  addBackend: 'Add backend',
   detail: 'Head detail',
   openHead: 'Open head',
   close: 'Close',
@@ -75,7 +74,6 @@ export const S = {
 export const H = {
   about: 'Every head, its health, and the account each will use next.',
   firstByte: "Time to first byte over the fleet's recent turns.",
-  add: 'Add another provider from a terminal with this command.',
   noHeads: 'Run splice setup, then splice add for each further provider.',
   fields: 'This splice version does not serve the topology or model list.',
   pools: 'This splice version does not serve accounts.',

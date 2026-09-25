@@ -29,7 +29,8 @@ export const dispositions: readonly Disposition[] = [
   // V4-220: each names its job action and the route that action calls (checks.ts, verbProblems).
   { kind: 'verb', name: 'status', disposition: 'read-only', via: '/api/status' },
   { kind: 'verb', name: 'restart', disposition: 'editable', action: 'Restart the daemon', via: '/api/daemon/restart' },
-  { kind: 'verb', name: 'add', disposition: 'pending', where: 'V4-220', action: 'Add a backend', via: '/api/add' },
+  // add is the Add backend key: the add form in the detail panel (widgets/add-backend).
+  { kind: 'verb', name: 'add', disposition: 'editable', action: 'Add a backend', via: '/api/add' },
   // upgrade is the doctor page's: its version strip reads /api/upgrade, and the upgrade form sits there.
   // Adding a backend, `splice add` over HTTP (V4-220 item 3): a new head joins this page's fleet.
   { kind: 'route', name: '/api/add/profiles', disposition: 'read-only' },
@@ -47,6 +48,6 @@ export const job: PageJob = {
   actions: [
     { name: 'Start, stop or restart a head' },
     { name: 'Restart the daemon' },
-    { name: 'Add a backend', row: 'V4-220' },
+    { name: 'Add a backend' },
   ],
 };

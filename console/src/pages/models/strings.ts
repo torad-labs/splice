@@ -34,6 +34,8 @@ export const S = {
   detail: 'Model detail',
   openModel: 'Open model',
   close: 'Close',
+  /** The header key and the panel it opens: `splice add-model` (V4-220). */
+  addModels: 'Add models',
   noModels: 'No models',
   noHeads: 'No heads',
   catalogPending: 'Catalog unavailable',

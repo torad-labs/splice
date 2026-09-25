@@ -10,6 +10,7 @@
 // printed as `undefined` (doctor's rollback). Soft assertions, so one run names every fault class on
 // every page instead of stopping at the first.
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -259,6 +260,49 @@ async function nextCell(main: Locator, account: string): Promise<Locator> {
   return row.getByRole('cell').nth(names.indexOf('Next'));
 }
 
+test('an api-key head\'s key is stored and removed from its detail, and each answer says where the head reads it', async ({ page }) => {
+  // V4-220 item 1 against the real jar: the stack's api-key head reads CONSOLE_E2E_NO_SUCH_KEY,
+  // which nothing sets, so it reads nowhere until the store holds one. The daemon's key store sits
+  // beside SPLICE_CONFIG in the stack's own home. The doctor rows later in this file read the key as
+  // unset, so the store is emptied however this test ends.
+  const name = 'CONSOLE_E2E_NO_SUCH_KEY';
+  const secret = `sk-e2e-${randomUUID()}`;
+  const faults = await open(page, 'accounts');
+  try {
+    await headRow(page, STACK.keyHead).click();
+    const detail = page.getByRole('complementary', { name: 'Account detail' });
+    const readFrom = detail.getByRole('definition').filter({ hasText: /^(Nowhere|Key store|Environment|Key file)$/ });
+    await expect(readFrom).toHaveText('Nowhere', { timeout: 15_000 });
+    await expect(detail.getByRole('button', { name: 'Remove key', exact: true })).toHaveCount(0);
+
+    const box = detail.getByLabel('New key', { exact: true });
+    await box.fill(secret);
+    const stored = page.waitForResponse((response) => response.request().method() === 'PUT'
+      && new URL(response.url()).pathname === `/api/keys/${name}`);
+    await detail.getByRole('button', { name: 'Store key', exact: true }).click();
+    expect((await stored).status()).toBe(200);
+    await expect(detail.getByRole('status')).toHaveText(`${STACK.keyHead} uses the stored key from its next request.`);
+    await expect(box, 'the box keeps no key once the store answered').toHaveValue('');
+    await expect(readFrom).toHaveText('Key store');
+    const keys = page.locator('main').getByRole('table', { name: 'API keys', exact: true });
+    await expect(keys.getByRole('row').filter({ hasText: name })).toContainText('Set');
+    expect(await page.content(), 'the value is on no page').not.toContain(secret);
+
+    await detail.getByRole('button', { name: 'Remove key', exact: true }).click();
+    const removed = page.waitForResponse((response) => response.request().method() === 'DELETE'
+      && new URL(response.url()).pathname === `/api/keys/${name}`);
+    await detail.getByRole('button', { name: `Remove ${name}`, exact: true }).click();
+    expect((await removed).status()).toBe(200);
+    await expect(detail.getByRole('status')).toHaveText(`${STACK.keyHead} has no key now.`);
+    await expect(readFrom).toHaveText('Nowhere');
+    expect(faults.pageErrors, 'the accounts page threw').toEqual([]);
+  } finally {
+    await page.evaluate(async ([storage, variable]) => {
+      await fetch(`/api/keys/${variable}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem(storage) ?? ''}` } });
+    }, [KEY_STORAGE, name]);
+  }
+});
+
 // The design's two frames (DESIGN.md, Scale), in both views that print the Heads column.
 for (const viewport of [{ width: 1600, height: 1000 }, { width: 3840, height: 2060 }]) {
   for (const view of ['By provider', 'Nearest limit']) {
@@ -386,6 +430,44 @@ test('fleet opens a head with its account pool and the next target marked', asyn
   await expect(detail).toContainText('No pool');
   await expect(detail.getByRole('table', { name: 'Account pool', exact: true })).toHaveCount(0);
   expect(faults.pageErrors, 'opening a head threw').toEqual([]);
+});
+
+test('a backend is added from the fleet\'s detail panel through the daemon\'s own add, and a failed check prints its rows', async ({ page }) => {
+  // V4-220 item 3 against the real jar: the `api-key` profile asks a name, a base URL and a model.
+  // Nothing supplies its key, so the checks refuse (409, with the rows), and the add is discarded:
+  // a save would write the stack's splice.toml and restart the daemon under the journeys after it.
+  const faults = await open(page, 'fleet');
+  await page.locator('main').getByRole('button', { name: 'Add backend', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Add backend' });
+  await pick(panel, 'Profile', 'api-key');
+  await panel.getByLabel('Head name', { exact: true }).fill('claude-e2e-added');
+  await panel.getByLabel('Base URL', { exact: true }).fill('http://127.0.0.1:9/v1');
+  await panel.getByLabel('Model id', { exact: true }).fill('e2e/added-model');
+  const opened = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/add');
+  await panel.getByRole('button', { name: 'Continue', exact: true }).click();
+  expect((await opened).status()).toBe(200);
+  await expect(panel.getByRole('definition').filter({ hasText: /^claude-e2e-added$/ })).toBeVisible();
+  await expect(panel).toContainText('API key');
+  // The key-signed head stores its key with the Accounts key form itself.
+  await expect(panel.getByRole('button', { name: 'Store key', exact: true })).toBeVisible();
+
+  const verified = page.waitForResponse((response) => response.request().method() === 'POST'
+    && /^\/api\/add\/[^/]+\/verify$/.test(new URL(response.url()).pathname));
+  await panel.getByRole('button', { name: 'Run checks', exact: true }).click();
+  const answer = await verified;
+  const body = await answer.json() as { error: string; checks: { name: string; ok: boolean }[] };
+  expect(answer.status()).toBe(409);
+  expect(body.checks.some((check) => !check.ok), 'a check failed').toBe(true);
+  await expect(panel.getByRole('alert')).toContainText(body.error);
+  await expect(panel.locator('.myx-add-check')).toHaveCount(body.checks.length);
+
+  const discarded = page.waitForResponse((response) => response.request().method() === 'DELETE'
+    && /^\/api\/add\/[^/]+$/.test(new URL(response.url()).pathname));
+  await panel.getByRole('button', { name: 'Discard', exact: true }).click();
+  expect((await discarded).status()).toBe(200);
+  await expect(panel).toHaveCount(0);
+  expect(faults.pageErrors, 'the fleet page threw').toEqual([]);
 });
 
 test('the draining restart confirms inline and prints the daemon\'s refusal verbatim', async ({ page }) => {
@@ -594,6 +676,38 @@ test('doctor\'s playground sends one prompt through a head to the upstream and s
   await expect(playground).toContainText('one prompt from the console e2e');
   expect(faults.pageErrors, 'the playground threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'the playground send was refused').toEqual([]);
+});
+
+test('Models offers the stack\'s OpenRouter head the catalogue models its roster does not reach, and adds the ones picked', async ({ page }) => {
+  // V4-220 against the real jar: GET /api/add-model reads the stack's splice.toml, where
+  // e2e-openrouter's roster reaches one model, so the OpenRouter catalogue's others are on offer.
+  // The add writes splice.toml and takes the restart, which would change the stack under every later
+  // test, so the POST answers here in AddViews.added's shape (tests/add-model.test.ts holds it).
+  const sent: (string | null)[] = [];
+  await page.route('**/api/add-model', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent.push(route.request().postData());
+    const asked = JSON.parse(route.request().postData() ?? '{}') as { head: string; models: string[] };
+    return route.fulfill({ json: { path: '/e2e/splice.toml', head: asked.head, added: asked.models, restart: { status: 'draining' } } });
+  });
+  const faults = await open(page, 'models');
+  await page.locator('main').getByRole('button', { name: 'Add models', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Add models' });
+  const offered = panel.getByRole('list', { name: 'Offered models' });
+  await expect(offered.getByRole('listitem').first()).toBeVisible({ timeout: 15_000 });
+  await expect(panel.getByText(STACK.keyHead, { exact: true })).toBeVisible();
+  await expect(offered, 'the roster\'s own model is not on offer').not.toContainText('e2e/key-model');
+
+  const first = offered.getByRole('switch').first();
+  const id = (await first.getAttribute('aria-label'))?.replace(/^Add /, '') ?? '';
+  await first.click();
+  await expect(first).toHaveAttribute('aria-checked', 'true');
+  await panel.getByRole('button', { name: 'Add 1 model', exact: true }).click();
+  await panel.getByRole('button', { name: 'Add and restart', exact: true }).click();
+  await expect.poll(() => sent, 'the add names the head and the picked id').toEqual([JSON.stringify({ head: STACK.keyHead, models: [id] })]);
+  await expect(panel.getByRole('status')).toHaveText('The daemon is restarting; the models appear once it is back.');
+  await expect(panel).toContainText(id);
+  expect(faults.pageErrors, 'the models page threw').toEqual([]);
 });
 
 test('models opens a model with the head windows its topology declares', async ({ page }) => {

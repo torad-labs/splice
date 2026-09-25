@@ -1,18 +1,24 @@
-// Every label this feature prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall). Validator sentences are not labels and live in the
-// component.
+// Every word this feature prints (docs/design/DESIGN.md section 10): labels, three words or fewer,
+// sentence case. A validator finding is one of these too: what is missing, in the fewest words.
 export const S = {
-  heads: 'heads',
-  declared: 'declared',
-  disable: 'disable',
+  heads: 'Heads',
+  declared: 'Declared',
+  disable: 'Disable',
   /** The armed second half of the disable gesture. */
-  confirmDisable: 'confirm disable',
-  addHead: 'add head',
-  provider: 'provider',
-  port: 'port',
-  prefix: 'discovery prefix',
-  pinned: 'pinned model',
-  window: 'context window',
-  key: 'head key',
-  source: 'splice.toml',
+  confirmDisable: 'Confirm disable',
+  addHead: 'Add head',
+  provider: 'Provider',
+  port: 'Port',
+  prefix: 'Discovery prefix',
+  pinned: 'Pinned model',
+  window: 'Context window',
+  key: 'Head key',
+  /** Where a head row lives: the TOML file the topology section writes. */
+  source: 'TOML',
+  noProviders: 'No providers declared',
+  keyRequired: 'Key required',
+  providerRequired: 'Provider required',
+  portRequired: 'Numeric port required',
+  prefixRequired: 'Prefix required',
+  modelRequired: 'Model required',
 } as const;

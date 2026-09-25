@@ -321,8 +321,6 @@ describe('the holder edge label', () => {
   const KEY = { css: sheet('src/shared/controls/controls.css'), selector: '.myx-key' };
   const ROOM = { css: sheet('src/app/app.css'), selector: 'body' };
   const ui = sheet('src/shared/ui/ui.css');
-  // THE BAY'S HEAD PLATE (M3-04): the compaction bay's grey `sample data` edge stands on it.
-  const PLATE = { css: ui, selector: '.myx-bay-head' };
 
   for (const theme of ['dark', 'light'] as const) {
     test(`a Flag on its key reads in the ${theme} room`, () => {
@@ -331,10 +329,14 @@ describe('the holder edge label', () => {
     test(`a HolderEdge standing in the ${theme} room reads`, () => {
       expect(edgeOn(ui, theme, ROOM)).toBeGreaterThanOrEqual(4.5);
     });
-    test(`a HolderEdge on a bay's head plate reads in the ${theme} room`, () => {
-      expect(edgeOn(ui, theme, PLATE)).toBeGreaterThanOrEqual(4.5);
-    });
   }
+
+  test("a bay's head draws no ground of its own, so an edge on it is the room case above", () => {
+    // The plate it once was (M3-04) is gone with the redesign: the head sits on the page's ground.
+    expect(declared(ui, '.myx-bay-head', 'background')).toBeNull();
+    expect(declared(ui, '.myx-bay-head', 'background-color')).toBeNull();
+    expect(declared(ui, '.myx-bay-head', 'color')).toBeNull();
+  });
 
   test('the wall can fail: a label handed a ground\'s colour vanishes on its key', () => {
     const planted = ui.replace(/(^\.myx-edge-label\s*\{[^}]*?)color:\s*inherit;/m, '$1color: var(--bg-active);');

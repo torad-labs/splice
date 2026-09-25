@@ -89,7 +89,7 @@ export function HeadAddForm({ topology, onAdd }: {
     <div className="myx-head myx-head-new">
       <div className="myx-head-id">
         <span className="myx-head-key">{S.addHead}</span>
-        <span className="myx-head-note">{providers.length === 0 ? 'no providers declared' : providers.join(', ')}</span>
+        <span className="myx-head-note">{providers.length === 0 ? S.noProviders : providers.join(', ')}</span>
       </div>
       <div className="myx-head-fields">
         {field('key', S.key)}

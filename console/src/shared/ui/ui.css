@@ -476,216 +476,37 @@
   color: var(--strip-ink-mute);
 }
 
-/* --- Bay: a rack of strips. Two rails, a bolted head plate, a ruled floor. --- */
+/* --- Bay: a titled group of rows (docs/design/DESIGN.md section 6). The heading, its count and its
+   actions sit on the page's own ground, like a Section's; the rows follow. It draws no ground of its
+   own, so what stands on its head (a HolderEdge) reads against the room. --- */
 .myx-bay {
   display: flex;
   flex-direction: column;
-  position: relative;
-  /* ---- A BAY OCCUPIES THE SPACE IT IS GIVEN (M1-38) --------------------------
-     On the comp a bay is not a content-height box in a room: bay-claude is y 138..947, 79 percent
-     of the frame, and M1-12 measured its slot rules continuing BELOW the last strip at a 31-32px
-     pitch (668, 698, 729, 760, 790, 821, 852, 884, 916) -- a rack that fills the floor the strips
-     do not, because the floor IS the rack. The build sizes every bay to its content, so the bottom
-     of each page is a flat empty room; measured on projects at 3840, the bay's ground reaches row
-     1338 of 2160 and the last third of the page is floor.
-     The ribbing is already the bay's own background, so it fills whatever box it is given -- the
-     mechanism was never the missing half. THIS DECLARATION IS ONLY THE BAY'S SIDE OF IT, and it is
-     deliberately the smallest true statement: grow into the height the container offers, and let a
-     container that offers none (an auto-height flex column, which is what every page sheet builds
-     today) leave the bay exactly as it is. It cannot do more from here, because a box cannot know
-     a height its parent never had; the parent half is the page sheets' and app.css's, and it is
-     reported rather than reached for.
-     REVERSED FOR EVERY BAY (console review, 2026-09-24): once the root stopped scaling with the
-     window (49b1fe49b), a bay that grew into its room drew hundreds of pixels of empty ribs under
-     its last row -- projects' seven repos under a floor to the bottom of a 1080 frame, fleet's ten
-     heads under 1600px of it on a 2160 panel. That fix was fleet's alone; the bay now ends after
-     its last row on every page, and a page that holds more than fits scrolls. */
+  gap: var(--space-3);
   flex: 0 0 auto;
+  min-width: 0;
   min-height: 0;
-  /* THE BAY IS ITS OWN PLANE (M1-35's census, bound here): `--bay` was measured in M1-13 and
-     has had NO reader since -- this rule was the one that was supposed to read it and it named
-     --room-deep instead, three steps off, so the bay rendered at 1.06:1 against the room and
-     read as nothing. Binding the name is safe by the token's own construction: in light --bay
-     already holds the value this block uses as the bay floor, so the light theme does not move
-     at all, and in dark it moves 3 L up. */
-  background: var(--bay);
-  border-top: var(--hair) solid var(--hairline-strong);
-  border-bottom: var(--hair) solid var(--hairline-strong);
-  /* ---- E-3 · THE STILES (M1-24) ---------------------------------------------
-     The bay's side rails are not a wash, they are members. Measured across a stile between
-     two bays on the comp at y=875: gutter L 10-19 | **1px outer highlight L 58.7 `#3A3B3A`** |
-     **14px face L 25-31 `#1A1D1C`-`#1D201F`** | a hard 2px edge at L 0.0 | room L 7-16. The
-     same member in band-1, a different rack 590px away, measures a 12px face at L 24-32
-     bounded at x 164-165 by L 0.0 `#000000` -- two racks agreeing on the construction, which
-     is what makes it a world rule and not a hero detail. It is what makes a bay read as a
-     container instead of a change of background.
-     Written against the bay floor it sits on: the face is the floor lifted toward white by
-     the measured fraction (9.6 -> 28 is 7.5% of the way to 255), and the highlight is the
-     face lifted again by its own measured step (28 -> 58.7 is 13.7% of that face's remaining
-     room), so neither can invert. The inner edge is the same near-black the strip's outline
-     is -- the darkest tone in the frame, and darker than everything it borders in BOTH
-     themes, so it needs no per-theme value.
-     In light the highlight lands at 190.8 against a 180.6 face: it keeps the sign and takes
-     a reduced magnitude, which ruling two allows because the light bay already separates
-     from its room at 1.690 and does not need a full dark-derived carcass on top of that.
-     The 16px rail width is unchanged, so no bay's inner width moves. */
-  /* The border is the rail for every bay that lays out around one, and the two rail layers in
-     background-image below redraw the SAME 16px band on top of it, so a bay that has no border
-     -- `.myx-board-bay { border: none }`, whose strips are placed as a percentage of the bay and
-     would all shift if a border were added -- gets the member anyway. A background layer cannot
-     move anything, which is what makes this the one shape that works for both. */
-  border-inline: var(--space-4) solid color-mix(in srgb, var(--bay) 92.5%, white);
-  box-shadow:
-    inset 0 0 0 var(--hair) color-mix(in srgb, var(--room) 27%, black),
-    0 0 0 var(--hair) color-mix(in srgb, color-mix(in srgb, var(--bay) 92.5%, white) 86.3%, white);
-  /* ---- E-4 · THE BOLT INSETS (M1-24) ----------------------------------------
-     Dark rectangular holes punched into the stile face at a regular pitch: the holes a shelf
-     rail clips into. They are RECESSES, not raised rivets -- darker than the stile, not
-     brighter. Measured down the comp's stile at x=566, y 835-960: stile median L 28.4, insets
-     at y 849-857 and y 896-904, each 9px tall and 12-14px wide, colour `#020202`, at a pitch
-     of 47px (849 -> 896, and a third at 946, +50). THAT PITCH IS THE BOLT'S OWN and it is
-     deliberately NOT the floor's 31px slot pitch -- the two rhythms are different features of
-     the same machine and unifying them would erase the distinction.
-     The 6px phase is what the comp shows: the first bolt of bay-claude sits at y 849 against a
-     bay that starts at 138, and 849 - 138 = 711 = 15 x 47 + 6.
-     The bolts ride in the same background layer as the rail they are punched into, and that
-     layer paints the full 16px band including the part of it that is the border, because a
-     background paints across the border box. So the bolts sit on the member whether or not the
-     bay lays out a border for it -- which is the same problem E-3 solves above, solved once. */
-  /* The floor is ribbed, not ruled. The comp's unprinted slots sit at a 31-32px pitch (measured
-     below the last lead strip: 668, 698, 729, 760, 790, 821, 852, 884, 916) and reading its own rows
-     down an empty rack shows two parts, not one: a bright rule a couple of pixels wide (L45 at row
-     698, L40 at 728) and a soft wash carrying the rest of the pitch (a plateau at L11-13), with a
-     dark notch under each rule (L2-6). One --hair of --hairline per pitch puts all of that tone in a
-     single row: sampling 240 rows, the comp reads 232 brighter than its floor and peaks at L52,
-     where the hairline build read 85 and peaked at L68. So the slot is the rule AND the wash, both
-     off --bay-slot: the token is the rule's tone and the wash is a fifth of it. The pitch itself is
-     measured and stays. */
-  /* ---- E-2's SHADOW HALF (M1-24) --------------------------------------------
-     M1-17 closed the rail and left the shadow. Read across the comp at x=350, band-7: ground
-     L 12.4 | **rail at y 852, L 53.4 `#343634`, 1px** | floor at 853-855 | **y 856-858 at
-     L 7.4, 0.9, 3.4 -- a 3px under-shadow DARKER than the floor** (`#000102`). The rail alone
-     is a line; the rail plus a notch below it is a groove, and the notch is what the build
-     has never had. It is written as an alpha over the floor it darkens rather than as the
-     comp's near-black hex, so it darkens whichever floor it lands on and needs no token pair
-     of its own.
-     The slot's parts, in order and all in lengths: the rule (--space-1), a shoulder back to
-     the floor (--space-1 to --space-2), the notch (--space-2 to --space-2 + --space-1 +
-     --hair = 7px), then the wash out to the pitch. */
-  /* RULE: EVERY STOP IN A REPEATING GRADIENT ON A RACK IS A LENGTH, NEVER A PERCENTAGE.
-     A percentage stop silently redefines the gradient's period as the ELEMENT's own size, so
-     mixing one with pixel stops makes the period the bay's height (809px) rather than the
-     pitch: this rule rendered one 27px ramp where a ribbed floor was intended, and it renders
-     plausibly -- it looks deliberate, it passes every test, and only reading the rendered rows
-     against the comp's sample catches it (52 of 240 rows against the comp's 210). If you edit
-     this rule, re-run that sample; do not eyeball it. */
-  background-image:
-    /* the two stile rails, face AND bolts in one layer each (E-3, E-4): the gradient's gaps are
-       the face and its dark stops are the holes, so the rail is a single 16px band that cannot
-       fall out of register with itself. 6px phase, 9px hole, 47px pitch -- the comp's own
-       numbers, and deliberately NOT the floor's 31px slot pitch below. */
-    repeating-linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--bay) 92.5%, white) 0 6px,
-      color-mix(in srgb, var(--bay) 20%, black) 6px 15px,
-      color-mix(in srgb, var(--bay) 92.5%, white) 15px 53px
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--bay) 92.5%, white) 0 6px,
-      color-mix(in srgb, var(--bay) 20%, black) 6px 15px,
-      color-mix(in srgb, var(--bay) 92.5%, white) 15px 53px
-    ),
-    /* the floor's ribbing (M1-17, and E-2's shadow half added): rule, shoulder, notch, wash */
-    repeating-linear-gradient(
-      to bottom,
-      var(--bay-slot) 0 var(--space-1),
-      color-mix(in srgb, var(--bay-slot) 15%, transparent) var(--space-1) var(--space-2),
-      color-mix(in srgb, transparent 40%, black) var(--space-2) calc(var(--space-2) + var(--space-1) + var(--hair)),
-      color-mix(in srgb, var(--bay-slot) 15%, transparent) calc(var(--space-2) + var(--space-1) + var(--hair)) calc(var(--space-7) - var(--space-1)),
-      transparent calc(var(--space-7) - var(--space-1)) var(--space-7)
-    );
-  background-size: var(--space-4) 100%, var(--space-4) 100%, auto;
-  background-position: left top, right top, left top;
-  background-repeat: no-repeat, no-repeat, repeat;
-  border-radius: 0;
 }
-/* The head plate: the comp bolts a plate over each bay, measured 184x24px, on a shaded pale ground
-   (sampled 188,176,156) inside a 1px line of the strip's own mute, its label centered on it. No
-   rivet is drawn: the header carries a live label, a count and the bay's actions, and the world has
-   no radius for the comp's two round bolts per end. A bay with actions keeps them at the plate's
-   right end, which is where the comp has nothing and a real control has to be. */
 .myx-bay-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  /* A discrete plate, centered over the rack: the comp's measures 184px in a 430px bay, cut to
-     its content. It grows on its own when a bay carries column labels (B9) or actions. */
-  width: max-content;
-  margin: var(--space-3) auto 0;
-  /* the pins stand in their own margin at each end, clear of the word: they sat on its first
-     letter at 4.5px and read as selection handles (2026-09-23, console design pass) */
-  padding: var(--space-1) var(--space-6);
-  /* E-1 and E-5 on the plate (M1-24). The plate is paper, so it takes the paper's own
-     three-part edge -- measured across its left edge at comp y=155: 1px outline at L 0-5,
-     1px shade at L 103-121, 1px lip at L 200-224, then the face at L 180-186. It is the
-     same material as the strip's edge and it is written the same way, against its own
-     ground, and it carries no token of its own.
-     It also carries four CORNER PINS where the bays stand alone: comp x 267 and 440,
-     y 155 and 166, a 6-9px round mark at 6px in from each corner -- the same 6px inset
-     E-5 measures on the strip pin, which is what makes it one material and not two.
-     Two pseudos cannot hold four marks, so the pins are a background layer; the plate's
-     own fill moves to background-color so a caller can still set it without clearing them. */
-  /* THE PLATE IS ITS OWN CREAM (M1-35's census): `--plate` and `--plate-line` were measured
-     off the comp in M1-13 and have had no reader since. The plate was derived here instead
-     (`--strip` mixed toward its mute), which lands 190 against the comp's measured 178-188 --
-     --plate is 183, dead centre of that band, and it is the value the token already holds. */
-  background-color: var(--plate);
-  /* THE PLATE IS PAPER, SO IT DECLARES PAPER INK (M3-04, the cascade detector). Its label and count
-     declare their own, but a holder edge on it inherits since M2R-01, and the compaction bay's grey
-     `sample data` edge printed body's --ink #C9C3B4 on the plate's #C3B6A0 at 1.14:1 in the dark
-     room -- the log tail head's defect on the plate it was one fix away from. */
-  color: var(--strip-ink);
-  background-image:
-    radial-gradient(circle at 8px 30%, var(--strip-ink) 0 2.5px, transparent 3px),
-    radial-gradient(circle at calc(100% - 8px) 30%, var(--strip-ink) 0 2.5px, transparent 3px),
-    radial-gradient(circle at 8px 70%, var(--strip-ink) 0 2.5px, transparent 3px),
-    radial-gradient(circle at calc(100% - 8px) 70%, var(--strip-ink) 0 2.5px, transparent 3px);
-  border: var(--hair) solid color-mix(in srgb, var(--plate) 76%, white);
-  box-shadow:
-    0 0 0 var(--hair) var(--plate-line),
-    0 0 0 calc(var(--hair) * 2) color-mix(in srgb, var(--room) 27%, black);
-  border-radius: 0;
+  gap: var(--space-3);
+  min-height: var(--space-7);
 }
 .myx-bay-label {
-  font-family: var(--font-label);
-  /* THE CONTRACT'S BAY LABEL IS 16, NOT 12 (M1-64). Bound to --text-1 it rendered a 9.0px cap where
-     the comp measures 10.9 -- and it is the role that made the ladder's middle collapse, because the
-     rule's readouts sat at 20 above it. At --text-3 its cap is 11.82, which is the comp's 10.9 plus
-     the face's ~8 percent. */
   font-size: var(--text-3);
-  color: var(--strip-ink);
+  font-weight: 600;
+  color: var(--fg);
 }
 .myx-bay-count {
-  /* FIGURE: a bay's count is a number in a column. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
   font-size: var(--text-1);
+  font-weight: 500;
+  line-height: var(--leading);
+  color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
-  /* ---- THE PLATE'S OWN INK (M1-53, handed in from M1-52's sweep) --------------
-     This was --strip-ink-mute, at 3.63:1 on --plate in dark (5.05 in light) -- under AA, and it
-     is the visibly faint half of "summary 3" in the crop, exactly as design-reviewer read it.
-     THE CAUSE IS BORROWING, NOT THE TOKEN: M1-24 bound --plate to #C3B6A0 (L183) and the inks
-     printed on it were never re-measured. --strip-ink-mute clears AA on every plane it was
-     LANDED against (--strip-field 5.49/7.26, --strip 5.13/6.23) and fails only on the two it was
-     borrowed onto, so changing it would break three working planes to repair one. A token is
-     landed against a plane or it is not.
-     So the ink is measured against the plate it is printed on, and written against that plate
-     rather than as a hex: 0.95 x --strip-ink's L20 + 0.05 x the plate's L183 = L28, which is
-     4.79:1 on #C3B6A0 and clears AA; the same expression clears it on light's #D6D8D3. The
-     fraction is the AA floor with a little air and not a taste call. */
-  color: color-mix(in srgb, var(--strip-ink) 95%, var(--plate));
 }
 .myx-bay-actions {
   display: flex;
@@ -704,27 +525,15 @@
      scroller, so without this a rack wider than its bay printed them past the bay's edge */
   overflow: hidden;
   padding-inline-start: calc(var(--space-4) + var(--space-2) + var(--space-8) + var(--space-2));
-  padding-block-start: var(--space-3);
-  font-family: var(--font-label);
   font-size: var(--text-1);
-  color: var(--ink-mute);
+  color: var(--fg-subtle);
 }
 .myx-bay-rows {
   display: flex;
   flex-direction: column;
-  /* Measured between strips: 34px (a 96px pitch carrying a 62px strip), the widest gap the ladder
-     has is --space-7 at 32. Above the first strip the comp measures 37px from the plate's bottom
-     edge to the strip's top, of which the plate's own padding is 4; inline the strips start flush
-     at the rail, which is what the comp's strip x 163 against the rail's edge at 163 says. */
-  /* 2026-09-23, console design pass: a 32px gap between every strip and 32px above the first put
-     a ten-head fleet on two screens and made every rack read as a column of separate cards. A
-     record rack (strips of different shapes, each carrying its own labels) keeps a visible floor
-     between slips; a compact rack (below) packs them the way the comp's activity bay does. */
-  gap: var(--space-5);
-  padding: var(--space-4) 0 var(--space-4);
-  /* The rack scrolls (m1 review B7): the brief's own words are "strips keep fixed field widths in
-     ch units and scroll inside their bay", and five page sheets carry a copy-pasted attempt at
-     this rule. A strip is now width: max-content, so this is the box that has to move. */
+  gap: var(--space-3);
+  /* The rack scrolls (m1 review B7): strips keep fixed field widths in ch units and scroll inside
+     their bay, so this is the box that moves. */
   overflow-x: auto;
   overflow-y: hidden;
 }

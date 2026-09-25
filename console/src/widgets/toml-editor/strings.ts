@@ -1,5 +1,5 @@
-// Every label this widget prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall).
+// Every word this widget prints (docs/design/DESIGN.md section 10): labels, three words or fewer,
+// sentence case.
 export const S = {
-  editor: 'topology text',
+  editor: 'Topology text',
 } as const;

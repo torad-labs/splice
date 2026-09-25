@@ -2297,3 +2297,4 @@ console/tests/charts.test.ts	9e0acd251a27380b68da74d557ed9d3245c0e935c37a5e09f50
 console/src/shared/coverage/copy-scan.ts	e8bbbe602aab65a87409cca3b9156b5cd33e0bcb90838a17c1acb32f9b867355	created		the copy wall bare-copy scanner: JSX text and sentence literals outside a copy module (voice ruling, 2026-09-25)
 console/tests/fixtures/walls/bad-copy.tsx	2391d41ac12241d35dd881cf556b98ac2584a6026e12ebb5d080be39b060b12d	created		planted bare copy the copy wall must find, and the forms it must not
 console/src/shared/ui/strings.ts	554a17ed7aedf63be2332f1caa3ca61c0dc3a35edf0d82c2e7ffc9ed619cf0ee	created		the kit words: the empty state info mark (voice ruling, 2026-09-25)
+console/src/widgets/knob-form/knobs.ts	a9466b80f23a88e7b089d07184e6db536f8ad44614726038ff433faa7088f62c	created		the knob data (group, unit, closed values) apart from its words, so the copy wall reads only words

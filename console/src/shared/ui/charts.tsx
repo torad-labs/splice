@@ -237,7 +237,8 @@ export function LayerChip({ names, active, label }: { names: readonly string[]; 
       <span className="myx-layers" role="img" aria-label={`${label}: ${winner}`}>
         {names.map((name, at) => (
           <span
-            key={name}
+            // by position: two layers may share a name (a console save writes two of them)
+            key={`${at}:${name}`}
             className={cx('myx-layer', at < active && 'myx-layer-under', at === active && 'myx-layer-on')}
           />
         ))}

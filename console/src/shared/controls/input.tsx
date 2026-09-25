@@ -8,8 +8,10 @@
 import type { ChangeEvent } from 'react';
 import { cx } from '@shared/lib';
 
-export function Input({ label, value, onChange, numeric = false, w = 20, id, placeholder, invalid, disabled }: {
+export function Input({ label, value, onChange, numeric = false, w = 20, id, placeholder, invalid, disabled, hideLabel = false }: {
   label: string;
+  /** Keeps the label for a screen reader only, where a table's column already names the box. */
+  hideLabel?: boolean;
   value: string;
   onChange: (next: string) => void;
   /** Numeric fields take the figure face and the numeric keypad, and never an `input type=number`:
@@ -25,7 +27,7 @@ export function Input({ label, value, onChange, numeric = false, w = 20, id, pla
   const change = (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value);
   return (
     <label className={cx('myx-input', invalid === true && 'myx-input-invalid')} htmlFor={id}>
-      <span className="myx-input-label">{label}</span>
+      <span className={cx('myx-input-label', hideLabel && 'myx-input-label-hidden')}>{label}</span>
       <input
         id={id}
         className="myx-input-box"

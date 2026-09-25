@@ -289,7 +289,7 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
               nothing is a skeleton that never resolves. */}
           {sample !== undefined ? null : <PlanBay usage={usage} error={usageError} now={now} />}
 
-          <Section title={S.totals} meta={chartWindow.label}>
+          <Section title={S.totals}>
             <StatRow>
               <Stat
                 label={S.tokens}
@@ -315,7 +315,7 @@ export function UsageBoard({ payload, usage = null, usageError = null, catalog, 
               <Stat
                 label={S.cost}
                 value={priced ? fmtUsd(cost) : S.absent}
-                figure={trend(perHour(heads, TREND_HOURS, now, priceOf), S.cost, fmtUsd)}
+                {...(priced ? { figure: trend(perHour(heads, TREND_HOURS, now, priceOf), S.cost, fmtUsd) } : {})}
                 {...(unpriced === 0 ? {} : { sub: <>{`${unpriced} ${U.unpriced}`}<InfoTip text={H.unpriced} label={S.unpricedWhy} /></> })}
               />
               <Stat

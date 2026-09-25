@@ -150,11 +150,11 @@ describe('StripField', () => {
 
   test('prints the basis only when the value is not measured', () => {
     expect(render(h(StripField, { w: 8, label: 'cost', value: 12, basis: 'estimated' })))
-      .toContain('estimated');
+      .toContain('>Estimated<');
     expect(render(h(StripField, { w: 8, label: 'cost', value: 12, basis: 'measured' })))
-      .not.toContain('measured');
+      .not.toContain('myx-sfield-basis');
     expect(render(h(StripField, { w: 8, label: 'cost', value: 12 })))
-      .not.toContain('measured');
+      .not.toContain('myx-sfield-basis');
   });
 });
 
@@ -182,7 +182,7 @@ describe('ScopeInset', () => {
   test('prints its title and its basis beside the chart', () => {
     const out = render(h(ScopeInset, { title: 'tokens per turn', basis: 'stale', children: h('svg') }));
     expect(out).toContain('tokens per turn');
-    expect(out).toContain('stale');
+    expect(out).toContain('>Stale<');
     expect(out).toContain('<svg');
   });
 });
@@ -250,7 +250,7 @@ describe('Figure', () => {
   test('names an unavailable basis rather than printing a zero', () => {
     const out = render(h(Figure, { value: 'not reported by provider', basis: 'unavailable' }));
     expect(out).toContain('not reported by provider');
-    expect(out).toContain('unavailable');
+    expect(out).toContain('>Unavailable<');
   });
 });
 

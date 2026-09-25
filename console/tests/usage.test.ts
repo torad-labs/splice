@@ -156,18 +156,20 @@ describe('usage page', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
     for (const entry of WINDOWS) expect(markup).toContain(entry.label);
     for (const head of fixtureEconomics.heads) expect(markup).toContain(head.label);
-    // The charts are scope insets and every one of them prints its basis.
-    expect(markup).toContain('myx-scope')
-    expect(markup).toContain('measured');
-    expect(markup).toContain('estimated');
-    // Cost is priced because the catalog carries the pinned model rates.
-    expect(markup).not.toContain('no prices set');
+    // The charts are scope insets. A measured one says nothing of its basis; the estimated one
+    // says so, because its dollars are this console's multiplication, not the daemon's count.
+    expect(markup).toContain('myx-scope');
+    expect(markup).not.toContain('>Measured<');
+    expect(markup).toContain('<span class="myx-scope-basis">Estimated</span>');
+    // Cost is priced because the catalog carries the pinned model rates, and drawn hour by hour.
+    expect(markup).not.toContain('No prices set');
+    expect(markup).toContain('aria-label="Cost per hour"');
   });
 
   test('with no catalog there is no dollar figure, and the inset says so rather than printing zero', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: { pending: 'V4-127' }, now: FIXTURE_NOW }));
-    expect(markup).toContain('no prices set');
-    expect(markup).toContain('unavailable');
+    expect(markup).toContain('No prices set');
+    expect(markup).toContain('<span class="myx-scope-basis">Unavailable</span>');
   });
 });
 

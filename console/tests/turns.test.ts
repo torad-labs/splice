@@ -119,7 +119,7 @@ describe('waterfall bars', () => {
     );
     expect(waterfall(bare)).toEqual([]);
     expect(barRows([], totalOf([]))).toEqual([]);
-    expect(render(h(Waterfall, { row: bare }))).toContain('unavailable');
+    expect(render(h(Waterfall, { row: bare }))).toContain('>Unavailable<');
   });
 
   test('bar fractions are of the turn, so the rows share one axis', () => {

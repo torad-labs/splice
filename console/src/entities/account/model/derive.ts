@@ -9,7 +9,7 @@
 //   - a next-target mark the console derives for itself names a different account than the daemon
 //     will actually take next (it skipped the pin, and ran over every pool at once), so the mark
 //     is the daemon's own flag and the console only names the rule that explains it.
-import { fmtDurationS } from '@shared/lib';
+import { fmtDurationS, timeAgo } from '@shared/lib';
 import type { Edge } from '@shared/ui';
 import type { AccountRow, AccountWindow } from './types';
 
@@ -66,16 +66,28 @@ export function slotWindows(account: AccountRow): { short: AccountWindow | null;
 }
 
 /**
- * The window closest to exhaustion, or null when the account reports no used figure at all.
+ * A window whose reset has passed: its figure is from before the reset, so it says nothing about
+ * now. #235 made these visible, since a single-login head's window is only re-read when the head
+ * runs a turn: muse printed `warn 99%` on an amber edge for a seven-day window that had reset 91 hours
+ * earlier. The usage page's plan rack treats the same window the same way.
+ */
+export function isStale(window: AccountWindow, nowMs: number): boolean {
+  return window.reset_epoch_seconds !== null && window.reset_epoch_seconds * 1000 <= nowMs;
+}
+
+/**
+ * The window closest to exhaustion, or null when the account reports no used figure at all. A
+ * stale window (its reset has passed) is not a candidate either: it is a reading of a window that
+ * no longer exists.
  *
  * A window with no reported figure is NOT a candidate: it is an absence, and an absence cannot be
  * "nearest to exhausted". Ties go to the shorter window, which is the one that resets sooner and
  * therefore the one the operator is actually waiting on.
  */
-export function nearestWindow(account: AccountRow): AccountWindow | null {
+export function nearestWindow(account: AccountRow, nowMs: number): AccountWindow | null {
   let best: AccountWindow | null = null;
   for (const window of account.windows) {
-    if (window.used_percent === null) continue;
+    if (window.used_percent === null || isStale(window, nowMs)) continue;
     if (best === null || best.used_percent === null) { best = window; continue; }
     if (window.used_percent > best.used_percent) { best = window; continue; }
     if (window.used_percent === best.used_percent && window.seconds < best.seconds) best = window;
@@ -89,10 +101,10 @@ export interface NearestOverall {
 }
 
 /** The single window nearest exhaustion across every account, for the rule's own readout. */
-export function nearestOverall(accounts: readonly AccountRow[]): NearestOverall | null {
+export function nearestOverall(accounts: readonly AccountRow[], nowMs: number): NearestOverall | null {
   let best: NearestOverall | null = null;
   for (const account of accounts) {
-    const window = nearestWindow(account);
+    const window = nearestWindow(account, nowMs);
     if (window === null || window.used_percent === null) continue;
     if (best === null || window.used_percent > (best.window.used_percent ?? -1)) {
       best = { account, window };
@@ -205,7 +217,7 @@ export function accountState(account: AccountRow, nowMs: number): AccountState {
   if (isExcluded(account, nowMs)) {
     return { edge: 'grey', cocked: false, struck: true, label: 'excluded' };
   }
-  const window = nearestWindow(account);
+  const window = nearestWindow(account, nowMs);
   const used = window?.used_percent ?? null;
   if (used === null) {
     // No provider figure at all. Grey and quiet, never green: green would claim a health nobody
@@ -232,3 +244,19 @@ export function resetText(resetEpochSeconds: number | null, nowMs: number): stri
   if (deltaS <= 0) return 'now';
   return `in ${fmtDurationS(deltaS)}`;
 }
+
+/**
+ * When an account's windows were read, and which of them have reset since, as the opened account
+ * says it. Null when the daemon does not date the reading. A single-login head's windows are read
+ * only when the head runs a turn, so a reading days old is normal there, and the sentence says why
+ * its figure reads `unknown` rather than leaving a blank to guess at.
+ */
+export function readAgeText(account: AccountRow, nowMs: number): string | null {
+  const observed = account.observed_at_epoch_seconds;
+  if (observed === null || observed === undefined) return null;
+  const read = `windows read ${timeAgo(observed * 1000, nowMs)}`;
+  const reset = account.windows.filter((window) => isStale(window, nowMs)).map((window) => windowLengthText(window.seconds));
+  if (reset.length === 0) return read;
+  return `${read}; the ${reset.join(' and ')} ${reset.length === 1 ? 'window has' : 'windows have'} reset since, so ${reset.length === 1 ? 'its figure is' : 'their figures are'} unknown until the next reading`;
+}
+

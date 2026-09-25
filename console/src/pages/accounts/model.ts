@@ -36,12 +36,12 @@ export const NO_HEAD_GROUP = S.noHeads;
  * that sorts the unknown to the top trains the eye to skip the top, which is exactly where the
  * account that is about to fail belongs.
  */
-export function exhaustionRank(account: AccountRow): number {
-  return nearestWindow(account)?.used_percent ?? Number.NEGATIVE_INFINITY;
+export function exhaustionRank(account: AccountRow, nowMs: number): number {
+  return nearestWindow(account, nowMs)?.used_percent ?? Number.NEGATIVE_INFINITY;
 }
 
-function byExhaustion(left: AccountRow, right: AccountRow): number {
-  const delta = exhaustionRank(right) - exhaustionRank(left);
+function byExhaustion(left: AccountRow, right: AccountRow, nowMs: number): number {
+  const delta = exhaustionRank(right, nowMs) - exhaustionRank(left, nowMs);
   if (delta !== 0) return delta;
   // A stable, meaningful tiebreak: the label, so two equally-spent accounts do not swap places
   // between polls and make the rack flicker.
@@ -65,7 +65,7 @@ function keysFor(account: AccountRow, group: string | null): string[] {
  * a login under two heads is one pool row riding both, and hiding it from one of them would make
  * the page disagree with the daemon about which heads are on it.
  */
-export function arrangeAccounts(accounts: readonly AccountRow[], view: View): AccountGroup[] {
+export function arrangeAccounts(accounts: readonly AccountRow[], view: View, nowMs: number): AccountGroup[] {
   const grouped = new Map<string, AccountRow[]>();
   for (const account of accounts) {
     for (const key of keysFor(account, view.group)) {
@@ -78,7 +78,7 @@ export function arrangeAccounts(accounts: readonly AccountRow[], view: View): Ac
   const groups = [...grouped.entries()].map(([key, rows]) => ({ key, accounts: rows }));
   for (const group of groups) {
     if (view.sort?.field === 'exhaustion') {
-      const ranked = [...group.accounts].sort(byExhaustion);
+      const ranked = [...group.accounts].sort((left, right) => byExhaustion(left, right, nowMs));
       group.accounts = view.sort.dir === 'desc' ? ranked : ranked.reverse();
     }
   }

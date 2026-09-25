@@ -79,6 +79,9 @@ export interface AccountRow {
   /** Every window the provider reported, at its reported length. Empty, never missing: an account
    *  whose provider reports nothing shows its empty, it does not vanish. */
   windows: AccountWindow[];
+  /** When the windows were read (epoch seconds); null when the source did not say, absent from a
+   *  daemon older than #235. */
+  observed_at_epoch_seconds?: number | null;
   /** Heads riding this login. Two heads appear here only when they share a credential file. */
   heads: string[];
   /** Sessions currently on this login, where the route can attribute them. */
@@ -117,6 +120,8 @@ export interface AccountWire {
   pinned: boolean | null;
   next_target: boolean | null;
   heads: string[];
+  /** When the windows above were read (epoch seconds), or null when their source did not say (#235). */
+  observed_at_epoch_seconds: number | null;
 }
 
 export interface AccountsWire {

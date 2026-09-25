@@ -134,6 +134,10 @@ describe('the sheet', () => {
     for (const [, token] of marks) expect(token).toMatch(/^--(series-[123]|ok|warn|danger|hue, var\(--head-none)$/);
   });
 
+  test('a landed turn pulses its strand once (Hitstop, 2026-09-25: two in a row read as an alarm)', () => {
+    expect(css).toMatch(/\.myx-strand-pulse \{ animation: myx-strand-land var\(--dur-3\) var\(--ease-out\) 1; \}/);
+  });
+
   test('nothing moves under reduced motion', () => {
     const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(reduced).toMatch(/\.myx-strand-pulse \{ animation: none; \}/);

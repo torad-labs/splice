@@ -2,9 +2,11 @@
 // layers are pure on purpose: what a gesture fires ON, and whether two events are one movement, are
 // the decisions that go wrong silently. The animation itself is CSS and is checked by looking at
 // the thing; these tests check the judgement underneath it.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
-import { diffKeys, keysOf } from '../src/shared/motion';
+import { MOTION_MS, diffKeys, keysOf } from '../src/shared/motion';
 import { createHandoffRegistry, handoffTransform } from '../src/shared/motion';
 import type { Handoff, Rect } from '../src/shared/motion';
 
@@ -146,5 +148,21 @@ describe('the flip transform', () => {
     const nothing = handoffTransform(rect(0, 0), rect(0, 0, 0, 0));
     expect(nothing.sx).toBe(1);
     expect(nothing.sy).toBe(1);
+  });
+});
+
+describe('the timers end when the gestures do', () => {
+  // Hitstop, 2026-09-25: the sheet moved to 180/180/240 ms and the mirror stayed at 240/240/400, so
+  // a finished row held 60-160 ms before the DOM changed, and a recording showed it as a hitch.
+  const sheet = (file: string): string => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+  const tokens = sheet('../src/shared/tokens.css');
+  const motion = sheet('../src/shared/motion/motion.css');
+  const ms = (token: string): number => Number(new RegExp(`${token}:\\s*(\\d+)ms`).exec(tokens)?.[1] ?? NaN);
+  const reads = (rule: RegExp): string => rule.exec(motion)?.[1] ?? 'none';
+
+  test('each mirrored duration is the token its gesture\'s rule reads', () => {
+    expect(MOTION_MS.print).toBe(ms(reads(/\.myx-strip-print \{\s*animation: myx-print var\((--dur-\d)\)/)));
+    expect(MOTION_MS.strike).toBe(ms(reads(/animation: myx-strike var\((--dur-\d)\)/)));
+    expect(MOTION_MS.handoff).toBe(ms(reads(/\.myx-strip \{\s*transition: transform var\((--dur-\d)\)/)));
   });
 });

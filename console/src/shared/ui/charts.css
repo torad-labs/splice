@@ -222,7 +222,8 @@
   background: var(--hue, var(--head-none));
   box-shadow: 0 0 0 calc(.0625 * var(--u)) var(--bg);
 }
-.myx-strand-pulse { animation: myx-strand-land var(--dur-3) var(--ease-out) 2; }
+/* one pulse per landed turn: one beat reads as a heartbeat, two in a row as an alarm */
+.myx-strand-pulse { animation: myx-strand-land var(--dur-3) var(--ease-out) 1; }
 @keyframes myx-strand-land {
   50% { transform: scaleY(1.75); box-shadow: 0 0 0 calc(.1875 * var(--u)) color-mix(in srgb, var(--hue, var(--head-none)) 28%, transparent); }
 }

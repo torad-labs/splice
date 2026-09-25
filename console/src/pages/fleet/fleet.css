@@ -1,11 +1,11 @@
 /* The fleet page: figures, the heads table, and one detail panel beside it once a head is opened.
    Spacing, type size and colour only through the token sheet. */
 
-.myx-fl { display: grid; gap: var(--space-7); }
+.myx-fl { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
 .myx-fl .myx-ph { margin-block-end: 0; }
 .myx-fl .myx-stats { margin-block-end: 0; }
 
-.myx-fl-main { display: grid; gap: var(--space-7); min-width: 0; }
+.myx-fl-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
 .myx-fl-main .myx-sec + .myx-sec { margin-block-start: 0; }
 
 /* A figure beside its shape (a sparkline's median, an unlimited gate's count), in tabular numerals

@@ -1,11 +1,11 @@
 /* Settings: the form surface (docs/design/DESIGN.md section 7). The scope picker, the finder, then
    the knob rack (widgets/knob-form), and under it the topology and the claude head. */
 
-.myx-settings { display: grid; gap: var(--space-7); }
+.myx-settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
 .myx-settings .myx-ph { margin-block-end: 0; }
 .myx-settings .myx-sec + .myx-sec { margin-block-start: 0; }
 
-.myx-settings-section { display: grid; gap: var(--space-4); }
+.myx-settings-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 .myx-settings-section > .myx-sec-head { margin-block-end: 0; }
 
 /* ---------- scope: global, then one button per head wearing its mark ---------- */

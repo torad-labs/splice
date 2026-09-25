@@ -55,6 +55,9 @@ button:not(:disabled):active { transform: scale(.97); }
 
 .myx-console-main {
   display: grid;
+  /* Declared, not implicit: an implicit column grows to its widest content's min-content, so on a
+     phone one unbreakable row pushed the whole page past the window, where the shell clipped it. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;

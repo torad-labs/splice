@@ -39,7 +39,7 @@ a.myx-key { text-decoration: none; }
 .myx-confirm { display: inline-flex; align-items: center; gap: var(--space-2); }
 
 /* ---------- field ---------- */
-.myx-input { display: inline-flex; flex-direction: column; gap: var(--space-2); }
+.myx-input { display: inline-flex; flex-direction: column; gap: var(--space-2); max-width: 100%; }
 .myx-input-label { font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
 /* named for a screen reader, drawn nowhere */
 .myx-input-label-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

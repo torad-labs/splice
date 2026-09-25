@@ -2,17 +2,17 @@
    playground, and one detail panel beside them once a check is opened. Spacing, type size and colour
    only through the token sheet. */
 
-.myx-dc { display: grid; gap: var(--space-7); }
+.myx-dc { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
 .myx-dc .myx-ph { margin-block-end: 0; }
 .myx-dc .myx-stats { margin-block-end: 0; }
 
-.myx-dc-main { display: grid; gap: var(--space-7); min-width: 0; }
+.myx-dc-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
 .myx-dc-main .myx-sec + .myx-sec { margin-block-start: 0; }
 
 /* Two sections that share a row: the report beside the upgrade, the request beside the response. */
 .myx-dc-pair {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(calc(25 * var(--u)), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(25 * var(--u))), 1fr));
   gap: var(--space-7);
   align-items: start;
   min-width: 0;

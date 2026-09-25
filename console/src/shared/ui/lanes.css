@@ -37,6 +37,14 @@
   font-size: var(--text-3);
   font-weight: 600;
 }
+/* On a narrow window the name stands over its strand, where an arc can cross it: the name and its
+   count stand on a patch of the page's ground, as a card's words stand on the card's. */
+.myx-lane-head > * {
+  position: relative;
+  z-index: 3;
+  background: var(--bg);
+  box-shadow: 0 0 0 calc(.125 * var(--u)) var(--bg);
+}
 .myx-lane-count {
   font-family: var(--font-mono);
   font-size: var(--text-1);

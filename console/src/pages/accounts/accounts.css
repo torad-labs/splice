@@ -1,11 +1,11 @@
 /* The accounts page: figures, the pools table, the Claude logins and the api keys, with one detail
    panel beside them. Spacing, type size and colour only through the token sheet. */
 
-.myx-ac { display: grid; gap: var(--space-7); }
+.myx-ac { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
 .myx-ac .myx-ph { margin-block-end: 0; }
 .myx-ac .myx-stats { margin-block-end: 0; }
 
-.myx-ac-main { display: grid; gap: var(--space-7); min-width: 0; }
+.myx-ac-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
 .myx-ac-main .myx-sec + .myx-sec { margin-block-start: 0; }
 
 .myx-ac-help { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: 0; }

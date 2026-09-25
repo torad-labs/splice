@@ -1,7 +1,7 @@
 /* The compaction page: figures, the outcome and head tables, the rules, and the recent tail with
    its detail beside it. Spacing, type size and colour only through the token sheet. */
 
-.myx-cp { display: grid; gap: var(--space-7); }
+.myx-cp { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
 .myx-cp .myx-ph { margin-block-end: 0; }
 .myx-cp .myx-sec + .myx-sec { margin-block-start: 0; }
 .myx-cp .myx-stats { margin-block-end: 0; }

@@ -1,7 +1,7 @@
 /* The MCP page: figures, the servers table with its detail beside it, and the host limits.
    Spacing, type size and colour only through the token sheet. */
 
-.myx-mcp { display: grid; gap: var(--space-7); }
+.myx-mcp { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
 .myx-mcp .myx-sec + .myx-sec { margin-block-start: 0; }
 .myx-mcp .myx-stats { margin-block-end: 0; }
 

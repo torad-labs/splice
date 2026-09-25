@@ -2,7 +2,7 @@
    loaded turns' time went beside what their prompts cost, and the landed table, which narrows to
    put an opened turn beside it, the geometry of the sessions board. */
 
-.myx-tn { display: grid; gap: var(--space-7); min-width: 0; }
+.myx-tn { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
 .myx-tn .myx-ph { margin-block-end: 0; }
 .myx-tn .myx-sec + .myx-sec { margin-block-start: 0; }
 

@@ -5,6 +5,7 @@
 .myx-ph { margin-block-end: var(--space-6); }
 .myx-ph-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-5);
@@ -31,6 +32,7 @@
 .myx-sec + .myx-sec { margin-block-start: var(--space-7); }
 .myx-sec-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
@@ -268,6 +270,9 @@
   grid-template-columns: repeat(auto-fit, minmax(calc(10.5 * var(--u)), 1fr));
   gap: var(--space-4);
   margin-block-end: var(--space-7);
+  /* A row that wraps claims no width of its own: at its automatic minimum it asked a phone-wide
+     parent for five tiles' worth (1074px) and pushed the page past the window. */
+  min-width: 0;
 }
 .myx-stat {
   padding: var(--space-5);

@@ -1,10 +1,10 @@
 /* The teams page (docs/design/DESIGN.md section 7): the head, the editor when it is open, the team
    list when there is a choice, then the opened team: who it is beside its figures, its seats or its
    day, today's chat beside its activity, and the cost per role. */
-.myx-tm { display: grid; gap: var(--space-7); min-width: 0; }
+.myx-tm { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
 .myx-tm .myx-ph { margin-block-end: 0; }
 .myx-tm .myx-sec + .myx-sec { margin-block-start: 0; }
-.myx-tm-team { display: grid; gap: var(--space-7); min-width: 0; }
+.myx-tm-team { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
 
 /* who the team is, beside its figures */
 .myx-tm-head {

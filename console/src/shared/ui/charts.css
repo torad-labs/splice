@@ -31,15 +31,23 @@
   text-align: start;
   white-space: normal;
   pointer-events: none;
+  /* Out of the layout while hidden: a hidden body still widened its page's scroll area, so a phone
+     could scroll sideways into tips nobody had opened. The fade survives the display switch. */
+  display: none;
   opacity: 0;
   transform: translate(-50%, 0);
-  transition: opacity var(--dur-1) ease;
+  transition: opacity var(--dur-1) ease, display var(--dur-1) allow-discrete;
 }
 .myx-tip-top .myx-tip-body { bottom: calc(100% + var(--space-3)); }
 .myx-tip-bottom .myx-tip-body { top: calc(100% + var(--space-3)); }
 .myx-tip:hover > .myx-tip-body,
 .myx-tip:focus-visible > .myx-tip-body,
-.myx-tip:focus-within > .myx-tip-body { opacity: 1; }
+.myx-tip:focus-within > .myx-tip-body { display: block; opacity: 1; }
+@starting-style {
+  .myx-tip:hover > .myx-tip-body,
+  .myx-tip:focus-visible > .myx-tip-body,
+  .myx-tip:focus-within > .myx-tip-body { opacity: 0; }
+}
 
 .myx-info-btn {
   display: inline-grid;

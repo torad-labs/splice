@@ -28,8 +28,7 @@ import './ui.css';
    The first four had no JSX site left on feat/v0.4.0 either; Strip and StripField lost their last
    eighteen when every rack became a kit DataTable. Only the rules no live class shares went with
    them (.myx-field, .myx-well, the armed button, the strip's selected state, the field's basis):
-   the strip and field classes still dress controls/blank.tsx, and `.myx-btn` is still written by
-   hand on four pages. */
+   the strip and field classes still dress controls/blank.tsx. */
 
 // The Strip Bay world (v0.4.0). One file per primitive; new code imports from here and never from
 // a primitive's file.

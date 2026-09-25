@@ -21,6 +21,7 @@
   cursor: pointer;
   transition: background-color var(--dur-1) ease, border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
+a.myx-key { text-decoration: none; }
 .myx-key:hover { background: var(--bg-hover); }
 .myx-key[disabled] { cursor: not-allowed; color: var(--fg-subtle); background: var(--bg); }
 

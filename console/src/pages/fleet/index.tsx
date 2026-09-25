@@ -34,7 +34,7 @@ import type { NearestLimit } from '@features/nearest-limit';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
-import { Blank, Confirm, Copy, Fault, Key } from '@shared/controls';
+import { Blank, Confirm, Copy, Fault, Key, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo } from '@shared/lib';
 import {
   Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow,
@@ -99,7 +99,7 @@ export function CauseLine({ help }: { help: CauseHelp | null }) {
           <Copy value={help.command} />
         </>
       )}
-      {help.href === undefined ? null : <a className="myx-btn" href={help.href}>{help.link}</a>}
+      {help.href === undefined ? null : <KeyLink href={help.href}>{help.link}</KeyLink>}
     </p>
   );
 }
@@ -311,7 +311,7 @@ function Pool({ head, payload, nowMs }: { head: HeadStatus; payload: AccountsSta
       <Empty
         text={empty.text}
         source={empty.source}
-        {...(empty === EMPTIES.noAccounts ? { action: <a className="myx-btn" href="#/accounts">{S.signIn}</a> } : {})}
+        {...(empty === EMPTIES.noAccounts ? { action: <KeyLink href="#/accounts">{S.signIn}</KeyLink> } : {})}
       />
     );
   }

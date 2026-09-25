@@ -15,7 +15,7 @@ import type { McpPayload, McpRow } from '@entities/mcp';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { knobLabel } from '@widgets/knob-form';
-import { Blank, Fault } from '@shared/controls';
+import { Blank, Fault, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, ratio, timeAgo } from '@shared/lib';
 import {
   Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow,
@@ -197,7 +197,7 @@ function LimitsSection({ limits }: { limits: readonly HostLimit[] }) {
     },
   ];
   return (
-    <Section title={S.limits} actions={<a className="myx-btn" href={SETTINGS_HREF}>{S.editLimits}</a>}>
+    <Section title={S.limits} actions={<KeyLink href={SETTINGS_HREF}>{S.editLimits}</KeyLink>}>
       <DataTable columns={columns} rows={limits} rowKey={(limit) => limit.key} label={S.limits} />
     </Section>
   );
@@ -219,7 +219,7 @@ export function McpBoard({ payload, limits = [], view = null, sample }: {
   const rows = arrangeServers(payload, view ?? { group: null, sort: null });
   const body = payload === null ? <Blank strips={3} />
     : !payload.hosting ? (
-      <Empty text={S.hostingOff} source={H.hostingOff} action={<a className="myx-btn" href={SETTINGS_HREF}>{S.openSettings}</a>} />
+      <Empty text={S.hostingOff} source={H.hostingOff} action={<KeyLink href={SETTINGS_HREF}>{S.openSettings}</KeyLink>} />
     )
     : rows.length === 0 ? <Empty text={S.noServers} source={H.noServers} />
     : (

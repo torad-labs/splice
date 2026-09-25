@@ -19,7 +19,7 @@ import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Blank, Choice, Copy, Fault, Input, Key } from '@shared/controls';
+import { Blank, Choice, Copy, Fault, Input, Key, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
@@ -90,7 +90,7 @@ function FixLine({ fix }: { fix: string | null }) {
     <p className="myx-dc-fix">
       <code className="myx-dc-command">{fix}</code>
       <Copy value={fix} label={S.copyFix} />
-      {logsHead === null ? null : <a className="myx-btn" href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</a>}
+      {logsHead === null ? null : <KeyLink href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</KeyLink>}
     </p>
   );
 }

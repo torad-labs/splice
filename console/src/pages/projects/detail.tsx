@@ -17,7 +17,7 @@ import { HeadMark } from '@entities/control-status';
 import { startProjectPolling, useProject } from '@entities/project';
 import type { ProjectCompactionRule, ProjectRow, ProjectStatuslineRoot, TrustedRootEntry } from '@entities/project';
 import { CompactionRules } from '@widgets/compaction-rule';
-import { Fault } from '@shared/controls';
+import { Fault, KeyLink } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
 import { Badge, DataTable, Empty } from '@shared/ui';
 import type { Column } from '@shared/ui';
@@ -96,7 +96,7 @@ const ENTRY: Record<TrustedRootEntry, string> = { home: S.home, tmp: S.tmp, stat
  *  or that none covers it and the statusline shows no branch here. */
 export function ProjectStatusline({ row }: { row: ProjectRow }) {
   if (row.statusline_roots.length === 0) {
-    return <Empty text={S.noHeads} source={H.noHeads} action={<a href="#/settings">{S.settings}</a>} />;
+    return <Empty text={S.noHeads} source={H.noHeads} action={<KeyLink href="#/settings">{S.settings}</KeyLink>} />;
   }
   const columns: Column<ProjectStatuslineRoot>[] = [
     { key: 'head', label: S.head, width: '30%', cell: (entry) => <HeadMark head={entry.head} /> },

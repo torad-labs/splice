@@ -1,8 +1,8 @@
-// KNOB COPY WALL. Settings answers "what is this knob" from two tables in widgets/knob-form: the
-// label (strings.ts, which the label wall already reads) and the sentence, group and unit
-// (copy.ts). Both are keyed by the knob's key, and the key list is PARSED FROM Knob.kt here, not
-// typed: a knob the daemon grows without a sentence fails by name, and so does a sentence left
-// behind for a knob the daemon dropped. The last describe block covers what the rack does with
+// KNOB COPY WALL. Settings answers "what is this knob" from three tables in widgets/knob-form: the
+// label (strings.ts), the one line of help (copy.ts), both read by the copy wall, and the group,
+// unit and closed values (knobs.ts). All are keyed by the knob's key, and the key list is PARSED
+// FROM Knob.kt here, not typed: a knob the daemon grows without words fails by name, and so do
+// words left behind for a knob the daemon dropped. The last describe block covers what the rack does with
 // the copy and what a head's view writes.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -16,8 +16,9 @@ import { globalValueOf, headOptions, shadowOfOverride } from '../src/entities/co
 import { withHeadOverride } from '../src/pages/settings/model';
 import type { ConfigPayload } from '../src/shared/api';
 import { KNOB_SOURCE } from '../src/shared/coverage/denominator';
-import { HEAD_WORDING, KnobForm, KnobRack, choiceOptions, knobMatches } from '../src/widgets/knob-form';
-import { KNOB_COPY, readableBytes, readableMs, unitText } from '../src/widgets/knob-form/copy';
+import { HEAD_WORDING, KnobForm, KnobRack, choiceOptions, knobMatches, scaleOf } from '../src/widgets/knob-form';
+import { KNOB_HELP } from '../src/widgets/knob-form/copy';
+import { KNOB_META, readableBytes, readableMs, unitText } from '../src/widgets/knob-form/knobs';
 import { GROUP_LABELS, KNOB_LABELS } from '../src/widgets/knob-form/strings';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -50,25 +51,27 @@ describe('every knob Knob.kt declares has words', () => {
     expect(drift(knobKeys, KNOB_LABELS)).toEqual({ missing: [], extra: [] });
   });
 
-  test('each has a sentence, a group and no leftover', () => {
-    expect(drift(knobKeys, KNOB_COPY)).toEqual({ missing: [], extra: [] });
+  test('each has a line of help, and no line is left over', () => {
+    expect(drift(knobKeys, KNOB_HELP)).toEqual({ missing: [], extra: [] });
+  });
+
+  test('each has a group, and no entry is left over', () => {
+    expect(drift(knobKeys, KNOB_META)).toEqual({ missing: [], extra: [] });
   });
 
   test('the check fails on a knob with no words, and on words with no knob', () => {
-    const short = Object.fromEntries(Object.entries(KNOB_COPY).filter(([key]) => key !== 'maxInflight'));
+    const short = Object.fromEntries(Object.entries(KNOB_HELP).filter(([key]) => key !== 'maxInflight'));
     expect(drift(knobKeys, short).missing).toEqual(['maxInflight']);
-    expect(drift(knobKeys, { ...KNOB_COPY, retiredKnob: KNOB_COPY.debug }).extra).toEqual(['retiredKnob']);
+    expect(drift(knobKeys, { ...KNOB_META, retiredKnob: KNOB_META.debug }).extra).toEqual(['retiredKnob']);
   });
 
-  test('every sentence is one: capitalised or a key, ends with a stop, no em-dash', () => {
-    const bad = Object.entries(KNOB_COPY).filter(([, copy]) =>
-      copy.summary.trim() === '' || !copy.summary.endsWith('.') || copy.summary.includes('—') || copy.summary.length > 200);
-    expect(bad.map(([key]) => key)).toEqual([]);
+  test('every line ends with a stop (its length and case are the copy wall\'s)', () => {
+    expect(Object.entries(KNOB_HELP).filter(([, help]) => !help.endsWith('.')).map(([key]) => key)).toEqual([]);
   });
 
   test('every group a knob names is a group the rack prints', () => {
     const groups = new Set(Object.keys(GROUP_LABELS));
-    expect(Object.entries(KNOB_COPY).filter(([, copy]) => !groups.has(copy.group)).map(([key]) => key)).toEqual([]);
+    expect(Object.entries(KNOB_META).filter(([, meta]) => !groups.has(meta.group)).map(([key]) => key)).toEqual([]);
   });
 });
 
@@ -107,10 +110,10 @@ const render = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderTo
 describe('the knob row', () => {
   test('leads with the name and the sentence, and keeps the key', () => {
     const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 12, defaultValue: 12 }), pending: false, onSave: () => undefined }));
-    expect(html).toContain('>concurrent turns<');
+    expect(html).toContain('>Concurrent turns<');
     expect(html).toContain('>maxInflight<');
-    expect(html).toContain(KNOB_COPY.maxInflight.summary);
-    expect(html).not.toContain('>changed<');
+    expect(html).toContain(KNOB_HELP.maxInflight);
+    expect(html).not.toContain('>Changed<');
   });
 
   test('a millisecond knob prints its unit and its readable form', () => {
@@ -134,7 +137,7 @@ describe('the knob row', () => {
       const global = render(h(KnobForm, { disposition, pending: false, onSave: () => undefined }));
       expect(global, key).not.toContain('<input');
       expect(global, key).not.toContain('role="switch"');
-      expect(global, key).toContain('per head');
+      expect(global, key).toContain('>Per head<');
       const perHead = render(h(KnobForm, { disposition, pending: false, onSave: () => undefined, perHead: true }));
       expect(perHead, key).toMatch(/<input|role="switch"/);
     }
@@ -152,7 +155,7 @@ describe('the knob row', () => {
 
   test('a read-only switch prints on or off, not the payload\'s true or false', () => {
     const html = render(h(KnobForm, { disposition: knob({ key: 'mirrorReasoning', value: false, defaultValue: false }), pending: false, onSave: () => undefined }));
-    expect(html).toContain('>off<');
+    expect(html).toContain('>Off<');
     expect(html).not.toContain('>false<');
   });
 
@@ -160,21 +163,46 @@ describe('the knob row', () => {
     expect(choiceOptions(['auto', 'off'], 'auto').map((o) => o.value)).toEqual(['auto', 'off']);
     expect(choiceOptions(['auto', 'off'], 'sometimes').map((o) => o.value)).toEqual(['auto', 'off', 'sometimes']);
     // only effort declares an empty value, which each model fills in; elsewhere empty is unset
-    expect(choiceOptions(['', 'low', 'high'], '').find((o) => o.value === '')?.label).toBe('model default');
-    expect(choiceOptions(['warn', 'block'], '').find((o) => o.value === '')?.label).toBe('not set');
-    expect(choiceOptions(['', 'high'], '')[0]).toEqual({ value: '', label: 'model default' });
+    expect(choiceOptions(['', 'low', 'high'], '').find((o) => o.value === '')?.label).toBe('Model default');
+    expect(choiceOptions(['warn', 'block'], '').find((o) => o.value === '')?.label).toBe('Not set');
+    expect(choiceOptions(['', 'high'], '')[0]).toEqual({ value: '', label: 'Model default' });
   });
 
   test('a value off its default says so and offers the way back', () => {
     const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 40, defaultValue: 12 }), pending: false, onSave: () => undefined }));
-    expect(html).toContain('>changed<');
-    expect(html).toContain('>reset to default<');
+    expect(html).toContain('>Changed<');
+    expect(html).toContain('aria-label="Reset to default"');
+  });
+
+  test('a number draws where it sits against its default', () => {
+    const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 24, defaultValue: 12 }), pending: false, onSave: () => undefined }));
+    expect(html).toContain('aria-label="Concurrent turns: 24, default 12"');
+    // twice the default is one doubling of the three either side: a sixth right of centre
+    expect(scaleOf('count', 24, 12)).toEqual({ at: 0.5 + 1 / 6, mark: 0.5 });
+    expect(scaleOf('count', 12, 12)).toEqual({ at: 0.5, mark: 0.5 });
+    expect(scaleOf('count', 12 * 64, 12)?.at).toBe(1); // past the end, pinned to it
+    // a percent has both ends, so it reads 0 to 100
+    expect(scaleOf('percent', 90, 80)).toEqual({ at: 0.9, mark: 0.8 });
+    // a zero means no limit, a port is an address, text is not a number: none of them draws one
+    expect(scaleOf('count', 0, 12)).toBeNull();
+    expect(scaleOf('port', 3100, 3099)).toBeNull();
+    expect(scaleOf(undefined, 4, 4)).toBeNull();
+  });
+
+  test('the source is the layer stack with the winner lit, and live or restart is a glyph', () => {
+    const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 12, defaultValue: 12, provenance: 'env', hot: true }), pending: false, onSave: () => undefined }));
+    expect(html).toContain('aria-label="Source: Environment"');
+    expect(html.match(/myx-layer-on/g)).toHaveLength(1);
+    expect(html.match(/myx-layer-under/g)).toHaveLength(4); // default, toml, head override, state file
+    expect(html).toContain('aria-label="Applies live"');
+    const cold = render(h(KnobForm, { disposition: knob({ key: 'debug', value: false, defaultValue: false }), pending: false, onSave: () => undefined }));
+    expect(cold).toContain('aria-label="Applies on restart"');
   });
 
   test("a head's view names the difference against the global value", () => {
     const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 40, defaultValue: 12 }), pending: false, onSave: () => undefined, wording: HEAD_WORDING }));
-    expect(html).toContain('>own value<');
-    expect(html).toContain('>use global value<');
+    expect(html).toContain('>Own value<');
+    expect(html).toContain('aria-label="Use global value"');
   });
 
   test('the rack prints groups in order and the scope note under its row', () => {
@@ -192,7 +220,7 @@ describe('the knob row', () => {
   test('the finder matches the name, the key and the sentence', () => {
     expect(knobMatches('maxInflight', 'concurrent')).toBe(true);
     expect(knobMatches('maxInflight', 'MAXINFL')).toBe(true);
-    expect(knobMatches('maxInflight', 'upstream at the same')).toBe(true);
+    expect(knobMatches('maxInflight', 'upstream at once')).toBe(true);
     expect(knobMatches('maxInflight', 'retry')).toBe(false);
     expect(knobMatches('maxInflight', '  ')).toBe(true);
   });

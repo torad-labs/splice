@@ -4,7 +4,7 @@
 import { MCP_HOST_KNOBS, serverRows } from '@entities/mcp';
 import type { McpHostedServer, McpPayload, McpRow, McpState } from '@entities/mcp';
 import type { KnobDisposition } from '@entities/config';
-import { KNOB_COPY, unitText } from '@widgets/knob-form';
+import { KNOB_META, unitText } from '@widgets/knob-form';
 import { ABSENT, fmtInt } from '@shared/lib';
 import type { BarPart, Mark, Tone } from '@shared/ui';
 import { S } from './strings';
@@ -100,7 +100,7 @@ export function hostLimits(dispositions: readonly KnobDisposition[]): HostLimit[
 export function limitText(knob: KnobDisposition): string {
   if (knob.value === null || knob.value === '') return ABSENT;
   if (typeof knob.value !== 'number') return String(knob.value);
-  const { suffix, readable } = unitText(KNOB_COPY[knob.key]?.unit, knob.value);
+  const { suffix, readable } = unitText(KNOB_META[knob.key]?.unit, knob.value);
   if (readable !== null) return readable;
   return suffix === null ? fmtInt(knob.value) : `${fmtInt(knob.value)} ${suffix}`;
 }

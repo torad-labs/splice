@@ -10,6 +10,7 @@
 // or by its wrapper command (`Topology.resolveHeadKeys`), so the key is the one field that cannot
 // be edited in place — renaming it would silently orphan every session bound to the old name.
 import type { Provenance } from '@shared/ui';
+import { S } from './strings';
 
 /**
  * What every topology form field prints as its provenance.
@@ -145,13 +146,13 @@ export function validateNewHead(
   const providers = providerKeys(topology);
 
   if (draft.key.trim() === '') {
-    findings.push({ field: 'key', message: 'a head needs a key' });
+    findings.push({ field: 'key', message: S.keyRequired });
   } else if (rows.some((row) => row.key === draft.key.trim())) {
     findings.push({ field: 'key', message: `head ${draft.key.trim()} is already declared` });
   }
 
   if (draft.provider.trim() === '') {
-    findings.push({ field: 'provider', message: 'a head needs a provider' });
+    findings.push({ field: 'provider', message: S.providerRequired });
   } else if (!providers.includes(draft.provider.trim())) {
     findings.push({
       field: 'provider',
@@ -161,7 +162,7 @@ export function validateNewHead(
 
   const port = Number.parseInt(draft.port, 10);
   if (draft.port.trim() === '' || !Number.isFinite(port)) {
-    findings.push({ field: 'port', message: 'a head needs a numeric port' });
+    findings.push({ field: 'port', message: S.portRequired });
   } else {
     const clash = rows.find((row) => Number.parseInt(row.port, 10) === port);
     if (clash !== undefined) {
@@ -170,10 +171,10 @@ export function validateNewHead(
   }
 
   if (draft.discoveryPrefix.trim() === '') {
-    findings.push({ field: 'discoveryPrefix', message: 'a head needs a discovery prefix' });
+    findings.push({ field: 'discoveryPrefix', message: S.prefixRequired });
   }
   if (draft.pinnedModel.trim() === '') {
-    findings.push({ field: 'pinnedModel', message: 'a head needs a pinned model' });
+    findings.push({ field: 'pinnedModel', message: S.modelRequired });
   }
 
   return findings;

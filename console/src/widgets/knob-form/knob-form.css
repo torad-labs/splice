@@ -53,21 +53,21 @@
 
 .myx-knob {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem) minmax(9rem, 11rem);
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem) minmax(9rem, 12rem);
   grid-template-areas:
-    "name    value foot"
-    "summary value foot"
-    "scope   scope scope";
+    "name  value foot"
+    "help  value foot"
+    "scope scope scope";
   column-gap: var(--space-6);
   row-gap: var(--space-1);
   align-items: start;
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5);
   background: var(--bg);
 }
 .myx-knob + .myx-knob { border-top: var(--hair) solid var(--line); }
 .myx-knob[data-changed] { background: var(--bg-raised); }
 
-.myx-knob-name { grid-area: name; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.myx-knob-name { grid-area: name; display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; }
 .myx-knob-label { font-size: var(--text-3); font-weight: 500; color: var(--fg); }
 .myx-knob-key {
   font-family: var(--font-mono);
@@ -75,22 +75,19 @@
   color: var(--fg-subtle);
   overflow-wrap: anywhere;
 }
-.myx-knob-summary {
-  grid-area: summary;
-  margin: var(--space-2) 0 0;
-  max-width: 64ch;
+/* one line, quieter than the name: the help is a reminder, not the row's subject */
+.myx-knob-help {
+  grid-area: help;
+  margin: 0;
+  overflow: hidden;
   font-size: var(--text-2);
-  color: var(--fg-muted);
+  color: var(--fg-subtle);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.myx-knob-value {
-  grid-area: value;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  min-width: 0;
-}
+.myx-knob-value { grid-area: value; display: grid; gap: var(--space-2); min-width: 0; }
+.myx-knob-control { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
 .myx-knob-input {
   flex: 1 1 8rem;
   min-width: 0;
@@ -109,41 +106,58 @@
 .myx-knob-choice { flex: 1 1 8rem; min-width: 0; }
 .myx-knob-choice .myx-choice-label { display: none; }
 .myx-knob-figure { font-family: var(--font-mono); font-size: var(--text-2); color: var(--fg); }
+.myx-knob-readout .myx-knob-value { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .myx-knob-unit { display: inline-flex; gap: var(--space-2); font-size: var(--text-2); color: var(--fg-subtle); }
 .myx-knob-readable { font-family: var(--font-mono); color: var(--fg-muted); }
+
+/* the value against its default: a faint axis, a tick at the default, the run between, a dot */
+.myx-knob-scale { position: relative; display: block; height: .5rem; margin-inline: var(--space-1); }
+.myx-knob-scale::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: var(--hair) solid var(--line-strong);
+}
+.myx-knob-scale-run { position: absolute; top: 50%; height: .125rem; background: var(--fg-muted); transform: translateY(-50%); }
+.myx-knob-scale-mark { position: absolute; top: 0; bottom: 0; width: .125rem; background: var(--fg-subtle); transform: translateX(-50%); }
+.myx-knob-scale-dot {
+  position: absolute;
+  top: 50%;
+  width: .5rem;
+  height: .5rem;
+  border-radius: var(--radius-full);
+  background: var(--fg);
+  box-shadow: 0 0 0 .125rem var(--bg);
+  transform: translate(-50%, -50%);
+}
+.myx-knob[data-changed] .myx-knob-scale-dot { box-shadow: 0 0 0 .125rem var(--bg-raised); }
 
 .myx-knob-foot {
   grid-area: foot;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
-.myx-knob-source { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
-.myx-knob-prov {
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--bg-active);
-  font-size: var(--text-1);
-  font-weight: 500;
-  line-height: var(--leading);
-  color: var(--fg-muted);
-}
-.myx-knob-prov-default { background: none; padding: 0; color: var(--fg-subtle); font-weight: 400; }
-.myx-knob-hot { font-size: var(--text-1); color: var(--fg-subtle); }
-.myx-knob-changed { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-size: var(--text-1); color: var(--fg-muted); }
+.myx-knob-source { display: inline-flex; align-items: center; gap: var(--space-3); }
+.myx-knob-apply { display: block; font-size: var(--text-3); color: var(--fg-subtle); }
+.myx-knob-live { color: var(--fg-muted); }
+.myx-knob-changed { display: inline-flex; align-items: center; gap: var(--space-1); }
 .myx-knob-reset {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
   padding: 0;
   background: none;
   border: 0;
-  font: inherit;
-  color: var(--fg);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: .2em;
+  border-radius: var(--radius-2);
+  font-size: var(--text-3);
+  color: var(--fg-muted);
   cursor: pointer;
 }
-.myx-knob-reset:hover { text-decoration-color: var(--fg-muted); }
+.myx-knob-reset:hover { background: var(--bg-hover); color: var(--fg); }
+.myx-knob-reset:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
 .myx-knob-reset[disabled] { color: var(--fg-subtle); cursor: not-allowed; }
 
 .myx-knob-scope {
@@ -156,14 +170,13 @@
   color: var(--fg);
 }
 
-.myx-knob-readout { opacity: 1; }
-
 @media (max-width: 1100px) {
   .myx-knob-rack { grid-template-columns: minmax(0, 1fr); }
   .myx-knob-index { position: static; display: flex; flex-wrap: wrap; }
   .myx-knob {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "name" "summary" "value" "foot" "scope";
+    grid-template-areas: "name" "help" "value" "foot" "scope";
     row-gap: var(--space-3);
   }
+  .myx-knob-help { white-space: normal; }
 }

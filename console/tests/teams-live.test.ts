@@ -139,6 +139,22 @@ describe('the members', () => {
       expect(member.diff).toBeNull();
     }
   });
+
+  test('a member is lead by its slot flag, never by its role name', () => {
+    // compose lets a role be any text, so the flag and the name disagree here; on TEAM they agree
+    // on every slot, and a membersOf that keyed on the role would pass every other test.
+    const team: TeamRow = {
+      ...TEAM,
+      slots: [
+        { ...slot('s-arch', 'architect', 'aaaaaaaa-1111'), lead: true },
+        { ...slot('s-named', 'lead', 'bbbbbbbb-2222'), lead: false },
+      ],
+    };
+    expect(membersOf(team, SESSIONS, ECONOMICS, NOW).map((m) => [m.slot, m.lead])).toEqual([
+      ['s-arch', true],
+      ['s-named', false],
+    ]);
+  });
 });
 
 describe('the messages and the activity', () => {

@@ -7,6 +7,7 @@
 //   topology  six files' `@SerialName("...")` values                          58 distinct today
 //   routes    .dev/campaigns/web-console/FEATURES.md sections 2.1 and 6, first column,
 //             backticked spans, normalized by the CONTRACTS.md section 4 rule  52 distinct today
+//   verbs     app/.../cli/CommandParser.kt's verb table, `"<verb>" to CommandFactory`  21 today
 //   served    every tracked src/main/kotlin file's `get("/api/...")` / `route.put("/api/...")`
 //             registrations (M4-06): what the daemon SERVES, whatever the plan says  58 today
 
@@ -85,6 +86,14 @@ export function parseRouteNames(markdown: string): string[] {
 }
 
 /** The runtime knob enum — the denominator for `kind: 'knob'`. */
+/** The CLI's verb table (V4-219): each `"<verb>" to CommandFactory` entry of the `verbs` map. */
+export const CLI_SOURCE = 'app/src/main/kotlin/splice/app/cli/CommandParser.kt';
+
+export function parseCliVerbs(kotlin: string): string[] {
+  const table = /private val verbs[^=]*= mapOf\(([\s\S]*?)\n\)/.exec(kotlin)?.[1] ?? '';
+  return [...new Set([...table.matchAll(/^\s+"([a-z][a-z-]*)" to CommandFactory/gm)].map((match) => match[1]))].sort();
+}
+
 export const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';
 
 /** The six topology sources named by M1-04, and HeadConfig.kt since HeadConfig and HeadModel left

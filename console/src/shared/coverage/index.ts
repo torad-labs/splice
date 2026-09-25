@@ -4,5 +4,7 @@
 // wall reads it as the overridable baseline, never as a page declaration.
 export { checkCoverage } from './checks';
 export type { CoverageFinding, CoverageProblem, Disposition, DispositionSource } from './checks';
+export { checkJobs, renderJobs } from './jobs';
+export type { JobFinding, JobProblem, PageAction, PageJob } from './jobs';
 export { checkLabels } from './labels';
 export type { LabelFinding, LabelProblem } from './labels';

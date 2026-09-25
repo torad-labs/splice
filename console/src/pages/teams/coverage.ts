@@ -6,7 +6,7 @@
 // The names are the denominator's own, normalized by the rule in CONTRACTS.md
 // section 4 (method prefix stripped, query dropped, one item per slash-joined
 // method).
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: Disposition[] = [
   // GET is the list the page opens a team from; PUT is the composer's create.
@@ -37,3 +37,14 @@ export const dispositions: Disposition[] = [
     reason: "the composer writes every slot's instructions through PUT /api/teams/{id}",
   },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'Who on the team is working, and who is waiting on whom?',
+  leaves: 'Each member\'s head, state and running turns, the hand-offs between them, and what the team has spent.',
+  actions: [
+    { name: 'Create or edit a team' },
+    { name: 'Bind or unbind a session to a slot' },
+    { name: 'Archive a team' },
+  ],
+};

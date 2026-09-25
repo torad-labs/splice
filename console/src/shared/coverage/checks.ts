@@ -5,7 +5,8 @@ import { servedBy } from './denominator';
 
 /** The manifest entry a page's `coverage.ts` and the baseline both export. */
 export type Disposition = {
-  readonly kind: 'knob' | 'topology' | 'route';
+  /** `verb`: a `splice` CLI verb (CommandParser.kt), V4-219: every CLI capability has a console answer. */
+  readonly kind: 'knob' | 'topology' | 'route' | 'verb';
   readonly name: string;
   readonly disposition: 'editable' | 'read-only' | 'excluded' | 'pending';
   /** Required on a `pending` entry: the row that will cover the name. */

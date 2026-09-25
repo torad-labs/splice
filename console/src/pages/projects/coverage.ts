@@ -6,10 +6,19 @@
 //
 // All three are ProjectsRoutes (V4-131, served) and read-only: the page fetches
 // them at entities/project/api/index.ts and writes none of them (M4-05).
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/projects', disposition: 'read-only' },
   { kind: 'route', name: '/api/projects/{id}', disposition: 'read-only' },
   { kind: 'route', name: '/api/projects/{id}/files', disposition: 'read-only' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'Which repositories have sessions run in, and what is running there now?',
+  leaves: 'Every repo the daemon has seen, with its sessions, teams, today\'s turns and cost.',
+  actions: [
+    { name: 'Open a project' },
+  ],
+};

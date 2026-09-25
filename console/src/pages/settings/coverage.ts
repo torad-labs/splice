@@ -9,7 +9,7 @@
 // config KEY (`port`), which is what the daemon's payload carries and what the operator types.
 // Both are listed below, each in its own group, because the wall counts the first and the page
 // renders the second.
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 import { TOPOLOGY_CHOICES } from '@entities/topology';
 
 type State = 'editable' | 'read-only';
@@ -142,4 +142,23 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/claude-head', disposition: 'read-only', reason: 'a status read; the mode changes through the two action routes beside it' },
   { kind: 'route', name: '/api/claude-head/wrap', disposition: 'editable' },
   { kind: 'route', name: '/api/claude-head/unwrap', disposition: 'editable' },
+  // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
+  { kind: 'verb', name: 'init', disposition: 'excluded', reason: 'writes the first splice.toml and state before any daemon runs; the console exists only on a running one' },
+  { kind: 'verb', name: 'setup', disposition: 'excluded', reason: 'the first-run wizard that installs and starts the daemon this console runs on' },
+  { kind: 'verb', name: 'dashboard', disposition: 'excluded', reason: 'opens this console' },
+  { kind: 'verb', name: 'shim-version', disposition: 'excluded', reason: 'the client shim\'s build stamp for the installer\'s own check; doctor shows the versions an operator reads' },
+  { kind: 'verb', name: 'install', disposition: 'pending', where: 'V4-220' },
+  { kind: 'verb', name: 'uninstall', disposition: 'pending', where: 'V4-220' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'How is the daemon set up, and what does a change do?',
+  leaves: 'Every runtime knob, each head\'s splice.toml table and the Claude head\'s mode, and which changes need a restart.',
+  actions: [
+    { name: 'Edit a knob' },
+    { name: 'Edit a head\'s topology' },
+    { name: 'Wrap or unwrap the Claude head' },
+    { name: 'Link or unlink a head\'s command', row: 'V4-220' },
+  ],
+};

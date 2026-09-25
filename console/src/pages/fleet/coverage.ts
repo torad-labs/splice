@@ -10,7 +10,7 @@
 //
 // The fleet also READS /api/accounts for the head detail's pool and /api/auth for the strips; both
 // are disposed once, by the accounts page that owns them.
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   // The shell's own reads: the rule bar's server/version and the unauthenticated health probe the
@@ -25,4 +25,21 @@ export const dispositions: readonly Disposition[] = [
   // The draining restart, written through from the head detail (features/daemon-restart).
   { kind: 'route', name: '/api/daemon/restart', disposition: 'editable' },
   { kind: 'route', name: '/api/usage', disposition: 'read-only' },
+  // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
+  { kind: 'verb', name: 'status', disposition: 'read-only' },
+  { kind: 'verb', name: 'restart', disposition: 'editable' },
+  { kind: 'verb', name: 'add', disposition: 'pending', where: 'V4-220' },
+  { kind: 'verb', name: 'upgrade', disposition: 'pending', where: 'V4-220' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'Is every head up, and which account will each use next?',
+  leaves: 'Each head\'s health, pinned model, turns in flight and account pool, with the next target marked.',
+  actions: [
+    { name: 'Start, stop or restart a head' },
+    { name: 'Restart the daemon' },
+    { name: 'Add a backend', row: 'V4-220' },
+    { name: 'Upgrade or roll back splice', row: 'V4-220' },
+  ],
+};

@@ -13,10 +13,12 @@ import { describe, expect, test } from 'vitest';
 import { dispositions as baseline } from '../src/shared/coverage/baseline';
 import { checkCoverage, type DispositionSource } from '../src/shared/coverage/checks';
 import {
+  CLI_SOURCE,
   FEATURES_SOURCE,
   KNOB_SOURCE,
   KOTLIN_MAIN,
   TOPOLOGY_SOURCES,
+  parseCliVerbs,
   parseKnobNames,
   parseRouteNames,
   parseRouteSpans,
@@ -34,7 +36,10 @@ const topologyKeys = [...new Set(TOPOLOGY_SOURCES.flatMap((file) => parseSerialN
 const features = read(FEATURES_SOURCE);
 const routeSpans = parseRouteSpans(features);
 const routes = parseRouteNames(features);
-const denominator = [...knobs, ...topologyKeys, ...routes];
+// V4-219: the CLI's verbs join the denominator, so a verb the console neither answers nor excludes
+// with a reason fails by name (PRODUCT.md principle 2).
+const verbs = parseCliVerbs(read(CLI_SOURCE));
+const denominator = [...knobs, ...topologyKeys, ...routes, ...verbs];
 
 // What the daemon SERVES, from every tracked main Kotlin file (git's list, not a named file, so a
 // route that moves to another installer is still found).
@@ -76,6 +81,20 @@ describe('coverage wall', () => {
     expect(routes.length).toBeGreaterThan(0);
     expect(served).toContain('/api/teams/{id}/economics');
     expect(served).toContain('/api/heads/{head}/{action}');
+    console.log(`coverage verbs: ${verbs.length} from ${CLI_SOURCE}`);
+    expect(verbs).toContain('dashboard');
+    expect(verbs.length).toBeGreaterThanOrEqual(21);
+  });
+
+  test('a CLI verb the pages do not answer fails by name', () => {
+    // The fake-verb proof: the real sources against a denominator with one verb nobody declared.
+    expect(checkCoverage([...denominator, 'fake-verb'], sources, served)).toEqual([{ name: 'fake-verb', problem: 'no disposition' }]);
+    // and a verb the pages exclude without saying why
+    const unexplained = sources.map((source) => ({
+      ...source,
+      dispositions: source.dispositions.map((declared) => (declared.name === 'dashboard' ? { kind: 'verb' as const, name: 'dashboard', disposition: 'excluded' as const } : declared)),
+    }));
+    expect(checkCoverage(denominator, unexplained, served)).toEqual([{ name: 'dashboard', problem: 'excluded without reason' }]);
   });
 
   test('every enumerated key carries a disposition, and none is pending for a route the daemon serves', () => {

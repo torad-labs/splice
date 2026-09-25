@@ -473,7 +473,8 @@ describe('the upgrade verdict', () => {
 
 describe('the coverage manifests', () => {
   test('the routes of this row are disposed exactly once, across the two files', () => {
-    const names = [...mcpDispositions, ...doctorDispositions].map((entry) => entry.name);
+    // Routes only: doctor also answers the doctor and version verbs (V4-219), which the coverage wall counts.
+    const names = [...mcpDispositions, ...doctorDispositions].filter((entry) => entry.kind === 'route').map((entry) => entry.name);
     // This list is the pages' route INVENTORY and stays exact on purpose: a new fetch site with no
     // disposition should fail here by name. Four since M4-06. /api/heads/{head}/capture moved to the
     // turns page (M4-04: its request drawer's switch reads and writes it), and budgets, alerts and

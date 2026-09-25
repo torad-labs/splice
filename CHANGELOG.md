@@ -105,8 +105,8 @@ origin.
 - **`splice setup` can hand an NVIDIA card to rig.** On Linux x86_64 with a card nvidia-smi can
   name, an interactive setup asks (default no) whether to run a local model through
   [rig](https://github.com/torad-labs/rig): rig installs into `~/.local/share/rig`, downloads
-  bonsai-2-27b (about 8 GB; about 18 GB of disk in all), builds the engine for the card and serves
-  it on 127.0.0.1. Setup then adds a `bonsai` head (`claude-bonsai`) through `splice add`'s own
+  bonsai-2-27b and an engine for the card (about 9 GB; about 18 GB of disk in all) and serves it
+  on 127.0.0.1. Setup then adds a `bonsai` head (`claude-bonsai`) through `splice add`'s own
   checks, atomic save and restart, from what `rig describe` reports: its base URL, its advertised
   window, and its server facts as quirks (`reasoning_effort` off where the server rejects it,
   `slot_affinity` where it pins slots).

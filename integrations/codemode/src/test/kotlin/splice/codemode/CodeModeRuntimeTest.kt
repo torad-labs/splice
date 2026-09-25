@@ -208,7 +208,11 @@ class CodeModeRuntimeTest {
 
     @Test
     fun `active worker cap rejects a second live cell`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, advanceTimeoutMs = SCRIPT_DEADLINE_MS, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            maxWorkers = 1,
+            advanceTimeoutMs = SCRIPT_DEADLINE_MS,
+            workerClasspath = testClasspath,
+        ).use { runtime ->
             val reclamation = CodeModeWorkerReclamation(this)
             val first = runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
             assertThrows(IOException::class.java) {

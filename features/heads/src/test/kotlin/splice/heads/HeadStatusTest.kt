@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import splice.core.head.GateHealth
 import splice.core.head.GatePhase
 import splice.core.head.GateSlot
 import splice.core.head.Head
@@ -33,15 +34,17 @@ class HeadStatusTest {
         running = true,
         port = 3099,
         version = "test",
-        gateInflight = live.size,
-        gateQueued = 1,
-        gateLimit = 4,
-        gateAcquired = 9,
-        gateReleased = 7,
-        gateWaited = 3,
-        gateAvgWaitMs = 120,
-        gateLive = live,
-        streamIdleMs = 90_000,
+        gate = GateHealth(
+            inflight = live.size,
+            queued = 1,
+            limit = 4,
+            acquired = 9,
+            released = 7,
+            waited = 3,
+            avgWaitMs = 120,
+            live = live,
+            streamIdleMs = 90_000,
+        ),
     )
 
     @Test

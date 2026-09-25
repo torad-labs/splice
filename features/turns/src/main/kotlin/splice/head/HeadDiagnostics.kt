@@ -14,6 +14,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
+import splice.core.head.GateHealth
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
 import splice.head.turn.TurnDriver
@@ -43,16 +44,18 @@ internal class HeadDiagnostics(
             version = GATEWAY_VERSION,
             localOriginErrors = counts.localOrigin,
             providerErrors = counts.providerError,
-            gateInflight = gateSnap.inflight,
-            gateQueued = gateSnap.queued,
-            gateLimit = gateSnap.limit,
-            gateAcquired = gateSnap.acquired,
-            gateReleased = gateSnap.released,
-            gateWaited = gateSnap.waited,
-            gateAvgWaitMs = gateSnap.avgWaitMs,
-            gateLive = gateSnap.live,
-            // restartRequired (Knob.STREAM_IDLE_MS): the budget the head was built with is the one in force.
-            streamIdleMs = provider.watchdog.streamIdle.inWholeMilliseconds,
+            gate = GateHealth(
+                inflight = gateSnap.inflight,
+                queued = gateSnap.queued,
+                limit = gateSnap.limit,
+                acquired = gateSnap.acquired,
+                released = gateSnap.released,
+                waited = gateSnap.waited,
+                avgWaitMs = gateSnap.avgWaitMs,
+                live = gateSnap.live,
+                // restartRequired (Knob.STREAM_IDLE_MS): the budget the head was built with is the one in force.
+                streamIdleMs = provider.watchdog.streamIdle.inWholeMilliseconds,
+            ),
         )
     }
 

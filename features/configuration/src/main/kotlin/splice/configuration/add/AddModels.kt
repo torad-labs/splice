@@ -26,20 +26,20 @@ internal val addValuePattern = Regex("[^\"\\\\\\p{Cntrl}]+")
 internal class AddModelRows(private val output: TerminalOutput, private val prompt: AddPrompter) {
 
     /** The catalog keys models by id, so a repeated id would keep only the last window (review 2026-09-14). */
-    fun problem(models: List<AddModel>): String? {
+    fun problem(models: List<AddModel>): AddModelProblem? {
         val quoted = models.any { !addValuePattern.matches(it.id) || !addValuePattern.matches(it.label) }
         val duplicate = models.groupingBy { it.id }.eachCount().entries.firstOrNull { it.value > 1 }?.key
         return when {
-            models.isEmpty() -> "no models: pass --model <id>:<context_window> (repeatable)"
-            quoted -> "model ids must not contain quotes"
-            models.any { it.contextWindow <= 0 } -> "context windows must be positive: --model ID:WINDOW"
-            duplicate != null -> "model '$duplicate' is given more than once"
+            models.isEmpty() -> AddModelProblem.None
+            quoted -> AddModelProblem.Quoted
+            models.any { it.contextWindow <= 0 } -> AddModelProblem.NonPositiveWindow
+            duplicate != null -> AddModelProblem.Repeated(duplicate)
             else -> null
         }
     }
 
     /** `--model id:window` rows, else the profile's own, else what the operator types in (TTY only). */
-    fun resolve(args: AddArgs, profile: AddProfile): List<AddModel> {
+    fun resolve(args: AddArgs, profile: AddProfile): AddRows {
         val given = args.models.map { spec ->
             // A model id may itself carry colons (ollama: qwen3:4b), so the window is the LAST segment
             // and only when it is a number; a non-positive number is refused below, never defaulted.
@@ -47,28 +47,36 @@ internal class AddModelRows(private val output: TerminalOutput, private val prom
             val id = if (window == null) spec else spec.substringBeforeLast(':')
             AddModel(id, id, window ?: DEFAULT_WINDOW)
         }
-        if (given.isNotEmpty() || profile.models.isNotEmpty()) return given.ifEmpty { profile.models }
+        if (given.isNotEmpty() || profile.models.isNotEmpty()) return AddRows.Resolved(given.ifEmpty { profile.models })
         val typed = mutableListOf<AddModel>()
         while (typed.size < MAX_PROMPTED_MODELS) {
             val id = prompt("model id (blank when done):", "")
             if (id.isEmpty()) break
-            typed += AddModel(id, id, window(id))
+            val window = window(id) ?: return AddRows.Refused(AddModelProblem.PromptedWindow(id))
+            typed += AddModel(id, id, window)
         }
-        return typed
+        return AddRows.Resolved(typed)
     }
 
     /** A blank answer takes the default (the prompter returns it); "32k", a decimal or a number past
      *  Long is asked again, never silently 128000 — the endpoint's model list does not validate a
-     *  window, so a wrong one would be saved (review 2026-09-14). Three misses refuse the add. */
-    private fun window(id: String): Long {
+     *  window, so a wrong one would be saved (review 2026-09-14). Three misses are null: the add refuses. */
+    private fun window(id: String): Long? {
         repeat(WINDOW_ATTEMPTS) {
             val answer = prompt("context window for $id:", DEFAULT_WINDOW.toString())
             val window = answer.toLongOrNull()
             if (window != null && window > 0) return window
             output.line("  context window for $id must be a positive integer (tokens), not '$answer'")
         }
-        throw AddRefused("context window for $id must be a positive integer (tokens)")
+        return null
     }
+}
+
+/** [AddModelRows.resolve]'s answer: the rows, or the prompted window that never became valid. */
+internal sealed class AddRows {
+    data class Resolved(val models: List<AddModel>) : AddRows()
+
+    data class Refused(val problem: AddModelProblem) : AddRows()
 }
 
 /** V4-34: add OpenRouter model rows through the prompt toolkit, never a hand-rolled readline. The two

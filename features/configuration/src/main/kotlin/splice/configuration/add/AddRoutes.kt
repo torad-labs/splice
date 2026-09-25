@@ -45,6 +45,7 @@ public class AddRoutes(
     private val jsonBody = JsonBody()
     private val views = AddViews()
     private val requests = AddRequestReader()
+    private val texts = AddRefusalText()
 
     /** GET /api/add/profiles: `{profiles: [...]}`, in the catalogue's order. */
     public suspend fun profiles(call: ApplicationCall) {
@@ -75,7 +76,7 @@ public class AddRoutes(
             }
             is AddOpened.Refused -> refuse(
                 call,
-                opened.reason,
+                texts.console(opened.refusal),
                 if (opened.conflict) HttpStatusCode.Conflict else HttpStatusCode.BadRequest,
             )
         }
@@ -129,7 +130,10 @@ public class AddRoutes(
                 if (outcome.saved.restart == AddRestartTaken.Draining) restart.drain()
             }
             is AddSaveOutcome.ChecksFailed -> failed(call, outcome.checks)
-            is AddSaveOutcome.Stale -> refuse(call, outcome.reason, HttpStatusCode.Conflict)
+            is AddSaveOutcome.Stale -> {
+                val text = texts.consoleStale(s.candidate.path.toString(), outcome.refused)
+                refuse(call, text, HttpStatusCode.Conflict)
+            }
             AddSaveOutcome.AlreadySaved -> refuse(call, "'$key' is already saved.", HttpStatusCode.Conflict)
         }
     }

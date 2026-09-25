@@ -46,7 +46,7 @@ internal data class AddSaved(val link: AddLinked, val restart: AddRestartTaken)
 internal sealed class AddOpened {
     data class Opened(val session: AddSession) : AddOpened()
 
-    data class Refused(val reason: String, val conflict: Boolean) : AddOpened()
+    data class Refused(val refusal: AddRefusal, val conflict: Boolean) : AddOpened()
 
     data object UnknownProfile : AddOpened()
 }
@@ -70,7 +70,7 @@ internal sealed class AddSaveOutcome {
     data class ChecksFailed(val checks: List<AddCheck>) : AddSaveOutcome()
 
     /** Nothing written: splice.toml changed or vanished since the add opened. */
-    data class Stale(val reason: String) : AddSaveOutcome()
+    data class Stale(val refused: AddWritten.Refused) : AddSaveOutcome()
 
     data object AlreadySaved : AddSaveOutcome()
 }
@@ -106,7 +106,7 @@ public class AddConsole(
 
     internal fun open(args: AddArgs): AddOpened = when (val prepared = prepare.prepare(args, env)) {
         AddPrepared.UnknownProfile -> AddOpened.UnknownProfile
-        is AddPrepared.Refused -> AddOpened.Refused(prepared.reason, prepared.conflict)
+        is AddPrepared.Refused -> AddOpened.Refused(prepared.refusal, prepared.conflict)
         is AddPrepared.Ready -> {
             val session = AddSession(UUID.randomUUID().toString(), args.profile.orEmpty(), prepared.candidate)
             synchronized(lock) { sessions[session.id] = session }
@@ -148,7 +148,7 @@ public class AddConsole(
         val written = if (results.all { it.ok }) synchronized(writes) { AddWrite().write(s.candidate) } else null
         when (written) {
             null -> AddSaveOutcome.ChecksFailed(results)
-            is AddWritten.Refused -> AddSaveOutcome.Stale("${s.candidate.path} ${written.stale}")
+            is AddWritten.Refused -> AddSaveOutcome.Stale(written)
             AddWritten.Written -> {
                 val saved = AddSaved(link.link(s.candidate.key, env), restart.take())
                 s.saved = saved

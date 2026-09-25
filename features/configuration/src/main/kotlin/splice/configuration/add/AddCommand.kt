@@ -32,6 +32,7 @@ internal class AddCommand(
 ) {
     private val prepare = AddPrepare(output, checks, ports.prompt)
     private val settings = DaemonSettings(errors)
+    private val texts = AddRefusalText()
 
     suspend fun add(args: List<String>, env: EnvReader): Boolean {
         val parsed = AddArgParser().parse(args) ?: return AddArgParser().usage(output)
@@ -78,7 +79,9 @@ internal class AddCommand(
     private fun save(c: AddCandidate): Boolean {
         val label = "saved".padEnd(ADD_PAD)
         return when (val written = AddWrite().write(c)) {
-            is AddWritten.Refused -> false.also { output.line("  $RED✗$RESET $label ${c.path} ${written.stale}") }
+            is AddWritten.Refused -> false.also {
+                output.line("  $RED✗$RESET $label ${c.path} ${texts.cliStale(written)}")
+            }
             AddWritten.Written -> true.also {
                 output.line("  $GREEN✓$RESET $label ${c.path} (+[providers.${c.key}], +[heads.${c.key}])")
             }

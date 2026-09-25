@@ -107,7 +107,7 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             is ListedModels.Absent ->
                 AddCheck(MODELS_CHECK, true, "no model list on ${listed.dialect}; ${models.size} row(s) trusted")
             is ListedModels.Unreadable ->
-                AddCheck(MODELS_CHECK, false, "${listed.detail} — the model list could not be checked")
+                AddCheck(MODELS_CHECK, false, "${listed.detail}; the model list could not be checked")
             is ListedModels.Listed -> {
                 val missing = models.filterNot { it in listed.ids }
                 val shown = listed.ids.take(LISTED_SHOWN)

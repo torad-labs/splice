@@ -249,7 +249,7 @@ class AddBackendRouteTest {
         Files.writeString(config, edited)
         val saved = post("/api/add/$id/save")
         assertEquals(HttpStatusCode.Conflict, saved.status, saved.bodyAsText())
-        assertTrue(error(saved).endsWith("changed while this add was running — rerun"), error(saved))
+        assertEquals("$config changed while this add was open, so nothing was saved; open the add again.", error(saved))
         assertEquals(edited, Files.readString(config))
         assertEquals(0, drainsAfter(SETTLE_MS))
     }
@@ -265,7 +265,7 @@ class AddBackendRouteTest {
         assertEquals(HttpStatusCode.OK, post("/api/add/$first/save").status)
         val late = post("/api/add/$second/save")
         assertEquals(HttpStatusCode.Conflict, late.status, late.bodyAsText())
-        assertTrue(error(late).endsWith("changed while this add was running — rerun"), error(late))
+        assertEquals("$config changed while this add was open, so nothing was saved; open the add again.", error(late))
         val written = Files.readString(config)
         assertTrue("[heads.fw]" in written && "[heads.fx]" !in written, written)
     }
@@ -294,7 +294,7 @@ class AddBackendRouteTest {
         assertEquals("Name the profile to add.", error(bare))
         val taken = post("/api/add", """{"profile":"openrouter"}""")
         assertEquals(HttpStatusCode.Conflict, taken.status, taken.bodyAsText())
-        assertEquals("'openrouter' is already configured — pick another --name", error(taken))
+        assertEquals("'openrouter' is already configured; pick another name.", error(taken))
         val forwarded = post("/api/add", """{"profile":"claude"}""")
         val login = post("/api/add/${body(forwarded)["id"]!!.jsonPrimitive.content}/login")
         assertEquals(HttpStatusCode.Conflict, login.status)

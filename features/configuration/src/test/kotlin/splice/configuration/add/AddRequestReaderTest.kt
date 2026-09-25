@@ -16,7 +16,7 @@ class AddRequestReaderTest {
     private fun models(body: String): List<AddModel> {
         val request = reader.parse(Json.parseToJsonElement(body).jsonObject)
         val args = (request as AddRequest.Args).args
-        return rows.resolve(args, AddProfiles().find("api-key")!!)
+        return (rows.resolve(args, AddProfiles().find("api-key")!!) as AddRows.Resolved).models
     }
 
     /** RED before the fix: [AddModel(id=llama3, label=llama3, contextWindow=8)]. */

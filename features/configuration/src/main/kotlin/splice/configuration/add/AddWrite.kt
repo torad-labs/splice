@@ -11,8 +11,14 @@ import java.nio.file.StandardCopyOption
 internal sealed class AddWritten {
     data object Written : AddWritten()
 
-    /** Nothing written; [stale] says why, after the file's path. */
-    data class Refused(val stale: String) : AddWritten()
+    /** Nothing written (AddRefusalText renders why, per surface). */
+    sealed class Refused : AddWritten()
+
+    /** The file changed since the candidate was built from it. */
+    data object Changed : Refused()
+
+    /** The file could not be read again; [detail] is SafeFailureText's. */
+    data class Unreadable(val detail: String) : Refused()
 }
 
 internal class AddWrite {
@@ -27,10 +33,10 @@ internal class AddWrite {
         // Normalized the way the candidate's `existing` was (one trailing newline), or a config saved
         // without one would be "changed" on every run and never written (review 2026-09-14).
         val stale = Cancellables.runCatchingCancellable { Files.readString(c.path).trimEnd('\n') + "\n" }.fold(
-            onSuccess = { if (it == c.existing) null else "changed while this add was running — rerun" },
-            onFailure = { "could not be read again (${SafeFailureText.render(it)}) — nothing written" },
+            onSuccess = { if (it == c.existing) null else AddWritten.Changed },
+            onFailure = { AddWritten.Unreadable(SafeFailureText.render(it)) },
         )
-        if (stale != null) return AddWritten.Refused(stale)
+        if (stale != null) return stale
         val tmp = c.path.resolveSibling(c.path.fileName.toString() + ".add-${ProcessHandle.current().pid()}.tmp")
         Files.writeString(tmp, c.existing + c.appended)
         Files.move(tmp, c.path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)

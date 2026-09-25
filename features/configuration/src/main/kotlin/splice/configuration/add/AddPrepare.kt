@@ -40,7 +40,7 @@ internal sealed class AddPrepared {
 
     /** [conflict] is a refusal the operator's CURRENT file causes (a taken key or command, a file that
      *  will not parse with the new tables), as against one the request itself carries. */
-    data class Refused(val reason: String, val conflict: Boolean) : AddPrepared()
+    data class Refused(val refusal: AddRefusal, val conflict: Boolean) : AddPrepared()
 
     data object UnknownProfile : AddPrepared()
 }
@@ -52,11 +52,12 @@ internal class AddPrepare(
 ) {
     private val profiles = AddProfiles()
     private val modelRows = AddModelRows(output, prompt)
+    private val texts = AddRefusalText()
 
     /** The CLI's reading: the refusal or the usage printed, and null. */
     fun candidate(args: AddArgs, env: EnvReader): AddCandidate? = when (val prepared = prepare(args, env)) {
         is AddPrepared.Ready -> prepared.candidate
-        is AddPrepared.Refused -> null.also { output.line("splice add: ${prepared.reason}") }
+        is AddPrepared.Refused -> null.also { output.line("splice add: ${texts.cli(prepared.refusal)}") }
         AddPrepared.UnknownProfile -> usage()
     }
 
@@ -64,9 +65,9 @@ internal class AddPrepare(
     fun prepare(args: AddArgs, env: EnvReader): AddPrepared {
         val profile = args.profile?.let(profiles::find) ?: return AddPrepared.UnknownProfile
         val key = args.name ?: profile.headKey
-        return when (val resolved = resolved(args, profile, key)) {
-            is Resolved.Rows -> assembled(args, resolved.profile, key, env)
-            is Resolved.Refused -> AddPrepared.Refused(resolved.reason, conflict = false)
+        return when (val rows = modelRows.resolve(args, profile)) {
+            is AddRows.Resolved -> assembled(args, applied(args, profile, key, rows.models), key, env)
+            is AddRows.Refused -> AddPrepared.Refused(AddRefusal.Models(rows.problem), conflict = false)
         }
     }
 
@@ -74,7 +75,7 @@ internal class AddPrepare(
      *  nothing to prompt for, then the same refusals, render and parse as a catalogue profile. */
     fun described(profile: AddProfile, env: EnvReader): AddCandidate? {
         val prepared = assembled(AddArgs(profile = profile.name, yes = true), profile, profile.headKey, env)
-        if (prepared is AddPrepared.Refused) output.line("splice add: ${prepared.reason}")
+        if (prepared is AddPrepared.Refused) output.line("splice add: ${texts.cli(prepared.refusal)}")
         return (prepared as? AddPrepared.Ready)?.candidate
     }
 
@@ -103,27 +104,19 @@ internal class AddPrepare(
                     ),
                 )
             },
-            onFailure = { e -> AddPrepared.Refused(refusal(e), conflict = true) },
+            onFailure = { e ->
+                AddPrepared.Refused(AddRefusal.Unparseable(SafeFailureText.render(e)), conflict = true)
+            },
         )
     }
 
-    /** The profile with the operator's flags and model rows applied, or the refusal (a prompted window
-     *  never became valid). */
-    private fun resolved(args: AddArgs, profile: AddProfile, key: String): Resolved = try {
-        Resolved.Rows(
-            profile.copy(
-                baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
-                command = args.command ?: profile.command.ifEmpty { "claude-$key" },
-                models = modelRows.resolve(args, profile),
-            ),
+    /** The profile with the operator's flags and model rows applied. */
+    private fun applied(args: AddArgs, profile: AddProfile, key: String, models: List<AddModel>): AddProfile =
+        profile.copy(
+            baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
+            command = args.command ?: profile.command.ifEmpty { "claude-$key" },
+            models = models,
         )
-    } catch (refused: AddRefused) {
-        // SAFE-RENDER-EXEMPT[2026-09-15]: AddRefused is constructed only by splice with a fixed
-        // operator sentence, never from upstream or file content. The single construction site is
-        // AddModels.kt line 58 (a context window must be a positive integer in tokens). The
-        // exemption stops being true the day an AddRefused is built from a caught throwable.
-        Resolved.Refused(refused.message.orEmpty())
-    }
 
     private fun usage(): AddCandidate? {
         output.line("splice add: which profile? one of:")
@@ -135,43 +128,39 @@ internal class AddPrepare(
         return null
     }
 
-    private fun refusal(e: Throwable): String = when (e) {
-        is AddRefused -> e.message.orEmpty()
-        else -> "the candidate topology does not parse: ${SafeFailureText.render(e)}"
-    }
-
-    private fun keyProblem(profile: AddProfile, key: String): String? = when {
+    private fun keyProblem(profile: AddProfile, key: String): AddRefusal? = when {
         KEY_RE.matches(key) -> null
-        else -> "--name is required for '${profile.name}' (lowercase letters, digits, dashes)"
+        else -> AddRefusal.NameRequired(profile.name)
     }
 
     /** What the operator's current file already holds; checked first, as before the split. */
-    private fun keyConflict(profile: AddProfile, current: Topology, key: String): String? = when {
+    private fun keyConflict(profile: AddProfile, current: Topology, key: String): AddRefusal? = when {
         !KEY_RE.matches(key) -> null
-        key in current.providers || key in current.heads -> "'$key' is already configured — pick another --name"
+        key in current.providers || key in current.heads -> AddRefusal.KeyTaken(key)
         // A head with no explicit command launches as its own key (Topology.resolveHeadKeys), so that is
         // the name a new command must not take either.
         current.heads.any { (headKey, head) -> (head.claude.command ?: headKey) == profile.command } ->
-            "command '${profile.command}' already belongs to a head"
+            AddRefusal.CommandTaken(profile.command)
         else -> null
     }
 
     /** `--live` speaks plain HTTP with a splice-held key; a browser-OAuth or client-auth profile has
      *  no such turn to run, and a flag that would silently do nothing is refused instead. */
-    private fun liveProblem(args: AddArgs, profile: AddProfile): String? = when {
+    private fun liveProblem(args: AddArgs, profile: AddProfile): AddRefusal? = when {
         !args.live || profile.dialect == OPENAI_CHAT_DIALECT -> null
-        else ->
-            "--live is only supported for api-key profiles; '${profile.name}' is exercised by its first launch, " +
-                "then splice doctor — drop --live"
+        else -> AddRefusal.LiveUnsupported(profile.name)
     }
 
     /** [profile] here is the resolved one: base URL, command and models already filled in. */
-    private fun valueProblem(profile: AddProfile): String? = when {
-        profile.baseUrl.isNullOrEmpty() -> "--base-url is required for '${profile.name}'"
-        modelRows.problem(profile.models) != null -> modelRows.problem(profile.models)
-        !addValuePattern.matches(profile.baseUrl) || !addValuePattern.matches(profile.command) ->
-            "values must not contain quotes"
-        else -> null
+    private fun valueProblem(profile: AddProfile): AddRefusal? {
+        val rows = modelRows.problem(profile.models)
+        return when {
+            profile.baseUrl.isNullOrEmpty() -> AddRefusal.BaseUrlRequired(profile.name)
+            rows != null -> AddRefusal.Models(rows)
+            !addValuePattern.matches(profile.baseUrl) || !addValuePattern.matches(profile.command) ->
+                AddRefusal.QuotedValue
+            else -> null
+        }
     }
 
     private fun nextPort(current: Topology): Int {
@@ -181,13 +170,7 @@ internal class AddPrepare(
     }
 }
 
-/** [AddPrepare.resolved]'s answer: the rows applied, or the refusal their resolution raised. */
-private sealed class Resolved {
-    data class Rows(val profile: AddProfile) : Resolved()
-
-    data class Refused(val reason: String) : Resolved()
-}
-
-/** A refusal decided before the candidate was parsed; its message is the whole explanation. Public
- *  since LAYOUT-01: the CLI's guard renders it verbatim, as a refusal rather than a breakage. */
+/** `splice add-model`'s refusal (HeadModelArray, AddModelVerb); its message is the whole explanation. `splice
+ *  add` decides AddRefusal values instead (V4-220). Public since LAYOUT-01: the CLI's guard renders it
+ *  verbatim, as a refusal rather than a breakage. */
 public class AddRefused(message: String) : RuntimeException(message)

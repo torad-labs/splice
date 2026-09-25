@@ -46,6 +46,6 @@ class DoctorClaudeHeadCheckTest {
         Files.delete(bin.resolve("claude"))
         Files.createSymbolicLink(bin.resolve("claude"), shim)
         val check = probes(home, bin, share).claudeHeadModeCheck()
-        assertEquals("wrapped", check.detail.substringBefore(" —"))
+        assertEquals("wrapped", check.detail.substringBefore(";"))
     }
 }

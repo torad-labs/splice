@@ -107,7 +107,7 @@ public class LogFileSource(
     ): LogDelta {
         val lineEnd = nextLineEnd(ch, end, size) ?: return LogDelta("", 0L)
         val skipped = lineEnd - fromOffset
-        val notice = "[log line exceeds $LOG_TAIL_BYTES bytes — skipped $skipped bytes to keep --follow live]"
+        val notice = "[log line exceeds $LOG_TAIL_BYTES bytes; skipped $skipped bytes to keep --follow live]"
         return LogDelta(notice, skipped)
     }
 

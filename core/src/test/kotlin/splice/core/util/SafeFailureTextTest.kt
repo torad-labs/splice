@@ -19,7 +19,7 @@ class SafeFailureTextTest {
         }
         val rendered = SafeFailureText.render(hostile)
         assertFalse(rendered.contains("tok_9f8e7d"), rendered)
-        assertEquals("failure (message withheld — may quote file bytes)", rendered)
+        assertEquals("failure (message withheld: it may quote file bytes)", rendered)
     }
 
     @Test

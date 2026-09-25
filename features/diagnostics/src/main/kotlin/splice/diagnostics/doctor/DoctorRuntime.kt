@@ -78,7 +78,7 @@ internal class DoctorRuntime {
         h.turnPathStalled.isNotEmpty() -> DoctorCheck(
             "turn path",
             CheckStatus.FAIL,
-            "WEDGED on ${h.turnPathStalled.joinToString(", ")} — requests are accepted but never " +
+            "WEDGED on ${h.turnPathStalled.joinToString(", ")}: requests are accepted but never " +
                 "answered (loopback probes timed out). This is the 91h-outage signature.",
             "splice restart (then: splice logs --head <key> --tail 100)",
         )

@@ -33,7 +33,7 @@ internal class SplitBrainChecks {
         val seen = key?.let { DaemonProbe.authSeen(snapshot.port, it) }
         if (seen != null) return DaemonAuthSeen.Seen(seen)
         val reason = when {
-            read is MgmtKeyRead.Unreadable -> "mgmt-key unreadable (${read.reason}) — fix its permissions"
+            read is MgmtKeyRead.Unreadable -> "mgmt-key unreadable (${read.reason}); fix its permissions"
             key == null -> "no mgmt-key"
             else -> "daemon /api/auth unreachable"
         }

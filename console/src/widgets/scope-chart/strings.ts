@@ -6,7 +6,7 @@ export const S = {
   hour24: '24 hours',
   day7: '7 days',
   tokens: 'Tokens per hour',
-  cost: 'Cost per hour',
+  cost: 'Hourly API cost',
   /** Request size as the client sent it and as splice forwarded it to the provider. */
   bytes: 'Request size',
   /** Tool definitions sent with every request, against those loaded only when asked for. */
@@ -21,8 +21,11 @@ export const S = {
   upstream: 'To provider',
   eager: 'Sent up front',
   deferred: 'On demand',
-  /** The cost legend's one key: the window's dollars, an estimate at the head's rate card, so the key
-   *  does not claim them as spent (Marlin, 2026-09-25). */
-  spent: 'Estimated cost',
-  noRates: 'No prices set',
+  /** The cost legend's one key: the window's dollars, an estimate at each turn's rate card, so the
+   *  key does not claim them as spent (Marlin, 2026-09-25). The inset's estimated basis says
+   *  "Estimated" once for the chart, so the key names only what it is (Marlin's rule, same day). */
+  spent: 'API cost',
+  /** Turns the daemon could not price: no rate card, or recorded before it priced turns. */
+  unpriced: 'Unpriced turns',
+  noPriced: 'No priced turns',
 } as const;

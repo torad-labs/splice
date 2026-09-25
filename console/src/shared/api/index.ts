@@ -428,6 +428,13 @@ export interface EconomicsBucket {
    * must render as "n/a", never as a deferral rate of zero. */
   deferral_turns: number;
   rate_limited: number;
+  /** V4-221: the hour's dollars, each turn priced by the daemon at its own model's card. Null is
+   *  "not priced then", an hour recorded before the daemon priced turns, and never $0. Absent from
+   *  a daemon older than V4-221, which read the same: not priced. */
+  cost_usd?: number | null;
+  /** V4-221: turns whose model had no rate card; their dollars are not in cost_usd. Absent beside
+   *  an absent cost_usd, when every turn of the hour is unpriced. */
+  unpriced_turns?: number;
 }
 
 export interface HeadEconomics {

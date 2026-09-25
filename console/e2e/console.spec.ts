@@ -559,7 +559,7 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   };
   await expect(await turnsOf(STACK.sender.name)).toHaveText('1', { timeout: 15_000 });
   await expect(await turnsOf(STACK.peer.name)).toHaveText('0');
-  await expect(page.getByRole('table', { name: 'Cost per role' })).toContainText('lead');
+  await expect(page.getByRole('table', { name: 'Per-role API cost' })).toContainText('lead');
   // The day's timeline lays the sender's turns on its lane, joined on the same session tag.
   await page.getByRole('tab', { name: 'Timeline' }).click();
   await expect(page.getByRole('img', { name: new RegExp(`^${STACK.sender.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: [1-9]\\d* turns`) }))
@@ -594,7 +594,7 @@ test('projects opens the stack repository with the detail its own route reports'
   await expect(detail).toContainText(/Sessions running\s*2/);
   expect(row.turns_today, 'the sender\'s hand-off is a turn in this repository today').toBeGreaterThanOrEqual(1);
   await expect(detail).toContainText(new RegExp(`Turns today\\s*${row.turns_today}(?!\\d)`));
-  await expect(detail).toContainText(/Cost today\s*–/);
+  await expect(detail).toContainText(/API cost today\s*–/);
   await expect(detail).toContainText(`${repo}/CLAUDE.md`);
   // What governs the repo (FEATURES.md 4.14), from the same row: the stack's project rule for this
   // repo shadows its model and global rules here, so it is the only one listed; and every head's

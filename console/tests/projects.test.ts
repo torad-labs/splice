@@ -113,4 +113,12 @@ describe('projects declares its table', () => {
     expect(relay).toContain('>–<');
     expect(relay).toContain('>Quiet<');
   });
+
+  // A dollar here is declared rates times tokens, never a bill, and the label's three words have no
+  // room to say so: the kit's estimated basis says it beside the figure and the column.
+  test('the day\'s API cost says it is an estimate, in the figure and the column', () => {
+    const html = markup();
+    expect(html).toMatch(/myx-stat-label">API cost today<span class="myx-basis">Estimated</);
+    expect(html).toMatch(/>API cost today<span class="myx-basis">Estimated<\/span><\/th>/);
+  });
 });

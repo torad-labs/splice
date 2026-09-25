@@ -11,8 +11,9 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/models', disposition: 'read-only' },
   { kind: 'route', name: '/api/add-model', disposition: 'editable' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
-  { kind: 'verb', name: 'add-model', disposition: 'pending', where: 'V4-220' },
-  { kind: 'verb', name: 'models', disposition: 'pending', where: 'V4-219' },
+  { kind: 'verb', name: 'add-model', disposition: 'pending', where: 'V4-220', action: 'Add a model', via: '/api/add-model' },
+  // V4-239 serves what `splice models` prints (each provider's published roster against splice.toml).
+  { kind: 'verb', name: 'models', disposition: 'pending', where: 'V4-239', action: 'Compare the declared models with what each provider publishes' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
@@ -22,6 +23,6 @@ export const job: PageJob = {
   actions: [
     { name: 'Open a model' },
     { name: 'Add a model', row: 'V4-220' },
-    { name: 'Compare the declared models with what each provider publishes', row: 'V4-219' },
+    { name: 'Compare the declared models with what each provider publishes', row: 'V4-239' },
   ],
 };

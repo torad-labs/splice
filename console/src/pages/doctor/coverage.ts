@@ -22,10 +22,12 @@ export const dispositions: readonly Disposition[] = [
   // (install_all). Declared with the daemon commit that serves it; the answer is doctor re-run.
   { kind: 'route', name: '/api/doctor/fix/{id}', disposition: 'editable' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
-  { kind: 'verb', name: 'doctor', disposition: 'read-only' },
-  { kind: 'verb', name: 'version', disposition: 'read-only' },
+  { kind: 'verb', name: 'doctor', disposition: 'read-only', via: '/api/doctor' },
+  { kind: 'verb', name: 'version', disposition: 'read-only', via: '/api/doctor' },
   // install --all is the Fix on every wrapper row it relinks: POST /api/doctor/fix/install_all (#275).
-  { kind: 'verb', name: 'install', disposition: 'pending', where: 'V4-220' },
+  { kind: 'verb', name: 'install', disposition: 'pending', where: 'V4-220', action: 'Run a check\'s fix', via: '/api/doctor/fix/{id}' },
+  // `splice upgrade` and its rollback, run out of process (#303); moved here from the fleet page.
+  { kind: 'verb', name: 'upgrade', disposition: 'pending', where: 'V4-220', action: 'Upgrade or roll back splice', via: '/api/upgrade' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
@@ -37,5 +39,6 @@ export const job: PageJob = {
     { name: 'Send a test prompt through a head' },
     { name: 'Open a head\'s log' },
     { name: 'Run a check\'s fix', row: 'V4-220' },
+    { name: 'Upgrade or roll back splice', row: 'V4-220' },
   ],
 };

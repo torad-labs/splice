@@ -9,7 +9,7 @@ import type { Disposition, PageJob } from '@shared/coverage';
 export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/logs/{head}', disposition: 'read-only' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
-  { kind: 'verb', name: 'logs', disposition: 'read-only' },
+  { kind: 'verb', name: 'logs', disposition: 'read-only', via: '/api/logs/{head}' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */

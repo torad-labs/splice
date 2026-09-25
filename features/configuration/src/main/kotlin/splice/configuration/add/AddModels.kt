@@ -16,7 +16,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
-private const val DEFAULT_WINDOW = 128_000L
+internal const val DEFAULT_WINDOW = 128_000L
 private const val MAX_PROMPTED_MODELS = 8
 private const val WINDOW_ATTEMPTS = 3
 

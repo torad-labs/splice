@@ -178,7 +178,9 @@ internal sealed class AddRequest {
 }
 
 internal class AddRequestReader {
-    /** `models` rows become the CLI's `id:window` specs, so AddModelRows reads both the same way. */
+    /** `models` rows become the CLI's `id:window` specs, so AddModelRows reads both the same way. The
+     *  window is always written: a bare id ending `:<digits>` (an ollama tag, `llama3:8`) would read as
+     *  an id and a window, where the row said neither. */
     fun parse(body: JsonObject?): AddRequest {
         val profile = JsonScalars.str(body, "profile")
         val rows = (body?.get("models") as? JsonArray).orEmpty().map { it as? JsonObject }
@@ -203,7 +205,7 @@ internal class AddRequestReader {
 
     private fun spec(row: JsonObject): String? {
         val id = JsonScalars.str(row, "id")?.takeIf { it.isNotBlank() } ?: return null
-        val window = row["context_window"] ?: return id
+        val window = row["context_window"] ?: return "$id:$DEFAULT_WINDOW"
         val tokens = (window as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toLongOrNull()
         return tokens?.let { "$id:$it" }
     }

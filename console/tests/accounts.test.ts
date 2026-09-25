@@ -26,15 +26,16 @@ import {
   windowUsedText,
 } from '../src/entities/account';
 import type { AccountRow, AccountWindow } from '../src/entities/account';
-import { LOGIN_PENDING_EMPTY, IDLE, canStart, next, stepMessage } from '../src/features/account-login/model';
+import { LOGIN_PENDING_EMPTY, IDLE, canStart, next, polling, stepMessage } from '../src/features/account-login/model';
 import { H as LOGIN } from '../src/features/account-login/strings';
 import {
   ACCOUNT_FIELDS, ACCOUNT_WORDS as W, AccountFacts, AccountStateBadge, accountColumns, accountKey, accountTone, countdown, stateOf, TONE, usedTone,
   windowFigure, windowName,
 } from '../src/widgets/account-table';
-import { refusalOf } from '../src/features/account-login';
+import { LoginTicket, refusalOf } from '../src/features/account-login';
 import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget, nextReset } from '../src/pages/accounts/model';
 import { signInOf } from '../src/entities/auth';
+import type { LoginStatusPayload } from '../src/entities/auth';
 import { dispositions } from '../src/pages/accounts/coverage';
 import { AccountsBoard, ApiKeyDetail } from '../src/pages/accounts';
 import { S as KEY_WORDS, SOURCE } from '../src/features/api-key/strings';
@@ -192,49 +193,55 @@ describe('the login flow machine', () => {
     expect(canStart(next(IDLE, { kind: 'label', value: 'work' }))).toBe(true);
   });
 
-  test('start, started, awaiting: the code is on screen until the credential lands', () => {
+  // Every payload below is LoginRoutes.loginStatusJson's shape, all seven keys: the start answers
+  // with it, and every poll does. The console first typed a plan (login_id, flow, a landed state)
+  // the daemon never sent, so a login never polled and never finished against a real daemon.
+  const view = (state: LoginStatusPayload['state'], extra: Partial<LoginStatusPayload> = {}): LoginStatusPayload => ({
+    id: 'L1', head: 'claudex', state, user_code: null, verification_uri: null, browser_url: null, failure_reason: null, ...extra,
+  });
+
+  test('the start answers starting with no code, and the login is polled by the id it answered with', () => {
     let state = next(IDLE, { kind: 'label', value: 'work' });
     state = next(state, { kind: 'start' });
     expect(state.step).toBe('starting');
-    state = next(state, {
-      kind: 'started',
-      payload: { login_id: 'L1', head: 'claudex', label: 'work', flow: 'device', user_code: 'AB-12' },
-    });
+    expect(polling(state)).toBe(false);
+    state = next(state, { kind: 'status', payload: view('starting') });
     expect(state.step).toBe('awaiting');
+    expect(polling(state)).toBe(true);
+    expect(state.status?.id).toBe('L1');
+    expect(stepMessage(state)).toBe(LOGIN.waiting);
+  });
+
+  test('a device flow\'s code and link arrive on a poll, and are on screen until the credential lands', () => {
+    const waiting = view('waiting', { user_code: 'AB-12', verification_uri: 'https://auth.example/device' });
+    const state = next(next(IDLE, { kind: 'status', payload: view('starting') }), { kind: 'status', payload: waiting });
+    expect(state.step).toBe('awaiting');
+    expect(state.status).toEqual(waiting);
     expect(stepMessage(state)).toBe(LOGIN.device);
+    const ticket = renderToStaticMarkup(React.createElement(LoginTicket, { status: waiting }));
+    expect(ticket).toContain('>AB-12<');
+    expect(ticket).toContain('href="https://auth.example/device"');
   });
 
-  test('a poll that is still pending keeps waiting rather than failing', () => {
-    let state = next(IDLE, { kind: 'label', value: 'work' });
-    state = next(state, { kind: 'started', payload: { login_id: 'L1', head: 'claudex', label: 'work', flow: 'browser' } });
-    state = next(state, {
-      kind: 'status',
-      payload: { login_id: 'L1', head: 'claudex', label: 'work', state: 'pending', restart_required: false },
-    });
-    expect(state.step).toBe('awaiting');
+  test('a browser flow\'s link is the one the operator opens', () => {
+    const waiting = view('waiting', { browser_url: 'https://auth.example/authorize?x=1' });
+    const state = next(IDLE, { kind: 'status', payload: waiting });
+    expect(stepMessage(state)).toBe(LOGIN.browser);
+    expect(renderToStaticMarkup(React.createElement(LoginTicket, { status: waiting }))).toContain('href="https://auth.example/authorize?x=1"');
+    // before the flow announces anything there is nothing to open
+    expect(renderToStaticMarkup(React.createElement(LoginTicket, { status: view('starting') }))).toBe('');
   });
 
-  test('a landed login that still needs a restart says so, and does not say added', () => {
-    const state = next(
-      next(IDLE, { kind: 'started', payload: { login_id: 'L1', head: 'claudex', label: 'work', flow: 'browser' } }),
-      {
-        kind: 'status',
-        payload: { login_id: 'L1', head: 'claudex', label: 'work', state: 'landed', restart_required: true },
-      },
-    );
-    expect(state.step).toBe('landed');
-    expect(stepMessage(state)).toBe(LOGIN.afterRestart);
-  });
-
-  test('a landed login with no restart needed is simply added', () => {
-    const state = next(
-      next(IDLE, { kind: 'started', payload: { login_id: 'L1', head: 'claudex', label: 'work', flow: 'browser' } }),
-      {
-        kind: 'status',
-        payload: { login_id: 'L1', head: 'claudex', label: 'work', state: 'landed', restart_required: false },
-      },
-    );
-    expect(stepMessage(state)).toBe(LOGIN.added);
+  test('signed in is not added: the head restarts to take the account, and the poll goes on until it has', () => {
+    const signed = next(next(IDLE, { kind: 'status', payload: view('waiting') }), { kind: 'status', payload: view('signed_in') });
+    expect(signed.step).toBe('landed');
+    expect(stepMessage(signed)).toBe(LOGIN.afterRestart);
+    expect(stepMessage(signed)).not.toBe(LOGIN.added);
+    expect(polling(signed)).toBe(true);
+    const live = next(signed, { kind: 'status', payload: view('live_after_restart') });
+    expect(live.step).toBe('live');
+    expect(stepMessage(live)).toBe(LOGIN.added);
+    expect(polling(live)).toBe(false);
   });
 
   test('a failed login carries the daemon sentence, and the label survives for a retry', () => {
@@ -246,16 +253,13 @@ describe('the login flow machine', () => {
     expect(canStart(state)).toBe(true);
   });
 
-  test('a failed status is a failure, not a wait', () => {
-    const state = next(
-      next(IDLE, { kind: 'started', payload: { login_id: 'L1', head: 'claudex', label: 'work', flow: 'device' } }),
-      {
-        kind: 'status',
-        payload: { login_id: 'L1', head: 'claudex', label: 'work', state: 'failed', restart_required: false, note: 'denied' },
-      },
-    );
+  test('a failed status is a failure in the daemon\'s words, not a wait, and the poll stops', () => {
+    const state = next(next(IDLE, { kind: 'status', payload: view('waiting') }), {
+      kind: 'status', payload: view('failed', { failure_reason: 'login did not complete' }),
+    });
     expect(state.step).toBe('failed');
-    expect(stepMessage(state)).toBe('denied');
+    expect(stepMessage(state)).toBe('login did not complete');
+    expect(polling(state)).toBe(false);
   });
 
   test('a pending route leaves the form and names its row', () => {

@@ -2391,3 +2391,4 @@ console/src/features/api-key/index.tsx	aa304313ce98dd178ba12a6dd83da763b2a720b9e
 console/src/features/api-key/strings.ts	6011ac3020fcd7119bff57af11fe6af024bd640cd05524618f672d50033a5c0e	created		the key form's words, under the copy gate
 console/src/features/api-key/api-key.css	d3ff4401c602bde935c43b71f62a8ca8cbc8c88ca974c610ce5f3b6d737aa661	created		the key form's layout: the box and its key, the remove, and the answer per head
 console/tests/api-key.test.ts	accef6bdc65ca85570ae662c093bab15a3837b307394459ca32fa1de091bc408	created		PUT and DELETE /api/keys/{ENV} through the real client: one write, the reads taken again, the value in no store
+console/tests/login-wire.test.ts	37eb8b6c184e98d11ef48aff50c07a734c76091ff5dcc08a798e797678f13ad3	created		the login's wire read from the daemon's source: both serializers' keys and every LoginState wire against the console's types

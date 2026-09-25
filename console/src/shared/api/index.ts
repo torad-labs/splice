@@ -392,6 +392,28 @@ export interface ProviderAuth {
 
 export type AuthPayload = Record<string, ProviderAuth>;
 
+/** Where one login stands (LoginSessions.kt): STARTING until the flow announces itself, WAITING once
+ *  it has handed out its code or link, SIGNED_IN once the credential is on disk, LIVE_AFTER_RESTART
+ *  once the daemon has restarted the head and the account is in its pool, FAILED at any point. */
+export const LOGIN_STATES = ['starting', 'waiting', 'signed_in', 'live_after_restart', 'failed'] as const;
+export type LoginState = (typeof LOGIN_STATES)[number];
+
+/** One login as the daemon reports it. The code and the links arrive on a poll, once the flow
+ *  announces them; which of them a login carries is the flow's (a device flow a code and its link, a
+ *  browser flow the URL to open), so each is null until then and never defaulted. Two routes answer
+ *  with it: an account login's (LoginRoutes, as LoginStatusPayload, which adds the head) and a
+ *  console add's `sign_in` (AddViews.login), whose head is in no file yet. Here, in shared, because
+ *  both the auth and the add entities read it. */
+export interface LoginView {
+  id: string;
+  state: LoginState;
+  user_code: string | null;
+  verification_uri: string | null;
+  browser_url: string | null;
+  /** The daemon's own sentence when the login failed. */
+  failure_reason: string | null;
+}
+
 /** POST /api/auth/:head/refresh|login — a transient outcome, not the full card
  * (callers re-fetch /api/auth for the authoritative card state). */
 export interface AuthActionResult {

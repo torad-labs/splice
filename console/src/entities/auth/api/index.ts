@@ -8,7 +8,6 @@ import type {
   AuthActionOutcome,
   KeyState,
   KeysPayload,
-  LoginStartPayload,
   LoginStatusPayload,
   SwitchPayload,
 } from '../model/types';
@@ -109,18 +108,19 @@ export async function unpinAccount(head: string): Promise<AuthActionOutcome | Pe
 }
 
 /** POST /api/auth/{head}/login — start a device or browser login for a new account on this head.
- *  The label is the operator's name for it and becomes the credential file's name. */
+ *  The label is the operator's name for it and becomes the credential file's name. The answer is
+ *  the login's STARTING view: its id to poll, and no code or link yet. */
 export function startLogin(head: string, label: string): Promise<AuthActionOutcome | PendingRoute> {
-  return settle<LoginStartPayload>(
+  return settle<LoginStatusPayload>(
     `/api/auth/${segment(head)}/login`,
     { method: 'POST', body: JSON.stringify({ label }) },
     (result) => ({ action: 'login', result }),
   );
 }
 
-/** GET /api/auth/{head}/login/{id} — poll one login to landed or failed. A landed login still needs
- *  the head restarted before the account is in the pool, which the payload carries as
- *  `restart_required`; the strip stays cocked until it clears. */
+/** GET /api/auth/{head}/login/{id} — poll one login: its code or link once the flow announces them,
+ *  then signed in (the credential is on disk), then live after restart (the daemon restarted the
+ *  head and the account is in its pool), or failed with the daemon's reason. */
 export function fetchLoginStatus(head: string, id: string): Promise<AuthActionOutcome | PendingRoute> {
   return settle<LoginStatusPayload>(
     `/api/auth/${segment(head)}/login/${segment(id)}`,

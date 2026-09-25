@@ -125,9 +125,14 @@ internal object Concentration {
      *     2.18 -> 3.49 (C 153.5 -> 177.5, den 70.5 -> 50.8). TopologyWindows.kt 2.52 -> 3.21
      *     (C 172.0 -> 180.0, den 68.2 -> 56.0). Daemon.kt 2.27 -> 3.19 (C 141.5 -> 168.5, den
      *     62.4 -> 52.8: ShutdownDaemon, DeclaredHead(s) and TopologyLoader).
-     *  The remedy is decomposing these seven, not re-merging the slices. */
-    const val RATCHET_RECORDED = "2026-09-23"
-    const val RATCHET_MAX_HIGH = 19
+     *  The remedy is decomposing these seven, not re-merging the slices.
+     *
+     *  2026-09-25, 19 -> 18, DOWN, measured by this law on PR #271's coverage run (36146732495):
+     *  StatuslineRenderer.kt left the band, 3.49 -> 2.98, with no change of its own since 90cf92371,
+     *  so the fall is its neighbourhood's. Recorded because the law prints this remedy, and a
+     *  baseline held above the measured count is room for the next regression. */
+    const val RATCHET_RECORDED = "2026-09-25"
+    const val RATCHET_MAX_HIGH = 18
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

@@ -37,7 +37,7 @@ const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
 
 const DOWN = 'splice is not answering';
 /** What a Figure prints for a stale basis: the word in its own basis span. */
-const STALE_MARK = '<span class="myx-fig-basis">stale</span>';
+const STALE_MARK = '<span class="myx-fig-basis">Stale</span>';
 
 /** What a browser's fetch throws for a refused connection (Chrome's words). */
 const refused = () => new TypeError('Failed to fetch');

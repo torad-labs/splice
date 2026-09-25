@@ -52,18 +52,6 @@
 .myx-swatch-request { opacity: .45; }
 .myx-swatch-deferred { opacity: .4; }
 
-.myx-schart-figure {
-  margin: 0;
-  padding: var(--space-4) 0 var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-7);
-  font-weight: 500;
-  line-height: var(--leading-tight);
-  font-variant-numeric: tabular-nums;
-  color: var(--fg);
-}
-
-.myx-schart-note,
 .myx-schart-empty {
   margin: 0;
   padding: var(--space-2) 0;

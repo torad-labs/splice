@@ -5,6 +5,7 @@
 import type { CSSProperties } from 'react';
 import { cx } from '../lib';
 import type { Basis } from './types';
+import { BASIS } from './strings';
 
 export function StripField({ w, span, fixed, label, value, basis, mono }: {
   w: number;
@@ -66,7 +67,7 @@ export function StripField({ w, span, fixed, label, value, basis, mono }: {
       {label !== undefined ? <span className="myx-sfield-label">{label}</span> : null}
       <span className={cx('myx-sfield-value', figure && 'myx-sfield-figure')}>
         <span className="myx-sfield-text">{value}</span>
-        {basis && basis !== 'measured' ? <span className="myx-sfield-basis">{basis}</span> : null}
+        {basis && basis !== 'measured' ? <span className="myx-sfield-basis">{BASIS[basis]}</span> : null}
       </span>
     </div>
   );

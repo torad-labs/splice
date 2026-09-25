@@ -19,7 +19,7 @@ import { byProvider, findModel, headWindows, PROVIDER_UNKNOWN } from '../src/pag
 import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
-import { ratesFor, sortedHeads } from '../src/pages/usage/model';
+import { fmtUsd, perHour, ratesFor, sortedHeads } from '../src/pages/usage/model';
 import { PlanBay, planRows, readText, windowCells, windowTone } from '../src/pages/usage/plan';
 import type { UsagePayload } from '../src/shared/api';
 
@@ -153,18 +153,59 @@ describe('usage page', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
     for (const entry of WINDOWS) expect(markup).toContain(entry.label);
     for (const head of fixtureEconomics.heads) expect(markup).toContain(head.label);
-    // The charts are scope insets and every one of them prints its basis.
-    expect(markup).toContain('myx-scope')
-    expect(markup).toContain('measured');
-    expect(markup).toContain('estimated');
-    // Cost is priced because the catalog carries the pinned model rates.
-    expect(markup).not.toContain('no prices set');
+    // The charts are scope insets. A measured one says nothing of its basis; the estimated one
+    // says so, because its dollars are this console's multiplication, not the daemon's count.
+    expect(markup).toContain('myx-scope');
+    expect(markup).not.toContain('>Measured<');
+    expect(markup).toContain('<span class="myx-scope-basis">Estimated</span>');
+    // Cost is priced because the catalog carries the pinned model rates, and drawn hour by hour.
+    expect(markup).not.toContain('No prices set');
+    expect(markup).toContain('aria-label="Cost per hour"');
   });
 
   test('with no catalog there is no dollar figure, and the inset says so rather than printing zero', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: { pending: 'V4-127' }, now: FIXTURE_NOW }));
-    expect(markup).toContain('no prices set');
-    expect(markup).toContain('unavailable');
+    expect(markup).toContain('No prices set');
+    expect(markup).toContain('<span class="myx-scope-basis">Unavailable</span>');
+  });
+});
+
+describe('the totals row', () => {
+  const end = Math.floor(NOW / HOUR_MS) * HOUR_MS;
+  const bucket = (hour: number, turns: number) => ({
+    hour, turns, in_tokens: 100 * turns, cached_tokens: 0, cache_write_tokens: 0, out_tokens: 10 * turns,
+    req_bytes: 0, upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0, deferral_turns: 0, rate_limited: 0,
+  });
+
+  test('a trend is one figure per hour, oldest first, summed across heads, an idle hour at zero', () => {
+    const heads = [
+      { key: 'a', label: 'a', ceiling_tokens: null, buckets: [bucket(end - 2 * HOUR_MS, 3), bucket(end, 1)] },
+      { key: 'b', label: 'b', ceiling_tokens: null, buckets: [bucket(end, 4), bucket(end - 9 * HOUR_MS, 7)] },
+    ];
+    expect(perHour(heads, 3, NOW, (_, totals) => totals.turns)).toEqual([3, 0, 5]);
+  });
+
+  const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
+
+  test('cost prices each head by its own card, and a head with no card is counted, never priced at zero', () => {
+    // claude-splice is in the rollup and not in the catalog, so it has no card
+    expect(ratesFor(fixtureModels, 'claude-splice')).toBeNull();
+    const priced = fixtureEconomics.heads.reduce((held, head) => {
+      const card = ratesFor(fixtureModels, head.key);
+      return card === null ? held : held + costOf(sum(within(head.buckets, 24, FIXTURE_NOW)), card);
+    }, 0);
+    expect(priced).toBeGreaterThan(0);
+    expect(markup).toContain(`>${fmtUsd(priced)}<`);
+    expect(markup).toContain('1 unpriced');
+  });
+
+  test('each figure carries its shape: the in and out split, a day of trend, the cache ring', () => {
+    expect(markup).toMatch(/role="img" aria-label="Tokens: Input [^"]+, Output [^"]+"/);
+    expect(markup).toMatch(/aria-label="Turns, last 24h: [^"]+ last, [^"]+ peak"/);
+    expect(markup).toMatch(/aria-label="Cost, last 24h: \$[^"]+"/);
+    expect(markup).toMatch(/aria-label="Cache read \d+%"/);
+    // each head's own trend, in its hue
+    for (const head of fixtureEconomics.heads) expect(markup).toContain(`aria-label="${head.label} Turns per hour, last 24h:`);
   });
 });
 
@@ -203,10 +244,10 @@ describe('plan limits', () => {
   test('a window whose reset passed prints as reset, never as the figure from before it', () => {
     const muse = planRows(usage, NOW).find((row) => row.entry.key === 'claude-muse');
     expect(muse?.live).toBeNull();
-    expect(windowCells(muse?.windows[1], NOW)).toEqual({ used: 'unknown', resets: 'already reset' });
+    expect(windowCells(muse?.windows[1], NOW)).toEqual({ used: 'Unknown', resets: 'Already reset' });
     // the card prints the reset in words and draws an empty meter, never the 99% from before it
     const card = render(h(PlanBay, { usage: { ...usage, heads: usage.heads.filter((head) => head.key === 'claude-muse') }, now: NOW }));
-    expect(card).toContain('already reset');
+    expect(card).toContain('Already reset');
     expect(card).not.toContain('99%');
     expect(card).toContain('myx-plan-neutral');
   });
@@ -228,15 +269,15 @@ describe('plan limits', () => {
 
   test('the board draws the plan rack above the heads rack, with the plan name', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, usage, catalog: fixtureModels, now: NOW }));
-    expect(markup).toContain('plan limits');
-    expect(markup).toContain('already reset');
+    expect(markup).toContain('Plan limits');
+    expect(markup).toContain('Already reset');
     expect(markup).toContain('>pro<');
-    expect(markup.indexOf('plan limits')).toBeLessThan(markup.indexOf('tokens used'));
+    expect(markup.indexOf('Plan limits')).toBeLessThan(markup.indexOf('Tokens used'));
   });
 
   test('no head with a plan window is a named empty, not a blank rack', () => {
     const none: UsagePayload = { ...usage, heads: usage.heads.filter((row) => row.key === 'bonsai') };
-    expect(render(h(UsageBoard, { payload: fixtureEconomics, usage: none, catalog: fixtureModels, now: NOW }))).toContain('no head reports plan limits');
+    expect(render(h(UsageBoard, { payload: fixtureEconomics, usage: none, catalog: fixtureModels, now: NOW }))).toContain('No plan limits');
   });
 });
 
@@ -386,11 +427,11 @@ describe('a rack of like rows prints its column names once', () => {
   // instrument is .impeccable/review/compose/compose.mjs and the capture is beside it.
   test('usage\'s heads table prints its column names once, in its head row, and in no cell', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
-    const table = /<table[^>]*aria-label="heads"[^>]*>([\s\S]*?)<\/table>/.exec(markup);
+    const table = /<table[^>]*aria-label="Heads"[^>]*>([\s\S]*?)<\/table>/.exec(markup);
     expect(table).not.toBeNull();
     const [head, body] = (table?.[1] ?? '').split('</thead>');
     const names = [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1]);
-    expect(names).toEqual(['head', 'share', 'turns', 'in tokens', 'out tokens', 'tokens used', 'limit', 'runs out in', 'rate limited']);
+    expect(names).toEqual(['Head', 'Share', 'Turns per hour', 'Turns', 'Input', 'Output', 'Tokens used', 'Limit', 'Runs out in', 'Rate limited']);
     const rows = (body ?? '').split('<tr').slice(1);
     expect(rows.length).toBeGreaterThan(0); // the denominator: a table with no rows would pass vacuously
     for (const row of rows) {

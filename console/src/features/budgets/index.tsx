@@ -1,14 +1,17 @@
-// The budgets panel: one row per head, mounted by the usage page in its actions slot.
+// The budgets panel: one row per head, mounted by the usage page.
 //
 // It is a FEATURE rather than a page section because the usage page owns its own layout and this
-// row does not; the public component is the whole interface between them. A head with no budget is
-// the state every head starts in and prints as such, never as $0.00 — a zero budget would block a
-// head on its first turn.
+// table does not; the public component is the whole interface between them. A head with no budget
+// is the state every head starts in and prints as an empty box, never as $0.00: a zero budget would
+// block a head on its first turn.
 import { useEffect, useState } from 'react';
-import { budgetFor, budgetText, putBudgets, startBudgetsPolling, useBudgets } from '@entities/budget';
+import { HeadMark, hueClass, useHues } from '@entities/control-status';
+import { budgetFor, putBudgets, startBudgetsPolling, useBudgets } from '@entities/budget';
 import type { Budget, BudgetAction } from '@entities/budget';
-import { Empty, FieldBox } from '@shared/ui';
-import { S } from './strings';
+import { Input, Key } from '@shared/controls';
+import { DataTable, Empty, Section, Segmented } from '@shared/ui';
+import type { Column } from '@shared/ui';
+import { H, S } from './strings';
 import './budgets.css';
 
 const POLL_MS = 30000;
@@ -28,88 +31,115 @@ export function parseUsd(raw: string): ParsedUsd {
   return { ok: true, value: Number(amount) };
 }
 
-/** What the row says under a box that does not hold an amount. */
-export const NOT_AN_AMOUNT = 'not a dollar amount; nothing saved';
-
-/** The reverse, for the field box: null prints EMPTY rather than `0`. */
+/** The reverse, for the box: null prints EMPTY rather than `0`. */
 export function formatUsd(value: number | null): string {
   return value === null ? '' : value.toFixed(2);
 }
 
+const ACTIONS: readonly { value: BudgetAction; label: string }[] = [
+  { value: 'warn', label: S.warn },
+  { value: 'block', label: S.block },
+];
+
 export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
   const budgets = useBudgets((state) => state);
+  const hueOf = useHues();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => startBudgetsPolling(POLL_MS), []);
 
   if (budgets.data !== null && 'pending' in budgets.data) {
-    return <Empty text="budgets unavailable" source="this splice version does not serve budgets" />;
+    return (
+      <Section title={S.title}>
+        <Empty text={S.unavailable} source={H.unavailable} />
+      </Section>
+    );
   }
 
   const payload = budgets.data;
   const rows: Budget[] = heads.map((head) => budgetFor(payload, head) ?? { head, daily_usd: null, action: 'warn' });
+  const note = (head: string, text: string) => setNotes((current) => ({ ...current, [head]: text }));
 
   const save = (budget: Budget) => {
     const merged = rows.map((row) => (row.head === budget.head ? budget : row));
-    setNotes((current) => ({ ...current, [budget.head]: S.saving }));
-    void putBudgets(merged).then(
-      () => setNotes((current) => ({ ...current, [budget.head]: '' })),
-      () => setNotes((current) => ({ ...current, [budget.head]: 'save failed' })),
-    );
+    setBusy(budget.head);
+    note(budget.head, '');
+    void putBudgets(merged)
+      .then(() => note(budget.head, S.saved), () => note(budget.head, S.failed))
+      .finally(() => setBusy(null));
   };
 
+  const typedOf = (budget: Budget): string => draft[budget.head] ?? formatUsd(budget.daily_usd);
+
+  const columns: Column<Budget>[] = [
+    { key: 'head', label: S.head, width: '26%', primary: true, cell: (budget) => <HeadMark head={budget.head} /> },
+    {
+      key: 'limit',
+      label: S.daily,
+      width: '26%',
+      cell: (budget) => (
+        <span className="myx-bud-usd">
+          <span className="myx-bud-dollar" aria-hidden="true">$</span>
+          <Input
+            label={`${S.daily} ${budget.head}`}
+            hideLabel
+            numeric
+            w={12}
+            placeholder={S.noLimit}
+            value={typedOf(budget)}
+            invalid={notes[budget.head] === H.notAmount}
+            onChange={(value) => setDraft((current) => ({ ...current, [budget.head]: value }))}
+          />
+        </span>
+      ),
+    },
+    {
+      key: 'action',
+      label: S.action,
+      width: '26%',
+      // Two values and a toggle between them, never a free field: the daemon's words are a warning
+      // and a refusal, and a text box would invite a third spelling.
+      cell: (budget) => (
+        <Segmented label={`${S.action} ${budget.head}`} options={ACTIONS} value={budget.action} onChange={(action) => save({ ...budget, action })} />
+      ),
+    },
+    {
+      key: 'save',
+      label: '',
+      width: '22%',
+      align: 'end',
+      cell: (budget) => (
+        <span className="myx-bud-save">
+          {notes[budget.head] ? (
+            <span className={notes[budget.head] === S.saved ? 'myx-bud-note' : 'myx-bud-note myx-bud-refused'} role="status">
+              {notes[budget.head]}
+            </span>
+          ) : null}
+          <Key
+            busy={busy === budget.head}
+            ariaLabel={`${S.save} ${budget.head}`}
+            onClick={() => {
+              const parsed = parseUsd(typedOf(budget));
+              if (!parsed.ok) {
+                note(budget.head, H.notAmount);
+                return;
+              }
+              save({ ...budget, daily_usd: parsed.value });
+              setDraft((current) => ({ ...current, [budget.head]: formatUsd(parsed.value) }));
+            }}
+          >
+            {S.save}
+          </Key>
+        </span>
+      ),
+    },
+  ];
+
   return (
-    <section className="myx-bud">
-      <h2 className="myx-bud-title">{S.title}</h2>
-      {rows.map((budget) => {
-        const typed = draft[budget.head] ?? formatUsd(budget.daily_usd);
-        return (
-          <div key={budget.head} className="myx-bud-row">
-            <span className="myx-bud-note">{budget.head}</span>
-            <FieldBox
-              label={S.daily}
-              value={typed}
-              provenance="state file"
-              hot
-              onChange={(value) => setDraft((current) => ({ ...current, [budget.head]: value }))}
-            />
-            {/* The action is a toggle rather than a free field: the daemon's two values are a
-                warning and a refusal, and a text box would invite a third spelling. */}
-            <button
-              type="button"
-              className={budget.action === 'block' ? 'myx-bud-btn myx-bud-btn-block' : 'myx-bud-btn'}
-              onClick={() => {
-                const nextAction: BudgetAction = budget.action === 'warn' ? 'block' : 'warn';
-                save({ ...budget, action: nextAction });
-              }}
-            >
-              {budget.action}
-            </button>
-            <button
-              type="button"
-              className="myx-bud-btn"
-              onClick={() => {
-                const parsed = parseUsd(typed);
-                if (!parsed.ok) {
-                  setNotes((current) => ({ ...current, [budget.head]: NOT_AN_AMOUNT }));
-                  return;
-                }
-                save({ ...budget, daily_usd: parsed.value });
-                setDraft((current) => ({ ...current, [budget.head]: formatUsd(parsed.value) }));
-              }}
-            >
-              {S.save}
-            </button>
-            <span className="myx-bud-note">{budgetText(budget)}</span>
-            {notes[budget.head] ? (
-              <span className={notes[budget.head] === NOT_AN_AMOUNT ? 'myx-bud-note myx-bud-refused' : 'myx-bud-note'} role="status">
-                {notes[budget.head]}
-              </span>
-            ) : null}
-          </div>
-        );
-      })}
-    </section>
+    <Section title={S.title} info={{ text: H.about, label: S.about }} className="myx-bud">
+      <DataTable columns={columns} rows={rows} rowKey={(budget) => budget.head} label={S.title} rowHue={(budget) => hueClass(hueOf(budget.head))} />
+    </Section>
   );
 }

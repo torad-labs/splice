@@ -116,6 +116,8 @@ const TOOLS: readonly Series[] = [
 
 const LIMITED: readonly Series[] = [{ key: 'limited', label: S.limitedCount }];
 
+const COST: readonly Series[] = [{ key: 'spent', label: S.spent }];
+
 /** The window's buckets: exactly the hours the bars draw, taken from the same walk. */
 function slice(buckets: readonly EconomicsBucket[], window: ChartWindow, now: number): EconomicsBucket[] {
   const wanted = new Set(windowHours(window.hours, now));
@@ -129,7 +131,7 @@ export function TokenChart({ buckets, window, now }: {
 }) {
   const rows = tokenRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.tokens} ${window.label}`} basis="measured">
+    <ScopeInset title={S.tokens} basis="measured">
       <StackedBars rows={rows} series={TOKENS} ariaLabel={S.tokens} />
       <Legend rows={rows} series={TOKENS} />
     </ScopeInset>
@@ -137,10 +139,10 @@ export function TokenChart({ buckets, window, now }: {
 }
 
 /**
- * Cost, from the declared rates. Basis `estimated`, never `measured`: the tokens are the daemon's and
- * exact, but the dollars are this console multiplying them by a card the operator wrote in the
- * topology — and a vendor's real invoice can differ. With no rates declared there is no dollar
- * figure at all, which is what the honest empty says rather than a confident zero.
+ * Cost, from the declared rates, hour by hour. Basis `estimated`, never `measured`: the tokens are
+ * the daemon's and exact, but the dollars are this console multiplying them by a card the operator
+ * wrote in the topology, and a vendor's real invoice can differ. With no rates declared there is no
+ * dollar figure at all, which is what the honest empty says rather than a confident zero.
  */
 export function CostChart({ buckets, window, now, rates }: {
   buckets: readonly EconomicsBucket[];
@@ -150,18 +152,20 @@ export function CostChart({ buckets, window, now, rates }: {
 }) {
   if (rates === null) {
     return (
-      <ScopeInset title={`${S.cost} ${window.label}`} basis="unavailable">
+      <ScopeInset title={S.cost} basis="unavailable">
         <p className="myx-schart-empty">{S.noRates}</p>
       </ScopeInset>
     );
   }
-  const inWindow = slice(buckets, window, now);
-  const totals = sum(inWindow);
-  const usd = costOf(totals, rates);
+  const found = new Map(slice(buckets, window, now).map((bucket) => [bucket.hour, bucket]));
+  const rows: HourRow[] = windowHours(window.hours, now).map((at) => {
+    const bucket = found.get(at);
+    return { at, values: { spent: bucket === undefined ? 0 : costOf(sum([bucket]), rates) } };
+  });
   return (
-    <ScopeInset title={`${S.cost} ${window.label}`} basis="estimated">
-      <p className="myx-schart-figure">{`$${usd.toFixed(4)}`}</p>
-      <p className="myx-schart-note">{`${fmtTokens(totals.inTokens)} in, ${fmtTokens(totals.outTokens)} out`}</p>
+    <ScopeInset title={S.cost} basis="estimated">
+      <StackedBars rows={rows} series={COST} ariaLabel={S.cost} />
+      <Legend rows={rows} series={COST} format={(usd) => `$${usd.toFixed(4)}`} />
     </ScopeInset>
   );
 }
@@ -173,7 +177,7 @@ export function ByteChart({ buckets, window, now }: {
 }) {
   const rows = byteRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.bytes} ${window.label}`} basis="measured">
+    <ScopeInset title={S.bytes} basis="measured">
       <StackedBars rows={rows} series={BYTES} ariaLabel={S.bytes} mode="group" />
       <Legend rows={rows} series={BYTES} format={fmtBytes} />
     </ScopeInset>
@@ -187,7 +191,7 @@ export function ToolChart({ buckets, window, now }: {
 }) {
   const rows = toolRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.tools} ${window.label}`} basis="measured">
+    <ScopeInset title={S.tools} basis="measured">
       <StackedBars rows={rows} series={TOOLS} ariaLabel={S.tools} />
       <Legend rows={rows} series={TOOLS} format={(value) => fmtInt(value)} />
     </ScopeInset>
@@ -201,7 +205,7 @@ export function LimitedChart({ buckets, window, now }: {
 }) {
   const rows = limitedRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.limited} ${window.label}`} basis="measured">
+    <ScopeInset title={S.limited} basis="measured">
       <StackedBars rows={rows} series={LIMITED} ariaLabel={S.limited} />
       <Legend rows={rows} series={LIMITED} format={(value) => fmtInt(value)} />
     </ScopeInset>

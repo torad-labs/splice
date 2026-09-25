@@ -1,13 +1,23 @@
-// Every label this feature prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall).
+// Every word this feature prints (docs/design/DESIGN.md section 10). S holds labels, three words or
+// fewer in sentence case; H holds help, one sentence of twelve words or fewer.
 export const S = {
-  title: 'budgets',
-  head: 'head',
-  daily: 'daily usd',
-  action: 'action',
-  save: 'save',
-  saving: 'saving',
-  warn: 'warn',
-  block: 'block',
-  add: 'add budget',
+  title: 'Budgets',
+  about: 'About budgets',
+  head: 'Head',
+  daily: 'Daily limit',
+  action: 'Past limit',
+  save: 'Save',
+  saved: 'Saved',
+  failed: 'Save failed',
+  warn: 'Warn',
+  block: 'Block',
+  /** An empty box: the head has no budget, which is a state and never $0.00. */
+  noLimit: 'No limit',
+  unavailable: 'Budgets unavailable',
+} as const;
+
+export const H = {
+  about: 'A dollar limit per head for each UTC day.',
+  unavailable: 'This splice version does not serve budgets.',
+  notAmount: 'Not a dollar amount; nothing saved.',
 } as const;

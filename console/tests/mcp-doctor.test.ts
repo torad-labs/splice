@@ -15,9 +15,9 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdict } from '../src/entities/doctor';
 import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
-import { budgetFor, budgetText, NO_BUDGET } from '../src/entities/budget';
-import { parseUsd } from '../src/features/budgets';
-import { canTest, desktopText, webhookText } from '../src/entities/alert';
+import { budgetFor } from '../src/entities/budget';
+import { BudgetsPanel, parseUsd } from '../src/features/budgets';
+import { canTest } from '../src/entities/alert';
 import type { AlertSettings } from '../src/entities/alert';
 import { CheckStrip } from '../src/pages/doctor';
 import {
@@ -330,10 +330,11 @@ describe('pending routes render an empty naming their row', () => {
 });
 
 describe('budgets and alerts', () => {
-  test('no budget is a state, never $0.00', () => {
-    expect(budgetText(null)).toBe(NO_BUDGET);
-    expect(budgetText({ head: 'a', daily_usd: null, action: 'warn' })).toBe(NO_BUDGET);
-    expect(budgetText({ head: 'a', daily_usd: 4, action: 'warn' })).toBe('$4.00/day');
+  test('no budget is a state, never $0.00: an empty box that says no limit', () => {
+    const out = renderToStaticMarkup(h(BudgetsPanel, { heads: ['a'] }));
+    expect(out).toContain('placeholder="No limit"');
+    expect(out).toContain('value=""');
+    expect(out).not.toContain('0.00');
   });
 
   test('only an empty box clears a budget; a typo is refused and saves nothing', () => {
@@ -357,15 +358,12 @@ describe('budgets and alerts', () => {
     expect(budgetFor(null, 'a')).toBeNull();
   });
 
-  test('a webhook that is absent is no webhook, not an empty link', () => {
+  test('a test send needs a saved webhook: the daemon answers 409 without one', () => {
     const off: AlertSettings = { desktop: false, webhook_url: null };
-    expect(webhookText(off)).toBe('no webhook');
-    expect(desktopText(off)).toBe('desktop off');
     expect(canTest(off)).toBe(false);
-  });
-
-  test('a test send needs somewhere to send to', () => {
-    expect(canTest({ desktop: true, webhook_url: null })).toBe(true);
+    expect(canTest(null)).toBe(false);
+    // desktop is no destination: the daemon delivers nothing to one (AlertDelivery.kt)
+    expect(canTest({ desktop: true, webhook_url: null })).toBe(false);
     expect(canTest({ desktop: false, webhook_url: 'https://example.test/hook' })).toBe(true);
   });
 });

@@ -533,7 +533,7 @@ describe('a window read before its reset', () => {
     expect(accountState(muse, NOW).edge).toBe('grey');
     const out = render(h(AccountStrip, { account: muse, isNext: false, nextRule: '', columns: ['provider'], nowMs: NOW }));
     expect(out).not.toContain('99%');
-    expect(out).toContain('>stale<');
+    expect(out).toContain('>Stale<');
     // the same window before its reset is the figure it was
     expect(accountState(muse, reset * 1000 - 1).label).toBe('warn 99%');
   });

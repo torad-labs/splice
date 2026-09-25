@@ -54,12 +54,14 @@ export function Section({ title, meta, count, info, actions, children, className
   return (
     <section className={cx('myx-sec', className)}>
       <div className="myx-sec-head">
-        <h2 className="myx-sec-title">
-          {meta === undefined ? null : <span className="myx-sec-meta">{meta}</span>}
-          <span className="myx-sec-name">{title}</span>
-          {count === undefined ? null : <span className="myx-sec-count">{count}</span>}
-        </h2>
-        {info === undefined ? null : <InfoTip text={info.text} label={info.label} />}
+        <div className="myx-sec-titles">
+          <h2 className="myx-sec-title">
+            {meta === undefined ? null : <span className="myx-sec-meta">{meta}</span>}
+            <span className="myx-sec-name">{title}</span>
+            {count === undefined ? null : <span className="myx-sec-count">{count}</span>}
+          </h2>
+          {info === undefined ? null : <InfoTip text={info.text} label={info.label} />}
+        </div>
         {actions === undefined ? null : <div className="myx-sec-actions">{actions}</div>}
       </div>
       {children}

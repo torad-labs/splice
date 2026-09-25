@@ -11,6 +11,16 @@
 // So the transcript is what moves, and only the rows that name a model — `message.model` of
 // `type: assistant` rows — in the transcript itself and in every jsonl under its `<id>/` subdir.
 //
+// A row that moves loses its THINKING with its model. A thinking block is signed by the model that
+// wrote it (or carries splice's `splice-synth-v1` stand-in when a head like Kimi signs nothing), and
+// once the row claims the pinned model Claude Code replays that signature to an upstream that verifies
+// it: Anthropic refuses the whole request, "Invalid signature in thinking block", on every turn.
+// Claude Code strips thinking and retries on that error only when it arrives as an HTTP 400, and a
+// head's stream has already answered 200, so the retag is the last moment the block is known to be
+// foreign. A row that held only thinking keeps its place (its uuid is the next row's parentUuid) with
+// the text block Claude Code 2.1.281 itself writes when that recovery strips a message bare (kcr in
+// the binary), a shape it already loads, merges by message.id and replays.
+//
 // Rows are re-encoded only when they change, so history this head did not touch stays
 // byte-identical; an unparseable line is history too and is never dropped. A read or write failure
 // throws: half-rewritten history is precisely what leaves a resumed session on a model the head
@@ -18,10 +28,13 @@
 package splice.client.resume
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
+import splice.client.transcript.CONTENT
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -40,9 +53,18 @@ public class TranscriptModelRewrite {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Rewrite to [pinnedModel] every assistant row whose `message.model` the head does NOT serve, in
-     *  [transcript] and in every jsonl under its sibling `<id>/` subdir (the subagent transcripts and
-     *  tool results Claude Code keeps beside it). A row on a model in [served] — the head's roster,
+    /** The blocks a signature rides on — the two Claude Code's own strip removes (aEt/Tcr). */
+    private val thinkingTypes = setOf("thinking", "redacted_thinking")
+
+    /** Claude Code's stand-in for a message its signature recovery leaves empty: kcr() in 2.1.281,
+     *  byte for byte. */
+    private val thinkingRemoved =
+        json.parseToJsonElement("""{"type":"text","text":"[Thinking removed]","citations":[]}""")
+
+    /** Rewrite to [pinnedModel], without its thinking blocks (see the header), every assistant row
+     *  whose `message.model` the head does NOT serve, in [transcript] and in every jsonl under its
+     *  sibling `<id>/` subdir (the subagent transcripts and tool results Claude Code keeps beside
+     *  it). A row on a model in [served] — the head's roster,
      *  the same list its `availableModels` allowlist is written from — is restored by Claude Code as
      *  it is, so it stays (v0.4.0 review: claude-splice's tree is the operator's main
      *  ~/.claude/projects, and moving its opus rows onto fable rewrote history for nothing). Returns
@@ -86,11 +108,25 @@ public class TranscriptModelRewrite {
             .getOrNull() ?: return null
         val message = assistantMessage(obj)
         if (message == null || JsonScalars.str(message, Keys.MODEL) in kept) return null
-        val fixedMessage = JsonObject(message.toMutableMap().apply { put(Keys.MODEL, JsonPrimitive(pinnedModel)) })
+        val fixedMessage = JsonObject(
+            message.toMutableMap().apply {
+                put(Keys.MODEL, JsonPrimitive(pinnedModel))
+                withoutThinking(message[CONTENT])?.let { put(CONTENT, it) }
+            },
+        )
         return json.encodeToString(
             JsonObject.serializer(),
             JsonObject(obj.toMutableMap().apply { put(TRANSCRIPT_MESSAGE, fixedMessage) }),
         )
+    }
+
+    /** [content] without its thinking blocks, or null when it holds none (or is not a block list) and
+     *  stays exactly as it is. Emptied, it becomes [thinkingRemoved]: the row is never dropped. */
+    private fun withoutThinking(content: JsonElement?): JsonArray? {
+        val blocks = content as? JsonArray ?: return null
+        val kept = blocks.filterNot { block -> JsonScalars.str(block as? JsonObject, TRANSCRIPT_TYPE) in thinkingTypes }
+        if (kept.size == blocks.size) return null
+        return JsonArray(kept.ifEmpty { listOf(thinkingRemoved) })
     }
 
     private fun assistantMessage(row: JsonObject): JsonObject? =

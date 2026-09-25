@@ -610,6 +610,16 @@ origin.
   copies, so a live session keeps appending) and linked, so the `-r` picker on every head lists
   every session again. A head that isolates `projects` keeps a private tree and reaches a foreign
   session by name, as before.
+- **A session resumed from another head no longer fails every turn on its old thinking.**
+  Resuming on `claude-splice` a session written on `claude-kimi` moved its rows onto Fable and kept
+  their thinking blocks, which carry splice's stand-in signature (Kimi signs nothing). Claude Code
+  sent them back, Anthropic answered every turn with `Invalid signature in thinking block`, and each
+  retry sent the same history. Claude Code strips thinking and retries on that error only when it
+  arrives as an HTTP 400, and a head's stream has already answered 200 by then. The rows that move
+  to another head's model now leave their `thinking` and `redacted_thinking` blocks behind, in the
+  session and in its subagent transcripts. A row that held only thinking keeps its place with the
+  same `[Thinking removed]` text Claude Code writes when it strips a message bare itself. Rows on a
+  model the head serves are untouched.
 - **A resumed session follows the resuming head's model (V4-169).** A transcript carries the model
   id of the head that wrote it, and Claude Code refuses to restore a model the head does not serve
   ("Session model X could not be restored"). Splice now moves the transcript's assistant rows that

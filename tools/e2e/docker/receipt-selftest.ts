@@ -17,7 +17,7 @@ const LIB = resolve(ROOT, "tools/e2e/docker/lib.sh");
 const LIB_TS = resolve(ROOT, "tools/e2e/docker/lib.ts");
 // The container scenarios: each sources lib.sh (where the receipt contract lives) and runs its
 // version step, so neither can write a receipt that skips the pin.
-const SCENARIOS = ["inside.sh", "upgrade.sh"].map((name) => resolve(ROOT, "tools/e2e/docker", name));
+const SCENARIOS = ["inside.sh", "upgrade.sh", "plan-limit.sh"].map((name) => resolve(ROOT, "tools/e2e/docker", name));
 const RUN = resolve(ROOT, "tools/e2e/docker/run.sh");
 
 function rel(p: string): string {

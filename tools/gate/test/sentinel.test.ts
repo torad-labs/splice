@@ -18,6 +18,17 @@ function scratchSentinel(): string {
   return path;
 }
 
+/** Whether [pid] is running. Signal 0 delivers nothing; pid 0 would name this process group, so it is refused. */
+function alive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 afterEach(() => {
   releaseForTests();
   delete process.env.SPLICE_GATE_SENTINEL;
@@ -129,6 +140,11 @@ describe("the gate run sentinel", () => {
     expect(probeRunSentinel(), "the kernel drops an flock on SIGKILL; no trap can").toBeNull();
   }, 40_000);
 
+  // The grandchild is unref'd so its parent EXITS while it lives. The first cut let the parent wait on
+  // it: `await proc.exited` took the whole `sleep 20`, the grandchild was gone before the probe, and
+  // the arm passed a holder that handed the sentinel's fd to the grandchild as an extra stdio entry
+  // (splice-lead, 2026-09-25). What keeps the fd out of children today is Bun's spawn, which passes
+  // only stdio: the openSync fd itself is not CLOEXEC. The control is the grandchild alive at the probe.
   test("the fd does not leak to spawned children — a Gradle daemon must not pin it forever", async () => {
     const path = scratchSentinel();
     const proc = Bun.spawn(
@@ -138,13 +154,20 @@ describe("the gate run sentinel", () => {
         `process.env.SPLICE_GATE_SENTINEL=${JSON.stringify(path)};` +
           `const { acquireRunSentinel } = await import(${JSON.stringify(join(import.meta.dir, "../src/lib/sentinel.ts"))});` +
           `if (acquireRunSentinel("x") !== null) process.exit(3);` +
-          `Bun.spawn(["sleep", "20"], { stdio: ["ignore", "ignore", "ignore"] });`,
+          `const child = Bun.spawn(["sleep", "20"], { stdio: ["ignore", "ignore", "ignore"] });` +
+          `child.unref(); console.log(child.pid);`,
       ],
-      { stdout: "ignore", stderr: "ignore" },
+      { stdout: "pipe", stderr: "ignore" },
     );
-    await proc.exited;
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline && probeRunSentinel() !== null) await Bun.sleep(50);
-    expect(probeRunSentinel(), "the long-lived grandchild must not still be holding it").toBeNull();
+    const grandchild = Number((await new Response(proc.stdout).text()).trim());
+    try {
+      expect(await proc.exited, "the holder took the sentinel and exited").toBe(0);
+      expect(alive(grandchild), "control: the grandchild outlives its parent, or this arm proves nothing").toBe(true);
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline && probeRunSentinel() !== null) await Bun.sleep(50);
+      expect(probeRunSentinel(), "the long-lived grandchild must not still be holding it").toBeNull();
+    } finally {
+      if (alive(grandchild)) process.kill(grandchild, "SIGKILL");
+    }
   }, 40_000);
 });

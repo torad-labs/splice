@@ -112,6 +112,39 @@ for (const name of PAGES) {
   });
 }
 
+// THE OPERATOR'S FRAME (ruling 4, 2026-09-25). His panels are 3840 wide at desktop scale 1, where
+// the console was a 1920px island of 13px type, 70% of the screen black. At his frame a page uses
+// the width and its body reads at 20px; at 1600 the floors of tests/scale.test.ts hold in a real
+// browser, where the clamps and the unit resolve.
+const FRAMES = [
+  { width: 3840, height: 2060, used: 0.8, body: 20, cell: 19 },
+  { width: 1600, height: 1000, used: 0.7, body: 17, cell: 16 },
+] as const;
+for (const frame of FRAMES) {
+  for (const name of ['sessions', 'usage', 'turns']) {
+    test(`${name} at ${frame.width}x${frame.height} uses the width and reads at the floor`, async ({ page }) => {
+      await page.setViewportSize({ width: frame.width, height: frame.height });
+      await open(page, name);
+      await page.waitForTimeout(SETTLE_MS);
+      const read = await page.evaluate(() => {
+        const content = [...document.querySelectorAll('.myx-console-page *')]
+          .map((element) => element.getBoundingClientRect())
+          .filter((rect) => rect.width > 0 && rect.height > 0);
+        const cell = document.querySelector('.myx-dt tbody td');
+        return {
+          left: Math.min(...content.map((rect) => rect.left)),
+          right: Math.max(...content.map((rect) => rect.right)),
+          body: parseFloat(getComputedStyle(document.body).fontSize),
+          cell: cell === null ? null : parseFloat(getComputedStyle(cell).fontSize),
+        };
+      });
+      expect((read.right - read.left) / frame.width, 'share of the window the page draws in').toBeGreaterThanOrEqual(frame.used);
+      expect(read.body, 'body text px').toBeGreaterThanOrEqual(frame.body);
+      if (read.cell !== null) expect(read.cell, 'table text px').toBeGreaterThanOrEqual(frame.cell);
+    });
+  }
+}
+
 test('turns lists the turn the stack drove through a real head', async ({ page }) => {
   await open(page, 'turns');
   await expect(page.locator('main')).toContainText(STACK.model, { timeout: 15_000 });

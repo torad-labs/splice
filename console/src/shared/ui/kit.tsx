@@ -74,7 +74,7 @@ export interface Column<T> {
   key: string;
   label: string;
   cell: (row: T) => ReactNode;
-  /** A CSS width for the column (`30%`, `8rem`); columns without one share what is left. */
+  /** A CSS width for the column (`30%`, `calc(8 * var(--u))`); columns without one share what is left. */
   width?: string;
   align?: 'start' | 'end';
   /** Figures and identifiers: tabular numerals in the mono face. */

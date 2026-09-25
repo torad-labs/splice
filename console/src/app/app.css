@@ -66,11 +66,9 @@ button:not(:disabled):active { transform: scale(.97); }
   padding: var(--space-6) var(--space-7) var(--space-8);
 }
 
-/* A wider window shows the same page, not a stretched one: past 1920px the page sits centred. */
-.myx-console-page > * {
-  max-width: 120rem;
-  margin-inline: auto;
-}
+/* The page uses the screen (ruling 4, 2026-09-25): a 120rem cap left a 1920px island centred in a
+   3840 panel, 70% of it black. Past 3000 a page composes to the width instead, with sections side by
+   side, so no table row runs the full span. */
 
 /* The page column holds its space before a lazily loaded page arrives, and claims nothing. */
 .myx-console-pending { min-height: 100%; }
@@ -88,7 +86,7 @@ button:not(:disabled):active { transform: scale(.97); }
 
 .myx-modal {
   width: 100%;
-  max-width: 32rem;
+  max-width: calc(32 * var(--u));
   max-height: 85vh;
   overflow-y: auto;
   display: grid;

@@ -48,8 +48,8 @@ import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
 import { H, S, U } from './strings';
 import { groupByOf, groupHref, selectionOf } from './select';
-import { baseOf, boardFields, FIELD_LABEL, fieldsOf, headText, peerOf, projectKeyOf, startedText, toneOf } from './strip';
-import type { Peer } from './strip';
+import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, startedText, toneOf } from './strip';
+import type { Handoff, Peer } from './strip';
 import './sessions.css';
 
 const PAGE_ID = 'sessions';
@@ -131,8 +131,8 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: re
     { key: 'way', label: S.way, width: '24%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
     { key: 'peer', label: S.peer, width: '28%', primary: true, cell: (edge) => peerLabel(rows, edge) },
     // The address is what a peer is reached at: read whole, so it wraps in a narrow panel.
-    { key: 'address', label: S.address, width: '30%', mono: true, wrap: true, cell: (edge) => peerAddressOf(rows, edge) },
-    { key: 'at', label: S.at, width: '18%', align: 'end', mono: true, cell: (edge) => timeAgo(edge.at) },
+    { key: 'address', label: S.address, width: '28%', mono: true, wrap: true, cell: (edge) => peerAddressOf(rows, edge) },
+    { key: 'at', label: S.at, width: '20%', align: 'end', mono: true, cell: (edge) => timeAgo(edge.at) },
   ];
   return (
     <DataTable
@@ -144,10 +144,38 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: re
   );
 }
 
+/** The newest hand-offs the fleet's list draws: past a screen of them the lanes carry the story. */
+const HANDOFF_ROWS = 12;
+
+/** One end of a hand-off: the session under its head's mark, or the words the edge carried. */
+function HandoffEnd({ row, label }: { row: SessionRow | null; label: string }) {
+  return row === null ? <>{label}</> : <HeadMark head={row.head}>{label}</HeadMark>;
+}
+
+/** The fleet's hand-offs, newest first: which session messaged which, and when. Beside the board
+ *  on a wide screen, under it on a narrow one (sessions.css). */
+function FleetHandoffs({ rows, board }: { rows: readonly SessionRow[]; board: BoardEdgesPayload }) {
+  const handoffs = fleetHandoffs(rows, board);
+  const columns: Column<Handoff>[] = [
+    { key: 'from', label: S.from, width: '40%', cell: (handoff) => <HandoffEnd row={handoff.from} label={handoff.fromLabel} /> },
+    { key: 'to', label: S.to, width: '40%', primary: true, cell: (handoff) => <HandoffEnd row={handoff.to} label={handoff.toLabel} /> },
+    { key: 'at', label: S.at, width: '20%', align: 'end', mono: true, cell: (handoff) => timeAgo(handoff.at) },
+  ];
+  return (
+    <Section title={S.handoffs} count={handoffs.length} className="myx-sx-handoffs">
+      {handoffs.length === 0 ? (
+        <Empty text={S.noHandoffs} />
+      ) : (
+        <DataTable columns={columns} rows={handoffs.slice(0, HANDOFF_ROWS)} rowKey={(handoff) => handoff.key} label={S.handoffs} />
+      )}
+    </Section>
+  );
+}
+
 /** Column widths for the board, by field key: the view with a head column gives it room from the
  *  name, project and lifetime. Status always closes the row, at 10%. */
-const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '20%', project: '16%', life: '34%', peer: '20%' };
-const WIDTH_WITH_HEAD: Record<string, string> = { name: '16%', head: '14%', project: '14%', life: '26%', peer: '20%' };
+const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '20%', project: '18%', life: '32%', peer: '20%' };
+const WIDTH_WITH_HEAD: Record<string, string> = { name: '16%', head: '14%', project: '16%', life: '24%', peer: '20%' };
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
 export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
@@ -397,6 +425,8 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
           </DetailPanel>
         )}
       </div>
+
+      {boardEdges === null || rows.length === 0 ? null : <FleetHandoffs rows={rows} board={boardEdges} />}
     </div>
   );
 }

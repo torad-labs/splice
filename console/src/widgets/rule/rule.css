@@ -35,7 +35,7 @@
 .myx-rule-health-warn .myx-rule-state svg { color: var(--warn); }
 .myx-rule-health-danger .myx-rule-state svg { color: var(--danger); }
 .myx-rule-health-neutral .myx-rule-state svg { color: var(--fg-subtle); }
-.myx-rule-meter { display: inline-flex; width: 4rem; }
+.myx-rule-meter { display: inline-flex; width: calc(5 * var(--u)); }
 .myx-rule-reset { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono); color: var(--fg-muted); }
 
 .myx-rule-word { color: var(--fg-subtle); }

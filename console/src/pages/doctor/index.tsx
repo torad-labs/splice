@@ -58,7 +58,7 @@ function StatusBadge({ row, quiet = false }: { row: CheckRow; quiet?: boolean })
 function checkColumns(): Column<CheckRow>[] {
   return [
     { key: 'check', label: S.check, width: '36%', primary: true, mono: true, cell: (row) => row.label },
-    { key: 'state', label: S.state, width: '7rem', cell: (row) => <StatusBadge row={row} quiet /> },
+    { key: 'state', label: S.state, width: 'calc(7 * var(--u))', cell: (row) => <StatusBadge row={row} quiet /> },
     // A check with nothing to fix prints the absence glyph; `No fix offered` is the opened check's.
     { key: 'fix', label: S.fix, mono: true, cell: (row) => row.fix ?? ABSENT },
   ];

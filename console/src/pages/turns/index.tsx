@@ -191,11 +191,11 @@ const INPUT_KEY = [
 
 function tokenColumns(scale: number, nameOf: (key: string) => string): Column<TokenRow>[] {
   return [
-    { key: 'head', label: S.head, width: '20%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
+    { key: 'head', label: S.head, width: '26%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
     {
       key: 'input',
       label: S.input,
-      width: '46%',
+      width: '40%',
       cell: (row) => (
         <span className="myx-tn-split">
           <StackedBar

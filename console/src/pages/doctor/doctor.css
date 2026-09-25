@@ -12,7 +12,7 @@
 /* Two sections that share a row: the report beside the upgrade, the request beside the response. */
 .myx-dc-pair {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(calc(25 * var(--u)), 1fr));
   gap: var(--space-7);
   align-items: start;
   min-width: 0;
@@ -33,7 +33,7 @@
 /* A playground body, as the daemon returned it: raw, scrolled rather than wrapped. */
 .myx-dc-raw {
   margin: 0;
-  max-height: 24rem;
+  max-height: calc(24 * var(--u));
   overflow: auto;
   padding: var(--space-4);
   border: var(--hair) solid var(--line);
@@ -50,7 +50,7 @@
   gap: var(--space-5);
   align-items: start;
 }
-.myx-dc-board-open { grid-template-columns: minmax(0, 1fr) minmax(22rem, 32%); }
+.myx-dc-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(27.5 * var(--u)), 32%); }
 .myx-dc-board-open .myx-panel { position: sticky; top: 0; }
 
 @media (max-width: 1100px) {

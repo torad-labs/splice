@@ -37,7 +37,7 @@ import './log-tail.css';
 export { cacheHitOf, perfOf, scaleOf, totalOf } from './perf-line';
 export type { PerfLine, PerfScale } from './perf-line';
 
-const ROW_H = 28;
+const ROW_H = 36;
 
 /** One line's status: the daemon's own severity, or no mark at all on a line it left unmarked. */
 export function toneOfLevel(level: LogLevel | null): Tone | null {

@@ -74,7 +74,7 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
   const typedOf = (budget: Budget): string => draft[budget.head] ?? formatUsd(budget.daily_usd);
 
   const columns: Column<Budget>[] = [
-    { key: 'head', label: S.head, width: '26%', primary: true, cell: (budget) => <HeadMark head={budget.head} /> },
+    { key: 'head', label: S.head, width: '27%', primary: true, cell: (budget) => <HeadMark head={budget.head} /> },
     {
       key: 'limit',
       label: S.daily,
@@ -86,7 +86,7 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
             label={`${S.daily} ${budget.head}`}
             hideLabel
             numeric
-            w={12}
+            w={9}
             placeholder={S.noLimit}
             value={typedOf(budget)}
             invalid={notes[budget.head] === H.notAmount}
@@ -98,7 +98,7 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
     {
       key: 'action',
       label: S.action,
-      width: '26%',
+      width: '30%',
       // Two values and a toggle between them, never a free field: the daemon's words are a warning
       // and a refusal, and a text box would invite a third spelling.
       cell: (budget) => (
@@ -108,7 +108,7 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
     {
       key: 'save',
       label: '',
-      width: '22%',
+      width: '17%',
       align: 'end',
       cell: (budget) => (
         <span className="myx-bud-save">

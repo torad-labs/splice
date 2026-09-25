@@ -13,7 +13,6 @@ export const S = {
   singleLogin: 'Single login',
   primary: 'Primary',
   pinned: 'Pinned',
-  stale: 'Stale',
   windowsRead: 'Windows read',
   reason: 'Reason',
   /** An account's state in words: the badge beside the figures that decide it. */

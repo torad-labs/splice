@@ -15,7 +15,7 @@
   gap: var(--space-5);
   align-items: start;
 }
-.myx-md-board-open { grid-template-columns: minmax(0, 1fr) minmax(22rem, 32%); }
+.myx-md-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(27.5 * var(--u)), 32%); }
 .myx-md-board-open .myx-panel { position: sticky; top: 0; }
 
 @media (max-width: 1100px) {

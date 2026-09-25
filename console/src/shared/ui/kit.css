@@ -79,6 +79,7 @@
 }
 .myx-dt-fixed { table-layout: fixed; }
 .myx-dt th {
+  height: var(--row-head);
   padding: var(--space-3) var(--space-4);
   background: var(--bg-raised);
   border-bottom: var(--hair) solid var(--line);
@@ -89,6 +90,7 @@
   white-space: nowrap;
 }
 .myx-dt td {
+  height: var(--row-board);
   padding: var(--space-4);
   color: var(--fg-muted);
   white-space: nowrap;
@@ -246,7 +248,7 @@
   white-space: nowrap;
   vertical-align: middle;
 }
-.myx-badge-dot { width: .375rem; height: .375rem; border-radius: var(--radius-full); background: currentColor; flex: none; }
+.myx-badge-dot { width: calc(.5 * var(--u)); height: calc(.5 * var(--u)); border-radius: var(--radius-full); background: currentColor; flex: none; }
 .myx-badge-ok { background: var(--ok-soft); color: var(--ok); }
 .myx-badge-warn { background: var(--warn-soft); color: var(--warn); }
 .myx-badge-danger { background: var(--danger-soft); color: var(--danger); }
@@ -263,7 +265,7 @@
 /* ---------- stat ---------- */
 .myx-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(calc(10.5 * var(--u)), 1fr));
   gap: var(--space-4);
   margin-block-end: var(--space-7);
 }
@@ -275,7 +277,7 @@
 }
 .myx-stat-label { margin: 0; font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
 /* a trend at the end of the label's line: the figure below keeps the tile's whole width */
-.myx-stat-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.myx-stat-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-4); }
 .myx-stat-trend { flex: none; }
 .myx-stat-value {
   margin: var(--space-3) 0 0;
@@ -309,13 +311,13 @@
 .myx-meter {
   display: block;
   width: 100%;
-  height: .375rem;
+  height: var(--meter-h);
   border-radius: var(--radius-full);
   background: var(--track);
   overflow: hidden;
 }
 .myx-meter-row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-.myx-meter-row .myx-meter { flex: 1 1 auto; min-width: 2rem; }
+.myx-meter-row .myx-meter { flex: 1 1 auto; min-width: calc(2.5 * var(--u)); }
 .myx-meter-figure {
   flex: none;
   min-width: 3.5em;
@@ -380,7 +382,7 @@
 .myx-kv { margin: 0; display: grid; }
 .myx-kv-row {
   display: grid;
-  grid-template-columns: minmax(7rem, 38%) 1fr;
+  grid-template-columns: minmax(calc(8.75 * var(--u)), 38%) 1fr;
   gap: var(--space-4);
   padding-block: var(--space-3);
   font-size: var(--text-2);

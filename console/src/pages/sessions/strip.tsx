@@ -3,8 +3,8 @@
 // basis of every field that is not measured, and the peer. Pure, so it is directly testable.
 import type { Basis, Tone } from '@shared/ui';
 import { timeAgo } from '@shared/lib';
-import { peerLabel, sessionLabel, UNKNOWN_HEAD } from '@entities/session';
-import type { SessionEdge, SessionRow } from '@entities/session';
+import { nameForAddress, peerLabel, sessionLabel, UNKNOWN_HEAD } from '@entities/session';
+import type { BoardEdgesPayload, SessionEdge, SessionRow } from '@entities/session';
 import { S } from './strings';
 
 export interface Field {
@@ -53,6 +53,39 @@ export interface Peer {
   row: SessionRow | null;
   direction: SessionEdge['direction'];
   at: number;
+}
+
+/** One message between sessions, as the fleet's hand-offs list draws it: who sent it, to whom,
+ *  and when. An end the registry does not hold is null, with the words the edge carried for it. */
+export interface Handoff {
+  key: string;
+  from: SessionRow | null;
+  fromLabel: string;
+  to: SessionRow | null;
+  toLabel: string;
+  at: number;
+}
+
+/** Every hand-off in the fleet, newest first. Each message is read once, from its SENDER's `out`
+ *  edge: the receiver holds the same message as an `in` edge, and counting both drew it twice. */
+export function fleetHandoffs(rows: readonly SessionRow[], board: BoardEdgesPayload): Handoff[] {
+  const out: Handoff[] = [];
+  for (const [sessionId, edges] of Object.entries(board.sessions)) {
+    for (const edge of edges) {
+      if (edge.direction !== 'out') continue;
+      const from = rows.find((row) => row.session_id === sessionId) ?? null;
+      const to = rows.find((row) => row.address === edge.to) ?? null;
+      out.push({
+        key: `${sessionId}:${edge.to}:${edge.at}`,
+        from,
+        fromLabel: from === null ? sessionId.slice(0, 8) : sessionLabel(from),
+        to,
+        toLabel: to === null ? nameForAddress(rows, edge.to) ?? edge.to : sessionLabel(to),
+        at: edge.at,
+      });
+    }
+  }
+  return out.sort((left, right) => right.at - left.at);
 }
 
 export function peerOf(rows: readonly SessionRow[], edges: readonly SessionEdge[]): Peer | null {

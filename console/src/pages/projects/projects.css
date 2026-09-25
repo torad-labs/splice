@@ -8,7 +8,7 @@
   gap: var(--space-5);
   align-items: start;
 }
-.myx-px-board-open { grid-template-columns: minmax(0, 1fr) minmax(26rem, 42%); }
+.myx-px-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(32.5 * var(--u)), 42%); }
 .myx-px-board-open .myx-panel {
   position: sticky;
   top: 0;
@@ -21,7 +21,7 @@
 .myx-px-note { display: inline-flex; align-items: center; gap: var(--space-2); }
 
 /* the way out to the sessions board */
-.myx-px-go { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
+.myx-px-go { display: inline-grid; place-items: center; width: calc(1.875 * var(--u)); height: calc(1.875 * var(--u)); border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
 .myx-px-go:hover { color: var(--fg); background: var(--bg-hover); }
 
 @media (max-width: 1100px) {

@@ -212,9 +212,9 @@ function StateBadge({ attention, quiet = false }: { attention: HeadAttention; qu
   return <Badge tone={stateTone(attention.cause)} quiet={quiet}>{S.stateName[attention.cause]}</Badge>;
 }
 
-/** The identity columns: the opened head's facts repeat them, so an open panel takes their width
- *  and the figures keep theirs. */
-const IDENTITY_FIELDS: ReadonlySet<string> = new Set(['provider', 'model', 'account']);
+/** The columns an opened head's facts repeat, so an open panel takes their width and the figures
+ *  keep theirs: its identity, and its plan window, which reads `–` on every head without a login. */
+const IDENTITY_FIELDS: ReadonlySet<string> = new Set(['provider', 'model', 'account', 'window']);
 
 function headColumns(fields: readonly string[], grouped: string | null, nowMs: number, opened: boolean): Column<HeadLine>[] {
   const wanted = new Set(fields.filter((field) => !opened || !IDENTITY_FIELDS.has(field)));
@@ -224,17 +224,17 @@ function headColumns(fields: readonly string[], grouped: string | null, nowMs: n
   const columns: (Column<HeadLine> | null)[] = [
     { key: 'head', label: S.head, primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
     wanted.has('provider') && grouped !== 'provider'
-      ? { key: 'provider', label: S.provider, width: '7rem', cell: (line) => familyName(line.head.authKind) }
+      ? { key: 'provider', label: S.provider, width: 'calc(6.5 * var(--u))', cell: (line) => familyName(line.head.authKind) }
       : null,
-    { key: 'state', label: S.state, width: '8rem', cell: (line) => <StateBadge attention={line.attention} quiet /> },
-    wanted.has('model') ? { key: 'model', label: S.model, width: '13rem', mono: true, cell: (line) => line.model ?? ABSENT } : null,
-    wanted.has('account') ? { key: 'account', label: S.account, width: '8rem', mono: true, cell: (line) => line.account ?? ABSENT } : null,
-    wanted.has('inflight') ? { key: 'inflight', label: S.inflight, width: '8.5rem', cell: (line) => <InFlight head={line.head} /> } : null,
+    { key: 'state', label: S.state, width: 'calc(6 * var(--u))', cell: (line) => <StateBadge attention={line.attention} quiet /> },
+    wanted.has('model') ? { key: 'model', label: S.model, width: 'calc(10 * var(--u))', mono: true, cell: (line) => line.model ?? ABSENT } : null,
+    wanted.has('account') ? { key: 'account', label: S.account, width: 'calc(7.5 * var(--u))', mono: true, cell: (line) => line.account ?? ABSENT } : null,
+    wanted.has('inflight') ? { key: 'inflight', label: S.inflight, width: 'calc(12 * var(--u))', cell: (line) => <InFlight head={line.head} /> } : null,
     wanted.has('window')
-      ? { key: 'window', label: S.window, width: '9rem', cell: (line) => <WindowFigure window={line.window} label={`${S.window} ${line.head.label}`} /> }
+      ? { key: 'window', label: S.window, width: 'calc(9 * var(--u))', cell: (line) => <WindowFigure window={line.window} label={`${S.window} ${line.head.label}`} /> }
       : null,
-    wanted.has('latency') ? { key: 'latency', label: S.firstByte, width: '11rem', cell: (line) => <Latency line={line} /> } : null,
-    wanted.has('turn') ? { key: 'turn', label: S.lastTurn, width: '9rem', cell: (line) => <LastTurnCell last={line.last} nowMs={nowMs} /> } : null,
+    wanted.has('latency') ? { key: 'latency', label: S.firstByte, width: 'calc(9.5 * var(--u))', cell: (line) => <Latency line={line} /> } : null,
+    wanted.has('turn') ? { key: 'turn', label: S.lastTurn, width: 'calc(6.5 * var(--u))', cell: (line) => <LastTurnCell last={line.last} nowMs={nowMs} /> } : null,
   ];
   return columns.filter((column): column is Column<HeadLine> => column !== null);
 }

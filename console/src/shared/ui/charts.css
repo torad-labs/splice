@@ -19,7 +19,7 @@
   left: 50%;
   z-index: 20;
   width: max-content;
-  max-width: 18rem;
+  max-width: calc(22.5 * var(--u));
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   background: var(--fg);
@@ -44,8 +44,8 @@
 .myx-info-btn {
   display: inline-grid;
   place-items: center;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: calc(1.5 * var(--u));
+  height: calc(1.5 * var(--u));
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -60,12 +60,12 @@
 .myx-spark {
   display: block;
   width: 100%;
-  min-width: 4rem;
-  height: 1.25rem;
+  min-width: calc(5 * var(--u));
+  height: calc(1.5625 * var(--u));
   overflow: visible;
 }
-.myx-spark-line { fill: none; stroke: var(--mark); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-.myx-spark-empty { border-bottom: var(--hair) dashed var(--line-strong); height: .625rem; }
+.myx-spark-line { fill: none; stroke: var(--mark); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.myx-spark-empty { border-bottom: var(--hair) dashed var(--line-strong); height: calc(.8125 * var(--u)); }
 
 /* ---------- stacked bar ---------- */
 .myx-stack-wrap { display: grid; gap: var(--space-3); min-width: 0; }
@@ -73,7 +73,7 @@
   display: flex;
   gap: var(--space-1);
   width: 100%;
-  height: .5rem;
+  height: calc(.625 * var(--u));
   border-radius: var(--radius-full);
   background: var(--track);
   overflow: hidden;
@@ -81,23 +81,23 @@
 .myx-stack-part { display: block; height: 100%; background: var(--mark); }
 .myx-stack-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); }
 .myx-stack-key { display: inline-flex; align-items: baseline; gap: var(--space-3); font-size: var(--text-2); color: var(--fg-muted); }
-.myx-stack-swatch { align-self: center; width: .5rem; height: .5rem; border-radius: var(--radius-0); background: var(--mark); }
+.myx-stack-swatch { align-self: center; width: calc(.625 * var(--u)); height: calc(.625 * var(--u)); border-radius: var(--radius-0); background: var(--mark); }
 .myx-stack-figure { font-family: var(--font-mono); font-size: var(--text-4); font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
 .myx-stack-key-none .myx-stack-figure { color: var(--fg-subtle); }
 .myx-stack-key-none .myx-stack-swatch { background: var(--track); }
 
 /* ---------- pips: a small count against its capacity ---------- */
 .myx-pips { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
-.myx-pip { width: .5rem; height: .75rem; border-radius: var(--radius-0); background: var(--track); }
+.myx-pip { width: calc(.625 * var(--u)); height: calc(.9375 * var(--u)); border-radius: var(--radius-0); background: var(--track); }
 .myx-pip-on { background: var(--mark); }
 
 /* ---------- legend: marks named once for a set of charts ---------- */
 .myx-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); font-size: var(--text-1); color: var(--fg-subtle); }
 .myx-legend-key { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
-.myx-legend-swatch { width: .5rem; height: .5rem; border-radius: var(--radius-0); background: var(--mark); }
+.myx-legend-swatch { width: calc(.625 * var(--u)); height: calc(.625 * var(--u)); border-radius: var(--radius-0); background: var(--mark); }
 
 /* ---------- ring ---------- */
-.myx-ring { position: relative; display: inline-grid; place-items: center; width: 3.5rem; height: 3.5rem; flex: none; }
+.myx-ring { position: relative; display: inline-grid; place-items: center; width: calc(4.375 * var(--u)); height: calc(4.375 * var(--u)); flex: none; }
 .myx-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
 .myx-ring-track { fill: none; stroke: var(--track); stroke-width: 3.5; }
 .myx-ring-arc { fill: none; stroke: var(--mark); stroke-width: 3.5; stroke-linecap: butt; transition: stroke-dasharray var(--dur-3) var(--ease-out); }
@@ -108,8 +108,8 @@
   position: relative;
   display: block;
   width: 100%;
-  min-width: 6rem;
-  height: .75rem;
+  min-width: calc(7.5 * var(--u));
+  height: calc(.9375 * var(--u));
 }
 .myx-life::before {
   /* the axis itself: the board's window, faint */
@@ -122,7 +122,7 @@
   position: absolute;
   top: 25%;
   height: 50%;
-  min-width: .25rem;
+  min-width: calc(.3125 * var(--u));
   border-radius: var(--radius-full);
   background: var(--mark);
 }
@@ -130,17 +130,17 @@
 .myx-life-quiet {
   position: absolute;
   top: 50%;
-  border-top: .125rem dotted var(--fg-subtle);
+  border-top: calc(.1875 * var(--u)) dotted var(--fg-subtle);
   transform: translateY(-50%);
 }
 .myx-life-seen {
   position: absolute;
   top: 50%;
-  width: .5rem;
-  height: .5rem;
+  width: calc(.625 * var(--u));
+  height: calc(.625 * var(--u));
   border-radius: var(--radius-full);
   background: var(--mark);
-  box-shadow: 0 0 0 .125rem var(--bg);
+  box-shadow: 0 0 0 calc(.1875 * var(--u)) var(--bg);
   transform: translate(-50%, -50%);
 }
 
@@ -149,7 +149,7 @@
   position: relative;
   display: block;
   width: 100%;
-  height: .625rem;
+  height: calc(.8125 * var(--u));
   border-radius: var(--radius-1);
   background: var(--track);
 }
@@ -157,15 +157,15 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  min-width: .125rem;
+  min-width: calc(.1875 * var(--u));
   background: var(--mark);
 }
 
 /* ---------- layer chip: where a value comes from ---------- */
 .myx-layers { display: inline-flex; align-items: center; gap: var(--space-1); }
 .myx-layer {
-  width: .5rem;
-  height: .75rem;
+  width: calc(.625 * var(--u));
+  height: calc(.9375 * var(--u));
   border-radius: var(--radius-0);
   background: var(--track);
 }
@@ -188,7 +188,7 @@
   align-items: center;
   /* an idle head keeps a short strand; each turn in flight lengthens it, up to eight */
   width: calc(var(--space-5) + var(--space-3) * var(--strand, 0));
-  height: .5rem;
+  height: calc(.625 * var(--u));
   transition: width var(--dur-3) var(--ease-out);
 }
 .myx-strand-line {
@@ -201,7 +201,7 @@
 .myx-strand-idle .myx-strand-line { height: 25%; opacity: .7; }
 .myx-strand-pulse { animation: myx-strand-land var(--dur-3) var(--ease-out) 2; }
 @keyframes myx-strand-land {
-  50% { transform: scaleY(1.75); box-shadow: 0 0 0 .1875rem color-mix(in srgb, var(--hue, var(--head-none)) 28%, transparent); }
+  50% { transform: scaleY(1.75); box-shadow: 0 0 0 calc(.1875 * var(--u)) color-mix(in srgb, var(--hue, var(--head-none)) 28%, transparent); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -8,6 +8,8 @@
 /* A window: its meter and used share, then its own length where it is not the slot's and the time
    until it resets, quiet, so the share is what reads first. */
 .myx-at-win { display: grid; gap: var(--space-1); min-width: 0; }
+/* In a narrow window cell (a fleet head's pool) the stale words wrap rather than clip. */
+.myx-at-stale .myx-badge { white-space: normal; }
 .myx-at-win-note {
   font-family: var(--font-mono);
   font-size: var(--text-1);

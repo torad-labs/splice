@@ -5,7 +5,7 @@
 
 .myx-knob-rack {
   display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
+  grid-template-columns: calc(15 * var(--u)) minmax(0, 1fr);
   gap: var(--space-7);
   align-items: start;
 }
@@ -53,7 +53,7 @@
 
 .myx-knob {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem) minmax(9rem, 12rem);
+  grid-template-columns: minmax(0, 1fr) minmax(calc(15 * var(--u)), calc(22 * var(--u))) minmax(calc(8 * var(--u)), calc(10 * var(--u)));
   grid-template-areas:
     "name  value foot"
     "help  value foot"
@@ -75,21 +75,19 @@
   color: var(--fg-subtle);
   overflow-wrap: anywhere;
 }
-/* one line, quieter than the name: the help is a reminder, not the row's subject */
+/* quieter than the name: the help is a reminder, not the row's subject. It wraps, since one
+   sentence of twelve words cut to three is no help at all. */
 .myx-knob-help {
   grid-area: help;
   margin: 0;
-  overflow: hidden;
   font-size: var(--text-2);
   color: var(--fg-subtle);
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .myx-knob-value { grid-area: value; display: grid; gap: var(--space-2); min-width: 0; }
 .myx-knob-control { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
 .myx-knob-input {
-  flex: 1 1 8rem;
+  flex: 1 1 calc(8 * var(--u));
   min-width: 0;
   padding: var(--space-2) var(--space-4);
   background: var(--bg);
@@ -103,7 +101,7 @@
 .myx-knob-input:hover { border-color: var(--fg-subtle); }
 .myx-knob-input:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 0; border-color: var(--focus); }
 .myx-knob-input::placeholder { color: var(--fg-subtle); }
-.myx-knob-choice { flex: 1 1 8rem; min-width: 0; }
+.myx-knob-choice { flex: 1 1 calc(8 * var(--u)); min-width: 0; }
 .myx-knob-choice .myx-choice-label { display: none; }
 .myx-knob-figure { font-family: var(--font-mono); font-size: var(--text-2); color: var(--fg); }
 .myx-knob-readout .myx-knob-value { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
@@ -111,26 +109,26 @@
 .myx-knob-readable { font-family: var(--font-mono); color: var(--fg-muted); }
 
 /* the value against its default: a faint axis, a tick at the default, the run between, a dot */
-.myx-knob-scale { position: relative; display: block; height: .5rem; margin-inline: var(--space-1); }
+.myx-knob-scale { position: relative; display: block; height: calc(.625 * var(--u)); margin-inline: var(--space-1); }
 .myx-knob-scale::before {
   content: '';
   position: absolute;
   inset: 50% 0 auto;
   border-top: var(--hair) solid var(--line-strong);
 }
-.myx-knob-scale-run { position: absolute; top: 50%; height: .125rem; background: var(--fg-muted); transform: translateY(-50%); }
-.myx-knob-scale-mark { position: absolute; top: 0; bottom: 0; width: .125rem; background: var(--fg-subtle); transform: translateX(-50%); }
+.myx-knob-scale-run { position: absolute; top: 50%; height: calc(.1875 * var(--u)); background: var(--fg-muted); transform: translateY(-50%); }
+.myx-knob-scale-mark { position: absolute; top: 0; bottom: 0; width: calc(.1875 * var(--u)); background: var(--fg-subtle); transform: translateX(-50%); }
 .myx-knob-scale-dot {
   position: absolute;
   top: 50%;
-  width: .5rem;
-  height: .5rem;
+  width: calc(.625 * var(--u));
+  height: calc(.625 * var(--u));
   border-radius: var(--radius-full);
   background: var(--fg);
-  box-shadow: 0 0 0 .125rem var(--bg);
+  box-shadow: 0 0 0 calc(.125 * var(--u)) var(--bg);
   transform: translate(-50%, -50%);
 }
-.myx-knob[data-changed] .myx-knob-scale-dot { box-shadow: 0 0 0 .125rem var(--bg-raised); }
+.myx-knob[data-changed] .myx-knob-scale-dot { box-shadow: 0 0 0 calc(.125 * var(--u)) var(--bg-raised); }
 
 .myx-knob-foot {
   grid-area: foot;
@@ -146,8 +144,8 @@
 .myx-knob-reset {
   display: inline-grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: calc(1.875 * var(--u));
+  height: calc(1.875 * var(--u));
   padding: 0;
   background: none;
   border: 0;
@@ -178,5 +176,4 @@
     grid-template-areas: "name" "help" "value" "foot" "scope";
     row-gap: var(--space-3);
   }
-  .myx-knob-help { white-space: normal; }
 }

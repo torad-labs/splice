@@ -13,7 +13,7 @@
   left: 50%;
   top: 16%;
   transform: translateX(-50%);
-  width: min(36rem, 92vw);
+  width: min(calc(45 * var(--u)), 92vw);
   max-height: 60vh;
   display: flex;
   flex-direction: column;

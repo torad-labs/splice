@@ -38,6 +38,10 @@ import type { HeadRow } from './model';
 import { H, S, U } from './strings';
 import './accounts.css';
 
+/** The columns an opened account's facts repeat, so an open panel takes their width and the
+ *  windows keep theirs. */
+const OPEN_REPEATS: ReadonlySet<string> = new Set(['provider', 'plan', 'heads']);
+
 export { dispositions };
 export type { HeadRow };
 
@@ -258,7 +262,7 @@ export function AccountsBoard({ payload, headRows = [], usage = null, auth = nul
               <Figures accounts={accounts} usage={usage} auth={auth} nowMs={nowMs} />
               <Section title={S.accounts} count={accounts.length} info={{ text: orderText(), label: S.aboutNext }}>
                 <DataTable
-                  columns={accountColumns({ fields: columnsOf(active), grouped: active.group, nowMs, accounts })}
+                  columns={accountColumns({ fields: columnsOf(active).filter((field) => panel === null || !OPEN_REPEATS.has(field)), grouped: active.group, nowMs, accounts })}
                   groups={groups}
                   rowKey={openAccountKey}
                   label={S.accounts}

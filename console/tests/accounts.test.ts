@@ -16,6 +16,7 @@ import { describe, expect, test } from 'vitest';
 import {
   COCK_AT_PERCENT,
   NOT_REPORTED,
+  NOT_REREAD,
   SELECTOR_ORDER_TEXT,
   accountState,
   exclusionText,
@@ -642,7 +643,7 @@ describe('a window read before its reset', () => {
     expect(accountState(muse, NOW).edge).toBe('grey');
     const out = accountRow(muse, ['provider']);
     expect(out).not.toContain('99%');
-    expect(out).toContain(`>${W.stale}<`);
+    expect(out).toContain(`>${NOT_REREAD}<`);
     // the same window before its reset is the figure it was
     expect(accountState(muse, reset * 1000 - 1).label).toBe('warn 99%');
   });
@@ -650,7 +651,7 @@ describe('a window read before its reset', () => {
   test('the page draws it as stale, its state is unknown, and its old share is nowhere', () => {
     const out = render(h(AccountsBoard, { payload: { accounts: [muse] }, nowMs: NOW }));
     expect(stateOf(muse, NOW)).toBe('unknown');
-    expect(out).toContain(`>${W.stale}<`);
+    expect(out).toContain(`>${NOT_REREAD}<`);
     expect(out).not.toContain('99%');
     expect(out).toContain(`>${W.stateName.unknown}<`);
   });

@@ -44,7 +44,7 @@
 
 .myx-lt-line {
   display: grid;
-  grid-template-columns: 9rem minmax(0, 1fr);
+  grid-template-columns: calc(9.5 * var(--u)) minmax(0, 1fr);
   column-gap: var(--space-5);
   padding: var(--space-1) var(--space-4);
   font-family: var(--font-mono);
@@ -52,7 +52,7 @@
   line-height: var(--leading);
   color: var(--fg);
 }
-.myx-lt-line.myx-lt-tagged { grid-template-columns: 9rem 11rem minmax(0, 1fr); }
+.myx-lt-line.myx-lt-tagged { grid-template-columns: calc(9.5 * var(--u)) calc(12 * var(--u)) minmax(0, 1fr); }
 .myx-lt-cols {
   padding-block: var(--space-2);
   border-bottom: var(--hair) solid var(--line);
@@ -94,7 +94,7 @@
 .myx-lt-perf { display: grid; row-gap: var(--space-2); white-space: normal; }
 .myx-lt-perf-row {
   display: grid;
-  grid-template-columns: var(--space-6) minmax(0, 10rem) minmax(6rem, 1fr) 4rem 8rem 6.5rem 6.5rem;
+  grid-template-columns: var(--space-6) minmax(calc(6 * var(--u)), calc(11 * var(--u))) minmax(calc(6 * var(--u)), 1fr) calc(4.5 * var(--u)) calc(8.75 * var(--u)) calc(7.25 * var(--u)) calc(7.75 * var(--u));
   grid-template-areas: 'toggle model wf ms hit in out';
   align-items: center;
   column-gap: var(--space-4);

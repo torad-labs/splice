@@ -2,7 +2,7 @@
 .myx-chat { display: grid; margin: 0; padding: 0; list-style: none; }
 .myx-chat-row {
   display: grid;
-  grid-template-columns: 3.5rem minmax(0, 1fr);
+  grid-template-columns: calc(4.375 * var(--u)) minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--space-4);
   row-gap: var(--space-2);

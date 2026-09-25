@@ -4,18 +4,18 @@
 .myx-usage { display: grid; gap: var(--space-7); }
 .myx-usage .myx-ph { margin-block-end: 0; }
 .myx-usage .myx-sec + .myx-sec { margin-block-start: 0; }
-.myx-usage .myx-stats { margin-block-end: 0; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.myx-usage .myx-stats { margin-block-end: 0; grid-template-columns: repeat(auto-fit, minmax(calc(14.5 * var(--u)), 1fr)); }
 
 /* a figure's last day, hour by hour, at the end of its label's line */
 .myx-usage-trend { display: inline-flex; align-items: center; gap: var(--space-3); }
-.myx-usage-trend .myx-spark { width: 4.5rem; height: 1.25rem; }
+.myx-usage-trend .myx-spark { width: calc(4.5 * var(--u)); height: calc(1.5625 * var(--u)); }
 .myx-usage-trend-note { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-subtle); }
 .myx-usage .myx-stat-sub { display: flex; align-items: center; gap: var(--space-1); }
 
 /* ---------- plan cards ---------- */
 .myx-plans {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(calc(27.5 * var(--u)), 1fr));
   gap: var(--space-4);
 }
 .myx-plan {
@@ -74,13 +74,13 @@
 /* ---------- the opened head ---------- */
 .myx-usage-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  grid-template-columns: minmax(0, 1fr) minmax(calc(20 * var(--u)), calc(27.5 * var(--u)));
   gap: var(--space-4);
   align-items: start;
 }
 .myx-usage-charts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(calc(22.5 * var(--u)), 1fr));
   gap: var(--space-4);
 }
 .myx-usage-read {
@@ -94,11 +94,20 @@
 
 .myx-usage-panels {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(calc(30 * var(--u)), 1fr));
   gap: var(--space-4);
 }
 
 @media (max-width: 1100px) {
   .myx-usage-detail-grid { grid-template-columns: minmax(0, 1fr); }
   .myx-plan-windows { gap: var(--space-4); }
+}
+
+/* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
+   Past 3000 the sections pair up, plan windows beside the totals and the heads beside the opened
+   head, so no table row runs the width of a 3840 panel. */
+@media (min-width: 3000px) {
+  .myx-usage { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .myx-usage > .myx-ph,
+  .myx-usage > .myx-usage-panels { grid-column: 1 / -1; }
 }

@@ -29,24 +29,40 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* ---------- SCALE (both themes; `:root` matches under either) ---------- */
-  --space-0: 0;
-  --space-1: .125rem;  /*  2 */
-  --space-2: .25rem;   /*  4 */
-  --space-3: .5rem;    /*  8 */
-  --space-4: .75rem;   /* 12 */
-  --space-5: 1rem;     /* 16 */
-  --space-6: 1.5rem;   /* 24 */
-  --space-7: 2rem;     /* 32 */
-  --space-8: 3rem;     /* 48 */
+  /* ---------- SCALE (both themes; `:root` matches under either) ----------
+     Operator ruling 4 (2026-09-25): the 12/13px scale needed a magnifier, on panels 3840 wide at
+     desktop scale 1. Every size is BOUNDED-FLUID between two frames, a 1600px-wide window and a
+     3840px one, linear between and held outside, so the console reads like every other app on the
+     screen it is on: neither the 2.5x of a 40px root nor the 13px island. Type takes its own
+     clamp per step; every other size (space, rows, the sidebar, the marks, a column's width) is a
+     multiple of --u, so type and graphics grow together. All clamps are rem-based, so browser zoom
+     still scales everything. tests/scale.test.ts holds the floors at both frames and fails on any
+     raw rem size outside this file. */
+  --u: clamp(1rem, 0.86608rem + 0.13393vw, 1.1875rem);  /* 16 -> 19 */
 
-  --text-1: .75rem;    /* 12  captions, column labels, meta */
-  --text-2: .8125rem;  /* 13  table cells, controls */
-  --text-3: .875rem;   /* 14  body, nav */
-  --text-4: 1rem;      /* 16  section titles, emphasis */
-  --text-5: 1.25rem;   /* 20  sub-page titles */
-  --text-6: 1.5rem;    /* 24  page titles */
-  --text-7: 2rem;      /* 32  a number that is the point */
+  --space-0: 0;
+  --space-1: calc(.125 * var(--u));   /*  2 at 1600 */
+  --space-2: calc(.375 * var(--u));   /*  6 */
+  --space-3: calc(.625 * var(--u));   /* 10 */
+  --space-4: calc(.875 * var(--u));   /* 14 */
+  --space-5: calc(1.25 * var(--u));   /* 20 */
+  --space-6: calc(1.75 * var(--u));   /* 28 */
+  --space-7: calc(2.5 * var(--u));    /* 40 */
+  --space-8: calc(3.5 * var(--u));    /* 56 */
+
+  --text-1: clamp(0.875rem, 0.78572rem + 0.08929vw, 1rem);       /* 14 -> 16  captions, column labels, meta: the floor */
+  --text-2: clamp(1rem, 0.86608rem + 0.13393vw, 1.1875rem);       /* 16 -> 19  table cells, controls */
+  --text-3: clamp(1.0625rem, 0.88393rem + 0.17858vw, 1.3125rem);  /* 17 -> 21  body, nav */
+  --text-4: clamp(1.25rem, 1.07143rem + 0.17858vw, 1.5rem);    /* 20 -> 24  section titles, emphasis */
+  --text-5: clamp(1.5rem, 1.23215rem + 0.26786vw, 1.875rem);   /* 24 -> 30  sub-page titles */
+  --text-6: clamp(2rem, 1.64286rem + 0.35715vw, 2.5rem);      /* 32 -> 40  page titles */
+  --text-7: clamp(2.75rem, 1.85715rem + 0.89286vw, 4rem);      /* 44 -> 64  a number that is the point */
+
+  /* A board row's height and its column names' row, read by the kit's table as minimums. */
+  --row-board: calc(3.5 * var(--u));  /* 56 at 1600 */
+  --row-head: calc(3 * var(--u));     /* 48 */
+  /* A meter's bar: 9px at 1600, 10.7 at 3840. */
+  --meter-h: calc(.5625 * var(--u));
 
   --leading-tight: 1.25;
   --leading: 1.5;
@@ -66,7 +82,7 @@
   --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --sidebar-width: 14.5rem; /* 232 */
+  --sidebar-width: calc(17.5 * var(--u)); /* 280 at 1600 */
 
   /* ---------- GROUND ---------- */
   --bg: #0b0c0e;          /* the page */
@@ -78,8 +94,8 @@
 
   /* ---------- INK ---------- */
   --fg: #ededf0;          /* 16.8:1 on --bg */
-  --fg-muted: #a3a6ae;    /*  8.0:1 */
-  --fg-subtle: #878a93;   /*  5.7:1, and 4.6:1 on --bg-active */
+  --fg-muted: #bcbfc6;    /* 10.6:1; one step up from #a3a6ae (ruling 4: faint grey was half of it) */
+  --fg-subtle: #a3a6ae;   /*  8.0:1, and 6.5:1 on --bg-active */
 
   /* ---------- ACCENT: the ink itself ---------- */
   --accent: #ededf0;
@@ -132,8 +148,8 @@
   --line-strong: #d3d5db;
 
   --fg: #15161a;          /* 18.1:1 on --bg */
-  --fg-muted: #50535c;    /*  7.7:1 */
-  --fg-subtle: #61646d;   /*  5.9:1, and 5.0:1 on --bg-active */
+  --fg-muted: #3c3f47;    /* 10.5:1; one step up from #50535c */
+  --fg-subtle: #50535c;   /*  7.7:1, and 6.5:1 on --bg-active */
 
   --accent: #15161a;
   --accent-hover: #000000;

@@ -2,7 +2,7 @@
 .myx-feed { display: grid; margin: 0; padding: 0; list-style: none; }
 .myx-feed-row {
   display: grid;
-  grid-template-columns: 4.5rem minmax(6rem, 30%) minmax(0, 1fr);
+  grid-template-columns: calc(5.625 * var(--u)) minmax(calc(7.5 * var(--u)), 30%) minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--space-4);
   row-gap: var(--space-1);

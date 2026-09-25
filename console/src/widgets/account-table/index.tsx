@@ -3,7 +3,7 @@
 // disagree about the same account: a window is a meter with its share and its reset, a stale reading
 // says so, and an unreported window prints the absence and never a zero.
 import type { ReactNode } from 'react';
-import { exclusionText, nextRuleOf, slotWindows } from '@entities/account';
+import { exclusionText, nextRuleOf, NOT_REREAD, slotWindows } from '@entities/account';
 import type { AccountRow, AccountWindow } from '@entities/account';
 import { HeadMark } from '@entities/control-status';
 import { familyName } from '@entities/heads';
@@ -46,7 +46,7 @@ export function AccountStateBadge({ account, nowMs, quiet = false }: { account: 
 export function WindowCell({ window, slot, nowMs, label }: { window: AccountWindow | null; slot: string; nowMs: number; label: string }) {
   const figure = windowFigure(window, nowMs);
   if (figure.kind === 'none') return <>{ABSENT}</>;
-  if (figure.kind === 'stale') return <Badge tone="neutral" quiet>{S.stale}</Badge>;
+  if (figure.kind === 'stale') return <span className="myx-at-stale"><Badge tone="neutral" quiet>{NOT_REREAD}</Badge></span>;
   const name = window === null ? slot : windowName(window);
   return (
     <span className="myx-at-win">
@@ -83,7 +83,7 @@ export function accountColumns({ fields, grouped, nowMs, accounts, compact = fal
   compact?: boolean;
 }): Column<AccountRow>[] {
   const wanted = new Set(fields);
-  const windowWidth = compact ? '7.5rem' : '18%';
+  const windowWidth = compact ? 'calc(9 * var(--u))' : '20%';
   const columns: (Column<AccountRow> | null)[] = [
     {
       key: 'account',
@@ -104,8 +104,8 @@ export function accountColumns({ fields, grouped, nowMs, accounts, compact = fal
       : null,
     wanted.has('plan') ? { key: 'plan', label: S.plan, width: '8%', cell: (account) => account.plan ?? ABSENT } : null,
     compact ? null : { key: 'state', label: S.state, width: '11%', cell: (account) => <AccountStateBadge account={account} nowMs={nowMs} quiet /> },
-    { key: 'short', label: S.short, width: windowWidth, cell: (account) => <WindowCell window={slotWindows(account).short} slot={S.short} nowMs={nowMs} label={accountName(account)} /> },
-    { key: 'long', label: S.long, width: windowWidth, cell: (account) => <WindowCell window={slotWindows(account).long} slot={S.long} nowMs={nowMs} label={accountName(account)} /> },
+    { key: 'short', label: S.short, width: windowWidth, wrap: true, cell: (account) => <WindowCell window={slotWindows(account).short} slot={S.short} nowMs={nowMs} label={accountName(account)} /> },
+    { key: 'long', label: S.long, width: windowWidth, wrap: true, cell: (account) => <WindowCell window={slotWindows(account).long} slot={S.long} nowMs={nowMs} label={accountName(account)} /> },
     wanted.has('heads') && grouped !== 'head'
       ? {
         key: 'heads',

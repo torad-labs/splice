@@ -18,7 +18,7 @@
   gap: var(--space-5);
   align-items: start;
 }
-.myx-sx-board-open { grid-template-columns: minmax(0, 1fr) minmax(24rem, 34%); }
+.myx-sx-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(30 * var(--u)), 34%); }
 
 .myx-sx-list { display: grid; gap: var(--space-4); min-width: 0; }
 
@@ -26,13 +26,13 @@
 .myx-sx-table .myx-hm-name { color: var(--fg); }
 
 /* the tally: availability as one bar with its figures under it */
-.myx-sx-tally .myx-stack-wrap { flex: 0 1 28rem; }
+.myx-sx-tally .myx-stack-wrap { flex: 0 1 calc(28 * var(--u)); }
 
 /* the headless group names itself and carries its reason as a tip */
 .myx-sx-headless { display: inline-flex; align-items: center; gap: var(--space-2); }
 
 /* a group's way out: an arrow to the head, project or team page */
-.myx-sx-go { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
+.myx-sx-go { display: inline-grid; place-items: center; width: calc(1.875 * var(--u)); height: calc(1.875 * var(--u)); border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
 .myx-sx-go:hover { color: var(--fg); background: var(--bg-hover); }
 
 /* the hand-off: an arrow in the peer's head colour, then the peer's name; it opens the peer */
@@ -61,4 +61,20 @@ button.myx-sx-peer:hover { color: var(--fg); }
 
 @media (max-width: 1100px) {
   .myx-sx-board-open { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* the fleet's hand-offs follow the board */
+.myx-sx > .myx-sx-handoffs { margin-block-start: var(--space-7); }
+
+/* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
+   Past 3000 the board keeps a readable measure and the fleet's hand-offs take the rest; an opened
+   session takes both columns, since its panel sits beside the list. */
+@media (min-width: 3000px) {
+  .myx-sx { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); column-gap: var(--space-7); align-items: start; }
+  .myx-sx > .myx-ph,
+  .myx-sx > .myx-sx-tally { grid-column: 1 / -1; }
+  .myx-sx > .myx-sx-board { grid-column: 1; }
+  .myx-sx > .myx-sx-handoffs { grid-column: 2; margin-block-start: 0; }
+  .myx-sx:has(> .myx-sx-board-open) > .myx-sx-board,
+  .myx-sx:has(> .myx-sx-board-open) > .myx-sx-handoffs { grid-column: 1 / -1; }
 }

@@ -214,11 +214,11 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
 
   type HeadRow = (typeof perHead)[number];
   const columns: Column<HeadRow>[] = [
-    { key: 'head', label: S.head, width: '16%', primary: true, cell: ({ head }) => <HeadMark head={head.key}>{head.label}</HeadMark> },
+    { key: 'head', label: S.head, width: '15%', primary: true, cell: ({ head }) => <HeadMark head={head.key}>{head.label}</HeadMark> },
     {
       key: 'share',
       label: S.share,
-      width: '14%',
+      width: '13%',
       cell: ({ totals }) => {
         const share = allTokens === 0 ? 0 : (totals.inTokens + totals.outTokens) / allTokens;
         return (
@@ -232,20 +232,20 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
     {
       key: 'trend',
       label: S.trend,
-      width: '12%',
+      width: '13%',
       cell: ({ head }) => (
         <Sparkline values={perHour([head], TREND_HOURS, now, (_, totals) => totals.turns)} label={`${head.label} ${S.trend}, ${U.lastDay}`} mark="hue" />
       ),
     },
     { key: 'turns', label: S.turns, width: '7%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.turns) },
-    { key: 'in', label: S.inTokens, width: '9%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.inTokens) },
-    { key: 'out', label: S.outTokens, width: '9%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.outTokens) },
-    { key: 'spent', label: S.spent, width: '9%', align: 'end', mono: true, cell: ({ head }) => fmtTokens(burn(head, now).spent) },
-    { key: 'limit', label: S.ceiling, width: '8%', align: 'end', mono: true, cell: ({ head }) => (head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)) },
+    { key: 'in', label: S.inTokens, width: '8.5%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.inTokens) },
+    { key: 'out', label: S.outTokens, width: '8%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.outTokens) },
+    { key: 'spent', label: S.spent, width: '9.5%', align: 'end', mono: true, cell: ({ head }) => fmtTokens(burn(head, now).spent) },
+    { key: 'limit', label: S.ceiling, width: '6.5%', align: 'end', mono: true, cell: ({ head }) => (head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)) },
     {
       key: 'runs-out',
       label: S.exhaustion,
-      width: '9%',
+      width: '9.5%',
       align: 'end',
       mono: true,
       cell: ({ head }) => {
@@ -253,7 +253,7 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
         return hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent);
       },
     },
-    { key: 'limited', label: S.limited, width: '7%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.rateLimited) },
+    { key: 'limited', label: S.limited, width: '10%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.rateLimited) },
   ];
 
   return (

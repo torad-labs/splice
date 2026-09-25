@@ -6,7 +6,7 @@
 .myx-tw-lanes { display: grid; gap: var(--space-3); }
 .myx-tw-lane {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 1fr) 4rem;
+  grid-template-columns: calc(9.375 * var(--u)) minmax(0, 1fr) calc(5 * var(--u));
   align-items: center;
   column-gap: var(--space-4);
 }

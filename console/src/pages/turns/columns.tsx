@@ -82,13 +82,13 @@ const figure = (value: number | undefined, format: (n: number) => string): strin
  *  waterfall shares one axis; `nameOf` prints a head by the label the daemon gives it. */
 export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf: (key: string) => string): Column<TurnRow>[] {
   const all: Record<LandedKey, Column<TurnRow>> = {
-    time: { key: 'time', label: S.time, width: '7%', mono: true, cell: (row) => atText(row.ts) ?? S.absent },
-    head: { key: 'head', label: S.head, width: '12%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
+    time: { key: 'time', label: S.time, width: '10%', mono: true, cell: (row) => atText(row.ts) ?? S.absent },
+    head: { key: 'head', label: S.head, width: '14%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
     model: { key: 'model', label: S.model, width: '12%', primary: true, cell: (row) => row.model ?? S.absent },
     outcome: {
       key: 'outcome',
       label: S.outcome,
-      width: '13%',
+      width: '11%',
       cell: (row) => (
         <span className="myx-tn-badges">
           {badgesOf(row).map((badge) => <Badge key={badge.key} tone={badge.tone} quiet>{badge.text}</Badge>)}
@@ -98,7 +98,7 @@ export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf:
     timing: {
       key: 'timing',
       label: S.timing,
-      width: '24%',
+      width: '19.5%',
       cell: (row) => {
         const length = lengthOf(row);
         return (
@@ -113,18 +113,18 @@ export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf:
         );
       },
     },
-    firstByte: { key: 'firstByte', label: S.firstByte, width: '8%', align: 'end', mono: true, cell: (row) => figure(row.first_byte, fmtMs) },
+    firstByte: { key: 'firstByte', label: S.firstByte, width: '8.5%', align: 'end', mono: true, cell: (row) => figure(row.first_byte, fmtMs) },
     cache: {
       key: 'cache',
       label: S.cacheHit,
-      width: '11%',
+      width: '10.5%',
       cell: (row) => {
         const hit = cacheHitOf(row);
         return hit === null ? S.absent : <Meter tone="neutral" value={hit} label={`${S.cacheHit} ${fmtShare(hit)}`} figure={fmtShare(hit)} />;
       },
     },
-    tokensIn: { key: 'tokensIn', label: S.input, width: '7%', align: 'end', mono: true, cell: (row) => figure(row.in_tokens, fmtTokens) },
-    tokensOut: { key: 'tokensOut', label: S.output, width: '6%', align: 'end', mono: true, cell: (row) => figure(row.out_tokens, fmtTokens) },
+    tokensIn: { key: 'tokensIn', label: S.input, width: '7.5%', align: 'end', mono: true, cell: (row) => figure(row.in_tokens, fmtTokens) },
+    tokensOut: { key: 'tokensOut', label: S.output, width: '7%', align: 'end', mono: true, cell: (row) => figure(row.out_tokens, fmtTokens) },
   };
   return keys.map((key) => all[key]);
 }
@@ -254,14 +254,14 @@ export function summaryColumns(heads: readonly PerfSummaryHead[]): Column<PerfSu
   const lost = heads.some((head) => (head.io_drops_in_window ?? 0) > 0);
   const refreshed = heads.some((head) => (head.refreshes ?? 0) > 0);
   return [
-    { key: 'head', label: S.head, width: '15%', cell: (head) => <HeadMark head={head.key}>{head.label}</HeadMark> },
-    { key: 'turns', label: S.turns, width: '7%', align: 'end', mono: true, cell: (head) => String(head.count) },
-    { key: 'first', label: S.firstByte, width: '22%', cell: (head) => <Spread stats={head.time_before_first_byte_ms} scale={firstScale} label={S.firstByte} /> },
-    { key: 'total', label: S.turnTime, width: '22%', cell: (head) => <Spread stats={head.total_ms} scale={totalScale} label={S.turnTime} /> },
+    { key: 'head', label: S.head, width: '14%', cell: (head) => <HeadMark head={head.key}>{head.label}</HeadMark> },
+    { key: 'turns', label: S.turns, width: '6%', align: 'end', mono: true, cell: (head) => String(head.count) },
+    { key: 'first', label: S.firstByte, width: '20%', cell: (head) => <Spread stats={head.time_before_first_byte_ms} scale={firstScale} label={S.firstByte} /> },
+    { key: 'total', label: S.turnTime, width: '20%', cell: (head) => <Spread stats={head.total_ms} scale={totalScale} label={S.turnTime} /> },
     {
       key: 'failed',
       label: S.failed,
-      width: '7%',
+      width: '6%',
       align: 'end',
       mono: true,
       cell: (head) => (head.failure_share === undefined ? S.absent : (
@@ -271,13 +271,13 @@ export function summaryColumns(heads: readonly PerfSummaryHead[]): Column<PerfSu
     {
       key: 'cache',
       label: S.cacheHit,
-      width: '12%',
+      width: '11%',
       cell: (head) => (head.cache_hit_ratio == null ? S.absent : (
         <Meter tone="neutral" value={head.cache_hit_ratio} label={`${S.cacheHit} ${fmtShare(head.cache_hit_ratio)}`} figure={fmtShare(head.cache_hit_ratio)} />
       )),
     },
-    { key: 'peak', label: S.peak, width: '8%', align: 'end', mono: true, cell: (head) => figure(head.peak_inflight, String) },
-    { key: 'retries', label: S.retries, width: '7%', align: 'end', mono: true, cell: (head) => figure(head.retries, String) },
+    { key: 'peak', label: S.peak, width: '13%', align: 'end', mono: true, cell: (head) => figure(head.peak_inflight, String) },
+    { key: 'retries', label: S.retries, width: '10%', align: 'end', mono: true, cell: (head) => figure(head.retries, String) },
     ...(refreshed
       ? [{ key: 'refreshes', label: S.refreshes, width: '8%', align: 'end' as const, mono: true, cell: (head: PerfSummaryHead) => figure(head.refreshes, String) }]
       : []),

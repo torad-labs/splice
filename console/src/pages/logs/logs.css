@@ -6,7 +6,7 @@
 
 .myx-lg-body {
   display: grid;
-  grid-template-columns: 15rem minmax(0, 1fr);
+  grid-template-columns: calc(15 * var(--u)) minmax(0, 1fr);
   gap: var(--space-6);
   align-items: start;
 }

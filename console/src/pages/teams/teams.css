@@ -9,7 +9,7 @@
 /* who the team is, beside its figures */
 .myx-tm-head {
   display: grid;
-  grid-template-columns: minmax(22rem, 1fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(calc(27.5 * var(--u)), 1fr) minmax(0, 1.6fr);
   gap: var(--space-7);
   align-items: start;
 }

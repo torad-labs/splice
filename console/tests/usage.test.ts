@@ -15,6 +15,7 @@ import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windo
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
 import { fmtUsd, perHour, ratesFor, sortedHeads } from '../src/pages/usage/model';
+import { NOT_REREAD } from '../src/entities/account';
 import type { AccountRow } from '../src/entities/account';
 import { PlanBay, planRows, readText, windowCells, windowTone } from '../src/pages/usage/plan';
 import type { UsagePayload } from '../src/shared/api';
@@ -258,6 +259,11 @@ describe('plan limits', () => {
     expect(card).not.toContain('aria-valuenow');
     expect([...card.matchAll(/class="myx-meter myx-meter-neutral" aria-hidden="true"/g)]).toHaveLength(2);
     expect(card).toContain('myx-plan-neutral');
+  });
+
+  test('a reset window says the same words on the plan card as on the accounts table', () => {
+    expect(windowCells(planRows(usage, [], NOW).find((row) => row.key === 'claude-muse')?.windows[1], NOW).resets).toBe(NOT_REREAD);
+    expect(NOT_REREAD).toBe('Reset, not re-read');
   });
 
   test('a live window prints its figure and how long until it resets', () => {

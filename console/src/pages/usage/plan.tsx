@@ -18,7 +18,7 @@
 // reset 3.7 days earlier, live /api/usage 2026-09-24), and the new figure is unknown until it runs.
 import { TimerIcon } from '@phosphor-icons/react/dist/csr/Timer';
 import { HeadMark } from '@entities/control-status';
-import { isStale, slotWindows, windowLengthText } from '@entities/account';
+import { isStale, NOT_REREAD, slotWindows, windowLengthText } from '@entities/account';
 import type { AccountRow, AccountWindow } from '@entities/account';
 import { planLevel, planWindows, resetsInText } from '@entities/usage';
 import type { PlanWindow } from '@entities/usage';
@@ -108,7 +108,7 @@ export function windowTone(pct: number, warnPct: number): Tone {
 /** One window's two cells: how much is used and when it resets. */
 export function windowCells(window: PlanWindow | undefined, nowMs: number): { used: string; resets: string } {
   if (window === undefined) return { used: ABSENT, resets: ABSENT };
-  if (window.stale) return { used: ABSENT, resets: S.notReread };
+  if (window.stale) return { used: ABSENT, resets: NOT_REREAD };
   return { used: `${window.pct}%`, resets: resetsInText(window.resetsAt, nowMs) ?? ABSENT };
 }
 

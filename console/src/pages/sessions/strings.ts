@@ -22,6 +22,9 @@ export const S = {
   conversation: 'Conversation',
   files: 'Files',
   handoffs: 'Hand-offs',
+  /** The fleet's hand-offs: the two ends of each message. */
+  from: 'From',
+  to: 'To',
   /** The board's columns, in the order the views declare them. */
   name: 'Name',
   head: 'Head',

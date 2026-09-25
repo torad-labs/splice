@@ -130,8 +130,8 @@
 }
 .myx-edge-mark {
   flex: none;
-  width: .375rem;
-  height: .375rem;
+  width: calc(.5 * var(--u));
+  height: calc(.5 * var(--u));
   border-radius: var(--radius-full);
   background: var(--fg-subtle);
 }

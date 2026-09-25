@@ -22,6 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 public const val DEFAULT_MAX_WORKERS: Int = 4
 public const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
 
+// why: a worker's start is a JVM boot and a JavaScript engine's set-up, which a loaded machine
+// stretches to seconds (V4-226: a cell's whole first exchange took 1.1-1.3 s on an idle CI runner and
+// 4.9-5.2 s under a parallel build); the bound only keeps a worker that never comes up from holding its
+// slot, and the advance deadline no longer pays for the start
+public const val DEFAULT_WORKER_START_TIMEOUT_MS: Long = 30_000
+
 // why: one bounded GraalJS cell fits in 128MB and the smaller heap keeps each child's spawn and GC
 // cheap
 public const val DEFAULT_HEAP_MB: Int = 128
@@ -49,6 +55,7 @@ public class JvmCodeModeRuntime(
     private val javaExecutable: String = Path.of(System.getProperty("java.home"), "bin", "java").toString(),
     private val workerClasspath: String = System.getProperty("java.class.path"),
     private val spawn: WorkerSpawn = WorkerSpawn(ProcessBuilder::start),
+    private val workerStartTimeoutMs: Long = DEFAULT_WORKER_START_TIMEOUT_MS,
 ) : CodeModeRuntime {
     private val closed: AtomicBoolean = AtomicBoolean()
     private val permits: Semaphore = Semaphore(maxWorkers)
@@ -58,6 +65,7 @@ public class JvmCodeModeRuntime(
     init {
         require(maxWorkers > 0) { "Code-mode worker capacity must be positive" }
         require(advanceTimeoutMs > 0) { "Code-mode advance timeout must be positive" }
+        require(workerStartTimeoutMs > 0) { "Code-mode worker start timeout must be positive" }
         require(heapMb > 0) { "Code-mode worker heap must be positive" }
         require(workerClasspath.isNotBlank()) { "Code-mode worker classpath is required" }
     }
@@ -71,6 +79,7 @@ public class JvmCodeModeRuntime(
         val permit = WorkerPermit(permits)
         try {
             channel = startWorker(permit)
+            channel.awaitReady(workerStartTimeoutMs)
             val initial = CodeModeFrames.parseReply(channel.exchange(start), tools, 1)
             val cell = JvmCodeModeCell(channel, initial, tools, ReleaseCodeModeCell(::releaseCell))
             cells.add(cell)

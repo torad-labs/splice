@@ -9,7 +9,7 @@
   justify-content: space-between;
   gap: var(--space-5);
 }
-.myx-ph-titles { min-width: 0; }
+.myx-ph-titles { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .myx-ph-title {
   margin: 0;
   font-size: var(--text-6);
@@ -17,12 +17,6 @@
   line-height: var(--leading-tight);
   letter-spacing: -0.015em;
   color: var(--fg);
-}
-.myx-ph-desc {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-3);
-  color: var(--fg-muted);
-  max-width: 72ch;
 }
 .myx-ph-actions { display: flex; align-items: center; gap: var(--space-3); flex: none; }
 .myx-ph-bar {
@@ -67,12 +61,6 @@
   font-variant-numeric: tabular-nums;
 }
 .myx-sec-actions { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-2); }
-.myx-sec-desc {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-2);
-  color: var(--fg-muted);
-  max-width: 80ch;
-}
 
 /* ---------- data table ---------- */
 .myx-dt-wrap {
@@ -298,6 +286,16 @@
 }
 .myx-stat-unit { margin-inline-start: var(--space-2); font-size: var(--text-4); font-weight: 500; color: var(--fg-muted); letter-spacing: 0; }
 .myx-stat-sub { margin: var(--space-2) 0 0; font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-stat-chart { margin-block-start: var(--space-4); }
+/* a ring beside the figure: label, figure and note stack on the left, the shape sits on the right */
+.myx-stat-figured {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-content: start;
+}
+.myx-stat-figured > :not(.myx-stat-figure) { grid-column: 1; }
+.myx-stat-figure { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
 .myx-stat-ok .myx-stat-value { color: var(--ok); }
 .myx-stat-warn .myx-stat-value { color: var(--warn); }
 .myx-stat-danger .myx-stat-value { color: var(--danger); }
@@ -308,8 +306,19 @@
   width: 100%;
   height: .375rem;
   border-radius: var(--radius-full);
-  background: var(--bg-active);
+  background: var(--track);
   overflow: hidden;
+}
+.myx-meter-row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.myx-meter-row .myx-meter { flex: 1 1 auto; min-width: 2rem; }
+.myx-meter-figure {
+  flex: none;
+  min-width: 3.5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--fg-muted);
 }
 .myx-meter-fill { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .myx-meter-ok .myx-meter-fill { background: var(--ok); }
@@ -388,8 +397,9 @@
   border-radius: var(--radius-3);
   font-size: var(--text-3);
 }
+.myx-empt-line { display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start; }
 .myx-empt-text { font-weight: 500; color: var(--fg); }
-.myx-empt-source { font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-empt-action { justify-self: start; margin-block-start: var(--space-2); }
 
 /* ---------- reveal (shared/ui/reveal.tsx) ---------- */
 .myx-reveal { display: grid; gap: var(--space-3); justify-items: start; }

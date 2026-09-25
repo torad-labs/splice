@@ -3,8 +3,8 @@
 // basis of every field that is not measured, and the peer. Pure, so it is directly testable.
 import type { Basis, Tone } from '@shared/ui';
 import { timeAgo } from '@shared/lib';
-import { sessionLabel, UNKNOWN_HEAD } from '@entities/session';
-import type { SessionRow } from '@entities/session';
+import { peerLabel, sessionLabel, UNKNOWN_HEAD } from '@entities/session';
+import type { SessionEdge, SessionRow } from '@entities/session';
 import { S } from './strings';
 
 export interface Field {
@@ -28,10 +28,43 @@ export const FIELD_LABEL: Readonly<Record<string, string>> = {
   name: S.name,
   head: S.head,
   project: S.project,
+  life: S.life,
   started: S.started,
   seen: S.seen,
   peer: S.peer,
 };
+
+/** A view's fields as the board draws them. `started` and `seen` were two timestamp columns; they
+ *  are one lifetime bar now, so a view saved with either (or both) draws the bar once, where the
+ *  first of them stood. */
+export function boardFields(fields: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const field of fields) {
+    const key = field === 'started' || field === 'seen' ? 'life' : field;
+    if (!out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
+/** The other end of a session's newest hand-off: its label, its registered row when it has one (for
+ *  its head's colour and to open it), which way the message went, and when. */
+export interface Peer {
+  label: string;
+  row: SessionRow | null;
+  direction: SessionEdge['direction'];
+  at: number;
+}
+
+export function peerOf(rows: readonly SessionRow[], edges: readonly SessionEdge[]): Peer | null {
+  let newest: SessionEdge | null = null;
+  for (const edge of edges) if (newest === null || edge.at > newest.at) newest = edge;
+  if (newest === null) return null;
+  const edge = newest;
+  const row = edge.direction === 'out'
+    ? rows.find((candidate) => candidate.address === edge.to) ?? null
+    : rows.find((candidate) => candidate.session_id === edge.from) ?? null;
+  return { label: peerLabel(rows, edge), row, direction: edge.direction, at: edge.at };
+}
 
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
  *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the

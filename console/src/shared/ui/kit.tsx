@@ -1,19 +1,27 @@
 // The console's building blocks: a page head, a section, a data table, a status badge, a stat, a
 // meter, a detail panel and a key/value list (docs/design/DESIGN.md section 9). Flat grounds and one
 // hairline; the page carries its hierarchy in type size and weight, not in boxes. Every label prop
-// takes a word from the caller's strings.ts and prints it as written: the voice is lowercase.
+// takes a word from the caller's strings.ts and prints it as written, in sentence case. There is no
+// description slot: an explanation is an `info` tip beside the title, shown on hover and focus.
 import type { CSSProperties, ReactNode } from 'react';
 import { cx } from '../lib';
+import { InfoTip } from './charts';
 import './kit.css';
+
+/** The help a title carries on hover and focus: one plain sentence, and the name of its mark. */
+export interface Info {
+  text: string;
+  label: string;
+}
 
 /** A status colour. It never travels alone: a badge always prints its word. */
 export type Tone = 'ok' | 'warn' | 'danger' | 'neutral' | 'accent';
 
-/** The head of a page: its title, one line about it, the actions on the right, and the view tabs
+/** The head of a page: its title with its info tip, the actions on the right, and the view tabs
  *  (or any other control row) under it. */
-export function PageHeader({ title, description, actions, children }: {
+export function PageHeader({ title, info, actions, children }: {
   title: string;
-  description?: ReactNode;
+  info?: Info | undefined;
   actions?: ReactNode;
   children?: ReactNode;
 }) {
@@ -22,7 +30,7 @@ export function PageHeader({ title, description, actions, children }: {
       <div className="myx-ph-top">
         <div className="myx-ph-titles">
           <h1 className="myx-ph-title">{title}</h1>
-          {description === undefined ? null : <p className="myx-ph-desc">{description}</p>}
+          {info === undefined ? null : <InfoTip text={info.text} label={info.label} side="bottom" />}
         </div>
         {actions === undefined ? null : <div className="myx-ph-actions">{actions}</div>}
       </div>
@@ -32,12 +40,13 @@ export function PageHeader({ title, description, actions, children }: {
 }
 
 /** A titled group of content. No box: a title row, then whatever it holds. `meta` is a quiet word
- *  beside the title (a group's kind, `head` or `project`); `count` prints after it. */
-export function Section({ title, meta, count, description, actions, children, className }: {
+ *  beside the title (a group's kind, `head` or `project`); `count` prints after it; `info` is its
+ *  tip. */
+export function Section({ title, meta, count, info, actions, children, className }: {
   title: ReactNode;
   meta?: string;
   count?: number;
-  description?: ReactNode;
+  info?: Info | undefined;
   actions?: ReactNode;
   children?: ReactNode;
   className?: string;
@@ -50,9 +59,9 @@ export function Section({ title, meta, count, description, actions, children, cl
           <span className="myx-sec-name">{title}</span>
           {count === undefined ? null : <span className="myx-sec-count">{count}</span>}
         </h2>
+        {info === undefined ? null : <InfoTip text={info.text} label={info.label} />}
         {actions === undefined ? null : <div className="myx-sec-actions">{actions}</div>}
       </div>
-      {description === undefined ? null : <p className="myx-sec-desc">{description}</p>}
       {children}
     </section>
   );
@@ -241,20 +250,26 @@ export function Badge({ tone, children, quiet = false }: { tone: Tone; children:
 }
 
 /** A number that is the point of its tile: a small label over a large figure, and one line under. */
-export function Stat({ label, value, unit, sub, tone }: {
+export function Stat({ label, value, unit, sub, tone, chart, figure }: {
   label: string;
   value: ReactNode;
   unit?: string;
   sub?: ReactNode;
   tone?: Tone;
+  /** The figure's shape under it, full width: a split bar, a sparkline. */
+  chart?: ReactNode;
+  /** A shape beside the figure, such as a ring. */
+  figure?: ReactNode;
 }) {
   return (
-    <div className={cx('myx-stat', tone !== undefined && `myx-stat-${tone}`)}>
+    <div className={cx('myx-stat', tone !== undefined && `myx-stat-${tone}`, figure !== undefined && 'myx-stat-figured')}>
       <p className="myx-stat-label">{label}</p>
       <p className="myx-stat-value">
         {value}
         {unit === undefined ? null : <span className="myx-stat-unit">{unit}</span>}
       </p>
+      {figure === undefined ? null : <div className="myx-stat-figure">{figure}</div>}
+      {chart === undefined ? null : <div className="myx-stat-chart">{chart}</div>}
       {sub === undefined ? null : <p className="myx-stat-sub">{sub}</p>}
     </div>
   );
@@ -266,9 +281,16 @@ export function StatRow({ children }: { children: ReactNode }) {
 }
 
 /** How full something is, 0 to 1. The figure is printed beside it by the caller. */
-export function Meter({ value, tone = 'accent', label }: { value: number; tone?: Tone; label: string }) {
+export function Meter({ value, tone = 'accent', label, figure }: {
+  value: number;
+  tone?: Tone;
+  label: string;
+  /** The figure the bar stands for, printed after it in tabular numerals, end-aligned so a column
+   *  of meters lines its figures up. */
+  figure?: ReactNode;
+}) {
   const share = Math.max(0, Math.min(1, value));
-  return (
+  const bar = (
     <span
       className={cx('myx-meter', `myx-meter-${tone}`)}
       role="meter"
@@ -278,6 +300,13 @@ export function Meter({ value, tone = 'accent', label }: { value: number; tone?:
       aria-valuenow={Math.round(share * 100)}
     >
       <span className="myx-meter-fill" style={{ width: `${share * 100}%` }} />
+    </span>
+  );
+  if (figure === undefined) return bar;
+  return (
+    <span className="myx-meter-row">
+      {bar}
+      <span className="myx-meter-figure">{figure}</span>
     </span>
   );
 }

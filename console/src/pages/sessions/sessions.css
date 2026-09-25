@@ -25,7 +25,33 @@
 /* The head column's name takes the row's full ink: it is the board's airline. */
 .myx-sx-table .myx-hm-name { color: var(--fg); }
 
-.myx-sx-note { margin: 0; max-width: 72ch; color: var(--fg-muted); }
+/* the tally: availability as one bar with its figures under it */
+.myx-sx-tally .myx-stack-wrap { flex: 0 1 28rem; }
+
+/* the headless group names itself and carries its reason as a tip */
+.myx-sx-headless { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* a group's way out: an arrow to the head, project or team page */
+.myx-sx-go { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
+.myx-sx-go:hover { color: var(--fg); background: var(--bg-hover); }
+
+/* the hand-off: an arrow in the peer's head colour, then the peer's name; it opens the peer */
+.myx-sx-peer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--fg-muted);
+  text-align: start;
+}
+button.myx-sx-peer { cursor: pointer; }
+button.myx-sx-peer:hover { color: var(--fg); }
+.myx-sx-peer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.myx-sx-arrow { flex: none; font-size: var(--text-4); color: var(--hue, var(--head-none)); }
 
 .myx-sx-board-open .myx-panel {
   position: sticky;

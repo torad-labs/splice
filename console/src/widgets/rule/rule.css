@@ -27,11 +27,21 @@
 
 .myx-rule-clocks { margin-inline-start: auto; }
 
+/* a glyph stands for a word the strip does not print: the limit, the countdown, the daemon's state */
+.myx-rule-glyph { flex: none; font-size: var(--text-4); color: var(--fg-subtle); }
+.myx-rule-state { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--fg); }
+.myx-rule-state svg { flex: none; font-size: var(--text-4); }
+.myx-rule-health-ok .myx-rule-state svg { color: var(--ok); }
+.myx-rule-health-warn .myx-rule-state svg { color: var(--warn); }
+.myx-rule-health-danger .myx-rule-state svg { color: var(--danger); }
+.myx-rule-health-neutral .myx-rule-state svg { color: var(--fg-subtle); }
+.myx-rule-meter { display: inline-flex; width: 4rem; }
+.myx-rule-reset { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono); color: var(--fg-muted); }
+
 .myx-rule-word { color: var(--fg-subtle); }
 .myx-rule-absent { color: var(--fg-subtle); }
 .myx-rule-account,
 .myx-rule-period { color: var(--fg-muted); }
-.myx-rule-reset { color: var(--fg-muted); }
 
 .myx-rule-figure {
   font-family: var(--font-mono);

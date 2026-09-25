@@ -13,7 +13,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headsReportingNone, nearestWindow } from '../src/entities/usage';
 import type { AuthPayload, UsagePayload } from '../src/shared/api';
-import { ConnectionCell, LINK_SILENT_MS, NoneCell, PendingRestartCell, WindowCell, healthOf } from '../src/widgets/rule';
+import { ConnectionCell, HealthCell, LINK_SILENT_MS, PendingRestartCell, WindowCell, healthOf, strandsOf } from '../src/widgets/rule';
+import type { HeadStatus } from '../src/shared/api';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -49,13 +50,13 @@ const auth: AuthPayload = {
  */
 function expectedWindowParts(payload: UsagePayload | null): string[] {
   const nearest = nearestWindow(payload, auth);
-  if (nearest === null) return ['no head reports a limit'];
+  if (nearest === null) return ['No plan limits'];
   return [
     nearest.head,
     nearest.window,
-    String(nearest.pct),
+    `${nearest.pct}%`,
     ...(nearest.account === null ? [] : [nearest.account]),
-    ...(nearest.reset === null ? [] : [`resets ${nearest.reset}`]),
+    ...(nearest.reset === null ? [] : [nearest.reset]),
   ];
 }
 
@@ -65,8 +66,8 @@ describe('the rule window cell', () => {
 
   test('prints the nearest window the entity derives, for a fleet where one head is ahead', () => {
     const out = render(h(WindowCell, { usage: crowded, auth }));
-    expect(out).toContain('closest limit');
-    expect(out).toContain('>used<');
+    expect(out).toContain('Closest plan limit'); // the glyph's name, and its tip
+    expect(out).toContain('role="meter"'); // the share has its shape as well as its figure
     for (const part of expectedWindowParts(crowded)) expect(out).toContain(part);
     expect(out).toContain('74'); // the highest percentage wins, not the first head
     expect(out).not.toContain('>41<');
@@ -81,20 +82,20 @@ describe('the rule window cell', () => {
   test('a fleet where nobody reports a window prints the absence, never a zero', () => {
     const out = render(h(WindowCell, { usage: quiet, auth }));
     for (const part of expectedWindowParts(quiet)) expect(out).toContain(part);
-    expect(out).toContain('no head reports a limit');
+    expect(out).toContain('No plan limits');
     expect(out).not.toContain('>0<');
   });
 
-  test('the none count agrees with the entity, and a route that has not answered prints nothing', () => {
-    expect(render(h(NoneCell, { usage: quiet }))).toContain(String(headsReportingNone(quiet)));
-    expect(render(h(NoneCell, { usage: null }))).toBe('');
+  test('the none count agrees with the entity and rides in the tip, and an unanswered route adds none', () => {
+    expect(render(h(WindowCell, { usage: quiet, auth }))).toContain(`Closest plan limit, ${headsReportingNone(quiet)} without limits`);
+    expect(render(h(WindowCell, { usage: null, auth }))).not.toContain('without limits');
   });
 });
 
 describe('the rule restart signal', () => {
   test('reads warn with the count of saved-but-unread knobs', () => {
     const out = render(h(PendingRestartCell, { pending: ['maxInflight', 'debug'] }));
-    expect(out).toContain('restart pending');
+    expect(out).toContain('Restart pending');
     expect(out).toContain('myx-badge-warn'); // the dot, and the word prints beside it
     expect(out).toContain('>2<');
   });
@@ -107,21 +108,21 @@ describe('the rule restart signal', () => {
 describe('the rule connection cell', () => {
   test('prints the state word beside its status dot, in all three states', () => {
     const live = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() }));
-    expect(live).toContain('>live<');
+    expect(live).toContain('>Live<');
     expect(live).toContain('myx-badge-ok');
 
     const reconnecting = render(h(ConnectionCell, { status: 'reconnecting', lastFrameAt: null }));
-    expect(reconnecting).toContain('>reconnecting<');
+    expect(reconnecting).toContain('>Reconnecting<');
     expect(reconnecting).toContain('myx-badge-warn');
 
     const off = render(h(ConnectionCell, { status: 'off', lastFrameAt: null }));
-    expect(off).toContain('>off<');
+    expect(off).toContain('>Offline<');
     expect(off).toContain('myx-badge-neutral');
   });
 
   test('a stream that has never delivered a frame says so, and never reads as an age', () => {
     const out = render(h(ConnectionCell, { status: 'live', lastFrameAt: null }));
-    expect(out).toContain('no events yet');
+    expect(out).toContain('No events yet');
     expect(out).not.toContain('ago');
   });
 
@@ -130,14 +131,15 @@ describe('the rule connection cell', () => {
     // stream read stale. The heartbeat is what says the link is alive.
     const now = 1_790_000_000_000;
     const quiet = render(h(ConnectionCell, { status: 'live', lastFrameAt: now - 120_000, lastBeatAt: now - 5_000, now }));
-    expect(quiet).not.toContain('>stale<');
-    expect(quiet).toContain('last event');
-    expect(quiet).toContain('2m ago');
+    expect(quiet).not.toContain('Link silent');
+    expect(quiet).toContain('>Live<');
+    expect(quiet).toContain('Last event 2m ago'); // the age is detail, in the tip
 
     const silent = render(h(ConnectionCell, { status: 'live', lastFrameAt: now - 120_000, lastBeatAt: now - LINK_SILENT_MS - 1, now }));
-    expect(silent).toContain('>stale<');
-    // The state word still says what the stream reports; the basis carries the doubt.
-    expect(silent).toContain('>live<');
+    // A socket still open past its heartbeat is a link in doubt: one state, warn, in words.
+    expect(silent).toContain('>Link silent<');
+    expect(silent).toContain('myx-badge-warn');
+    expect(silent).not.toContain('>Live<');
   });
 });
 
@@ -151,5 +153,34 @@ describe('health', () => {
   test('a locked console says the key is missing, not that the daemon is unreachable', () => {
     // the status read fails with a 401 while locked: the daemon answered, so red would be false
     expect(healthOf(true, false, true)).toBe('grey');
+  });
+});
+
+describe('the health cell', () => {
+  test('a fine daemon prints its name beside the check, a troubled one prints the trouble', () => {
+    expect(render(h(HealthCell, { health: 'green' }))).toContain('<span>Daemon</span>');
+    expect(render(h(HealthCell, { health: 'amber' }))).toContain('<span>Daemon degraded</span>');
+    expect(render(h(HealthCell, { health: 'red' }))).toContain('<span>Daemon unreachable</span>');
+  });
+});
+
+describe('the braid', () => {
+  const head = (key: string, running: boolean, inflight: number, released: number): HeadStatus => ({
+    key, label: `${key}-label`, name: key, port: 1, authKind: 'x', wantVersion: '', running, healthy: true,
+    version: null, versionMatch: null, mode: null, maxInflight: null, pids: [],
+    health: {} as HeadStatus['health'],
+    gate: { inflight, queued: 0, max: 'unlimited', acquired: 0, released, waited: 0, avg_wait_ms: 0, live: [], stream_idle_ms: 0 },
+  });
+
+  test('one strand per running head, as long as its turns in flight, in its registry hue', () => {
+    const strands = strandsOf([head('a', true, 2, 9), head('b', false, 0, 0), head('c', true, 0, 4)], (key) => (key === 'a' ? 1 : 3));
+    expect(strands).toEqual([
+      { key: 'a', name: 'a-label', hue: 'myx-hue-1', count: 2, landed: 9 },
+      { key: 'c', name: 'c-label', hue: 'myx-hue-3', count: 0, landed: 4 },
+    ]);
+  });
+
+  test('no heads read yet is no strands, never a strand at zero', () => {
+    expect(strandsOf(null, () => 0)).toEqual([]);
   });
 });

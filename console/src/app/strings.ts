@@ -1,12 +1,29 @@
-// Labels the shell prints itself: the sidebar's group names. Three words or fewer, lowercase, no
-// em-dash (the label wall globs this file).
+// Copy the shell prints itself: the sidebar's group names and every page's name. The copy gate
+// reads this file: every value is a label (three words or fewer, sentence case).
 export const S = {
   /** The session in flight: sessions, turns, teams, projects. */
-  inFlight: 'in flight',
+  inFlight: 'In flight',
   /** The head a turn goes to: fleet, models, compaction. */
-  routing: 'routing',
+  routing: 'Routing',
   /** The account window a turn spends: accounts, usage. */
-  plans: 'plans',
+  plans: 'Plans',
   /** The daemon under all of it: settings, mcp, logs, doctor. */
-  daemon: 'daemon',
+  daemon: 'Daemon',
+} as const;
+
+/** Every page's name, as the sidebar and the palette print it. The address stays the slug. */
+export const PAGE = {
+  sessions: 'Sessions',
+  turns: 'Turns',
+  teams: 'Teams',
+  projects: 'Projects',
+  fleet: 'Fleet',
+  models: 'Models',
+  compaction: 'Compaction',
+  accounts: 'Accounts',
+  usage: 'Usage',
+  settings: 'Settings',
+  mcp: 'MCP',
+  logs: 'Logs',
+  doctor: 'Doctor',
 } as const;

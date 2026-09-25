@@ -13,6 +13,9 @@ import { MoonIcon } from '@phosphor-icons/react/dist/csr/Moon';
 import { SunIcon } from '@phosphor-icons/react/dist/csr/Sun';
 import { cx } from '@shared/lib';
 import { S } from './strings';
+
+/** The product's name as its mark: a brand, set lowercase on purpose, so it is not copy. */
+const WORDMARK = 'splice';
 import './rail.css';
 
 const STEP: Record<string, number> = {
@@ -32,7 +35,7 @@ export function revealBy(box: { start: number; size: number }, item: { start: nu
 
 export interface RailGroup {
   label: string;
-  items: ReadonlyArray<{ address: string; icon: ReactNode }>;
+  items: ReadonlyArray<{ address: string; label: string; icon: ReactNode }>;
 }
 
 export function Rail({ active, groups, theme, onTheme, onJump }: {
@@ -70,7 +73,7 @@ export function Rail({ active, groups, theme, onTheme, onJump }: {
   return (
     <aside className="myx-side">
       <div className="myx-side-top">
-        <p className="myx-side-wordmark">{S.wordmark}</p>
+        <p className="myx-side-wordmark">{WORDMARK}</p>
         <button type="button" className="myx-side-jump" onClick={onJump}>
           <MagnifyingGlassIcon className="myx-side-icon" aria-hidden="true" />
           <span className="myx-side-jump-word">{S.jump}</span>
@@ -99,7 +102,7 @@ export function Rail({ active, groups, theme, onTheme, onJump }: {
                       onKeyDown={(event) => step(event, at)}
                     >
                       <span className="myx-side-icon" aria-hidden="true">{item.icon}</span>
-                      <span className="myx-side-word">{item.address}</span>
+                      <span className="myx-side-word">{item.label}</span>
                     </a>
                   </li>
                 );

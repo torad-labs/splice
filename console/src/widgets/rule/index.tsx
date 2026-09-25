@@ -14,8 +14,15 @@
 // payloads rather than from the stores (a static render sees a store's initial
 // state and never its current one).
 import { useEffect, useState } from 'react';
-import { HeadMark, startControlStatusPolling, useControlStatus } from '@entities/control-status';
-import { useHeads } from '@entities/heads';
+import type { ReactNode } from 'react';
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle';
+import { GaugeIcon } from '@phosphor-icons/react/dist/csr/Gauge';
+import { KeyIcon } from '@phosphor-icons/react/dist/csr/Key';
+import { TimerIcon } from '@phosphor-icons/react/dist/csr/Timer';
+import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle';
+import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle';
+import { HeadMark, hueClass, startControlStatusPolling, useControlStatus, useHues } from '@entities/control-status';
+import { startHeadsPolling, useHeads } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { headsReportingNone, nearestWindow, planLevel, startUsagePolling, useUsage } from '@entities/usage';
 import { useRestartPending } from '@entities/config';
@@ -24,10 +31,10 @@ import { connect, useEvents } from '@entities/events';
 import { wireLive } from './wire';
 import type { ConnectionStatus } from '@entities/events';
 import { timeAgo } from '@shared/lib';
-import { Badge } from '@shared/ui';
-import type { Tone } from '@shared/ui';
-import type { AuthPayload, UsagePayload } from '@shared/api';
-import { S } from './strings';
+import { Badge, Braid, Meter, Tip } from '@shared/ui';
+import type { Strand, Tone } from '@shared/ui';
+import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
+import { S, U } from './strings';
 import './rule.css';
 
 const pad = (value: number): string => String(value).padStart(2, '0');
@@ -61,6 +68,14 @@ export type HealthState = 'green' | 'amber' | 'red' | 'grey';
 /** The status colour each health state prints beside its word. */
 const HEALTH_TONE: Record<HealthState, Tone> = { green: 'ok', amber: 'warn', red: 'danger', grey: 'neutral' };
 
+/** A glyph per health state, so the state reads in greyscale as well as in colour. */
+const HEALTH_GLYPH: Record<HealthState, ReactNode> = {
+  green: <CheckCircleIcon weight="fill" aria-hidden="true" />,
+  amber: <WarningCircleIcon weight="fill" aria-hidden="true" />,
+  red: <XCircleIcon weight="fill" aria-hidden="true" />,
+  grey: <KeyIcon aria-hidden="true" />,
+};
+
 export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: boolean): HealthState {
   // A 401 is the daemon ANSWERING: without the key the console cannot say how the daemon is, and
   // the red "unreachable" it printed over the key gate was a claim the answer had just disproved.
@@ -69,24 +84,36 @@ export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: bo
   return anyHeadDown ? 'amber' : 'green';
 }
 
-/** The plan window nearest exhaustion, at its reported length. */
+/** The plan window nearest exhaustion: the head, the window, how full it is as a meter and a
+ *  figure, and when it resets. What the strip does not print (how many heads report no limit)
+ *  shows on hover and focus. */
 export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: AuthPayload | null }) {
   const nearest = nearestWindow(usage, auth);
+  const none = headsReportingNone(usage);
+  const tip = none === null || none === 0 ? S.limit : `${S.limit}, ${none} ${U.withoutLimit}`;
+  const glyph = <Tip text={tip} side="bottom"><GaugeIcon className="myx-rule-glyph" aria-label={S.limit} /></Tip>;
+  if (nearest === null) {
+    return (
+      <p className="myx-rule-cell myx-rule-window">
+        {glyph}
+        <span className="myx-rule-absent">{S.noLimit}</span>
+      </p>
+    );
+  }
+  const tone = pctTone(nearest.pct, usage?.warn_pct ?? 0);
   return (
     <p className="myx-rule-cell myx-rule-window">
-      <span className="myx-rule-word">{S.nearest}</span>
-      {nearest === null ? (
-        <span className="myx-rule-absent">no head reports a limit</span>
-      ) : (
-        <>
-          <HeadMark head={nearest.head} />
-          {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
-          <span className="myx-rule-period">{nearest.window}</span>
-          <span className={`myx-rule-figure myx-rule-pct-${pctTone(nearest.pct, usage?.warn_pct ?? 0)}`}>{nearest.pct}%</span>
-          <span className="myx-rule-word">{S.used}</span>
-          {nearest.reset !== null ? <span className="myx-rule-reset">resets {nearest.reset}</span> : null}
-        </>
-      )}
+      {glyph}
+      <HeadMark head={nearest.head} />
+      {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
+      <span className="myx-rule-period">{nearest.window}</span>
+      <span className="myx-rule-meter">
+        <Meter value={nearest.pct / 100} tone={tone === 'neutral' ? 'accent' : tone} label={`${nearest.window} ${nearest.pct}%`} />
+      </span>
+      <span className={`myx-rule-figure myx-rule-pct-${tone}`}>{nearest.pct}%</span>
+      {nearest.reset !== null ? (
+        <span className="myx-rule-reset"><TimerIcon className="myx-rule-glyph" aria-label={U.resets} />{nearest.reset}</span>
+      ) : null}
     </p>
   );
 }
@@ -119,37 +146,44 @@ export function ConnectionCell({ status, lastFrameAt, lastBeatAt = null, now = D
   lastBeatAt?: number | null;
   now?: number;
 }) {
-  const tone: Tone = status === 'live' ? 'ok' : status === 'reconnecting' ? 'warn' : 'neutral';
-  const word = status === 'live' ? S.live : status === 'reconnecting' ? S.reconnecting : S.off;
-  const silent = lastBeatAt !== null && now - lastBeatAt > LINK_SILENT_MS;
+  const silent = status === 'live' && lastBeatAt !== null && now - lastBeatAt > LINK_SILENT_MS;
+  const tone: Tone = silent ? 'warn' : status === 'live' ? 'ok' : status === 'reconnecting' ? 'warn' : 'neutral';
+  const word = silent ? S.silent : status === 'live' ? S.live : status === 'reconnecting' ? S.reconnecting : S.off;
+  // the age of the last event is detail, not state: it shows on hover and focus
+  const tip = lastFrameAt === null ? S.noEvents : `${S.lastEvent} ${timeAgo(lastFrameAt, now)}`;
   return (
     <p className="myx-rule-cell myx-rule-connection">
-      <Badge tone={tone} quiet>{word}</Badge>
-      {lastFrameAt === null ? (
-        <span className="myx-rule-absent">no events yet</span>
-      ) : (
-        <>
-          <span className="myx-rule-word">{S.lastEvent}</span>
-          <span className="myx-rule-figure">{timeAgo(lastFrameAt, now)}</span>
-          {silent ? <span className="myx-rule-word">{S.stale}</span> : null}
-        </>
-      )}
+      <Tip text={tip} side="bottom"><Badge tone={tone} quiet>{word}</Badge></Tip>
     </p>
   );
 }
 
-/** How many heads report no window at all. Null until the route answers. */
-export function NoneCell({ usage }: { usage: UsagePayload | null }) {
-  const none = headsReportingNone(usage);
-  // Nothing at all until the route answers: an empty cell would take a slot in the rule's grid and
-  // read as a readout that is present and blank, which is the one thing this bar never does.
-  if (none === null) return null;
+/** The daemon's health as a glyph and a word: the word is the daemon while it is fine, and the
+ *  state itself when it is not, so a problem reads without hovering. */
+export function HealthCell({ health }: { health: HealthState }) {
   return (
-    <p className="myx-rule-cell myx-rule-none">
-      <span className="myx-rule-figure">{none}</span>
-      <span className="myx-rule-word">{S.noneTail}</span>
+    <p className={`myx-rule-cell myx-rule-health myx-rule-health-${HEALTH_TONE[health]}`}>
+      <Tip text={S.health[health]} side="bottom">
+        <span className="myx-rule-state">
+          {HEALTH_GLYPH[health]}
+          <span>{health === 'green' ? S.daemon : S.health[health]}</span>
+        </span>
+      </Tip>
     </p>
   );
+}
+
+/** Every running head as a strand of its colour, as long as its turns in flight, pulsing when one
+ *  lands (the gate's `released` count moves). Registry order, so the strands keep their places. */
+export function strandsOf(heads: readonly HeadStatus[] | null, hueOfHead: (head: string) => number): Strand[] {
+  if (heads === null) return [];
+  return heads.filter((head) => head.running).map((head) => ({
+    key: head.key,
+    name: head.label,
+    hue: hueClass(hueOfHead(head.key)),
+    count: head.gate?.inflight ?? 0,
+    landed: head.gate?.released ?? 0,
+  }));
 }
 
 /**
@@ -180,14 +214,21 @@ export function Rule() {
   const pendingRestart = useRestartPending((state) => state.pending);
   const locked = useSession((state) => state.locked);
   const connection = useEvents((state) => state);
+  const hues = useHues();
   const { local, utc } = useClock();
 
   useEffect(() => {
     // The daemon's identity and registry are near-static, but the health cell is whether it
-    // answers, so the status read is polled with the two routes the readout needs: the rule is
-    // chrome and outlives every page it is drawn over.
-    const stops = [startControlStatusPolling(10_000), startUsagePolling(15_000), startAuthPolling(30_000)];
-    // The live stream is opened here because the rule is the chrome that outlives every page and
+    // answers, so the status read is polled with the routes the readout needs: the strip is
+    // chrome and outlives every page it is drawn over. The heads read feeds the braid: a turn
+    // ending arrives as an event (wire.ts), a turn starting only on the next read.
+    const stops = [
+      startControlStatusPolling(10_000),
+      startUsagePolling(15_000),
+      startAuthPolling(30_000),
+      startHeadsPolling(5_000),
+    ];
+    // The live stream is opened here because the strip is the chrome that outlives every page and
     // the surface that prints the connection; connect() is idempotent, so whoever else asks for it
     // gets the same one stream.
     connect();
@@ -202,18 +243,21 @@ export function Rule() {
 
   const anyHeadDown = heads !== null && heads.some((head) => !head.running || !head.healthy);
   const health = healthOf(status.error !== null, anyHeadDown, locked);
+  const strands = strandsOf(heads, hues);
 
   return (
     <header className="myx-rule">
+      {strands.length === 0 ? null : (
+        <div className="myx-rule-cell myx-rule-braid">
+          <Braid strands={strands} label={S.braid} unit={U.inFlight} />
+        </div>
+      )}
+
       <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} lastBeatAt={connection.lastBeatAt} />
 
-      <p className="myx-rule-cell myx-rule-health">
-        <Badge tone={HEALTH_TONE[health]} quiet>{S.health[health]}</Badge>
-      </p>
+      <HealthCell health={health} />
 
       <WindowCell usage={usage} auth={auth} />
-
-      <NoneCell usage={usage} />
 
       <PendingRestartCell pending={pendingRestart} />
 

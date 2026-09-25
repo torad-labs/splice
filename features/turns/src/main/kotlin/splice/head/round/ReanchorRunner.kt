@@ -84,7 +84,7 @@ internal class ReanchorRunner(
             // than claiming a partial that does not exist.
             val restarted =
                 if (cont.body == body) "restarting the round from scratch" else "continuing from partial output"
-            log("[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream — $restarted\n")
+            log("[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream; $restarted\n")
             // V4-116 (5): the continuation is SPENT here — right where the loop commits to another
             // POST and the counter that names it moves. Stamped at the same point as [attempt] on
             // purpose: a number that could disagree with the loop's own count is worse than no
@@ -116,7 +116,7 @@ internal class ReanchorRunner(
         val cutSalvage = continuation.toolCutSalvage(outcome, salvaged, acc) ?: return false
         absorbedFailures.forEach(signals.onRoundFailure::invoke)
         log(
-            "[$key] tool-cut salvage: stream cut after a COMPLETED tool_use — ending " +
+            "[$key] tool-cut salvage: stream cut after a COMPLETED tool_use; ending " +
                 "clean at tool_use so the client runs the call and continues\n",
         )
         finish(cutSalvage)

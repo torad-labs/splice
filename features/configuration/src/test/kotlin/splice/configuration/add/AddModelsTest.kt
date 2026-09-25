@@ -29,8 +29,10 @@ import splice.terminal.SttyResult
 import splice.terminal.TerminalMode
 import splice.topology.TopologyLoader
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 
 class AddModelsTest {
 
@@ -176,8 +178,35 @@ class AddModelsTest {
         assertTrue(addFirstRemaining(path), "add-model wrote nothing")
         val provider = requireNotNull(TopologyLoader.loadOrMaterialize(path).providers["openrouter"])
         val row = requireNotNull(provider.models.firstOrNull { it.id == LUNA }) { "emitted row never parsed back" }
-        assertEquals("GPT-5.6 Luna", row.label)
+        assertEquals("GPT-6 Luna", row.label)
         assertEquals(1_050_000L, row.contextWindow)
+    }
+
+    // ---- V4-220: the file is read again before the rename -----------------------------------
+
+    /** RED before V4-220: the verb read splice.toml before its prompts and renamed its composition over
+     *  whatever the file held after them, so an edit made while the picker was open was lost. */
+    @Test
+    fun `an edit made while the picker is open is kept and the add refuses`(@TempDir dir: Path) {
+        val path = seed(dir)
+        val edit = "\n# edited while add-model was open\n"
+        val keys = object : InputStream() {
+            private val picks = ByteArrayInputStream(byteArrayOf(SPACE, ENTER))
+            private var edited = false
+
+            override fun read(): Int {
+                if (!edited) Files.writeString(path, edit, StandardOpenOption.APPEND).also { edited = true }
+                return picks.read()
+            }
+        }
+        val verb = verb(selectTty = false, multiTty = true, multiInput = keys)
+
+        val refused = assertThrows(AddRefused::class.java) { verb.add(path) }
+
+        assertTrue(refused.message.orEmpty().contains("changed while add-model was open"), refused.message)
+        val after = Files.readString(path)
+        assertTrue(after.endsWith(edit), "the edit made during the prompt was overwritten")
+        assertFalse(LUNA in rosterOf(after), "the refused add still reached the roster")
     }
 
     /** The real starter with [edit] applied — the seed is always the shipped file plus one named
@@ -209,7 +238,7 @@ class AddModelsTest {
             .split("\n")
             .mapNotNull { Regex("id = \"([^\"]*)\"").find(it)?.groupValues?.get(1) }
 
-    /** The first id the starter's head roster does not already carry — `openai/gpt-5.6-luna`. */
+    /** The first id the starter's head roster does not already carry — `openai/gpt-6-luna`. */
     private fun addFirstRemaining(path: Path): Boolean = verb(
         selectTty = false,
         multiTty = true,
@@ -233,6 +262,7 @@ class AddModelsTest {
         selectTty: Boolean = false,
         multiTty: Boolean = false,
         roster: RosterEditor = RosterEditor(HeadModelArray()::withAdded),
+        multiInput: InputStream = ByteArrayInputStream(multiKeys),
     ): AddModelVerb = AddModelVerb(
         select = SelectPrompt(
             keys = KeyReader(ByteArrayInputStream(selectKeys)),
@@ -241,7 +271,7 @@ class AddModelsTest {
             hasConsole = { selectTty },
         ),
         multi = MultiSelectPrompt(
-            keys = KeyReader(ByteArrayInputStream(multiKeys)),
+            keys = KeyReader(multiInput),
             terminal = idle(multiTty),
             out = StringBuilder(),
             hasConsole = { multiTty },
@@ -263,7 +293,7 @@ private const val ESC: Byte = 27
 private const val SPACE: Byte = 32
 private const val ENTER: Byte = 13
 private const val SONNET = "anthropic/claude-sonnet-5"
-private const val LUNA = "openai/gpt-5.6-luna"
+private const val LUNA = "openai/gpt-6-luna"
 private const val ROSTER_OPEN = "models = ["
 private const val HEADER = "[heads.openrouter]"
 private const val PROVIDER_ROW = "[[providers.openrouter.models]]"

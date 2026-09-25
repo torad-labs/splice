@@ -2,13 +2,18 @@
 //
 // `/api/models` was `pending: M2-06` in the baseline and then `pending: V4-127` here. V4-127 serves
 // it, and the page reads the catalog and never writes it (M4-06).
+//
+// `/api/add-model` is `splice add-model` over HTTP (V4-220): GET lists each OpenRouter head with the
+// catalogue rows its roster does not reach yet, POST adds the picked ids and takes the restart.
 import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/models', disposition: 'read-only' },
+  { kind: 'route', name: '/api/add-model', disposition: 'editable' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
-  { kind: 'verb', name: 'add-model', disposition: 'pending', where: 'V4-220' },
-  { kind: 'verb', name: 'models', disposition: 'pending', where: 'V4-219' },
+  { kind: 'verb', name: 'add-model', disposition: 'pending', where: 'V4-220', action: 'Add a model', via: '/api/add-model' },
+  // V4-239 serves what `splice models` prints (each provider's published roster against splice.toml).
+  { kind: 'verb', name: 'models', disposition: 'pending', where: 'V4-239', action: 'Compare the declared models with what each provider publishes' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
@@ -18,6 +23,6 @@ export const job: PageJob = {
   actions: [
     { name: 'Open a model' },
     { name: 'Add a model', row: 'V4-220' },
-    { name: 'Compare the declared models with what each provider publishes', row: 'V4-219' },
+    { name: 'Compare the declared models with what each provider publishes', row: 'V4-239' },
   ],
 };

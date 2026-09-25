@@ -36,7 +36,7 @@ class TransportFailureReasonTest {
     @Test
     fun `a refused connect with no message names the endpoint and why`() {
         assertEquals(
-            "connection refused by 127.0.0.1:8099 — nothing is listening there; the server is down or still starting",
+            "connection refused by 127.0.0.1:8099: nothing is listening there; the server is down or still starting",
             reason(refused),
         )
     }

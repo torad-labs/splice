@@ -24,11 +24,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.HeadRates
+import splice.core.model.LongContextRates
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
@@ -260,16 +262,54 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a head with no rates renders the client number byte-identically to before`() {
-        val withClient = segment(null)
-        assertTrue("$3.69" in withClient, withClient)
-        // No source at all is the pre-V4-37 render; an UNPRICEABLE session must land on that exact
-        // same line too, never on a confident $0.00 and never on another session's number.
-        assertEquals(
-            withClient,
-            segment(SessionCost(tokens(emptyList()), deepseekCatalog())),
-            "an unpriced session falls back to the client's number, not to a zero",
+    fun `a head that cannot price the session never shows the client's Anthropic-priced number`() {
+        // V4-240 reversed the fallback on every head whose upstream is not Anthropic: the client's
+        // 3.69 is Anthropic's card applied to DeepSeek's tokens. No source at all says so in words.
+        val noSource = segment(null)
+        assertTrue("no rate card" in noSource && "3.69" !in noSource, noSource)
+        // A rated model with no turns yet shows nothing: never a confident $0.00, never another
+        // session's number, and never the client's.
+        val unpriced = segment(SessionCost(tokens(emptyList()), deepseekCatalog()))
+        assertTrue("$" !in unpriced && "no rate card" !in unpriced, unpriced)
+    }
+
+    @Test
+    fun `rated answers whether the head holds a card for the model, suffixes and all`() {
+        val cost = SessionCost(tokens(measuredTurns), deepseekCatalog())
+        assertTrue(cost.rated("deepseek-flash"))
+        assertTrue(cost.rated("deepseek-flash[1m]"), "a suffixed picker id resolves its bare id's card")
+        assertFalse(cost.rated("deepseek-v4-pro"), "declared with no rates")
+        assertFalse(cost.rated(null))
+        assertFalse(SessionCost(tokens(measuredTurns), null).rated("deepseek-flash"), "no catalog, no card")
+    }
+
+    /** V4-240: a long-context tier bills one REQUEST by its own size, so a session is priced turn by
+     *  turn. Two 150k turns under a 200k tier are two base-rate turns; summed first, they would read
+     *  as one 300k request and bill every token at the tier. */
+    @Test
+    fun `a long-context tier prices each turn by its own size, never the session's sum`() {
+        val tiered = ModelRates(
+            input = 2.0,
+            cacheRead = 0.5,
+            output = 6.0,
+            longContext = LongContextRates(overInputTokens = 199_999, input = 4.0, cacheRead = 1.0, output = 12.0),
         )
+        val catalog = ModelCatalog(
+            discoveryPrefix = "claude-grok--",
+            models = listOf(ModelEntry(id = "grok-4.7", label = "Grok 4.7", contextWindow = 500_000, rates = tiered)),
+            defaultContextWindow = 500_000,
+            pinnedModel = "grok-4.7",
+        )
+        val small = mapOf("in_tokens" to 150_000L, "out_tokens" to 1_000L)
+        val large = mapOf("in_tokens" to 250_000L, "out_tokens" to 1_000L)
+
+        val twoSmall = SessionCost(tokens(listOf(small, small)), catalog).usdFor(sessionId, "grok-4.7")!!
+        // 2 x (150000 x 2.0 + 1000 x 6.0) / 1e6 = 2 x 0.306
+        assertEquals(0.612, twoSmall, 1e-12, "each 150k turn bills at the base card")
+
+        val mixed = SessionCost(tokens(listOf(small, large)), catalog).usdFor(sessionId, "grok-4.7")!!
+        // 0.306 + (250000 x 4.0 + 1000 x 12.0) / 1e6 = 0.306 + 1.012
+        assertEquals(1.318, mixed, 1e-12, "only the 250k turn bills at the tier, output included")
     }
 
     @Test

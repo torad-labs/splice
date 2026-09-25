@@ -208,7 +208,7 @@ public class EconomicsStore(
     private fun readFromDisk(): List<EconomicsBucket> = Cancellables.runCatchingCancellable {
         val size = Files.size(file)
         if (size > MAX_FILE_BYTES) {
-            log("[economics] $file is ${size}B > ${MAX_FILE_BYTES}B cap — history treated as empty\n")
+            log("[economics] $file is ${size}B > ${MAX_FILE_BYTES}B cap; history treated as empty\n")
             emptyList()
         } else {
             json.parseToJsonElement(Files.readString(file)).jsonArray
@@ -219,7 +219,7 @@ public class EconomicsStore(
             !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent) {
             log(
-                "[economics] $file unreadable/corrupt (${SafeFailureText.render(failure)}) — " +
+                "[economics] $file unreadable/corrupt (${SafeFailureText.render(failure)}); " +
                     "history treated as empty and overwritten at the next persist\n",
             )
         }

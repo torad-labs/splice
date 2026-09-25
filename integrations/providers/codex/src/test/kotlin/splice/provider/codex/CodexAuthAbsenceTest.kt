@@ -59,7 +59,7 @@ class CodexAuthAbsenceTest {
         Files.delete(authPath)
         log.clear()
         assertNull(auth.refresh())
-        assertTrue(log.any { it.contains("no credential file — not logged in") }, "true absence stays honest: $log")
+        assertTrue(log.any { it.contains("no credential file, so not logged in") }, "true absence stays honest: $log")
     }
 
     // Moved from CodexAuthTest (LargeClass ceiling), then DR-59-sharpened: auth.json is SHARED

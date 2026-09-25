@@ -11,18 +11,24 @@
 # splits on it and never prints it, so it is built from its code point (DoctorReportShape
 # FIX_SEPARATOR), which no string_content holds.
 #
-# Scope: the diagnostics module, where these sentences are authored. Strings doctor QUOTES from
-# other modules (SafeFailureText, the topology's messages) were rewritten in the same pass; the rest
-# of the daemon's text is dispositioned in tools/gate/config/rule-coverage-exclusions.toml.
+# V4-219 scoped it to the diagnostics module, where these sentences are authored. Strings doctor
+# QUOTES from other modules (SafeFailureText, the topology's messages) were rewritten in the same
+# pass.
+# V4-238 (2026-09-25) widened it module by module as each came clean, starting with the paths a new
+# user's first run prints (app, splice add, launch, the Claude Code heads, sign-in and the providers
+# the add path signs into), then every other main source set, build-logic's gate text included. Two
+# em dashes are not sentences: the RetryMatrix table's empty cell is built from its code point like
+# the fix separator, and the clause boundary UpstreamFailureClassifier reads in vendor prose is the
+# regex escape \x{2014}. Tests stay out (their exclusion in rule-coverage-exclusions.toml).
 id: kt-no-emdash-cli-text
 language: kotlin
 severity: error
-message: "Zero em-dashes in doctor, logs and wire text (locked copy gate): rewrite the sentence."
+message: "Zero em-dashes in text splice prints or sends (locked copy gate): rewrite the sentence."
 note: |
   Split the clause, or use a colon, a semicolon or a comma. The report's fix separator is built
   from its code point in DoctorReportShape and is the only em-dash the wire carries.
 files:
-  - features/diagnostics/src/main/**/*.kt
+  - "**/src/main/**/*.kt"
 rule:
   kind: string_content
   regex: "—|\\x5Cu2014"

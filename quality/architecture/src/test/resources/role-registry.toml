@@ -467,3 +467,13 @@ names = [
     "TurnPathStalled",
 ]
 reason = """Two reads that answer with names, where the EMPTY list means opposite things. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles."""
+
+# ── 2 names, () -> JsonObject ─────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->JsonObject"
+dated = "2026-09-25"
+names = [
+    "GlobalMcpServers",
+    "WorkerFrameIo",
+]
+reason = """A config read and a process round trip. GlobalMcpServers (integrations/mcp McpHost.kt) reads the operator's global `mcpServers` object as it is on disk now, each time the MCP host acquires a hosted server (HostedServers.acquire) or reports its status (McpStatus.json), with no deadline around it. WorkerFrameIo (integrations/codemode WorkerChannel.kt, V4-226) is the blocking framed I/O one code-mode deadline covers: a frame written to the worker process and its reply read back, or the ready frame alone at a start. WorkerChannel.within runs it on the IO dispatcher and destroys the worker when the deadline passes. Wired the wrong way round, a slow disk read would be timed against a worker's deadline and kill a healthy worker, and the MCP host would block on a worker's pipe, so they stay two roles."""

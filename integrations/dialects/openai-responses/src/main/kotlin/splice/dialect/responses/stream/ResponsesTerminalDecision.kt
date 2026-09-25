@@ -38,7 +38,7 @@ internal class ResponsesTerminalDecision(
             // provider-reported (the backend produced the bytes) so it retries, never a clean
             // Success that dispatches garbage.
             TurnOutcome.Failure(
-                "upstream: $it in tool call — retry",
+                "upstream: $it in tool call; retry",
                 providerReported = true,
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
@@ -89,7 +89,7 @@ internal class ResponsesTerminalDecision(
                 // says a refusal is deterministic, and `permanent` is that sentence made load-
                 // bearing. Without it the pre-content rule relabelled the refusal overloaded_error
                 // and the client re-sent the identical bytes up to 300 times for the same refusal.
-                "upstream: model refused — $it",
+                "upstream: model refused. $it",
                 providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
                 // V4-122 item 11: the sentence above was load-bearing and the ARGUMENT HAD BEEN
                 // LOST — the comment survived while the call passed only providerReported, so
@@ -157,7 +157,7 @@ internal class ResponsesTerminalDecision(
                 "no completion within the ${ctx.upstreamTimeoutMsForMessage / MS_PER_S}s total cap"
         }
         return TurnOutcome.Failure(
-            "splice: upstream stream stalled ($why) — aborted; retry",
+            "splice: upstream stream stalled ($why), aborted; retry",
             partial = when (fired) {
                 is WatchdogFired.Idle -> payload.partialOrNull(state)
                 is WatchdogFired.TotalCap -> null

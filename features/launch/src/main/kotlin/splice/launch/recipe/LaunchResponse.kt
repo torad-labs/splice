@@ -36,11 +36,12 @@ internal class LaunchResponse {
         }
     }
 
-    // Names the exact fix: the env var for an api-key head, the login command for an OAuth head, and
+    // Names the exact fix: `splice key set` for an api-key head, the login command for an OAuth head, and
     // Claude Code's own /login for a client head upstream rejected (V4-220 item 6b: splice holds nothing
     // there, so the only fix is the caller's login).
-    // The key is read from the DAEMON's environment, so "export then retry" silently fails until
-    // the daemon restarts — the message says so.
+    // V4-227: the head reads a stored key and its key file on every request (ApiKeyAuthProvider), so
+    // neither needs a restart. Only a key kept in the DAEMON's environment does, since the daemon reads
+    // its environment once at start, so that path is named second, with its restart.
     private fun missingAuthWarning(target: LaunchHead, auth: AuthDescription, spec: LaunchSpec): String {
         val label = target.head.label
         val envVar = auth.fields["env_var"]
@@ -49,15 +50,16 @@ internal class LaunchResponse {
         return when {
             verdict is CredentialVerdict.Rejected ->
                 "'$label': upstream rejected the Claude login on the last forwarded turn " +
-                    "(${Instant.ofEpochMilli(verdict.atEpochMs)}) — run /login in this session"
+                    "(${Instant.ofEpochMilli(verdict.atEpochMs)}); run /login in this session"
             // A file-configured head's primary fix is the file it reads, not an env var it never used.
             keyFile != null ->
-                "'$label' has no upstream API key: add it to $keyFile " +
-                    "(or export $envVar) — then run: splice restart"
+                "'$label' has no upstream API key: add it to $keyFile, or run: splice key set $envVar. " +
+                    "The next request reads either, with no restart"
             envVar != null ->
-                "'$label' has no upstream API key: $envVar is not set in the daemon's environment. " +
-                    "Requests will fail until you export $envVar and run: splice restart"
-            else -> "'$label' is not signed in — requests will fail until you run: ${spec.loginCommand}"
+                "'$label' has no upstream API key: requests will fail until you run: splice key set $envVar. " +
+                    "The next request reads it, with no restart (a key kept in the daemon's environment " +
+                    "instead needs export $envVar there, then: splice restart)"
+            else -> "'$label' is not signed in. Requests will fail until you run: ${spec.loginCommand}"
         }
     }
 }

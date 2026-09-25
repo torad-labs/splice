@@ -15,6 +15,7 @@ import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.lifecycle.upgrade.CompactionSlot
+import splice.lifecycle.upgrade.CompactionWait
 import splice.lifecycle.upgrade.InflightRead
 import java.net.InetSocketAddress
 import java.nio.file.Files

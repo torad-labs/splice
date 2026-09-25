@@ -41,6 +41,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Send a test prompt through a head
 - Open a head's log
 - Run a check's fix
+- Upgrade or roll back splice (V4-220)
 
 ## fleet
 
@@ -53,7 +54,6 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Start, stop or restart a head
 - Restart the daemon
 - Add a backend (V4-220)
-- Upgrade or roll back splice (V4-220)
 
 ## logs
 
@@ -88,7 +88,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 
 - Open a model
 - Add a model (V4-220)
-- Compare the declared models with what each provider publishes (V4-219)
+- Compare the declared models with what each provider publishes (V4-239)
 
 ## needs-you
 
@@ -162,6 +162,8 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Open a turn's waterfall
 - Turn a head's request capture on or off
 - Start a stopped head
+- Read a head's captured request bodies (V4-239)
+- Read a head's request and response trace (V4-239)
 
 ## usage
 

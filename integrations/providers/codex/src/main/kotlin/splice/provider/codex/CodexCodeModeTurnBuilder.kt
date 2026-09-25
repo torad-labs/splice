@@ -142,14 +142,14 @@ internal class CodexCodeModeTurnBuilder(
 
     private fun imageMarker(toolUseId: String, source: MediaSource?, disposition: ImageDisposition): String =
         if (disposition.delivered) {
-            "[image from tool_result $toolUseId: ${describe("image", source)} — delivered to the model " +
+            "[image from tool_result $toolUseId: ${describe("image", source)}, delivered to the model " +
                 "beside this script's output; a splice_exec script itself reads tool results as text only]"
         } else {
             omitted(toolUseId, "image", source, disposition.reason.orEmpty())
         }
 
     private fun omitted(toolUseId: String, kind: String, source: MediaSource?, why: String): String =
-        "[$kind omitted by splice code-mode from tool_result $toolUseId: ${describe(kind, source)} — $why; " +
+        "[$kind omitted by splice code-mode from tool_result $toolUseId: ${describe(kind, source)} ($why); " +
             "a splice_exec script reads tool results as text only]"
 
     private fun describe(kind: String, source: MediaSource?): String {
@@ -177,7 +177,7 @@ private class CodeModeLegacyMarkers {
     private fun omitted(toolUseId: String, kind: String, source: MediaSource?): String {
         val media = source?.mediaType?.takeIf { it.isNotEmpty() } ?: kind
         val size = (source?.data?.length?.let { ", $it base64 chars" } ?: source?.url?.let { ", url $it" }).orEmpty()
-        return "[$kind omitted by splice code-mode from tool_result $toolUseId: $media$size — a " +
+        return "[$kind omitted by splice code-mode from tool_result $toolUseId: $media$size. A " +
             "splice_exec script reads tool results as text only; call the tool outside code mode to see it]"
     }
 }

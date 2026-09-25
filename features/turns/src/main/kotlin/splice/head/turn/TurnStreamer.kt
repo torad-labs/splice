@@ -174,7 +174,7 @@ internal class TurnStreamer(
             if (job.isActive && drive.channel.detachIfRecording()) {
                 val who = drive.sessionTag()?.let { "session $it, " } ?: ""
                 deps.log(
-                    "[${provider.key}] client gone (${who}call cancelled) — " +
+                    "[${provider.key}] client gone (${who}call cancelled); " +
                         "compaction continues detached; its answer is held for a retry\n",
                 )
             }
@@ -192,10 +192,10 @@ internal class TurnStreamer(
     private fun finishLine(drive: TurnDrive, recording: FrameRecording, kept: Boolean): String {
         val who = drive.sessionTag()?.let { "session $it" } ?: "no session"
         return if (kept) {
-            "[${provider.key}] detached compaction finished ($who) — " +
+            "[${provider.key}] detached compaction finished ($who): " +
                 "${recording.size} frames held for a byte-identical retry\n"
         } else {
-            "[${provider.key}] detached compaction ended without a terminal frame ($who) — " +
+            "[${provider.key}] detached compaction ended without a terminal frame ($who): " +
                 "nothing held; a retry runs upstream\n"
         }
     }

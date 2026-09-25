@@ -1,0 +1,25 @@
+id: kt-dollar-figure-single-source
+valid:
+  # the formatter's calls carry the basis
+  - 'val figure = ApiCostText.short(usd, DIM, RESET)'
+  - 'val text = "head has run up ${ApiCostText.sentence(usd)} today"'
+  # shell text: the parameter sigil is not money
+  - 'val d = "$"'
+  - 'val script = "export PATH=\"\$HOME/bin:\$PATH\""'
+  - 'val launch = "nohup java -jar \"\$1\" daemon"'
+  - 'val expand = "a value expands \${VAR} from the environment"'
+  - 'val scanner = SCANNER.replace("%D%", "$")'
+  # JSON Schema keys
+  - 'val ref = obj["\$ref"]'
+  # a price-free format
+  - 'val pct = String.format(Locale.ROOT, "%.1f%%", share)'
+invalid:
+  # the status line's old spelling: an escaped dollar right before an interpolation
+  - 'val figure = "$DIM\$$RESET" + String.format(Locale.ROOT, "%.2f", shown)'
+  - 'val figure = "\$${amount(usd)}"'
+  - 'val figure = "cost \$$usd"'
+  # the budget's old spelling: a lone dollar glued on with +
+  - 'private fun dollars(usd: Double): String = "$" + amount(usd)'
+  - 'val trailing = amount(usd) + "$"'
+  - 'val literal = "spent \$0.85 today"'
+  - 'val formatted = String.format("$%.2f", usd)'

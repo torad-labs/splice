@@ -84,7 +84,7 @@ public class QuotaPoller(
         if (n <= MAX_RESTARTS) {
             val restarts = "$n/$MAX_RESTARTS"
             log(
-                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)} — " +
+                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)}; " +
                     "restarting (${LogSafe.str(restarts)})\n",
             )
             synchronized(lifecycle) {
@@ -93,7 +93,7 @@ public class QuotaPoller(
         } else {
             val budget = "$MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m"
             log(
-                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)} — restart budget exhausted " +
+                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)}; restart budget exhausted " +
                     "(${LogSafe.str(budget)}); probe permanently down\n",
             )
         }
@@ -115,7 +115,7 @@ public class QuotaPoller(
                 if (failureLogged.compareAndSet(false, true)) {
                     val why = SafeFailureText.render(failure)
                     log(
-                        "[${LogSafe.str(head)}][quota] usage probe failed (${LogSafe.str(why)}) — " +
+                        "[${LogSafe.str(head)}][quota] usage probe failed (${LogSafe.str(why)}); " +
                             "bars keep the last snapshot\n",
                     )
                 }

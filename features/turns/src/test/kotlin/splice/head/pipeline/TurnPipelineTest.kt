@@ -177,7 +177,7 @@ class TurnPipelineTest {
      *  case here reddens, because the raw JSON is exactly what arrives. */
     @Test
     fun `no text block or error message splice emits is json`() = runTest {
-        val payload = """{"detail":"Rate limit exceeded — this gateway is holding retries for 120s"}"""
+        val payload = """{"detail":"Rate limit exceeded: this gateway is holding retries for 120s"}"""
         val offending = mutableListOf<String>()
         // V4-117: the denominator is FailureCause.entries now, not ErrorType.entries. It has to be:
         // the type is DERIVED from (cause, phase), so a cause is the thing that can be added without

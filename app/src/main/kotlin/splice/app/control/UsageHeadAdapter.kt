@@ -3,6 +3,7 @@
 package splice.app.control
 
 import splice.app.control.api.HeadResolver
+import splice.core.auth.CLIENT_AUTH_KIND
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
@@ -27,5 +28,6 @@ internal object UsageHeadAdapter {
         catalog = head.catalog,
         clientWindows = head.clientWindows,
         accountPool = head.accountPool,
+        anthropicUpstream = head.authKind == CLIENT_AUTH_KIND,
     )
 }

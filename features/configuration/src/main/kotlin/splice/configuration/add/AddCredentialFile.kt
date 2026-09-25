@@ -24,17 +24,17 @@ internal class AddCredentialFile(private val json: Json = Json { ignoreUnknownKe
     /** Null when the file can serve or refresh; otherwise the reason, with the fix being a sign-in. */
     fun problem(path: Path, kind: String, nowMs: Long = System.currentTimeMillis()): String? {
         val root = Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
-            .getOrElse { return "the stored credential does not parse (${SafeFailureText.render(it)}) — $SIGN_IN" }
+            .getOrElse { return "the stored credential does not parse (${SafeFailureText.render(it)}); $SIGN_IN" }
         val material = credentials.shapeFor(kind)?.material(root)
-            ?: return "splice add cannot judge a $kind credential — $SIGN_IN"
+            ?: return "splice add cannot judge a $kind credential; $SIGN_IN"
         val expiresAt = material.expiresAtMs
         return when {
             material.access.isNullOrEmpty() ->
-                "the stored credential holds no access token where $kind keeps it — $SIGN_IN"
+                "the stored credential holds no access token where $kind keeps it; $SIGN_IN"
             material.refreshOptional -> null
             !material.refresh.isNullOrEmpty() -> null
             expiresAt != null && expiresAt > nowMs -> null
-            else -> "the stored credential holds no refresh token and no expiry still ahead — $SIGN_IN"
+            else -> "the stored credential holds no refresh token and no expiry still ahead; $SIGN_IN"
         }
     }
 }

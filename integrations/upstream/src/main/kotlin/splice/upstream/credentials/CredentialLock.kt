@@ -136,7 +136,7 @@ public object CredentialLock {
             }
             if (waited >= waitMs) {
                 log(
-                    "[credential-lock] waited ${waited}ms for a peer on $lockPath; proceeding unlocked — " +
+                    "[credential-lock] waited ${waited}ms for a peer on $lockPath; proceeding unlocked: " +
                         "bounded-and-unlocked beats hung; G1's re-read/adopt/reread-on-rejection layers cover the race",
                 )
                 return null

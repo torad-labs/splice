@@ -108,7 +108,7 @@ public class ResponsesReanchorController(
 
 private const val MARKER_TEXT: String =
     "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +
-        "above stops — do not repeat or restate anything already written, and do not " +
+        "above stops. Do not repeat or restate anything already written, and do not " +
         "restate reasoning you have already given."
 
 // FILE SCOPE ON PURPOSE: one shared immutable set, read per failure classification.

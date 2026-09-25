@@ -188,7 +188,7 @@ public class PerfStats(
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
-                log("[perf] $file unreadable (${SafeFailureText.render(failure)}) — stats rendered empty\n")
+                log("[perf] $file unreadable (${SafeFailureText.render(failure)}); stats rendered empty\n")
             }
             if (genuinelyAbsent) unreadableLogged.set(false)
             emptyList()
@@ -205,7 +205,7 @@ public class PerfStats(
         val total = skippedRows.incrementAndGet()
         if (skippedLogged.compareAndSet(false, true)) {
             log(
-                "[perf] $file has unreadable rows (first skip at this read, $total so far) — " +
+                "[perf] $file has unreadable rows (first skip at this read, $total so far); " +
                     "any figure summed from this file is LOW by those turns\n",
             )
         }

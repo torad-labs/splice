@@ -115,7 +115,7 @@ public class ApiKeyAuthProvider(
                 !Files.exists(file, LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
                 log(
-                    "[api-key-auth] failed to read $file: ${SafeFailureText.render(failure)} — " +
+                    "[api-key-auth] failed to read $file: ${SafeFailureText.render(failure)}; " +
                         "treating as no key configured",
                 )
             }

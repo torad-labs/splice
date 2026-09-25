@@ -248,7 +248,7 @@ class SseEmitterTest {
         }
         assertTrue(cancelled != null, "mid-terminal cancellation must propagate")
         assertTrue(!emitter.hasEnded, "a cancelled terminal must not read as ended")
-        emitter.emitError(ErrorType.OVERLOADED, "turn cancelled — retry")
+        emitter.emitError(ErrorType.OVERLOADED, "turn cancelled; retry")
         assertTrue(emitter.hasEnded, "the seal after a cancelled terminal must land")
         assertTrue(frames.any { it.startsWith("event: error") && it.contains("turn cancelled") })
     }

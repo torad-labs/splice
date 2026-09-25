@@ -101,7 +101,7 @@ class BudgetEnforcementTest {
         assertNotNull(block)
         val message = block!!.message
         assertTrue(message.contains("'h'"), message)
-        assertTrue(message.contains("$2.50 today"), message)
+        assertTrue(message.contains("an estimated $2.50 in API cost today"), message)
         assertTrue(message.contains("$2.00 daily budget"), message)
         assertTrue(message.contains("00:00 UTC"), message)
         assertEquals("spent_usd=2.50 limit_usd=2.00 unpriced_turns=0", block.detail)
@@ -170,7 +170,7 @@ class BudgetEnforcementTest {
         val (alertedHead, text) = rig.alerts.single()
         assertEquals("h", alertedHead)
         assertTrue(text.contains("'h'"), text)
-        assertTrue(text.contains("$1.00 spent today"), text)
+        assertTrue(text.contains("an estimated $1.00 in API cost today"), text)
         assertTrue(rig.logs.any { it.startsWith("[h][budget]") && it.contains("limit_usd=1.00") }, "${rig.logs}")
 
         rig.budget("h", 2.0, BudgetActions.WARN)

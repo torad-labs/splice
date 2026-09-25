@@ -26,7 +26,7 @@ public class ForeignHostLog(private val listener: String, private val log: LogSi
         if (named.size < MAX_NAMED_HOSTS) {
             if (named.add(name)) {
                 log(
-                    "[security] $listener refused a request naming Host '$name' — not a loopback name: a web " +
+                    "[security] $listener refused a request naming Host '$name', which is not a loopback name: a web " +
                         "page that rebound its name to this machine (DNS rebinding), or a client reaching " +
                         "splice by another name; nothing ran\n",
                 )

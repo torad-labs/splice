@@ -4,9 +4,12 @@
 import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
-  // The report and the upgrade status, both read and never written (V4-127 serves them).
+  // The report, read and never written (V4-127 serves it).
   { kind: 'route', name: '/api/doctor', disposition: 'read-only' },
-  { kind: 'route', name: '/api/upgrade', disposition: 'read-only' },
+  // The upgrade: GET is the status the version strip reads (V4-127); POST starts `splice upgrade` or
+  // its rollback out of process (V4-220 item 4), and /api/upgrade/run is that run's progress.
+  { kind: 'route', name: '/api/upgrade', disposition: 'editable' },
+  { kind: 'route', name: '/api/upgrade/run', disposition: 'read-only' },
   // /api/heads/{head}/capture moved to pages/turns/coverage.ts (M4-04): the turns page's request
   // drawer carries the switch that reads and writes it, and a name has exactly one page owner.
   // Budgets and alerts moved to pages/usage/coverage.ts (M4-06): the usage page is the one that
@@ -19,11 +22,13 @@ export const dispositions: readonly Disposition[] = [
   // (install_all). Declared with the daemon commit that serves it; the answer is doctor re-run.
   { kind: 'route', name: '/api/doctor/fix/{id}', disposition: 'editable' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
-  { kind: 'verb', name: 'doctor', disposition: 'read-only' },
-  { kind: 'verb', name: 'version', disposition: 'read-only' },
+  { kind: 'verb', name: 'doctor', disposition: 'read-only', via: '/api/doctor' },
+  { kind: 'verb', name: 'version', disposition: 'read-only', via: '/api/doctor' },
   // install --all is the Fix on every wrapper row it relinks: POST /api/doctor/fix/install_all, from
   // the check's detail here and from Needs you (features/doctor-fix).
-  { kind: 'verb', name: 'install', disposition: 'editable' },
+  { kind: 'verb', name: 'install', disposition: 'editable', action: 'Run a check\'s fix', via: '/api/doctor/fix/{id}' },
+  // `splice upgrade` and its rollback, run out of process (#303); moved here from the fleet page.
+  { kind: 'verb', name: 'upgrade', disposition: 'pending', where: 'V4-220', action: 'Upgrade or roll back splice', via: '/api/upgrade' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
@@ -35,5 +40,6 @@ export const job: PageJob = {
     { name: 'Send a test prompt through a head' },
     { name: 'Open a head\'s log' },
     { name: 'Run a check\'s fix' },
+    { name: 'Upgrade or roll back splice', row: 'V4-220' },
   ],
 };

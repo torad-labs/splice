@@ -35,9 +35,10 @@ public interface ProviderIdentity {
     public val auth: RefreshableAuthProvider
     public val watchdog: WatchdogBudget
 
-    /** The per-head `<command> login` instruction (empty when the provider has no OAuth login
-     *  flow, e.g. api-key-only heads) — surfaced by [splice.head.turn.TurnDriver] as an
-     *  operator hint on AUTHENTICATION-classified failures. */
+    /** The command that fixes this head's credentials, surfaced by [splice.head.turn.TurnDriver] as an
+     *  operator hint on AUTHENTICATION-classified failures: `<command> login` for an OAuth head,
+     *  `splice key set <ENV>` for an api-key head (read on its next request, no restart), empty where
+     *  splice has none to name (a client-auth head), so the upstream's own message stands. */
     public val loginCommand: String
 }
 

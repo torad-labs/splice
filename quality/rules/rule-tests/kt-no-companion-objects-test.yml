@@ -61,3 +61,20 @@ invalid:
             const val NAME = "provider"
         }
     }
+  # V4-220 (2026-09-25): a visibility-modified companion inside a `public sealed class` or an
+  # `object`. tree-sitter-kotlin reads both as infix expressions, so `kind: companion_object` never
+  # saw them, and CredentialVerdict's `public companion object` passed the wall.
+  - |
+    public sealed class CredentialVerdict {
+        public data object Held : CredentialVerdict()
+
+        public companion object {
+            public fun of(wire: String?): CredentialVerdict? = null
+        }
+    }
+  - |
+    object Registry {
+        internal companion object {
+            const val NAME = "registry"
+        }
+    }

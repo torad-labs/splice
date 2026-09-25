@@ -10,7 +10,7 @@
 //   - NOTHING MOVES UNDER REDUCED MOTION. The one animation, the braid's pulse, is dropped by the
 //     sheet's reduced-motion block, and every transition reads `--dur-N`, which the token sheet sets
 //     to 0ms there.
-import { useId, useRef } from 'react';
+import { useId, useMemo, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { InfoIcon } from '@phosphor-icons/react/dist/csr/Info';
 import { cx } from '../lib';
@@ -26,29 +26,93 @@ const pct = (part: number, whole: number): string => `${whole <= 0 ? 0 : Math.ma
 
 // ---------------------------------------------------------------------------------------- tip
 
+type TipSide = 'top' | 'bottom';
+
+/** How far a tip stands off its trigger, and off the window's edge, in CSS pixels. */
+const TIP_GAP = 8;
+const TIP_EDGE = 8;
+
+/**
+ * A tip's body lives in the TOP LAYER (the Popover API), placed against its trigger and kept inside
+ * the window. Positioned inside the page, it was clipped by whatever scrolled around it (a detail
+ * panel, a table cell) and cut by the window's edge: a masked fix's "Why no copy" read half a
+ * sentence on Doctor and on Needs you alike (the masked-fix renders, 2026-09-25).
+ */
+function useTipBody(side: TipSide) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const body = useRef<HTMLSpanElement>(null);
+  const handlers = useMemo(() => {
+    const hide = () => {
+      window.removeEventListener('scroll', hide, true);
+      if (body.current?.matches(':popover-open') === true) body.current.hidePopover();
+    };
+    const show = () => {
+      const at = anchor.current;
+      const tip = body.current;
+      if (at === null || tip === null || tip.matches(':popover-open')) return;
+      tip.showPopover();
+      placeTip(at.getBoundingClientRect(), tip, side);
+      // A fixed body would stay behind while the page moved under it: any scroll closes it.
+      window.addEventListener('scroll', hide, true);
+    };
+    return { show, hide };
+  }, [side]);
+  return { anchor, body, ...handlers };
+}
+
+/** Centred on the trigger, on [side] unless the window has no room there, never past an edge. */
+function placeTip(at: DOMRect, tip: HTMLElement, side: TipSide) {
+  const { width, height } = tip.getBoundingClientRect();
+  const right = document.documentElement.clientWidth - TIP_EDGE - width;
+  const bottom = window.innerHeight - TIP_EDGE - height;
+  const above = at.top - TIP_GAP - height;
+  const below = at.bottom + TIP_GAP;
+  const top = side === 'top' ? (above >= TIP_EDGE ? above : below) : (below <= bottom ? below : above);
+  tip.style.left = `${Math.max(TIP_EDGE, Math.min(at.left + at.width / 2 - width / 2, right))}px`;
+  tip.style.top = `${Math.max(TIP_EDGE, Math.min(top, bottom))}px`;
+}
+
 /** A short text shown on hover and on keyboard focus of what it wraps: the help slot of the voice
  *  (one sentence, twelve words or fewer). The wrapped element is the tab stop; the text is its
  *  description, so a screen reader reads it after the element's own name. */
-export function Tip({ text, side = 'top', children }: { text: string; side?: 'top' | 'bottom'; children: ReactNode }) {
+export function Tip({ text, side = 'top', children }: { text: string; side?: TipSide; children: ReactNode }) {
   const id = useId();
+  const tip = useTipBody(side);
   return (
-    <span className={cx('myx-tip', `myx-tip-${side}`)} tabIndex={0} aria-describedby={id}>
+    <span
+      ref={tip.anchor}
+      className="myx-tip"
+      tabIndex={0}
+      aria-describedby={id}
+      onPointerEnter={tip.show}
+      onPointerLeave={tip.hide}
+      onFocus={tip.show}
+      onBlur={tip.hide}
+    >
       {children}
-      <span className="myx-tip-body" role="tooltip" id={id}>{text}</span>
+      <span ref={tip.body} className="myx-tip-body" role="tooltip" id={id} popover="manual">{text}</span>
     </span>
   );
 }
 
 /** An info mark that explains the thing beside it on hover or focus, in place of a sentence printed
  *  on the page. `label` is its accessible name ("About plan limits"). */
-export function InfoTip({ text, label, side = 'top' }: { text: string; label: string; side?: 'top' | 'bottom' }) {
+export function InfoTip({ text, label, side = 'top' }: { text: string; label: string; side?: TipSide }) {
   const id = useId();
+  const tip = useTipBody(side);
   return (
-    <span className={cx('myx-tip', 'myx-info', `myx-tip-${side}`)}>
+    <span
+      ref={tip.anchor}
+      className={cx('myx-tip', 'myx-info')}
+      onPointerEnter={tip.show}
+      onPointerLeave={tip.hide}
+      onFocus={tip.show}
+      onBlur={tip.hide}
+    >
       <button type="button" className="myx-info-btn" aria-label={label} aria-describedby={id}>
         <InfoIcon aria-hidden="true" />
       </button>
-      <span className="myx-tip-body" role="tooltip" id={id}>{text}</span>
+      <span ref={tip.body} className="myx-tip-body" role="tooltip" id={id} popover="manual">{text}</span>
     </span>
   );
 }

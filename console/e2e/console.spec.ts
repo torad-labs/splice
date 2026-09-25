@@ -71,6 +71,28 @@ async function open(page: Page, name: string): Promise<Faults> {
   return faults;
 }
 
+/** Opens the tip [trigger] describes and fails unless the operator sees all of it: its box inside
+ *  the window, and hit-testing at its four inner corners finding the tip, not a clip or what a clip
+ *  leaves. A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips. */
+async function expectWholeTip(trigger: Locator, where: string): Promise<void> {
+  await trigger.hover();
+  const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
+  await expect(tip, `${where}: the tip did not open`).toBeVisible();
+  const seen = await tip.evaluate((body: HTMLElement) => {
+    body.style.pointerEvents = 'auto';
+    const box = body.getBoundingClientRect();
+    const inWindow = box.left >= 0 && box.top >= 0
+      && box.right <= document.documentElement.clientWidth && box.bottom <= window.innerHeight;
+    const inset = 2;
+    const corners = [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]]
+      .map(([x, y]) => [x + (x === box.left ? inset : -inset), y + (y === box.top ? inset : -inset)]);
+    const onTop = corners.every(([x, y]) => body.contains(document.elementFromPoint(x, y)));
+    body.style.pointerEvents = '';
+    return { inWindow, onTop };
+  });
+  expect(seen, `${where}: the open tip must be whole in the window and on top`).toEqual({ inWindow: true, onTop: true });
+}
+
 test('the page set comes from the source', () => {
   expect(PAGES, `no page directories under ${PAGES_DIR}`).toContain('fleet');
 });
@@ -361,6 +383,24 @@ test('doctor renders the stack\'s report, the CLI\'s own masked values included,
   const detail = page.getByRole('complementary', { name: 'Check detail' });
   await expect(detail).toContainText('CONSOLE_E2E_NO_SUCH_KEY is not set');
   expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at Needs you\'s right edge', async ({ page }) => {
+  // The same masked fix as above. Its tip opened inside the panel's scroll box, which cut it at the
+  // panel's left edge, and in Needs you's last column, where the window cut it (2026-09-25 renders).
+  const faults = await open(page, 'doctor');
+  const masked = 'CONSOLE_E2E_NO_SUCH_KEY=<redacted>';
+  const row = page.locator('main').getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: masked });
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole('button').click();
+  const detail = page.getByRole('complementary', { name: 'Check detail' });
+  await expectWholeTip(detail.getByRole('button', { name: 'Why no copy', exact: true }), 'doctor detail panel');
+
+  await page.goto(`${env('CONSOLE_E2E_BASE')}/#/needs-you`);
+  const why = page.locator('main').getByRole('button', { name: 'Why no copy', exact: true }).first();
+  await expect(why, 'the masked fix is not on Needs you').toBeVisible({ timeout: 15_000 });
+  await expectWholeTip(why, 'needs you, last column');
+  expect(faults.pageErrors, 'a page threw').toEqual([]);
 });
 
 test('doctor\'s playground sends one prompt through a head to the upstream and shows both sides', async ({ page }) => {

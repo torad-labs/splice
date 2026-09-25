@@ -89,4 +89,9 @@ class ClientAuthProviderTest {
         assertFalse(provider.allowRefreshAfterFailure(401, ""))
         assertFalse(provider.allowRefreshAfterFailure(403, """{"error":"token expired"}"""))
     }
+
+    @Test
+    fun `red proof for 277, a failing unit test must fail the gate`() {
+        assertEquals(1, 2, "deliberate: this assertion exists only to prove the gate goes red")
+    }
 }

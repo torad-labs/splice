@@ -36,7 +36,7 @@ public class ClientAuthProvider(
 
     /** Never null: a null would make the transport raise auth-missing before the request, and
      *  there IS no missing credential here — the one that matters rides on the inbound call. */
-    override suspend fun credentials(): Credentials = Credentials.ClientForwarded
+    override suspend fun credentials(): Credentials = Credentials.ClientForwarded.also { println("red proof for 277: kt-no-println must fire") }
 
     /** [AuthDescription.present] is false only once upstream REJECTED the forwarded login: an
      *  unverified one is not known to be missing, and the verdict field says which it is. */

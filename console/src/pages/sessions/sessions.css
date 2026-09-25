@@ -72,10 +72,12 @@ button.myx-sx-peer:hover { color: var(--fg); }
 .myx-sx-handoffs .myx-dt td { padding-inline-end: var(--space-7); }
 
 /* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
-   Past 3000 the board keeps a readable measure and the fleet's hand-offs take the rest; an opened
-   session takes both columns, since its panel sits beside the list. */
+   Past 3000 the fleet's hand-offs stand at the right edge, as wide as their table and never past
+   40%, and the lanes take the rest: a fixed share left the fitted table in half an empty column and
+   a fifth of the 3840 frame black (the e2e frame test, 69% drawn). An opened session takes both
+   columns, since its panel sits beside the list. */
 @media (min-width: 3000px) {
-  .myx-sx { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); column-gap: var(--space-7); align-items: start; }
+  .myx-sx { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); column-gap: var(--space-7); align-items: start; }
   .myx-sx > .myx-ph,
   .myx-sx > .myx-sx-tally { grid-column: 1 / -1; }
   .myx-sx > .myx-sx-board { grid-column: 1; }

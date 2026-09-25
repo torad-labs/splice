@@ -192,4 +192,11 @@ describe('the fleet\'s hand-offs', () => {
     const sheet = readFileSync(fileURLToPath(new URL('../src/pages/sessions/sessions.css', import.meta.url)), 'utf8');
     expect(sheet).toMatch(/\.myx-sx-handoffs \.myx-dt-wrap \{ width: fit-content; max-width: 100%; \}/);
   });
+
+  test('past 3000 the hand-offs column is as wide as its table, and the lanes take the rest', () => {
+    // A fixed share of the page left the fitted table in half an empty column at 3840.
+    const sheet = readFileSync(fileURLToPath(new URL('../src/pages/sessions/sessions.css', import.meta.url)), 'utf8');
+    const wide = /@media \(min-width: 3000px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? '';
+    expect(wide).toMatch(/\.myx-sx \{[^}]*grid-template-columns: minmax\(0, 1fr\) fit-content\(40%\);/);
+  });
 });

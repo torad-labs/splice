@@ -98,6 +98,9 @@ const EDITABLE_TOPOLOGY = [
   'map_thinking_adaptive', 'strip_sampling_params', 'reanchor_prefill', 'tool_name_cap',
   'defer_prefixes', 'min_deferred', 'search_limit', 'search_rounds',
   'config_dir', 'cache_read', 'cache_write',
+  // V4-240: a rate card's long-context tier, keys of the same rates table the forms write.
+  'long_context_over_input_tokens', 'long_context_input', 'long_context_cache_read',
+  'long_context_output', 'long_context_cache_write',
 ] as const;
 
 /**

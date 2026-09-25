@@ -33,7 +33,10 @@ private const val MASK_KEEP = 4
  *  read as applied. */
 private enum class KeySource(val wire: String) { ENVIRONMENT("environment"), FILE("file"), STORE("store") }
 
-private class ResolvedKey(val value: String, val source: KeySource)
+// A data class whose toString names the source only: the generated one would print the key.
+private data class ResolvedKey(val value: String, val source: KeySource) {
+    override fun toString(): String = "ResolvedKey(source=$source)"
+}
 
 public class ApiKeyAuthProvider(
     private val envVar: String,

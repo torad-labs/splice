@@ -153,10 +153,13 @@ class KeysRouteTest {
     @Test
     fun `refusals carry their reason and the status that matches`() = runBlocking {
         awaitPort()
-        assertRefused(send("PUT", "/api/keys/lower_case", """{"value":"x"}"""), HttpStatusCode.BadRequest, "not an environment variable name")
-        assertRefused(send("PUT", "/api/keys/$STORED", """{"value":"  "}"""), HttpStatusCode.BadRequest, "non-empty 'value'")
+        val badName = send("PUT", "/api/keys/lower_case", """{"value":"x"}""")
+        assertRefused(badName, HttpStatusCode.BadRequest, "not an environment variable name")
+        val blank = send("PUT", "/api/keys/$STORED", """{"value":"  "}""")
+        assertRefused(blank, HttpStatusCode.BadRequest, "non-empty 'value'")
         assertRefused(send("PUT", "/api/keys/$STORED", "not json"), HttpStatusCode.BadRequest, "non-empty 'value'")
-        assertRefused(send("PUT", "/api/keys/$STORED", """{"value":"a\nb"}"""), HttpStatusCode.BadRequest, "line break")
+        val lineBreak = send("PUT", "/api/keys/$STORED", """{"value":"a\nb"}""")
+        assertRefused(lineBreak, HttpStatusCode.BadRequest, "line break")
         assertRefused(send("DELETE", "/api/keys/NEVER_STORED_KEY"), HttpStatusCode.NotFound, "was not stored")
         assertEquals(null, store.read(STORED), "no refused write reached the store")
     }
@@ -212,7 +215,11 @@ class KeysRouteTest {
     private suspend fun obj(response: HttpResponse): JsonObject =
         json.parseToJsonElement(response.bodyAsText()).jsonObject
 
-    private suspend fun send(method: String, path: String, body: String? = null): HttpResponse = withTimeout(TIMEOUT_MS) {
+    private suspend fun send(
+        method: String,
+        path: String,
+        body: String? = null,
+    ): HttpResponse = withTimeout(TIMEOUT_MS) {
         val response = when (method) {
             "PUT" -> client.put("$url$path") {
                 header("Authorization", "Bearer $key")

@@ -59,7 +59,8 @@ class ApiKeyAuthProviderTest {
         val store = KeyStore(tmp.resolve("keys.toml")).apply { write("OPENROUTER_API_KEY", "sk-store") }
         val file = tmp.resolve("key").also { Files.writeString(it, "sk-file") }
         val empty = KeyStore(tmp.resolve("empty.toml"))
-        assertEquals("environment", provider(mapOf("OPENROUTER_API_KEY" to "sk-env"), file, store).describe().fields["key_source"])
+        val fromEnv = provider(mapOf("OPENROUTER_API_KEY" to "sk-env"), file, store)
+        assertEquals("environment", fromEnv.describe().fields["key_source"])
         assertEquals("file", provider(emptyMap(), file, store).describe().fields["key_source"])
         assertEquals("store", provider(emptyMap(), null, store).describe().fields["key_source"])
         assertEquals("missing", provider(emptyMap(), null, empty).describe().fields["key_source"])

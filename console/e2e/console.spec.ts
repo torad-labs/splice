@@ -67,7 +67,7 @@ async function open(page: Page, name: string): Promise<Faults> {
   const faults = watch(page);
   await unlock(page);
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#/${name}`);
-  await expect(page.getByRole('navigation', { name: 'bays' }), 'the console shell did not render').toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'pages' }), 'the console shell did not render').toBeVisible();
   return faults;
 }
 
@@ -374,7 +374,9 @@ test('sessions prints each session\'s peer from the fleet-wide edges read, unope
 
 test('compaction lists the instruction rules the daemon has in effect, with their lengths', async ({ page }) => {
   const faults = await open(page, 'compaction');
-  const rule = (source: string) => page.getByRole('group', { name: `instruction ${source}` });
+  // One row of the rules table per rule, found by its source cell.
+  const rule = (source: string) => page.getByRole('table', { name: 'Rules' }).getByRole('row')
+    .filter({ has: page.getByRole('cell', { name: source, exact: true }) });
   await expect(rule('global')).toContainText(String(STACK.compactGlobal.length), { timeout: 15_000 });
   await expect(rule(`model:${STACK.model}`)).toContainText(String(STACK.compactModel.length));
   await expect(rule(`project:${env('CONSOLE_E2E_REPO')}`)).toContainText(String(STACK.compactProject.length));

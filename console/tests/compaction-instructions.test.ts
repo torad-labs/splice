@@ -4,17 +4,13 @@
 // into one strip per rule carrying its heads, a model rule keeps only the heads that listed it, one
 // head's refusal is named without blanking the rest, and a length's two special values print as
 // what they mean.
-import * as React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchInstructions } from '../src/entities/compact-stats';
 import type { InstructionsWire } from '../src/entities/compact-stats';
 import { mergeInstructions } from '../src/entities/compact-stats/model/instructions';
 import { instructionsStore } from '../src/entities/compact-stats/model/store';
-import { InstructionsBay } from '../src/pages/compaction';
 import { charsText } from '../src/widgets/compaction-rule';
 
-const h = React.createElement;
 
 // What the live daemon answered for the e2e stack on 2026-09-23: the codex head's roster carries
 // the model the model rule names, the solo head's does not.
@@ -101,30 +97,10 @@ describe('reading every head', () => {
   });
 });
 
-describe('the rules bay', () => {
+describe('the rule strip projects still prints', () => {
   test('a length prints as a count, an empty rule as the client default, an unreadable file as unavailable', () => {
     expect(charsText(41)).toBe('41');
     expect(charsText(0)).toBe('client default');
     expect(charsText(null)).toBe('unavailable');
-  });
-
-  test('prints one strip per rule, labelled by its source, with its length and heads', () => {
-    const rules = mergeInstructions([{ head: 'e2e-codex', wire: CODEX }, { head: 'e2e-codex-solo', wire: SOLO }]);
-    const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules, unread: [] } }));
-    expect(out).toContain('aria-label="instruction model:e2e-model"');
-    expect(out).toContain('>31<');
-    expect(out).toContain('e2e-codex e2e-codex-solo');
-  });
-
-  test('no rule says the client\'s instructions stand, and names where rules are declared', () => {
-    const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules: [], unread: [] } }));
-    expect(out).toContain('no compaction rules');
-    expect(out).toContain('own summary instructions apply');
-    expect(out).toContain('[compaction] in splice.toml');
-  });
-
-  test('a head that could not be asked is named with its reason', () => {
-    const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules: [], unread: [{ head: 'e2e-openrouter', reason: 'HTTP 503' }] } }));
-    expect(out).toContain('e2e-openrouter: HTTP 503');
   });
 });

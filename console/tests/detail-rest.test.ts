@@ -126,9 +126,9 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
   // inspection -- it guards only if the assignment happens to precede the Object.keys() that
   // reads it -- and a guarded list that can silently lose a member is the failure this file
   // exists to prevent. Entry order in a literal cannot be reordered by accident.
-  'compact-feed': 'src/widgets/compact-feed/compact-feed.css: .myx-cfeed second track is 0 at '
-    + 'rest and the -open class widens it, with column-gap moving with the track so the collapse '
-    + 'leaves no gutter of its own (M1-117, mirroring sessions and M1-119).',
+  compaction: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind '
+    + 'an `open === null ? null :` gate and .myx-cp-board declares one track until -open adds the '
+    + 'second. It was the compact-feed widget\'s .myx-cfeed collapsed track before (M1-117).',
   turns: 'already collapses its track to 0 at rest and transitions it open. Dead region 17.7%.',
   sessions: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind '
     + 'an `open === null ? null :` gate, so no track and no empty landmark exist until a row is '

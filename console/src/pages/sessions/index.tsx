@@ -2,12 +2,13 @@
 // fixed columns and the status printed last, grouped under four saved views (by head, by project,
 // by team, and a timeline). Opening a row puts its detail beside the board; the board stays.
 //
-// WHAT THE ROW SAYS, and why the states are printed rather than coloured. The status cell carries
-// availability (ok live, warn stale, neutral gone) and ALWAYS prints the word beside its dot, so a
-// greyscale screenshot still says which session stopped reporting. A stale row also marks its
-// leading edge, because it is the one that needs the operator. A gone session is not struck:
-// striking is the verdict on a disabled or excluded row, and a gone session is still readable
-// (its transcript and its perf rows stay).
+// WHAT THE ROW SAYS, shown before it is said (DESIGN.md section 3). A session's life is one bar on
+// the board's shared time axis (started, last heard from, now), so the rows read as a timeline and a
+// session gone quiet shows as a trail rather than a timestamp to subtract. Its last hand-off is an
+// arrow in the peer's head colour that opens the peer. The status cell carries availability (ok
+// live, warn stale, neutral gone) and ALWAYS prints the word beside its dot, so a greyscale
+// screenshot still says which session stopped reporting; a stale row is also tinted, because it is
+// the one that needs the operator. A gone session is not struck: its transcript and perf rows stay.
 //
 // WHAT IS DELIBERATELY NOT HERE: the per-session turn join of FEATURES.md 4.4 (turns by the perf
 // session tag, tokens by bucket, cost). Those numbers come from /api/perf/turns, which is pending
@@ -22,10 +23,12 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
+import { ArrowLeftIcon } from '@phosphor-icons/react/dist/csr/ArrowLeft';
+import { ArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight';
+import { ArrowUpRightIcon } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
 import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import {
   fetchSessionEdges,
-  latestPeer,
   peerLabel,
   sessionLabel,
   startBoardEdgesPolling,
@@ -39,13 +42,14 @@ import {
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
-import { Badge, DataTable, DetailPanel, Empty, PageHeader, Reveal, Section, Tally } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
-import { S } from './strings';
+import { H, S, U } from './strings';
 import { groupByOf, groupHref, selectionOf } from './select';
-import { baseOf, FIELD_LABEL, fieldsOf, headText, projectKeyOf, toneOf } from './strip';
+import { baseOf, boardFields, FIELD_LABEL, fieldsOf, headText, peerOf, projectKeyOf, startedText, toneOf } from './strip';
+import type { Peer } from './strip';
 import './sessions.css';
 
 const PAGE_ID = 'sessions';
@@ -53,32 +57,61 @@ const PAGE_ID = 'sessions';
 /** The four views this page ships. `by head` is the default and stands first. */
 const DEFAULT_VIEWS: View[] = [
   // A grouped view does not repeat its group as a column: the bay's own label already names it.
-  { id: 'by-head', name: 'by head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'project', 'started', 'seen', 'peer'] },
-  { id: 'by-project', name: 'by project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'head', 'started', 'seen', 'peer'] },
-  { id: 'by-team', name: 'by team', layout: 'rack', filter: {}, sort: null, group: 'team', fields: ['name', 'head', 'project', 'started', 'seen', 'peer'] },
-  { id: 'timeline', name: 'timeline', layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['name', 'head', 'project', 'started', 'peer'] },
+  { id: 'by-head', name: 'By head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'project', 'life', 'peer'] },
+  { id: 'by-project', name: 'By project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'head', 'life', 'peer'] },
+  { id: 'by-team', name: 'By team', layout: 'rack', filter: {}, sort: null, group: 'team', fields: ['name', 'head', 'project', 'life', 'peer'] },
+  { id: 'timeline', name: 'Timeline', layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['name', 'head', 'project', 'life', 'peer'] },
 ];
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
-/** Why a session has no head: splice did not start it, or the daemon could not read how it was
- *  started. A sentence, so it lives here (CONTRACTS.md 4). It says only what the registry knows:
- *  it used to add "so their turns do not pass through splice", and the walkthrough watched a
- *  headless session's turn go through a head (S3); where a turn goes is the turns page's fact. */
-export const NO_HEAD_WHY = 'splice did not start these sessions, or could not tell which head did';
+/** The daemon's availability word, as the board prints it. */
+const AVAILABILITY: Record<SessionRow['availability'], string> = { live: S.live, stale: S.stale, gone: S.gone };
 
-/** Why a group of sessions has no head, from each row's route when the daemon reports one: a
- *  session started with `claude` directly skips splice; one whose environment could not be read
- *  may not. A daemon that reports no route keeps the sentence above, which covers both. */
+/** Why a session has no head: splice did not start it, or the daemon could not read how it was
+ *  started. It says only what the registry knows: where a turn goes is the turns page's fact. */
+export const NO_HEAD_WHY = H.noHead;
+
+/** Why a group of sessions has no head, for its tip, from each row's route when the daemon reports
+ *  one: a session started with `claude` directly skips splice; one whose environment could not be
+ *  read may not. A daemon that reports no route keeps the sentence above, which covers both. */
 export function noHeadWhy(rows: readonly SessionRow[]): string {
   const direct = rows.filter((row) => row.route === 'direct').length;
   const unread = rows.filter((row) => row.route === 'unknown').length;
   if (direct + unread === 0) return NO_HEAD_WHY;
   const parts = [
-    direct === 0 ? null : `${direct} started with claude directly, not with a splice head`,
-    unread === 0 ? null : `${unread} could not be read, so splice cannot tell which head started them`,
+    direct === 0 ? null : `${direct} ${U.direct}`,
+    unread === 0 ? null : `${unread} ${U.unread}`,
   ];
-  return parts.filter((part) => part !== null).join('; ');
+  return parts.filter((part) => part !== null).join(', ');
+}
+
+/** The hand-off cell: an arrow pointing the way the message went, in the peer's head colour, and
+ *  the peer's name. A peer that is a registered session opens it; one that is not (a session gone
+ *  since) prints its label and nothing to open. */
+function PeerCell({ peer, hue, onOpen }: { peer: Peer | null; hue: string; onOpen: (row: SessionRow) => void }) {
+  if (peer === null) return <>{S.absent}</>;
+  const arrow = peer.direction === 'out'
+    ? <ArrowRightIcon className="myx-sx-arrow" aria-hidden="true" />
+    : <ArrowLeftIcon className="myx-sx-arrow" aria-hidden="true" />;
+  const said = `${peer.direction === 'out' ? S.sent : S.received} ${peer.label} ${timeAgo(peer.at)}`;
+  if (peer.row === null) return <span className={`myx-sx-peer ${hue}`} aria-label={said}>{arrow}{peer.label}</span>;
+  const row = peer.row;
+  return (
+    <button type="button" className={`myx-sx-peer ${hue}`} aria-label={said} onClick={() => onOpen(row)}>
+      {arrow}
+      <span>{peer.label}</span>
+    </button>
+  );
+}
+
+/** The board's shared time axis: from the oldest session's start, up to a day back, to now. A
+ *  session older than the window starts at its edge. */
+export function axisOf(rows: readonly SessionRow[], now: number): { from: number; to: number } {
+  const DAY = 86_400_000;
+  const starts = rows.map((row) => row.started_at).filter((at): at is number => at !== null);
+  const oldest = starts.length === 0 ? now - 3_600_000 : Math.min(...starts);
+  return { from: Math.max(oldest, now - DAY), to: now };
 }
 
 /** The address of a hand-off's other end: a sent edge carries the one its call used; a received
@@ -93,7 +126,7 @@ type Edge = SessionEdgesPayload['edges'][number];
 /** The opened session's hand-offs: which way each went, to whom, and when. */
 function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: readonly SessionRow[] }) {
   if (edges === null) return null;
-  if (edges.edges.length === 0) return <Empty text="no hand-offs yet" source="a message this session sends to another, or gets from one, shows here" />;
+  if (edges.edges.length === 0) return <Empty text={S.noHandoffs} />;
   const columns: Column<Edge>[] = [
     { key: 'way', label: S.way, width: '16%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
     { key: 'peer', label: S.peer, width: '34%', primary: true, cell: (edge) => peerLabel(rows, edge) },
@@ -111,9 +144,9 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: re
 }
 
 /** Column widths for the board, by field key: the view with a head column gives it room from the
- *  name and project. Status always closes the row, at 10%. */
-const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '26%', project: '22%', started: '16%', seen: '12%', peer: '14%' };
-const WIDTH_WITH_HEAD: Record<string, string> = { name: '20%', head: '16%', project: '16%', started: '14%', seen: '10%', peer: '14%' };
+ *  name, project and lifetime. Status always closes the row, at 10%. */
+const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '20%', project: '16%', life: '34%', peer: '20%' };
+const WIDTH_WITH_HEAD: Record<string, string> = { name: '16%', head: '14%', project: '14%', life: '26%', peer: '20%' };
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
 export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
@@ -152,10 +185,12 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
     if (open?.session_id != null) void fetchSessionEdges(open.session_id);
   }, [open?.session_id]);
 
-  const peerOf = (row: SessionRow): string | null => {
+  const peerFor = (row: SessionRow): Peer | null => {
     if (boardEdges === null || row.session_id === null) return null;
-    return latestPeer(rows, boardEdges.sessions[row.session_id] ?? []);
+    return peerOf(rows, boardEdges.sessions[row.session_id] ?? []);
   };
+  const now = Date.now();
+  const axis = axisOf(rows, now);
 
   const selection = selectionOf(rows, active, Date.now());
   const by = groupByOf(active);
@@ -165,13 +200,13 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
     ? selection.timeline.buckets.filter((bucket) => bucket.sessions.length === 0).length
     : 0;
 
-  if (locked) return <Empty text="console locked" source="management key" />;
+  if (locked) return <Empty text={S.locked} />;
   if (error !== null && payload === null) return <Fault message={error} />;
 
   // THE COLUMNS ARE THE VIEW'S FIELDS, in its order, with the status closing the row the way an
   // airport board prints its remark last. A grouped view does not repeat its group as a column:
   // the group's own title row already names it.
-  const order = active.fields;
+  const order = boardFields(active.fields);
   const widths = order.includes('head') ? WIDTH_WITH_HEAD : WIDTH_WITHOUT_HEAD;
   const columns: Column<SessionRow>[] = [
     ...order.flatMap((key): Column<SessionRow>[] => {
@@ -180,19 +215,55 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
       const width = widths[key];
       const base = { key, label, ...(width === undefined ? {} : { width }) };
       if (key === 'head') return [{ ...base, cell: (row) => <HeadMark head={row.head}>{headText(row)}</HeadMark> }];
+      if (key === 'life') {
+        return [{
+          ...base,
+          cell: (row) => {
+            const started = startedText(row);
+            const seen = fieldsOf(row, null, ['seen'])[0]?.value ?? S.absent;
+            if (row.started_at === null) return S.absent;
+            return (
+              <LifetimeBar
+                start={row.started_at}
+                seen={row.updated_at ?? row.started_at}
+                now={now}
+                from={axis.from}
+                to={axis.to}
+                label={`${S.started} ${started ?? S.absent}, ${S.seen.toLowerCase()} ${seen}`}
+              />
+            );
+          },
+        }];
+      }
+      if (key === 'peer') {
+        return [{
+          ...base,
+          cell: (row) => {
+            const peer = peerFor(row);
+            const peerHue = peer?.row == null ? hueClass(0) : hueClass(hueOf(peer.row.head));
+            return <PeerCell peer={peer} hue={peerHue} onOpen={(target) => setOpenId(keyOf(target))} />;
+          },
+        }];
+      }
       return [{
         ...base,
         primary: key === 'name',
-        mono: key === 'started' || key === 'seen',
-        cell: (row) => fieldsOf(row, peerOf(row), [key])[0]?.value ?? S.absent,
+        cell: (row) => fieldsOf(row, null, [key])[0]?.value ?? S.absent,
       }];
     }),
-    { key: 'status', label: S.status, width: '10%', cell: (row) => <Badge tone={toneOf(row)} quiet>{row.availability}</Badge> },
+    { key: 'status', label: S.status, width: '10%', cell: (row) => <Badge tone={toneOf(row)} quiet>{AVAILABILITY[row.availability]}</Badge> },
   ];
 
   const groupTitle = (key: string): ReactNode => {
     if (by === 'head' || by === null) {
-      return key === UNKNOWN_HEAD ? <HeadMark head="" hue={0}>{S.noHead}</HeadMark> : <HeadMark head={key} />;
+      if (key !== UNKNOWN_HEAD) return <HeadMark head={key} />;
+      const headless = rows.filter((row) => row.head === UNKNOWN_HEAD);
+      return (
+        <span className="myx-sx-headless">
+          <HeadMark head="" hue={0}>{S.noHead}</HeadMark>
+          <InfoTip text={noHeadWhy(headless)} label={S.noHead} side="bottom" />
+        </span>
+      );
     }
     if (by === 'repo') return key === 'unattributed' ? key : baseOf(key);
     return key;
@@ -212,8 +283,8 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
         rows: group.rows,
         ...(byHead ? { hue: hueClass(headless ? 0 : hueOf(group.key)) } : {}),
         ...(headless
-          ? { note: noHeadWhy(group.rows) }
-          : { actions: <a href={groupHref(by)}>{openLabel}</a> }),
+          ? {}
+          : { actions: <a className="myx-sx-go" href={groupHref(by)} aria-label={openLabel}><ArrowUpRightIcon aria-hidden="true" /></a> }),
       };
     })
     : [
@@ -237,30 +308,26 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
     <div className="myx-sx">
       <PageHeader
         title={S.title}
-        actions={(
-          <>
-            {sample === undefined ? null : <Badge tone="neutral">{S.sample}</Badge>}
-            <Reveal label={S.headless}>
-              <p className="myx-sx-note">{payload?.note ?? S.registry}</p>
-            </Reveal>
-          </>
-        )}
+        info={{ text: payload?.note ?? H.registry, label: S.about }}
+        actions={sample === undefined ? undefined : <Badge tone="neutral">{S.sample}</Badge>}
       >
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
 
       {rows.length === 0 ? null : (
         <div className="myx-sx-tally">
-          <Tally
-            items={[
-              { label: S.live, value: count('live') },
-              { label: S.stale, value: stale, ...(stale > 0 ? { tone: 'warn' as const } : {}) },
-              { label: S.gone, value: count('gone') },
+          <StackedBar
+            label={S.availability}
+            legend
+            parts={[
+              { key: 'live', label: S.live, value: count('live'), mark: 'ok' },
+              { key: 'stale', label: S.stale, value: stale, mark: 'warn' },
+              { key: 'gone', label: S.gone, value: count('gone'), mark: 'series-3' },
             ]}
           />
           {selection.kind === 'timeline' ? (
             <p className="myx-sx-window">
-              {selection.window.hours}h {S.window}, {idleBuckets} {S.idle}
+              {selection.window.hours}h {U.window}, {idleBuckets} {U.idle}
             </p>
           ) : null}
         </div>
@@ -282,7 +349,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
               the same fact as "no hand-offs". */}
           {edgesError === null ? null : <Fault message={edgesError} />}
           {rows.length === 0 ? (
-            <Empty text="no sessions in flight" source="start claude code through a splice head and it lands here" />
+            <Empty text={S.noSessions} source={H.noSessions} />
           ) : (
             <DataTable
               className="myx-sx-table"
@@ -305,20 +372,20 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
           <DetailPanel
             title={sessionLabel(open)}
             label={S.detail}
-            status={<Badge tone={toneOf(open)} quiet>{open.availability}</Badge>}
+            status={<Badge tone={toneOf(open)} quiet>{AVAILABILITY[open.availability]}</Badge>}
             onClose={() => setOpenId(null)}
             closeLabel={S.close}
           >
             <Section title={S.conversation}>
               {open.session_id === null ? (
-                <Empty text="this registration carries no session id" source="session registry" />
+                <Empty text={S.noSessionId} />
               ) : (
                 <Conversation sessionId={open.session_id} />
               )}
             </Section>
             <Section title={S.files}>
               {projectKeyOf(open) === null ? (
-                <Empty text="this registration carries no cwd" source="session registry" />
+                <Empty text={S.noCwd} />
               ) : (
                 <FileView projectId={projectKeyOf(open) ?? ''} />
               )}

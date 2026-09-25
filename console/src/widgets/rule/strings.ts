@@ -1,29 +1,37 @@
-// Labels of the status strip. Three words or fewer, lowercase, no em-dash (the
-// label wall globs this file). The honest empty for a window no head reports
-// is not a label and lives in the component (CONTRACTS.md section 4).
+// Copy of the status strip (docs/design/DESIGN.md section 6). The copy gate reads this file: `S`
+// holds labels (three words or fewer, sentence case) and `U` the fragments printed beside a figure.
 export const S = {
-  local: 'local',
-  utc: 'utc',
-  /** The daemon's own three words for its health, printed beside the edge. */
+  local: 'Local',
+  utc: 'UTC',
+  /** The daemon's health: the word printed when it is not fine, and the tip in every state. */
   health: {
-    green: 'daemon ok',
-    amber: 'daemon degraded',
-    red: 'daemon unreachable',
-    grey: 'key required',
+    green: 'Daemon ok',
+    amber: 'Daemon degraded',
+    red: 'Daemon unreachable',
+    grey: 'Key required',
   },
+  /** Printed beside the check glyph while the daemon is fine. */
+  daemon: 'Daemon',
   /** The plan limit closest to running out, across every head that reports one. */
-  nearest: 'closest limit',
-  used: 'used',
+  limit: 'Closest plan limit',
+  noLimit: 'No plan limits',
   /** Saved knobs the running daemon has not read yet (a restart-only knob was patched). */
-  restartPending: 'restart pending',
-  /** The live connection, printed beside health: the word follows the holder edge's state. */
-  live: 'live',
-  reconnecting: 'reconnecting',
-  off: 'off',
-  /** Before the age of the last event the stream delivered. */
-  lastEvent: 'last event',
-  /** After that age, when the link has gone silent past its heartbeat. */
-  stale: 'stale',
-  /** Beside a count: heads with no plan limit to report (a pay-per-token key has none). */
-  noneTail: 'heads without limits',
+  restartPending: 'Restart pending',
+  /** The live connection. */
+  live: 'Live',
+  reconnecting: 'Reconnecting',
+  off: 'Offline',
+  /** The link has gone past its heartbeat with nothing heard. */
+  silent: 'Link silent',
+  lastEvent: 'Last event',
+  noEvents: 'No events yet',
+  /** The braid: every running head's turns in flight. */
+  braid: 'Turns in flight',
+} as const;
+
+export const U = {
+  inFlight: 'in flight',
+  resets: 'resets',
+  /** Beside a count of heads with no plan limit (a pay-per-token key has none). */
+  withoutLimit: 'without limits',
 } as const;

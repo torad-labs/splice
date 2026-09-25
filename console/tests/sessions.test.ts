@@ -164,8 +164,8 @@ describe('session strip', () => {
   test('a measured value carries the measured basis and no suffix word', () => {
     const fields = fieldsOf(session({ repo: { root: '/dev/atlas' } }), 'gs-backend-claude', ['project', 'peer']);
     expect(fields.map((f) => [f.label, f.value, f.basis])).toEqual([
-      ['project', 'atlas', 'measured'],
-      ['last hand-off', 'gs-backend-claude', 'measured'],
+      ['Project', 'atlas', 'measured'],
+      ['Last hand-off', 'gs-backend-claude', 'measured'],
     ]);
   });
 
@@ -190,9 +190,9 @@ describe('sessions board', () => {
       }),
     );
 
-    expect(out).toContain('>live<');
-    expect(out).toContain('>stale<');
-    expect(out).toContain('>gone<');
+    expect(out).toContain('>Live<');
+    expect(out).toContain('>Stale<');
+    expect(out).toContain('>Gone<');
     // stale is the one that needs the operator: its row, and only its row, carries the warn tint
     expect(out.match(/myx-dt-tone-warn/g)?.length).toBe(1);
     expect(out).not.toContain('myx-dt-tone-danger'); // a gone session is read, not disabled
@@ -208,15 +208,16 @@ describe('sessions board', () => {
 
   test('an empty registry says what fills it, in words and never a route, and never a fixture', () => {
     const out = render(h(SessionsBoard, { payload: payload([]) }));
-    expect(out).toContain('no sessions in flight');
+    expect(out).toContain('>No sessions<');
     expect(out).not.toContain('/api/');
     expect(out).not.toContain('sample data');
   });
 
   test('sessions the daemon ties to no head are one group that says why, with no head to open', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ head: 'unknown head' }), session({ session_id: 'b', head: 'claudex' })]) }));
-    expect(out).toContain('no splice head');
-    expect(out).toContain('splice did not start these sessions');
+    expect(out).toContain('No splice head');
+    // the reason rides in the group's tip, not on the page
+    expect(out).toMatch(/role="tooltip"[^>]*>Splice did not start these, or cannot tell which head did\.</);
     expect(out).not.toContain('unknown head'); // the daemon's sentinel is never printed as a name
     expect(out).toContain('myx-hm-name">claudex<');
   });
@@ -227,11 +228,10 @@ describe('sessions board', () => {
       session({ session_id: 'b', head: 'unknown head', route: 'direct' }),
       session({ session_id: 'c', head: 'unknown head', route: 'unknown' }),
     ];
-    expect(noHeadWhy(rows)).toBe('2 started with claude directly, not with a splice head; '
-      + '1 could not be read, so splice cannot tell which head started them');
+    expect(noHeadWhy(rows)).toBe('2 started directly, 1 unreadable');
     expect(noHeadWhy([session({ head: 'unknown head' })])).toBe(NO_HEAD_WHY);
-    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('started directly');
-    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('no splice head');
+    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('Started directly');
+    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('No splice head');
     expect(headText(session({ head: 'claudex', route: 'head' }))).toBe('claudex');
   });
 
@@ -241,13 +241,15 @@ describe('sessions board', () => {
     expect(startedText(session({ started_at: new Date(2026, 8, 20, 9, 35, 29).getTime() }), now)).toBe('sep 20 09:35:29');
   });
 
-  test('the headless note is behind a reveal, and a sample board says so', () => {
+  test('the daemon\'s note is a tip beside the title, never page text, and a sample board says so', () => {
     // The sample prop IS the fixture's own file name (M1-20): the chrome and the capture marker
     // are the same value, so a board cannot claim a sample it was not handed.
     const out = render(h(SessionsBoard, { payload: payload([]), sample: 'board' }));
-    expect(out).toContain('myx-reveal-btn');
-    expect(out).not.toContain('headless `claude -p` runs never register');
-    expect(out).toContain('sample data');
+    const note = 'headless `claude -p` runs never register';
+    expect(out).toContain('myx-info-btn');
+    expect(out.split(note)).toHaveLength(2); // printed once
+    expect(out).toMatch(new RegExp(`role="tooltip"[^>]*>${note.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<`));
+    expect(out).toContain('>Sample<');
   });
 });
 

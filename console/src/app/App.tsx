@@ -17,6 +17,7 @@ import { Rail } from '@widgets/rail';
 import { Rule } from '@widgets/rule';
 import { Empty } from '@shared/ui';
 import { ADDRESSES, LEGACY_PATHS, PAGE_ROW, addressOf, type Address } from './rows';
+import { PAGE } from './strings';
 import { pageFor } from './pages';
 import { RAIL_GROUPS } from './nav';
 import './app.css';
@@ -56,7 +57,7 @@ function Console() {
         </main>
       </div>
       <Palette
-        addresses={ADDRESSES}
+        pages={ADDRESSES.map((page) => ({ address: page, label: PAGE[page] }))}
         views={views}
         onSelectView={(id) => selectView(address, id)}
         theme={theme}

@@ -16,6 +16,7 @@ import { TimerIcon } from '@phosphor-icons/react/dist/csr/Timer';
 import { UsersThreeIcon } from '@phosphor-icons/react/dist/csr/UsersThree';
 import type { RailGroup } from '@widgets/rail';
 import { NAV_GROUPS, type Address } from './rows';
+import { PAGE } from './strings';
 
 const ICON: Record<Address, ReactNode> = {
   sessions: <TerminalWindowIcon />,
@@ -35,5 +36,5 @@ const ICON: Record<Address, ReactNode> = {
 
 export const RAIL_GROUPS: readonly RailGroup[] = NAV_GROUPS.map((group) => ({
   label: group.label,
-  items: group.addresses.map((address) => ({ address, icon: ICON[address] })),
+  items: group.addresses.map((address) => ({ address, label: PAGE[address], icon: ICON[address] })),
 }));

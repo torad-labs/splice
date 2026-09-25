@@ -17,7 +17,8 @@ export interface PaletteView {
 }
 
 export interface PaletteProps {
-  addresses: readonly string[];
+  /** Every page, by its address and the name the sidebar prints. */
+  pages: ReadonlyArray<{ address: string; label: string }>;
   views: readonly PaletteView[];
   onSelectView: (id: string) => void;
   theme: 'dark' | 'light';
@@ -35,7 +36,7 @@ function isTyping(target: EventTarget | null): boolean {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }
 
-export function Palette({ addresses, views, onSelectView, theme, onTheme, open: held, onOpenChange }: PaletteProps) {
+export function Palette({ pages, views, onSelectView, theme, onTheme, open: held, onOpenChange }: PaletteProps) {
   const [own, setOwn] = useState(false);
   const open = held ?? own;
   // One setter for both holders, taking a value or an updater like useState's.
@@ -77,17 +78,17 @@ export function Palette({ addresses, views, onSelectView, theme, onTheme, open: 
         <Command.Empty className="myx-palette-empty">{S.noMatch}</Command.Empty>
 
         <Command.Group className="myx-palette-group" heading={S.pages}>
-          {addresses.map((address) => (
+          {pages.map((page) => (
             <Command.Item
-              key={address}
+              key={page.address}
               className="myx-palette-item"
-              value={address}
+              value={`${page.label} ${page.address}`}
               onSelect={() => {
                 setOpen(false);
-                void navigate(`/${address}`);
+                void navigate(`/${page.address}`);
               }}
             >
-              {address}
+              {page.label}
             </Command.Item>
           ))}
         </Command.Group>

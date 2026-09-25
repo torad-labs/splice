@@ -91,7 +91,7 @@ describe('the board-wide edges', () => {
     );
     // Each strip carries its own name and its peer's; the peer column is the only place the OTHER
     // name can come from.
-    const strip = (name: string) => out.slice(out.indexOf(`aria-label="sessions ${name}"`)).split('</div></div>')[0];
+    const strip = (name: string) => out.slice(out.indexOf(`aria-label="Sessions ${name}"`)).split('</div></div>')[0];
     expect(strip('e2e-sender')).toContain('e2e-peer');
     expect(strip('e2e-peer')).toContain('e2e-sender');
   });

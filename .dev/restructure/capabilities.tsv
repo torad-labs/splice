@@ -2296,3 +2296,4 @@ console/src/shared/ui/charts.css	10321e8845e73d951c4d1d36756f25f886f6f785e55a51b
 console/tests/charts.test.ts	9e0acd251a27380b68da74d557ed9d3245c0e935c37a5e09f5005c1240b72acd	created		the kit charts say their numbers, gap on a missing point, paint measured tokens and hold still under reduced motion
 console/src/shared/coverage/copy-scan.ts	e8bbbe602aab65a87409cca3b9156b5cd33e0bcb90838a17c1acb32f9b867355	created		the copy wall bare-copy scanner: JSX text and sentence literals outside a copy module (voice ruling, 2026-09-25)
 console/tests/fixtures/walls/bad-copy.tsx	2391d41ac12241d35dd881cf556b98ac2584a6026e12ebb5d080be39b060b12d	created		planted bare copy the copy wall must find, and the forms it must not
+console/src/shared/ui/strings.ts	554a17ed7aedf63be2332f1caa3ca61c0dc3a35edf0d82c2e7ffc9ed619cf0ee	created		the kit words: the empty state info mark (voice ruling, 2026-09-25)

@@ -8,8 +8,11 @@ import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
-private const val NO_SUCH_COMMAND = 127
-private const val TIMED_OUT = 124
+/** The exit a command that could not be started reports (the shell's 127). */
+internal const val NO_SUCH_COMMAND = 127
+
+/** The exit a command that ran past its deadline reports (timeout(1)'s 124). */
+internal const val TIMED_OUT = 124
 private const val MILLIS_PER_SECOND = 1_000L
 
 /** Long enough for `gh attestation verify` on a slow link; an upgrade must never hang forever on it. */

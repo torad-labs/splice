@@ -182,53 +182,52 @@ verify_sum() {
   echo "${name}: OK"
 }
 
-# require_authed_gh <release-base> — remote release artifacts are verified against GitHub build
-# provenance, which needs a PRESENT and AUTHENTICATED gh. Local file:// mirrors are acceptance
-# fixtures assembled from the current checkout and never touch gh. Called before every curl of a
-# remote release base, so a missing/unauthenticated gh aborts before anything is downloaded.
-require_authed_gh() {
-  local release_base="$1" authed=1
-  case "$release_base" in
-    file://*) return 0 ;;
-  esac
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "splice: GitHub CLI (gh) is required to verify release provenance — aborting" >&2
-    echo "splice: install gh from https://cli.github.com/ and retry" >&2
-    exit 1
-  fi
-  if command -v timeout >/dev/null 2>&1; then
-    if ! timeout 20 gh auth status >/dev/null 2>&1; then
-      authed=0
+# gh_attestation_gap — empty when gh can verify a build provenance attestation (installed and
+# signed in), else why not: "is not installed" or "is not signed in". Asked once per run.
+GH_GAP_KNOWN=0
+GH_GAP=""
+gh_attestation_gap() {
+  if [ "$GH_GAP_KNOWN" = 0 ]; then
+    GH_GAP_KNOWN=1
+    if ! command -v gh >/dev/null 2>&1; then
+      GH_GAP="is not installed"
+    elif command -v timeout >/dev/null 2>&1; then
+      timeout 20 gh auth status >/dev/null 2>&1 || GH_GAP="is not signed in"
+    else
+      gh auth status >/dev/null 2>&1 || GH_GAP="is not signed in"
     fi
-  elif ! gh auth status >/dev/null 2>&1; then
-    authed=0
   fi
-  if [ "$authed" = 0 ]; then
-    echo "splice: gh is installed but not authenticated — provenance verification will fail" >&2
-    echo "splice: run: gh auth login   then re-run this installer" >&2
-    exit 1
-  fi
+  printf '%s' "$GH_GAP"
 }
 
-# verify_attestation <file> <asset-name> <release-base> — remote release artifacts must
-# be bound to this repository's GitHub Actions build provenance. Local file:// mirrors are
-# acceptance fixtures assembled from the current checkout and cannot have a GitHub attestation.
+# verify_attestation <file> <asset-name> <release-base> — binds a remote release artifact to this
+# repository's GitHub Actions build provenance whenever gh can check it, and refuses when the check
+# fails. Without a signed-in gh the install continues on the sha256 match alone (V4-217: a first
+# install needs no GitHub account) and the end of the run prints the command that verifies it later.
+# The attestation cannot guard `curl … | bash` on its own anyway: install.sh comes from the same
+# release, so whoever could swap the jar could swap the check. Local file:// mirrors are acceptance
+# fixtures assembled from the current checkout and cannot have a GitHub attestation.
+PROVENANCE_DEFERRED=""
 verify_attestation() {
-  local file="$1" name="$2" release_base="$3"
+  local file="$1" name="$2" release_base="$3" gap
   case "$release_base" in
     file://*)
       echo "splice: local release base — skipping Sigstore attestation for ${name} (dev/acceptance artifact)" >&2
-      ;;
-    *)
-      require_authed_gh "$release_base"
-      echo "splice: verifying build provenance attestation for ${name}"
-      if ! gh attestation verify "$file" --repo torad-labs/splice; then
-        echo "splice: attestation verification FAILED for ${name} — aborting" >&2
-        exit 1
-      fi
-      echo "${name} attestation: OK"
+      return 0
       ;;
   esac
+  gap="$(gh_attestation_gap)"
+  if [ -n "$gap" ]; then
+    echo "splice: ${name}: build provenance not checked here, gh ${gap}"
+    PROVENANCE_DEFERRED="$gap"
+    return 0
+  fi
+  echo "splice: verifying build provenance attestation for ${name}"
+  if ! gh attestation verify "$file" --repo torad-labs/splice; then
+    echo "splice: attestation verification FAILED for ${name} — aborting" >&2
+    exit 1
+  fi
+  echo "${name} attestation: OK"
 }
 
 # 1. Obtain the jar. Prefer an explicit SPLICE_JAR, else build from the checkout, else (release
@@ -258,9 +257,6 @@ else
   else
     RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
   fi
-  # Preflight BEFORE any download: catching the two common gh gaps here beats aborting
-  # after the jar has already been fetched.
-  require_authed_gh "$RELEASE_BASE"
   JAR_URL="${RELEASE_BASE}/splice.jar"
   SUMS_URL="${RELEASE_BASE}/sha256sums.txt"
   echo "splice: downloading $JAR_URL"
@@ -289,7 +285,6 @@ if [ ! -f "$SHIM_SRC" ]; then
   [ -n "$JAR_VERSION" ] || { echo "splice: prebuilt jar has no readable splice version" >&2; exit 1; }
   REPO="torad-labs/splice"
   RELEASE_BASE="${SPLICE_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/v${JAR_VERSION}}"
-  require_authed_gh "$RELEASE_BASE"
   SUMS_TMP="$(mktemp)"
   curl -fsSL "${RELEASE_BASE}/sha256sums.txt" -o "$SUMS_TMP"
   curl -fsSL "${RELEASE_BASE}/splice-launch" -o "$SHIM_TMP"
@@ -408,6 +403,12 @@ rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 
 echo
 echo "splice: installed  (jar: $JAR_DST)"
+if [ -n "$PROVENANCE_DEFERRED" ]; then
+  echo "splice: sha256 matched the release's sha256sums.txt; build provenance was not checked (gh ${PROVENANCE_DEFERRED})."
+  echo "splice: to verify it later, with gh installed and signed in:"
+  echo "  gh attestation verify $JAR_DST --repo torad-labs/splice"
+  echo "  gh attestation verify $SHIM_DST --repo torad-labs/splice"
+fi
 
 # 5. Verify, don't assume: run the same checkup a user would. Its findings are NEXT STEPS
 #    (a missing API key is expected before `splice setup`), never an installer failure —

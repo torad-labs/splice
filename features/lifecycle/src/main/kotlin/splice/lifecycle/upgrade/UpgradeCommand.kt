@@ -81,7 +81,8 @@ internal class UpgradeCommand(
         val base = release.base(a.to, env("SPLICE_RELEASE_BASE_URL"))
         output.line("${BOLD}splice upgrade$RESET $DIM— from $base$RESET")
         val staging = layout.stagingDir()
-        val version = staged(base, staging, a.to)
+        val candidate = staged(base, staging, a.to)
+        val version = candidate.version
         val installed = layout.installedVersion()
         if (version == installed) {
             layout.discard(staging)
@@ -96,6 +97,10 @@ internal class UpgradeCommand(
         }
         Files.move(staging, dir, StandardCopyOption.ATOMIC_MOVE)
         output.line("  $GREEN✓$RESET ${"staged".padEnd(UPGRADE_PAD)} $version -> $dir")
+        candidate.provenanceGap?.let { gap ->
+            output.line("  $YELLOW!$RESET ${"provenance".padEnd(UPGRADE_PAD)} not checked (gh $gap); to verify it later:")
+            for (asset in listOf(JAR_ASSET, SHIM_ASSET)) output.line("      ${release.verifyLater(dir.resolve(asset))}")
+        }
         if (!daemon.waitIdle(a.now)) {
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
             return false
@@ -120,13 +125,13 @@ internal class UpgradeCommand(
 
     /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
      *  directory, and a `--to` that the candidate jar does not confirm is a refusal, not a rename. */
-    private fun staged(base: String, staging: Path, requested: String?): String {
+    private fun staged(base: String, staging: Path, requested: String?): Staged {
         // runCatchingCancellable folds I/O and parse failures into a refusal; a refusal thrown by the
         // verifier itself passes straight through it, so the cleanup catches the refusal, not the Result.
         return try {
-            val version = Cancellables.runCatchingCancellable { release.stage(base, staging) }
+            val candidate = Cancellables.runCatchingCancellable { release.stage(base, staging) }
                 .getOrElse { e -> throw UpgradeRefused("staging failed: ${SafeFailureText.render(e)}") }
-            layout.confirmVersion(version, requested)
+            candidate.copy(version = layout.confirmVersion(candidate.version, requested))
         } catch (refused: UpgradeRefused) {
             layout.discard(staging)
             throw refused

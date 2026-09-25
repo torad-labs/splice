@@ -3,11 +3,16 @@
 // so the return value stays deterministic.
 package splice.diagnostics.doctor
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.SHIM_VERSION
 import splice.core.testing.TestPorts
+import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -584,6 +589,33 @@ class DoctorTopologyLeakTest {
         )
         assertTrue(output.contains("does not parse"), output)
         assertFalse(output.contains("sk-SENT-99"), "parse text must not quote config bytes: $output")
+    }
+}
+
+/** The report's `claude_code.version` is the claude the doctor's own PATH resolves, the same one the
+ *  prerequisites row probes. It ran the bare name on the JVM's PATH instead, and a missing binary's
+ *  failure to start read "present (version probe failed: ...)" (CI run 36184525303). */
+class DoctorClaudeVersionTest {
+    @Test
+    fun `the report's claude version is the claude on the doctor's PATH`() {
+        val tmp = Files.createTempDirectory("doctor-claude-version")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        Files.writeString(bin.resolve("claude"), "#!/bin/sh\necho '9.9.9 (Claude Code)'\n")
+        bin.resolve("claude").toFile().setExecutable(true)
+        assertEquals("9.9.9 (Claude Code)", claudeVersionIn(tmp, bin))
+    }
+
+    @Test
+    fun `a claude missing from the doctor's PATH reads not found, never present`() {
+        val tmp = Files.createTempDirectory("doctor-claude-absent")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        assertEquals("not found on PATH", claudeVersionIn(tmp, bin))
+    }
+
+    private fun claudeVersionIn(tmp: Path, bin: Path): String {
+        val env = hermetic(tmp, env(tmp, bin, Files.createDirectories(tmp.resolve("share"))))
+        val report = Json.parseToJsonElement(DoctorTestPorts.doctor().reportJson(EnvReader { env[it] })).jsonObject
+        return report.getValue("claude_code").jsonObject.getValue("version").jsonPrimitive.content
     }
 }
 

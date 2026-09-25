@@ -53,7 +53,8 @@ export function sum(buckets: readonly EconomicsBucket[]): Totals {
     deferralTurns: a.deferralTurns + b.deferral_turns,
     rateLimited: a.rateLimited + b.rate_limited,
     costUsd: a.costUsd + (b.cost_usd ?? 0),
-    unpricedTurns: a.unpricedTurns + (b.cost_usd === null ? b.turns : b.unpriced_turns),
+    // An hour not priced then, or served by a daemon that prices none, is every one of its turns.
+    unpricedTurns: a.unpricedTurns + (b.cost_usd == null ? b.turns : b.unpriced_turns ?? 0),
   }), ZERO);
 }
 

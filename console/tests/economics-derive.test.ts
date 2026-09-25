@@ -45,6 +45,18 @@ describe('the dollars, as the daemon priced each turn (V4-221)', () => {
     expect(costOf(sum([bucket(1, { turns: 5, cost_usd: null })]))).toBeNull();
   });
 
+  test('a daemon older than V4-221 sends neither field: every turn is unpriced, never NaN', () => {
+    // #281's gate, 2026-09-25: its own daemon served no cost fields yet, and the usage page printed
+    // "NaN turns unpriced".
+    const old: EconomicsBucket = bucket(1, { turns: 5 });
+    delete old.cost_usd;
+    delete old.unpriced_turns;
+    const totals = sum([old, bucket(2, { turns: 2, cost_usd: 0.25 })]);
+    expect(totals.unpricedTurns).toBe(5);
+    expect(totals.costUsd).toBeCloseTo(0.25, 12);
+    expect(costOf(sum([old]))).toBeNull();
+  });
+
   test('turns on a model with no card are no dollar figure; no turns at all is $0, a reading', () => {
     expect(costOf(sum([bucket(1, { turns: 2, cost_usd: 0, unpriced_turns: 2 })]))).toBeNull();
     expect(costOf(sum([]))).toBe(0);

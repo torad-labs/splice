@@ -441,7 +441,7 @@ Not a contract: log wording, the console's layout, the format of files under the
 and the Kotlin module API (splice publishes no library).
 
 **Claude Code.** Each release is tested against one Claude Code version in a fresh-machine e2e
-(0.4.0: 2.1.281). A newer client usually works, but Anthropic can change what it sends at any
+(0.4.0: 2.1.282). A newer client usually works, but Anthropic can change what it sends at any
 time, so when a session runs a newer one, `splice doctor`, `splice status` and the status line say
 so.
 

@@ -52,11 +52,12 @@ export const S = {
     warn: 'Warn',
     fail: 'Fail',
   },
-  /** How the installed release stands against the newest one. */
+  /** How the installed release stands against the newest one. The unknown one names what is
+   *  unknown: a bare `Unknown` beside the installed version read as the version being unknown. */
   verdictName: {
     current: 'Current',
     behind: 'Behind',
-    unknown: 'Unknown',
+    unknown: 'Latest unknown',
   },
 } as const;
 

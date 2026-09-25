@@ -36,6 +36,19 @@ export function exhaustionRank(account: AccountRow, nowMs: number): number {
   return nearestWindow(account, nowMs)?.used_percent ?? Number.NEGATIVE_INFINITY;
 }
 
+/** The soonest reset of any account's window still ahead, epoch seconds; null when none is. The
+ *  `Next reset` figure: a weekly window's reset is not the next one while a five-hour window
+ *  resets first (review of #264). */
+export function nextReset(accounts: readonly AccountRow[], nowMs: number): number | null {
+  let soonest: number | null = null;
+  for (const window of accounts.flatMap((account) => account.windows)) {
+    const at = window.reset_epoch_seconds;
+    if (at === null || at * 1000 <= nowMs) continue;
+    if (soonest === null || at < soonest) soonest = at;
+  }
+  return soonest;
+}
+
 function byExhaustion(left: AccountRow, right: AccountRow, nowMs: number): number {
   const delta = exhaustionRank(right, nowMs) - exhaustionRank(left, nowMs);
   if (delta !== 0) return delta;

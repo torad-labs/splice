@@ -43,6 +43,7 @@ import type { PlaygroundState } from '../src/pages/doctor/model';
 import { dispositions as mcpDispositions } from '../src/pages/mcp/coverage';
 import { dispositions as doctorDispositions } from '../src/pages/doctor/coverage';
 import { Empty } from '../src/shared/ui';
+import { statOf } from './lib/markup';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -435,6 +436,15 @@ describe('the upgrade verdict', () => {
   test('a matching version is current and a different one is behind', () => {
     expect(upgradeVerdict(payload({ latest_basis: 'measured', latest: '0.4.0' }))).toBe('current');
     expect(upgradeVerdict(payload({ latest_basis: 'measured', latest: '0.5.0' }))).toBe('behind');
+  });
+
+  test('the installed figure names what is unknown: the latest release, not the version beside it', () => {
+    const report: DoctorPayload = {
+      schema_version: 1, generated_at: '2026-09-18T00:00:00Z', splice: { version: '0.4.0' }, claude_code: { version: '2.1.257' },
+      os: { name: 'Linux', version: '6.17', arch: 'x86_64' }, jvm: { version: '21', vendor: 'x' }, topology: {}, checks: [], accounts: {}, perf: {},
+    };
+    const out = render(h(DoctorBoard, { report, upgrade: payload(), onToggle: () => undefined }));
+    expect(statOf(out, DOCTOR_WORDS.installed)?.sub).toBe('Latest unknown');
   });
 });
 

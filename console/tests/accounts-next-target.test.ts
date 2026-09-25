@@ -16,6 +16,7 @@ import { SELECTOR_ORDER_TEXT, nextRuleOf } from '../src/entities/account';
 import type { AccountRow, AccountWindow } from '../src/entities/account';
 import { AccountsBoard } from '../src/pages/accounts';
 import { orderText } from '../src/pages/accounts/model';
+import { tableOf } from './lib/markup';
 
 const h = React.createElement;
 const DAY_7 = 604800;
@@ -59,13 +60,10 @@ const POOLS: AccountRow[] = [
 /** The `Next` cell's text in every account row of the board, in document order, found by the
  *  column's position in the head row so a moved column cannot silently read another. */
 function nextCells(markup: string): string[] {
-  const table = /<table[^>]*aria-label="Accounts"[^>]*>([\s\S]*?)<\/table>/.exec(markup)?.[1] ?? '';
-  const [head, body] = table.split('</thead>');
-  const names = [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1]);
-  const at = names.indexOf('Next');
+  const table = tableOf(markup, 'Accounts');
+  const at = table.names.indexOf('Next');
   if (at < 0) throw new Error('the accounts table has no Next column');
-  return (body ?? '').split('<tr').slice(1).filter((row) => !row.includes('myx-dt-group'))
-    .map((row) => (row.split('<td').slice(1)[at] ?? '').replace(/^[^>]*>/, '').replace(/<[^>]*>/g, ''));
+  return table.cells.map((cells) => cells[at] ?? '');
 }
 
 function board(accounts: AccountRow[]): string {

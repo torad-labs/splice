@@ -11,19 +11,10 @@ import {
   failedOf, headRows, MARK, medianOf, outcomeCounts, outcomeParts, outcomeText, seriesOf, shareText, stateOf, TONE,
 } from '../src/pages/compaction/model';
 import { H, S } from '../src/pages/compaction/strings';
+import { escapeHtml, tableOf } from './lib/markup';
 
 const h = createElement;
 const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => renderToStaticMarkup(element);
-
-/** The column names of one labelled table, and its body rows. */
-function table(markup: string, label: string): { names: string[]; rows: string[] } {
-  const match = new RegExp(`<table[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</table>`).exec(markup);
-  const [head, body] = (match?.[1] ?? '').split('</thead>');
-  return {
-    names: [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1] ?? ''),
-    rows: (body ?? '').split('<tr').slice(1).filter((row) => !row.includes('myx-dt-group')),
-  };
-}
 
 describe('an outcome earns one state', () => {
   test('a summary is ok, a failure is fail, and an outcome the console has not met is never ok', () => {
@@ -125,10 +116,10 @@ describe('the tail as series', () => {
 describe('the board', () => {
   test('the outcomes and recent tables name their columns once, in the head row, never per cell', () => {
     const markup = render(h(CompactionBoard, { payload: fixtureCompact }));
-    const outcomes = table(markup, S.outcomes);
+    const outcomes = tableOf(markup, S.outcomes);
     expect(outcomes.names).toEqual([S.outcome, S.share, S.count]);
     expect(outcomes.rows).toHaveLength(Object.keys(fixtureCompact.stats.by_outcome).length);
-    const recent = table(markup, S.recent);
+    const recent = tableOf(markup, S.recent);
     expect(recent.names).toEqual([S.when, S.head, S.outcome, S.summary, S.took]);
     expect(recent.rows).toHaveLength(fixtureCompact.stats.tail.length);
     // one cell per column in every row, so no row carries a name of its own beside its value
@@ -155,7 +146,7 @@ describe('the board', () => {
   test('which model compacts is one sentence behind an info mark, not prose on the page', () => {
     const markup = render(h(CompactionBoard, { payload: fixtureCompact }));
     expect(markup).toContain(`aria-label="${S.aboutModel}"`);
-    expect(markup).toContain(H.model.replace("'", '&#x27;'));
+    expect(markup).toContain(escapeHtml(H.model));
     expect(H.model.split(/\s+/).length).toBeLessThanOrEqual(12);
   });
 
@@ -190,7 +181,7 @@ describe('the rules', () => {
   test('one row per rule, with its source, its length drawn, and every head it applies to', () => {
     const rules = mergeInstructions([{ head: 'e2e-codex', wire: CODEX }, { head: 'e2e-codex-solo', wire: SOLO }]);
     const markup = render(h(RulesSection, { instructions: { rules, unread: [] } }));
-    const rows = table(markup, S.rules).rows;
+    const rows = tableOf(markup, S.rules).rows;
     expect(rows).toHaveLength(3);
     const model = rows.find((row) => row.includes('model:e2e-model')) ?? '';
     expect(model).toContain('>31<');

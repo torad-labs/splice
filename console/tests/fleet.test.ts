@@ -28,7 +28,7 @@ import type { HeadSignals } from '../src/entities/heads';
 import type { TurnRow } from '../src/entities/perf';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
 import {
-  EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, fullestWindow, healthOf, healthParts, inflightTotals,
+  EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthOf, healthParts, inflightTotals,
   lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone,
 } from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
@@ -40,6 +40,7 @@ import { ABSENT } from '../src/shared/lib';
 import { Empty } from '../src/shared/ui';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
 import type { View } from '../src/features/views';
+import { tableOf } from './lib/markup';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -337,16 +338,6 @@ function board(heads: readonly HeadStatus[] | null, over: Partial<FleetSources> 
   return render(h(FleetBoard, { heads, sources: { ...NO_SOURCES, ...over }, openKey, onOpen: () => undefined, nowMs: BOARD_NOW }));
 }
 
-/** A table's column names and its data rows (group title rows left out), one string per row. */
-function table(markup: string, label: string): { names: string[]; rows: string[] } {
-  const match = new RegExp(`<table[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</table>`).exec(markup);
-  const [top, body] = (match?.[1] ?? '').split('</thead>');
-  return {
-    names: [...(top ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1] ?? ''),
-    rows: (body ?? '').split('<tr').slice(1).filter((row) => !row.includes('myx-dt-group')),
-  };
-}
-
 /** One landed turn of `head`, `firstByte` ms to its first byte (absent for a turn that failed first). */
 function turn(key: string, ts: number, firstByte?: number): TurnRow {
   return { head: key, ts, model: null, outcome: 'ok', compact: false, ...(firstByte === undefined ? {} : { first_byte: firstByte }) };
@@ -361,17 +352,17 @@ describe('what one head row prints', () => {
   };
 
   function row(over: Partial<HeadStatus> = {}, sources: Partial<FleetSources> = {}): string {
-    return table(board([head(over)], { usage, ...sources }), S.heads).rows[0] ?? '';
+    return tableOf(board([head(over)], { usage, ...sources }), S.heads).rows[0] ?? '';
   }
 
   /** One cell of the row, found by its column's name rather than its position. */
   function cell(column: string, over: Partial<HeadStatus> = {}, sources: Partial<FleetSources> = {}): string {
-    const heads = table(board([head(over)], { usage, ...sources }), S.heads);
+    const heads = tableOf(board([head(over)], { usage, ...sources }), S.heads);
     return (heads.rows[0] ?? '').split('<td').slice(1)[heads.names.indexOf(column)] ?? '';
   }
 
   test('names every column once, and every row has one cell per column', () => {
-    const heads = table(board([head(), head({ key: 'other', gate: null })], { usage }), S.heads);
+    const heads = tableOf(board([head(), head({ key: 'other', gate: null })], { usage }), S.heads);
     expect(heads.names).toEqual([S.head, S.provider, S.state, S.model, S.account, S.inflight, S.window, S.firstByte, S.lastTurn]);
     for (const one of heads.rows) expect((one.match(/<td/g) ?? []).length).toBe(heads.names.length);
   });
@@ -463,13 +454,6 @@ describe('the figures', () => {
     expect(inflightTotals([head(), head({ gate: gate({ max: 'unlimited' }) })]).max).toBeNull();
   });
 
-  test('the fullest window names its head, and a fleet reporting none names nobody', () => {
-    const quiet = { pct: null, level: 'none' as const, reset: null };
-    const lines = [{ key: 'a', window: quiet }, { key: 'b', window: { pct: 40, level: 'ok' as const, reset: null } }, { key: 'c', window: { pct: 12, level: 'ok' as const, reset: null } }];
-    expect(fullestWindow(lines)?.key).toBe('b');
-    expect(fullestWindow([{ key: 'a', window: quiet }])).toBeNull();
-  });
-
   test('first byte leaves out a turn that never got one, and the median of nothing is nothing', () => {
     expect(firstBytes([turn('a', 1, 100), turn('b', 2), turn('a', 3, 300)])).toEqual([100, 300]);
     expect(firstBytes([turn('a', 1, 100), turn('b', 2, 50)], 'b')).toEqual([50]);
@@ -512,7 +496,7 @@ describe('the opened head', () => {
       { label: 'work' },
       { label: 'elsewhere', heads: ['codex'] },
     ]) }, 'claudex');
-    const accounts = table(out, S.pool);
+    const accounts = tableOf(out, S.pool);
     expect(accounts.rows).toHaveLength(2);
     const main = accounts.rows.find((one) => one.includes('>main<')) ?? '';
     expect(main).toContain('>30%<');

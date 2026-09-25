@@ -17,6 +17,7 @@ import {
 } from '../src/pages/models/model';
 import { H, S } from '../src/pages/models/strings';
 import { ABSENT } from '../src/shared/lib';
+import { tableOf } from './lib/markup';
 
 const h = createElement;
 const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => renderToStaticMarkup(element);
@@ -28,23 +29,11 @@ function first<T>(items: readonly T[]): T {
   return value;
 }
 
-/** The column names of one labelled table, and its body rows without the group title rows. */
-function table(markup: string, label: string): { names: string[]; rows: string[]; groups: string[] } {
-  const match = new RegExp(`<table[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</table>`).exec(markup);
-  const [head, body] = (match?.[1] ?? '').split('</thead>');
-  const all = (body ?? '').split('<tr').slice(1);
-  return {
-    names: [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1] ?? ''),
-    rows: all.filter((row) => !row.includes('myx-dt-group')),
-    groups: all.filter((row) => row.includes('myx-dt-group')),
-  };
-}
-
 const models = fixtureCatalog.heads.reduce((sum, head) => sum + head.models.length, 0);
 
 describe('the catalog table', () => {
   const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
-  const catalog = table(markup, S.models);
+  const catalog = tableOf(markup, S.models);
 
   test('every head is a group and every model a row, so a green below is not an empty denominator', () => {
     expect(catalog.groups).toHaveLength(fixtureCatalog.heads.length);
@@ -97,7 +86,7 @@ describe('the catalog table', () => {
 describe('the tiers', () => {
   test('each head\'s four tiers are chips, green where a model fills one and grey where none does', () => {
     const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
-    const claudex = first(table(markup, S.models).groups.filter((group) => group.includes('>claudex<')));
+    const claudex = first(tableOf(markup, S.models).groups.filter((group) => group.includes('>claudex<')));
     for (const tier of ['Opus', 'Sonnet', 'Haiku']) expect(claudex).toMatch(new RegExp(`myx-badge-ok[^"]*"[^>]*>(<[^>]*>)*${tier}<`));
     expect(claudex).toMatch(/myx-badge-neutral[^"]*"[^>]*>(<[^>]*>)*Fable</);
   });

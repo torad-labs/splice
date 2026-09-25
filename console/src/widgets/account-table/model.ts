@@ -2,9 +2,10 @@
 // pool): its state as a tone and a mark, and its windows as figures and countdowns. Pure, so the
 // thresholds and the stale rule are pinned without a renderer.
 import {
-  COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT, isExcluded, isStale, nearestWindow, windowLengthText,
+  COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT, isExcluded, isStale, nearestWindow,
 } from '@entities/account';
 import type { AccountRow, AccountWindow } from '@entities/account';
+import { windowName } from '@features/nearest-limit';
 import { fmtDurationS } from '@shared/lib';
 import type { BarPart, Mark, Tone } from '@shared/ui';
 import { S } from './strings';
@@ -55,12 +56,8 @@ export function accountName(account: AccountRow): string {
   return account.label ?? S.singleLogin;
 }
 
-/** A window's name: its reported length, prefixed by the model where the provider scopes one. The
- *  length is the window's own (Grok reports 30d), never assumed from its slot. */
-export function windowName(window: AccountWindow): string {
-  const length = windowLengthText(window.seconds);
-  return window.model === undefined ? length : `${window.model} ${length}`;
-}
+/** A window's name, from the one definition the nearest limit also prints. */
+export { windowName };
 
 const DAY_S = 86_400;
 const HOUR_S = 3_600;

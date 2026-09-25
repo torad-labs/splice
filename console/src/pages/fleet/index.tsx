@@ -29,6 +29,8 @@ import { startTopologyPolling, useTopology } from '@entities/topology';
 import { headWindow, startUsagePolling, useUsage } from '@entities/usage';
 import type { HeadWindow } from '@entities/usage';
 import { DaemonRestart } from '@features/daemon-restart';
+import { limitText, limitTone, nearestLimit } from '@features/nearest-limit';
+import type { NearestLimit } from '@features/nearest-limit';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
@@ -42,7 +44,7 @@ import { NextRule, accountColumns, accountKey, accountName, accountTone } from '
 import { KnobReadout } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import {
-  EMPTIES, HEAD_FIELDS, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, fullestWindow, healthParts,
+  EMPTIES, HEAD_FIELDS, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
   inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone, windowTone,
 } from './model';
 import type { CauseHelp, LastTurn } from './model';
@@ -238,13 +240,12 @@ function headColumns(fields: readonly string[], grouped: string | null, nowMs: n
 }
 
 /** The figures the page leads with: the heads by health, what is in flight against the ceiling, the
- *  fleet's time to first byte, and the plan window nearest its limit. */
-function Figures({ lines, landed }: { lines: readonly HeadLine[]; landed: readonly TurnRow[] }) {
+ *  fleet's time to first byte, and the nearest limit (the one definition the strip and the accounts
+ *  page print). */
+function Figures({ lines, landed, limit }: { lines: readonly HeadLine[]; landed: readonly TurnRow[]; limit: NearestLimit | null }) {
   const totals = inflightTotals(lines.map((line) => line.head));
   const fleet = firstBytes(landed);
   const middle = median(fleet);
-  const fullest = fullestWindow(lines);
-  const pct = fullest?.window.pct ?? null;
   return (
     <StatRow>
       <Stat
@@ -265,13 +266,13 @@ function Figures({ lines, landed }: { lines: readonly HeadLine[]; landed: readon
         value={middle === null ? ABSENT : fmtMs(middle)}
         {...(fleet.length === 0 ? {} : { chart: <Sparkline values={fleet} label={S.firstByte} format={fmtMs} /> })}
       />
-      {fullest === null || pct === null ? <Stat label={S.nearestLimit} value={ABSENT} /> : (
+      {limit === null ? <Stat label={S.nearestLimit} value={ABSENT} /> : (
         <Stat
           label={S.nearestLimit}
-          value={`${Math.round(pct)}%`}
-          {...(windowTone(fullest.window) === 'ok' ? {} : { tone: windowTone(fullest.window) })}
-          chart={<Meter value={pct / 100} tone={windowTone(fullest.window)} label={S.nearestLimit} />}
-          sub={[fullest.head.label, fullest.window.reset].filter((part) => part !== null).join(' ')}
+          value={`${Math.round(limit.pct)}%`}
+          {...(limitTone(limit) === 'ok' ? {} : { tone: limitTone(limit) })}
+          chart={<Meter value={limit.pct / 100} tone={limitTone(limit)} label={S.nearestLimit} />}
+          sub={limitText(limit)}
         />
       )}
     </StatRow>
@@ -418,7 +419,7 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
             <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} action={<AddHead />} />
           ) : (
             <>
-              <Figures lines={[...lines.values()]} landed={sources.landed} />
+              <Figures lines={[...lines.values()]} landed={sources.landed} limit={nearestLimit({ accounts, usage: sources.usage, auth: sources.auth }, nowMs)} />
               <Section title={S.heads} count={all.length} info={{ text: H.firstByte, label: S.aboutFirstByte }}>
                 <DataTable
                   columns={headColumns(columnsOf(active, HEAD_FIELDS), active.group, nowMs, opened !== null)}

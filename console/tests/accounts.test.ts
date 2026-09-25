@@ -32,13 +32,14 @@ import {
   windowFigure, windowName,
 } from '../src/widgets/account-table';
 import { refusalOf } from '../src/features/account-login';
-import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp } from '../src/pages/accounts/model';
+import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp, nextReset } from '../src/pages/accounts/model';
 import { dispositions } from '../src/pages/accounts/coverage';
 import { AccountsBoard, ApiKeyDetail } from '../src/pages/accounts';
 import { H, S } from '../src/pages/accounts/strings';
 import { ABSENT } from '../src/shared/lib';
 import { DataTable, Empty } from '../src/shared/ui';
 import type { View } from '../src/features/views';
+import { statOf, tableOf } from './lib/markup';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -485,7 +486,7 @@ describe('the api-key heads have a table of their own', () => {
         { head: 'claude-deepseek', kind: 'api-key', present: false, masked: null, note: null, envVar: 'DEEPSEEK_API_KEY' },
       ],
     }));
-    const keys = table(out, S.apiKeys);
+    const keys = tableOf(out, S.apiKeys);
     expect(keys.names).toEqual([S.head, S.variable, S.key, S.state]);
     expect(keys.rows).toHaveLength(2);
     expect(out).toContain('OPENROUTER_API_KEY');
@@ -520,18 +521,6 @@ describe('the api-key heads have a table of their own', () => {
     expect(render(h(ApiKeyDetail, { row: empty }))).toContain('splice key set OR_KEY');
   });
 });
-
-/** The column names of one labelled table, and its body rows without the group title rows. */
-function table(markup: string, label: string): { names: string[]; rows: string[]; cells: string[][] } {
-  const match = new RegExp(`<table[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</table>`).exec(markup);
-  const [head, body] = (match?.[1] ?? '').split('</thead>');
-  const rows = (body ?? '').split('<tr').slice(1).filter((row) => !row.includes('myx-dt-group'));
-  return {
-    names: [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1] ?? ''),
-    rows,
-    cells: rows.map((row) => row.split('<td').slice(1).map((cell) => cell.replace(/^[^>]*>/, '').replace(/<[^>]*>/g, ''))),
-  };
-}
 
 describe('an account\'s state', () => {
   test('is decided by its nearest window, at the same thresholds the strip used', () => {
@@ -573,7 +562,7 @@ describe('the accounts table', () => {
     account({ kind: 'grok-oauth', label: 'grok', windows: [{ seconds: DAY_30, used_percent: 42, reset_epoch_seconds: null }] }),
   ];
   const out = render(h(AccountsBoard, { payload: { accounts: pool }, nowMs: NOW }));
-  const accounts = table(out, S.accounts);
+  const accounts = tableOf(out, S.accounts);
 
   test('names its columns once, with one cell per column in every row, grouped by provider by default', () => {
     expect(accounts.names).toEqual([W.account, W.plan, W.state, W.short, W.long, W.heads, W.next]);
@@ -602,10 +591,43 @@ describe('the accounts table', () => {
     expect((out.match(/myx-dt-tone-warn/g) ?? []).length).toBe(1);
   });
 
-  test('the figures lead with the state split and the window nearest its limit', () => {
-    expect(out).toContain(`>${S.nearestLimit}<`);
-    expect(out).toContain('>100%<');
-    expect(out).toContain('myx-stat-danger');
+  test('the nearest limit is the fullest account that can serve a turn, not the spent one beside it', () => {
+    // `spent` sits at 100% and the pool has stepped past it; `near` at 95% is the limit ahead.
+    expect(statOf(out, S.nearestLimit)).toEqual({ value: '95%', sub: 'near 5h' });
+    expect(out).toContain('myx-stat-warn');
+    // with nothing left that can serve, the fullest of the rest is the limit reached
+    const allSpent = render(h(AccountsBoard, { payload: { accounts: [pool[0] as AccountRow] }, nowMs: NOW }));
+    expect(statOf(allSpent, S.nearestLimit)?.value).toBe('100%');
+    expect(allSpent).toContain('myx-stat-danger');
+  });
+});
+
+describe('the next reset', () => {
+  const at = (seconds: number) => NOW / 1000 + seconds;
+  // the review's capture: work's five-hour window resets in 41m 24s, its weekly one in 3d 10h
+  const pool = [
+    account({ label: 'work', windows: [
+      { seconds: HOUR_5, used_percent: 12, reset_epoch_seconds: at(41 * 60 + 24) },
+      { seconds: DAY_7, used_percent: 64, reset_epoch_seconds: at(3 * 86_400 + 10 * 3600) },
+    ] }),
+    account({ label: 'primary', windows: [
+      { seconds: HOUR_5, used_percent: 38, reset_epoch_seconds: at(2 * 3600 + 4 * 60) },
+      { seconds: DAY_7, used_percent: 21, reset_epoch_seconds: at(5 * 86_400) },
+    ] }),
+  ];
+
+  test('is the soonest reset of any window, a five-hour one ahead of the weekly one nearest its limit', () => {
+    expect(nextReset(pool, NOW)).toBe(at(41 * 60 + 24));
+    const out = render(h(AccountsBoard, { payload: { accounts: pool }, nowMs: NOW }));
+    expect(statOf(out, S.nextReset)?.value).toBe(countdown(at(41 * 60 + 24), NOW));
+    expect(statOf(out, S.nearestLimit)?.value).toBe('64%');
+  });
+
+  test('a reset already past is not the next one, and no reset ahead prints the absence', () => {
+    const passed = account({ label: 'old', windows: [{ seconds: HOUR_5, used_percent: 50, reset_epoch_seconds: at(-60) }] });
+    expect(nextReset([passed, ...pool], NOW)).toBe(at(41 * 60 + 24));
+    expect(nextReset([passed], NOW)).toBeNull();
+    expect(statOf(render(h(AccountsBoard, { payload: { accounts: [passed] }, nowMs: NOW })), S.nextReset)?.value).toBe(ABSENT);
   });
 });
 

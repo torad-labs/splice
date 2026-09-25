@@ -1,8 +1,8 @@
 // M2-09: the rule's two new signals.
 //
-// The window cell is checked against the ENTITY's derivation, on two payloads: the widget used to
-// carry its own copy of `nearestWindow`, and a second copy is one that can silently disagree. The
-// test builds the expected line from @entities/usage and asserts the rendered cell prints exactly
+// The window cell is checked against the ONE derivation, on two payloads: the widget used to carry
+// its own copy of `nearestWindow`, and a second copy is one that can silently disagree. The test
+// builds the expected line from @features/nearest-limit and asserts the rendered cell prints exactly
 // that, so a widget that started deciding for itself would fail here rather than in a screenshot.
 //
 // The cells are rendered from props rather than through Rule(), because a static render sees a
@@ -11,7 +11,8 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
-import { headsReportingNone, nearestWindow } from '../src/entities/usage';
+import { headsReportingNone } from '../src/entities/usage';
+import { nearestLimit } from '../src/features/nearest-limit';
 import type { AuthPayload, UsagePayload } from '../src/shared/api';
 import { ConnectionCell, HealthCell, LINK_SILENT_MS, PendingRestartCell, WindowCell, healthOf, strandsOf } from '../src/widgets/rule';
 import type { HeadStatus } from '../src/shared/api';
@@ -44,15 +45,15 @@ const auth: AuthPayload = {
 };
 
 /**
- * Every word the window cell must print for a payload, built from the ENTITY's derivation. The cell
+ * Every word the window cell must print for a payload, built from the ONE derivation. The cell
  * prints each in its own element, so the check is per part rather than on one concatenated string:
  * what matters is that the values are the entity's, not that they are adjacent in the markup.
  */
 function expectedWindowParts(payload: UsagePayload | null): string[] {
-  const nearest = nearestWindow(payload, auth);
+  const nearest = nearestLimit({ accounts: [], usage: payload, auth }, Date.now());
   if (nearest === null) return ['No plan limits'];
   return [
-    nearest.head,
+    ...(nearest.head === null ? [] : [nearest.head]),
     nearest.window,
     `${nearest.pct}%`,
     ...(nearest.account === null ? [] : [nearest.account]),
@@ -65,7 +66,7 @@ describe('the rule window cell', () => {
   const quiet = usagePayload([usageHead('claudex', 30, 'none'), usageHead('claude-grok', 0, 'none')]);
 
   test('prints the nearest window the entity derives, for a fleet where one head is ahead', () => {
-    const out = render(h(WindowCell, { usage: crowded, auth }));
+    const out = render(h(WindowCell, { accounts: [], usage: crowded, auth }));
     expect(out).toContain('Closest plan limit'); // the glyph's name, and its tip
     expect(out).toContain('role="meter"'); // the share has its shape as well as its figure
     for (const part of expectedWindowParts(crowded)) expect(out).toContain(part);
@@ -75,20 +76,20 @@ describe('the rule window cell', () => {
 
   test('the login method is not an account: a head with no account id prints none', () => {
     // claude-grok wins at 74 and its auth card has `login: 'oauth'` and no masked id.
-    expect(nearestWindow(crowded, auth)?.account).toBeNull();
-    expect(render(h(WindowCell, { usage: crowded, auth }))).not.toContain('oauth');
+    expect(nearestLimit({ accounts: [], usage: crowded, auth }, Date.now())?.account).toBeNull();
+    expect(render(h(WindowCell, { accounts: [], usage: crowded, auth }))).not.toContain('oauth');
   });
 
   test('a fleet where nobody reports a window prints the absence, never a zero', () => {
-    const out = render(h(WindowCell, { usage: quiet, auth }));
+    const out = render(h(WindowCell, { accounts: [], usage: quiet, auth }));
     for (const part of expectedWindowParts(quiet)) expect(out).toContain(part);
     expect(out).toContain('No plan limits');
     expect(out).not.toContain('>0<');
   });
 
   test('the none count agrees with the entity and rides in the tip, and an unanswered route adds none', () => {
-    expect(render(h(WindowCell, { usage: quiet, auth }))).toContain(`Closest plan limit, ${headsReportingNone(quiet)} without limits`);
-    expect(render(h(WindowCell, { usage: null, auth }))).not.toContain('without limits');
+    expect(render(h(WindowCell, { accounts: [], usage: quiet, auth }))).toContain(`Closest plan limit, ${headsReportingNone(quiet)} without limits`);
+    expect(render(h(WindowCell, { accounts: [], usage: null, auth }))).not.toContain('without limits');
   });
 });
 

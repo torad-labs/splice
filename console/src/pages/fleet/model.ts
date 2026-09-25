@@ -81,17 +81,6 @@ export function windowTone(window: HeadWindow): Tone {
   return window.level === 'critical' ? 'danger' : window.level === 'warn' ? 'warn' : 'ok';
 }
 
-/** The head whose plan window is fullest, or null when no head reports one: an absent window is
- *  never a candidate, so a fleet that reports none says so rather than naming a 0%. */
-export function fullestWindow<T extends { window: HeadWindow }>(lines: readonly T[]): T | null {
-  let best: T | null = null;
-  for (const line of lines) {
-    if (line.window.pct === null) continue;
-    if (best === null || line.window.pct > (best.window.pct ?? 0)) best = line;
-  }
-  return best;
-}
-
 /** What the fleet has in flight against its ceiling. The ceiling is null when any running head's
  *  gate is unlimited: a sum with an unlimited term has no ceiling. */
 export function inflightTotals(heads: readonly HeadStatus[]): { inflight: number; max: number | null } {

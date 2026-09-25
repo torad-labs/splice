@@ -13,25 +13,27 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { nearestOverall, startAccountsPolling, useAccounts } from '@entities/account';
+import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { HeadMark } from '@entities/control-status';
 import { familyName } from '@entities/heads';
+import { startUsagePolling, useUsage } from '@entities/usage';
 import { AccountActions, AccountLogin, HeadActions } from '@features/account-login';
+import { limitText, limitTone, nearestLimit } from '@features/nearest-limit';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
+import type { AuthPayload, UsagePayload } from '@shared/api';
 import { Blank, Copy, Fault } from '@shared/controls';
 import { ABSENT, fmtInt } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import {
   AccountFacts, AccountStateBadge, accountColumns, accountKey, accountName, accountTone, countdown, stateOf, stateParts,
-  usedTone, windowName,
 } from '@widgets/account-table';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
 import { dispositions } from './coverage';
-import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp, orderText } from './model';
+import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp, nextReset, orderText } from './model';
 import type { HeadRow } from './model';
 import { H, S, U } from './strings';
 import './accounts.css';
@@ -73,19 +75,25 @@ function useNow(intervalMs: number, fixed: number | null): number {
   return now;
 }
 
-/** The figures the page leads with: every account by state, the window nearest its limit with its
- *  reset, and how many accounts the pools are refusing. */
-function Figures({ accounts, nowMs }: { accounts: readonly AccountRow[]; nowMs: number }) {
-  const nearest = nearestOverall(accounts, nowMs);
-  const used = nearest?.window.used_percent ?? null;
+/** The figures the page leads with: every account by state, the nearest limit (the one definition
+ *  the strip and the fleet print), the soonest reset of any window, and how many accounts the pools
+ *  are refusing. */
+function Figures({ accounts, usage, auth, nowMs }: {
+  accounts: readonly AccountRow[];
+  usage: UsagePayload | null;
+  auth: AuthPayload | null;
+  nowMs: number;
+}) {
+  const nearest = nearestLimit({ accounts, usage, auth }, nowMs);
+  const reset = nextReset(accounts, nowMs);
   const excluded = accounts.filter((account) => stateOf(account, nowMs) === 'excluded').length;
-  const nearestTile = nearest === null || used === null ? <Stat label={S.nearestLimit} value={ABSENT} /> : (
+  const nearestTile = nearest === null ? <Stat label={S.nearestLimit} value={ABSENT} /> : (
     <Stat
       label={S.nearestLimit}
-      value={`${Math.round(used)}${U.used}`}
-      {...(usedTone(used) === 'ok' ? {} : { tone: usedTone(used) })}
-      chart={<Meter value={used / 100} tone={usedTone(used)} label={S.nearestLimit} />}
-      sub={`${accountName(nearest.account)} ${windowName(nearest.window)}`}
+      value={`${Math.round(nearest.pct)}${U.used}`}
+      {...(limitTone(nearest) === 'ok' ? {} : { tone: limitTone(nearest) })}
+      chart={<Meter value={nearest.pct / 100} tone={limitTone(nearest)} label={S.nearestLimit} />}
+      sub={limitText(nearest)}
     />
   );
   return (
@@ -96,7 +104,7 @@ function Figures({ accounts, nowMs }: { accounts: readonly AccountRow[]; nowMs: 
         chart={<StackedBar parts={stateParts(accounts, nowMs)} label={S.accounts} legend format={fmtInt} />}
       />
       {nearestTile}
-      <Stat label={S.nextReset} value={(nearest === null ? null : countdown(nearest.window.reset_epoch_seconds, nowMs)) ?? ABSENT} />
+      <Stat label={S.nextReset} value={(reset === null ? null : countdown(reset, nowMs)) ?? ABSENT} />
       <Stat label={S.excluded} value={fmtInt(excluded)} {...(excluded > 0 ? { tone: 'warn' as const } : {})} />
     </StatRow>
   );
@@ -157,10 +165,14 @@ export function ApiKeyDetail({ row }: { row: HeadRow }) {
 
 /** The board, drawn from a payload it is handed rather than from the store, so a test can hand it
  *  pools (a static render only ever sees a store's initial state). */
-export function AccountsBoard({ payload, headRows = [], nowMs, error = null, lastRead = null, sample }: {
+export function AccountsBoard({ payload, headRows = [], usage = null, auth = null, nowMs, error = null, lastRead = null, sample }: {
   payload: AccountsState | null;
   /** Every head as GET /api/auth reports it: the fallback table, the Claude logins and the keys. */
   headRows?: readonly HeadRow[];
+  /** What the heads report for themselves, and their auth cards: the nearest limit reads both for a
+   *  head no account row names. */
+  usage?: UsagePayload | null;
+  auth?: AuthPayload | null;
   nowMs: number;
   error?: string | null;
   /** When the pools on screen were read, which the fault prints as stale while `error` stands. */
@@ -243,7 +255,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, las
             </Section>
           ) : accounts.length === 0 ? <Empty text={S.noAccounts} source={H.noAccounts} /> : (
             <>
-              <Figures accounts={accounts} nowMs={nowMs} />
+              <Figures accounts={accounts} usage={usage} auth={auth} nowMs={nowMs} />
               <Section title={S.accounts} count={accounts.length} info={{ text: orderText(), label: S.aboutNext }}>
                 <DataTable
                   columns={accountColumns({ fields: columnsOf(active), grouped: active.group, nowMs, accounts })}
@@ -302,12 +314,14 @@ export function AccountsPage() {
   const { search } = useLocation();
   const accountsResource = useAccounts((state) => state);
   const authResource = useAuth((state) => state);
+  const usage = useUsage((state) => state.data);
 
   const fixture = fixtureName(search, import.meta.env.DEV);
   const nowMs = useNow(CLOCK_MS, fixtureNow(fixture));
 
   useEffect(() => startAccountsPolling(POLL_MS), []);
   useEffect(() => startAuthPolling(POLL_MS), []);
+  useEffect(() => startUsagePolling(POLL_MS), []);
 
   const rows = fixtureAccounts(fixture);
 
@@ -327,6 +341,8 @@ export function AccountsPage() {
     <AccountsBoard
       payload={rows === null ? accountsResource.data : { accounts: [...rows] }}
       headRows={headRows}
+      usage={rows === null ? usage : null}
+      auth={rows === null ? authResource.data : null}
       nowMs={nowMs}
       error={accountsResource.error}
       lastRead={rows === null ? accountsResource.lastUpdated : null}

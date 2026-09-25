@@ -14,19 +14,10 @@ import {
   arrangeServers, hostLimits, limitText, liveOf, MARK, maxServersOf, stateParts, stateText, TONE, totalsOf,
 } from '../src/pages/mcp/model';
 import { H, S } from '../src/pages/mcp/strings';
+import { tableOf } from './lib/markup';
 
 const h = createElement;
 const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => renderToStaticMarkup(element);
-
-/** The column names of one labelled table, and its body rows. */
-function table(markup: string, label: string): { names: string[]; rows: string[] } {
-  const match = new RegExp(`<table[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</table>`).exec(markup);
-  const [head, body] = (match?.[1] ?? '').split('</thead>');
-  return {
-    names: [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1] ?? ''),
-    rows: (body ?? '').split('<tr').slice(1),
-  };
-}
 
 function knob(key: string, value: KnobDisposition['value'], hot = true): KnobDisposition {
   return { key, value, provenance: 'default', hot, defaultValue: value, overriddenBy: [] };
@@ -99,7 +90,7 @@ describe('the figures', () => {
 
 describe('the servers table', () => {
   const markup = render(h(McpBoard, { payload: fixtureMcp }));
-  const servers = table(markup, S.servers);
+  const servers = tableOf(markup, S.servers);
 
   test('names its columns once, in the head row, with one cell per column in every row', () => {
     expect(servers.names).toEqual([S.server, S.state, S.sessions, S.streams, S.restarts, S.lastCall]);
@@ -113,7 +104,7 @@ describe('the servers table', () => {
     const unused = servers.rows.find((row) => row.includes('>memory<')) ?? '';
     expect(unused).not.toContain('role="meter"');
     // the sessions and streams cells print the absence; restarts stays a count, and 0 is its fact
-    const cells = unused.split('<td').slice(1).map((cell) => cell.replace(/<[^>]*>/g, '').replace(/^[^>]*>/, ''));
+    const cells = servers.cells[servers.rows.indexOf(unused)] ?? [];
     const at = (name: string) => cells[servers.names.indexOf(name)];
     expect([at(S.sessions), at(S.streams), at(S.restarts)]).toEqual([ABSENT, ABSENT, '0']);
   });
@@ -150,7 +141,7 @@ describe('the host limits', () => {
     const limits = hostLimits([knob('mcpIdleTimeoutMs', 1_800_000)]);
     expect(limits.map((limit) => limit.key)).toEqual([...MCP_HOST_KNOBS]);
     const markup = render(h(McpBoard, { payload, limits }));
-    const rows = table(markup, S.limits).rows;
+    const rows = tableOf(markup, S.limits).rows;
     expect(rows).toHaveLength(4);
     expect(rows.filter((row) => row.includes(`>${S.notCarried}<`))).toHaveLength(3);
     expect(markup).toContain('href="#/settings"');

@@ -725,7 +725,8 @@ class RoleRegistryLawTest {
         )
         val names = config.entries.values.map { it.strings("names") }
         assertTrue(names.none { it == null }) { "every entry must declare an array of strings under `names`" }
-        assertEquals(109, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 108 since 2026-09-25: DoctorReport left `()->String` when it began taking the daemon's answers (V4-230).
+        assertEquals(108, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

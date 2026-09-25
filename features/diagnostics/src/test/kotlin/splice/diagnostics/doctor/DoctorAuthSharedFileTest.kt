@@ -15,6 +15,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.daemonclient.DaemonProbe
 
 class DoctorAuthSharedFileTest {
 
@@ -35,7 +36,12 @@ class DoctorAuthSharedFileTest {
 
     private fun authChecks(topology: Topology) =
         DoctorAuth(TerminalOutput(::println))
-            .authChecks(DoctorTopology.Parsed(topology), EnvReader { null }, DaemonSnapshot(4123, null))
+            .authChecks(
+                DoctorTopology.Parsed(topology),
+                EnvReader { null },
+                DaemonSnapshot(4123, DaemonProbe.HealthProbe.Down),
+                LoopbackDaemon(JdkAccountPoolRead()),
+            )
 
     @Test
     fun `a head on the vendor app's own file gets a WARN naming the fix`() {

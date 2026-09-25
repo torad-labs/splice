@@ -10,6 +10,7 @@ import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
+import splice.daemonclient.DaemonProbe
 import splice.topology.TopologyStatePaths
 import java.nio.file.Path
 
@@ -31,16 +32,28 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
     ): List<DoctorCheck> {
         val statePaths = TopologyStatePaths(envReader).of(topology)
         val expected = DaemonHealth().cliVersion()
-        val daemon = when (val running = snapshot.healthVersion) {
-            null -> DoctorCheck(CHECK_DAEMON, CheckStatus.INFO, "stopped (starts on first launch)")
-            expected ->
-                DoctorCheck(CHECK_DAEMON, CheckStatus.OK, "running $expected on :${snapshot.port}")
-            else -> DoctorCheck(
+        val port = snapshot.port
+        val daemon = when (val probe = snapshot.probe) {
+            DaemonProbe.HealthProbe.Down ->
+                DoctorCheck(CHECK_DAEMON, CheckStatus.INFO, "stopped (starts on first launch)")
+            // V4-230: a probe that timed out met a daemon, not an empty port.
+            is DaemonProbe.HealthProbe.Slow -> DoctorCheck(
                 CHECK_DAEMON,
                 CheckStatus.WARN,
-                "running $running but this CLI is $expected",
-                FIX_RESTART,
+                "running on :$port, slow to answer: /health gave no answer within ${probe.waitedMs}ms",
+                FIX_LOGS,
             )
+            is DaemonProbe.HealthProbe.Odd -> foreign(port, probe.detail)
+            is DaemonProbe.HealthProbe.Up -> when (val running = probe.view.version) {
+                null -> foreign(port, "its /health names no version")
+                expected -> DoctorCheck(CHECK_DAEMON, CheckStatus.OK, "running $expected on :$port")
+                else -> DoctorCheck(
+                    CHECK_DAEMON,
+                    CheckStatus.WARN,
+                    "running $running but this CLI is $expected",
+                    FIX_RESTART,
+                )
+            }
         }
         // daemon.lock is a flock advisory gate whose FILE persists after the daemon exits, so its mere
         // presence proves nothing about liveness (DaemonLock.kt) — report the path only, never a
@@ -67,6 +80,14 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
             ) +
             stateInfo
     }
+
+    /** Something holds the control port that does not answer as splice's daemon. */
+    private fun foreign(port: Int, detail: String) = DoctorCheck(
+        CHECK_DAEMON,
+        CheckStatus.WARN,
+        "something on :$port answers, but not as splice's daemon ($detail)",
+        "lsof -iTCP:$port -sTCP:LISTEN",
+    )
 }
 
 // V4-177's state-layout row lives HERE and not in its own file, deliberately. splice.app.cli sits

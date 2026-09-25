@@ -30,10 +30,11 @@ internal class DoctorAuth(output: TerminalOutput) {
         topo: DoctorTopology,
         envReader: EnvReader,
         snapshot: DaemonSnapshot,
+        reads: DaemonReads,
     ): List<DoctorCheck> {
         val topology = (topo as? DoctorTopology.Parsed)?.topology
             ?: return listOf(DoctorCheck("auth", CheckStatus.INFO, "skipped (no readable topology)"))
-        val daemon = splitBrain.read(snapshot, envReader)
+        val daemon = splitBrain.read(snapshot, envReader, reads)
         val heads = probeHeads(topology, envReader).map { head -> seenBy(head, daemon) }
         if (heads.isEmpty()) return listOf(DoctorCheck("auth", CheckStatus.INFO, "no heads configured"))
         // Severity is honest to "can I use splice at all": with zero authed heads a missing credential

@@ -25,6 +25,7 @@ import {
   MARK as DOCTOR_MARK,
   TONE as DOCTOR_TONE,
   attentionCount,
+  attentionParts,
   canSend,
   claudeVersionText,
   collapseChecks,
@@ -252,6 +253,9 @@ describe('every failing check carries its fix', () => {
     const alpha = groupChecks(checks, { sort: null });
     expect(alpha.map((group) => group.key)).toEqual(['alpha', 'configuration', 'runtime', 'zeta']);
     expect(attentionCount(checks)).toBe(3);
+    // the count names its parts, worst first, and only the statuses it counts (splice-lead, 2026-09-25)
+    expect(attentionParts(checks)).toBe('1 Fail · 2 Warn');
+    expect(attentionParts(checks.filter((one) => one.status === 'ok'))).toBeNull();
   });
 });
 

@@ -6,6 +6,8 @@
 // CONTRACTS.md section 4: a .ts test holds no JSX (TS1161), so elements are built with
 // createElement and asserted on the markup react-dom/server returns; and a BOARD takes its payload
 // as a prop, because a static render only ever sees a zustand store's initial state.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
@@ -415,5 +417,29 @@ describe('a rack of like rows prints its column names once', () => {
     const rack = first(racks(planted));
     expect(rack.label).toBe('planted');
     expect(rack.labels).toBe(1);
+  });
+});
+
+describe('a column of dashes is not drawn', () => {
+  // splice-lead at 2560, 2026-09-25: Limit and Runs out in were a dash on every row when no head has
+  // a token ceiling, and the plan cards filled only the left half of their row.
+  const names = (markup: string): string[] => {
+    const table = /<table[^>]*aria-label="Heads"[^>]*>([\s\S]*?)<\/thead>/.exec(markup)?.[1] ?? '';
+    return [...table.matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1]);
+  };
+
+  test('with no head ceilinged, the heads table drops Limit and Runs out in; with one, it keeps both', () => {
+    const open = { ...fixtureEconomics, heads: fixtureEconomics.heads.map((head) => ({ ...head, ceiling_tokens: null })) };
+    const bare = names(renderToStaticMarkup(createElement(UsageBoard, { payload: open, catalog: fixtureModels, now: FIXTURE_NOW })));
+    expect(bare.length).toBeGreaterThan(0); // the denominator: a table that did not render would pass vacuously
+    expect(bare).not.toContain('Limit');
+    expect(bare).not.toContain('Runs out in');
+    const bounded = names(renderToStaticMarkup(createElement(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW })));
+    expect(bounded).toEqual(expect.arrayContaining(['Limit', 'Runs out in']));
+  });
+
+  test('the plan cards share their row rather than holding empty tracks beside them', () => {
+    const sheet = readFileSync(fileURLToPath(new URL('../src/pages/usage/usage.css', import.meta.url)), 'utf8');
+    expect(/\.myx-plans \{[^}]*grid-template-columns: repeat\((auto-f[a-z]+),/.exec(sheet)?.[1]).toBe('auto-fit');
   });
 });

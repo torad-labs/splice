@@ -15,7 +15,8 @@
 /* ---------- plan cards ---------- */
 .myx-plans {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(27.5 * var(--u))), 1fr));
+  /* auto-fit: the cards share the row, where auto-fill kept empty tracks and filled half of it */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(27.5 * var(--u))), 1fr));
   gap: var(--space-4);
 }
 .myx-plan {

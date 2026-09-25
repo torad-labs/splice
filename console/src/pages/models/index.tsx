@@ -51,11 +51,13 @@ function TierChips({ head }: { head: HeadCatalog }) {
   );
 }
 
-/** The figures the page leads with: how many heads and models, how many tiers a model fills, and
- *  the widest window, which is the scale every window bar is drawn against. */
+/** The figures the page leads with: how many heads and models, how many tiers a model fills, the
+ *  widest window, which is the scale every window bar is drawn against, and how many models carry a
+ *  rate card, which says what the rate columns would have when there are none to draw. */
 function Figures({ heads, max }: { heads: readonly HeadCatalog[]; max: ColumnMax }) {
   const { filled, total } = tiersFilled(heads);
   const models = heads.reduce((sum, head) => sum + head.models.length, 0);
+  const priced = heads.flatMap(entriesOf).filter((entry) => hasRates(entry.model)).length;
   return (
     <StatRow>
       <Stat label={S.heads} value={fmtInt(heads.length)} />
@@ -67,11 +69,14 @@ function Figures({ heads, max }: { heads: readonly HeadCatalog[]; max: ColumnMax
         chart={<Meter value={ratio(filled, total)} tone="ok" label={S.tiersFilled} />}
       />
       <Stat label={S.widestWindow} value={max.window === 0 ? ABSENT : fmtTokens(max.window)} />
+      <Stat label={S.priced} value={fmtInt(priced)} unit={`${U.of} ${fmtInt(models)}`} />
     </StatRow>
   );
 }
 
-function columnsOf(max: ColumnMax, withHead: boolean): Column<ModelEntry>[] {
+/** The table's columns. The rate columns only when a model has a rate card: without one every cell
+ *  was a dash, a third of the table (splice-lead, 2026-09-25), and the Priced figure says why. */
+function columnsOf(max: ColumnMax, withHead: boolean, priced: boolean): Column<ModelEntry>[] {
   const rate = (value: number | undefined, top: number, label: string) => (
     value === undefined ? ABSENT : <Meter value={ratio(value, top)} tone="neutral" label={label} figure={rateText(value)} />
   );
@@ -101,8 +106,10 @@ function columnsOf(max: ColumnMax, withHead: boolean): Column<ModelEntry>[] {
       )),
     },
     { key: 'from', label: S.windowFrom, width: '12%', cell: ({ model }) => windowFromText(model.context_window_source) },
-    { key: 'input', label: S.input, cell: ({ model }) => rate(hasRates(model) ? model.rates.input : undefined, max.input, `${S.input} ${model.id}`) },
-    { key: 'output', label: S.output, cell: ({ model }) => rate(hasRates(model) ? model.rates.output : undefined, max.output, `${S.output} ${model.id}`) },
+    ...(priced ? [
+      { key: 'input', label: S.input, cell: ({ model }: ModelEntry) => rate(hasRates(model) ? model.rates.input : undefined, max.input, `${S.input} ${model.id}`) },
+      { key: 'output', label: S.output, cell: ({ model }: ModelEntry) => rate(hasRates(model) ? model.rates.output : undefined, max.output, `${S.output} ${model.id}`) },
+    ] : []),
   ];
 }
 
@@ -172,7 +179,7 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
         <Section title={S.models} info={{ text: H.rates, label: S.aboutRates }}>
           <div className={opened === null ? 'myx-md-board' : 'myx-md-board myx-md-board-open'}>
             <DataTable
-              columns={columnsOf(max, !byHead)}
+              columns={columnsOf(max, !byHead, heads.some((head) => entriesOf(head).some((entry) => hasRates(entry.model))))}
               groups={groups}
               rowKey={(entry) => entry.key}
               label={S.models}

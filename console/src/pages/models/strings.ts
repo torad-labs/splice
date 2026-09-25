@@ -11,6 +11,8 @@ export const S = {
   model: 'Model',
   tiersFilled: 'Tiers filled',
   widestWindow: 'Widest window',
+  /** How many models carry a rate card. */
+  priced: 'Priced',
   tiers: 'Tiers',
   tier: 'Tier',
   contextWindow: 'Context window',

@@ -176,3 +176,25 @@ describe('grouping and the opened model', () => {
     expect(entriesOf(twin)[0]?.key).not.toBe(entriesOf(kimi)[0]?.key);
   });
 });
+
+describe('the rate columns are drawn only when a model has a rate card', () => {
+  // splice-lead at 2560, 2026-09-25: with no rate card on any model, Input and Output were two
+  // full-width columns of dashes, a third of the table. The Priced figure carries what they said.
+  const unpriced = { ...fixtureCatalog, heads: fixtureCatalog.heads.map((head) => ({ ...head, models: head.models.map((model) => ({ ...model, rates: null })) })) };
+  const headers = (markup: string): string[] => [...markup.matchAll(/<th scope="col"[^>]*>([^<]*)/g)].map((m) => m[1]);
+
+  test('a priced catalog draws Input and Output, and counts its priced models', () => {
+    const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
+    expect(headers(markup)).toEqual(expect.arrayContaining([S.input, S.output]));
+    const priced = fixtureCatalog.heads.flatMap((head) => head.models).filter((model) => model.rates !== null && model.rates !== undefined).length;
+    expect(priced).toBeGreaterThan(0);
+    expect(markup).toMatch(new RegExp(`${S.priced}</p><p class="myx-stat-value">${priced}<span class="myx-stat-unit">of ${models}<`));
+  });
+
+  test('an unpriced catalog draws neither, and says none of its models is priced', () => {
+    const markup = render(h(ModelsBoard, { catalog: unpriced }));
+    expect(headers(markup)).not.toContain(S.input);
+    expect(headers(markup)).not.toContain(S.output);
+    expect(markup).toMatch(new RegExp(`${S.priced}</p><p class="myx-stat-value">0<span class="myx-stat-unit">of ${models}<`));
+  });
+});

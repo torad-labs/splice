@@ -24,7 +24,7 @@ import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
 import {
-  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, canSend, claudeVersionText, collapseChecks, gateReport, groupChecks, latestText, logsHeadOf,
+  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersionText, collapseChecks, gateReport, groupChecks, latestText, logsHeadOf,
   playgroundNext, reportFacts, rollbackText, rowTone, statusParts, subjectOf,
 } from './model';
 import type { CheckRow, PlaygroundEvent } from './model';
@@ -104,6 +104,7 @@ function verdictTone(upgrade: UpgradePayload): Tone {
  *  page refused would be a claim about something it did not read, so each prints the absence. */
 function Figures({ shown, checks, upgrade }: { shown: DoctorPayload | null; checks: readonly DoctorCheck[]; upgrade: UpgradePayload | null }) {
   const attention = shown === null ? null : attentionCount(checks);
+  const parts = shown === null ? null : attentionParts(checks);
   const failing = checks.some((check) => check.status === 'fail');
   return (
     <StatRow>
@@ -116,6 +117,7 @@ function Figures({ shown, checks, upgrade }: { shown: DoctorPayload | null; chec
         label={S.needAttention}
         value={attention === null ? ABSENT : fmtInt(attention)}
         {...(attention === null || attention === 0 ? {} : { tone: failing ? 'danger' as const : 'warn' as const })}
+        {...(parts === null ? {} : { sub: parts })}
       />
       <Stat
         label={S.installed}

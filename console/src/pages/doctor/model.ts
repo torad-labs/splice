@@ -9,7 +9,7 @@
 // or to localStorage could not be.
 import type { DoctorCheck, DoctorPayload, DoctorStatus, Leak, UpgradePayload } from '@entities/doctor';
 import { checkFix, checkSection, leaksIn } from '@entities/doctor';
-import { ABSENT } from '@shared/lib';
+import { ABSENT, fmtInt } from '@shared/lib';
 import type { BarPart, Mark, Tone } from '@shared/ui';
 import { H, S } from './strings';
 
@@ -170,6 +170,16 @@ export function logsHeadOf(fix: string | null): string | null {
 /** How many checks are not `ok`. The report's one number, and the one the page leads with. */
 export function attentionCount(checks: readonly DoctorCheck[]): number {
   return checks.filter((check) => wantsAttention(check.status)).length;
+}
+
+/** What the attention count is made of, worst first (`6 Fail · 2 Warn`): a bare number said how
+ *  many and not what (splice-lead, 2026-09-25). Null when nothing wants the operator. */
+export function attentionParts(checks: readonly DoctorCheck[]): string | null {
+  const parts = [...STATUSES].reverse().filter(wantsAttention).flatMap((status) => {
+    const count = checks.filter((check) => check.status === status).length;
+    return count === 0 ? [] : [`${fmtInt(count)} ${S.statusName[status]}`];
+  });
+  return parts.length === 0 ? null : parts.join(' · ');
 }
 
 /**

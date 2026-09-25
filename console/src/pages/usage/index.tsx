@@ -213,6 +213,23 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
   );
 
   type HeadRow = (typeof perHead)[number];
+  // The limit and the time it runs out in only when a head has a token ceiling: without one both
+  // were a dash on every row (splice-lead, 2026-09-25), and a plan's own limits are its card above.
+  const bounded = perHead.some(({ head }) => head.ceiling_tokens !== null);
+  const ceiling: Column<HeadRow>[] = bounded ? [
+    { key: 'limit', label: S.ceiling, width: '6.5%', align: 'end', mono: true, cell: ({ head }) => (head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)) },
+    {
+      key: 'runs-out',
+      label: S.exhaustion,
+      width: '9.5%',
+      align: 'end',
+      mono: true,
+      cell: ({ head }) => {
+        const projection = burn(head, now);
+        return hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent);
+      },
+    },
+  ] : [];
   const columns: Column<HeadRow>[] = [
     { key: 'head', label: S.head, width: '15%', primary: true, cell: ({ head }) => <HeadMark head={head.key}>{head.label}</HeadMark> },
     {
@@ -241,18 +258,7 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
     { key: 'in', label: S.inTokens, width: '8.5%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.inTokens) },
     { key: 'out', label: S.outTokens, width: '8%', align: 'end', mono: true, cell: ({ totals }) => fmtTokens(totals.outTokens) },
     { key: 'spent', label: S.spent, width: '9.5%', align: 'end', mono: true, cell: ({ head }) => fmtTokens(burn(head, now).spent) },
-    { key: 'limit', label: S.ceiling, width: '6.5%', align: 'end', mono: true, cell: ({ head }) => (head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)) },
-    {
-      key: 'runs-out',
-      label: S.exhaustion,
-      width: '9.5%',
-      align: 'end',
-      mono: true,
-      cell: ({ head }) => {
-        const projection = burn(head, now);
-        return hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent);
-      },
-    },
+    ...ceiling,
     { key: 'limited', label: S.limited, width: '10%', align: 'end', mono: true, cell: ({ totals }) => fmtInt(totals.rateLimited) },
   ];
 

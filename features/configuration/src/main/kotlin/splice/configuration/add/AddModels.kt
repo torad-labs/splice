@@ -14,7 +14,6 @@ import splice.terminal.SelectPrompt
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 
 internal const val DEFAULT_WINDOW = 128_000L
 private const val MAX_PROMPTED_MODELS = 8
@@ -80,104 +79,46 @@ internal sealed class AddRows {
 }
 
 /** V4-34: add OpenRouter model rows through the prompt toolkit, never a hand-rolled readline. The two
- *  prompts come from app (AddWiring), which owns the terminal they read. */
+ *  prompts come from app (AddWiring), which owns the terminal they read. What is on offer and what is
+ *  written are AddModelOffers' and AddModelCompose's, which the console's add-model shares. */
 internal class AddModelVerb(
     private val select: SelectPrompt,
     private val multi: MultiSelectPrompt,
-    // The roster edit as a seam (the DR-66 StarterWrite precedent): the fail-closed re-parse below
-    // is only testable on the production path if a test can hand write() a composition that does
-    // not parse. Production always passes the real editor.
-    private val roster: RosterEditor = RosterEditor(HeadModelArray()::withAdded),
+    roster: RosterEditor = RosterEditor(HeadModelArray()::withAdded),
 ) {
+    private val compose = AddModelCompose(roster)
+
+    /** The file is read before the prompts and written through AddWrite's re-read, so an edit made while
+     *  a picker was open refuses the add instead of being renamed over (V4-220). */
     fun add(path: Path): Boolean {
         val existing = Files.readString(path)
         val planned = plan(TopologyLoader.loadOrMaterialize(path)) ?: return false
         if (planned.models.isEmpty()) return false
-        write(path, existing, planned)
-        return true
+        return when (val written = AddWrite().replace(path, existing, compose(existing, planned))) {
+            AddWritten.Written -> true
+            is AddWritten.Refused -> throw AddRefused(AddRefusalText().modelStale(path.toString(), written))
+        }
     }
 
-    private fun plan(topology: Topology): Planned? {
-        val profile = AddProfiles().find("openrouter") ?: return null
-        val heads = topology.heads.filter { it.value.provider == profile.headKey }.keys.toList()
-        if (heads.isEmpty()) return null
-        return pick(profile, topology, heads)
-    }
-
-    private fun pick(profile: AddProfile, topology: Topology, heads: List<String>): Planned? {
-        val headPick = select.ask("Which head?", heads.map { SelectOption(it, it) }, 0)
+    private fun plan(topology: Topology): AddModelPlan? {
+        val offers = AddModelOffers().of(topology)
+        if (offers.isEmpty()) return null
+        val headPick = select.ask("Which head?", offers.map { SelectOption(it.headKey, it.headKey) }, 0)
         val headKey = (headPick as? SelectOutcome.Chosen)?.value ?: return null
-        val head = topology.heads.getValue(headKey)
-        val providerKey = head.provider
-        val providerIds = topology.providers.getValue(providerKey).models.map { it.id }.toSet()
-        // REACHABLE, not merely present. A head that declares `models = [...]` is a ROSTER:
-        // Topology.modelsFor returns it verbatim and ignores every other provider row, so a model
-        // already in the provider table but absent from the array is still invisible on /v1/models
-        // and must stay on offer (V4-34 redo 2026-09-17).
-        val reachable = head.models?.map { it.id }?.toSet() ?: providerIds
-        val remaining = profile.models.filter { it.id !in reachable }
-        val ids = if (remaining.isEmpty()) {
-            emptyList()
-        } else {
-            val picked = multi.ask(
-                "Add OpenRouter models",
-                remaining.map { SelectOption(it.id, it.label, it.id) },
-                initiallySelected = emptySet(),
-                minimum = 0,
-            )
-            (picked as? MultiSelectOutcome.Chosen)?.values ?: return null
-        }
-        return Planned(providerKey, headKey, head.models != null, providerIds, remaining.filter { it.id in ids })
+        return pick(offers.first { it.headKey == headKey })
     }
 
-    private fun write(path: Path, existing: String, planned: Planned) {
-        val key = planned.providerKey
-        // Only ids the provider table does not already carry: on the shipped starter every curated
-        // id is already a provider row and the roster is what was missing, so a second copy here
-        // would be a duplicate the catalog silently collapses. No rows means the file keeps exactly
-        // its trailing newline rather than gaining a blank line (V4-34 redo 2026-09-17).
-        val rows = planned.models.filter { it.id !in planned.providerIds }.flatMap { model ->
-            listOf(
-                "[[providers.$key.models]]",
-                "id = \"${model.id}\"",
-                "label = \"${model.label}\"",
-                "context_window = ${model.contextWindow}",
-            )
-        }
-        val extra = if (rows.isEmpty()) "\n" else rows.joinToString("\n", prefix = "\n", postfix = "\n")
-        val rostered = if (planned.headDeclaresModels) {
-            roster(existing, planned.headKey, planned.models.map { it.id })
-        } else {
-            existing
-        }
-        val composed = rostered.trimEnd('\n') + extra
-        refuseUnparseable(composed)
-        val tmp = path.resolveSibling(path.fileName.toString() + ".add-model-${ProcessHandle.current().pid()}.tmp")
-        Files.writeString(tmp, composed)
-        Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-    }
-
-    /** FAIL CLOSED (review 2026-09-17 (2)): the composition is parsed by the loader `splice` itself
-     *  boots with BEFORE any byte reaches the operator's file, so a corrupted edit refuses instead
-     *  of riding ATOMIC_MOVE over a working splice.toml. Nothing is written on the refusal — not
-     *  even the temp file, which is created after this returns. */
-    private fun refuseUnparseable(composed: String) {
-        val failure = splice.core.util.Cancellables
-            .runCatchingCancellable { TopologyLoader.parse(composed) }
-            .exceptionOrNull() ?: return
-        throw AddRefused(
-            "the roster edit does not parse, so splice.toml was left untouched: " +
-                splice.core.util.SafeFailureText.render(failure),
+    private fun pick(offer: AddModelOffer): AddModelPlan? {
+        if (offer.remaining.isEmpty()) return AddModelPlan(offer, emptyList())
+        val picked = multi.ask(
+            "Add OpenRouter models",
+            offer.remaining.map { SelectOption(it.id, it.label, it.id) },
+            initiallySelected = emptySet(),
+            minimum = 0,
         )
+        val ids = (picked as? MultiSelectOutcome.Chosen)?.values ?: return null
+        return AddModelPlan(offer, offer.remaining.filter { it.id in ids })
     }
-
-    private data class Planned(
-        val providerKey: String,
-        val headKey: String,
-        val headDeclaresModels: Boolean,
-        val providerIds: Set<String>,
-        val models: List<AddModel>,
-    )
 }
 
 /** V4-34 redo (2026-09-17): the `models = [...]` array on `[heads.KEY]` is the head's ROSTER, not a

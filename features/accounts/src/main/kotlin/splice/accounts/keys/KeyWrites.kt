@@ -28,7 +28,7 @@ internal class KeyWrites(private val keys: KeyStore) {
             else -> null
         }
         if (invalid != null || value == null) return KeyOutcome.Refused(invalid.orEmpty(), HttpStatusCode.BadRequest)
-        val failure = Cancellables.runCatchingCancellable { keys.write(name, value) }.exceptionOrNull()
+        val failure = Cancellables.runCatchingCleanup { keys.write(name, value) }.exceptionOrNull()
             ?: return KeyOutcome.Applied(name, "stored")
         return KeyOutcome.Refused(refusalText(failure), HttpStatusCode.Conflict)
     }
@@ -36,7 +36,7 @@ internal class KeyWrites(private val keys: KeyStore) {
     /** DELETE: a stored key is removed; one the store does not hold is a 404, not a quiet success. */
     fun removed(name: String): KeyOutcome {
         invalidName(name)?.let { return KeyOutcome.Refused(it, HttpStatusCode.BadRequest) }
-        val attempt = Cancellables.runCatchingCancellable { keys.unset(name) }
+        val attempt = Cancellables.runCatchingCleanup { keys.unset(name) }
         val failure = attempt.exceptionOrNull()
         return when {
             failure != null -> KeyOutcome.Refused(refusalText(failure), HttpStatusCode.Conflict)
@@ -52,8 +52,11 @@ internal class KeyWrites(private val keys: KeyStore) {
             "'${LogSafe.str(name)}' is not an environment variable name (want $envNameRegex)"
         }
 
-    // The store's own refusals are check() texts it builds from the name and SafeFailureText alone
-    // (unreadable, locked by a peer), so they are shown as written; anything else is rendered through
+    // The store REFUSES with check() — an IllegalStateException (unreadable, locked by a peer) that
+    // runCatchingCancellable lets escape by design, so a refusal became the guard's 500 with its text
+    // withheld. runCatchingCleanup's set is exactly this one: I/O, (de)serialization, IllegalArgument
+    // and IllegalState, with cancellation still propagating. Those check() texts are built from the name
+    // and SafeFailureText alone, so they are shown as written; anything else is rendered through
     // SafeFailureText, which withholds a message that could quote bytes.
     private fun refusalText(failure: Throwable): String =
         (failure as? IllegalStateException)?.message ?: SafeFailureText.render(failure)

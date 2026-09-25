@@ -11,6 +11,8 @@
 import { useEffect, useState } from 'react';
 import { canTest, fetchAlerts, putAlerts, sendTestAlert, useAlerts } from '@entities/alert';
 import { Input, Key } from '@shared/controls';
+import { writeNote } from '@shared/lib';
+import type { WriteResult } from '@shared/lib';
 import { Empty, Section, Tip } from '@shared/ui';
 import { H, S } from './strings';
 import './alerts.css';
@@ -34,13 +36,10 @@ export function AlertsPanel() {
   const settings = alerts.data;
   const typed = url ?? (settings?.webhook_url ?? '');
 
-  const run = (work: Promise<unknown>, done: string) => {
+  const run = (work: Promise<WriteResult<unknown>>, done: string) => {
     setBusy(true);
     setNote(null);
-    work.then(
-      () => setNote({ text: done, failed: false }),
-      (err: unknown) => setNote({ text: err instanceof Error ? err.message : String(err), failed: true }),
-    ).finally(() => setBusy(false));
+    void work.then((result) => setNote(writeNote(result, { done, pending: S.unavailable }))).finally(() => setBusy(false));
   };
 
   const test = (

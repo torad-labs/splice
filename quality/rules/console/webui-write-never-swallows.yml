@@ -1,0 +1,31 @@
+# A write says how it ended. An exported function that sends a write (its request carries a
+# `method:`) and answers `null` or `false` from its catch hands its caller "nothing" for a refusal,
+# a network failure and a route not built yet alike; the caller cannot tell any of them from a
+# success, and the panels printed "Saved" and "Sent" over each (Marlin's HOLD, 2026-09-25: putBudgets,
+# putAlerts, sendTestAlert). A write returns a WriteResult (shared/lib): applied with the daemon's
+# answer, pending with the item that will serve it, or failed with the reason.
+id: webui-write-never-swallows
+language: typescript
+severity: error
+message: "A write answers a WriteResult (applied | pending | failed), never null or false from a catch."
+note: |
+  Return `writeFailure(err, PENDING_ROW)` from the catch (shared/api); the caller prints
+  `writeNote(result, ...)`, which reads only `applied` as success and prints the reason on `failed`.
+files:
+  - console/src/entities/*/api/**/*.ts
+  - console/src/shared/api/**/*.ts
+rule:
+  any:
+    - pattern: return null
+    - pattern: return false
+    - pattern: return undefined
+  inside:
+    kind: catch_clause
+    stopBy: end
+    inside:
+      kind: export_statement
+      stopBy: end
+      has:
+        kind: property_identifier
+        regex: ^method$
+        stopBy: end

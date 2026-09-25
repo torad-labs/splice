@@ -150,3 +150,23 @@ export function poll(fn: () => void | Promise<void>, intervalMs: number): () => 
     doc?.removeEventListener('visibilitychange', onVisibility);
   };
 }
+
+/**
+ * How a write ended, and the only answer a write gives: the daemon's answer when it applied, the
+ * v0.4.0 item that will serve a route not built yet, or the reason it failed in the daemon's words.
+ * Writes that answered `null` or `false` for all three read as success to every caller, and the
+ * panels printed "Saved" over a refusal (Marlin's HOLD, 2026-09-25). The wall
+ * `webui-write-never-swallows` keeps it the only answer; `writeFailure` (shared/api) builds the
+ * failures.
+ */
+export type WriteResult<T> =
+  | { status: 'applied'; answer: T }
+  | { status: 'pending'; item: string }
+  | { status: 'failed'; reason: string };
+
+/** The one line a panel prints for a write's result: `done` when it applied, `pending` for a route
+ *  not built yet, and the reason when it failed. Only an applied write reads as success. */
+export function writeNote(result: WriteResult<unknown>, words: { done: string; pending: string }): { text: string; failed: boolean } {
+  if (result.status === 'applied') return { text: words.done, failed: false };
+  return { text: result.status === 'pending' ? words.pending : result.reason, failed: true };
+}

@@ -8,7 +8,6 @@ export const S = {
   action: 'Past limit',
   save: 'Save',
   saved: 'Saved',
-  failed: 'Save failed',
   warn: 'Warn',
   block: 'Block',
   /** An empty box: the head has no budget, which is a state and never $0.00. */

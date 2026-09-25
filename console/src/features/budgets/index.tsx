@@ -9,6 +9,7 @@ import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { budgetFor, putBudgets, startBudgetsPolling, useBudgets } from '@entities/budget';
 import type { Budget, BudgetAction } from '@entities/budget';
 import { Input, Key } from '@shared/controls';
+import { writeNote } from '@shared/lib';
 import { DataTable, Empty, Section, Segmented } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import { H, S } from './strings';
@@ -67,7 +68,7 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
     setBusy(budget.head);
     note(budget.head, '');
     void putBudgets(merged)
-      .then(() => note(budget.head, S.saved), () => note(budget.head, S.failed))
+      .then((result) => note(budget.head, writeNote(result, { done: S.saved, pending: S.unavailable }).text))
       .finally(() => setBusy(null));
   };
 

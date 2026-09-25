@@ -6,6 +6,7 @@
 // opens the console with it in the address's fragment (takeLaunchKey below), so
 // the operator never pastes it; the gate's paste is the fallback.
 
+import type { WriteResult } from '@shared/lib';
 import { H } from './strings';
 
 const KEY_STORAGE = 'myx-mgmt-key';
@@ -157,6 +158,14 @@ export function pendingOf(err: unknown, row: string): PendingRoute | null {
   if (!(err instanceof MgmtError)) return null;
   if (err.status === 404 || /unknown route|no such route/i.test(err.message)) return { pending: row };
   return null;
+}
+
+/** A write's failure as its result (WriteResult, shared/lib): a route not built yet is `pending` on
+ *  `row`, anything else is `failed` with the error's own words. */
+export function writeFailure(err: unknown, row: string): WriteResult<never> {
+  const pending = pendingOf(err, row);
+  if (pending !== null) return { status: 'pending', item: pending.pending };
+  return { status: 'failed', reason: err instanceof Error ? err.message : String(err) };
 }
 
 // ── payload types ────────────────────────────────────────────────────────────

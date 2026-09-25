@@ -216,7 +216,7 @@ describe('pending routes', () => {
 
   test('a test send reports failure rather than a fake delivery', async () => {
     stubRoutes({});
-    expect(await sendTestAlert()).toBe(false);
+    expect(await sendTestAlert()).toEqual({ status: 'pending', item: 'V4-133' });
   });
 
   test('a route that EXISTS reports a 404 as an error, not as pending', async () => {

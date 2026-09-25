@@ -46,12 +46,12 @@ class HeadStatusTest {
 
     @Test
     fun `the gate carries what the head measured, one live row per slot in the order held`() {
-        val streaming = GateSlot("gpt-5.6-sol", compact = false, GatePhase.STREAMING, ageMs = 5_000, idleMs = 40)
-        val connecting = GateSlot("compact", compact = true, GatePhase.CONNECT, ageMs = 900, idleMs = 900)
+        val streaming = GateSlot("b2e4d8f1 gpt-5.6-sol", false, GatePhase.STREAMING, ageMs = 5_000, idleMs = 40)
+        val connecting = GateSlot("gpt-5.6-sol", compact = true, GatePhase.CONNECT, ageMs = 900, idleMs = 900)
         val expected = listOf(
-            mapOf("label" to "gpt-5.6-sol", "compact" to "false", "phase" to "streaming") +
+            mapOf("label" to "b2e4d8f1 gpt-5.6-sol", "compact" to "false", "phase" to "streaming") +
                 mapOf("age_ms" to "5000", "idle_ms" to "40"),
-            mapOf("label" to "compact", "compact" to "true", "phase" to "connect") +
+            mapOf("label" to "gpt-5.6-sol", "compact" to "true", "phase" to "connect") +
                 mapOf("age_ms" to "900", "idle_ms" to "900"),
         )
         val gate = gateOf(measured(listOf(streaming, connecting)))

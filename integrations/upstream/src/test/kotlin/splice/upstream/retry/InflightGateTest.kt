@@ -232,7 +232,7 @@ class InflightGateTest {
     fun `a held slot is one live row, and a released one leaves it and is counted`() = runTest {
         val gate = InflightGate({ 2 })
         val slot = gate.admittedSlot()
-        slot.describe("gpt-5.6-sol", compact = false)
+        slot.describe("gpt-5.6-sol", compact = false, session = null)
         val held = gate.snapshot()
         assertEquals(listOf("gpt-5.6-sol"), held.live.map { it.label })
         assertEquals(1L to 0L, held.acquired to held.released)
@@ -288,13 +288,24 @@ class InflightGateTest {
         val unread = GateSlot("req", compact = false, phase = GatePhase.CONNECT, ageMs = 300, idleMs = 300)
         assertEquals(unread, gate.snapshot().live.single())
         slot.touch()
-        slot.describe("gpt-5.6-sol", compact = false)
+        slot.describe("gpt-5.6-sol", compact = false, session = null)
         now = 1_500L
         val heard = GateSlot("gpt-5.6-sol", compact = false, phase = GatePhase.STREAMING, ageMs = 500, idleMs = 200)
         assertEquals(heard, gate.snapshot().live.single())
-        slot.describe("gpt-5.6-sol", compact = true)
-        assertEquals("compact" to true, gate.snapshot().live.single().let { it.label to it.compact })
         slot.release()
+    }
+
+    @Test
+    fun `a live row is led by its session tag, and a compaction keeps its model beside the flag`() = runTest {
+        val gate = InflightGate({ 2 })
+        val one = gate.admittedSlot()
+        val two = gate.admittedSlot()
+        one.describe("gpt-6-astra", compact = false, session = "b2e4d8f1")
+        two.describe("gpt-6-astra", compact = true, session = "d4c6f9b3")
+        val rows = gate.snapshot().live.map { it.label to it.compact }
+        assertEquals(listOf("b2e4d8f1 gpt-6-astra" to false, "d4c6f9b3 gpt-6-astra" to true), rows)
+        one.release()
+        two.release()
     }
 
     private fun InflightGate.Snapshot.admission() = Triple(inflight, queued, limit)

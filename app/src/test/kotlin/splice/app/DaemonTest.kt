@@ -158,6 +158,7 @@ class DaemonTest {
             client.post("http://127.0.0.1:$headPort/v1/messages") {
                 header("Content-Type", "application/json")
                 header("Authorization", "Bearer $key")
+                header("x-claude-code-session-id", HELD_SESSION)
                 setBody(
                     """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
                         "system":"You are a test. SCENARIO:hold","messages":[{"role":"user","content":"go"}]}""",
@@ -168,7 +169,8 @@ class DaemonTest {
         try {
             held = awaitGate("one streaming live row") { it.live().singleOrNull()?.text("phase") == "streaming" }
             val row = held.live().single()
-            assertEquals("gpt-5.6-sol", row.text("label"))
+            // the session's short tag leads, so two sessions on one model are two tellable rows
+            assertEquals("b2e4d8f1 gpt-5.6-sol", row.text("label"))
             assertFalse(row["compact"]!!.jsonPrimitive.boolean)
             // stream_idle_ms is the head's configured limit
             assertEquals(Knob.STREAM_IDLE_MS.default, held.long("stream_idle_ms"))
@@ -361,3 +363,4 @@ class DaemonTest {
 /** /api/heads is polled for up to 10 s: a held turn reaches the gate in well under a second. */
 private const val GATE_POLLS = 200
 private const val GATE_POLL_MS = 50L
+private const val HELD_SESSION = "b2e4d8f1-5c6a-4f32-8d1b-6e3f9a2c4b02"

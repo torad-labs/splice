@@ -303,10 +303,12 @@ public class InflightGate(
 
         @Volatile private var streaming: Boolean = false
 
-        /** Names the turn this slot carries: `compact` for a compaction, else [model]. */
-        public fun describe(model: String, compact: Boolean) {
+        /** Names the turn this slot carries: [session] (the caller's short tag) then [model], or the
+         *  model alone when the client sent no session, so two sessions on one model stay two tellable
+         *  rows. A compaction keeps its model; [compact] is the flag that marks it. */
+        public fun describe(model: String, compact: Boolean, session: String?) {
             this.compact = compact
-            label = if (compact) COMPACT_LABEL else model
+            label = listOfNotNull(session, model).joinToString(" ")
         }
 
         public fun touch() {
@@ -347,7 +349,6 @@ public class InflightGate(
     }
 }
 
-/** The live label of a compaction turn, and of a slot whose request has not been read yet: the Node
- *  gate's own two words (codex-proxy.mjs: `compactMode ? 'compact' : (model || 'req')`). */
-private const val COMPACT_LABEL = "compact"
+/** The live label of a slot whose request has not been read yet: the Node gate's own word
+ *  (codex-proxy.mjs: `model || 'req'`). */
 private const val UNREAD_LABEL = "req"

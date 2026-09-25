@@ -469,8 +469,10 @@ describe('the coverage manifests', () => {
     // the alerts test to the usage page (M4-06: it mounts those two panels); the coverage wall fails
     // if nothing declares them. (/api/alerts/test was added 2026-09-18, when M1-37's wire-check
     // found it fetched and disposed by nothing.)
+    // Five since V4-220 item 4: the doctor page's Fix button posts /api/doctor/fix/{id}.
     expect([...names].sort()).toEqual([
       '/api/doctor',
+      '/api/doctor/fix/{id}',
       '/api/mcp',
       '/api/playground',
       '/api/upgrade',

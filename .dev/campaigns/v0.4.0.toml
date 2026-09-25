@@ -207,6 +207,8 @@
 # 2026-09-25 FOLLOW-UP: A fourth request reached MultiProviderDaemonTest's shared Anthropic mock in gate run 36171410103 (the class ran kimi, the claude turn, openrouter, neutral; bodies stood one entry ahead of headers, which only a lost concurrent append explains). The only layer that can re-send a POST invisibly is OkHttp's retryOnConnectionFailure: default true, set nowhere (git grep), under UpstreamTransport.kt whose comment says the app-level retry loop owns retries. #277's rewrite now counts per provider atomically, so a duplicate fails 'one turn must produce one upstream request' by name. A controlled run (sequential streaming POSTs through the production client under CPU load, counted at the server) is the next step before any product change.
 # 2026-09-25 FOLLOW-UP: Muse Spark 1.2's row also declares 1M and is unmeasured (claude-builder, V4-229). mythos CLAUDE.md section 22 says a row never declares past its real ceiling. Measuring it costs one ~1M-token turn on the Muse plan (V4-229's turn read 2% of the 5h quota, and first byte came after about 3.5 min). CPO to triage: a 0.4.0 row, a later row, or lower the declaration to what is measured.
 # 2026-09-25 FOLLOW-UP: Film take: a cold ~1M-token prompt to muse-spark-1.3 drew three upstream 504s ('The response stream did not start before the server timeout.'), about 60 s apart. Only the fourth attempt served, on a 99% cached prefix, with first byte at about 3.5 min (claude-builder, V4-229 measurement, 14:32-14:36 CDT). A take that opens or resumes a Muse session near 1M context depends on splice's retry layer and waits minutes for the first byte. A fresh team per take starts small, so the take is exposed only if a session grows toward 1M.
+# 2026-09-25 FOLLOW-UP: Film rehearsal checks 1 and 2 on the live stack (the installed train 18 jar built from 9eb5b09c2; ~/.local/bin/claude 2.1.282), splice-lead 19:50-19:52 UTC: one claudex review turn on gpt-6-sol at xhigh (switched in-session with /model, which 2.1.282 also saves as the head's default in ~/.claude-claudex/settings.json; restored to gpt-6-astra after, with a dated backup). The turn took 2m 4s and printed no [splice] line: Sol streamed reasoning summaries and tool calls throughout, so the wire never went quiet. 2.1.282 does display a thinking block's text, as '∴ <summary>' lines. No [claude-code:unrecognized_model] line appeared in the interactive pane. Check 3 (each pane opens on its latest model) needs a fresh splice add home.
+# 2026-09-25 Train 19 (train/v040-19 off 9eb5b09c2) carries #295 (the census merges by union; the train's own merges of #287, #292 and #291 auto-resolved the census through it), #290 (the plan-limit e2e), #294 (V4-229, muse-spark-1.3's window measured at 1,010,789 tokens), #287 (V4-220 follow-ups), #292 (doctor strings without em dashes and the kt-no-emdash-cli-text wall), #291 (V4-220's add-backend route and form contract), and the train 19 ledger (V4-212 closed, V4-222 to V4-225 done, V4-227 to V4-236 filed). #277 with #293 (the CI gate's --parallel, and V4-226's fix-forward: the engine warm-up before ready and the runaway bound) rides train 20 once its re-gate passes, with #296, #297 and #298.
 [campaign]
 id = "v0.4.0"
 title = "splice 0.4.0 — everything but the console: setup, drift warning, perf/sessions data, upgrade, doctor --json, compaction instructions, shared MCP hosting, local models, account pools, code-mode graduation"
@@ -6628,3 +6630,35 @@ title = "A fresh claude-bonsai prints no [claude-code:unrecognized_model] line, 
 files = ["app/src/main/dist/bin/splice-launch", "features/launch/src/main/kotlin/splice/launch/", "features/configuration/src/main/kotlin/splice/configuration/add/"]
 status = "todo"
 verify = "red first on the receipt's command (claude-bonsai -p against a runtime head that presents bonsai-2-27b prints the line; a mock runtime is enough, since the line is the client's reaction to the id), green after: no unrecognized_model line interactive or -p, -p stdout is the answer alone, and the client's window equals the runtime's served context; CI gate on the train sha."
+
+[[items]]
+id = "V4-233"
+phase = "release"
+title = "At an Anthropic plan limit, splice holds until the upstream's own reset, so the client sleeps once and the session is alive when the plan resets (CPO triage 2026-09-25 of the plan-limit follow-up; it carries the film's held line, 'Or Claude keeps going after the reset'). When the upstream answers unified-status rejected with a five_hour or seven_day claim, the head answers the client with that reset, so persistent mode sleeps the 429 until it once (capped at 6 h, LaunchService.kt:317-321), and splice sends nothing upstream for that account until the reset, apart from any probe it needs, each named in the receipt. Today the hold is splice's own 20 s (DEFAULT_RATE_LIMIT_COOLDOWN_MS, RateLimitCooldown.kt:307) and the upstream's anthropic-ratelimit-unified-reset is ignored, so the client re-sends every 15-65 s; nobody has measured whether five hours of that exhausts 2.1.282's 300 transient retries before the reset. Muse keeps V4-61's behaviour. The head's own refusal names the reset and carries no em dash. splice-lead."
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/retry/", "features/turns/src/main/kotlin/splice/head/admission/", "tools/e2e/docker/"]
+status = "todo"
+verify = "red first: the plan-limit scenario with the reset 5 hours out (run.sh --scenario plan-limit --plan-reset-s 18000) on today's build, counting upstream requests in the window and whether the session is alive at the reset; green after: the session resumes after the reset, exit 0, the upstream count in the receipt; machine time only; CI gate on the train sha."
+
+[[items]]
+id = "V4-234"
+phase = "release"
+title = "Whether the client waits is decided by the reset signal, never by the upstream's words (CPO triage 2026-09-25). When the upstream names a reset, the frame the client gets carries no phrase Claude Code 2.1.282 reads as stop-waiting, and the upstream's own words go to the daemon log. When it names no reset, the stop passes through unchanged, because waiting cannot fix a spend limit. Today splice relays the upstream text verbatim ([SPLICE-RATE-LIMIT] <message>), so a no-wait phrase in Anthropic's real plan-limit text, which nobody has captured, would end the wait: #290's red arm planted 'Extra usage is required' and the probe went red. splice-lead."
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/retry/", "features/turns/src/main/kotlin/splice/head/", "tools/e2e/docker/plan_limit.ts"]
+status = "todo"
+verify = "#290's red arm with 'Extra usage is required' planted goes green when a reset is named, and with no reset named the client stops; CI gate on the train sha."
+
+[[items]]
+id = "V4-235"
+phase = "release"
+title = "No user-facing string the gateway writes into a frame carries an em dash (CPO triage 2026-09-25). #292's wall (kt-no-emdash-cli-text) covers the diagnostics strings; extend it to every user-facing string the gateway writes into a frame, the rate-limit refusals first (V4-233's refusal today reads 'holding new turns for 20s — retry after that'). The fix separator DoctorReportTest pins stays byte-identical. After V4-233 and V4-234, which rewrite the same refusal texts. splice-lead."
+files = [".rules/", "features/turns/src/main/kotlin/splice/head/", "integrations/upstream/src/main/kotlin/splice/upstream/"]
+status = "todo"
+verify = "the wall red on today's frame strings (each hit named), green after the rewrite; its rule test proves the character and the backslash-u escape both match; CI gate on the train sha."
+
+[[items]]
+id = "V4-236"
+phase = "release"
+title = "No row declares an unmeasured window: muse-spark-1.2's 1M has a measured source (CPO triage 2026-09-25), measured the way V4-229 measured 1.3, or 1.2 leaves what splice add writes; the builder's call. claude-builder measured it (PR #298, head cd4f80600, stacked on #294): a 1,010,789-token prompt by the backend's own count, served cold on the first attempt (sent 15:00:01 CDT, 46.4 s, cached_tokens=0), so the 1M row stands and cites the measurement. claude-builder."
+files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "app/src/main/resources/splice.example.toml"]
+status = "todo"
+verify = "the measurement receipt (tokens by the backend's count, the answer, the time) beside the row; CI gate on the train sha."

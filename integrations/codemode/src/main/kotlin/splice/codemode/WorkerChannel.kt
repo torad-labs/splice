@@ -26,6 +26,12 @@ internal fun interface CodeModeCleanup {
     operator fun invoke()
 }
 
+/** The blocking framed I/O one deadline covers: a whole round trip for an exchange, the ready frame
+ *  alone for a start (V4-226). */
+internal fun interface WorkerFrameIo {
+    operator fun invoke(): JsonObject
+}
+
 /** Owns framed worker I/O and observes process exit before releasing capacity. */
 internal class WorkerChannel(
     private val process: Process,
@@ -62,7 +68,7 @@ internal class WorkerChannel(
         CodeModeFrames.parseReady(within(startTimeoutMs) { CodeModeWire.read(input) })
     }
 
-    private suspend fun within(deadlineMs: Long, io: () -> JsonObject): JsonObject = try {
+    private suspend fun within(deadlineMs: Long, io: WorkerFrameIo): JsonObject = try {
         // A reply is never null: only this deadline maps to an ordinary worker failure.
         withTimeoutOrNull(deadlineMs) {
             suspendCancellableCoroutine<JsonObject> { continuation ->

@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 public const val DEFAULT_MAX_WORKERS: Int = 4
 public const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
 
-// why: a worker's start is a JVM boot and a JavaScript engine's set-up, which a loaded machine
+// why: a worker's start is a JVM boot and a JavaScript engine's set-up and warm-up run, which a loaded machine
 // stretches to seconds (V4-226: a cell's whole first exchange took 1.1-1.3 s on an idle CI runner and
 // 4.9-5.2 s under a parallel build); the bound only keeps a worker that never comes up from holding its
 // slot, and the advance deadline no longer pays for the start

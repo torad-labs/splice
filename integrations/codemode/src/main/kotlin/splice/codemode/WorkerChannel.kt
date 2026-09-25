@@ -12,6 +12,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -148,5 +149,44 @@ internal class WorkerChannel(
     } catch (_: RuntimeException) {
         // A failed wait is not evidence of exit; the onExit observer retains ownership.
         false
+    }
+}
+
+/** A spawned process owns capacity until its exit is observed, even if startup is cancelled. */
+internal class WorkerPermit(private val permits: Semaphore) {
+    private val released = AtomicBoolean()
+
+    @Volatile private var observed: Process? = null
+
+    fun observe(process: Process) {
+        observed = process
+        process.onExit().thenRun { releaseAfterExit() }
+    }
+
+    fun releaseIfUnstarted() {
+        if (observed == null) releaseAfterExit()
+    }
+
+    /** V4-214: the cancelled-startup path. Destroys the observed process and, once its exit is seen,
+     *  returns the permit HERE, so a cancelled start() finishes with its capacity back; the
+     *  [observe] callback runs on the JDK reaper's schedule and a start() made the moment the cancel
+     *  returned could still find none. Blocks up to [waitMs]: call it on an IO context. An exit not
+     *  seen by then is not an exit, and the [observe] callback keeps ownership. */
+    fun reapAfterCancel(waitMs: Long) {
+        val process = observed ?: return
+        try {
+            process.destroyForcibly()
+            if (process.waitFor(waitMs, TimeUnit.MILLISECONDS)) releaseAfterExit()
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: RuntimeException) {
+            // A failed destroy or wait is not evidence of exit; the onExit observer keeps ownership.
+        }
+    }
+
+    fun releaseAfterExit() {
+        if (released.compareAndSet(false, true)) permits.release()
     }
 }

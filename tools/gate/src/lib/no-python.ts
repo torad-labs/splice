@@ -438,16 +438,44 @@ function burndownGrowth(root: string, now: Burndown): string[] {
 }
 
 /** today's path -> the path git says it was renamed FROM, for every rename between [rev] and the
- *  WORKING TREE. */
-function renamedSince(root: string, rev: string): Map<string, string> {
-  const r = spawnSync("git", ["diff", "--name-status", "-M", "--diff-filter=R", rev], { cwd: root, encoding: "utf8" });
+ *  WORKING TREE.
+ *
+ *  V4-215: THIS MAP CAN NEVER COME BACK SHORT IN SILENCE — a missing rename is charged as growth.
+ *  `-l0` lifts git's rename limit (diff.renameLimit, 1000 by default): past it git skips the
+ *  inexact pass and says so only on stderr, and feat/console-redesign's diff since birth needed
+ *  1191, so five invokers the restructure moved and edited read as new lines. A cut-short warning
+ *  that still appears, or git failing outright, throws instead of returning what it managed. */
+export function renamedSince(root: string, rev: string): Map<string, string> {
+  // LC_ALL=C: the warnings are matched by their English words, which a translated git would change.
+  const r = spawnSync("git", ["diff", "--name-status", "-M", "-l0", "--diff-filter=R", rev], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, LC_ALL: "C" },
+  });
+  if (r.status !== 0) {
+    throw new WallError(`no-python: git diff -M ${rev} failed (${r.stderr.trim()}) — a rename census that did not run excuses no moved invoker`);
+  }
+  renamesComplete(r.stderr, rev);
   const out = new Map<string, string>();
-  if (r.status !== 0) return out;
   for (const line of r.stdout.split("\n")) {
     const [status, from, to] = line.split("\t");
     if (status?.startsWith("R") && from && to) out.set(to, from);
   }
   return out;
+}
+
+/** git's own words for a rename pass it cut short (diff.c, merge-ort.c): "exhaustive rename
+ *  detection was skipped", "inexact rename detection was skipped", "only found copies from modified
+ *  paths", each "due to too many files". */
+const RENAMES_CUT_SHORT = /(?:exhaustive|inexact) rename detection was skipped|only found copies from modified paths/;
+
+/** Throws when git's [stderr] says the rename pass since [rev] was cut short: the map it produced
+ *  is missing renames, and the ratchet would charge each one as growth. */
+export function renamesComplete(stderr: string, rev: string): void {
+  const cut = stderr.split("\n").find((line) => RENAMES_CUT_SHORT.test(line));
+  if (cut) {
+    throw new WallError(`no-python: git cut rename detection short since ${rev} (${cut.trim()}) — every invoker it missed would be charged as growth`);
+  }
 }
 
 export function burndown(root: string): Burndown {

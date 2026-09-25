@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.core.head.GatePhase
+import splice.core.head.GateSlot
 
 class InflightGateTest {
 
@@ -29,7 +31,7 @@ class InflightGateTest {
         val b = launch { gate.admittedSlot().also { order.add(3) }.release() }
         yield()
         order.add(1)
-        assertEquals(InflightGate.Snapshot(1, 2, 1), gate.snapshot())
+        assertEquals(Triple(1, 2, 1), gate.snapshot().admission())
         first.release()
         a.join()
         b.join()
@@ -52,7 +54,7 @@ class InflightGateTest {
         val holder = gate.admittedSlot() // holds the only slot
         val parked = async { gate.admittedSlot() }
         yield()
-        assertEquals(InflightGate.Snapshot(1, 1, 1), gate.snapshot())
+        assertEquals(Triple(1, 1, 1), gate.snapshot().admission())
 
         limit = 2 // the operator's relief PATCH
         val newcomer = async { gate.admittedSlot() }
@@ -61,7 +63,7 @@ class InflightGateTest {
 
         assertTrue(parked.isCompleted, "the raise must admit the waiter that was already queued")
         assertFalse(newcomer.isCompleted, "a newcomer must not overtake a waiter parked before it")
-        assertEquals(InflightGate.Snapshot(2, 1, 2), gate.snapshot())
+        assertEquals(Triple(2, 1, 2), gate.snapshot().admission())
 
         holder.release()
         yield()
@@ -192,7 +194,12 @@ class InflightGateTest {
                 // whereas a tight bound produced false failures under host/CI load (scheduler
                 // starvation of the racing Default-dispatcher coroutines), NOT leaks.
                 kotlinx.coroutines.withTimeout(REACQUIRE_LIVENESS_MS) { gate.admittedSlot().release() }
-                assertEquals(0, gate.snapshot().inflight, "leaked at iteration $it")
+                val after = gate.snapshot()
+                assertEquals(0, after.inflight, "leaked at iteration $it")
+                // V4-213: an undelivered permit was never a slot — nothing lingers on the live list,
+                // and every slot counted as acquired was counted as released
+                assertEquals(emptyList<Any>(), after.live, "a lost hand-off left a live row at iteration $it")
+                assertEquals(after.acquired, after.released, "counts disagree at iteration $it: $after")
             }
         }
     }
@@ -218,6 +225,90 @@ class InflightGateTest {
         assertEquals(0, slot.idleForMs())
         slot.release()
     }
+
+    // V4-213: the gate reported its counters and live rows as literals. These pin what it measures.
+
+    @Test
+    fun `a held slot is one live row, and a released one leaves it and is counted`() = runTest {
+        val gate = InflightGate({ 2 })
+        val slot = gate.admittedSlot()
+        slot.describe("gpt-5.6-sol", compact = false, session = null)
+        val held = gate.snapshot()
+        assertEquals(listOf("gpt-5.6-sol"), held.live.map { it.label })
+        assertEquals(1L to 0L, held.acquired to held.released)
+        slot.release()
+        slot.release() // idempotent: counted once
+        val after = gate.snapshot()
+        assertEquals(emptyList<Any>(), after.live)
+        assertEquals(1L to 1L, after.acquired to after.released)
+    }
+
+    @Test
+    fun `a waiter cancelled in the queue never appears and is never counted`() = runTest {
+        val gate = InflightGate({ 1 })
+        val holder = gate.admittedSlot()
+        val doomed = launch { gate.admittedSlot() }
+        yield()
+        assertEquals(1, gate.snapshot().queued)
+        doomed.cancelAndJoin()
+        val after = gate.snapshot()
+        assertEquals(1, after.live.size, "only the holder is live: $after")
+        // the cancelled waiter was neither acquired nor counted as waited
+        assertEquals(1L to 0L, after.acquired to after.waited, "$after")
+        holder.release()
+        assertEquals(1L to 1L, gate.snapshot().let { it.acquired to it.released })
+    }
+
+    @Test
+    fun `a queued admission is counted as waited with its measured wait`() = runTest {
+        var now = 1_000L
+        val gate = InflightGate({ 1 }, clock = { now })
+        val holder = gate.admittedSlot()
+        val quick = async { gate.admittedSlot() }
+        yield()
+        now = 1_400L
+        holder.release()
+        val first = quick.await()
+        assertEquals(1L to 400L, gate.snapshot().let { it.waited to it.avgWaitMs })
+        val slow = async { gate.admittedSlot() }
+        yield()
+        now = 2_000L // queued at 1400, admitted at 2000: 600, so the mean is 500
+        first.release()
+        slow.await().release()
+        assertEquals(2L to 500L, gate.snapshot().let { it.waited to it.avgWaitMs })
+        assertEquals(3L, gate.snapshot().acquired, "the holder never waited, and still counts as acquired")
+    }
+
+    @Test
+    fun `a slot reads connect until the upstream is heard, then streaming, aged on the gate clock`() = runTest {
+        var now = 1_000L
+        val gate = InflightGate({ 1 }, clock = { now })
+        val slot = gate.admittedSlot()
+        now = 1_300L
+        val unread = GateSlot("req", compact = false, phase = GatePhase.CONNECT, ageMs = 300, idleMs = 300)
+        assertEquals(unread, gate.snapshot().live.single())
+        slot.touch()
+        slot.describe("gpt-5.6-sol", compact = false, session = null)
+        now = 1_500L
+        val heard = GateSlot("gpt-5.6-sol", compact = false, phase = GatePhase.STREAMING, ageMs = 500, idleMs = 200)
+        assertEquals(heard, gate.snapshot().live.single())
+        slot.release()
+    }
+
+    @Test
+    fun `a live row is led by its session tag, and a compaction keeps its model beside the flag`() = runTest {
+        val gate = InflightGate({ 2 })
+        val one = gate.admittedSlot()
+        val two = gate.admittedSlot()
+        one.describe("gpt-6-astra", compact = false, session = "b2e4d8f1")
+        two.describe("gpt-6-astra", compact = true, session = "d4c6f9b3")
+        val rows = gate.snapshot().live.map { it.label to it.compact }
+        assertEquals(listOf("b2e4d8f1 gpt-6-astra" to false, "d4c6f9b3 gpt-6-astra" to true), rows)
+        one.release()
+        two.release()
+    }
+
+    private fun InflightGate.Snapshot.admission() = Triple(inflight, queued, limit)
 
     private companion object {
         const val RACE_ITERATIONS = 500

@@ -3,6 +3,7 @@ package splice.codemode
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import splice.upstream.codemode.CodeModeCell
@@ -25,9 +26,19 @@ public const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
 // cheap
 public const val DEFAULT_HEAP_MB: Int = 128
 
+// why: a SIGKILLed worker is gone in milliseconds; the bound only keeps a cancel from hanging on a
+// process stuck in the kernel, and past it the permit stays with the process's onExit observer
+private const val CANCEL_REAP_WAIT_MS: Long = 2_000
+
 // Spelled, not reflected (kt-no-reflection-in-production): every runtime test boots its worker
 // through this name, so a stale one fails the suite rather than the daemon.
 private const val WORKER_MAIN_CLASS: String = "splice.codemode.CodeModeWorker"
+
+/** Starts one worker process from its builder: the runtime's one step across the OS boundary, named
+ *  so a test can hold what the JDK reports about the process it spawned (its onExit callbacks). */
+public fun interface WorkerSpawn {
+    public operator fun invoke(builder: ProcessBuilder): Process
+}
 
 /** Runs one GraalJS cell in each bounded child JVM; it never executes client tools. */
 public class JvmCodeModeRuntime(
@@ -37,6 +48,7 @@ public class JvmCodeModeRuntime(
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val javaExecutable: String = Path.of(System.getProperty("java.home"), "bin", "java").toString(),
     private val workerClasspath: String = System.getProperty("java.class.path"),
+    private val spawn: WorkerSpawn = WorkerSpawn(ProcessBuilder::start),
 ) : CodeModeRuntime {
     private val closed: AtomicBoolean = AtomicBoolean()
     private val permits: Semaphore = Semaphore(maxWorkers)
@@ -68,6 +80,10 @@ public class JvmCodeModeRuntime(
             started = true
             return cell
         } catch (error: CancellationException) {
+            // V4-214: the channel is closed by now (exchange's cancellation handler, or startWorker's
+            // finally). The reap waits for the exit off the caller's dispatcher and cannot itself be
+            // cancelled, so when this start() finishes its permit is back.
+            withContext(NonCancellable + ioDispatcher) { permit.reapAfterCancel(CANCEL_REAP_WAIT_MS) }
             throw error
         } catch (error: CodeModeTimeoutException) {
             throw error
@@ -109,7 +125,7 @@ public class JvmCodeModeRuntime(
                     )
                     builder.environment().clear()
                     builder.redirectError(Redirect.DISCARD)
-                    process = builder.start()
+                    process = spawn(builder)
                     permit.observe(checkNotNull(process))
                     WorkerChannel(
                         process = checkNotNull(process),
@@ -145,24 +161,5 @@ public class JvmCodeModeRuntime(
 
     private fun releaseCell(cell: JvmCodeModeCell) {
         cells.remove(cell)
-    }
-}
-
-/** A spawned process owns capacity until its exit is observed, even if startup is cancelled. */
-internal class WorkerPermit(private val permits: Semaphore) {
-    private val released = AtomicBoolean()
-    private val observed = AtomicBoolean()
-
-    fun observe(process: Process) {
-        observed.set(true)
-        process.onExit().thenRun { releaseAfterExit() }
-    }
-
-    fun releaseIfUnstarted() {
-        if (!observed.get()) releaseAfterExit()
-    }
-
-    fun releaseAfterExit() {
-        if (released.compareAndSet(false, true)) permits.release()
     }
 }

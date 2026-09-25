@@ -5,6 +5,7 @@ package splice.app.control
 
 import splice.accounts.signin.ConsoleAccounts
 import splice.core.compaction.CompactionInstructions
+import splice.core.config.KeyStore
 import splice.core.topology.TopologyWriter
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
@@ -122,4 +123,9 @@ public class ConsolePorts {
     /** V4-133: the daemon's ONE upstream probe for POST /api/playground, assigned like [budgets].
      *  Null answers with a named 503 — never a payload that reads as a completed run. */
     public var playground: PlaygroundProbe? = null
+
+    /** V4-220 item 3: the key store GET/PUT/DELETE /api/keys read and write — the same keys.toml the
+     *  api-key heads read on every request, assigned by ConsoleWiring like [budgets]. Null answers the
+     *  three routes with a named 503, never an empty key list. */
+    public var keys: KeyStore? = null
 }

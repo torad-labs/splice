@@ -112,7 +112,7 @@ public class ControlServer(
     private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard, heads, log)
     private val configuration = ConfigurationMount(config, topologyStale, ports, guard)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
-    private val accounts = AccountsMount(heads, resolver, ports, guard)
+    private val accounts = AccountsMount(heads, resolver, ports, guard, log)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val sessionMount = SessionsMount(sessions, heads, config, ports, guard)
     private val events = EventsMount(ports, guard)

@@ -107,6 +107,18 @@ class ConsoleWiringPinTest {
         )
     }
 
+    /** V4-220 item 3: the key routes must write the file the api-key heads READ, which is
+     *  KeyStorePath.defaultPath() over the daemon's own environment (ApiKeyAuthProvider's default). A
+     *  store at any other path would answer every PUT with 200 and change nothing a head uses. */
+    @Test
+    fun `the control plane wires the key store the api-key heads read`() {
+        assertTrue(
+            consoleWiringSource().contains("srv.ports.keys = KeyStore(KeyStorePath.defaultPath())"),
+            "ConsoleWiring must assign `srv.ports.keys` to the heads' own keys.toml, or /api/keys answers " +
+                "a named 503 forever — or, at another path, stores keys no head reads",
+        )
+    }
+
     /** The roster is a MAP so an absent key and a present-key-null stay different facts — a head the
      *  wiring never named versus a head whose operator declared no tiers. Collapsing them is what a
      *  per-head nullable list would have done, and the page exists to show the second. */

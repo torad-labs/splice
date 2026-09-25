@@ -24,7 +24,7 @@ import splice.core.util.LogSink
 import splice.http.JsonBody
 import splice.http.JsonReply
 
-private const val UNWIRED = "Adding models is not wired on this daemon."
+private const val ADD_MODEL_UNWIRED = "Adding models is not wired on this daemon."
 
 public class AddModelRoutes(
     private val console: AddConsoleSource,
@@ -37,7 +37,7 @@ public class AddModelRoutes(
 
     /** GET /api/add-model: 200 with the offers, or 409 when splice.toml does not load. */
     public suspend fun list(call: ApplicationCall) {
-        val adds = console() ?: return refuse(call, UNWIRED, HttpStatusCode.ServiceUnavailable)
+        val adds = console() ?: return refuse(call, ADD_MODEL_UNWIRED, HttpStatusCode.ServiceUnavailable)
         when (val listed = adds.models.list()) {
             is AddModelListed.Listed -> JsonReply(HttpStatusCode.OK, views.offers(listed).toString()).send(call)
             is AddModelListed.Unloadable ->
@@ -47,7 +47,7 @@ public class AddModelRoutes(
 
     /** POST /api/add-model: 200 with what was added and the restart taken; the drain, when there is one, after. */
     public suspend fun add(call: ApplicationCall) {
-        val adds = console() ?: return refuse(call, UNWIRED, HttpStatusCode.ServiceUnavailable)
+        val adds = console() ?: return refuse(call, ADD_MODEL_UNWIRED, HttpStatusCode.ServiceUnavailable)
         val request = when (val read = requests.parse(jsonBody.parse(call))) {
             is AddModelRequest.Invalid -> return refuse(call, read.reason, HttpStatusCode.BadRequest)
             is AddModelRequest.Models -> read

@@ -1,0 +1,46 @@
+id: webui-write-never-swallows-tsx
+valid:
+  - |
+    useEffect(() => {
+      void import(`./fixtures/${name}.ts`)
+        .then((module) => setSample(module.sample ?? null))
+        .catch(() => undefined);
+    }, [name]);
+  - |
+    export async function loadFixture(name) {
+      const module = await import(`./fixtures/${name}.ts`).then((loaded) => loaded).catch(() => null);
+      return module;
+    }
+  - |
+    function onSave() {
+      void putBudgets(rows).then(setResult).catch((err) => setFault(err instanceof Error ? err.message : String(err)));
+    }
+  - |
+    async function onRestart() {
+      try {
+        setResult(await restartHead(key));
+      } catch (err) {
+        setFault(String(err));
+      }
+    }
+invalid:
+  - |
+    function onSave() {
+      void putBudgets(rows).catch(() => null);
+    }
+  - |
+    function onRestart() {
+      void restartHead(key).then(setResult).catch(() => undefined);
+    }
+  - |
+    function onSend() {
+      sendTestAlert().catch(() => {});
+    }
+  - |
+    async function onSave() {
+      try {
+        return await putAlerts(settings);
+      } catch {
+        return false;
+      }
+    }

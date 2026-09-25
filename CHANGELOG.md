@@ -605,6 +605,12 @@ origin.
   reached`: the slot came back only when the JDK's process reaper got round to the killed worker.
   The cancelled start now kills its worker and waits for the exit itself, off the caller's thread,
   so its slot is free when it finishes.
+- **A code-mode script's deadline no longer pays for its worker's start.** Each cell runs in a
+  fresh worker JVM, and the 5 s a script has to answer (`code_mode_timeout_ms`) also covered that
+  JVM's boot and its JavaScript engine's set-up. A busy machine stretches those past 5 s, and the
+  cell then failed with `Code-mode worker timed out` before its script ran. A worker now says it is
+  ready once it is up, under a start budget of its own (30 s), and the deadline times the script
+  alone.
 - **An install that cannot link says so in one line.** `splice install` and `splice setup` stopped
   with a JVM stack trace when the launch shim was missing, dangling or unreadable, when two heads
   shared a wrapper command, or when a command name held a real file. Each now prints the one

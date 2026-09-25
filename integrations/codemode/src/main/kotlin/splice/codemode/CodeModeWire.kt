@@ -30,6 +30,7 @@ private const val FIELD_SOURCE: String = "source"
 private const val FIELD_TOOLS: String = "tools"
 private const val TYPE_CALLS: String = "calls"
 private const val TYPE_COMPLETED: String = "completed"
+private const val TYPE_READY: String = "ready"
 private const val TYPE_RESULTS: String = "results"
 private const val TYPE_START: String = "start"
 private const val TOO_MANY_TOOLS: String = "Too many code-mode tools"
@@ -84,6 +85,10 @@ internal object CodeModeWire {
         return element as? JsonObject ?: throw IOException("Code-mode worker sent a non-object frame")
     }
 
+    /** V4-226: a worker's first frame, sent once its JVM and JavaScript engine are up and before it
+     *  reads the start frame, so the parent can time its start apart from the script's advance. */
+    fun readyFrame(): JsonObject = buildJsonObject { put(FIELD_TYPE, TYPE_READY) }
+
     fun startFrame(source: String, tools: Set<String>): JsonObject {
         CodeModeFrames.requireText(source, FIELD_SOURCE)
         require(tools.size <= maxToolCatalog) { TOO_MANY_TOOLS }
@@ -129,6 +134,16 @@ internal object CodeModeWire {
 }
 
 internal object CodeModeFrames {
+    /** A worker's first frame: ready, or the fatal diagnostics of a start that failed. Anything else
+     *  is a worker that answered before it was ready. */
+    fun parseReady(frame: JsonObject) {
+        when (CodeModeFields.requiredString(frame, FIELD_TYPE)) {
+            TYPE_READY -> CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE))
+            CODE_MODE_FATAL_FRAME_TYPE -> CodeModeFatalFrame.parse(frame)
+            else -> throw IOException("Code-mode worker answered before it was ready")
+        }
+    }
+
     fun parseStart(frame: JsonObject): WorkerStart {
         CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS))
         require(CodeModeFields.requiredString(frame, FIELD_TYPE) == TYPE_START) { "Expected a code-mode start frame" }

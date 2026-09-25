@@ -10,7 +10,7 @@
 // about to un-declare before it happens.
 import { useState } from 'react';
 import { FieldBox } from '@shared/ui';
-import { Confirm } from '@shared/controls';
+import { Confirm, Key } from '@shared/controls';
 import { EMPTY_DRAFT, TOPOLOGY_PROVENANCE, headRows, providerKeys, validateNewHead, withHeadField, withNewHead, withoutHead } from './model';
 import type { HeadDraft, HeadFinding } from './model';
 import { S } from './strings';
@@ -89,7 +89,7 @@ export function HeadAddForm({ topology, onAdd }: {
     <div className="myx-head myx-head-new">
       <div className="myx-head-id">
         <span className="myx-head-key">{S.addHead}</span>
-        <span className="myx-head-note">{providers.length === 0 ? 'no providers declared' : providers.join(', ')}</span>
+        <span className="myx-head-note">{providers.length === 0 ? S.noProviders : providers.join(', ')}</span>
       </div>
       <div className="myx-head-fields">
         {field('key', S.key)}
@@ -99,9 +99,7 @@ export function HeadAddForm({ topology, onAdd }: {
         {field('pinnedModel', S.pinned)}
       </div>
       <div className="myx-head-actions">
-        <button
-          type="button"
-          className="myx-btn myx-btn-primary"
+        <Key
           onClick={() => {
             const findings = validateNewHead(draft, topology);
             setShown(findings);
@@ -112,7 +110,7 @@ export function HeadAddForm({ topology, onAdd }: {
           }}
         >
           {S.addHead}
-        </button>
+        </Key>
       </div>
       {shown.length === 0 ? null : (
         <ul className="myx-head-findings" role="alert">

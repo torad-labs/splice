@@ -1,136 +1,116 @@
-/* Usage: the windows, the head rack, and the insets for the opened head. Tokens
-   only for spacing and type; radius 0; no shadow or glow. */
-.myx-usage {
-  display: flex;
-  flex-direction: column;
+/* The usage page: the numbers page (docs/design/DESIGN.md section 7). Plan cards, a stat row, the
+   heads table with each head's share drawn in its colour, and the opened head's charts. */
+
+.myx-usage { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
+.myx-usage .myx-ph { margin-block-end: 0; }
+.myx-usage .myx-sec + .myx-sec { margin-block-start: 0; }
+.myx-usage .myx-stats { margin-block-end: 0; grid-template-columns: repeat(auto-fit, minmax(calc(14.5 * var(--u)), 1fr)); }
+
+/* a figure's last day, hour by hour, at the end of its label's line */
+.myx-usage-trend { display: inline-flex; align-items: center; gap: var(--space-3); }
+.myx-usage-trend .myx-spark { width: calc(4.5 * var(--u)); height: calc(1.5625 * var(--u)); }
+.myx-usage-trend-note { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-subtle); }
+.myx-usage .myx-stat-sub { display: flex; align-items: center; gap: var(--space-1); }
+
+/* ---------- plan cards ---------- */
+.myx-plans {
+  display: grid;
+  /* auto-fit: the cards share the row, where auto-fill kept empty tracks and filled half of it */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(27.5 * var(--u))), 1fr));
+  gap: var(--space-4);
+}
+.myx-plan {
+  display: grid;
   gap: var(--space-5);
-
-/* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44). The board stretches instead of
-   starting at the top, the rack area takes the height that is left, and the bay takes the rack
-   area's height - so the ruled floor runs to the bottom of the frame the way the comp's does
-   (bay-claude is y138..947 of a 1024 frame, and its slot rules continue below the last strip).
-   min-height and not height: a page taller than its room still grows and the room scrolls. */
-  min-height: 100%;
+  padding: var(--space-5);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--bg);
 }
-
-/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
-   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
-   leftover ch is distributed across them, so the column grid is still the declared one and only the
-   slack moves. That is the whole difference between bare paper and a full row. */
-.myx-usage .myx-strip { min-width: 100%; }
-/* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
-   overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
-   every row shape has the same cell count -- it does not, so the primitive now sets
-   flexGrow to the field's own ch (strip-field.tsx) and that inline value wins here.
-   REMOVED RATHER THAN LEFT, because a declaration that is always overridden READS AS
-   THE RULE THAT GOVERNS: the next seat debugging a rack width finds it, believes it,
-   changes it, and watches nothing happen. Verified dead on this page by DOM probe
-   before removal -- see the M1-93 note for the counts. */
-
-
-
-.myx-usage-windows {
+.myx-plan-head {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* A selector option: the rail's idiom, a pressable whose state is a printed
-   holder edge. Styled down to the edge itself so nothing of the browser's
-   default button reads as another world's control. */
-.myx-usage-window,
-.myx-usage-head-option {
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-
-.myx-usage-window:focus-visible,
-.myx-usage-head-option:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
-
-
-.myx-usage-detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.myx-usage-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
   flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  font-weight: 600;
 }
-
-.myx-usage-sub {
-  font-size: var(--text-4);
-  color: var(--ink-strong);
+.myx-plan-account { font-weight: 400; color: var(--fg-muted); }
+.myx-plan-read { margin-inline-start: auto; font-size: var(--text-1); font-weight: 400; color: var(--fg-subtle); }
+/* Two windows side by side while each has room for its figure, one over the other on a phone. */
+.myx-plan-windows { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(12 * var(--u))), 1fr)); gap: var(--space-6); }
+.myx-plan-window { display: grid; gap: var(--space-2); min-width: 0; }
+.myx-plan-label { margin: 0; font-size: var(--text-2); color: var(--fg-muted); }
+.myx-plan-pct {
   margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-7);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.myx-plan-warn .myx-plan-pct { color: var(--warn); }
+.myx-plan-danger .myx-plan-pct { color: var(--danger); }
+.myx-plan-resets { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-plan-glyph { flex: none; font-size: var(--text-3); }
+
+/* ---------- a head's share of the window, in its colour ---------- */
+.myx-usage-share { display: flex; align-items: center; gap: var(--space-3); }
+.myx-usage-share-bar {
+  flex: 1;
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--track);
+  overflow: hidden;
+}
+.myx-usage-share-fill { display: block; height: 100%; border-radius: inherit; background: var(--hue); }
+.myx-usage-share-pct {
+  flex: none;
+  min-width: 3.5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  text-align: end;
+  color: var(--fg-muted);
 }
 
-.myx-usage-note {
-  font-size: var(--text-1);
-  color: var(--ink-mute);
+/* ---------- the opened head ---------- */
+.myx-usage-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(calc(20 * var(--u)), calc(27.5 * var(--u)));
+  gap: var(--space-4);
+  align-items: start;
 }
-
-/* The insets tile to the frame -- three per row at 1536, two at a laptop width, one narrow; the
-   charts hold their own height so a row of them stays aligned whatever the series holds. */
 .myx-usage-charts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
-  gap: var(--space-5);
-  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(calc(22.5 * var(--u)), 1fr));
+  gap: var(--space-4);
 }
-
-/* THE READ IS THE SIXTH TILE, NOT A BANNER UNDER FIVE (M2-32). It spanned the whole grid, and
-   five charts in three columns leave the third cell of the second row empty -- measured at 1536:
-   a 429x206px hole in the middle of the page, the dead-right-column shape M1-109 measured at
-   11.3% of this frame, with the read's own 92px band stacked below it. Taking the free cell
-   instead costs the figures two wrapped lines and gives the page back 108px (grid 607px -> 499px)
-   -- and it is where the section belongs anyway: these eight figures are the numbers the five
-   insets are drawn from, so they read as a sixth panel rather than as a footnote to the row. */
 .myx-usage-read {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
 }
+.myx-usage-read .myx-kv dd { font-family: var(--font-mono); text-align: end; }
+.myx-usage-read .myx-stack-wrap { margin-block-end: var(--space-4); }
+.myx-usage-note { font-size: var(--text-1); color: var(--fg-subtle); }
 
-.myx-usage-figures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-5);
-  margin: 0;
-}
-
-/* THE MOUNTED PANELS (M1-96). Two finished features that M2-07 exported and no page ever
-   rendered: they sat invisible while a census counted their sheets as eight of seventy-three
-   unexercised rules. The slot is a plain stack, not a grid, because the two panels have
-   different natural widths -- budgets is a column of field boxes per head, alerts is one
-   webhook and a test send -- and forcing them into one column count would be a layout
-   decision about content that never had one. */
 .myx-usage-panels {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  margin-block-start: var(--space-5);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(30 * var(--u))), 1fr));
+  gap: var(--space-4);
 }
 
-/* THE RACK'S COLUMN NAMES, ONCE (m1 design review B9, M2-32). Both this page's racks -- the heads
-   bay and each model bay -- are rows of one shape, which is the precondition B9 states, and each
-   was printing its column names on every strip. The names sit over cells that are `flex: 0 0 auto`
-   with an inline flex-grow of their own ch, so a name takes the same basis and the same growth
-   (they arrive inline from ColumnNames) or it drifts off its column. What belongs here is only
-   what is true of every name: it does not shrink, and it clips rather than wrapping, because a
-   wrapped name would make the head taller than the rows it labels. */
-.myx-usage-col {
-  flex: 0 0 auto;
-  overflow: hidden;
-  white-space: nowrap;
+@media (max-width: 1100px) {
+  .myx-usage-detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .myx-plan-windows { gap: var(--space-4); }
+}
+
+/* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
+   Past 3000 the sections pair up, plan windows beside the totals and the heads beside the opened
+   head, so no table row runs the width of a 3840 panel. */
+@media (min-width: 3000px) {
+  .myx-usage { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .myx-usage > .myx-ph,
+  .myx-usage > .myx-usage-panels { grid-column: 1 / -1; }
 }

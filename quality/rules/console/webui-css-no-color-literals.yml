@@ -1,0 +1,22 @@
+# Colour comes from the token sheet only (2026-09-25, console redesign, splice-lead's amendment 2).
+# 29 colour literals had leaked into page and primitive sheets (ui.css 18, board.css 4, and
+# settings, log-tail, rail and controls), each one a colour no theme switch reaches and no contrast
+# test reads. A hex or a colour function outside shared/tokens.css is a token that was never named.
+id: webui-css-no-color-literals
+language: css
+severity: error
+message: "No colour literals outside shared/tokens.css: name the colour as a token (var(--...)), or derive it with color-mix() from tokens."
+note: |
+  Hex values and rgb()/hsl()/hwb()/lab()/lch()/oklab()/oklch()/color() are literals. Keywords
+  (transparent, currentColor, inherit) and color-mix() of tokens are not.
+files:
+  - console/src/**/*.css
+ignores:
+  - console/src/shared/tokens.css
+rule:
+  any:
+    - kind: color_value
+    - kind: call_expression
+      has:
+        kind: function_name
+        regex: '(?i)^(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)$'

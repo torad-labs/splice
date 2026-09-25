@@ -1,15 +1,29 @@
-// Labels of the conversation widget. Three words or fewer, lowercase, no
-// em-dash (the label wall globs this file). The pending empty and the
-// transcript path are not labels and live in the component.
+// Copy of the conversation widget. The copy gate reads this file: `S` holds labels (three words or
+// fewer, sentence case), `H` the one-line help a tip shows, `U` the fragments beside a figure.
 export const S = {
-  turn: 'turn',
-  at: 'at',
-  tool: 'tool',
-  result: 'result',
-  size: 'size',
-  body: 'show body',
-  loadMore: 'load more',
+  turns: 'Turns',
   /** The file that answered, so a fallback to the vanilla tree is visible. */
-  source: 'read from',
-  pages: 'pages',
+  source: 'Read from',
+  pages: 'Pages',
+  result: 'Result',
+  body: 'Show message',
+  loadMore: 'Load more',
+  noTranscript: 'No transcript',
+  unavailable: 'Transcript unavailable',
+  /** Who spoke, one word per role the daemon's reader folds the client's events into. */
+  user: 'User',
+  assistant: 'Assistant',
+  system: 'System',
+  tool: 'Tool',
+} as const;
+
+export const H = {
+  lookedIn: 'Looked in:',
+  notWritten: 'Claude Code has not written it yet, or it was removed.',
+  pending: 'This splice version does not serve transcripts.',
+} as const;
+
+export const U = {
+  chars: 'chars',
+  turn: 'turn',
 } as const;

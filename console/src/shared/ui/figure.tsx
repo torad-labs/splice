@@ -1,6 +1,7 @@
 // A number that says what it is. value, unit and basis are all printed text:
 // the basis is never implied by a color or a tooltip, because the operator's
 // whole reason to be on this page is knowing whether a number can be trusted.
+import { BASIS } from './strings';
 import type { Basis } from './types';
 
 export function Figure({ value, unit, basis }: {
@@ -17,7 +18,7 @@ export function Figure({ value, unit, basis }: {
           ("6 measured heads report none", m1 design review B5). StripField has suppressed it since
           M2-10's finding; the two primitives in one set agreed about the rule everywhere except
           here. A basis that is not the default is the thing worth printing. */}
-      {basis !== 'measured' ? <span className="myx-fig-basis">{basis}</span> : null}
+      {basis === 'measured' ? null : <span className="myx-fig-basis">{BASIS[basis]}</span>}
     </span>
   );
 }

@@ -74,9 +74,15 @@ class ConsoleWiringPinTest {
                 "file, which can diverge from the heads that were actually built",
         )
         assertTrue(
-            daemon.contains("DeclaredHead(head.provider, head.models)"),
-            "each entry carries BOTH the provider key and the declared model list: the models page " +
-                "groups by the first and reports missing tiers from the second",
+            daemon.contains("DeclaredHead(head.provider, head.models, family)"),
+            "each entry carries the provider key, the declared model list and the provider's family: " +
+                "the models page groups by the first and reports missing tiers from the second, and " +
+                "the console colours the head by the third",
+        )
+        assertTrue(
+            daemon.contains("topology.providers[head.provider]?.let { ProviderFamilyRule().of(head.provider, it) }"),
+            "the family must come from the provider this daemon booted with, so a head is coloured by " +
+                "the vendor it actually talks to",
         )
     }
 

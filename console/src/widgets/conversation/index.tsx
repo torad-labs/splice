@@ -1,18 +1,17 @@
-// A session's conversation: one strip per turn, with the turn's body behind a
-// Reveal. Read as a conversation between participants, never as a log tail
+// A session's conversation: one line per turn (who spoke, when, which tool, how long), with the
+// turn's body behind a Reveal. Read as a conversation between participants, never as a log tail
 // (FEATURES.md 4.4).
 //
-// The body is behind a reveal for two reasons that agree: the world's copy rule
-// allows no paragraph on a page except an honest empty, and a transcript is
-// thousands of lines the operator did not ask for until they open one. Nothing
-// is prefetched: this reads a page when it is asked to and reads the next only
-// when the reader asks again.
+// The body is behind a reveal for two reasons that agree: the voice ruling allows no paragraph on a
+// page, and a transcript is thousands of lines the operator did not ask for until they open one.
+// Nothing is prefetched: this reads a page when it is asked to and reads the next only when the
+// reader asks again.
 import { useEffect } from 'react';
-import { TRANSCRIPT_MISSING, loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
-import type { TranscriptSlice } from '@entities/transcript';
-import { Fault } from '@shared/controls';
-import { Empty, Reveal, Strip, StripField } from '@shared/ui';
-import { S } from './strings';
+import { loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
+import type { TranscriptRole, TranscriptSlice } from '@entities/transcript';
+import { Fault, Key } from '@shared/controls';
+import { Badge, Empty, KeyValue, Reveal } from '@shared/ui';
+import { H, S, U } from './strings';
 import './conversation.css';
 
 const pad = (value: number): string => String(value).padStart(2, '0');
@@ -23,10 +22,12 @@ function atClock(epochMs: number): string {
   return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
+const ROLE: Record<TranscriptRole, string> = { user: S.user, assistant: S.assistant, system: S.system, tool: S.tool };
+
 /**
- * `slice` is the fixture and test seam (CONTRACTS.md section 4): a capture or a
- * test hands the loaded transcript straight in, so nothing has to reach the
- * store. When it is provided this reads nothing.
+ * `slice` is the fixture and test seam (CONTRACTS.md section 4): a capture or a test hands the
+ * loaded transcript straight in, so nothing has to reach the store. When it is provided this reads
+ * nothing.
  */
 export function Conversation({ sessionId, slice }: { sessionId: string; slice?: TranscriptSlice }) {
   const state = useTranscript((s) => s);
@@ -35,52 +36,38 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
     if (slice === undefined) void loadTranscript(sessionId);
   }, [sessionId, slice]);
 
-  // A session with no transcript on disk is the daemon's answer, not a fault and not a missing route.
-  if (slice === undefined && state.error === TRANSCRIPT_MISSING) {
-    return <Empty text="no transcript on disk" source="claude code has not written this session's transcript yet, or it was removed" />;
-  }
   if (slice === undefined && state.error !== null) return <Fault message={state.error} />;
   const data = slice ?? state.data;
   if (data === null) return null;
-  if ('pending' in data) {
-    return <Empty text="transcript unavailable" source="this splice version does not serve transcripts" />;
+  // No file on disk is the daemon's answer, with where it looked: not a fault and not a missing route.
+  if ('missing' in data) {
+    return <Empty text={S.noTranscript} source={data.missing.length === 0 ? H.notWritten : `${H.lookedIn} ${data.missing.join(', ')}`} />;
   }
+  if ('pending' in data) return <Empty text={S.unavailable} source={H.pending} />;
 
   return (
     <div className="myx-cv">
-      <div className="myx-cv-head">
-        <StripField w={40} label={S.source} value={data.path} />
-        <StripField w={7} label={S.pages} value={data.cursor.pages} />
-      </div>
+      <KeyValue rows={[[S.source, <span className="myx-cv-path">{data.path}</span>], [S.pages, String(data.cursor.pages)]]} />
 
-      {data.messages.map((message) => (
-        <div className="myx-cv-turn" key={message.index}>
-          <Strip edge="grey" edgeLabel={message.role} ariaLabel={`${message.role} turn ${message.index}`}>
-            <StripField w={7} label={S.turn} value={message.index} />
-            {/* THE TRACK RENDERS EMPTY (M1-107). These three rendered the FIELD only when the
-                data had something for it, so a turn with no timestamp, no tool or no result was a
-                row with three fewer cells -- and the property a field grid buys is that field N
-                lands at the same x on every strip, which a column that appears and disappears per
-                row destroys. Four sites wrote this defect in two different forms (the third here
-                is the INVERTED ternary); twenty-two elsewhere render the field and fall back the
-                VALUE, which is what a ledger does with an optional value. The cell is a track: it
-                is drawn whether or not this row has anything to put in it. */}
-            <StripField w={7} label={S.at} value={message.ts === undefined ? '' : atClock(message.ts)} />
-            <StripField w={14} label={S.tool} value={message.tool ?? ''} />
-            <StripField w={9} label={S.tool} value={message.result === true ? S.result : ''} />
-            <StripField w={10} label={S.size} value={message.text.length} />
-          </Strip>
-          <Reveal label={S.body}>
-            <pre className="myx-cv-text">{message.text}</pre>
-          </Reveal>
-        </div>
-      ))}
+      <ol className="myx-cv-turns" aria-label={S.turns}>
+        {data.messages.map((message) => (
+          <li className="myx-cv-turn" key={message.index} aria-label={`${ROLE[message.role]} ${U.turn} ${message.index}`}>
+            <div className="myx-cv-line">
+              <Badge tone="neutral" quiet>{ROLE[message.role]}</Badge>
+              <span className="myx-cv-index">#{message.index}</span>
+              {message.ts === undefined ? null : <span className="myx-cv-at">{atClock(message.ts)}</span>}
+              {message.tool === undefined ? null : <span className="myx-cv-tool">{message.tool}</span>}
+              {message.result === true ? <Badge tone="neutral" quiet>{S.result}</Badge> : null}
+              <span className="myx-cv-size">{message.text.length.toLocaleString('en-US')} {U.chars}</span>
+            </div>
+            <Reveal label={S.body}>
+              <pre className="myx-cv-text">{message.text}</pre>
+            </Reveal>
+          </li>
+        ))}
+      </ol>
 
-      {data.cursor.complete ? null : (
-        <button type="button" className="myx-cv-more" onClick={() => void loadMoreTranscript()}>
-          {S.loadMore}
-        </button>
-      )}
+      {data.cursor.complete ? null : <Key onClick={() => void loadMoreTranscript()}>{S.loadMore}</Key>}
     </div>
   );
 }

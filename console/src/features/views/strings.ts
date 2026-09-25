@@ -1,12 +1,12 @@
-// Labels of the views feature. Three words or fewer, lowercase, no em-dash
-// (the label wall globs this file).
+// Copy of the views feature. The copy gate reads this file: every value is a label (three words or
+// fewer, sentence case).
 export const S = {
-  tabs: 'views',
-  edit: 'edit views',
-  name: 'view name',
-  rename: 'rename',
-  duplicate: 'duplicate',
-  remove: 'remove',
-  earlier: 'move earlier',
-  later: 'move later',
+  tabs: 'Views',
+  edit: 'Edit views',
+  name: 'View name',
+  rename: 'Rename',
+  duplicate: 'Duplicate',
+  remove: 'Remove',
+  earlier: 'Move earlier',
+  later: 'Move later',
 } as const;

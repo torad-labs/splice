@@ -140,7 +140,7 @@ function contractTokens(markdown: string): { bothRooms: string[]; shared: string
     if (cells.length < 4) continue;
     const named = [...cells[1].matchAll(range)];
     if (named.length === 0) continue;
-    const target = /kept/i.test(cells[2]) ? shared : bothRooms;
+    const target = /kept|shared/i.test(cells[2]) ? shared : bothRooms;
     for (const [, from, to] of named) {
       target.add(from);
       if (to !== undefined) {
@@ -156,90 +156,66 @@ function contractTokens(markdown: string): { bothRooms: string[]; shared: string
 }
 
 const { bothRooms, shared } = contractTokens(contracts);
-const edgeTokens = bothRooms.filter((name) => name.startsWith('--edge-'));
+const headTokens = bothRooms.filter((name) => name.startsWith('--head-'));
 
 // ---------------------------------------------------------------- the pairs
 
 const TEXT_MIN = 4.5;
-const EDGE_MIN = 3;
-const PLANE_MIN = 1.6;
-const FIELD_MIN = 1.05;
+/** A mark that carries data or state -- a head's bar, a chart series, a status dot -- is non-text
+ *  content: WCAG 1.4.11 holds it to 3:1 against what it stands on. */
+const MARK_MIN = 3;
+
+/** The grounds text and marks stand on: the page, the raised plane (sidebar, panels, table heads),
+ *  a row under the pointer, a selected row. */
+const GROUNDS = ['--bg', '--bg-raised', '--bg-hover', '--bg-active'];
 
 /** ink that must clear AA text contrast on each ground it is printed on */
 const TEXT_ON: ReadonlyArray<[ink: string, grounds: string[]]> = [
-  ['--ink', ['--room', '--room-deep']],
-  ['--ink-mute', ['--room', '--room-deep']],
-  ['--ink-strong', ['--room', '--room-deep']],
-  ['--strip-ink', ['--strip', '--strip-field']],
-  ['--strip-ink-mute', ['--strip', '--strip-field']],
-  ['--scope-ink', ['--scope']],
+  ['--fg', GROUNDS],
+  ['--fg-muted', GROUNDS],
+  ['--fg-subtle', GROUNDS],
+  // a status colour prints its own word (a badge, a warn figure)
+  ['--ok', ['--bg', '--bg-raised']],
+  ['--warn', ['--bg', '--bg-raised']],
+  ['--danger', ['--bg', '--bg-raised']],
+  // the primary button's label on the ink
+  ['--accent-fg', ['--accent']],
 ];
 
-/** the holder edge carries attention, so it must be seen on the room and on a strip */
-const EDGE_ON = ['--room', '--strip'];
+/** marks: every head hue, the neutral head, the chart greys and the status dots, on the two grounds
+ *  a chart or a row stands on */
+const MARK_ON: ReadonlyArray<[mark: string, grounds: string[]]> = [
+  ...[...headTokens, '--series-1', '--series-2', '--series-3', '--ok', '--warn', '--danger']
+    .map((mark): [string, string[]] => [mark, ['--bg', '--bg-raised']]),
+];
 
 function pairingsFor(tokens: Tokens, room: string): Pairing[] {
   const pairings: Pairing[] = [];
-  for (const [ink, grounds] of TEXT_ON) {
-    for (const ground of grounds) {
-      pairings.push({
-        label: `${room}: ${ink} on ${ground}`,
-        ink: value(tokens, ink, room),
-        ground: value(tokens, ground, room),
-        min: TEXT_MIN,
-      });
-    }
-  }
-  for (const edge of edgeTokens) {
-    for (const ground of EDGE_ON) {
-      pairings.push({
-        label: `${room}: ${edge} on ${ground}`,
-        ink: value(tokens, edge, room),
-        ground: value(tokens, ground, room),
-        min: EDGE_MIN,
-      });
+  for (const [list, min] of [[TEXT_ON, TEXT_MIN], [MARK_ON, MARK_MIN]] as const) {
+    for (const [ink, grounds] of list) {
+      for (const ground of grounds) {
+        pairings.push({
+          label: `${room}: ${ink} on ${ground}`,
+          ink: value(tokens, ink, room),
+          ground: value(tokens, ground, room),
+          min,
+        });
+      }
     }
   }
   return pairings;
 }
 
-// ------------------------------------------------------- the plane ladder
-
-/**
- * A room is a ladder of planes, and the rungs are GEOMETRY, not taste: the bay
- * paints its own ground (ui.css:310, `background: var(--room-deep)`) and the
- * strip paints its own (ui.css:222, `background: var(--strip)`), so the planes
- * that touch on screen are room|room-deep and room-deep|strip. Below 1.6:1 a
- * boundary between two planes is a gradient, not an edge: the light room shipped
- * a page, a bay floor and a strip all within 1.3:1 of each other and read as one
- * sheet of paper (measured 2026-09-18 off the gate's own captures: strip-field
- * 1.30:1, strip 1.20:1, room-deep 1.14:1 against the room).
- *
- * The field box is a box ON the strip, not a plane: it is carried by its own
- * step and by `--strip-field-line` (the dark room's line measures 1.79:1 on its
- * strip), so it is held to a step and never to the plane floor.
- *
- * The dark room's rail pair is deliberately NOT held to the floor, and the
- * exemption is asserted rather than skipped: tokens.css declares the graphite
- * room one field whose rule, rail and floor between bays all measure
- * #0A0C0D..#0C1010, so room and room-deep stay within a step of each other
- * there. Pulling them apart on the way to a green light room fails that test by
- * name, which is the point: the light room's rungs are not the dark room's.
- */
-const PLANES: ReadonlyArray<[room: string, upper: string, lower: string, min: number]> = [
-  ['dark', '--room-deep', '--strip', PLANE_MIN],
-  ['light', '--room', '--room-deep', PLANE_MIN],
-  ['light', '--room-deep', '--strip', PLANE_MIN],
-  ['dark', '--strip', '--strip-field', FIELD_MIN],
-  ['light', '--strip', '--strip-field', FIELD_MIN],
-];
+// The strip-bay world held its planes apart by luminance steps (a ladder of room, bay floor and
+// strip, each 1.6:1 off the next). The redesign separates planes with a hairline instead (DESIGN.md
+// section 8), so no ground is held to a step from another and the ladder is gone with the world.
 
 // ------------------------------------------------------------------- tests
 
 describe('the token sheet carries what the contract names', () => {
   test('section 1 of CONTRACTS.md yielded a denominator', () => {
     expect(bothRooms.length).toBeGreaterThan(20);
-    expect(edgeTokens).toHaveLength(4);
+    expect(headTokens).toHaveLength(25); // --head-1 .. --head-8, their -up and -down tones, --head-none
   });
 
   for (const [room, tokens] of rooms) {
@@ -249,9 +225,9 @@ describe('the token sheet carries what the contract names', () => {
     });
   }
 
-  test('retired tokens named in section 1 survive somewhere in the sheet', () => {
+  test('the shared scale tokens section 1 names are declared in the sheet', () => {
     const missing = shared.filter((name) => !new RegExp(`(^|[;{\\s])${name}\\s*:`).test(css));
-    expect(missing, 'retired tokens the old pages still read').toEqual([]);
+    expect(missing, 'shared tokens the contract names').toEqual([]);
   });
 });
 
@@ -265,20 +241,6 @@ describe('WCAG AA in both rooms', () => {
   }
 });
 
-describe('the plane ladder holds in both rooms', () => {
-  for (const [room, upper, lower, min] of PLANES) {
-    const tokens = room === 'dark' ? dark : light;
-    test(`${room}: ${upper} stands off ${lower} by >= ${min}:1`, () => {
-      const measured = ratio(value(tokens, upper, room), value(tokens, lower, room));
-      expect(measured).toBeGreaterThanOrEqual(min);
-    });
-  }
-
-  test('dark: the rail stays one field with the room', () => {
-    expect(ratio(value(dark, '--room', 'dark'), value(dark, '--room-deep', 'dark'))).toBeLessThan(PLANE_MIN);
-  });
-});
-
 describe('the wall can fail', () => {
   test('a pair below AA is reported by name', () => {
     const fixture: Pairing = {
@@ -290,17 +252,15 @@ describe('the wall can fail', () => {
     expect(contrastFailures([fixture])).toEqual([fixture.label]);
   });
 
-  test('a flat room is reported by name', () => {
-    // Today's values: the light room against the light bay floor, 1.14:1. This is
-    // the pair the light block shipped, so the wall is proven against the real
-    // defect and not only against a synthetic grey.
-    const flat: Pairing = {
-      label: 'fixture: light room above the light bay floor',
-      ink: '#E0E2DF',
-      ground: '#D2D5D1',
-      min: PLANE_MIN,
+  test('a mark under 3:1 is reported by name', () => {
+    // The light neutral head as it first shipped: #8e919a on the raised ground, 2.94:1.
+    const faint: Pairing = {
+      label: 'fixture: light --head-none on --bg-raised',
+      ink: '#8e919a',
+      ground: '#f7f7f8',
+      min: MARK_MIN,
     };
-    expect(contrastFailures([flat])).toEqual([flat.label]);
+    expect(contrastFailures([faint])).toEqual([faint.label]);
   });
 
   test('a pair at the threshold passes', () => {

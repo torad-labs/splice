@@ -1,11 +1,11 @@
 // The scope charts: one dark inset per question, each drawn as stacked bars from the daemon's
 // hourly sums, each with a legend that PRINTS its numbers.
 //
-// WHY THE SERIES ARE MONOCHROME. The only colours this world spends on meaning are the holder-edge
-// states, and they mean attention — ok, warn, unhealthy. A four-series chart borrowing them would
-// say "cache writes are unhealthy" to anyone who has learned the vocabulary. So a stack steps
-// through one ink at four opacities instead, and the legend beside it names each step and prints
-// its total, which is what keeps the shape readable without colour and through a grayscale capture.
+// WHY THE SERIES ARE ONE COLOUR. A hue in this console means a head (docs/design/DESIGN.md section
+// 5), and status colours mean attention, so neither is free to name a kind of token: a stack in
+// four hues would claim four heads. A stack steps through ONE colour at four opacities instead,
+// the head's own colour when a head's section binds `--hue` around the chart, and the legend beside
+// it names each step and prints its total, which keeps the shape readable without colour.
 //
 // WHY RECTS ONLY. The SVG stretches to its frame with preserveAspectRatio="none", which distorts
 // anything that is not an axis-aligned rectangle. Bars survive it; a stroke or a circle would not.
@@ -13,7 +13,7 @@ import type { EconomicsBucket } from '@shared/api';
 import { costOf, sum } from '@entities/economics';
 import type { CostRates } from '@entities/economics';
 import { fmtBytes, fmtInt, fmtTokens } from '@shared/lib';
-import { ScopeInset, StripField } from '@shared/ui';
+import { ScopeInset } from '@shared/ui';
 import { limitedRows, peakMax, peakOf, tokenRows, byteRows, toolRows, totalOf, windowHours } from './model';
 import type { ChartWindow, HourRow } from './model';
 import { S } from './strings';
@@ -89,7 +89,8 @@ function Legend({ rows, series, format = fmtTokens }: {
       {series.map((entry) => (
         <div className="myx-schart-key" key={entry.key}>
           <span className={`myx-swatch myx-swatch-${entry.key}`} aria-hidden="true" />
-          <StripField w={14} label={entry.label} value={format(totalOf(rows, entry.key))} />
+          <span>{entry.label}</span>
+          <span className="myx-schart-value">{format(totalOf(rows, entry.key))}</span>
         </div>
       ))}
     </div>
@@ -115,6 +116,8 @@ const TOOLS: readonly Series[] = [
 
 const LIMITED: readonly Series[] = [{ key: 'limited', label: S.limitedCount }];
 
+const COST: readonly Series[] = [{ key: 'spent', label: S.spent }];
+
 /** The window's buckets: exactly the hours the bars draw, taken from the same walk. */
 function slice(buckets: readonly EconomicsBucket[], window: ChartWindow, now: number): EconomicsBucket[] {
   const wanted = new Set(windowHours(window.hours, now));
@@ -128,7 +131,7 @@ export function TokenChart({ buckets, window, now }: {
 }) {
   const rows = tokenRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.tokens} ${window.label}`} basis="measured">
+    <ScopeInset title={S.tokens} basis="measured">
       <StackedBars rows={rows} series={TOKENS} ariaLabel={S.tokens} />
       <Legend rows={rows} series={TOKENS} />
     </ScopeInset>
@@ -136,10 +139,10 @@ export function TokenChart({ buckets, window, now }: {
 }
 
 /**
- * Cost, from the declared rates. Basis `estimated`, never `measured`: the tokens are the daemon's and
- * exact, but the dollars are this console multiplying them by a card the operator wrote in the
- * topology — and a vendor's real invoice can differ. With no rates declared there is no dollar
- * figure at all, which is what the honest empty says rather than a confident zero.
+ * Cost, from the declared rates, hour by hour. Basis `estimated`, never `measured`: the tokens are
+ * the daemon's and exact, but the dollars are this console multiplying them by a card the operator
+ * wrote in the topology, and a vendor's real invoice can differ. With no rates declared there is no
+ * dollar figure at all, which is what the honest empty says rather than a confident zero.
  */
 export function CostChart({ buckets, window, now, rates }: {
   buckets: readonly EconomicsBucket[];
@@ -149,18 +152,20 @@ export function CostChart({ buckets, window, now, rates }: {
 }) {
   if (rates === null) {
     return (
-      <ScopeInset title={`${S.cost} ${window.label}`} basis="unavailable">
+      <ScopeInset title={S.cost} basis="unavailable">
         <p className="myx-schart-empty">{S.noRates}</p>
       </ScopeInset>
     );
   }
-  const inWindow = slice(buckets, window, now);
-  const totals = sum(inWindow);
-  const usd = costOf(totals, rates);
+  const found = new Map(slice(buckets, window, now).map((bucket) => [bucket.hour, bucket]));
+  const rows: HourRow[] = windowHours(window.hours, now).map((at) => {
+    const bucket = found.get(at);
+    return { at, values: { spent: bucket === undefined ? 0 : costOf(sum([bucket]), rates) } };
+  });
   return (
-    <ScopeInset title={`${S.cost} ${window.label}`} basis="estimated">
-      <p className="myx-schart-figure">{`$${usd.toFixed(4)}`}</p>
-      <p className="myx-schart-note">{`${fmtTokens(totals.inTokens)} in, ${fmtTokens(totals.outTokens)} out`}</p>
+    <ScopeInset title={S.cost} basis="estimated">
+      <StackedBars rows={rows} series={COST} ariaLabel={S.cost} />
+      <Legend rows={rows} series={COST} format={(usd) => `$${usd.toFixed(4)}`} />
     </ScopeInset>
   );
 }
@@ -172,7 +177,7 @@ export function ByteChart({ buckets, window, now }: {
 }) {
   const rows = byteRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.bytes} ${window.label}`} basis="measured">
+    <ScopeInset title={S.bytes} basis="measured">
       <StackedBars rows={rows} series={BYTES} ariaLabel={S.bytes} mode="group" />
       <Legend rows={rows} series={BYTES} format={fmtBytes} />
     </ScopeInset>
@@ -186,7 +191,7 @@ export function ToolChart({ buckets, window, now }: {
 }) {
   const rows = toolRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.tools} ${window.label}`} basis="measured">
+    <ScopeInset title={S.tools} basis="measured">
       <StackedBars rows={rows} series={TOOLS} ariaLabel={S.tools} />
       <Legend rows={rows} series={TOOLS} format={(value) => fmtInt(value)} />
     </ScopeInset>
@@ -200,7 +205,7 @@ export function LimitedChart({ buckets, window, now }: {
 }) {
   const rows = limitedRows(buckets, window.hours, now);
   return (
-    <ScopeInset title={`${S.limited} ${window.label}`} basis="measured">
+    <ScopeInset title={S.limited} basis="measured">
       <StackedBars rows={rows} series={LIMITED} ariaLabel={S.limited} />
       <Legend rows={rows} series={LIMITED} format={(value) => fmtInt(value)} />
     </ScopeInset>

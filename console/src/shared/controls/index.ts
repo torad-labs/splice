@@ -12,7 +12,7 @@
 // confirmation is inline, attention is a holder edge, and absence is a printed word.
 import './controls.css';
 
-export { Key } from './key';
+export { Key, KeyLink } from './key';
 export type { KeyVariant } from './key';
 export { Confirm, ConfirmKeys } from './confirm';
 export { Input } from './input';

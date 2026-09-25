@@ -3,15 +3,21 @@
 //
 // WHY THE WATERFALL IS SEGMENTS AND NOT ONE DURATION. FEATURES.md 4.3 asks for queue wait, upstream
 // wait and streaming to be "visibly separate", because the console cannot say WHY an upstream was
-// slow (2.12): it can only say where the time went. The four marks that answer that are already in
-// every perf row, cumulative ms since the request arrived - `gate` ends the queue wait, `headers`
-// and `first_byte` span the upstream wait, and `first_delta` to `stream_end` is the stream itself.
+// slow (2.12): it can only say where the time went. Every perf row carries the marks that answer it,
+// each in ms since the request arrived (PerfKeys: "marks are *_ms-since-arrival").
+//
+// THE SEGMENTS FOLLOW THE CLOCK, NOT THE KEY ORDER. The line prints its marks in PerfKeys.markOrder,
+// and the daemon does not stamp them in that order: admission marks `gate` as the turn opens,
+// before `parse` and `build` (AdmissionTelemetry.kt), and the client's first frame goes out at
+// upstream handoff, before the provider's first byte (ClientChannel.kt, the dead-air fix). Read in
+// key order, a live row's queue wait ran backwards and was dropped (gate=1 after build=18, the
+// demo daemon's log on 2026-09-25). So each present mark ends a segment that starts at the mark
+// before it in time, and the first one starts at arrival.
 //
 // ABSENT IS NOT ZERO. A failed turn has no `stream_end`, a turn that never reached the upstream has
-// no `headers`. A segment whose two marks are not both present is OMITTED, and the bar is drawn with
-// a gap there, so a broken turn reads as broken instead of as an instant one. A mark pair that runs
-// backwards is dropped for the same reason: marks are cumulative, so a decrease is a defect in the
-// row, never a negative duration to draw.
+// no `headers`. An absent mark draws no segment of its own: its time belongs to the next mark that
+// was stamped, and the bar stops at the last one, so a broken turn reads as broken instead of as an
+// instant one.
 import type { HeadStatus } from '@shared/api';
 import { MARK_KEYS } from './types';
 import type { InflightTurn, MarkKey, TurnRow } from './types';
@@ -35,19 +41,20 @@ export interface Stage {
   ms: number;
 }
 
-/** Consecutive mark pairs, in pipeline order. The last segment ends at `finish`, which is where
- *  FEATURES.md 4.3 ends the bar; `total` is the daemon's own closing mark and is not a phase. */
-const STAGES: readonly { key: string; label: string; group: StageGroup; from: MarkKey; to: MarkKey }[] = [
-  { key: 'parse', label: 'parse', group: 'ingest', from: 'recv', to: 'parse' },
-  { key: 'build', label: 'build', group: 'ingest', from: 'parse', to: 'build' },
-  { key: 'gate', label: 'gate', group: 'queue', from: 'build', to: 'gate' },
-  { key: 'headers', label: 'headers', group: 'upstream', from: 'gate', to: 'headers' },
-  { key: 'first_byte', label: 'first byte', group: 'upstream', from: 'headers', to: 'first_byte' },
-  { key: 'first_frame', label: 'first frame', group: 'stream', from: 'first_byte', to: 'first_frame' },
-  { key: 'first_delta', label: 'first delta', group: 'stream', from: 'first_frame', to: 'first_delta' },
-  { key: 'stream_end', label: 'streaming', group: 'stream', from: 'first_delta', to: 'stream_end' },
-  { key: 'finish', label: 'finish', group: 'finish', from: 'stream_end', to: 'finish' },
-];
+/** What the segment a mark ENDS is called, and where in the turn it sits. `total` is the daemon's
+ *  closing tally and not a phase, so it ends no segment. */
+const STAGE_OF: Record<Exclude<MarkKey, 'total'>, { label: string; group: StageGroup }> = {
+  recv: { label: 'receive', group: 'ingest' },
+  parse: { label: 'parse', group: 'ingest' },
+  build: { label: 'build', group: 'ingest' },
+  gate: { label: 'gate', group: 'queue' },
+  headers: { label: 'headers', group: 'upstream' },
+  first_byte: { label: 'first byte', group: 'upstream' },
+  first_frame: { label: 'first frame', group: 'stream' },
+  first_delta: { label: 'first delta', group: 'stream' },
+  stream_end: { label: 'streaming', group: 'stream' },
+  finish: { label: 'finish', group: 'finish' },
+};
 
 /** The marks a row actually carries, in pipeline order. A row with no marks returns empty, and the
  *  page says the row carries no telemetry rather than drawing a flat bar. */
@@ -55,16 +62,24 @@ export function marksOf(row: TurnRow): MarkKey[] {
   return MARK_KEYS.filter((key) => typeof row[key] === 'number');
 }
 
-/** The turn's segments, in pipeline order, omitting every one whose marks are not both present. */
-export function waterfall(row: TurnRow): Stage[] {
-  const stages: Stage[] = [];
-  for (const stage of STAGES) {
-    const start = row[stage.from];
-    const end = row[stage.to];
-    if (typeof start !== 'number' || typeof end !== 'number' || end < start) continue;
-    stages.push({ key: stage.key, label: stage.label, group: stage.group, start, end, ms: end - start });
-  }
-  return stages;
+/** The turn's segments in the order they happened: each stamped mark ends one, starting at the
+ *  mark stamped before it, the first at arrival. A mark stamped at the same ms as another keeps the
+ *  key order between them (the sort is stable), and a negative mark is a defect in the row, dropped.
+ *  It reads the marks and nothing else, so a perf line parsed off the log draws the same bar. */
+export function waterfall(row: Pick<TurnRow, MarkKey>): Stage[] {
+  const marks = MARK_KEYS
+    .filter((key): key is Exclude<MarkKey, 'total'> => key !== 'total')
+    .flatMap((key) => {
+      const at = row[key];
+      return typeof at === 'number' && at >= 0 ? [{ key, at }] : [];
+    })
+    .sort((left, right) => left.at - right.at);
+  let from = 0;
+  return marks.map(({ key, at }) => {
+    const stage: Stage = { key, ...STAGE_OF[key], start: from, end: at, ms: at - from };
+    from = at;
+    return stage;
+  });
 }
 
 /** What a turn with no client session tag is grouped under, so unattributed turns are counted and

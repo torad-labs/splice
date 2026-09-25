@@ -1,13 +1,13 @@
-// Labels of the palette. Three words or fewer, lowercase, no em-dash (the
-// label wall globs this file).
+// Copy of the palette. The copy gate reads this file: every value is a label (three words or
+// fewer, sentence case).
 export const S = {
-  palette: 'command',
-  placeholder: 'jump to',
-  pages: 'addresses',
-  views: 'saved views',
-  theme: 'theme',
-  themeDark: 'theme dark',
-  themeLight: 'theme light',
-  noMatch: 'no match',
-  current: 'current',
+  palette: 'Command',
+  placeholder: 'Jump to',
+  pages: 'Pages',
+  views: 'Saved views',
+  theme: 'Theme',
+  themeDark: 'Dark theme',
+  themeLight: 'Light theme',
+  noMatch: 'No match',
+  current: 'Current',
 } as const;

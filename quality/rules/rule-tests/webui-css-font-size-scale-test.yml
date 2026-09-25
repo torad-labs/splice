@@ -1,0 +1,13 @@
+id: webui-css-font-size-scale
+valid:
+  - '.myx-panel { font-size: var(--text-2); }'
+  - '.myx-panel { font-size: inherit; }'
+  - '.myx-panel { font-size: var(--text-7) !important; }'
+invalid:
+  - '.myx-panel { font-size: 13px; }'
+  - '.myx-panel { font-size: 1.5em; }'
+  - '.myx-panel { font-size: 1.4514cqh; }'
+  - '.myx-panel { font-size: 2vw; }'
+  - '.myx-panel { font-size: calc(var(--text-2) * 1.1); }'
+  - '.myx-panel { font-size: var(--room-size); }'
+  - '.myx-panel { font-size: smaller; }'

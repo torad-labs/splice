@@ -8,18 +8,14 @@ import { VERBS } from './src/lib/verbs.ts';
 
 const USAGE = `usage: bun console/tools <verb> [args]
 
-  look '<url>' …                freeze the address, run the rendered rules and the gate, report the two distributions
-  gate [--captures DIR] …       the mechanical half of a design review; 'gate sheets <milestone>' the contact sheets
   capture '<url>' <out.png> …   one proven screenshot; '--sweep <dir>' scores frames on disk
   snapshot '<url>' [out.html]   one self-contained HTML freeze of an address
-  comp [--frame WxH] …          the approved comp's constants measured on the live console
   exit [--only a,b] [--json]    the milestone exit gate over every leg
   leak                          no fixture byte ships in the built bundle
   scan <path…>                  the structural walls over a path they actually read
   scale '<url>' [--sizes …]     what the console looks like across frames
   coverage [--selftest]         every checker here carries a disposition the tree agrees with
   theme '<url>' …               both rooms captured; '--selftest' proves the seeding
-  typography [--address …]      the type and spacing ladders against the comp
   fixtures [--json]             the address-to-fixture table checked against the pages
 `;
 

@@ -1,4 +1,6 @@
-// The logs page: one head's daemon log as strips, filtered, following if asked.
+// The logs page: the stream surface (docs/design/DESIGN.md section 7). A filter rail on the left
+// (the head, the tail length, the tag, the level, a search) and one head's daemon log beside it,
+// following if asked.
 //
 // WHO OWNS WHAT: the page owns the head, the tail size, the filter, follow mode and the CURSOR -
 // the state that survives a poll. The widget owns the rendering, and takes all of it as props, so
@@ -16,11 +18,13 @@ import type { LogFilter, LogLevel, LogTail as Tail, LogsPayload } from '@entitie
 import type { CaptureState } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
 import { fetchCapture, putCapture, useCapture } from '@entities/perf';
-import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Choice, Fault } from '@shared/controls';
+import { HeadMark } from '@entities/control-status';
+import { cx } from '@shared/lib';
+import { Badge, Empty, PageHeader, Section, Segmented } from '@shared/ui';
+import { Choice, Fault, Input } from '@shared/controls';
 import { LogTail } from '@widgets/log-tail';
 import { RequestDrawer } from '@widgets/waterfall';
-import { S } from './strings';
+import { H, S } from './strings';
 import './logs.css';
 
 const TAIL_SIZES = [50, 200, 500, 1000];
@@ -74,97 +78,114 @@ export function LogsBoard({
   payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture, captureError = null,
   onCaptureSwitch, locked = false, error = null, lastRead = null, sample, onFilter, onFollow, onHead, onTail,
 }: LogsBoardProps) {
-  if (locked) return <Empty text="console locked" source="management key" />;
+  if (locked) return <Empty text={S.locked} source={H.locked} />;
   // A capture fixture IS the data: a live read that failed behind it must not blank the page.
-  if (error !== null && payload === null) return <Empty text="log unreadable" source={error} />;
+  if (error !== null && payload === null) return <Empty text={S.unreadable} source={error} />;
 
   return (
     <div
       className="myx-lg"
       {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
     >
-      <header className="myx-page-head myx-lg-head">
-        <h1 className="myx-page-title">{S.title}</h1>
-        {/* THE FOUR CHOICES ARE THE WORLD'S CONTROL (M1-103). These were four native `<select>`s,
-            which Choice's own header names as the reason it exists: a select's POPUP is the OS's
-            window with the OS's font and scrollbar, and `appearance: none` cannot reach inside it.
-            Choice prints the options in flow instead -- a rack of one-field strips under the box,
-            with no absolute layer to be clipped or land off-screen -- so this is a STATED BETTER
-            shape rather than an equivalent one, and it is the replacement the primitive was written
-            for. BEHAVIOUR IS PRESERVED ONE FOR ONE: the same value goes to the same callback, the
-            tail is stringified for the box and parsed back through Number, and the two filters keep
-            their empty-string-means-all sentinel, mapping to null exactly where they did before.
-            Keyboard is the native select's: Enter, Space and the arrows open and move, Home and End
-            jump, Escape closes, and a printable character type-aheads. */}
-        <Choice
-          label={S.head}
-          value={head}
-          options={heads.map((entry) => ({ value: entry.key, label: entry.label }))}
-          onChange={(next) => onHead?.(next)}
-          w={18}
-        />
-        <Choice
-          label={S.tail}
-          value={String(tail)}
-          options={TAIL_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
-          onChange={(next) => onTail?.(Number(next))}
-          // 12, not 8 (M3-04): the box prints the value AND its state word, and at 8 the finish
-          // review read `2…` where 200 stood
-          w={12}
-        />
-        {/* A filter prints only when it has something to choose: a head's own log carries one tag
-            (its own), and the daemon marks a level on few lines or none, so each box offered `all`
-            and one option that changed nothing. A filter already CHOSEN keeps its box, and its value
-            stays an option, even once the lines that offered it have scrolled out of the tail: the
-            filter still applies, and a hidden box left no way to clear it. */}
-        {tags.length > 1 || filter.head !== null ? (
-          <Choice
-            label={S.tag}
-            value={filter.head ?? ''}
-            options={[{ value: '', label: S.all }, ...kept(tags, filter.head).map((tag) => ({ value: tag, label: tag }))]}
-            onChange={(next) => onFilter?.({ ...filter, head: next === '' ? null : next })}
-            w={16}
-          />
-        ) : null}
-        {levels.length > 0 || filter.level !== null ? (
-          <Choice
-            label={S.level}
-            value={filter.level ?? ''}
-            options={[{ value: '', label: S.all }, ...kept(levels, filter.level).map((level) => ({ value: level, label: level }))]}
-            onChange={(next) => onFilter?.({ ...filter, level: next === '' ? null : (next as LogLevel) })}
-            w={10}
-          />
-        ) : null}
-        {reset ? <HolderEdge state="amber" label={S.rotated} /> : null}
-        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
-      </header>
+      <PageHeader
+        title={S.title}
+        actions={(
+          <>
+            {reset ? <Badge tone="warn">{S.rotated}</Badge> : null}
+            {sample === undefined ? null : <Badge tone="neutral">{S.sample}</Badge>}
+          </>
+        )}
+      />
 
       {/* A tail read that fails after one landed keeps the lines it had, and says both things: it
           used to keep them silently, so a dead daemon's last lines read as a quiet live one. */}
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
-      <Bay label={S.log} {...(payload === null ? {} : { count: payload.lines.length })}>
-        <LogTail
-          payload={payload}
-          filter={filter}
-          appended={appended}
-          reset={reset}
-          follow={follow}
-          tagged={tags.length > 1}
-          onFilter={onFilter}
-          onFollow={onFollow}
-        />
-      </Bay>
+      <div className="myx-lg-body">
+        {/* THE FILTER RAIL (Vercel's logs, DESIGN.md section 7): every choice the stream answers
+            to, on the left, so the stream keeps the width. */}
+        <aside className="myx-lg-rail" aria-label={S.filters}>
+          <div className="myx-lg-group" role="group" aria-label={S.head}>
+            <p className="myx-lg-label">{S.head}</p>
+            {heads.map((entry) => (
+              <button
+                key={entry.key}
+                type="button"
+                className={cx('myx-lg-head', entry.key === head && 'myx-lg-head-on')}
+                aria-pressed={entry.key === head}
+                onClick={() => onHead?.(entry.key)}
+              >
+                <HeadMark head={entry.key}>{entry.label}</HeadMark>
+              </button>
+            ))}
+          </div>
 
-      <Bay label={S.drawer}>
-        {/* Only the tailed head's capture: another head's read never stands in while this one's is
-            in flight. */}
-        <RequestDrawer
-          capture={capture !== undefined && capture !== null && capture.running.head === head ? capture : null}
-          error={captureError}
-          onSwitch={onCaptureSwitch}
-        />
-      </Bay>
+          <div className="myx-lg-group">
+            <p className="myx-lg-label">{S.tail}</p>
+            <Segmented
+              label={S.tail}
+              options={TAIL_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+              value={String(tail)}
+              onChange={(next) => onTail?.(Number(next))}
+            />
+          </div>
+
+          <div className="myx-lg-group">
+            <Input
+              label={S.search}
+              value={filter.substring}
+              onChange={(next) => onFilter?.({ ...filter, substring: next })}
+              w={20}
+            />
+          </div>
+
+          {/* A filter prints only when it has something to choose: a head's own log carries one tag
+              (its own), and the daemon marks a level on few lines or none. A filter already CHOSEN
+              keeps its box, and its value stays an option, even once the lines that offered it
+              have scrolled out of the tail: the filter still applies, and a hidden box left no way
+              to clear it. */}
+          {tags.length > 1 || filter.head !== null ? (
+            <Choice
+              label={S.tag}
+              value={filter.head ?? ''}
+              options={[{ value: '', label: S.all }, ...kept(tags, filter.head).map((tag) => ({ value: tag, label: tag }))]}
+              onChange={(next) => onFilter?.({ ...filter, head: next === '' ? null : next })}
+              w={16}
+            />
+          ) : null}
+          {levels.length > 0 || filter.level !== null ? (
+            <Choice
+              label={S.level}
+              value={filter.level ?? ''}
+              options={[{ value: '', label: S.all }, ...kept(levels, filter.level).map((level) => ({ value: level, label: level }))]}
+              onChange={(next) => onFilter?.({ ...filter, level: next === '' ? null : (next as LogLevel) })}
+              w={10}
+            />
+          ) : null}
+        </aside>
+
+        <div className="myx-lg-main">
+          <LogTail
+            payload={payload}
+            appended={appended}
+            reset={reset}
+            follow={follow}
+            tagged={tags.length > 1}
+            head={head === '' ? null : head}
+            onFollow={onFollow}
+          />
+
+          <Section title={S.drawer}>
+            {/* Only the tailed head's capture: another head's read never stands in while this one's
+                is in flight. */}
+            <RequestDrawer
+              capture={capture !== undefined && capture !== null && capture.running.head === head ? capture : null}
+              error={captureError}
+              onSwitch={onCaptureSwitch}
+            />
+          </Section>
+        </div>
+      </div>
     </div>
   );
 }

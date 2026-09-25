@@ -59,4 +59,11 @@ export interface TranscriptCursor {
   complete: boolean;
 }
 
-export type TranscriptSlice = TranscriptState | PendingRoute;
+/** The daemon's answer for a session with no transcript on disk (SessionsRoutes.transcript, a 404
+ *  carrying `searched`): the route exists and answered, with the directories it looked in. That is
+ *  neither the pending route an older daemon's 404 means nor a fault. */
+export interface TranscriptMissing {
+  missing: string[];
+}
+
+export type TranscriptSlice = TranscriptState | PendingRoute | TranscriptMissing;

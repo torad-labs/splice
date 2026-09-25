@@ -8,6 +8,7 @@
 //
 // Pure and DOM-free so the whole flow is tested without a renderer.
 import type { LoginStartPayload, LoginStatusPayload } from '@entities/auth';
+import { H, S } from './strings';
 
 export type LoginStep =
   /** Nothing started. */
@@ -94,8 +95,8 @@ export function next(state: LoginFlowState, event: LoginEvent): LoginFlowState {
  * ships inside the daemon's jar (console review, 2026-09-24).
  */
 export const LOGIN_PENDING_EMPTY = {
-  text: 'sign-in unavailable',
-  source: 'this splice version does not serve it; run splice login <head> instead',
+  text: S.signInUnavailable,
+  source: H.signInUnavailable,
 } as const;
 
 /** The line the operator reads back. Kept here rather than in the component so the wording for
@@ -104,15 +105,14 @@ export function stepMessage(state: LoginFlowState): string | null {
   switch (state.step) {
     case 'awaiting': {
       const restart = state.status?.restart_required === true;
-      if (state.start?.flow === 'device') return 'code printed, finish in the browser';
-      return restart ? 'signed in, live after restart' : 'waiting for the credential';
+      if (state.start?.flow === 'device') return H.device;
+      return restart ? H.afterRestart : H.waiting;
     }
     case 'landed':
-      return state.status?.restart_required === true
-        ? 'signed in, live after restart'
-        : 'account added';
+      return state.status?.restart_required === true ? H.afterRestart : H.added;
     case 'failed':
-      return state.note ?? 'login failed';
+      // the daemon's own words where it sent any: they say what failed
+      return state.note ?? H.failed;
     case 'pending':
       return null; // the pending case renders an honest empty, not a sentence
     default:

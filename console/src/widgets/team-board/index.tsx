@@ -1,332 +1,456 @@
-// The team board: a team's sessions racked under the head they run on, the
-// hand-off sliding between them, the chat and the activity feed beside them.
+// One team, drawn on the kit: its figures in a stat row, its seats as a table grouped by head or by
+// role (an open seat is a row with nobody in it), the day's turns as lanes on one clock, and what
+// each role cost. Every number with a shape gets its shape (docs/design/DESIGN.md section 9):
+// tokens are a split bar on one scale for the table, the seats a row of pips, the last hour a
+// sparkline, a turn a bar as long as it ran.
 //
-// Every region of this widget is bound to the box the approved comp measured
-// (console/.impeccable/build/scaffold/layout.css, regions in spec.json). The
-// boxes are percent of the comp frame; the page sits inside the shell's rail
-// and rule, so board.css carries each one twice: the frame percentage it was
-// measured at, and the page-relative percentage this sheet places it with.
-//
-// The bays are the rack; the strips are the rows. Nothing here is invented:
-// a field the comp does not show does not exist, and a figure the daemon does
-// not report prints its absence rather than a zero.
-import { Bay, Empty, Strip, StripField } from '@shared/ui';
-import type { TeamMemberRow, TeamPayload } from '@entities/team';
-import { BoardFooter, BoardHeader, MSG_COLS, MessageStrip } from './parts';
-import { S } from './strings';
-import './board.css';
-import { ABSENT } from '@shared/lib';
+// A figure no route reports prints its absence, never a zero. The member fields only the dev
+// fixture carries (window, context left, branch, diff) are printed where a member has them and
+// left out where none does, so a live team is not a table of dashes.
+import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { CrownSimpleIcon } from '@phosphor-icons/react/dist/csr/CrownSimple';
+import { HeadMark, hueClass, useHues } from '@entities/control-status';
+import { UNLISTED } from '@entities/team';
+import type { TeamPayload, TeamSlot } from '@entities/team';
+import {
+  Badge, BasisTag, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Lanes, Legend, Meter, Pips, Reveal, Section, Sparkline,
+  StackedBar, Stat, StatRow, weightedColumns,
+} from '@shared/ui';
+import type { Column, Lane, LaneMessage, RowGroup, Tone } from '@shared/ui';
+import { cx, fmtInt, fmtMs, fmtTokens } from '@shared/lib';
+import { clockText, costTable, dayAxis, lanesOf, lastReceived, roleName, seatGroups, seatsOf, slotName } from './model';
+import type { RoleCost, Seat, TeamViewData } from './model';
+import { H, S, U } from './strings';
+import './team-board.css';
 
-// The board's other two views, re-exported so a page reads every view of the team through the
-// slice's one entry point (the boundaries rule in eslint.config.mjs).
-export { TeamBoardByRole, TeamTimeline } from './views';
 export {
-  SESSION_TAG_CHARS, costTable, focusMember, groupByRole, roleName, roleRows, slotName, timeRule, timelineRows,
-  tokensIn, turnsPerSlot,
+  SESSION_TAG_CHARS, costTable, dayAxis, lanesOf, lastReceived, roleName, rolesOf, seatGroups, seatsOf, slotName,
+  tokensIn, clockText,
 } from './model';
-export type {
-  CostTable, RoleBay, RoleCost, RoleEvent, TeamHourPoint, TeamTurn, TeamViewData, TimelineRow,
-} from './model';
+export type { CostTable, DayAxis, RoleCost, Seat, SeatGroup, TeamHourPoint, TeamTurn, TeamViewData } from './model';
 
-/** The comp's two head bays, in the order it draws them. */
-const HEAD_BAY = ['myx-board-bay-0', 'myx-board-bay-1'];
+const money = (value: number | null): string => (value === null ? S.absent : `$${value.toFixed(3)}`);
 
-/* The field grid, measured off the comp rather than guessed: a column scan of
-   each strip region finds its vertical rules, and every one of the six sets sums
-   to exactly the region's 392px, which is how the grid was confirmed rather than
-   assumed. The numbers are those px widths over one ch of the field box itself --
-   the box declares its ch count on a 14px figure face, so a count is 8.4px --
-   which is the unit StripField takes. They are ch, so they move with that size:
-   this set was recomputed when the board's type moved to --text-2 on the wdth
-   axis (see board.css), and the previous set was 0.8204 of these.
-   The comp sizes each row's columns to its own content, so the two heads' lines
-   carry different grids rather than sharing one table. */
-const LEAD_COLS = [12.02, 4.29, 5.48, 6.07, 5.24, 5.36, 6.79];
-const BUILDER_COLS = [10.00, 4.76, 8.22, 4.41, 3.93, 4.88, 9.05];
-const LEAD_COLS_2 = [5.83, 7.02, 6.19, 5.48, 4.17, 5.48, 5.71, 5.36];
-const BUILDER_COLS_2 = [9.17, 6.43, 5.24, 4.53, 4.17, 5.24, 5.36, 5.12];
-const LEAD_COLS_3 = [5.83, 5.95, 12.50, 7.74, 3.33, 5.24, 4.64];
-const BUILDER_COLS_3 = [5.24, 6.07, 12.86, 8.10, 3.10, 5.24, 4.64];
-/* Each bay carries the names its columns can hold (M3-04): the builder's are narrower, and four
-   of its names print their authored short form (strings.ts) rather than a machine ellipsis. */
-const BAY_COLS = [
-  { l1: LEAD_COLS, l2: LEAD_COLS_2, l3: LEAD_COLS_3, names: S },
-  {
-    l1: BUILDER_COLS, l2: BUILDER_COLS_2, l3: BUILDER_COLS_3,
-    names: {
-      ...S, account: S.accountShort, window: S.windowShort, tokensOut: S.tokensOutShort,
-      contextLeft: S.contextLeftShort,
-    },
-  },
-];
-/* A member's three lines, percent of the bay: the comp's own plate extents, measured as board.css
-   records beside `.myx-board-strip`. */
-const LINE_ROWS = [
-  { top: 8.599, height: 7.788 },
-  { top: 20.886, height: 7.479 },
-  { top: 32.911, height: 7.541 },
-];
-/* The comp racks one member per bay, and the hand-off lies across the floor under it. So a second
-   member on the same head starts under the hand-off, not under the first member, where the tilted
-   strip and its ghost would cover its identity line. Measured in the DOM on the demo stack, the
-   two reach 63.98% of the bay at 1280x1024, 65.66% at 1536x864 and 66.17% at 2560x1080 (the tilt's
-   drop grows with the board's width), so the second member starts at 67%. Each member after it
-   takes one member pitch, three lines on the pitch the lines keep (32.911 - 20.886 between them).
-   Two members fit the bay; a third scrolls it (board.css). */
-const UNDER_HANDOFF = 67;
-const MEMBER_PITCH = LINE_ROWS[2].top + (LINE_ROWS[2].top - LINE_ROWS[1].top) - LINE_ROWS[0].top;
-const rowTop = (row: number) => (row === 0 ? LINE_ROWS[0].top : UNDER_HANDOFF + (row - 1) * MEMBER_PITCH);
-/** Where line `line` of the `row`th member on a head sits in its bay. */
-const lineBox = (row: number, line: number) => ({
-  top: `${Number((rowTop(row) + LINE_ROWS[line].top - LINE_ROWS[0].top).toFixed(3))}%`,
-  height: `${LINE_ROWS[line].height}%`,
-});
-/** The activity rack's columns, from the same scan of its bay. The chat's live in parts.tsx,
-   where the message strip that uses them does. */
-const ACT_COLS = [5.00, 11.43, 16.79, 20.24];
-
-/* The two racks below are pitched, not stacked: the comp spaces its chat strips
-   and its activity strips down the full height of their regions instead of
-   letting them pile up under the header. The three numbers are that spacing as
-   a percentage of each region's own height, read off the comp's plate rows. */
-/* The comp's three chat plates are not on one pitch: it draws them at 0, 106
-   and 200px inside a 287px region, standing 82, 69 and 72px tall. Each row
-   carries its own, as the rack's empty slots carry theirs. */
-const CHAT_ROWS = [
-  { top: 0, height: 28.6 },
-  { top: 36.9, height: 24 },
-  { top: 69.7, height: 25.1 },
-];
-/** A fourth message would take the last row's pitch rather than fall off. */
-const chatRow = (index: number) => CHAT_ROWS[Math.min(index, CHAT_ROWS.length - 1)];
-/** The hand-off's strips are the same strip lifted into a 618px box, so their
- *  columns are the chat's scaled by that wider box rather than re-measured. */
-const HANDOFF_COLS = MSG_COLS.map((w) => Number((w * 1.34).toFixed(2)));
-/* The activity plates are not on one pitch either (M3-04): the first carries the rack's column
-   names, so the comp draws it 58px tall from 619, and the four under it at 682, 721, 758 and 795,
-   32-34px tall -- as percentages of the 225px region from 624. The first plate starts above the
-   region, which is where the comp puts it. A sixth sample takes the last row's pitch. */
-const ACT_ROWS = [
-  { top: -2.35, height: 25.74 },
-  { top: 25.43, height: 15.09 },
-  { top: 42.74, height: 14.2 },
-  { top: 59.16, height: 14.2 },
-  { top: 75.59, height: 14.65 },
-];
-const actRow = (index: number) => {
-  const last = ACT_ROWS[ACT_ROWS.length - 1];
-  return ACT_ROWS[index] ?? { top: last.top + (index - ACT_ROWS.length + 1) * 16.43, height: last.height };
+/** YYYY-MM-DD HH:MM on the operator's own clock. */
+const stamp = (epochMs: number): string => {
+  const at = new Date(epochMs);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')} ${clockText(epochMs)}`;
 };
 
-const money = (value: number | null): string => (value === null ? ABSENT : `$${value.toFixed(3)}`);
-const thousand = (value: number | null): string => (value === null ? ABSENT : value.toLocaleString('en-US'));
-/** A figure no route reports prints its absence, never a zero. */
-const text = (value: string | number | null): string | number => value ?? ABSENT;
-const pct = (value: number | null): string => (value === null ? ABSENT : `${value}%`);
-const kb = (value: number | null): string => (value === null ? ABSENT : `${value} k`);
+/** A word as a badge prints it: the client's own status words arrive lowercase. */
+const capital = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1);
 
-/** The session strips of one member: three printed lines, as the comp racks them.
- *  The edge follows the comp: the slot flagged lead prints green, every other
- *  slot grey. `row` is the member's place among the members on its head. */
-function MemberStrips({ member, row, line, cols }: {
-  member: TeamMemberRow;
-  row: number;
-  line: number;
-  cols: { l1: number[]; l2: number[]; l3: number[]; names: Record<keyof typeof S, string> };
-}) {
-  /* The comp marks a slot once, on its identity line: the holder bar of the
-     lead's first line prints green and every other bar on the board prints
-     grey, including the lead's own second and third lines. The lead is the
-     slot's flag, never its role's name: compose lets a role be any text. */
-  const edge = line === 0 && member.lead ? 'green' : 'grey';
-  const N = cols.names;
-  const cls = `myx-board-strip myx-board-strip-${line}`;
-  const style = lineBox(row, line);
+/** The tones of the two token parts, named once in each section's legend. */
+const TOKEN_KEY = [{ mark: 'series-1', label: S.tokensIn }, { mark: 'series-2', label: S.tokensOut }] as const;
 
-  if (line === 0) {
-    return (
-      <Strip className={cls} style={style} edge={edge} edgeLabel="" ariaLabel={`${member.name} first line`}>
-        <StripField w={cols.l1[0]} label={N.name} value={member.name} mono={false} />
-        <StripField w={cols.l1[1]} label={N.role} value={member.role} mono={false} />
-        <StripField w={cols.l1[2]} label={N.model} value={member.model ?? ABSENT} mono={false} />
-        <StripField w={cols.l1[3]} label={N.account} value={member.account ?? ABSENT} mono={false} />
-        <StripField w={cols.l1[4]} label={N.window} value={member.window ?? ABSENT} />
-        <StripField w={cols.l1[5]} label={N.lastTurn} value={member.lastTurn ?? ABSENT} />
-        <StripField w={cols.l1[6]} label={N.state} value={member.state} mono={false} />
-      </Strip>
-    );
-  }
-  if (line === 1) {
-    return (
-      <Strip className={cls} style={style} edge={edge} edgeLabel="" ariaLabel={`${member.name} second line`}>
-        <StripField w={cols.l2[0]} label={N.head} value={member.head} mono={false} />
-        <StripField w={cols.l2[1]} label={N.sessionId} value={member.sessionId} />
-        <StripField w={cols.l2[2]} label={N.created} value={text(member.created)} />
-        <StripField w={cols.l2[3]} label={N.uptime} value={text(member.uptime)} />
-        <StripField w={cols.l2[4]} label={N.turns} value={text(member.turns)} />
-        <StripField w={cols.l2[5]} label={N.tokensIn} value={thousand(member.tokensIn)} />
-        <StripField w={cols.l2[6]} label={N.tokensOut} value={thousand(member.tokensOut)} />
-        <StripField w={cols.l2[7]} label={N.costEst} value={money(member.costEst)} />
-      </Strip>
-    );
-  }
+/** A seat's state as its badge: open, not listed by the registry, gone, stale, or the session's own
+ *  status word. */
+export function stateOf(seat: Seat): { tone: Tone; word: string } {
+  const member = seat.member;
+  if (member === null) return { tone: 'neutral', word: S.open };
+  if (member.state === UNLISTED) return { tone: 'neutral', word: S.unlisted };
+  if (member.state === 'gone') return { tone: 'neutral', word: capital(member.state) };
+  if (member.state === 'stale') return { tone: 'warn', word: capital(member.state) };
+  return { tone: 'ok', word: capital(member.state) };
+}
+
+function ChecksBadge({ checks }: { checks: string | null }) {
+  if (checks === null) return <>{S.absent}</>;
+  if (checks === 'pass') return <Badge tone="ok" quiet>{S.pass}</Badge>;
+  if (checks === 'fail') return <Badge tone="danger" quiet>{S.fail}</Badge>;
+  return <Badge tone="neutral" quiet>{capital(checks)}</Badge>;
+}
+
+/** A role with the lead's mark: an icon, so a role that is itself called `lead` does not read
+ *  twice. The lead is the slot's flag, never the role's name. */
+function RoleCell({ slot }: { slot: TeamSlot }) {
   return (
-    <Strip className={cls} style={style} edge={edge} edgeLabel="" ariaLabel={`${member.name} third line`}>
-      <StripField w={cols.l3[0]} label={N.contextLeft} value={pct(member.contextLeftPct)} />
-      <StripField w={cols.l3[1]} label={N.scratchpad} value={kb(member.scratchpadKb)} />
-      <StripField w={cols.l3[2]} label={N.workspace} value={text(member.workspace)} mono={false} />
-      <StripField w={cols.l3[3]} label={N.branch} value={text(member.branch)} mono={false} />
-      <StripField w={cols.l3[4]} label={N.base} value={text(member.base)} mono={false} />
-      <StripField w={cols.l3[5]} label={N.diff} value={text(member.diff)} />
-      <StripField w={cols.l3[6]} label={N.checks} value={text(member.checks)} mono={false} />
-    </Strip>
+    <span className="myx-tb-role">
+      <span className="myx-tb-role-name">{slot.role}</span>
+      {slot.lead ? (
+        <span className="myx-tb-lead" role="img" aria-label={S.lead} title={S.lead}>
+          <CrownSimpleIcon weight="fill" aria-hidden="true" />
+        </span>
+      ) : null}
+    </span>
   );
 }
 
-/** The heads the members run on, in the order the members run, folded into the comp's bays: the
- *  poster measured two, so every head after the first shares the second bay rather than a session
- *  being left off the board. */
-export function headBays(members: readonly TeamMemberRow[]): string[][] {
-  const heads: string[] = [];
-  for (const member of members) if (!heads.includes(member.head)) heads.push(member.head);
-  return heads.length <= HEAD_BAY.length ? heads.map((head) => [head]) : [[heads[0]], heads.slice(1)];
+/** In and out tokens as one bar on the table's shared scale, with the sum after it. */
+function TokenSplit({ input, output, scale }: { input: number | null; output: number | null; scale: number }) {
+  if (input === null || output === null) return <>{S.absent}</>;
+  return (
+    <span className="myx-tb-split">
+      <StackedBar
+        label={S.tokens}
+        total={scale}
+        format={fmtTokens}
+        parts={[
+          { key: 'in', label: S.tokensIn, value: input, mark: TOKEN_KEY[0].mark },
+          { key: 'out', label: S.tokensOut, value: output, mark: TOKEN_KEY[1].mark },
+        ]}
+      />
+      <span className="myx-tb-figure">{fmtTokens(input + output)}</span>
+    </span>
+  );
 }
 
-/** `unread` names why the chat or the activity could not be read, so an empty bay says which of
- *  the two silences it is: nothing today, or a read that failed. */
-export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?: { chat?: string; activity?: string } }) {
-  const bays = headBays(board.members);
+// ---- the stat row --------------------------------------------------------------------------
 
-  const handoff = board.messages[board.messages.length - 1] ?? null;
-
-  // THE FRAME IS THE PHONE'S SCROLLER AND NOTHING ELSE (M3-03). On a desktop it is
-  // `display: contents` and draws no box, so the board lays out exactly as before; below 720 it
-  // is the one box that scrolls sideways, so the poster can be wider than the screen (one bay per
-  // screen) while the view tabs, the list and the composer under it stay where the thumb left them.
+/** The team's figures: its seats, its lifetime turns, tokens and cost, the last hour's turns in
+ *  flight, and today's messages. The lifetime figures are the daemon's own role tallies summed. */
+export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewData | null }) {
+  const slots = board.team.slots;
+  const bound = slots.filter((slot) => slot.session !== null).length;
+  const table = data === null || 'error' in data.economics ? null : costTable(data.economics);
+  const hour = data?.lastHour ?? [];
   return (
-    <div className="myx-board-frame">
-      <section className="myx-board" aria-label={S.board}>
-        {/* the team header strip: five boxed fields, the team's own identity */}
-        <BoardHeader board={board} />
+    <StatRow>
+      <Stat
+        label={S.slotsBound}
+        value={bound}
+        unit={`${U.of} ${slots.length}`}
+        chart={<Pips used={bound} total={slots.length} label={S.slotsBound} />}
+      />
+      <Stat
+        label={S.turns}
+        value={table === null ? S.absent : fmtInt(table.total.turns)}
+        {...(table !== null && table.unattributed > 0 ? { sub: `${fmtInt(table.unattributed)} ${U.untagged}` } : {})}
+      />
+      <Stat
+        label={S.tokens}
+        value={table === null ? S.absent : fmtTokens(table.total.input + table.total.output)}
+        {...(table === null ? {} : {
+          chart: (
+            <StackedBar
+              label={S.tokens}
+              format={fmtTokens}
+              parts={[
+                { key: 'in', label: S.tokensIn, value: table.total.input, mark: TOKEN_KEY[0].mark },
+                { key: 'out', label: S.tokensOut, value: table.total.output, mark: TOKEN_KEY[1].mark },
+              ]}
+            />
+          ),
+        })}
+      />
+      <Stat
+        label={S.cost}
+        basis="estimated"
+        value={table === null ? S.absent : money(table.total.cost)}
+        {...(table !== null && table.total.cost === null ? { sub: S.unpriced } : {})}
+      />
+      <Stat
+        label={S.inFlight}
+        value={data === null || data.inFlight === null ? S.absent : data.inFlight}
+        {...(hour.length === 0 ? {} : { trend: <Sparkline values={hour.map((point) => point.turns)} label={S.lastHour} /> })}
+      />
+      <Stat label={S.messages} value={board.messages.length} unit={U.today} />
+    </StatRow>
+  );
+}
 
-        {/* No member means no head bay, and the board's left side drew nothing at all: a team with no
-            bound session read as a broken page (walkthrough S17). */}
-        {bays.length === 0 ? (
-          <div className="myx-board-unbound">
-            <Empty text="no session is bound yet" source="pick a session for one of its slots in the editor under the board, and its head shows here" />
-          </div>
-        ) : null}
+// ---- the members ---------------------------------------------------------------------------
 
-        {/* one bay per head, in the order the members run */}
-        {bays.map((heads, index) => (
-          <Bay
-            key={heads.join(' ')}
-            className={`myx-board-bay ${HEAD_BAY[index]}`}
-            label={`${S.headLabel} ${heads.join(', ')}`}
+/** The columns kept while a seat is open beside the table. */
+const OPEN_KEYS: ReadonlySet<string> = new Set(['name', 'role', 'state', 'turns', 'cost']);
+
+/** Each column's share of the table, before the shown columns are scaled to the whole: the table
+ *  drops the head column by head, a window no member reports, and all but five columns while a seat
+ *  is open, and fixed widths in rem overran it and crushed the names. */
+const WEIGHTS: Record<string, number> = {
+  name: 14, role: 9, head: 11, model: 10, window: 6, state: 11, turns: 5, tokens: 14, cost: 6.5, last: 6.5, checks: 7,
+};
+
+/** A seat's name: its member's, or its numbered role when it is open. */
+const seatName = (board: TeamPayload, seat: Seat): string => seat.member?.name ?? roleName(board.team.slots, seat.slot);
+
+/** Every seat of the team in runs by head or by role, and the opened seat beside them. */
+export function TeamMembers({ board, by }: { board: TeamPayload; by: 'head' | 'role' }) {
+  const [openSlot, setOpenSlot] = useState<string | null>(null);
+  const hueOf = useHues();
+  const opened = seatsOf(board).find((seat) => seat.slot.id === openSlot) ?? null;
+  const scale = Math.max(1, ...board.members.map((member) => (member.tokensIn ?? 0) + (member.tokensOut ?? 0)));
+  const hasWindow = board.members.some((member) => member.window !== null);
+
+  const all: Column<Seat>[] = [
+    {
+      key: 'name',
+      label: S.name,
+      primary: true,
+      cell: (seat) => seat.member?.name ?? <span className="myx-tb-open">{S.openSeat}</span>,
+    },
+    { key: 'role', label: S.role, cell: (seat) => <RoleCell slot={seat.slot} /> },
+    ...(by === 'head' ? [] : [{ key: 'head', label: S.head, cell: (seat: Seat) => <HeadMark head={seat.slot.head} /> }]),
+    { key: 'model', label: S.model, mono: true, cell: (seat) => seat.slot.model ?? S.absent },
+    ...(hasWindow ? [{ key: 'window', label: S.window, mono: true, cell: (seat: Seat) => seat.member?.window ?? S.absent }] : []),
+    { key: 'state', label: S.state, cell: (seat) => <Badge tone={stateOf(seat).tone} quiet>{stateOf(seat).word}</Badge> },
+    { key: 'turns', label: S.turns, align: 'end', mono: true, cell: (seat) => seat.member?.turns ?? S.absent },
+    {
+      key: 'tokens',
+      label: S.tokens,
+      cell: (seat) => <TokenSplit input={seat.member?.tokensIn ?? null} output={seat.member?.tokensOut ?? null} scale={scale} />,
+    },
+    { key: 'cost', label: S.cost, basis: 'estimated', align: 'end', mono: true, cell: (seat) => money(seat.member?.costEst ?? null) },
+    { key: 'last', label: S.lastTurn, mono: true, cell: (seat) => seat.member?.lastTurn ?? S.absent },
+    { key: 'checks', label: S.checks, cell: (seat) => <ChecksBadge checks={seat.member?.checks ?? null} /> },
+  ];
+  const columns = weightedColumns(opened === null ? all : all.filter((column) => OPEN_KEYS.has(column.key)), WEIGHTS);
+
+  const groups: RowGroup<Seat>[] = seatGroups(board, by).map((group) => ({
+    key: group.key,
+    title: by === 'head' ? <HeadMark head={group.key} /> : group.key,
+    count: group.seats.length,
+    rows: group.seats,
+    ...(by === 'head' ? { hue: hueClass(hueOf(group.key)) } : {}),
+  }));
+
+  return (
+    <Section
+      title={S.members}
+      count={board.team.slots.length}
+      info={{ text: H.members, label: S.membersWhy }}
+      actions={<Legend items={TOKEN_KEY} label={S.tokensKey} />}
+    >
+      <div className={cx('myx-tb-board', opened !== null && 'myx-tb-board-open')}>
+        <DataTable
+          className="myx-tb-table"
+          columns={columns}
+          groups={groups}
+          rowKey={(seat) => seat.slot.id}
+          label={S.members}
+          onOpen={(seat) => setOpenSlot(seat.slot.id === openSlot ? null : seat.slot.id)}
+          openLabel={(seat) => `${S.detail} ${seatName(board, seat)}`}
+          selectedKey={openSlot}
+          rowTone={(seat) => (seat.member?.state === 'stale' ? 'warn' : null)}
+          rowHue={(seat) => hueClass(hueOf(seat.slot.head))}
+        />
+        {/* UNMOUNTED at rest, the sessions pattern: the table takes the whole width until a seat
+            is opened, and no empty landmark stands in a reader's list (tests/detail-rest.test.ts). */}
+        {opened === null ? null : (
+          <DetailPanel
+            title={seatName(board, opened)}
+            label={S.detail}
+            status={<Badge tone={stateOf(opened).tone} quiet>{stateOf(opened).word}</Badge>}
+            onClose={() => setOpenSlot(null)}
+            closeLabel={S.close}
           >
-            {board.members
-              .filter((member) => heads.includes(member.head))
-              .flatMap((member, row) => [0, 1, 2].map((line) => (
-                <MemberStrips key={`${member.slot}-${line}`} member={member} row={row} line={line} cols={BAY_COLS[index]} />
-              )))}
-            {/* the rack's empty slots: the bay holds room for sessions not here yet */}
-            {Array.from({ length: 9 }, (_, i) => (
-              <span key={i} className="myx-board-slot" style={{ top: `${42.5 + i * 6.1}%` }} aria-hidden="true" />
-            ))}
-          </Bay>
-        ))}
+            <SeatDetail board={board} seat={opened} />
+          </DetailPanel>
+        )}
+      </div>
+    </Section>
+  );
+}
 
-        {/* the signature gesture: the newest edge caught between the bays */}
-        {handoff !== null ? (
-          <div className="myx-board-handoff" aria-label={`hand off ${handoff.from} to ${handoff.to}`}>
-            {/* ONE afterimage, and the comp is why (M1-58). It draws a lifted strip and a single
-                ghost beneath it, both inside the bay; the build drew TWO ghosts, and the second had
-                walked far enough down-left to leave the bay entirely - it hung across the bay's left
-                upright and over the rail column, a bare `message` label and a clipped packet line in
-                a box with no strip around it. It was the only element in the console that crossed a
-                bay wall, and no instrument owned it: not a contrast pair, not a coverage plane, not a
-                type rung. A gesture that reaches another bay's ground reads as a mistake rather than
-                as motion. `.myx-board-ghost-2` is now a rule with no element: board.css is not this
-                row's fence and its owner should take the rule out. */}
-            <div className="myx-board-ghost myx-board-ghost-1" aria-hidden="true">
-              <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
-            </div>
-            <div className="myx-board-handoff-live">
-              <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
-            </div>
-          </div>
-        ) : null}
+/** The team as lanes (operator ruling 4, item 5): one strand per head its slots run on, each seat a
+ *  card on its strand in slot order, and the day's messages between members as arcs from sender to
+ *  receiver. Opening a card opens the seat beside the lanes, as a row does on the table. */
+export function TeamLanes({ board }: { board: TeamPayload }) {
+  const [openSlot, setOpenSlot] = useState<string | null>(null);
+  const hueOf = useHues();
+  const seats = seatsOf(board);
+  const opened = seats.find((seat) => seat.slot.id === openSlot) ?? null;
 
-        {/* the team's group chat, newest at the bottom */}
-        <Bay className="myx-board-bay myx-board-bay-chat" label={`${S.chatLabel} (newest at bottom)`}>
-          <div className="myx-board-msgs">
-            {board.messages.length === 0 ? (
-              <Empty
-                text={unread.chat === undefined ? 'no messages today' : 'chat unreadable'}
-                source={unread.chat ?? "a message one of this team's sessions sends another shows here"}
+  const lanes: Lane[] = seatGroups(board, 'head').map((group) => ({
+    key: group.key,
+    name: group.key,
+    title: <HeadMark head={group.key} />,
+    hue: hueClass(hueOf(group.key)),
+    cards: group.seats.map((seat) => {
+      const title = seatName(board, seat);
+      const role = roleName(board.team.slots, seat.slot);
+      // A member named for its role would print the word twice; the second line says only news.
+      // A seat stands at its session's start; an open or unlisted seat has none and stands apart.
+      return { key: seat.slot.id, title, meta: role === title ? null : role, tone: stateOf(seat).tone, word: stateOf(seat).word, start: seat.member?.startedAt ?? null };
+    }),
+  }));
+  // A message names its parties as the board prints them (pages/teams/board.ts messagesOf): a
+  // seated member by name, so a card is found by its member's name; a party no seat holds is not.
+  const slotOf = new Map(seats.flatMap((seat) => (seat.member === null ? [] : [[seat.member.name, seat.slot.id] as const])));
+  const messages: LaneMessage[] = board.messages.flatMap((message) => {
+    const from = slotOf.get(message.from);
+    const to = slotOf.get(message.to);
+    return from === undefined || to === undefined ? [] : [{ from, to, at: message.at }];
+  });
+
+  return (
+    <Section title={S.members} count={board.team.slots.length} info={{ text: H.members, label: S.membersWhy }}>
+      <div className={cx('myx-tb-board', opened !== null && 'myx-tb-board-open')}>
+        <Lanes
+          lanes={lanes}
+          messages={messages}
+          label={S.members}
+          open={(key) => setOpenSlot(key === openSlot ? null : key)}
+          selected={openSlot}
+          cardLabel={(card) => `${card.title}, ${card.word}`}
+        />
+        {opened === null ? null : (
+          <DetailPanel
+            title={seatName(board, opened)}
+            label={S.detail}
+            status={<Badge tone={stateOf(opened).tone} quiet>{stateOf(opened).word}</Badge>}
+            onClose={() => setOpenSlot(null)}
+            closeLabel={S.close}
+          >
+            <SeatDetail board={board} seat={opened} />
+          </DetailPanel>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+/** An opened seat's body: where its session runs and what it has done, and the slot's standing
+ *  instructions behind a reveal. */
+export function SeatDetail({ board, seat }: { board: TeamPayload; seat: Seat }) {
+  const { slot, member } = seat;
+  /** A row only the dev fixture fills: printed when the member has it, left out when not. */
+  const reported = (label: string, value: ReactNode | null): (readonly [string, ReactNode])[] => (value === null ? [] : [[label, value]]);
+  const rows: (readonly [string, ReactNode])[] = [
+    [S.role, <RoleCell slot={slot} />],
+    [S.head, <HeadMark head={slot.head} />],
+    [S.model, slot.model ?? S.absent],
+    [S.account, slot.account ?? S.absent],
+    ...(member === null ? [] : [
+      [S.sessionId, <code className="myx-tb-code">{member.sessionId}</code>] as const,
+      [S.started, member.created ?? S.absent] as const,
+      [S.uptime, member.uptime ?? S.absent] as const,
+      [S.workspace, member.workspace === null ? S.absent : <code className="myx-tb-code">{member.workspace}</code>] as const,
+      ...reported(S.window, member.window),
+      ...reported(S.contextLeft, member.contextLeftPct === null ? null : (
+        <Meter value={member.contextLeftPct / 100} tone="neutral" label={S.contextLeft} figure={`${member.contextLeftPct}%`} />
+      )),
+      ...reported(S.scratchpad, member.scratchpadKb === null ? null : `${member.scratchpadKb} ${U.kb}`),
+      ...reported(S.branch, member.branch),
+      ...reported(S.base, member.base),
+      ...reported(S.diff, member.diff),
+      [S.tokensIn, member.tokensIn === null ? S.absent : fmtInt(member.tokensIn)] as const,
+      [S.tokensOut, member.tokensOut === null ? S.absent : fmtInt(member.tokensOut)] as const,
+      [S.cost, <>{money(member.costEst)}<BasisTag basis="estimated" /></>] as const,
+      [S.lastTurn, member.lastTurn ?? S.absent] as const,
+      [S.lastMessage, lastReceived(board, member.name) ?? S.none] as const,
+      [S.checks, <ChecksBadge checks={member.checks} />] as const,
+    ]),
+  ];
+  return (
+    <>
+      {member === null ? <Empty text={S.noSession} source={H.openSeat} /> : null}
+      <KeyValue rows={rows} />
+      <Section title={S.instructions}>
+        {slot.instructions === null
+          ? <Empty text={S.noInstructions} />
+          : <Reveal label={S.showInstructions}><p className="myx-tb-instructions">{slot.instructions}</p></Reveal>}
+      </Section>
+    </>
+  );
+}
+
+// ---- the day's timeline --------------------------------------------------------------------
+
+const TIMELINE_KEY = [
+  { mark: 'series-1', label: S.landed },
+  { mark: 'ok', label: S.running },
+  { mark: 'series-2', label: S.handoffs },
+] as const;
+
+/** The day as lanes: one per member, each turn a bar from its start as long as it ran, the
+ *  hand-offs as ticks on a lane of their own, all on one clock that ends now. */
+export function TeamTimeline({ board, data }: { board: TeamPayload; data: TeamViewData | null }) {
+  const section = (body: ReactNode) => (
+    <Section title={S.today} info={{ text: H.today, label: S.todayWhy }} actions={<Legend items={TIMELINE_KEY} label={S.timelineKey} />}>
+      {body}
+    </Section>
+  );
+  if (data === null) return section(<Empty text={S.readingTurns} />);
+  if (board.members.length === 0) return section(<Empty text={S.noSession} source={H.openSeat} />);
+
+  const axis = dayAxis([...data.turns.map((turn) => turn.start), ...board.messages.map((message) => message.at)], data.now);
+  const span = Math.max(axis.to - axis.from, 1);
+  const x = (at: number): string => `${Math.max(0, Math.min(100, ((at - axis.from) / span) * 100))}%`;
+  const grid = axis.ticks.map((tick) => <span key={tick.at} className="myx-tt-grid" style={{ left: x(tick.at) }} aria-hidden="true" />);
+
+  return section(
+    <div className="myx-tt">
+      <div className="myx-tt-row myx-tt-axis" aria-hidden="true">
+        <span />
+        <span className="myx-tt-scale">
+          {axis.ticks.map((tick) => <span key={tick.at} className="myx-tt-tick" style={{ left: x(tick.at) }}>{tick.label}</span>)}
+        </span>
+      </div>
+      <div className="myx-tt-row">
+        <span className="myx-tt-name myx-tt-quiet">{S.handoffs}</span>
+        <span className="myx-tt-track" role="img" aria-label={`${S.handoffs}: ${board.messages.length}`}>
+          {grid}
+          {board.messages.map((message) => (
+            <span
+              key={`${message.at}-${message.from}-${message.to}`}
+              className="myx-tt-msg myx-mark-series-2"
+              style={{ left: x(message.at) }}
+              title={`${message.time} ${slotName(board, message.from)} → ${slotName(board, message.to)}`}
+            />
+          ))}
+        </span>
+      </div>
+      {lanesOf(board, data.turns).map(({ member, turns }) => (
+        <div className="myx-tt-row" key={member.slot}>
+          <span className="myx-tt-name"><HeadMark head={member.head}>{member.name}</HeadMark></span>
+          <span
+            className="myx-tt-track"
+            role="img"
+            aria-label={`${member.name}: ${turns.length} ${U.turns}, ${turns.filter((turn) => turn.live).length} ${U.running}`}
+          >
+            {grid}
+            {turns.map((turn) => (
+              <span
+                key={turn.id}
+                className={cx('myx-tt-turn', turn.live ? 'myx-mark-ok' : 'myx-mark-series-1')}
+                style={{ left: x(turn.start), width: `${Math.min(100, (turn.ms / span) * 100)}%` }}
+                title={`${clockText(turn.start)}, ${fmtMs(turn.ms)}`}
               />
-            ) : null}
-            {board.messages.map((message, index) => (
-              <MessageStrip
-                key={`${message.time}-${message.from}`}
-                message={message}
-                className="myx-board-msg"
-                style={{
-                  top: `${chatRow(index).top}%`,
-                  height: `${chatRow(index).height}%`,
-                }}
-              />
             ))}
-          </div>
-        </Bay>
+          </span>
+        </div>
+      ))}
+      {data.turns.length === 0 ? <Empty text={S.noTurnsToday} source={H.noTurns} /> : null}
+    </div>,
+  );
+}
 
-        {/* the activity sample: a label every 30 seconds, and it says so.
-            L-7: THE COLUMN NAMES PRINT ONCE, ON THE RACK, NOT ON EVERY SLIP. The light-room review
-            filed it and the 3840 pass made it the most repetitive object on the page -- six data
-            rows each carrying its own `time member activity detail` row, alternating down the bay,
-            which reads as a rendering loop rather than a table. The comp's activity bay is a table:
-            the region crop shows one header row under the plate and five data rows beneath it, and
-            StripField's own contract names this case ("omit inside a bay whose head prints the
-            column names once ... which is also what a compact rack (the activity feed) needs").
-            The lead, builder, chat and hand-off bays keep their per-strip labels: those rows carry
-            DIFFERENT label sets, so there the label is a property of the row (M1-34). */}
-        <Bay
-          className="myx-board-bay myx-board-bay-activity"
-          label={`${S.activityLabel}, sampled every 30 s`}
-        >
-          {/* ONCE, BUT IN THE FIRST SLIP (M3-04). The names printed as a band of their own pressed
-              against the plate, outside every cell rule; the comp prints them as the FIRST strip's
-              label row, under that strip's own rules and clear of the plate, and the rows below
-              carry none. The bisect put -0.071 on activity-label at the commit that added the band
-              (c173d7b9, M1-38). */}
-          <div className="myx-board-acts">
-            {board.activity.length === 0 ? (
-              <Empty
-                text={unread.activity === undefined ? 'nothing sampled today' : 'activity unreadable'}
-                source={unread.activity ?? "splice samples this team's sessions every 30 s"}
-              />
-            ) : null}
-            {board.activity.map((entry, index) => (
-              <Strip
-                key={`${entry.time}-${entry.member}-${entry.activity}`}
-                className="myx-board-act"
-                edge="grey"
-                edgeLabel=""
-                style={{ top: `${actRow(index).top}%`, height: `${actRow(index).height}%` }}
-                ariaLabel={`${entry.member} ${entry.activity}`}
-              >
-                <StripField w={ACT_COLS[0]} {...(index === 0 ? { label: S.time } : {})} value={entry.time} />
-                <StripField w={ACT_COLS[1]} {...(index === 0 ? { label: S.member } : {})} value={entry.member} mono={false} />
-                <StripField w={ACT_COLS[2]} {...(index === 0 ? { label: S.activity } : {})} value={entry.activity} mono={false} />
-                <StripField w={ACT_COLS[3]} {...(index === 0 ? { label: S.detail } : {})} value={entry.detail} mono={false} />
-              </Strip>
-            ))}
-          </div>
-        </Bay>
+// ---- the economics -------------------------------------------------------------------------
 
-        {/* the team's identity at the foot of the console, across the rail's edge */}
-        <BoardFooter board={board} />
-      </section>
-    </div>
+/** Turns, tokens and cost per role over the team's life, as the daemon tallies them, with the turns
+ *  it could place in no role and how far back the oldest turn it holds reaches. */
+export function CostPerRole({ data }: { data: TeamViewData | null }) {
+  const info = { text: H.economics, label: S.economicsWhy };
+  if (data === null) return <Section title={S.costPerRole} info={info}><Empty text={S.readingCosts} /></Section>;
+  if ('error' in data.economics) {
+    return <Section title={S.costPerRole} info={info}><Empty text={S.costsUnreadable} source={data.economics.error} /></Section>;
+  }
+  const table = costTable(data.economics);
+  const scale = Math.max(1, ...table.rows.map((row) => row.input + row.output));
+  const columns: Column<RoleCost>[] = [
+    { key: 'role', label: S.role, cell: (row) => row.role },
+    { key: 'turns', label: S.turns, width: '10%', align: 'end', mono: true, cell: (row) => fmtInt(row.turns) },
+    { key: 'tokens', label: S.tokens, width: '40%', cell: (row) => <TokenSplit input={row.input} output={row.output} scale={scale} /> },
+    { key: 'cost', label: S.cost, basis: 'estimated', width: '14%', align: 'end', mono: true, cell: (row) => money(row.cost) },
+  ];
+  return (
+    <Section title={S.costPerRole} info={info} actions={<Legend items={TOKEN_KEY} label={S.tokensKey} />}>
+      {table.rows.length === 0
+        ? <Empty text={S.noTurns} source={H.noTurns} />
+        : <DataTable columns={columns} rows={table.rows} rowKey={(row) => row.role} label={S.costPerRole} />}
+      {table.unattributed === 0 && table.oldest === null ? null : (
+        <p className="myx-tb-note">
+          {table.unattributed === 0 ? null : (
+            <span className="myx-tb-note-part">
+              {`${fmtInt(table.unattributed)} ${U.untagged}`}
+              <InfoTip text={H.untagged} label={S.untaggedWhy} />
+            </span>
+          )}
+          {table.oldest === null ? null : <span className="myx-tb-note-part">{`${U.since} ${stamp(table.oldest)}`}</span>}
+        </p>
+      )}
+    </Section>
   );
 }

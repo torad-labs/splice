@@ -1,15 +1,13 @@
-// Every label a compaction rule strip prints. Lowercase, three words or fewer, no em-dash
-// (CONTRACTS.md section 4, enforced by the label wall).
+// Every word a compaction rule prints (docs/design/DESIGN.md section 10). S holds labels: three words
+// or fewer, sentence case. tests/copy.test.ts holds them.
 export const S = {
-  /** The strip's holder edge and its aria label prefix. */
-  rule: 'rule',
-  instruction: 'instruction',
-  scope: 'scope',
-  source: 'source',
-  chars: 'length',
-  heads: 'heads',
+  rules: 'Compaction rules',
+  scope: 'Scope',
+  source: 'Source',
+  chars: 'Length',
+  heads: 'Heads',
   /** A rule whose text is empty: the client's own instructions stand. */
-  optOut: 'client default',
+  optOut: 'Client default',
   /** A rule whose file cannot be read. */
-  unavailable: 'unavailable',
+  unavailable: 'Unavailable',
 } as const;

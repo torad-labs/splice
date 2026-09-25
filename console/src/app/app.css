@@ -1,271 +1,130 @@
-/* The console shell — hand-authored, .myx-* namespace.
-   One graphite room: a fixed rule, a rail of bays, the page's bay. Depth is
-   surface tier and hairline, never shadow. Every spacing value comes from
-   --space-1..8 and every size from --text-1..6 (wall: webui-css-tokens-only),
-   and every colour from CONTRACTS.md section 1.
-
-   The rule and the rail are bound to the measured regions of the approved comp
-   (console/.impeccable/build/scaffold/layout.css, regions top-rule, rail and
-   rail-labels in spec.json): the rule is the full-width top-rule band, the rail
-   is the rail band below it, and the five rule cells sit at their measured x
-   and width inside it. Those measurements are percent of the comp frame, and
-   the frame is the window, so the numbers bind here as vh/vw and the shell
-   scales the way the comp does at any capture size.
-
-   THIS FILE HOLDS THE SHELL'S OWN RULES AND NOTHING ELSE (row M1-08). The
-   plate-era blocks it used to carry - data tables, metric and pill rows, the
-   head plates, the fleet banner, the old log pane and the config editor -
-   existed only for surfaces the shell does not render; their components keep
-   their own class names and their own sheets, and M3-04 deletes them. The key
-   gate IS the shell's chrome (App.tsx renders it), so its rules stay here, on
-   the world's paper and ink. */
-
-/* ---------- THE SCALE (M1-26) ----------
-   The root font size is --root-size, derived in tokens.css beside the ladders it drives, because
-   a scale cannot be defined in terms of itself (wall: webui-css-tokens-only, which exempts the
-   token sheet by name). The number, its provenance and the arithmetic that justifies linear-no-cap
-   are all in that file; this rule only applies it. */
-html { font-size: var(--root-size); }
+/* The console shell (docs/design/DESIGN.md section 6): a sidebar of grouped pages on the left, and
+   a page column holding the status strip over the page. Flat grounds and one hairline; every size
+   from the token scales (walls webui-css-tokens-only and webui-css-font-size-scale), every colour
+   from tokens.css (webui-css-no-color-literals). The key gate is shell chrome too, so its rules
+   live here. */
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--room);
-  color: var(--ink);
-  font-family: var(--font-label);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
   font-size: var(--text-3);
-  /* THE ROOM'S LETTERING IS CONDENSED (2026-09-23, console design pass). The comp's type is a narrow
-     instrument face, and Archivo's width axis (62-125, declared in shared/fonts.css) reaches toward
-     it; only the team board and the rail used the axis, so every other page set Archivo at full
-     width and read as a default sans, and its model and dialect ids were cut off at the cell edge.
-     80 is as narrow as the 12px labels stay legible; the board and the rail set their own. The code
-     face declares no width range, so this leaves it untouched. */
-  font-stretch: 80%;
-  line-height: 1.55;
+  line-height: var(--leading);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-::selection { background: color-mix(in srgb, var(--focus) 30%, transparent); }
+::selection { background: var(--bg-active); color: var(--fg); }
 
-/* A link is the room's ink with a hairline under it: the world has no second accent, and the
-   coloured thing on any page is the holder edge. */
 a {
-  color: var(--ink);
-  text-decoration-color: var(--hairline-strong);
+  color: var(--fg);
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: .2em;
 }
+a:hover { text-decoration-color: var(--fg-muted); }
 
-/* One focus ring, everywhere, at the width the contract names: --focus is a colour, and the ring
-   is 2px with a 1px offset. The width used to come from two old tokens that only existed for it. */
+/* One focus ring, everywhere: 2px of the ink itself, offset 2px, so it reads on any ground. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }
 
-/* ---------- PRESS (2026-09-23, console design pass) ----------
-   Every button in the room answers a press by settling 3% into the page, so a click is felt the
-   moment it lands rather than when the daemon answers. 0.97 and the strong ease-out at --dur-1:
-   visible, never a bounce. Strips are not buttons for this purpose: a rack-wide slip scaling 3%
-   moves its far edge 40px, which reads as the row lurching, so a strip answers with its outline. */
-button {
-  transition: transform var(--dur-1) var(--ease-out);
-}
-button:not(:disabled):active {
-  transform: scale(0.97);
-}
+/* A press is felt when it lands: 3% into the page at --dur-1, never a bounce. */
+button { transition: transform var(--dur-1) var(--ease-out); }
+button:not(:disabled):active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) {
   button:not(:disabled):active { transform: none; }
 }
 
 /* ---------- the shell ---------- */
-
 .myx-console {
-  /* measured: top-rule h 5.8% of the frame, rail w 9% of it. The floors keep
-     the rule legible on a short window instead of letting it crush the cells. */
-  /* THE RULE BAR BELONGS TO THE TYPE, NOT TO THE FRAME'S HEIGHT (M1-35, from code-reviewer's
-     adversarial pass on M1-26). It was 5.8vh while the root is 1.0417vw, so rule.h / cell.fs was
-     2.582 at the comp frame and 2.179 at 3840x2160 - and at 3840x2560 the same width returns 2.582
-     again, which isolates it to ASPECT and nothing else. At 3840x900 the ratio fell to 0.970: 57.5px
-     of type in a 56px band, overflowing by 29px. A band sized to hold type is made of type: it is
-     2.582 x the rule's own type size, measured at the comp (59.4px of band, 23px of type), and both
-     the band and its floor are now type multiples so they follow the root with everything else. */
-  --rule-h: calc(var(--text-6) * 2.582);
-  --rule-min: calc(var(--text-6) * 2.4);
-  /* The rail is as wide as its plates, not a share of the window: 9vw was 130px at 1440 and 346px
-     at 3840, a column of air around the same eight-letter plates (2026-09-24, fixed root). */
-  --rail-w: 8.25rem;
-  --rail-min: 118px;
   height: 100vh;
   display: grid;
-  grid-template-rows: minmax(var(--rule-min), var(--rule-h)) 1fr;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   overflow: hidden;
-  background: var(--room);
+  background: var(--bg);
 }
 
-.myx-console-body {
+.myx-console-main {
   display: grid;
-  grid-template-columns: minmax(var(--rail-min), var(--rail-w)) 1fr;
+  /* Declared, not implicit: an implicit column grows to its widest content's min-content, so on a
+     phone one unbreakable row pushed the whole page past the window, where the shell clipped it. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
-  /* THE RACK RAILS ARE GONE FROM THE PAGE (2026-09-23, console design pass). A hairline every
-     sixty pixels ran across the whole frame behind the pages, through page heads, empty floor and
-     the doctor's report alike, so every page read as ruled notebook paper. The comp draws its
-     horizontal members inside the bays (their slot ribs, ui.css) and holds its rail tabs in slots
-     (rail.css); nothing crosses the open room. */
 }
 
 .myx-console-page {
   min-width: 0;
   overflow: auto;
-  padding: var(--space-5);
+  padding: var(--space-6) var(--space-7) var(--space-8);
 }
 
-/* A WIDER WINDOW SHOWS THE SAME PAGE, NOT A STRETCHED ONE (2026-09-24, fixed root). A strip's cells
-   share the bay's slack, so at 3840 a ten-field row spread its short values 370px apart and the eye
-   lost the row between them. The page stops at 120rem (1920px at the default root) and sits centred
-   in whatever the window has left. */
-.myx-console-page > * {
-  max-width: 120rem;
-  margin-inline: auto;
-}
+/* The page uses the screen (ruling 4, 2026-09-25): a 120rem cap left a 1920px island centred in a
+   3840 panel, 70% of it black. Past 3000 a page composes to the width instead, with sections side by
+   side, so no table row runs the full span. */
 
-/* The bay holds its space for the frame before a lazily loaded page arrives.
-   It claims nothing: no skeleton shaped like content the page has not sent. */
+/* The page column holds its space before a lazily loaded page arrives, and claims nothing. */
 .myx-console-pending { min-height: 100%; }
 
 /* ---------- the key gate ----------
-   The shell's own chrome: a scrim over the room and one printed plate. It is a plate because the
-   world has no dialog - but a gate is not a confirmation, and the console has nothing to show
-   until the key is pasted, so this is the one surface that covers the room instead of sitting in
-   it. A holder edge would have nothing to say here, so there is none: the wordmark leads. */
-
+   The one surface that covers the console: nothing can show until the key is pasted. */
 .myx-modal-scrim {
   position: fixed;
   inset: 0;
-  /* No z-index: this is the last thing App.tsx renders, so it paints over the rail, the rule and
-     the palette by document order (the world carries no stack ladder, section 1). */
-  background: color-mix(in srgb, var(--room-deep) 72%, transparent);
+  background: var(--overlay);
   display: grid;
   place-items: center;
-  padding: var(--space-4);
+  padding: var(--space-5);
 }
 
 .myx-modal {
-  background: var(--strip);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  padding: var(--space-5);
-  max-width: 44rem;
   width: 100%;
-  display: grid;
-  gap: var(--space-4);
+  max-width: calc(32 * var(--u));
   max-height: 85vh;
   overflow-y: auto;
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: var(--bg-raised);
+  color: var(--fg);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-float);
 }
 
 .myx-modal-title {
   margin: 0;
-  font-family: var(--font-label);
-  font-size: var(--text-4);
+  font-size: var(--text-5);
   font-weight: 600;
-  color: var(--strip-ink);
+  line-height: var(--leading-tight);
 }
 
-/* The gate is shown once per visit, so it can afford an entrance (the palette, opened by keyboard
-   many times a day, has none): the scrim fades and the plate settles from 98% at --dur-2. Reduced
-   motion holds --dur-2 at zero (tokens.css), so it simply appears. */
+/* Shown once per visit, so it may arrive: the scrim fades and the panel settles from 98%. */
 .myx-modal-scrim { transition: opacity var(--dur-2) ease; }
 .myx-modal { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
 @starting-style {
   .myx-modal-scrim { opacity: 0; }
-  .myx-modal { opacity: 0; transform: scale(0.98) translateY(var(--space-2)); }
+  .myx-modal { opacity: 0; transform: scale(.98) translateY(var(--space-2)); }
 }
 
-.myx-modal-actions { display: flex; justify-content: end; gap: var(--space-2); }
-.myx-unlock-form { display: grid; gap: var(--space-3); }
+.myx-modal-actions { display: flex; justify-content: end; gap: var(--space-3); }
 
-/* THE GATE'S OWN CONTROLS, styled from the shell because the gate IS shell chrome and its feature
-   file (features/unlock-mgmt) is outside this row's fence. It used to render the old `Btn` and
-   `Well` primitives: a vermilion bar and a dark mono slab on a printed plate, which is the plate
-   system showing through the one surface the operator sees before anything else.
-   Both overrides are scoped to .myx-modal, so they touch the gate and nothing else. */
-.myx-modal .myx-btn {
-  padding: var(--space-2) var(--space-3);
-  background: var(--strip);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
-}
-.myx-modal .myx-btn:hover { border-color: var(--strip-ink); }
-.myx-modal .myx-btn[disabled] { color: var(--strip-ink-mute); cursor: not-allowed; }
-
-/* The command that prints the key: printed on the plate beside its label, NOT in a field box.
-   In the input's own box it read as a field already filled in, one line above the field that
-   is empty. It clips rather than wraps so the plate never grows a second line. */
-.myx-unlock-hint {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  min-width: 0;
-}
-.myx-modal .myx-well {
-  min-width: 0;
-  padding: 0;
-  background: none;
-  color: var(--strip-ink);
-  border: 0;
-  /* CODE: the command to paste is code, as its own comment says. */
-  font-family: var(--font-code);
-  font-size: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The pasted key is the world's Input control, laid out by the old `Field` this file cannot edit:
-   same label above, same box, same figure face. The label keeps the world's sentence case - the
-   old rule shouted it in a mono face, which is a cue this world does not have. */
-.myx-modal .myx-field { display: grid; gap: var(--space-1); }
-.myx-modal .myx-field-label {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--strip-ink-mute);
-}
-.myx-modal .myx-field input {
-  padding: var(--space-2) var(--space-3);
-  background: var(--strip-field);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  /* FIGURE: a modal field prints a config value. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---------- THE PHONE (M3-03) ----------
-   Below 720 the frame is a phone, and the desktop shell does not survive the loss of width: it gave
-   the rail 96 of 390 pixels (25 percent of the screen to thirteen words) and left the page 294.
-   The rail becomes a strip of addresses along the BOTTOM of the screen, where a thumb is, and the
-   page takes the whole width between the rule and that strip. The rule's own height is its
-   content's here (rule.css stacks its cells), so the first track is auto rather than the type
-   multiple the desktop band is. */
+/* ---------- phone ----------
+   Below 720 the sidebar becomes a row of pages above the status strip, and the page takes the
+   whole width. */
 @media (max-width: 720px) {
-  .myx-console { grid-template-rows: auto minmax(0, 1fr); }
-  .myx-console-body {
+  .myx-console {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
   }
-  .myx-console-body > .myx-rail { order: 2; }
-  .myx-console-page { padding: var(--space-3); }
+  .myx-console-page { padding: var(--space-5) var(--space-4) var(--space-7); }
 }

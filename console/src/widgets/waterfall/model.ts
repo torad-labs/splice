@@ -25,8 +25,11 @@ export interface BarRow {
   group: StageGroup;
   start: number;
   end: number;
-  /** end - start: the wall time this group covers, which a segment sum would understate when the
-   *  mark pairs in the group are not contiguous. */
+  /** The time the turn spent in this group: the sum of its segments. The segments tile the turn on
+   *  its own clock (entities/perf waterfall), so a group's segments need not be adjacent, and the
+   *  span from its first to its last would count the other groups' time between them: the client's
+   *  first frame goes out at upstream handoff, so a stream span ran from there to the stream's end
+   *  and read 5.7s of streaming on a turn that streamed for 0.4s (2026-09-25). */
   ms: number;
   bars: Bar[];
 }
@@ -57,7 +60,7 @@ export function barRows(stages: readonly Stage[], total: number): BarRow[] {
       group,
       start,
       end,
-      ms: end - start,
+      ms: mine.reduce((held, stage) => held + stage.ms, 0),
       bars: mine.map((stage) => ({
         key: stage.key,
         label: stage.label,

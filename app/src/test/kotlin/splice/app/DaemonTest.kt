@@ -177,10 +177,11 @@ class DaemonTest {
             assertTrue(held.long("acquired") >= 1, "the held turn was acquired: $held")
             // acquired minus released is the live count
             assertEquals(1L, held.long("acquired") - held.long("released"), "$held")
-            delay(250)
-            val later = gate().live().single()
-            assertTrue(later.long("age_ms") > row.long("age_ms"), "age grows while held: $row then $later")
-            assertTrue(later.long("idle_ms") > row.long("idle_ms"), "a silent stream's idle grows: $row then $later")
+            // age grows while held, and a silent stream's idle grows with it
+            awaitGate("the held row to age past $row") { gate ->
+                val later = gate.live().singleOrNull() ?: return@awaitGate false
+                later.long("age_ms") > row.long("age_ms") && later.long("idle_ms") > row.long("idle_ms")
+            }
         } finally {
             mock.releaseHold()
             turn.await()

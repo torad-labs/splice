@@ -151,10 +151,10 @@ public class InflightGate(
 
     /** How [awaitTurn] ended: refused by the bounded queue, admitted on its recheck without
      *  queueing, or admitted after waiting in the queue for [Queued.waitedMs]. */
-    private sealed interface Turn {
-        data object Refused : Turn
-        data object Immediate : Turn
-        data class Queued(val waitedMs: Long) : Turn
+    private sealed class Turn {
+        data object Refused : Turn()
+        data object Immediate : Turn()
+        data class Queued(val waitedMs: Long) : Turn()
     }
 
     /** A delivered permit becomes a live slot: counted, its wait added when it queued, and listed

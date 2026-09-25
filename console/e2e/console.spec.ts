@@ -259,6 +259,33 @@ async function nextCell(main: Locator, account: string): Promise<Locator> {
   return row.getByRole('cell').nth(names.indexOf('Next'));
 }
 
+// The design's two frames (DESIGN.md, Scale), in both views that print the Heads column.
+for (const viewport of [{ width: 1600, height: 1000 }, { width: 3840, height: 2060 }]) {
+  for (const view of ['By provider', 'Nearest limit']) {
+    test(`accounts prints the longest head name whole, ${view} at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      // Every column had a width but Heads, which took the 11% left: 136px at 1600, and claude-muse
+      // needs 155 (the film's demo, 2026-09-25). claude-deepseek is the longest head the example
+      // config ships.
+      await page.setViewportSize(viewport);
+      await page.route('**/api/accounts', async (route) => {
+        const response = await route.fetch();
+        const body = await response.json() as { accounts: { heads: string[] }[] };
+        for (const account of body.accounts) account.heads = ['claude-deepseek'];
+        await route.fulfill({ response, json: body });
+      });
+      const faults = await open(page, 'accounts');
+      const main = page.locator('main');
+      await main.getByRole('tab', { name: view, exact: true }).click();
+      await expect(main.locator('table td').getByText('claude-deepseek').first()).toBeVisible({ timeout: 15_000 });
+      const cut = await main.locator('table td').evaluateAll((cells) => cells
+        .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+        .map((cell) => `${cell.textContent ?? ''} ${cell.scrollWidth}>${cell.clientWidth}`));
+      expect(cut, 'a cell of the accounts table is cut').toEqual([]);
+      expect(faults.pageErrors, 'the accounts page threw').toEqual([]);
+    });
+  }
+}
+
 test('accounts shows the OAuth account with the windows its provider reported', async ({ page }) => {
   await open(page, 'accounts');
   const main = page.locator('main');

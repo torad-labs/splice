@@ -83,7 +83,10 @@ export function accountColumns({ fields, grouped, nowMs, accounts, compact = fal
   compact?: boolean;
 }): Column<AccountRow>[] {
   const wanted = new Set(fields);
-  const windowWidth = compact ? 'calc(9 * var(--u))' : '20%';
+  // The two windows take what the other columns leave, split evenly (a fixed table shares it between
+  // the columns with no width): a meter stretches, a name does not. They held 20% each, which left
+  // Heads 11%, 136px at 1600 against the 155 claude-muse needs, and the name was cut (2026-09-25).
+  const windowWidth = compact ? { width: 'calc(9 * var(--u))' } : {};
   const columns: (Column<AccountRow> | null)[] = [
     {
       key: 'account',
@@ -104,12 +107,16 @@ export function accountColumns({ fields, grouped, nowMs, accounts, compact = fal
       : null,
     wanted.has('plan') ? { key: 'plan', label: S.plan, width: '8%', cell: (account) => account.plan ?? ABSENT } : null,
     compact ? null : { key: 'state', label: S.state, width: '11%', cell: (account) => <AccountStateBadge account={account} nowMs={nowMs} quiet /> },
-    { key: 'short', label: S.short, width: windowWidth, wrap: true, cell: (account) => <WindowCell window={slotWindows(account).short} slot={S.short} nowMs={nowMs} label={accountName(account)} /> },
-    { key: 'long', label: S.long, width: windowWidth, wrap: true, cell: (account) => <WindowCell window={slotWindows(account).long} slot={S.long} nowMs={nowMs} label={accountName(account)} /> },
+    { key: 'short', label: S.short, ...windowWidth, wrap: true, cell: (account) => <WindowCell window={slotWindows(account).short} slot={S.short} nowMs={nowMs} label={accountName(account)} /> },
+    { key: 'long', label: S.long, ...windowWidth, wrap: true, cell: (account) => <WindowCell window={slotWindows(account).long} slot={S.long} nowMs={nowMs} label={accountName(account)} /> },
     wanted.has('heads') && grouped !== 'head'
       ? {
         key: 'heads',
         label: S.heads,
+        // In the cell's own type, so it holds claude-deepseek, the longest head the example config
+        // ships, at every scale; a pool two heads share wraps to a second line rather than cutting one.
+        width: '12em',
+        wrap: true,
         cell: (account) => (account.heads.length === 0 ? ABSENT : (
           <span className="myx-at-heads">{account.heads.map((head) => <HeadMark key={head} head={head} />)}</span>
         )),

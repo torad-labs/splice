@@ -416,6 +416,7 @@ context_window = 1000000
 [[providers.muse.models]]
 id = "muse-spark-1.2[1m]"
 label = "Muse Spark 1.2"
+# Measured like 1.3 (2026-09-25): a 1,010,789-token prompt served cold, first attempt, 46.4 s.
 context_window = 1000000
 
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────

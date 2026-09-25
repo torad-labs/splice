@@ -169,7 +169,7 @@ What a Linear or Vercel clone would pick on each axis, what splice picks, and wh
 | Axis | A Linear / Vercel clone | splice | Why |
 |---|---|---|---|
 | Type | Inter (Linear) or Geist (Vercel); mono only for code | IBM Plex Sans for words, IBM Plex Mono for every figure: times, tokens, percentages, ids | Plex was drawn for engineering instruments and its figures read like a readout. Mono figures don't jitter as live numbers tick. And it is neither of the two defaults |
-| Colour | Grey plus one brand accent on the chrome (Linear's indigo, Vercel's blue) | Grey chrome with no hue. The accent is the ink itself, so the primary button is simply the brightest thing. Eight head colours are the only hues, plus status colours next to their words | The question the operator brings is "which head?". Colour that answers it is worth more than colour that brands the frame |
+| Colour | Linear: grey plus one brand accent (indigo) on the chrome. Vercel: the chrome is its grey scale (gray 100 to 1000 for grounds, borders and text, vercel.com/geist/colors), the primary button is the ink, and blue is kept for links and focus | The same ink-on-grey chrome as Vercel, with the focus ring in the ink too. Eight head colours are the only hues, plus status colours next to their words | On the chrome splice agrees with Vercel, and departs from it only by the head hues. The question the operator brings is "which head?", and colour that answers it is worth more than colour that brands the frame |
 | Layout | A sidebar, a page header, a grid of cards | A sidebar, an always-on status strip, one board per page, detail opening beside the list; stat tiles only on number pages | A card grid hides row order, and row order is the data here |
 | Nav | A flat list of features, or workspace first | Four groups named for splice's own objects (in flight, routing, plans, daemon). Home is sessions. ⌘K reaches all of it | See section 6: the grouping follows the session, its head, its plan and the daemon under them |
 | Motion | Springs and fades on everything | Nothing a keyboard triggers animates. Hover and open take 120 to 180ms. A status change on the board cross-fades its word, and that is the only motion with meaning | A console opened between terminal sessions must feel instant |
@@ -192,7 +192,8 @@ What a Linear or Vercel clone would pick on each axis, what splice picks, and wh
   its word.
 - **Where it appears.** Sessions (head column and group titles), turns (head column and waterfall
   bars), fleet (each head's title), usage (each head's row and chart series), logs (the head
-  column and head filter), settings (the scope picker), accounts (the heads an account serves).
+  filter, the band on the stream's bar, and a head column when a tail carries several heads),
+  settings (the scope picker), accounts (the heads an account serves).
 
 ## 6. Navigation and information architecture
 
@@ -259,6 +260,11 @@ Every page is one of four types. Build new pages from these.
 - A filter rail on the left: head (chips with marks), tail length, tag, level, search.
 - The stream fills the rest: time in mono, then the message. `key=value` pairs are split so keys
   print in the subtle ink and values in full ink, which makes a perf line scannable.
+- The stream's bar wears the tailed head's band, the wash a head's run takes on the sessions
+  board. The daemon's `/api/logs/{head}` answers with that head's lines only, so a head column
+  prints only for a tail that carries several heads, where it shows each line's mark.
+- Scrolled, the top rows fade under the column names instead of being sliced by them, and a
+  wrapped line cut by the top keeps its time in view.
 - Following pins the newest line to the bottom. While paused, a bar says how many lines arrived.
 - A request capture panel sits under the stream, closed until opened.
 

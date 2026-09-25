@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headOf, levelOf, timeOf } from '../src/entities/logs';
-import { LogColumns, LogLine, edgeOfLevel, messageOf, whenOf } from '../src/widgets/log-tail';
+import { LogColumns, LogLine, messageOf, partsOf, toneOfLevel, whenOf } from '../src/widgets/log-tail';
 
 const LINE = '[2026-09-18 01:14:02] [claude-deepseek] turn compact=false model=deepseek-flash ok';
 
@@ -55,23 +55,26 @@ describe('a tail row prints each fact once', () => {
   });
 });
 
-// THE RACK PRINTS ITS COLUMN NAMES ONCE (M3-04). Every tail row printed `time head level text` above its
-// own four values, so a 40-line tail spent half its height on forty copies of one header. The labels
-// now live on one label-only strip above the scroll, and a row prints values only.
-describe('the rack prints its column names once', () => {
-  const labels = (html: string) => [...html.matchAll(/class="myx-sfield-label">([^<]*)</g)].map((m) => m[1]);
+// THE STREAM PRINTS ITS COLUMN NAMES ONCE (M3-04). Every tail row printed `time head level text` above
+// its own four values, so a 40-line tail spent half its height on forty copies of one header. The
+// names live on one row above the scroll, and a line prints values only.
+describe('the stream prints its column names once', () => {
+  const cells = (html: string) => [...html.matchAll(/class="myx-lt-(?:time|head|text)">([^<]*)</g)].map((m) => m[1]);
 
-  test('a row prints no column name', () => {
-    expect(labels(renderToStaticMarkup(React.createElement(LogLine, { line: LINE })))).toEqual([]);
+  test('a line prints no column name', () => {
+    const row = renderToStaticMarkup(React.createElement(LogLine, { line: LINE }));
+    expect(row).not.toContain('myx-lt-cols');
+    expect(cells(row)).not.toContain('time');
+    expect(cells(row)).not.toContain('message');
   });
 
-  test('the column strip prints its names in the row order, with no level column', () => {
-    // The level is the edge's word; a column beside it printed it twice, and `-` on unmarked lines.
-    expect(labels(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['time', 'head', 'message']);
+  test('the column row prints its names in the line order, with no level column', () => {
+    // The level is the dot's word; a column beside it printed it twice, and `-` on unmarked lines.
+    expect(cells(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['time', 'head', 'message']);
   });
 
   test('a head\'s own log drops the head column from the names and from every row', () => {
-    expect(labels(renderToStaticMarkup(React.createElement(LogColumns, { tagged: false })))).toEqual(['time', 'message']);
+    expect(cells(renderToStaticMarkup(React.createElement(LogColumns, { tagged: false })))).toEqual(['time', 'message']);
     const row = renderToStaticMarkup(React.createElement(LogLine, { line: LINE, tagged: false }));
     expect(row.replace(/\saria-label="[^"]*"/g, '')).not.toContain('claude-deepseek');
   });
@@ -87,8 +90,14 @@ describe('a row cut by the top of the tail keeps its facts', () => {
   const css = readFileSync(path.join(webui, 'src/widgets/log-tail/log-tail.css'), 'utf8');
   const tsx = readFileSync(path.join(webui, 'src/widgets/log-tail/index.tsx'), 'utf8');
 
-  test('the fact cells stick and the text cell does not', () => {
-    expect(css).toMatch(/^\.myx-lt-row \.myx-sfield:not\(:last-child\) \.myx-sfield-value \{ position: sticky; top: 0; \}$/m);
+  test('the time cell sticks, shorter than its row, and the text cell does not', () => {
+    expect(css).toMatch(/^\.myx-lt-row \.myx-lt-time \{ position: sticky; top: 0; align-self: start; \}$/m);
+    expect(css).not.toMatch(/\.myx-lt-text[^{]*\{[^}]*position: sticky/);
+  });
+
+  test('scrolled, the rows fade under the column names instead of being sliced by them', () => {
+    expect(css).toMatch(/^\.myx-lt-scrolled \{ mask-image: linear-gradient\(to bottom, transparent, /m);
+    expect(tsx).toMatch(/virtualizer\.scrollOffset \?\? 0\) > 0 && 'myx-lt-scrolled'/);
   });
 
   test('the rows are placed by top, never by a transform sticky cannot see', () => {
@@ -120,19 +129,19 @@ describe('it strips only what the row prints beside it', () => {
   });
 });
 
-describe('the edge is the daemon severity', () => {
+describe('the tone is the daemon severity', () => {
   test.each([
-    ['error', 'red'], ['fatal', 'red'], ['warn', 'amber'], ['info', 'grey'], [null, 'grey'],
-  ] as const)('%s reads %s', (level, edge) => {
-    expect(edgeOfLevel(level)).toBe(edge);
+    ['error', 'danger'], ['fatal', 'danger'], ['warn', 'warn'], ['info', 'neutral'], [null, null],
+  ] as const)('%s reads %s', (level, tone) => {
+    expect(toneOfLevel(level)).toBe(tone);
   });
 
   test('stripping the prefix never changes the level the row reads', () => {
     // levelOf runs on the WHOLE line, so a severity word inside the prefix could not be lost --
-    // asserted rather than assumed, because the cell and the edge now read different strings.
+    // asserted rather than assumed, because the cell and the tone now read different strings.
     const line = '[2026-09-18 01:14:05] [claude-deepseek] turn ERROR conn-reset latency=2827ms';
     expect(levelOf(line)).toBe('error');
-    expect(edgeOfLevel(levelOf(line))).toBe('red');
+    expect(toneOfLevel(levelOf(line))).toBe('danger');
   });
 });
 
@@ -156,10 +165,33 @@ describe('a row says the day when it is not today', () => {
     expect(whenOf('    at Module._load (node:internal/modules/cjs/loader:1285:25)', noon)).toBe('');
   });
 
-  test('an unmarked line has a quiet edge with no word, and a marked one prints its level', () => {
-    const edgeWords = (html: string) => [...html.matchAll(/class="myx-edge-label">([^<]*)</g)].map((m) => m[1]);
-    expect(edgeWords(renderToStaticMarkup(React.createElement(LogLine, { line: LINE })))).not.toContain('line');
+  test('an unmarked line carries no mark and no word, and a marked one prints its level', () => {
+    const words = (html: string) => [...html.matchAll(/class="myx-badge-word">([^<]*)</g)].map((m) => m[1]);
+    expect(words(renderToStaticMarkup(React.createElement(LogLine, { line: LINE })))).toEqual([]);
     const marked = '[2026-09-18 01:14:05] [claude-deepseek] turn ERROR conn-reset';
-    expect(edgeWords(renderToStaticMarkup(React.createElement(LogLine, { line: marked })))).toEqual(['error']);
+    const out = renderToStaticMarkup(React.createElement(LogLine, { line: marked }));
+    expect(words(out)).toEqual(['error']);
+    expect(out).toContain('myx-lt-danger');
+  });
+});
+
+// A PERF LINE READS AS FIELDS (DESIGN.md section 7): its key=value pairs split into a quiet key and a
+// full value, and the prose between them kept as written, so nothing the daemon wrote is lost.
+describe('a message splits into its key=value pairs', () => {
+  test('pairs and prose come back in order, and rejoin to the message', () => {
+    const message = 'turn compact=false model=deepseek-flash ok';
+    const parts = partsOf(message);
+    expect(parts).toEqual([
+      { text: 'turn ' },
+      { key: 'compact', text: 'false' },
+      { text: ' ' },
+      { key: 'model', text: 'deepseek-flash' },
+      { text: ' ok' },
+    ]);
+    expect(parts.map((part) => (part.key === undefined ? part.text : `${part.key}=${part.text}`)).join('')).toBe(message);
+  });
+
+  test('a message with no pair is one piece of prose', () => {
+    expect(partsOf('daemon started')).toEqual([{ text: 'daemon started' }]);
   });
 });

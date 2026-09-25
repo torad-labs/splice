@@ -13,6 +13,7 @@ import {
   LEGACY_ADDRESS,
   LEGACY_PATHS,
   PAGE_ALIAS,
+  NAV_GROUPS,
   PAGE_ROW,
   addressOf,
   canonicalHash,
@@ -21,22 +22,33 @@ import {
 import { PAGE_KEYS, pageFor } from '../src/app/pages';
 
 describe('the address table', () => {
-  test('is the thirteen addresses, in reading order', () => {
+  test('is the thirteen addresses, in the sidebar order', () => {
     expect(ADDRESSES).toEqual([
-      'fleet',
-      'turns',
       'sessions',
+      'turns',
       'teams',
       'projects',
+      'fleet',
+      'models',
+      'compaction',
       'accounts',
       'usage',
       'settings',
-      'models',
-      'logs',
-      'compaction',
       'mcp',
+      'logs',
       'doctor',
     ]);
+  });
+
+  test('every address sits in exactly one nav group, and the groups read in address order', () => {
+    // The sidebar prints NAV_GROUPS and the palette and the fallback read ADDRESSES; if the two
+    // disagreed, the first page in the rail would not be the one the console opens on.
+    expect(NAV_GROUPS.flatMap((group) => group.addresses)).toEqual([...ADDRESSES]);
+  });
+
+  test('the wall can fail: a group missing an address reads unequal', () => {
+    const short = NAV_GROUPS.map((group) => group.addresses.filter((address) => address !== 'logs'));
+    expect(short.flat()).not.toEqual([...ADDRESSES]);
   });
 
   test('every address names the row that will build it', () => {
@@ -65,7 +77,7 @@ describe('canonicalHash', () => {
   test('keeps the query so a dev fixture survives boot (CONTRACTS.md section 4)', () => {
     expect(canonicalHash('#/accounts?fixture=demo')).toBe('#/accounts?fixture=demo');
     expect(canonicalHash('#auth?fixture=demo')).toBe('#/accounts?fixture=demo');
-    expect(canonicalHash('#?fixture=demo')).toBe('#/fleet?fixture=demo');
+    expect(canonicalHash('#?fixture=demo')).toBe('#/sessions?fixture=demo');
   });
 
   test('a bare path lands too, because the hash history adds the slash', () => {
@@ -75,11 +87,11 @@ describe('canonicalHash', () => {
     expect(canonicalHash('#/burn')).toBe('#/usage');
   });
 
-  test('an unknown or empty address goes to the fleet', () => {
-    expect(canonicalHash('#/nowhere')).toBe('#/fleet');
-    expect(canonicalHash('#nowhere')).toBe('#/fleet');
-    expect(canonicalHash('')).toBe('#/fleet');
-    expect(canonicalHash('#')).toBe('#/fleet');
+  test('an unknown or empty address goes to the first address, the sessions in flight', () => {
+    expect(canonicalHash('#/nowhere')).toBe('#/sessions');
+    expect(canonicalHash('#nowhere')).toBe('#/sessions');
+    expect(canonicalHash('')).toBe('#/sessions');
+    expect(canonicalHash('#')).toBe('#/sessions');
     expect(canonicalHash('#/turns?fixture=day')).toBe('#/turns?fixture=day');
     expect(canonicalHash('#/fleet/')).toBe('#/fleet');
   });
@@ -99,9 +111,9 @@ describe('addressOf', () => {
     expect(addressOf('/config')).toBe('settings');
   });
 
-  test('anything else is the fleet', () => {
-    expect(addressOf('/nowhere')).toBe('fleet');
-    expect(addressOf('/')).toBe('fleet');
+  test('anything else is the first address, the sessions in flight', () => {
+    expect(addressOf('/nowhere')).toBe('sessions');
+    expect(addressOf('/')).toBe('sessions');
   });
 
   test('the old paths with their own redirect routes point at the right address', () => {

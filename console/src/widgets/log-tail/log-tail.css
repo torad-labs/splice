@@ -21,6 +21,16 @@
   background: var(--bg-raised);
   border-bottom: var(--hair) solid var(--line);
 }
+/* The tailed head's band: the wash and the edge a head's run takes on the sessions board. The bar
+   already names the head, so the stream needs no head column to carry its colour. */
+.myx-lt-hued .myx-lt-bar {
+  background: color-mix(in srgb, var(--hue) 9%, var(--bg-raised));
+  box-shadow: inset var(--space-2) 0 0 var(--hue);
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+}
+.myx-lt-bar .myx-hm-mark { display: none; }
+.myx-lt-bar .myx-hm-name { font-size: var(--text-2); font-weight: 600; color: var(--fg); }
+
 .myx-lt-path {
   flex: 1;
   min-width: 0;
@@ -51,7 +61,11 @@
   color: var(--fg-subtle);
 }
 
+/* A wrapped line cut by the top of the tail keeps its time in view for as long as any of it shows,
+   so no row reads as missing its when; the message scrolls with its words. Sticky needs the cell
+   to be shorter than its row, hence start, not the grid's stretch. */
 .myx-lt-time { color: var(--fg-subtle); white-space: nowrap; }
+.myx-lt-row .myx-lt-time { position: sticky; top: 0; align-self: start; }
 .myx-lt-head { min-width: 0; font-family: var(--font-sans); font-size: var(--text-2); }
 .myx-lt-text { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .myx-lt-text .myx-badge { margin-inline-end: var(--space-3); font-family: var(--font-sans); }
@@ -68,6 +82,8 @@
   min-height: calc(var(--space-8) * 6);
   overflow-y: auto;
 }
+/* Only the alpha of a mask counts: the rows fade to nothing over the top step once scrolled. */
+.myx-lt-scrolled { mask-image: linear-gradient(to bottom, transparent, var(--fg) var(--space-6)); }
 .myx-lt-inner { position: relative; width: 100%; }
 .myx-lt-row { position: absolute; left: 0; right: 0; }
 .myx-lt-row:hover .myx-lt-line { background: var(--bg-hover); }

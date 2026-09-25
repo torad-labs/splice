@@ -21,7 +21,7 @@ import type { TranscriptMessage } from '../src/entities/transcript';
 import { NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
 import { ProjectsBoard } from '../src/pages/projects';
 import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, windowOf } from '../src/pages/sessions/select';
-import { edgeOf, fieldsOf, headText, startedText } from '../src/pages/sessions/strip';
+import { fieldsOf, headText, startedText, toneOf } from '../src/pages/sessions/strip';
 import { Conversation } from '../src/widgets/conversation';
 import { FileView } from '../src/widgets/file-view';
 
@@ -169,17 +169,17 @@ describe('session strip', () => {
     ]);
   });
 
-  test('gone is grey, never struck', () => {
-    expect(edgeOf(session({ availability: 'live' }))).toBe('green');
-    expect(edgeOf(session({ availability: 'stale' }))).toBe('amber');
-    expect(edgeOf(session({ availability: 'gone' }))).toBe('grey');
+  test('gone is neutral, never struck', () => {
+    expect(toneOf(session({ availability: 'live' }))).toBe('ok');
+    expect(toneOf(session({ availability: 'stale' }))).toBe('warn');
+    expect(toneOf(session({ availability: 'gone' }))).toBe('neutral');
   });
 });
 
 // ── the boards ───────────────────────────────────────────────────────────────
 
 describe('sessions board', () => {
-  test('prints the availability word on every strip, and cocks the stale one', () => {
+  test('prints the availability word on every row, and marks the stale one', () => {
     const out = render(
       h(SessionsBoard, {
         payload: payload([
@@ -193,9 +193,11 @@ describe('sessions board', () => {
     expect(out).toContain('>live<');
     expect(out).toContain('>stale<');
     expect(out).toContain('>gone<');
-    expect(out).toContain('myx-strip-cocked'); // stale is the one that needs the operator
-    expect(out).not.toContain('myx-strip-struck'); // a gone session is read, not disabled
-    expect(out).toContain('head: claudex');
+    // stale is the one that needs the operator: its row, and only its row, carries the warn tint
+    expect(out.match(/myx-dt-tone-warn/g)?.length).toBe(1);
+    expect(out).not.toContain('myx-dt-tone-danger'); // a gone session is read, not disabled
+    expect(out).not.toContain('line-through');
+    expect(out).toContain('myx-hm-name">claudex<'); // the group names its head with the head mark
   });
 
   test('the peer is unknown, and prints the absence glyph, until the board edges are read', () => {
@@ -206,7 +208,7 @@ describe('sessions board', () => {
 
   test('an empty registry says what fills it, in words and never a route, and never a fixture', () => {
     const out = render(h(SessionsBoard, { payload: payload([]) }));
-    expect(out).toContain('no sessions yet');
+    expect(out).toContain('no sessions in flight');
     expect(out).not.toContain('/api/');
     expect(out).not.toContain('sample data');
   });
@@ -215,8 +217,8 @@ describe('sessions board', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ head: 'unknown head' }), session({ session_id: 'b', head: 'claudex' })]) }));
     expect(out).toContain('no splice head');
     expect(out).toContain('splice did not start these sessions');
-    expect(out).not.toContain('head: unknown head');
-    expect(out).toContain('head: claudex');
+    expect(out).not.toContain('unknown head'); // the daemon's sentinel is never printed as a name
+    expect(out).toContain('myx-hm-name">claudex<');
   });
 
   test('a daemon that reports the route says which sessions splice did not start and which it could not read', () => {
@@ -365,20 +367,6 @@ describe('file view', () => {
     expect(out).toContain('>repo<'); // a head-less file belongs to the repo, and says so
     expect(out).toContain('myx-reveal-btn');
     expect(out).not.toContain('FILE-BODY-NOT-IN-MARKUP');
-  });
-});
-
-describe('the session rack budget', () => {
-  const ALL = ['name', 'head', 'project', 'started', 'seen', 'peer'];
-  const width = (order: string[]) => fieldsOf(session({}), 'peer-session', order).reduce((sum, field) => sum + field.w, 0);
-
-  test('no view passes 122ch, the ones that print head included', () => {
-    // by team prints all six; at the widths the head-less view uses it measured 151ch
-    expect(width(ALL)).toBe(122);
-    expect(width(ALL.filter((key) => key !== 'head'))).toBe(122);
-    for (let drop = 0; drop < ALL.length; drop += 1) {
-      expect(width(ALL.filter((_, at) => at !== drop))).toBeLessThanOrEqual(122);
-    }
   });
 });
 

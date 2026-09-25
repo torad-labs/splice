@@ -171,6 +171,7 @@ export function LogsBoard({
             reset={reset}
             follow={follow}
             tagged={tags.length > 1}
+            head={head === '' ? null : head}
             onFollow={onFollow}
           />
 

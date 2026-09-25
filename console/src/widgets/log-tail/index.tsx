@@ -6,15 +6,20 @@
 // view exist, which is why the strips are uniform height and the line's text clips with an
 // ellipsis instead of wrapping.
 //
-// Severity is the holder edge AND a printed word (the world's rule): an ERROR line carries a red
-// edge with `error` printed on it, a WARN line amber, everything the daemon left unmarked grey and
-// wordless. Color never carries the state alone. There is no level column: it printed the edge's
-// word a second time, and `-` on the 996 of 1,000 live lines the daemon leaves unmarked.
+// Severity is a dot AND a printed word: an ERROR line carries a red dot with `error` beside it and a
+// faint red tint, a WARN line amber, and a line the daemon left unmarked carries no mark at all.
+// Colour never carries the state alone. There is no level column: it printed the word a second
+// time, and `-` on the 996 of 1,000 live lines the daemon leaves unmarked.
+//
+// The stream wears its head (DESIGN.md section 5): the daemon's /api/logs/{head} answers with that
+// head's lines only, so the head column prints only for a tail that carries several tags, and the
+// head's colour rides on the stream's bar instead, the band a head's run takes on the sessions
+// board.
 import { useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { dateOf, headOf, levelOf, timeOf } from '@entities/logs';
 import type { LogLevel, LogsPayload } from '@entities/logs';
-import { HeadMark } from '@entities/control-status';
+import { HeadMark, hueClass, useHue } from '@entities/control-status';
 import { Fault, Flag } from '@shared/controls';
 import { cx, MONTHS } from '@shared/lib';
 import { Badge, Empty } from '@shared/ui';
@@ -138,14 +143,17 @@ export interface LogTailProps {
   follow: boolean;
   /** Whether the tail carries more than one head's lines, so the head column says something. */
   tagged?: boolean;
+  /** The head this tail is read from: its mark and colour head the stream. */
+  head?: string | null;
   error?: string | null;
   /** `| undefined` on the optional callback: this tree runs `exactOptionalPropertyTypes`, so a
    *  caller that forwards its own optional prop must be able to pass the undefined through. */
   onFollow?: ((follow: boolean) => void) | undefined;
 }
 
-export function LogTail({ payload, appended, reset, follow, tagged = true, error = null, onFollow }: LogTailProps) {
+export function LogTail({ payload, appended, reset, follow, tagged = true, head = null, error = null, onFollow }: LogTailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hue = useHue(head ?? '');
   const filtered = payload === null ? [] : payload.lines;
 
   const virtualizer = useVirtualizer({
@@ -166,8 +174,9 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, error
   if (error !== null) return <Fault message={error} />;
 
   return (
-    <div className="myx-lt">
+    <div className={cx('myx-lt', head !== null && 'myx-lt-hued', head !== null && hueClass(hue))}>
       <header className="myx-lt-bar">
+        {head === null ? null : <HeadMark head={head} />}
         <span className="myx-lt-path">{payload?.path ?? ''}</span>
         {/* Only while paused: following, every line is already in view. */}
         {follow ? null : <Badge tone="neutral">{`${appended} ${S.newLines}`}</Badge>}
@@ -184,7 +193,9 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, error
       ) : (
         <>
         <LogColumns tagged={tagged} />
-        <div className="myx-lt-scroll" ref={scrollRef}>
+        {/* Scrolled off the top, the first rows fade under the column names instead of being sliced
+            by them: a cut row reads as more above, not as a broken one. */}
+        <div className={cx('myx-lt-scroll', (virtualizer.scrollOffset ?? 0) > 0 && 'myx-lt-scrolled')} ref={scrollRef}>
           <div className="myx-lt-inner" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((item) => (
               <div

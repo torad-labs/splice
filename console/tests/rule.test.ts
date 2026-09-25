@@ -92,10 +92,10 @@ describe('the rule window cell', () => {
 });
 
 describe('the rule restart signal', () => {
-  test('cocks amber with the count of saved-but-unread knobs', () => {
+  test('reads warn with the count of saved-but-unread knobs', () => {
     const out = render(h(PendingRestartCell, { pending: ['maxInflight', 'debug'] }));
     expect(out).toContain('restart pending');
-    expect(out).toContain('myx-edge-amber'); // the gesture, and the label prints beside it
+    expect(out).toContain('myx-badge-warn'); // the dot, and the word prints beside it
     expect(out).toContain('>2<');
   });
 
@@ -105,18 +105,18 @@ describe('the rule restart signal', () => {
 });
 
 describe('the rule connection cell', () => {
-  test('prints the state word beside its holder edge, in all three states', () => {
+  test('prints the state word beside its status dot, in all three states', () => {
     const live = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() }));
     expect(live).toContain('>live<');
-    expect(live).toContain('myx-edge-green');
+    expect(live).toContain('myx-badge-ok');
 
     const reconnecting = render(h(ConnectionCell, { status: 'reconnecting', lastFrameAt: null }));
     expect(reconnecting).toContain('>reconnecting<');
-    expect(reconnecting).toContain('myx-edge-amber');
+    expect(reconnecting).toContain('myx-badge-warn');
 
     const off = render(h(ConnectionCell, { status: 'off', lastFrameAt: null }));
     expect(off).toContain('>off<');
-    expect(off).toContain('myx-edge-grey');
+    expect(off).toContain('myx-badge-neutral');
   });
 
   test('a stream that has never delivered a frame says so, and never reads as an age', () => {

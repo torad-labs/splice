@@ -25,11 +25,13 @@ import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import splice.core.auth.Credentials
+import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.upstream.CredentialHeaders
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
 import splice.upstream.failure.FailureRules
+import splice.upstream.retry.MS_PER_S
 import splice.upstream.retry.RetryAfter
 import splice.upstream.sse.AttemptRecorder
 
@@ -83,6 +85,8 @@ internal class HeaderRules {
 internal class UpstreamRequest(
     private val client: HttpClient,
     private val zstdRequestBody: Boolean,
+    /** V4-233: judges whether a plan-limit reset is still ahead; injectable so a test can pin it. */
+    private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val headerRules = HeaderRules()
     private val retryAfter = RetryAfter()
@@ -140,10 +144,16 @@ internal class UpstreamRequest(
                 val realStatus = resp.status.value
                 val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
                 recorder?.errorText(text)
+                val status = quotaExhaustedStatus(realStatus, text, ctx)
                 RetryOutcome.Failed(
-                    quotaExhaustedStatus(realStatus, text, ctx),
+                    status,
                     text,
                     retryAfter.retryAfterMs(resp.headers["Retry-After"]),
+                    planLimit = if (status == HttpStatus.TOO_MANY_REQUESTS) {
+                        ctx.auth.planLimit({ name -> resp.headers[name] }, wallClock() / MS_PER_S)
+                    } else {
+                        null
+                    },
                 )
             }
         }

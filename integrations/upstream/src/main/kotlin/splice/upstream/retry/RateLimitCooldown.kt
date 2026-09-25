@@ -13,15 +13,17 @@
 // rateLimitedPlan's 429 arm each spelled out `clock() + minOf(pushback, MAX)` followed by
 // `accumulateAndGet(max)` — and is now [arm], called from both.
 //
-// WALL: .dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.py reads THIS file.
+// NF-01's wall retired to UpstreamClientRateLimitTest and HeadServerCapacityTest
+// (.dev/campaigns/proxy-hardening/walls/wall_registry.toml): the clamp, and clear() dropping an
+// armed horizon through a real restart.
 //
 // V4-47 (2026-09-16): the provider's own reset is CAPTURED here and NAMED to the operator, but the
 // fail-fast horizon is deliberately NOT extended to it. THAT DECISION IS LOAD-BEARING — do not
 // "simplify" the re-probe away, and do not read the cycling as waste. Two reasons, hardest first.
-//  1. NF-01's wall pins clear()'s complete body to exactly rateLimitedUntilMs.set(0L). Restart is
-//     this file's ONLY escape hatch, so a fail-fast gate must live on the one horizon clear() can
+//  1. Restart is this file's ONLY escape hatch, so a fail-fast gate must live on state clear() can
 //     reach. Gate it on a horizon restart cannot clear and you rebuild the permanent poisoning
-//     NF-01 exists to prevent, with no operator escape short of killing the daemon.
+//     NF-01 exists to prevent, with no operator escape short of killing the daemon. V4-233's plan
+//     hold is cleared by the same call for the same reason.
 //  2. The bounded re-probe is what DETECTS THE OPERATOR TOPPING UP. Extending the horizon to the
 //     provider reset makes a head ignore a restored quota for hours — the head would refuse to try
 //     the very fix the message asks him to apply. One upstream request per two minutes, on a head
@@ -64,10 +66,17 @@ public class RateLimitCooldown public constructor(
     private val unavailableUntilMs = AtomicLong(0L)
     private val providerUnavailableUntilMs = AtomicLong(0L)
 
+    /** V4-233: the plan window the upstream named as spent, held until the reset it named. Its own
+     *  class, so this one keeps its function budget; [clear] ends it with the horizon. */
+    public val planHold: PlanHold = PlanHold(clock, wallClock)
+
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
-     *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
+     *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart.
+     *  V4-233: the plan hold goes with it, so a restart is still the operator's way past any hold:
+     *  the next turn asks the upstream, which answers or names the reset again. */
     public fun clear() {
         rateLimitedUntilMs.set(0L)
+        planHold.clear()
     }
 
     /** Account-pool restart escape hatch; separate so NF-01's legacy [clear] wall stays exact. */
@@ -163,27 +172,43 @@ public class RateLimitCooldown public constructor(
      *  scope — so this message claims nothing it cannot support. */
     public fun failFastIfArmed(onRetry: RetryNotice) {
         val remainingMs = rateLimitedUntilMs.get() - clock()
-        if (remainingMs <= 0) return
-        onRetry("rate-limit cooldown active (${remainingMs}ms remaining) — failing fast, no upstream attempt")
+        if (remainingMs <= 0) {
+            // V4-233: the clamp lifted while a plan window is still named spent, so this turn is the
+            // re-probe V4-47 keeps, and the log says which one it is.
+            planHold.claim()?.let { claim ->
+                onRetry("plan hold: probing upstream ${planHold.forMs()}ms before the named $claim reset")
+            }
+            return
+        }
+        onRetry("rate-limit cooldown active (${remainingMs}ms remaining): failing fast, no upstream attempt")
         val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
         val gatewayClause = "this gateway is holding retries for ${waitS}s"
         val providerResetMs = providerUnavailableForMs()
+        val planClaim = planHold.claim()
         // V4-47: when the provider reset is KNOWN, name it and say plainly that the gateway interval
         // is not a retry schedule. The live episode: Retry-After 5301000ms clamped to 120s, body
         // reset 20:02:52Z hours away, and the operator retried three times on a countdown that could
         // never satisfy him. The gateway clause stays in BOTH branches — it is the property V4-46
         // guarantees and a test pins it.
-        val detail = if (providerResetMs > 0) {
-            // WALL base, not elapsed: providerResetMs is a DELAY, and printing it against the
-            // elapsed clock would name a 1970-era instant to the operator.
-            val resetsAt = Instant.ofEpochMilli(wallClock() + providerResetMs)
-            // V4-61: the window is REPORTED, not asserted as the deadline. muse stamps its 5h-window
-            // reset on burst 429s that clear in seconds (the operator's own re-send succeeded), so
-            // "waiting will not help" was a claim this turn could not support.
-            "Rate limit exceeded — $gatewayClause; the upstream reports its quota window resets " +
-                "at $resetsAt. If this keeps happening, that is the real deadline."
-        } else {
-            "Rate limit exceeded — $gatewayClause to avoid a retry wave"
+        // V4-233: a held PLAN window is the upstream's own statement, not a burst's stamp, so its
+        // reset is stated as the deadline. No em dash, and none of the client's stop phrases.
+        val detail = when {
+            planClaim != null -> {
+                val resetsAt = Instant.ofEpochMilli(wallClock() + planHold.forMs())
+                "Rate limit exceeded: the upstream reports this plan's ${planWindowWords(planClaim)} window " +
+                    "is used up until $resetsAt, and $gatewayClause. The session resumes after the reset."
+            }
+            providerResetMs > 0 -> {
+                // WALL base, not elapsed: providerResetMs is a DELAY, and printing it against the
+                // elapsed clock would name a 1970-era instant to the operator.
+                val resetsAt = Instant.ofEpochMilli(wallClock() + providerResetMs)
+                // V4-61: the window is REPORTED, not asserted as the deadline. muse stamps its 5h-window
+                // reset on burst 429s that clear in seconds (the operator's own re-send succeeded), so
+                // "waiting will not help" was a claim this turn could not support.
+                "Rate limit exceeded: $gatewayClause, and the upstream reports its quota window resets " +
+                    "at $resetsAt. If this keeps happening, that is the real deadline."
+            }
+            else -> "Rate limit exceeded: $gatewayClause to avoid a retry wave"
         }
         // V4-61: the ANTHROPIC ERROR ENVELOPE, not a hand-built {"detail":...}. This body is the
         // classifier's structured input (TurnKnownEnd hands it to UpstreamFailureClassifier, which

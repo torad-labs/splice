@@ -2,6 +2,9 @@
 // unmasked — introspection surfaces (/mgmt/auth, /api/auth) consume AuthDescription only.
 package splice.core.auth
 
+import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaHeaderRead
+
 public sealed class Credentials {
     public data class Bearer(
         val token: String,
@@ -82,4 +85,16 @@ public interface RefreshableAuthProvider : AuthProvider {
      *  which is what makes this safe to add to a port every provider implements.
      */
     public fun isQuotaExhausted(status: Int, body: String): Boolean = false
+
+    /**
+     * V4-233: does a 429's headers say this account's PLAN window is spent until a named instant?
+     * Asked once per 429, at the same failure site as [isQuotaExhausted], with the response's
+     * headers and the wall time in epoch seconds. Only a provider that forwards a Claude
+     * subscription login is answered in Anthropic's unified plan family, so only that one reads it.
+     *
+     *  Default null: every other provider keeps V4-61's handling of a 429 exactly. muse stamps its
+     *  window's reset on burst 429s that clear in seconds, and a plan hold there would sleep a client
+     *  through a limit a re-send clears.
+     */
+    public fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? = null
 }

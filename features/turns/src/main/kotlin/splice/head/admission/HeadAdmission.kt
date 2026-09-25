@@ -25,6 +25,7 @@ import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
+import splice.upstream.retry.planWindowWords
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class HeadAdmission(
@@ -166,7 +167,12 @@ internal class HeadAdmission(
         val armedMs = deps.upstream.rateLimitedForMs
         if (armedMs <= 0L) return false
         val now = wallClock()
-        val retryEpochSeconds = clientRetryEpochSeconds(now, armedMs)
+        // V4-233: a held PLAN window is the upstream's own statement that the plan is spent until an
+        // instant, so that instant is the deadline, and a persistent client sleeps once, until it.
+        val plan = deps.upstream.planHoldClaim?.let { claim ->
+            PlanDeadline(claim, (now + deps.upstream.planHoldForMs) / MILLIS_PER_SECOND)
+        }
+        val retryEpochSeconds = plan?.resetEpochSeconds ?: clientRetryEpochSeconds(now, armedMs)
         val windowResetEpochSeconds =
             deps.upstream.providerResetForMs.takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
         // V4-51's seam: the refusal states `rejected` and carries the plain
@@ -191,7 +197,8 @@ internal class HeadAdmission(
                 trace,
             ),
         )
-        responses.respondRateLimited(call, rateLimitedMessage(armedMs, windowResetEpochSeconds), retryEpochSeconds)
+        val message = rateLimitedMessage(armedMs, windowResetEpochSeconds, plan)
+        responses.respondRateLimited(call, message, retryEpochSeconds)
         return true
     }
 
@@ -226,10 +233,14 @@ internal class HeadAdmission(
      *  horizons matters because they are different facts: a message carrying only the 120s hold
      *  read as "back in two minutes" against an 88-minute window, and one carrying only the window
      *  told the operator to wait 88 minutes for a limit his own re-send cleared in seconds. */
-    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?): String {
+    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?, plan: PlanDeadline?): String {
+        if (plan != null) {
+            return "Rate limit exceeded: this plan's ${planWindowWords(plan.claim)} window is used up until " +
+                "${AccountResetText.format(plan.resetEpochSeconds)}. The session waits and resumes after the reset."
+        }
         val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
         val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
-            "limited, so it is holding new turns for ${waitS}s — retry after that."
+            "limited, so it is holding new turns for ${waitS}s. Retry after that."
         if (windowResetEpochSeconds == null) return base
         return "$base The upstream reports its quota window resets at " +
             "${AccountResetText.format(windowResetEpochSeconds)}; if this keeps happening, that is the real deadline."
@@ -246,7 +257,11 @@ internal class HeadAdmission(
      *  Retry-After past 60s and a persistent one sleeps through it, so a 3-day pooled reset on the
      *  wire is the turn dying either way. The real reset is not lost — it rides in the refusal
      *  message and in the perf row — and the client that comes back at the bound meets a re-probe
-     *  that either serves it or re-refuses with a fresh bounded deadline. */
+     *  that either serves it or re-refuses with a fresh bounded deadline.
+     *
+     *  V4-233, the one exception: a PLAN window the upstream named spent (unified status rejected,
+     *  a window claim, a reset) is its own statement, not a burst's stamp, so [refuseIfRateLimited]
+     *  hands the client that reset instead, and every head's client runs persistent (V4-72). */
     private fun clientRetryEpochSeconds(now: Long, holdMs: Long): Long =
         (now + holdMs.coerceIn(0L, MAX_RATE_LIMIT_COOLDOWN_MS)) / MILLIS_PER_SECOND
 
@@ -341,3 +356,6 @@ internal class HeadAdmission(
 }
 
 private const val MILLIS_PER_SECOND = 1000L
+
+/** V4-233: the spent plan window a refusal names, and the instant it resets. */
+private data class PlanDeadline(val claim: String, val resetEpochSeconds: Long)

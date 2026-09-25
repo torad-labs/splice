@@ -15,6 +15,9 @@
 package splice.core.auth
 
 import splice.core.topology.AuthKind
+import splice.core.usage.PlanLimit
+import splice.core.usage.QuotaHeaderRead
+import splice.core.usage.planLimitOf
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicReference
@@ -58,6 +61,11 @@ public class ClientAuthProvider(
             success -> verdict.set(CredentialVerdict.Accepted(now()))
         }
     }
+
+    /** V4-233: the forwarded login is a Claude subscription, answered in Anthropic's unified plan
+     *  family, so its 429 can name a spent plan window and the reset it comes back at. */
+    override fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? =
+        planLimitOf(header, nowEpochSeconds)
 
     /** Nothing to refresh. Returning the same forward-mode marker keeps the transport's retry path
      *  intact (it re-reads credentials and tries once more) without pretending a rotation happened. */

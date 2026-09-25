@@ -44,49 +44,6 @@
 .myx-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 .myx-btn-busy { cursor: wait; }
 
-/* ConfirmBtn: armed state reads visibly more urgent than the resting danger
-   outline (a filled danger tint), so a scan of the bench can't mistake it
-   for the idle "stop" control. */
-.myx-confirm { display: inline-flex; gap: var(--space-2); align-items: center; }
-.myx-btn-danger.myx-btn-armed {
-  background: color-mix(in srgb, var(--data-neg) 16%, transparent);
-  border-color: var(--data-neg);
-  color: var(--data-neg);
-}
-
-.myx-field { display: grid; gap: var(--space-1); }
-.myx-field-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-1);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-mute);
-}
-/* An input in the world is a PRINTED FIELD BOX: the same paper, hairline and radius 0 that
-   `.myx-fbox` carries, with the figure face for the value the way a strip cell has it. This is the
-   other half of the same repaint as `.myx-btn` above. */
-.myx-field input,
-.myx-field select {
-  font-family: var(--font-figure);
-  font-size: var(--text-3);
-  color: var(--strip-ink);
-  background: var(--strip-field);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  padding: var(--space-1) var(--space-2);
-}
-.myx-field input:focus-visible,
-.myx-field select:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
-
-.myx-well {
-  background: var(--surface-sunk);
-  border: var(--hair) solid var(--line-mute);
-  border-radius: var(--radius-0);
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-2);
-  overflow-x: auto;
-}
 
 
 /* The error, skeleton, stale and meter rules left with ErrorNote, SkeletonRows, Stale and
@@ -324,10 +281,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Selection therefore needs a signal of its own, and the comp has no selected strip to copy. The
-   world's one way to pull a thing forward is its outline, so the open strip draws its box in the
-   strip's own ink: the same move a hovered key makes (controls.css). */
-.myx-strip-selected { border-color: var(--strip-ink); }
 .myx-strip-struck { color: var(--strip-ink-mute); }
 .myx-strip-struck > .myx-edge .myx-edge-label { color: var(--strip-ink-mute); }
 .myx-strip[aria-disabled='true'] { cursor: not-allowed; }
@@ -469,12 +422,6 @@
 /* No tabular-nums here: .myx-sfield-figure is a modifier ON .myx-sfield-value (see the :not()
    below), which already sets it, so a marked figure is tabular either way. */
 .myx-sfield-value:not(.myx-sfield-figure) { font-family: var(--font-label); }
-.myx-sfield-basis {
-  /* --space-1 (2px) let a --text-3 value run into its --text-1 basis word once the ladder
-     grew (M2-10 saw $12.84estimated); a real gap between value and basis. */
-  margin-inline-start: var(--space-2);
-  color: var(--strip-ink-mute);
-}
 
 /* --- Bay: a titled group of rows (docs/design/DESIGN.md section 6). The heading, its count and its
    actions sit on the page's own ground, like a Section's; the rows follow. It draws no ground of its

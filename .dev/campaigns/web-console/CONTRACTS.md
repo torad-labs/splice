@@ -59,29 +59,14 @@ to `0ms`.
 ## 2. Primitives (`src/shared/ui`, row M1-02)
 
 Every existing export (`Panel`, `StatusPill`, `Metric`, `Btn`, `Field`, `Well`, `EmptyState`,
-`ErrorNote`, `SkeletonRows`, `Stale`, `MeterBar`, `ConfirmBtn`) keeps working until M2 removes
-its last consumer; the finish row deletes what is left. New primitives, all named exports from
-`@shared/ui`:
+`ErrorNote`, `SkeletonRows`, `Stale`, `MeterBar`, `ConfirmBtn`) is deleted: the last four went
+with the console redesign (2026-09-25), which also deleted `Strip` and `StripField` once every
+rack they drew became a kit DataTable (docs/design/DESIGN.md section 9). The world primitives
+still exported from `@shared/ui`:
 
 ```ts
 type Edge = 'green' | 'amber' | 'red' | 'grey';
 type Basis = 'measured' | 'estimated' | 'unavailable' | 'stale';
-
-// A printed strip. Focusable (tabIndex 0, Enter/Space call onOpen). Cocked = holder edge
-// amber or red with the edgeLabel printed; struck = line drawn across, edge grey.
-// edgeLabel has a SIX CHARACTER budget (2026-09-18, review B1): it sits inside the strip's
-// fixed-width edge column, and that fixed width is what makes every strip in a bay start its
-// fields at the same x. A longer label used to set each strip's field origin and stagger the rack.
-<Strip edge={Edge} edgeLabel="string, 6 characters or fewer" cocked?: boolean struck?: boolean
-       selected?: boolean onOpen?: () => void ariaLabel="string">{Field children}</Strip>
-
-// A fixed-width boxed field inside a strip. w is a ch count; the value is clipped, never wrapped.
-// `label` is OPTIONAL as of 2026-09-18 (review B9): a rack of homogeneous strips declares its
-// columns ONCE on the bay head and omits the label on every row, which is what stops the column
-// names being reprinted on all of them. A strip whose fields differ from its neighbours keeps its
-// labels. `basis` is optional in the type, so a caller with exactOptionalPropertyTypes must omit
-// the prop rather than pass undefined.
-<StripField w={number} label?: string value={string | number} basis?: Basis mono?: boolean />
 
 // A labeled rack. count prints beside the label. When children are empty it renders <Empty>.
 // `fields` is the column header row (2026-09-18, review B9): a rack of homogeneous strips

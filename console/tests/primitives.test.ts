@@ -19,116 +19,14 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import {
-  Bay, Empty, FieldBox, Figure, HolderEdge, Reveal, ScopeInset, Strip, StripField,
+  Bay, Empty, FieldBox, Figure, HolderEdge, Reveal, ScopeInset,
 } from '../src/shared/ui';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
 
-describe('Strip', () => {
-  const strip = (over: Partial<React.ComponentProps<typeof Strip>> = {}) =>
-    render(h(Strip, {
-      edge: 'green',
-      edgeLabel: 'ok',
-      ariaLabel: 'head claude',
-      children: h(StripField, { w: 12, label: 'name', value: 'claude' }),
-      ...over,
-    }));
-
-  test('prints its edge label and its aria-label', () => {
-    const out = strip();
-    expect(out).toContain('>ok<');
-    expect(out).toContain('aria-label="head claude"');
-  });
-
-  // S9: every strip used to be a tab stop and a "button", so 6 of the 8 stops on turns pressed
-  // nothing. The markup is one half; the handlers are read off the element Strip returns (it holds no
-  // hooks, so calling it is rendering it), which is the half a static render cannot show.
-  const element = (over: Partial<React.ComponentProps<typeof Strip>> = {}) =>
-    Strip({ edge: 'green', edgeLabel: 'ok', ariaLabel: 'head claude', children: null, ...over }) as React.ReactElement<{
-      onClick?: () => void;
-      onKeyDown?: (event: { key: string; preventDefault: () => void }) => void;
-    }>;
-
-  test('a strip that opens is keyboard reachable and opens as a button', () => {
-    const out = strip({ onOpen: () => undefined });
-    expect(out).toContain('tabindex="0"');
-    expect(out).toContain('role="button"');
-  });
-
-  test('a strip with nothing to open is no tab stop and no button, and keeps its name', () => {
-    const out = strip();
-    expect(out).not.toContain('tabindex');
-    expect(out).not.toContain('role="button"');
-    expect(out).toContain('role="group"');
-    expect(out).toContain('aria-label="head claude"');
-    expect(element().props.onKeyDown).toBeUndefined();
-    expect(element().props.onClick).toBeUndefined();
-  });
-
-  test('Enter and Space open an openable strip, and other keys do not', () => {
-    let opened = 0;
-    const { onKeyDown } = element({ onOpen: () => { opened += 1; } }).props;
-    const press = (key: string) => onKeyDown?.({ key, preventDefault: () => undefined });
-    press('Enter');
-    press(' ');
-    press('a');
-    expect(opened).toBe(2);
-  });
-
-  test('a struck strip keeps its stop but does not open', () => {
-    let opened = 0;
-    const struck = element({ struck: true, onOpen: () => { opened += 1; } }).props;
-    struck.onKeyDown?.({ key: 'Enter', preventDefault: () => undefined });
-    expect(struck.onClick).toBeUndefined();
-    expect(opened).toBe(0);
-    expect(strip({ struck: true, onOpen: () => undefined })).toContain('tabindex="0"');
-  });
-
-  test('cocked lifts the edge into attention and STILL prints the label', () => {
-    const out = strip({ cocked: true });
-    expect(out).toContain('myx-edge-amber');
-    expect(out).toContain('>ok<'); // the label is the signal, the amber is the emphasis
-  });
-
-  test('cocked never cools a red edge', () => {
-    expect(strip({ edge: 'red', cocked: true })).toContain('myx-edge-red');
-  });
-
-  test('struck draws the line, greys the edge, and STILL prints the label', () => {
-    const out = strip({ struck: true });
-    expect(out).toContain('myx-strip-strike');
-    expect(out).toContain('myx-edge-grey');
-    expect(out).toContain('aria-disabled="true"');
-    expect(out).toContain('>ok<');
-  });
-
-  test('struck outranks cocked: a disabled strip is never also needs-me', () => {
-    const out = strip({ struck: true, cocked: true });
-    expect(out).toContain('myx-edge-grey');
-    expect(out).not.toContain('myx-edge-amber');
-  });
-
-  test('unset states leave no state class behind', () => {
-    const out = strip();
-    expect(out).not.toContain('aria-disabled');
-    expect(out).not.toContain('myx-strip-strike');
-    expect(out).not.toContain('myx-strip-selected');
-  });
-
-  // The ring used to stand 1px outside the strip, where the rack's scroller cut both sides and the
-  // next strip covered the bottom: on turns only the top survived. Measured in a browser (S9); what
-  // is pinned here is where it is drawn, inside the strip on a positioned last child.
-  test('the focus ring is drawn inside the strip, over its positioned mark', () => {
-    const ui = sheet('src/shared/ui/ui.css');
-    expect(declared(ui, '.myx-strip:focus-visible', 'outline')).toBe('none');
-    const ring = '.myx-strip:focus-visible::after';
-    expect(declared(ui, ring, 'position')).toBe('absolute');
-    expect(declared(ui, ring, 'outline')).toContain('var(--focus)');
-    expect(parseFloat(declared(ui, ring, 'outline-offset') ?? '0')).toBeLessThan(0);
-    expect(declared(ui, ring, 'pointer-events')).toBe('none');
-  });
-});
+// Strip and StripField left with their last consumers (the console redesign, 2026-09-25): every
+// row they drew is a kit DataTable row now, so their walls went with them.
 
 describe('HolderEdge', () => {
   test('always prints its label, in every state', () => {
@@ -137,24 +35,6 @@ describe('HolderEdge', () => {
       expect(out).toContain('warn 74%');
       expect(out).toContain(`myx-edge-${state}`);
     }
-  });
-});
-
-describe('StripField', () => {
-  test('sets a fixed width in ch and prints label and value', () => {
-    const out = render(h(StripField, { w: 12, label: 'account', value: 'acct-a' }));
-    expect(out).toContain('width:12ch');
-    expect(out).toContain('>account<');
-    expect(out).toContain('>acct-a<');
-  });
-
-  test('prints the basis only when the value is not measured', () => {
-    expect(render(h(StripField, { w: 8, label: 'cost', value: 12, basis: 'estimated' })))
-      .toContain('>Estimated<');
-    expect(render(h(StripField, { w: 8, label: 'cost', value: 12, basis: 'measured' })))
-      .not.toContain('myx-sfield-basis');
-    expect(render(h(StripField, { w: 8, label: 'cost', value: 12 })))
-      .not.toContain('myx-sfield-basis');
   });
 });
 

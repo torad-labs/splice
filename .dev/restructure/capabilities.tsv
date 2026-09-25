@@ -683,8 +683,8 @@ console/src/shared/ui/holder-edge.tsx	60508f3762c1f8ff02c968155a3691a5f17d30fd60
 console/src/shared/ui/index.tsx	d83625a5778d4c67a5878f1861403199c6d6034b2b29fa2b032b7dbf5e491029	retain	console/src/shared/ui/index.tsx	Independent frontend application
 console/src/shared/ui/reveal.tsx	80cbabf8b42515ea002ea7bc1e051fd5c3f1d35195d4c9fb85ba0d8311a9b1ba	retain	console/src/shared/ui/reveal.tsx	Independent frontend application
 console/src/shared/ui/scope-inset.tsx	d4a5cae145fe8ef54f7112d916a7fc409851ad89a63748e83d82dfd1431baac4	retain	console/src/shared/ui/scope-inset.tsx	Independent frontend application
-console/src/shared/ui/strip-field.tsx	3b581f1cdfa12848939271159a518ed996d0ec6bb08b3840568779d3fb641a6c	retain	console/src/shared/ui/strip-field.tsx	Independent frontend application
-console/src/shared/ui/strip.tsx	26a5b0f5beeb5ebaf94010818d49f706542dd13bb934ec0fb4aea96b82ec1731	retain	console/src/shared/ui/strip.tsx	Independent frontend application
+console/src/shared/ui/strip-field.tsx	3b581f1cdfa12848939271159a518ed996d0ec6bb08b3840568779d3fb641a6c	retire		retired by the console redesign (2026-09-25): the strip cell left with the strip; a table cell is the kit DataTable column now
+console/src/shared/ui/strip.tsx	26a5b0f5beeb5ebaf94010818d49f706542dd13bb934ec0fb4aea96b82ec1731	retire		retired by the console redesign (2026-09-25): every rack it drew became a kit DataTable row, so its last eighteen sites went and the strip primitive with them
 console/src/shared/ui/types.ts	b5fa8dc0c3c8b267d6a9f7c52a117523edd8f13b15d05d1ddb476fae58e1c9e2	retain	console/src/shared/ui/types.ts	Independent frontend application
 console/src/shared/ui/ui.css	57fe207084f8f9f5d5b16f9458fa4268b18e59c16b30c68e4b5229fdb56c1771	retain	console/src/shared/ui/ui.css	Independent frontend application
 console/src/widgets/account-strip/account-strip.css	961f27d9573e205798d6ba9921b6dfa935fa87bdfa1d388045c62ba633ac6e59	retire		retired by the console redesign (2026-09-25): accounts and the fleet pool draw accounts as kit table rows from console/src/widgets/account-table, so the strip had no reader left

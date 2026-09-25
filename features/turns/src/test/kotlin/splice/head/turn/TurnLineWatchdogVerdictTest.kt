@@ -33,7 +33,7 @@ private fun meta(compact: Boolean) = TurnMeta(
 )
 
 private val stalled = TurnOutcome.Failure(
-    "splice: upstream stream stalled — aborted; retry",
+    "splice: upstream stream stalled, aborted; retry",
     cause = FailureCause.UPSTREAM_STALLED,
     phase = FailurePhase.MID_OUTPUT,
 )

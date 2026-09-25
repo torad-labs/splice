@@ -69,7 +69,7 @@ public class ConfigService(
         // read would bury the daemon log in a config mistake that never changes. The doctor repeats
         // the same facts as a named row, so an operator who never reads the log still sees them.
         coerceRejects().forEach { (where, why) ->
-            log("[config] ignoring $where — $why; the knob keeps its default\n")
+            log("[config] ignoring $where: $why; the knob keeps its default\n")
         }
     }
 
@@ -227,7 +227,7 @@ public class ConfigService(
             return
         }
         log(
-            "[config] config.json present but unreadable (${cause?.let(SafeFailureText::render)}) — " +
+            "[config] config.json present but unreadable (${cause?.let(SafeFailureText::render)}); " +
                 "persisted knobs ignored, defaults/env in effect",
         )
     }
@@ -316,7 +316,7 @@ public class ConfigService(
                     throw java.nio.file.FileSystemException(
                         path.toString(),
                         null,
-                        "config.json unreadable (${SafeFailureText.render(it)}) — refusing to rewrite, " +
+                        "config.json unreadable (${SafeFailureText.render(it)}); refusing to rewrite, " +
                             "persisted knobs preserved",
                     )
                 }

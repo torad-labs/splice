@@ -88,31 +88,6 @@ red test, never by the operator in the CLI or the console, so they are not the t
 # ─── module scope ────────────────────────────────────────────────────────────────────────────────
 
 [[exclusion]]
-rule = "kt-no-emdash-cli-text"
-modules = [
-  "core", "features-accounts", "features-events", "features-heads", "features-lifecycle", "features-models", "features-sessions", "features-turns",
-  "features-usage", "integrations-codemode", "integrations-daemon-client",
-  "integrations-dialects-anthropic", "integrations-dialects-openai-chat",
-  "integrations-dialects-openai-responses", "integrations-http", "integrations-mcp",
-  "integrations-providers-kimi", "integrations-providers-openai", "integrations-terminal",
-  "integrations-topology", "integrations-upstream", "quality-compiler-plugin",
-]
-sourceSets = ["main"]
-date = "2026-09-25"
-reason = """
-V4-219 scoped this wall to the text doctor, logs and wire author, in features/diagnostics, because that
-is what the console's Doctor and Needs you pages print verbatim. The strings doctor QUOTES from these
-roots were rewritten in the same pass (SafeFailureText, the state-root probe, TopologyMessages,
-TomlStructurePreflight, the auth refresh note), but nothing here holds them. What remains is mostly
-daemon log lines and CLI text for other verbs (about 400 string fragments on 2026-09-25, counted with
-the rule's own matcher). Widening means rewriting those in the modules other seats are editing now; it
-is its own row, not a side effect of this one.
-V4-238 (2026-09-25) is that row: each module leaves this list in the commit that rewrites its text and
-widens the rule's files over it. The first batch took app, features-configuration, features-launch,
-integrations-claude-code, integrations-oauth and the codex, grok and muse providers.
-"""
-
-[[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
   "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",

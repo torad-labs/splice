@@ -66,7 +66,7 @@ internal class TurnEnding(
                 val permanent = e is URLParserException
                 drive.emitter.emitError(
                     ErrorType.API_ERROR,
-                    "splice: internal gateway error — retry",
+                    "splice: internal gateway error; retry",
                     permanent = permanent,
                 )
             }

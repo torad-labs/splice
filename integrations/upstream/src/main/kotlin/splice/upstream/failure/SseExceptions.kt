@@ -21,5 +21,5 @@ public class SseFrameTooLargeException(kind: String, limit: Int) :
  *  a crash, just no longer silently identical to EOF. The bound itself (MAX_SPURIOUS_WAKEUPS) is
  *  unchanged. */
 public class SseSpuriousWakeupException(limit: Int) : IOException(
-    "SSE channel claimed content $limit times running without delivering a byte — treating the stream as torn",
+    "SSE channel claimed content $limit times running without delivering a byte; treating the stream as torn",
 )

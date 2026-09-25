@@ -98,7 +98,7 @@ public class KeyStore(
         // An embedded newline (survives the trim() below, which only strips leading/trailing
         // whitespace) would split into multiple assignments. The line-oriented store cannot encode
         // that shape, so reject it rather than silently persist a different credential.
-        require('\n' !in value && '\r' !in value) { "key for '$envVar' contains a newline — cannot store" }
+        require('\n' !in value && '\r' !in value) { "key for '$envVar' contains a newline and cannot be stored" }
         withStoreLock {
             val next = entriesStrict().toMutableMap()
             next[envVar] = value.trim()
@@ -140,7 +140,7 @@ public class KeyStore(
                 // file" is a claim this branch cannot make — for a dangling link the target is
                 // GONE, and through an untraversable parent the state is unknowable.
                 log(
-                    "[keys] $path is UNREADABLE (${SafeFailureText.render(failure)}) — treating as empty for " +
+                    "[keys] $path is UNREADABLE (${SafeFailureText.render(failure)}); treating as empty for " +
                         "display; the path may still reference operator key state, fix or " +
                         "remove it (writes abort rather than clobber)\n",
                 )
@@ -162,7 +162,7 @@ public class KeyStore(
                 val genuinelyAbsent = it is java.nio.file.NoSuchFileException &&
                     !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
                 check(genuinelyAbsent) {
-                    "keys.toml unreadable (${SafeFailureText.render(it)}) — refusing to write, " +
+                    "keys.toml unreadable (${SafeFailureText.render(it)}); refusing to write, " +
                         "existing keys preserved"
                 }
                 emptyMap()
@@ -247,7 +247,7 @@ public class KeyStore(
             }
             if (lock != null) return lock
             check(System.currentTimeMillis() < deadline) {
-                "keys.toml locked by a peer for over ${LOCK_WAIT_MS}ms — refusing to write, existing keys preserved"
+                "keys.toml locked by a peer for over ${LOCK_WAIT_MS}ms; refusing to write, existing keys preserved"
             }
             Thread.sleep(LOCK_POLL_MS)
         }
@@ -255,7 +255,7 @@ public class KeyStore(
 
     private fun persist(entries: Map<String, String>) {
         val text = buildString {
-            appendLine("# splice api keys — password-equivalent, keep 0600, never commit.")
+            appendLine("# splice api keys: password-equivalent, keep 0600, never commit.")
             appendLine("# Written by `splice key set` / `<head> login` / a head's token-capture hook.")
             entries.toSortedMap().forEach { (name, value) ->
                 val encoded = value.replace("\\", "\\\\").replace("\"", "\\\"")

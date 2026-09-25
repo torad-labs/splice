@@ -121,7 +121,7 @@ internal class PassthroughBlockRegistry(
             // its content — never silently: this is the translator's only anomaly channel. Logged
             // ONCE per turn, not once per delta (a torn/misbehaving upstream can emit many).
             if (!unmappedIndexLogged) {
-                ctx.log("[${quirks.providerTag}] content_block_delta for unmapped index=$index — dropped\n")
+                ctx.log("[${quirks.providerTag}] content_block_delta for unmapped index=$index; dropped\n")
                 unmappedIndexLogged = true
             }
             return
@@ -157,7 +157,7 @@ internal class PassthroughBlockRegistry(
      *  latch idiom as the unmapped-index path, which is the translator's other anomaly channel. */
     private fun dropCrossKind(kind: Kind, type: String) {
         if (crossKindDeltaLogged) return
-        ctx.log("[${quirks.providerTag}] $type targeted a $kind block — dropped\n")
+        ctx.log("[${quirks.providerTag}] $type targeted a $kind block; dropped\n")
         crossKindDeltaLogged = true
     }
 

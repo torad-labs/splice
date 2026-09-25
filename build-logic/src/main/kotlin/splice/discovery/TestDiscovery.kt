@@ -475,7 +475,7 @@ object JUnitXml {
         val testsRaw = root?.getAttribute("tests")?.ifBlank { null }
         if (root == null || name == null || testsRaw == null) {
             throw IllegalStateException(
-                "$sourceName: JUnit XML root is missing name/tests — this reader dies loudly on a " +
+                "$sourceName: JUnit XML root is missing name/tests; this reader dies loudly on a " +
                     "document it cannot trust rather than return an empty row for it",
             )
         }
@@ -554,14 +554,14 @@ object TestDiscovery {
     ): List<String> {
         if (classes.isEmpty()) {
             return listOf(
-                "no test class with a @Test method was parsed from any subproject's src/test/kotlin " +
-                    "— refusing to pass vacuously, because a green over an empty denominator is the " +
+                "no test class with a @Test method was parsed from any subproject's src/test/kotlin; " +
+                    "refusing to pass vacuously, because a green over an empty denominator is the " +
                     "very signal this wall exists to distrust",
             )
         }
         if (xmlByModule.isEmpty()) {
             return listOf(
-                "no JUnit XML found under any subproject's test-results directory — a checker " +
+                "no JUnit XML found under any subproject's test-results directory; a checker " +
                     "reading an empty results directory is the bug it is hunting; verifyTestDiscovery " +
                     "depends on every Test task, so an empty read here means that dependency itself " +
                     "broke",
@@ -576,11 +576,11 @@ object TestDiscovery {
                 when {
                     reason == null -> problems.add(
                         "${testClass.module}: ${testClass.name} declares ${testClass.count} test " +
-                            "method(s) but the module produced NO XML at all — either its tests " +
+                            "method(s) but the module produced NO XML at all: either its tests " +
                             "never ran or its test task is disabled; disposition the module with a reason",
                     )
                     reason.isBlank() -> problems.add(
-                        "${testClass.module}: module disposition carries NO reason — an " +
+                        "${testClass.module}: module disposition carries NO reason; an " +
                             "undispositioned silence is exactly what this wall refuses",
                     )
                 }
@@ -590,7 +590,7 @@ object TestDiscovery {
             if (row == null) {
                 problems.add(
                     "${testClass.module}: ${testClass.name} declares ${testClass.count} test " +
-                        "method(s) and produced NO XML row — JUnit never ran the class",
+                        "method(s) and produced NO XML row: JUnit never ran the class",
                 )
                 continue
             }
@@ -616,16 +616,16 @@ object TestDiscovery {
                     when {
                         entry == null -> problems.add(
                             "HIGHER COUNT, no disposition: ${testClass.module}:${testClass.name} " +
-                                "declares ${testClass.count} test method(s) but ran $observed — if " +
+                                "declares ${testClass.count} test method(s) but ran $observed; if " +
                                 "that expansion is legitimate, add it to DISPOSITIONS with a written reason",
                         )
                         entry.reason.isBlank() -> problems.add(
                             "${testClass.module}:${testClass.name} carries a disposition with NO " +
-                                "reason — a blank reason is an absence wearing a label",
+                                "reason; a blank reason is an absence wearing a label",
                         )
                         observed != entry.expectedCount -> problems.add(
                             "${testClass.module}:${testClass.name} ran $observed cases, not the " +
-                                "${entry.expectedCount} its disposition was written for — the " +
+                                "${entry.expectedCount} its disposition was written for; the " +
                                 "expansion moved, so the disposition is stale and must be re-earned",
                         )
                     }

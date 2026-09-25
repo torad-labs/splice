@@ -29,7 +29,7 @@ class SseResponseTest {
 
     // The seal's frame as the wall writes it: the last thing on the wire before the throw.
     private val errorFrame = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"," +
-        "\"message\":\"codex: upstream stalled (watchdog) — aborted; retry\"}}\n\n"
+        "\"message\":\"codex: upstream stalled (watchdog), aborted; retry\"}}\n\n"
     private val startFrame = "event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
 
     // Ktor's CHANNEL_MAX_SIZE is 1 MiB (internal): two halves fill the channel, one alone leaves room.

@@ -115,7 +115,7 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
         versionDir(version)
         val wanted = requested?.removePrefix("v")
         if (wanted != null && wanted != version) {
-            throw UpgradeRefused("release $requested delivered a jar reporting $version — refusing to activate it")
+            throw UpgradeRefused("release $requested delivered a jar reporting $version; refusing to activate it")
         }
         return version
     }

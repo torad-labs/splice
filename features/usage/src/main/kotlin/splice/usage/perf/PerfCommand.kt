@@ -47,7 +47,7 @@ public class PerfCommand(
             return false
         }
         val heads = readHeads(envReader) ?: return false
-        output.line("${BOLD}splice perf$RESET $DIM— last ${window.label} per head, from the perf files$RESET")
+        output.line("${BOLD}splice perf$RESET$DIM: last ${window.label} per head, from the perf files$RESET")
         heads.forEach { key ->
             val s = summary.summarize(rows.rows(key, envReader), window)
             printHead(key, s)

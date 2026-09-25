@@ -238,4 +238,4 @@ public class PassthroughStreamTranslator(
 
 // The tail of an unrecognised-throwable sentence: it is still retryable (the operator's default),
 // and the throwable's own rendering is what makes the failure identifiable next time.
-private const val UNEXPECTED_TAIL = " — retry"
+private const val UNEXPECTED_TAIL = "; retry"

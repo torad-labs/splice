@@ -22,7 +22,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
-private const val STILL_BUSY = "turns still in flight after the wait — rerun with --now to restart anyway"
+private const val STILL_BUSY = "turns still in flight after the wait; rerun with --now to restart anyway"
 
 /** `splice upgrade` as app runs it: the local daemon resolved from [env] through the daemon client —
  *  control port and supervisor unit as the daemon itself resolves them, [errors] taking the one
@@ -71,7 +71,7 @@ internal class UpgradeCommand(
         } catch (refused: UpgradeRefused) {
             val reason = refused.reason
             output.line("splice upgrade: $reason")
-            output.line("${YELLOW}nothing activated$RESET — ${layout.installedVersion()} stays installed")
+            output.line("${YELLOW}nothing activated$RESET: ${layout.installedVersion()} stays installed")
             false
         }
     }
@@ -79,7 +79,7 @@ internal class UpgradeCommand(
     private fun upgradeTo(a: UpgradeArgs): Boolean {
         a.to?.let { layout.versionDir(it.removePrefix("v")) }
         val base = release.base(a.to, env("SPLICE_RELEASE_BASE_URL"))
-        output.line("${BOLD}splice upgrade$RESET $DIM— from $base$RESET")
+        output.line("${BOLD}splice upgrade$RESET$DIM: from $base$RESET")
         val staging = layout.stagingDir()
         val candidate = staged(base, staging, a.to)
         val version = candidate.version
@@ -115,7 +115,7 @@ internal class UpgradeCommand(
         val previous = layout.pointedVersion(layout.previous)
             ?: throw UpgradeRefused("no previous release to roll back to")
         val installed = layout.installedVersion()
-        output.line("${BOLD}splice upgrade --rollback$RESET $DIM— $installed -> $previous$RESET")
+        output.line("${BOLD}splice upgrade --rollback$RESET$DIM: $installed -> $previous$RESET")
         if (!daemon.waitIdle(a.now)) {
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; nothing changed")
             return false
@@ -146,8 +146,8 @@ internal class UpgradeCommand(
         val outcome = when (restart) {
             DaemonRestarted.Serving -> "restarted, serving $version"
             is DaemonRestarted.StillOld ->
-                "still serves ${restart.version} (a daemon started by hand?) — run: splice restart"
-            DaemonRestarted.NotAnswering -> "did not answer after the restart — run: splice restart"
+                "still serves ${restart.version} (a daemon started by hand?); run: splice restart"
+            DaemonRestarted.NotAnswering -> "did not answer after the restart; run: splice restart"
         }
         output.line("  $glyph ${"daemon".padEnd(UPGRADE_PAD)} $outcome")
         output.line("")

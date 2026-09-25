@@ -92,7 +92,7 @@ internal class DaemonLaunch(
         if (!up) {
             val budget = Duration.ofMillis(startupPolls * POLL_INTERVAL_MS).toSeconds()
             output.line(
-                "splice: $unit did not answer /health with $expectedVersion within ${budget}s — never starting " +
+                "splice: $unit did not answer /health with $expectedVersion within ${budget}s; never starting " +
                     "a second daemon beside it. See: systemctl --user status $unit; journalctl --user -u $unit -n 50",
             )
         }

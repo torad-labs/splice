@@ -48,7 +48,7 @@ internal class ZeroEventFailure(
             ),
         )
         val message = if (classified.type == ErrorType.AUTHENTICATION) {
-            val hint = if (provider.loginCommand.isNotEmpty()) " — run: ${provider.loginCommand}" else ""
+            val hint = if (provider.loginCommand.isNotEmpty()) "; run: ${provider.loginCommand}" else ""
             "${classified.message}$hint"
         } else {
             classified.message

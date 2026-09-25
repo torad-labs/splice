@@ -231,23 +231,33 @@ class CodeModeRuntimeTest {
         }
     }
 
+    // A hang guard only: the worker's start, warm-up included, is outside the deadline under test.
     @Test
-    @Timeout(10)
+    @Timeout(30)
     fun `runaway source times out and releases its worker slot`() = runBlocking {
+        // Twenty times a cold worker's first yield (98-133 ms measured 2026-09-25), which this deadline
+        // also covers, with the same 1 s of slack the bound always had.
+        val deadlineMs = 2_000L
         JvmCodeModeRuntime(
             maxWorkers = 1,
-            advanceTimeoutMs = 1_000,
+            advanceTimeoutMs = deadlineMs,
             workerClasspath = testClasspath,
         ).use { runtime ->
             val reclamation = CodeModeWorkerReclamation(this)
+            // V4-226: the deadline times the script, never its worker JVM's start, so the clock starts
+            // once the script is running: it yields a tool call, then runs away on the answer. Timed
+            // from before start() it also counted the boot, and a loaded runner's boot alone broke the
+            // bound (gate run 36180689372).
+            val cell = runtime.start("await tools.call(\"Read\", {}); while (true) {}", setOf("Read"))
+            calls(cell.advance())
             val startedAt = System.nanoTime()
             val timeout = assertThrows(IOException::class.java) {
-                runBlocking { runtime.start("while (true) {}", emptySet()) }
+                runBlocking { cell.advance(listOf(CodeModeResult("1", "{}"))) }
             }
             assertEquals("Code-mode worker timed out", timeout.message)
             assertTrue(timeout is CodeModeTimeoutException)
-            assertEquals(1_000L, (timeout as CodeModeTimeoutException).timeoutMillis)
-            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) < 2_000)
+            assertEquals(deadlineMs, (timeout as CodeModeTimeoutException).timeoutMillis)
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) < deadlineMs + 1_000)
             assertTrue(timeout.cause !is CancellationException)
 
             reclamation.assertReclaimed(runtime)

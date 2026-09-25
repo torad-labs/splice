@@ -92,6 +92,22 @@ internal class WorkerSession : AutoCloseable {
         .allowNativeAccess(false)
         .option("engine.WarnInterpreterOnly", "false")
         .build()
+
+    // The launcher is compiled and taken once through a whole cell here, a tool call, its settle and
+    // the completion, before the worker says ready, because a cold engine's FIRST run is the worker's
+    // start, not the script's: 1.4-1.9 s from a built context to a script's first yield, against
+    // 21-25 ms for the next session in the same JVM (three fresh JVMs, 2026-09-25). Charged to the
+    // script, it spent that much of the advance deadline on an idle box and more on a loaded one (gate
+    // run 36180689372). The run is self-contained: its state lives in the launcher's closure and a
+    // bridge nothing else holds.
+    private val launcher: Value = context.eval("js", LAUNCHER).also { launcher ->
+        val warmUp = launcher.execute(
+            "await tools.call(\"warm\", {}); return 1;",
+            "[\"warm\"]",
+            WorkerBridge(setOf("warm")).host,
+        )
+        warmUp.getMember("settle").execute("1", "{}", false)
+    }
     private var bridge: WorkerBridge? = null
     private var settle: Value? = null
     private var pendingCalls: List<CodeModeCall> = emptyList()
@@ -102,7 +118,6 @@ internal class WorkerSession : AutoCloseable {
             JsonArray.serializer(),
             buildJsonArray { start.tools.sorted().forEach(::add) },
         )
-        val launcher = context.eval("js", LAUNCHER)
         val control = launcher.execute(start.source, toolsJson, bridge.host)
         settle = control.getMember("settle")
         return reply()

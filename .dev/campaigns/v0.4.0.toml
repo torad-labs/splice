@@ -6620,3 +6620,11 @@ title = "install.sh installs the wrappers where it then checks for them, under a
 files = ["install.sh"]
 status = "todo"
 verify = "red first: install.sh under a scratch HOME that is not the passwd home fails today and installs into that HOME after, with nothing written under the passwd home; CI gate on the train sha."
+
+[[items]]
+id = "V4-232"
+phase = "release"
+title = "A fresh claude-bonsai prints no [claude-code:unrecognized_model] line, interactive or -p, and in -p its stdout carries only the answer (CPO triage 2026-09-25 of the v0.4.0.toml:181 follow-up; rig-lead's receipt 2 saw [claude-code:unrecognized_model] {\"model\":\"bonsai-2-27b\",\"query_source\":\"sdk\"} before the answer on Claude Code 2.1.282). Local models are a 0.4.0 headline and this is the first line a local-model user sees. The model id the client sees is a value splice authors (mythos CLAUDE.md section 22). Whatever id the head presents, the client's context window still matches what the runtime serves: scale the reported counts, and never spell an id past the ceiling. splice-lead."
+files = ["app/src/main/dist/bin/splice-launch", "features/launch/src/main/kotlin/splice/launch/", "features/configuration/src/main/kotlin/splice/configuration/add/"]
+status = "todo"
+verify = "red first on the receipt's command (claude-bonsai -p against a runtime head that presents bonsai-2-27b prints the line; a mock runtime is enough, since the line is the client's reaction to the id), green after: no unrecognized_model line interactive or -p, -p stdout is the answer alone, and the client's window equals the runtime's served context; CI gate on the train sha."

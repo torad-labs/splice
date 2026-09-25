@@ -56,9 +56,16 @@ const shareTable: SchemaNode = {
 };
 
 /** The per-million-token rates, per model id (FEATURES 2.3). `cache_write` is optional; the absent
- *  case means "no dollar figure", never zero. */
+ *  case means "no dollar figure", never zero. The `long_context_*` keys are a card's long-context
+ *  tier (V4-240, TomlRates in TokenCost.kt): all of them or none, `long_context_cache_write` optional. */
 const ratesTable: SchemaNode = {
-  each: { keys: { input: {}, cache_read: {}, output: {}, cache_write: {} } },
+  each: {
+    keys: {
+      input: {}, cache_read: {}, output: {}, cache_write: {},
+      long_context_over_input_tokens: {}, long_context_input: {}, long_context_cache_read: {},
+      long_context_output: {}, long_context_cache_write: {},
+    },
+  },
 };
 
 const providerModels: SchemaNode = {

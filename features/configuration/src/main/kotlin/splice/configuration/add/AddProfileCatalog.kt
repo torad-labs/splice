@@ -13,8 +13,15 @@ private const val ANTHROPIC_PASSTHROUGH = "anthropic-passthrough"
 /** Shared with AddProfiles.kt across the 2026-09-16 split. */
 internal const val API_KEY = "api-key"
 private const val WINDOW_272K = 272_000L
-private const val WINDOW_400K = 400_000L
+
+// why: grok-build-0.1's maxPromptLength on docs.x.ai (V4-224)
+private const val WINDOW_256K = 256_000L
+
 private const val WINDOW_500K = 500_000L
+
+// why: gpt-6-astra's max_context_window on the ChatGPT backend's own model listing (V4-224)
+private const val WINDOW_872K = 872_000L
+
 private const val WINDOW_1M = 1_000_000L
 private const val WINDOW_1048K = 1_048_576L
 private const val WINDOW_1050K = 1_050_000L
@@ -45,10 +52,18 @@ internal class AddProfileCatalog {
             baseUrl = "https://chatgpt.com/backend-api/codex",
             headKey = "codex",
             command = "claudex",
+            // V4-224: what the ChatGPT backend serves, windowed by its own model listing
+            // (chatgpt.com/backend-api/codex/models, read 2026-09-25): context_window 272000 on every row,
+            // and gpt-6-astra's max_context_window 872000, the vendor's sanctioned opt-in (measured served at
+            // 637k tokens on 2026-09-21, UpstreamRoster). OpenAI's Codex docs (developers.openai.com/codex/
+            // models) name gpt-6-sol the model to choose, so it is pinned. The API's 1,050,000 for the same id
+            // (developers.openai.com/api/docs/models/gpt-6-sol) is the platform's window, not this backend's.
+            // GPT-6 has no Terra, so gpt-5.6-terra is the row a slotted head gives its sonnet tier.
             models = listOf(
-                AddModel("gpt-5.6-sol", "GPT-5.6 Sol", WINDOW_400K),
-                AddModel("gpt-5.5", "GPT-5.5", WINDOW_272K),
-                AddModel("gpt-5.4-mini", "GPT-5.4 mini", WINDOW_272K),
+                AddModel("gpt-6-sol", "GPT-6 Sol", WINDOW_272K),
+                AddModel("gpt-6-astra", "GPT-6 Astra", WINDOW_872K),
+                AddModel("gpt-5.6-terra", "GPT-5.6 Terra", WINDOW_272K),
+                AddModel("gpt-6-luna", "GPT-6 Luna", WINDOW_272K),
             ),
         ),
         AddProfile(
@@ -59,9 +74,13 @@ internal class AddProfileCatalog {
             baseUrl = "https://api.x.ai/v1",
             headKey = "grok",
             command = "claude-grok",
+            // V4-224: windows from docs.x.ai/developers/models (maxPromptLength, read 2026-09-25). The build
+            // row is the concrete grok-build-0.1: the endpoint's own listing resolves grok-build-latest to
+            // grok-4.5 now, so an alias row would have its window move underneath it.
             models = listOf(
+                AddModel("grok-4.7", "Grok 4.7", WINDOW_500K),
                 AddModel("grok-4.6", "Grok 4.6", WINDOW_500K),
-                AddModel("grok-4.5", "Grok 4.5", WINDOW_500K),
+                AddModel("grok-build-0.1", "Grok Build 0.1", WINDOW_256K),
             ),
         ),
         AddProfile(
@@ -76,6 +95,7 @@ internal class AddProfileCatalog {
                 AddModel("k3-256k", "Kimi K3 256k", WINDOW_262K),
                 AddModel("k3[1m]", "Kimi K3 (1M)", WINDOW_1M),
                 AddModel("kimi-for-coding", "Kimi for Coding", WINDOW_262K),
+                AddModel("kimi-for-coding-highspeed", "Kimi for Coding (high speed)", WINDOW_262K),
             ),
         ),
         AddProfile(
@@ -186,10 +206,14 @@ internal class AddProfileCatalog {
             baseUrl = "https://api.anthropic.com",
             headKey = "claude-splice",
             command = "claude-splice",
+            // V4-224: platform.claude.com/docs/en/models/overview (read 2026-09-25): Fable 5.1, Opus 5.5 and
+            // Sonnet 5 have a 1M context window, Haiku 4.5 200K. A forwarded subscription login reaches 1M too:
+            // "On the Anthropic API, Fable 5.1, Fable 5, Sonnet 5, and Opus 4.7 and later run with the 1M
+            // window on every plan, including Pro" (code.claude.com/docs/en/model-config).
             models = listOf(
-                AddModel("claude-fable-5", "Claude Fable 5", WINDOW_200K, listOf("fable")),
-                AddModel("claude-opus-5", "Claude Opus 5", WINDOW_200K, listOf("opus")),
-                AddModel("claude-sonnet-5", "Claude Sonnet 5", WINDOW_200K, listOf("sonnet")),
+                AddModel("claude-fable-5-1", "Claude Fable 5.1", WINDOW_1M, listOf("fable")),
+                AddModel("claude-opus-5-5", "Claude Opus 5.5", WINDOW_1M, listOf("opus")),
+                AddModel("claude-sonnet-5", "Claude Sonnet 5", WINDOW_1M, listOf("sonnet")),
                 AddModel("claude-haiku-4-5", "Claude Haiku 4.5", WINDOW_200K, listOf("haiku")),
             ),
             providerExtra = listOf("""extra_headers = { anthropic-version = "2023-06-01" }"""),

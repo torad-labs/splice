@@ -74,9 +74,12 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("unreadable_entries", usage.unreadable)
     }
 
-    /** Exactly {id, status, detail} (schema 1): the fix rides inside the detail. A check's name and
-     *  detail are the doctor's own sentences, but they quote config values — so every unsafe
-     *  operator-authored value is scrubbed to its alias or <omitted> before the shape pass. */
+    /** Exactly {id, status, detail, fix_id} (schema 1): the fix sentence rides inside the detail, and
+     *  `fix_id` names the fix the daemon can run itself (POST /api/doctor/fix/{id}), null on every
+     *  row whose remedy is the operator's own. An added key is not a breaking change, so the schema
+     *  stays 1. A check's name and detail are the doctor's own sentences, but they quote config
+     *  values — so every unsafe operator-authored value is scrubbed to its alias or <omitted> before
+     *  the shape pass. */
     fun checks(sections: List<Pair<String, List<DoctorCheck>>>): JsonArray =
         buildJsonArray {
             sections.forEach { (section, checks) ->
@@ -86,6 +89,7 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                             put("id", safe("$section/${c.name}"))
                             put("status", c.status.name.lowercase())
                             put("detail", safe(c.fix?.let { "${c.detail} — fix: $it" } ?: c.detail))
+                            put("fix_id", c.fixId?.wire)
                         },
                     )
                 }

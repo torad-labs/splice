@@ -51,8 +51,10 @@ internal class UpgradeDaemon(
      *  own it and cannot assume one is there — an absent or inactive unit is the "started by hand"
      *  arm below, which the restart verb handles. Hardcoding the name made a box whose packager
      *  called the unit something else look permanently unsupervised. */
-    private val userUnit: String,
+    userUnit: String,
 ) {
+    private val unit = UpgradeUnit(userUnit, process)
+
     /** True only when every head reports zero turns, or no daemon exists at all. A read that cannot
      *  see the turns (key, timeout, shape) is waited out like a busy one and then refused: an unknown
      *  count is never treated as zero. False leaves the candidate staged. */
@@ -80,18 +82,17 @@ internal class UpgradeDaemon(
         InflightRead.NoDaemon -> "no daemon running"
     }
 
-    /** The user unit when one supervises THIS install — its ExecStart names [liveJar] AND the unit
-     *  is active, so the daemon on the port is its process; a loaded but
-     *  inactive unit means a daemon started by hand, which only the restart verb's stop reaches. An
-     *  install under another share dir (a second copy, a test home) never restarts someone else's
-     *  unit. Whatever ran, the verdict is /health's: it must report [version]. */
-    fun restart(liveJar: Path, version: String): DaemonRestarted {
-        val unit = process(listOf("systemctl", "--user", "show", "-p", "ExecStart", "--value", userUnit), false)
-        val active = process(listOf("systemctl", "--user", "is-active", userUnit), false)
-        val supervised = unit.code == 0 && unit.stdout.contains(liveJar.toString()) &&
-            active.stdout.trim() == "active"
-        if (supervised) {
-            process(listOf("systemctl", "--user", "restart", userUnit), true)
+    /** The user unit when one supervises THIS install (UpgradeUnit), else the restart verb,
+     *  whose stop is the only one that reaches a daemon started by hand. Whatever ran, the verdict is
+     *  /health's: it must report [version].
+     *
+     *  V4-220: the release activated AFTER [waitIdle], and a compaction that started meanwhile is the one
+     *  turn a restart must not cut, so either path first takes the wait the console's restart and `splice
+     *  restart` take (CompactionWait). [now] skips it, as `--now` skips [waitIdle]. */
+    fun restart(liveJar: Path, version: String, now: Boolean): DaemonRestarted {
+        if (!now) CompactionWait(output, inflight, pollMs).await()
+        if (unit.supervises(liveJar)) {
+            unit.restart()
         } else {
             restartVerb(version)
         }

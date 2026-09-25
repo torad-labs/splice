@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import { dispositions as baseline } from '../src/shared/coverage/baseline';
-import { checkCoverage, type DispositionSource } from '../src/shared/coverage/checks';
+import { checkCoverage, type Disposition, type DispositionSource } from '../src/shared/coverage/checks';
+import type { PageJob } from '../src/shared/coverage/jobs';
 import {
   CLI_SOURCE,
   FEATURES_SOURCE,
@@ -56,7 +57,9 @@ const pageSources: DispositionSource[] = Object.entries(pageModules).map(([file,
   if (!Array.isArray(declared)) {
     throw new Error(`${file} must export \`dispositions\` as an array (CONTRACTS.md section 4)`);
   }
-  return { source: file, dispositions: declared as DispositionSource['dispositions'] };
+  // The page's job actions, which a verb's `action` names (V4-220).
+  const job = module.job as PageJob | undefined;
+  return { source: file, dispositions: declared as DispositionSource['dispositions'], ...(job === undefined ? {} : { actions: job.actions }) };
 });
 
 const sources: DispositionSource[] = [
@@ -95,6 +98,41 @@ describe('coverage wall', () => {
       dispositions: source.dispositions.map((declared) => (declared.name === 'dashboard' ? { kind: 'verb' as const, name: 'dashboard', disposition: 'excluded' as const } : declared)),
     }));
     expect(checkCoverage(denominator, unexplained, served)).toEqual([{ name: 'dashboard', problem: 'excluded without reason' }]);
+  });
+
+  test('a verb names a built page action and a route that covers it, or fails by name (V4-220)', () => {
+    const routes: Disposition[] = [
+      { kind: 'route', name: '/api/x', disposition: 'editable' },
+      { kind: 'route', name: '/api/r', disposition: 'read-only' },
+    ];
+    const page = (dispositions: Disposition[]): DispositionSource[] => [
+      { source: 'pages/x/coverage.ts', dispositions: [...routes, ...dispositions], actions: [{ name: 'Do x' }, { name: 'Do y', row: 'V4-1' }] },
+    ];
+    const served = ['/api/x', '/api/r'];
+    const check = (verb: Disposition, registered: readonly string[] = served) => checkCoverage([], page([verb]), registered);
+    // Right: an editable verb through its built action and an editable, served route; a read-only
+    // verb through a read-only route; a pending verb whose action is not built yet.
+    expect(check({ kind: 'verb', name: 'a', disposition: 'editable', action: 'Do x', via: '/api/x' })).toEqual([]);
+    expect(check({ kind: 'verb', name: 'b', disposition: 'read-only', via: '/api/r' })).toEqual([]);
+    expect(check({ kind: 'verb', name: 'c', disposition: 'pending', where: 'V4-1', action: 'Do y', via: '/api/x' })).toEqual([]);
+    // An editable verb with no action, or one its page does not list.
+    expect(check({ kind: 'verb', name: 'd', disposition: 'editable', via: '/api/x' })).toEqual([{ name: 'd', problem: 'verb without action' }]);
+    expect(check({ kind: 'verb', name: 'e', disposition: 'editable', action: 'Do z', via: '/api/x' }))
+      .toEqual([{ name: 'e', problem: 'verb without action' }]);
+    // An editable verb whose page action is still a row's to build.
+    expect(check({ kind: 'verb', name: 'f', disposition: 'editable', action: 'Do y', via: '/api/x' }))
+      .toEqual([{ name: 'f', problem: 'verb action not built' }]);
+    // No route, a route only read, a route no disposition names, and a route the daemon does not serve.
+    expect(check({ kind: 'verb', name: 'g', disposition: 'read-only' })).toEqual([{ name: 'g', problem: 'verb via uncovered route' }]);
+    expect(check({ kind: 'verb', name: 'h', disposition: 'editable', action: 'Do x', via: '/api/r' }))
+      .toEqual([{ name: 'h', problem: 'verb via uncovered route' }]);
+    expect(check({ kind: 'verb', name: 'i', disposition: 'read-only', via: '/api/nowhere' }))
+      .toEqual([{ name: 'i', problem: 'verb via uncovered route' }]);
+    expect(check({ kind: 'verb', name: 'j', disposition: 'editable', action: 'Do x', via: '/api/x' }, ['/api/r']))
+      .toEqual([{ name: 'j', problem: 'verb via uncovered route' }]);
+    // A pending verb whose page action is built is answered: the manifest must say so.
+    expect(check({ kind: 'verb', name: 'k', disposition: 'pending', where: 'V4-1', action: 'Do x' }))
+      .toEqual([{ name: 'k', problem: 'pending but built' }]);
   });
 
   test('every enumerated key carries a disposition, and none is pending for a route the daemon serves', () => {

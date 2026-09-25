@@ -1,10 +1,11 @@
-// NEW: V4-220 item 3 (2026-09-25) — the only write an add makes, shared by `splice add` and the
-// console's add, moved out of AddCommand.save unchanged so the two cannot write differently.
+// NEW: V4-220 item 3 (2026-09-25) — the only write an add makes, shared by `splice add`, the console's
+// add and add-model on both surfaces, moved out of AddCommand.save so none of them can write differently.
 package splice.configuration.add
 
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
 /** Whether the candidate's tables reached the file. */
@@ -29,17 +30,24 @@ internal class AddWrite {
      *  overwritten by a rename. A file that cannot be read again (deleted, replaced by something
      *  unreadable) is refused the same way: the candidate was built from a file that existed, so a
      *  rename that recreated it would write stale content (review 2026-09-14). */
-    fun write(c: AddCandidate): AddWritten {
+    fun write(c: AddCandidate): AddWritten = replace(c.path, c.existing, c.existing + c.appended)
+
+    /** [composed] renamed over [path] only while the file still holds [existing]: the same re-read and
+     *  rename as [write], for add-model's roster edit, which changes the middle of the file rather than
+     *  appending (V4-220: add-model read the file before its prompts and renamed over any edit since). */
+    fun replace(path: Path, existing: String, composed: String): AddWritten {
         // Normalized the way the candidate's `existing` was (one trailing newline), or a config saved
         // without one would be "changed" on every run and never written (review 2026-09-14).
-        val stale = Cancellables.runCatchingCancellable { Files.readString(c.path).trimEnd('\n') + "\n" }.fold(
-            onSuccess = { if (it == c.existing) null else AddWritten.Changed },
+        val stale = Cancellables.runCatchingCancellable { normalized(Files.readString(path)) }.fold(
+            onSuccess = { if (it == normalized(existing)) null else AddWritten.Changed },
             onFailure = { AddWritten.Unreadable(SafeFailureText.render(it)) },
         )
         if (stale != null) return stale
-        val tmp = c.path.resolveSibling(c.path.fileName.toString() + ".add-${ProcessHandle.current().pid()}.tmp")
-        Files.writeString(tmp, c.existing + c.appended)
-        Files.move(tmp, c.path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        val tmp = path.resolveSibling(path.fileName.toString() + ".add-${ProcessHandle.current().pid()}.tmp")
+        Files.writeString(tmp, composed)
+        Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         return AddWritten.Written
     }
+
+    private fun normalized(text: String): String = text.trimEnd('\n') + "\n"
 }

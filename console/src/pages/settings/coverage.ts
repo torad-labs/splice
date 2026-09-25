@@ -148,7 +148,8 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'verb', name: 'dashboard', disposition: 'excluded', reason: 'opens this console' },
   { kind: 'verb', name: 'shim-version', disposition: 'excluded', reason: 'the client shim\'s build stamp for the installer\'s own check; doctor shows the versions an operator reads' },
   // splice-lead, 2026-09-25: install is Doctor's (its Fix runs install --all); uninstall stays CLI-only.
-  { kind: 'verb', name: 'uninstall', disposition: 'excluded', reason: 'removes the daemon this console runs inside, so no console action could finish it or report that it did' },
+  // Its reason, read from UninstallCommand.kt: it deletes wrapper symlinks, not the daemon.
+  { kind: 'verb', name: 'uninstall', disposition: 'excluded', reason: 'deletes wrapper commands from the operator\'s bin directory, splice itself with --all; destructive, CLI only' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */

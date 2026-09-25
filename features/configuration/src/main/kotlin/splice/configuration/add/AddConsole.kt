@@ -94,6 +94,9 @@ public class AddConsole(
     // save's re-read and rename never interleave with another's: the second then sees the first's
     // tables and refuses as stale, never renaming over them.
     private val writes = Any()
+
+    /** `splice add-model` as the console runs it, under the same [writes] lock as a save. */
+    internal val models = AddModelConsole(env, writes)
     private val sessions = object : LinkedHashMap<String, AddSession>(
         LruSizing.INITIAL_CAPACITY,
         LruSizing.LOAD_FACTOR,

@@ -6474,3 +6474,11 @@ title = "Release install and splice upgrade work without gh: sha256 against sha2
 files = ["install.sh", "README.md", "CHANGELOG.md"]
 status = "todo"
 verify = "red first: installer acceptance with gh absent and with gh unauthenticated fail today and pass after; tampered sums refuses in both; authed gh still verifies; one fresh ubuntu:22.04 container with no gh installs from an https release base"
+
+[[items]]
+id = "V4-218"
+phase = "deferred"
+title = "Every splice path honors $HOME, not only the passwd home. Main sources resolve ~ through System.getProperty(\"user.home\"): InstallPaths.kt:19 and :23 (bin and share dirs), StatePaths.kt:117 (state), TopologyLoader.kt:115 (config dir without XDG_CONFIG_HOME) and :177 (every ~/ path in splice.toml, auth files included), about 20 files in all. The launch shim runs CLI verbs as a bare java -jar (app/src/main/dist/bin/splice-launch, the exec of CLI verbs), so a run under a different HOME (a sandbox, CI, a second profile) reads and writes the real home's config, credentials and state. Found 2026-09-25 building the isolated film stack: splice add codex under HOME=/tmp/film-home would have resolved its ~/ paths into the operator's real home; the film pins -Duser.home with a java wrapper instead. FIX: one home resolver in core/config (HOME first, user.home as the fallback), every caller through it, and an ast-grep wall that bans System.getProperty(\"user.home\") outside it; the shim passes the same answer to the JVM it starts. Deferred out of 0.4.0 by the CPO 2026-09-25."
+files = ["core/src/main/kotlin/splice/core/config/InstallPaths.kt", "core/src/main/kotlin/splice/core/config/StatePaths.kt", "integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt", "app/src/main/dist/bin/splice-launch"]
+status = "todo"
+verify = "bun tools/gate run --only walls && a CLI test that runs splice add under HOME=<tmp> with user.home pointing elsewhere and asserts every file it writes is under <tmp>"

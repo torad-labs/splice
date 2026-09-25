@@ -61,6 +61,7 @@ export const H = {
 
 export const U = {
   /** The timeline's span and its empty hours, after their figures. */
+  hours: 'h',
   window: 'window',
   idle: 'idle',
   /** Beside a count in the headless group's tip. */

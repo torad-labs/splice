@@ -9,3 +9,8 @@ export const S = {
   toDark: 'Dark theme',
   toLight: 'Light theme',
 } as const;
+
+export const U = {
+  /** The palette's shortcut, printed beside the jump button. */
+  jumpKey: '⌘K',
+} as const;

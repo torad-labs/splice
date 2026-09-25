@@ -160,7 +160,7 @@ describe('Confirm', () => {
   test('armed it is TWO keys: the second label and a cancel, never a dialog', () => {
     const out = keys(true);
     expect(out).toContain('confirm stop');
-    expect(out).toContain('cancel');
+    expect(out).toContain('>Cancel<');
     expect(out.match(/<button/g)).toHaveLength(2);
     expect(out).toContain('myx-key-armed'); // the cocked key is visibly cocked
     expect(out).not.toContain('role="dialog"');
@@ -268,12 +268,12 @@ describe('Blank', () => {
 describe('Fault', () => {
   const long = 'the daemon closed the connection while a turn was streaming: upstream returned 502 after 43s of held bytes, and the head has been marked retryable';
 
-  test('carries a red holder edge with its word printed beside it', () => {
+  test('is one alert line: a danger mark that is an icon as well as a colour, then the words', () => {
     const out = render(h(Fault, { message: 'daemon unreachable' }));
-    expect(out).toContain('myx-edge-red');
-    expect(out).toContain('>fault<');
-    expect(out).toContain('daemon unreachable');
     expect(out).toContain('role="alert"');
+    expect(out).toMatch(/<svg[^>]*class="myx-fault-icon"/);
+    expect(out).toContain('>daemon unreachable<');
+    expect(declared(css, '.myx-fault-icon').color).toBe('var(--danger)');
   });
 
   test('D2: a long message prints whole and wraps, and is never clipped', () => {
@@ -289,8 +289,8 @@ describe('Fault', () => {
   });
 
   test('the retry key is offered only when there is something to retry', () => {
-    expect(render(h(Fault, { message: 'HTTP 404', onRetry: () => undefined }))).toContain('retry');
-    expect(render(h(Fault, { message: 'row V4-127' }))).not.toContain('>retry<');
+    expect(render(h(Fault, { message: 'HTTP 404', onRetry: () => undefined }))).toContain('>Retry<');
+    expect(render(h(Fault, { message: 'row V4-127' }))).not.toContain('>Retry<');
   });
 });
 
@@ -384,10 +384,10 @@ describe('Flag', () => {
 describe('the copy key', () => {
   test('an answer holds only for the value it was given for', () => {
     const copied = { outcome: 'copied' as const, value: 'splice key set A_KEY' };
-    expect(controls.copyLabel(copied, 'splice key set A_KEY', 'copy')).toBe('copied');
+    expect(controls.copyLabel(copied, 'splice key set A_KEY', 'copy')).toBe('Copied');
     // the detail column opened another head: its command was never copied
     expect(controls.copyLabel(copied, 'splice key set B_KEY', 'copy')).toBe('copy');
-    expect(controls.copyLabel({ outcome: 'refused', value: 'x' }, 'x', 'copy')).toBe('copy by hand');
+    expect(controls.copyLabel({ outcome: 'refused', value: 'x' }, 'x', 'copy')).toBe('Copy by hand');
     expect(controls.copyLabel(null, 'x', 'copy')).toBe('copy');
   });
 });

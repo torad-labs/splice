@@ -311,14 +311,21 @@ describe('conversation', () => {
     );
     expect(out).toContain('myx-reveal-btn');
     expect(out).not.toContain('BODY-TEXT-NOT-IN-MARKUP');
-    expect(out).toContain('>assistant<');
+    expect(out).toContain('>Assistant<');
     expect(out).toContain('/home/user/.claude/projects/x/s1.jsonl');
   });
 
   test('a transcript this daemon does not serve says so, without a row id', () => {
     const out = render(h(Conversation, { sessionId: 's1', slice: { pending: 'V4-130' } }));
-    expect(out).toContain('transcript unavailable');
+    expect(out).toContain('Transcript unavailable');
     expect(out).not.toContain('V4-130');
+  });
+
+  test('a session with no file names where the daemon looked, and is not a fault', () => {
+    const out = render(h(Conversation, { sessionId: 's1', slice: { missing: ['/home/user/.claude/projects/x'] } }));
+    expect(out).toContain('>No transcript<');
+    expect(out).toContain('Looked in: /home/user/.claude/projects/x');
+    expect(out).not.toContain('role="alert"');
   });
 
   test('a finished transcript offers no load more', () => {
@@ -333,7 +340,7 @@ describe('conversation', () => {
         },
       }),
     );
-    expect(out).not.toContain('load more');
+    expect(out).not.toContain('Load more');
   });
 });
 

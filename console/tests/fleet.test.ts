@@ -137,7 +137,7 @@ describe('one printed cause, and the worst one wins', () => {
   test('the opened head prints the command to copy, and the page to open', () => {
     const keyed = renderToStaticMarkup(React.createElement(CauseLine, { help: { text: 'no api key in X', command: 'splice key set X' } }));
     expect(keyed).toContain('splice key set X');
-    expect(keyed).toContain('>copy<');
+    expect(keyed).toContain('>Copy<');
     const linked = renderToStaticMarkup(React.createElement(CauseLine, { help: { text: 'no login', href: '#/accounts', link: 'sign in on accounts' } }));
     expect(linked).toContain('href="#/accounts"');
     expect(renderToStaticMarkup(React.createElement(CauseLine, { help: null }))).toBe('');
@@ -639,7 +639,7 @@ describe('how a head joins the fleet', () => {
     const markup = renderToStaticMarkup(React.createElement(AddHeadLine));
     expect(ADD_COMMAND).toBe('splice add');
     expect(markup).toContain(`>${ADD_COMMAND}<`);
-    expect(markup).toContain('>copy<');
+    expect(markup).toContain('>Copy<');
     expect(markup).not.toContain('/api/');
   });
 

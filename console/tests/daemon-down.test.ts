@@ -35,7 +35,7 @@ const { healthOf } = await import('../src/widgets/rule');
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
 
-const DOWN = 'splice is not answering';
+const DOWN = 'Splice is not answering.';
 /** What a Figure prints for a stale basis: the word in its own basis span. */
 const STALE_MARK = '<span class="myx-fig-basis">Stale</span>';
 
@@ -100,15 +100,15 @@ describe('the fault marks held rows stale', () => {
   test('with the time of the last good read, the fault prints its age on the stale basis', () => {
     const out = render(h(Fault, { message: DOWN, lastRead: Date.now() - 42_000 }));
     expect(out).toContain(DOWN);
-    expect(out).toContain('last read');
+    expect(out).toContain('>Last read<');
     expect(out).toContain('42s ago');
     expect(out).toContain(STALE_MARK);
-    expect(out).toContain(`aria-label="${DOWN}, last read 42s ago, stale"`);
+    expect(out).toContain(`aria-label="${DOWN}, Last read 42s ago, stale"`);
   });
 
   test('with nothing held, the fault says only what failed', () => {
     const out = render(h(Fault, { message: DOWN }));
-    expect(out).not.toContain('last read');
+    expect(out).not.toContain('Last read');
     expect(out).not.toContain(STALE_MARK);
   });
 });

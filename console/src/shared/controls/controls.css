@@ -67,37 +67,40 @@
 .myx-strip.myx-blank-strip { width: auto; }
 .myx-blank-strip .myx-sfield { flex: 1 1 auto; width: auto; }
 
-/* ---------- fault ---------- */
-.myx-fault { display: flex; }
-.myx-fault .myx-strip {
+/* ---------- fault: one line, a danger mark and the daemon's words ---------- */
+.myx-fault {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--danger-soft);
+  border: var(--hair) solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius-2);
+  color: var(--fg);
+  font-size: var(--text-2);
+}
+.myx-fault-icon { flex: none; margin-block-start: var(--space-1); font-size: var(--text-4); color: var(--danger); }
+.myx-fault-text {
   flex: 1 1 auto;
   min-width: 0;
-  padding: var(--space-4) var(--space-5);
-  background: var(--danger-soft);
-  color: var(--fg);
-  border: var(--hair) solid var(--danger);
-  border-radius: var(--radius-3);
-  box-shadow: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-5);
 }
-.myx-fault .myx-strip > .myx-edge { flex: none; color: var(--danger); background: none; padding: 0; }
-.myx-fault-field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .myx-fault-message {
-  font-size: var(--text-3);
   line-height: var(--leading);
   color: var(--fg);
   white-space: normal;
   overflow-wrap: anywhere;
 }
 .myx-fault-held {
-  display: flex;
+  display: inline-flex;
   align-items: baseline;
   gap: var(--space-2);
-  font-size: var(--text-2);
   color: var(--fg-muted);
 }
+.myx-fault > .myx-key { flex: none; }
 
 /* ---------- choice ---------- */
 .myx-choice { display: inline-flex; flex-direction: column; gap: var(--space-2); align-items: stretch; }

@@ -128,9 +128,10 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: re
   if (edges === null) return null;
   if (edges.edges.length === 0) return <Empty text={S.noHandoffs} />;
   const columns: Column<Edge>[] = [
-    { key: 'way', label: S.way, width: '16%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
-    { key: 'peer', label: S.peer, width: '34%', primary: true, cell: (edge) => peerLabel(rows, edge) },
-    { key: 'address', label: S.address, width: '32%', mono: true, cell: (edge) => peerAddressOf(rows, edge) },
+    { key: 'way', label: S.way, width: '24%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
+    { key: 'peer', label: S.peer, width: '28%', primary: true, cell: (edge) => peerLabel(rows, edge) },
+    // The address is what a peer is reached at: read whole, so it wraps in a narrow panel.
+    { key: 'address', label: S.address, width: '30%', mono: true, wrap: true, cell: (edge) => peerAddressOf(rows, edge) },
     { key: 'at', label: S.at, width: '18%', align: 'end', mono: true, cell: (edge) => timeAgo(edge.at) },
   ];
   return (
@@ -327,7 +328,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
           />
           {selection.kind === 'timeline' ? (
             <p className="myx-sx-window">
-              {selection.window.hours}h {U.window}, {idleBuckets} {U.idle}
+              {selection.window.hours}{U.hours} {U.window}, {idleBuckets} {U.idle}
             </p>
           ) : null}
         </div>

@@ -6,13 +6,19 @@
 // opens the console with it in the address's fragment (takeLaunchKey below), so
 // the operator never pastes it; the gate's paste is the fallback.
 
+import { H } from './strings';
+
 const KEY_STORAGE = 'myx-mgmt-key';
 
 export class MgmtError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** The daemon's whole error envelope, when it sent one: an entity reads a structured field of its
+   *  own route's refusal (a transcript's `searched` directories) rather than matching the sentence. */
+  readonly body: unknown;
+  constructor(status: number, message: string, body: unknown = null) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -93,7 +99,7 @@ function errorMessage(body: unknown, status: number): string {
  *  one per engine) name the transport and not the fact, and every page printed them verbatim
  *  (console walkthrough, 2026-09-24). Mapped here, once, so no store ever holds them; status 0 is
  *  the response that never came. */
-const NOT_ANSWERING = 'splice is not answering';
+const NOT_ANSWERING = H.notAnswering;
 
 /** What an HTTP header value may hold here: printable ASCII, no space. */
 const HEADER_SAFE = /^[\x21-\x7e]*$/;
@@ -133,7 +139,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const body = (await res.json().catch(() => null)) as T | ErrorBody | null;
   if (!res.ok) {
-    throw new MgmtError(res.status, errorMessage(body, res.status));
+    throw new MgmtError(res.status, errorMessage(body, res.status), body);
   }
   return body as T;
 }

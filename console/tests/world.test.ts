@@ -120,9 +120,8 @@ const DELETION_LIST = [
   // glob matches every directory and the single-file build inlines every chunk. An entry naming a
   // path that is gone is a denominator that lies about what it excludes, so the three come out.
   // M3-04 deleted widgets/head-plate, widgets/fleet-banner, features/edit-config and
-  // features/refresh-auth, so their four entries came out by the same rule. unlock-mgmt stays:
-  // it is live and still renders the old Field and Well.
-  'src/features/unlock-mgmt',
+  // features/refresh-auth, so their four entries came out by the same rule. unlock-mgmt came out
+  // when the key gate moved onto the controls (2026-09-25): it renders no old Field or Well.
   'src/shared/tokens.css', 'src/shared/fonts.css',
 ];
 

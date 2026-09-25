@@ -12,7 +12,7 @@ import { MagnifyingGlassIcon } from '@phosphor-icons/react/dist/csr/MagnifyingGl
 import { MoonIcon } from '@phosphor-icons/react/dist/csr/Moon';
 import { SunIcon } from '@phosphor-icons/react/dist/csr/Sun';
 import { cx } from '@shared/lib';
-import { S } from './strings';
+import { S, U } from './strings';
 
 /** The product's name as its mark: a brand, set lowercase on purpose, so it is not copy. */
 const WORDMARK = 'splice';
@@ -77,7 +77,7 @@ export function Rail({ active, groups, theme, onTheme, onJump }: {
         <button type="button" className="myx-side-jump" onClick={onJump}>
           <MagnifyingGlassIcon className="myx-side-icon" aria-hidden="true" />
           <span className="myx-side-jump-word">{S.jump}</span>
-          <kbd className="myx-side-kbd">⌘K</kbd>
+          <kbd className="myx-side-kbd">{U.jumpKey}</kbd>
         </button>
       </div>
 

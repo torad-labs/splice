@@ -116,59 +116,6 @@ button:not(:disabled):active { transform: scale(.97); }
 }
 
 .myx-modal-actions { display: flex; justify-content: end; gap: var(--space-3); }
-.myx-unlock-form { display: grid; gap: var(--space-4); }
-
-.myx-modal .myx-btn {
-  padding: var(--space-2) var(--space-5);
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: 0;
-  border-radius: var(--radius-2);
-  font: inherit;
-  font-size: var(--text-2);
-  font-weight: 500;
-  cursor: pointer;
-}
-.myx-modal .myx-btn:hover { background: var(--accent-hover); }
-.myx-modal .myx-btn[disabled] { background: var(--bg-active); color: var(--fg-subtle); cursor: not-allowed; }
-
-.myx-unlock-hint {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  min-width: 0;
-  color: var(--fg-muted);
-  font-size: var(--text-2);
-}
-.myx-modal .myx-well {
-  min-width: 0;
-  padding: var(--space-1) var(--space-3);
-  background: var(--bg-active);
-  color: var(--fg);
-  border: 0;
-  border-radius: var(--radius-1);
-  font-family: var(--font-mono);
-  font-size: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.myx-modal .myx-field { display: grid; gap: var(--space-2); }
-.myx-modal .myx-field-label {
-  font-size: var(--text-2);
-  font-weight: 500;
-  color: var(--fg-muted);
-}
-.myx-modal .myx-field input {
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg);
-  color: var(--fg);
-  border: var(--hair) solid var(--line-strong);
-  border-radius: var(--radius-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-3);
-}
 
 /* ---------- phone ----------
    Below 720 the sidebar becomes a row of pages above the status strip, and the page takes the

@@ -145,7 +145,7 @@ describe('exclusion', () => {
   });
 
   test('an exclusion with no reason still says something rather than nothing', () => {
-    expect(exclusionText(account({ available: false }))).toBe('excluded by the pool');
+    expect(exclusionText(account({ available: false }))).toBe('Excluded by the pool, with no reason given.');
   });
 });
 

@@ -2299,3 +2299,5 @@ console/tests/compaction.test.ts	56e6d17a9efc4351b1c5cab6526df17b813d4aea55fb9ce
 console/src/shared/coverage/copy-scan.ts	e8bbbe602aab65a87409cca3b9156b5cd33e0bcb90838a17c1acb32f9b867355	created		the copy wall bare-copy scanner: JSX text and sentence literals outside a copy module (voice ruling, 2026-09-25)
 console/tests/fixtures/walls/bad-copy.tsx	2391d41ac12241d35dd881cf556b98ac2584a6026e12ebb5d080be39b060b12d	created		planted bare copy the copy wall must find, and the forms it must not
 console/src/shared/ui/strings.ts	554a17ed7aedf63be2332f1caa3ca61c0dc3a35edf0d82c2e7ffc9ed619cf0ee	created		the kit words: the empty state info mark (voice ruling, 2026-09-25)
+console/src/pages/mcp/fixtures/mcp.ts	edef582150745f32cac619c0e6eea790f580ae405460c04a4e596c8b4f920295	created		the MCP page's sample host for captures, DEV-only behind ?fixture=mcp, with the planner's own reasons (console redesign, 2026-09-25)
+console/tests/mcp.test.ts	f5b0615d3fc7051edcfa3da7fe44bc3592240b701faef5c9b566cd4dba4271f1	created		the MCP page on the kit: servers by state, hosted against the cap, absences never zeros, limits from config, no restart control

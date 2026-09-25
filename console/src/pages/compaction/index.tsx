@@ -16,14 +16,14 @@ import { startCompactPolling, startInstructionsPolling, useCompact, useInstructi
 import type { InstructionRule, InstructionsState } from '@entities/compact-stats';
 import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { Blank, Fault } from '@shared/controls';
-import { ABSENT, fmtInt, fmtMs, fmtShare, timeAgo } from '@shared/lib';
+import { ABSENT, fmtInt, fmtMs, fmtShare, ratio, timeAgo } from '@shared/lib';
 import {
   Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Section, Sparkline, StackedBar, Stat, StatRow,
 } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import { dispositions } from './coverage';
 import {
-  failedOf, headRows, medianOf, outcomeCounts, outcomeParts, outcomeRows, outcomeText, ratio, seriesOf, shareText, stateOf, TONE,
+  failedOf, headRows, medianOf, outcomeCounts, outcomeParts, outcomeRows, outcomeText, seriesOf, shareText, stateOf, TONE,
 } from './model';
 import type { HeadOutcomes } from './model';
 import { H, S, U } from './strings';

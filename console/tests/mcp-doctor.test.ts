@@ -15,8 +15,6 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdict } from '../src/entities/doctor';
 import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
-import { MCP_HOST_KNOBS, serverRows, upText } from '../src/entities/mcp';
-import type { McpPayload } from '../src/entities/mcp';
 import { budgetFor, budgetText, NO_BUDGET } from '../src/entities/budget';
 import { parseUsd } from '../src/features/budgets';
 import { canTest, desktopText, webhookText } from '../src/entities/alert';
@@ -35,7 +33,6 @@ import {
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
 import type { PlaygroundState } from '../src/pages/doctor/model';
-import { EMPTIES as MCP_EMPTIES, RESPAWN_NOTE, arrangeServers, hostLimits, stateEdge, stateLabel } from '../src/pages/mcp/model';
 import { dispositions as mcpDispositions } from '../src/pages/mcp/coverage';
 import { dispositions as doctorDispositions } from '../src/pages/doctor/coverage';
 import { Empty } from '../src/shared/ui';
@@ -329,65 +326,6 @@ describe('pending routes render an empty naming their row', () => {
   test('the restart and the playground are controls now, not empties', () => {
     expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('restart');
     expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('playground');
-  });
-
-  test('where a restart control would stand, the page says what the host does on its own', () => {
-    // There is no restart route (/mcp/{name} is the JSON-RPC transport) and no CLI command restarts
-    // one server, so the old `restart not built / no route; CLI only` sent the reader nowhere.
-    // HostedServer.spawn respawns on the next call and backs off 5-60 s in a crash loop.
-    expect(RESPAWN_NOTE).toContain('starts again on its next call');
-    expect(RESPAWN_NOTE).not.toContain('CLI');
-  });
-
-  test('the hosting-off and no-servers empties say how to fill them, never a route', () => {
-    expect(render(h(Empty, MCP_EMPTIES.hostingOff))).toContain('mcp_hosting = true under [daemon]');
-    for (const empty of Object.values(MCP_EMPTIES)) expect(empty.source).not.toContain('/api/');
-  });
-});
-
-describe('the mcp host', () => {
-  const payload: McpPayload = {
-    hosting: true,
-    servers: {
-      zebra: { eligible: true, hosted: true, pid: 42, sessions: 2, session_ids: ['a', 'b'], streams: 3, started_at: 1000, last_activity: 2000, restarts: 1 },
-      alpha: { eligible: true, hosted: false, sessions: 0, session_ids: [], streams: 0, restarts: 0 },
-      moot: { eligible: false, reason: 'excluded by mcp_hosting_exclude' },
-    },
-  };
-
-  test('the three states are told apart, and idle is not a failure', () => {
-    const states = serverRows(payload).map((row) => [row.name, row.state]);
-    expect(states).toEqual([['alpha', 'idle'], ['moot', 'ineligible'], ['zebra', 'hosted']]);
-    // `unused` and not `not started`: the edge prints this word inside the contract's 6ch budget
-    // (CONTRACTS.md section 2, m1 design review B10).
-    expect(stateLabel('idle')).toBe('unused');
-  });
-
-  test('an ineligible server is grey, not red: a decision is not a fault', () => {
-    // and its word says clients reach it themselves, not that something was refused
-    expect(stateLabel('ineligible')).toBe('direct');
-    expect(stateEdge('ineligible')).toBe('grey');
-    expect(stateEdge('hosted')).toBe('green');
-  });
-
-  test('rows are ordered by name, so the rack does not reshuffle between polls', () => {
-    expect(serverRows(payload).map((row) => row.name)).toEqual(['alpha', 'moot', 'zebra']);
-  });
-
-  test('hosted first puts the loaded servers above the waiting ones', () => {
-    const rows = arrangeServers(payload, { group: null, sort: { field: 'state', dir: 'desc' } })[0]?.rows;
-    expect(rows?.map((row) => row.name)).toEqual(['zebra', 'alpha', 'moot']);
-  });
-
-  test('uptime is null for a server that never started, never a zero', () => {
-    expect(upText(undefined, 5000)).toBeNull();
-    expect(upText(1000, 4000)).toBe('up 3.0s');
-  });
-
-  test('the four host knobs are read from config, and a knob the daemon lacks has no value', () => {
-    const limits = hostLimits([]);
-    expect(limits.map((limit) => limit.key)).toEqual([...MCP_HOST_KNOBS]);
-    expect(limits.every((limit) => limit.knob === null)).toBe(true);
   });
 });
 

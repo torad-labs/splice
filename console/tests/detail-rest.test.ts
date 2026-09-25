@@ -126,6 +126,9 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
   // inspection -- it guards only if the assignment happens to precede the Object.keys() that
   // reads it -- and a guarded list that can silently lose a member is the failure this file
   // exists to prevent. Entry order in a literal cannot be reordered by accident.
+  mcp: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`open === null ? null :` gate, and the host limits it carried at rest moved into the main '
+    + 'column as their own section. It was POPULATED before, dead region 7.8%.',
   compaction: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind '
     + 'an `open === null ? null :` gate and .myx-cp-board declares one track until -open adds the '
     + 'second. It was the compact-feed widget\'s .myx-cfeed collapsed track before (M1-117).',
@@ -149,8 +152,6 @@ export const POPULATED: Record<string, string> = {
   doctor: 'its column carries the version strip, the claude-code version, the attention count, '
     + 'three empties naming pending V4 rows and the fix list at rest; only the opened-check '
     + 'section is conditional, and it already is. Dead region 10.6%, below the comp\'s own 11.2%.',
-  mcp: 'its column carries HostLimits at rest -- four knob cards of real content -- after the '
-    + 'opened-server branch. Dead region 7.8%, the lowest of the nine.',
 };
 
 /** Carries the defect, but the file belongs to another live row or to no row at all. */

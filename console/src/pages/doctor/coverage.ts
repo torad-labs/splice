@@ -18,6 +18,8 @@ export const dispositions: readonly Disposition[] = [
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
   { kind: 'verb', name: 'doctor', disposition: 'read-only' },
   { kind: 'verb', name: 'version', disposition: 'read-only' },
+  // install --all is the Fix on every wrapper row it relinks: POST /api/doctor/fix/install_all (#275).
+  { kind: 'verb', name: 'install', disposition: 'pending', where: 'V4-220' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */

@@ -123,7 +123,6 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Edit a knob
 - Edit a head's topology
 - Wrap or unwrap the Claude head
-- Link or unlink a head's command (V4-220)
 
 ## teams
 

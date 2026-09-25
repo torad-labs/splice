@@ -147,8 +147,8 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'verb', name: 'setup', disposition: 'excluded', reason: 'the first-run wizard that installs and starts the daemon this console runs on' },
   { kind: 'verb', name: 'dashboard', disposition: 'excluded', reason: 'opens this console' },
   { kind: 'verb', name: 'shim-version', disposition: 'excluded', reason: 'the client shim\'s build stamp for the installer\'s own check; doctor shows the versions an operator reads' },
-  { kind: 'verb', name: 'install', disposition: 'pending', where: 'V4-220' },
-  { kind: 'verb', name: 'uninstall', disposition: 'pending', where: 'V4-220' },
+  // splice-lead, 2026-09-25: install is Doctor's (its Fix runs install --all); uninstall stays CLI-only.
+  { kind: 'verb', name: 'uninstall', disposition: 'excluded', reason: 'removes the daemon this console runs inside, so no console action could finish it or report that it did' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
@@ -159,6 +159,5 @@ export const job: PageJob = {
     { name: 'Edit a knob' },
     { name: 'Edit a head\'s topology' },
     { name: 'Wrap or unwrap the Claude head' },
-    { name: 'Link or unlink a head\'s command', row: 'V4-220' },
   ],
 };

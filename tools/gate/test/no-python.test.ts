@@ -17,7 +17,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ALLOW, WallError, burndown, wall } from "../src/lib/no-python.ts";
+import { ALLOW, WallError, burndown, renamedSince, renamesComplete, wall } from "../src/lib/no-python.ts";
 import { layout } from "../src/lib/repo.ts";
 
 // ─── the wall ──────────────────────────────────────────────────────────────────────────────────
@@ -72,6 +72,9 @@ const commit = (root: string, msg = "base") => {
   git(root, "add", "-A");
   git(root, "commit", "-qm", msg);
 };
+/** A doc that names python, long enough that one added line leaves it an INEXACT rename. */
+const steps = (name: string) =>
+  `# ${name}\n\n1. stop the head\n2. the old python3 ${name} step\n3. read its report\n4. start the head\n`;
 
 describe("the no-python wall", () => {
   arm("recorded set matches", "green", (r) => {
@@ -322,6 +325,31 @@ describe("the no-python wall", () => {
     commit(r, "consolidation moves the doc");
   }, (r) => git(r, "diff", "--name-status", "-M", "HEAD~1", "HEAD").out.includes("R100\tdocs/plan.md\tplan.md"));
 
+  // V4-215: GIT'S RENAME DETECTION IS BOUNDED. Past diff.renameLimit candidates it skips the inexact
+  // pass and says so only on stderr: feat/console-redesign's diff since birth needed 1191 against the
+  // default 1000, and five invokers moved-and-edited by the restructure were charged as growth. A
+  // limit of 1 stands in for the thousand files; the setup proves plain -M really misses both.
+  arm("invokers moved AND edited, past git's rename limit", "green", (r) => {
+    git(r, "config", "diff.renameLimit", "1");
+    w(r, "a.py", "x\n");
+    w(r, "docs/doctor.md", steps("doctor"));
+    w(r, "docs/replay.md", steps("replay"));
+    w(r, ALLOW, list(["a.py"], ["docs/doctor.md", "docs/replay.md"]));
+    commit(r, "birth");
+    mkdirSync(join(r, "guide"));
+    git(r, "mv", "docs/doctor.md", "guide/checkup.md");
+    git(r, "mv", "docs/replay.md", "guide/rerun.md");
+    w(r, "guide/checkup.md", `${steps("doctor")}a line the move added\n`);
+    w(r, "guide/rerun.md", `${steps("replay")}a line the move added\n`);
+    w(r, ALLOW, list(["a.py"], ["guide/checkup.md", "guide/rerun.md"]));
+    commit(r, "the restructure moves and edits both");
+  }, (r) => {
+    const bounded = git(r, "diff", "--name-status", "-M", "--diff-filter=R", "HEAD~1");
+    const unbounded = git(r, "diff", "--name-status", "-M", "-l0", "--diff-filter=R", "HEAD~1");
+    return bounded.out === "" && bounded.err.includes("rename detection was skipped") &&
+      unbounded.out.split("\n").filter((line) => line.startsWith("R")).length === 2;
+  });
+
   arm("a .py RENAMED by git since birth", "red", (r) => {
     w(r, "a.py", "x\n");
     w(r, ALLOW, list(["a.py"]));
@@ -451,6 +479,58 @@ describe("the no-python wall", () => {
     w(r, ALLOW, pending(["tool.py"], [], [entry("tool.py", ["caller.ts"])]));
     commit(r);
   }, (r) => !readFileSync(join(r, "caller.ts"), "utf8").includes("python"));
+});
+
+// ─── the rename census (V4-215) ────────────────────────────────────────────────────────────────
+// renamedSince is what excuses a moved invoker. A census that could not run, or that git cut short,
+// must say so: an empty map there is indistinguishable from "nothing moved", and charges every
+// moved invoker as growth.
+
+describe("the rename census", () => {
+  test("git failing (a rev it cannot resolve) throws with git's own words, never an empty map", () => {
+    const root = mkdtempSync(join(tmpdir(), "nopy-"));
+    try {
+      git(root, "init", "-q");
+      git(root, "config", "user.email", "t@t");
+      git(root, "config", "user.name", "t");
+      w(root, "a.md", "x\n");
+      commit(root);
+      expect(git(root, "rev-parse", "--verify", "no-such-rev").rc, "SETUP: the rev must not resolve").not.toBe(0);
+      expect(() => renamedSince(root, "no-such-rev")).toThrow(/no-such-rev/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // -l0 means the warning should never appear, so the check is proven on git's REAL words: a run
+  // WITHOUT -l0 past the limit, captured here rather than quoted, so a reworded git fails this test.
+  test("git's cut-short warning, read live from a bounded run, is refused; a clean run is not", () => {
+    const root = mkdtempSync(join(tmpdir(), "nopy-"));
+    try {
+      git(root, "init", "-q");
+      git(root, "config", "user.email", "t@t");
+      git(root, "config", "user.name", "t");
+      git(root, "config", "diff.renameLimit", "1");
+      w(root, "docs/doctor.md", steps("doctor"));
+      w(root, "docs/replay.md", steps("replay"));
+      commit(root, "birth");
+      mkdirSync(join(root, "guide"));
+      git(root, "mv", "docs/doctor.md", "guide/checkup.md");
+      git(root, "mv", "docs/replay.md", "guide/rerun.md");
+      w(root, "guide/checkup.md", `${steps("doctor")}a line the move added\n`);
+      w(root, "guide/rerun.md", `${steps("replay")}a line the move added\n`);
+      const bounded = spawnSync("git", ["-C", root, "diff", "--name-status", "-M", "--diff-filter=R", "HEAD"], {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+      });
+      expect(bounded.stderr, "SETUP: git must warn that it cut the pass short").toContain("rename detection was skipped");
+      expect(() => renamesComplete(bounded.stderr, "HEAD")).toThrow(/rename detection was skipped/);
+      expect(() => renamesComplete("", "HEAD")).not.toThrow();
+      expect(renamedSince(root, "HEAD")).toEqual(new Map([["guide/checkup.md", "docs/doctor.md"], ["guide/rerun.md", "docs/replay.md"]]));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 // ─── the guard ─────────────────────────────────────────────────────────────────────────────────

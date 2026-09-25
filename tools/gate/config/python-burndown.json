@@ -37,8 +37,7 @@
     "features/turns/src/test/kotlin/splice/head/ActivityLabelTest.kt",
     "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
     "integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailurePolicyRefusalTest.kt",
-    "quality/rules/kotlin/kt-tests-no-wall-clock.yml",
-    "console/.impeccable/review/material-spec.md"
+    "quality/rules/kotlin/kt-tests-no-wall-clock.yml"
   ],
   "pendingTools": []
 }

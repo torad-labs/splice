@@ -328,7 +328,7 @@ if (isMain && (url === undefined || ARGS.includes('--help'))) {
 }
 
 const wanted = flag('theme', 'both') === 'both' ? THEMES : [flag('theme', 'dark')];
-const outDir = resolve(ROOT, flag('out', 'console/.impeccable/review/theme'));
+const outDir = resolve(ROOT, flag('out', 'console/.review/theme'));
 const width = Number(flag('width', '1536'));
 const height = Number(flag('height', '1024'));
 

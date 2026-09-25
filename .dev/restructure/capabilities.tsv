@@ -425,12 +425,12 @@ client/src/test/kotlin/splice/client/wrap/ClaudeConfigMaterializerWrapTest.kt	93
 client/src/test/kotlin/splice/client/wrap/ProjectsLinkTest.kt	54ff8581967dc7ff755fc3b497c96cd9b572bcacc22fd594bdf572017171d6ff	relocate	integrations/claude-code/src/test/kotlin/splice/client/wrap/ProjectsLinkTest.kt	Whole Claude Code filesystem/login/MCP/resume adapter visibility island
 client/src/test/kotlin/splice/client/wrap/WrapStateStoreTest.kt	2e1ee9780567589f1a181ee53e263473ba110f34ec37ce792d93d7424265c6b7	relocate	integrations/claude-code/src/test/kotlin/splice/client/wrap/WrapStateStoreTest.kt	Whole Claude Code filesystem/login/MCP/resume adapter visibility island
 client/src/test/kotlin/splice/client/wrap/WrappedHeadTest.kt	4328a63debc2028e02b207ebaee1b6ed36914b9e820ac451753a6684a331a834	relocate	integrations/claude-code/src/test/kotlin/splice/client/wrap/WrappedHeadTest.kt	Whole Claude Code filesystem/login/MCP/resume adapter visibility island
-console/.impeccable/.gitignore	0436a155f0133f57427386ab2bce4da88fde09fa02aa77d0c2e439faf6114bbb	retain	console/.impeccable/.gitignore	Independent frontend application
-console/.impeccable/build/scaffold/layout.css	96e92a1fb53f2ea1c0b754414f572dc2016a83e003a48ccebd8e360f6c170dfa	retain	console/.impeccable/build/scaffold/layout.css	Independent frontend application
-console/.impeccable/build/spec.json	d85db7fef25fce63d9cafdfa5048cb5f031ee8c437588b55eb977b3cebcd8c98	retain	console/.impeccable/build/spec.json	Independent frontend application
-console/.impeccable/config.json	47c9348681feca8bbb886588ee251f5e902b6a3222ba304dc99e6e59467bf562	retain	console/.impeccable/config.json	Independent frontend application
-console/.impeccable/design.json	c42502eff660e8da57e5000fd6c13ed3cd810c70d5fb82122fae11cb675e4c70	retain	console/.impeccable/design.json	Independent frontend application
-console/.impeccable/review/material-spec.md	4564edd19ae4cdb6f124e4f9eb4acb09c8ad46502dd5175f002438728b24cd2b	retain	console/.impeccable/review/material-spec.md	Independent frontend application
+console/.impeccable/.gitignore	0436a155f0133f57427386ab2bce4da88fde09fa02aa77d0c2e439faf6114bbb	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
+console/.impeccable/build/scaffold/layout.css	96e92a1fb53f2ea1c0b754414f572dc2016a83e003a48ccebd8e360f6c170dfa	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
+console/.impeccable/build/spec.json	d85db7fef25fce63d9cafdfa5048cb5f031ee8c437588b55eb977b3cebcd8c98	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
+console/.impeccable/config.json	47c9348681feca8bbb886588ee251f5e902b6a3222ba304dc99e6e59467bf562	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
+console/.impeccable/design.json	c42502eff660e8da57e5000fd6c13ed3cd810c70d5fb82122fae11cb675e4c70	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
+console/.impeccable/review/material-spec.md	4564edd19ae4cdb6f124e4f9eb4acb09c8ad46502dd5175f002438728b24cd2b	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
 console/build.gradle.kts	5a93bcf449819a239d8b0e24eb0fdffccf437a431e32ded484685bdcf05f571e	retain	console/build.gradle.kts	Independent frontend application
 console/eslint.config.mjs	e66263bb9ce815ed193c160614f3ec639df34478cc41e057eeec5672899a87bb	retain	console/eslint.config.mjs	Independent frontend application
 console/index.html	3f9ece6dcab54ee9e73852b87ef97d181ca6e3e071324e19c0575aa7cb7e75f4	retain	console/index.html	Independent frontend application
@@ -784,11 +784,11 @@ console/tools/fixtures/comp/team-board-a.png	0456d4434e3e1510e133f87cc1f5b54ab99
 console/tools/fixtures/comp/team-board-a.png.json	59acb1e2a3deff29cc458c95260d114c7e18277d59824436d201688d304d3f3f	retain	console/tools/fixtures/comp/team-board-a.png.json	Independent frontend application
 console/tools/index.ts	e7b60cc623ef47586f82ce72c7219a4910c6d9149cdbf71aea8b8e64c48d05c7	retain	console/tools/index.ts	Independent frontend application
 console/tools/src/commands/capture.ts	b52fe029e1340b6d2d3e5279ddf793a0bfd1798bf79e8a67bb594b1ec1d48ed4	retain	console/tools/src/commands/capture.ts	Independent frontend application
-console/tools/src/commands/comp.ts	87aefdef6f2058f53dfa2a31555adb700cd33e045cb3da97cd17b50268ed4f69	retain	console/tools/src/commands/comp.ts	Independent frontend application
+console/tools/src/commands/comp.ts	87aefdef6f2058f53dfa2a31555adb700cd33e045cb3da97cd17b50268ed4f69	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
 console/tools/src/commands/exit.ts	edd6dc0719bf52cec9b418772339bb6d1b5286b7061b7084763355c4baec1ddc	retain	console/tools/src/commands/exit.ts	Independent frontend application
-console/tools/src/commands/gate.ts	d43f3d234474ea95a8e48131248f92972b6ec4ffc009b7c0090721e82181d5cc	retain	console/tools/src/commands/gate.ts	Independent frontend application
+console/tools/src/commands/gate.ts	d43f3d234474ea95a8e48131248f92972b6ec4ffc009b7c0090721e82181d5cc	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
 console/tools/src/commands/leak.ts	111b4e7a6ef617d0f1c3acbe621b3ff2cbeac977073ea4efc6a764898a7497c5	retain	console/tools/src/commands/leak.ts	Independent frontend application
-console/tools/src/commands/look.ts	14bc63823c442039edada83d7b7877abc7989cec5614e72f1f87e359d35bfc44	retain	console/tools/src/commands/look.ts	Independent frontend application
+console/tools/src/commands/look.ts	14bc63823c442039edada83d7b7877abc7989cec5614e72f1f87e359d35bfc44	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
 console/tools/src/commands/scale.ts	4fae0f2ad970f0b7e05322ffc6c8587977c6020f711b68e9eea217d0a2fc000b	retain	console/tools/src/commands/scale.ts	Independent frontend application
 console/tools/src/commands/scan.ts	94a530c6e0bdeff3b8bb33fa5f6b65ea27474f324bd40a12b76022ab39594e68	retain	console/tools/src/commands/scan.ts	Independent frontend application
 console/tools/src/commands/snapshot.ts	2d65a5153992929e9ca90c55b518fd2b3bcdc0f6fc087751b8c8fe782ed0701d	retain	console/tools/src/commands/snapshot.ts	Independent frontend application
@@ -798,7 +798,7 @@ console/tools/src/lib/fixtures.ts	690cb833e3b5e13dc3438f1a9de2a35ae9219ac13a5fb9
 console/tools/src/lib/png.ts	bfdafb5925567fc035425bda7c692643903ff4bee04468d4cc930cf4eebd130a	retain	console/tools/src/lib/png.ts	Independent frontend application
 console/tools/src/lib/proc.ts	014b6df4dc8ed09f866e2daa08d7160a38c406ab7ef567b382e42596812c0c5f	retain	console/tools/src/lib/proc.ts	Independent frontend application
 console/tools/src/lib/theme.ts	d5b3ca9e6c4d311ccd4e5087bd3c9ac7ef2cb4461f240186de52983fb03ca429	retain	console/tools/src/lib/theme.ts	Independent frontend application
-console/tools/src/lib/typography.ts	845c3df922d320fdd86f7622ec2fe0cea0dc3e37083827e303ebca489b9650eb	retain	console/tools/src/lib/typography.ts	Independent frontend application
+console/tools/src/lib/typography.ts	845c3df922d320fdd86f7622ec2fe0cea0dc3e37083827e303ebca489b9650eb	retire		retired by the console redesign (2026-09-25): the comp of record and the tools that measured against it (docs/design/DESIGN.md section 12); the frames are held by the console e2e
 console/tools/src/lib/verbs.ts	53c6850c21f2aded246be3ac440c3149a9bb502c3dfe945a148b3b2a72dc3f4b	retain	console/tools/src/lib/verbs.ts	Independent frontend application
 console/tsconfig.json	fc987e987f63fd7597cb16075087366e249f52a10fc82719d9cb0501c89b64d4	retain	console/tsconfig.json	Independent frontend application
 console/vite.config.ts	5026e26ee69e254b570930e659e08bc46bd3157e47e10360e0436859c4cee3c8	retain	console/vite.config.ts	Independent frontend application
@@ -1282,7 +1282,7 @@ docs/assets/doctor.svg	a5ee70936223193b7b15fb6ba84a161ef3db1f165374b0644e651c371
 docs/design/DESIGN.md	208a84373d4405022c5e7c16fc40480b42fc278b180cc3dd5a608a115bf3a405	retain	docs/design/DESIGN.md	Project documentation
 docs/design/PRODUCT.md	1bfed47a8fed62997e5d1804f7d3996921c559908ad51df88aa0cb551df5688b	retain	docs/design/PRODUCT.md	Project documentation
 docs/design/look-gate.md	1d07219506d534c451dc0a77276777f1fa49509ca4f5cd2e2d95f5d9732b5fd9	retain	docs/design/look-gate.md	Project documentation
-docs/design/type-spec.md	5beecef07ab0351651959264c6b8f55163a22ac8c4983dc3ce5ec2b8ba41428c	retain	docs/design/type-spec.md	Project documentation
+docs/design/type-spec.md	5beecef07ab0351651959264c6b8f55163a22ac8c4983dc3ce5ec2b8ba41428c	retire		retired by the console redesign (2026-09-25): the strip-bay type spec; docs/design/DESIGN.md section 8 carries the bounded-fluid scale that replaced it
 docs/superpowers/plans/2026-08-15-head-decoupling.md	10645d336ec55cce2e118d5570efc7b2a7c0eb74864857b0ad30151296bdf190	retain	docs/superpowers/plans/2026-08-15-head-decoupling.md	Project documentation
 docs/superpowers/specs/2026-08-15-claude-head-design.md	0bc9c798002a190c21254c49021036e3479a8e3e8dfe89cb20e3738e2ab394ca	retain	docs/superpowers/specs/2026-08-15-claude-head-design.md	Project documentation
 features/heads/build.gradle.kts	7b5b0c6f335e9265ffbaea8ed31a6f85201ad8c42cdf49d35672f4133cae42e3	retain	features/heads/build.gradle.kts	Existing capability-owned source

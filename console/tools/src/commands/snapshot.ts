@@ -41,9 +41,9 @@ import { pathToFileURL } from 'node:url';
 import { show, withChrome } from '../lib/cdp.ts';
 import { themeValues } from '../lib/theme.ts';
 
-/** Where the artifacts live. Gitignored (console/.impeccable/.gitignore), because a snapshot is
- *  regenerable bytes and the page it froze may hold live daemon data. */
-export const LOOK_DIR = 'console/.impeccable/review/look';
+/** Where the artifacts live. Gitignored (/console/.review/ in the root .gitignore), because a
+ *  snapshot is regenerable bytes and the page it froze may hold live daemon data. */
+const SNAPSHOT_DIR = 'console/.review/snapshot';
 
 /** One address, one file name: `#/teams?fixture=hero` becomes `teams-hero.html`. */
 export function nameFor(url) {
@@ -173,10 +173,10 @@ if (isMain) {
   const [, , url, given, w = '1536', h = '1024', theme = 'dark'] = process.argv;
   if (url === undefined || url === '--help') {
     console.log("usage: bun console/tools snapshot '<url>' [<out.html>] [<width> <height>] [<theme>]");
-    console.log(`       default out: ${LOOK_DIR}/<address>.html`);
+    console.log(`       default out: ${SNAPSHOT_DIR}/<address>.html`);
     process.exit(url === '--help' ? 0 : 2);
   }
-  const out = resolve(given ?? `${LOOK_DIR}/${nameFor(url)}`);
+  const out = resolve(given ?? `${SNAPSHOT_DIR}/${nameFor(url)}`);
   const { bytes } = await snapshot(url, out, Number(w), Number(h), theme);
   console.log(`wrote ${out} (${bytes} bytes, ${statSync(out).size} on disk, ${Number(w)}x${Number(h)} ${theme})`);
 }

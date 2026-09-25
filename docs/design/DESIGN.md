@@ -395,6 +395,7 @@ buttons, inputs) keep their behaviour and take the new look.
 
 The strip-bay world is retired: paper strips, holder edges, bays, the Archivo and JetBrains faces,
 the `--root-size` viewport scalar, and the comp of record with the tools that measured against it
-(`console/.impeccable/`, `console/tools/src/commands/{comp,gate,look,typography}.ts`,
-`docs/design/type-spec.md`). The old token names stay mapped to the new roles in one marked block
-of `tokens.css` until the last page moves, and then they are deleted.
+(`console/.impeccable/`, `console/tools/src/commands/{comp,gate,look}.ts`,
+`console/tools/src/lib/typography.ts`, `docs/design/type-spec.md`), all deleted. The old token
+names stay mapped to the new roles in one marked block of `tokens.css` until the last page moves,
+and then they are deleted.

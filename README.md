@@ -47,7 +47,7 @@ Choosing a different model shouldn't mean rebuilding your coding workflow around
 - **Let different models work together.** A ChatGPT-backed session can find and message a Grok-backed session using Claude Code's own agent tools. [Shared session discovery](#heads-that-see-each-other) is enabled by default, with isolation available when you need it.
 - **Spend less time recovering long sessions.** More reliable compaction means fewer interruptions and less repeated work. If the client disconnects, an identical compaction retry can pick up the work already underway. [How recovery works](#long-session-reliability).
 - **See usage without leaving the session.** Provider-reported plan usage appears in Claude Code's status line. The [dashboard](#manage-your-sessions) brings connection status, usage warnings, configuration and logs together.
-- **Get a fix, not just an error.** [`splice doctor`](#troubleshooting) checks the installation, configuration and authentication, and prints the remedy for each failing check. Release installs verify checksums and build provenance before going live.
+- **Get a fix, not just an error.** [`splice doctor`](#troubleshooting) checks the installation, configuration and authentication, and prints the remedy for each failing check. Release installs verify checksums before going live, and build provenance whenever the GitHub CLI is signed in.
 
 ### A workflow across models
 
@@ -66,7 +66,7 @@ Each named backend connection is called a **head**. You choose which heads to co
 
 ## Install
 
-The release installer checks your prerequisites, verifies checksums and GitHub build-provenance attestations, and finishes with `splice doctor`.
+The release installer checks your prerequisites, verifies every download against the release's checksums, and finishes with `splice doctor`. No GitHub account is needed.
 
 ### Requirements
 
@@ -81,7 +81,7 @@ are Unix programs.
 | **Node 24** | Claude Code's own runtime, and the launch shim's | [nodejs.org](https://nodejs.org) or `nvm install 24` |
 | **Claude Code** | splice wraps it — `claude` must resolve on PATH | `npm install -g @anthropic-ai/claude-code` |
 | **curl** + **bash** | the installer | preinstalled almost everywhere |
-| **GitHub CLI, authenticated** | release installs verify build-provenance attestations via the GitHub API | `gh auth login` once ([cli.github.com](https://cli.github.com)); building from a checkout does not need it |
+| **GitHub CLI** (optional) | signed in, it lets release installs and `splice upgrade` also verify each asset's build-provenance attestation | [cli.github.com](https://cli.github.com), then `gh auth login`; without it the install still verifies checksums and prints the command that checks provenance later |
 
 You don't have to pre-check any of this: `install.sh` verifies every dependency up front, prints
 the exact fix for your machine's package manager, and, on an interactive terminal, offers to
@@ -89,12 +89,13 @@ run each fix for you (always with consent). `splice doctor` re-verifies everythi
 
 ### Install a release
 
-Authenticate the GitHub CLI once so the installer can verify build provenance:
-
 ```bash
-gh auth login   # once
 curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install.sh | bash
 ```
+
+Every download is checked against the release's `sha256sums.txt`. If the GitHub CLI is installed
+and signed in, the installer also verifies each asset's build-provenance attestation; if not, it
+prints the `gh attestation verify` command that does it later.
 
 To pin one version instead of following `latest` (prereleases never become `latest`):
 
@@ -115,7 +116,7 @@ until the next successful upgrade. Config and credentials are never touched. 0.3
 <details>
 <summary>Other installation options: from source or with a coding agent</summary>
 
-**From source** (no `gh` needed):
+**From source:**
 
 ```bash
 git clone https://github.com/torad-labs/splice.git
@@ -131,8 +132,7 @@ Install splice (https://github.com/torad-labs/splice) on this machine and verify
    (`claude` on PATH). Install anything missing with this machine's package manager —
    show me each install command and ask before running it.
 2. Install from source: `git clone https://github.com/torad-labs/splice && cd splice
-   && ./install.sh` (or, if `gh auth status` shows I'm authenticated, use the release
-   one-liner from the README instead).
+   && ./install.sh` (or use the release one-liner from the README instead).
 3. Make sure ~/.local/bin is on my PATH (add it to my shell rc if not).
 4. Ask me for an OpenRouter API key (I can create one at https://openrouter.ai/keys),
    export it as OPENROUTER_API_KEY, then run `splice setup`.

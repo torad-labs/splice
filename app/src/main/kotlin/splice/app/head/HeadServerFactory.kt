@@ -11,6 +11,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
+import splice.core.config.SpliceConfig
 import splice.core.config.TurnKey
 import splice.core.prompt.SystemPromptLayers
 import splice.core.topology.ProjectConfig
@@ -21,6 +22,7 @@ import splice.head.HeadServer
 import splice.head.NoHeadEvents
 import splice.head.admission.RequestMaterializationGate
 import splice.head.compact.ShadowClassifier
+import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.wire.WireTap
@@ -54,6 +56,7 @@ internal class HeadServerFactory(
         provider: Provider,
         stores: HeadStores,
         forwardClientAuth: Boolean,
+        compactionRecordings: CompactionRecordings,
     ): HeadServer {
         val key = ctx.key
         val cfg = ctx.cfg
@@ -69,19 +72,7 @@ internal class HeadServerFactory(
                 // feature — a head may legitimately run without economics or quota, and the tests
                 // that decline them say so through ONE testFixtures builder — but a DEFAULT let a
                 // caller that simply forgot get the same head as one that chose.
-                stores = HeadDeps.HeadStores(
-                    usageStore = stores.usageStore,
-                    perfStats = stores.perfStats,
-                    economicsStore = stores.economics,
-                    compactStats = stores.compactStats,
-                    shadow = ShadowClassifier(log = log),
-                    clientWindows = stores.clientWindows,
-                    // V4-173: the tap exists only for a head whose operator named a count, read
-                    // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
-                    // every other head's bodies unkept.
-                    wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) },
-                    trace = stores.trace,
-                ),
+                stores = headStores(stores, cfg, compactionRecordings),
                 quotaBundle = HeadDeps.HeadQuota(
                     quota = stores.quota,
                     accountPool = stores.accountPool,
@@ -122,6 +113,27 @@ internal class HeadServerFactory(
             ),
         )
     }
+
+    /** The head's stores. Its own function since V4-216 added the compaction recordings, which took
+     *  [headServerFor] past detekt's method-length ceiling. */
+    private fun headStores(
+        stores: HeadStores,
+        cfg: SpliceConfig,
+        compactionRecordings: CompactionRecordings,
+    ): HeadDeps.HeadStores = HeadDeps.HeadStores(
+        usageStore = stores.usageStore,
+        perfStats = stores.perfStats,
+        economicsStore = stores.economics,
+        compactStats = stores.compactStats,
+        shadow = ShadowClassifier(log = log),
+        clientWindows = stores.clientWindows,
+        // V4-173: the tap exists only for a head whose operator named a count, read
+        // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
+        // every other head's bodies unkept.
+        wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) },
+        trace = stores.trace,
+        compactionRecordings = compactionRecordings,
+    )
 
     /** The head's shared and per-head seams. Its own function since V4-134 added the console reporter,
      *  which took [headServerFor] past detekt's method-length ceiling. */

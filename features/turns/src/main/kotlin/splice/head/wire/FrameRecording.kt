@@ -27,6 +27,9 @@ internal class FrameRecording {
     val isWhole: Boolean get() = progress.value.whole
     val size: Int get() = progress.value.frames
 
+    /** Every frame recorded so far, in order (V4-216: what a finished recording is stored as). */
+    fun frames(): List<String> = synchronized(lock) { frames.toList() }
+
     fun append(frame: String) {
         val count = synchronized(lock) {
             frames.add(frame)

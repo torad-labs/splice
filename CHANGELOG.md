@@ -300,8 +300,8 @@ origin.
   that lists its own `models`, its roster) through one rename. A composed file that does not parse
   is refused and the old one is left as it was.
 - **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
-  `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
-  an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the
+  `install.sh` does (sha256 against `sha256sums.txt`, and the GitHub build-provenance attestation
+  whenever `gh` is signed in), stages it under `~/.local/share/splice/releases/<version>/`, runs the
   candidate's own doctor, waits until every head's in-flight count on `/api/heads` is zero (or
   `--now`), repoints the live jar, restarts the user unit when one supervises this install, and
   runs doctor. The launch shim is always refreshed with the release (it is version-locked to the
@@ -546,6 +546,12 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
+- **Installing a release needs no GitHub account.** `install.sh` and `splice upgrade` used to stop
+  unless the GitHub CLI was installed and signed in. Now every asset is still checked against the
+  release's `sha256sums.txt`, and a mismatch still refuses. The build-provenance attestation is
+  verified whenever `gh` is signed in, and a failed attestation still refuses. Without a signed-in
+  `gh` the install goes ahead and prints the `gh attestation verify` command for each installed
+  file. `splice doctor` reports a missing or signed-out `gh` as information, not a warning.
   The tracker remembers at most 4096 sessions and forgets the oldest first, so a daemon that
   lives for months never grows on session ids.
   Its tests render the warning from `GATEWAY_VERSION`, so the version bump does not turn them red.

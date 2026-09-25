@@ -10,7 +10,6 @@ package splice.lifecycle.upgrade
 import splice.core.terminal.TerminalOutput
 import java.nio.file.Path
 
-private const val POLL_MS = 2_000L
 private const val MAX_WAIT_MS = 30L * 60 * 1000
 private const val NANOS_PER_MS = 1_000_000L
 private const val CONFIRM_POLLS = 60
@@ -45,7 +44,7 @@ internal class UpgradeDaemon(
     private val inflight: UpgradeInflight,
     private val restartVerb: VersionedRestart,
     private val healthVersion: DaemonVersionRead,
-    private val pollMs: Long = POLL_MS,
+    private val pollMs: Long = INFLIGHT_POLL_MS,
     private val maxWaitMs: Long = MAX_WAIT_MS,
     private val confirmPollMs: Long = CONFIRM_POLL_MS,
     /** V4-176: the unit that supervises this install, by name, from the knob layer. splice does not
@@ -72,7 +71,8 @@ internal class UpgradeDaemon(
         return idle(read)
     }
 
-    private fun idle(read: InflightRead): Boolean = read is InflightRead.NoDaemon || read == InflightRead.Count(0)
+    private fun idle(read: InflightRead): Boolean =
+        read is InflightRead.NoDaemon || (read as? InflightRead.Count)?.turns == 0
 
     private fun describe(read: InflightRead): String = when (read) {
         is InflightRead.Count -> "${read.turns} turn(s) in flight; restarting when they finish"

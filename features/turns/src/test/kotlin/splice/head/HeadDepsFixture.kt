@@ -21,6 +21,7 @@ import splice.core.model.ClientWindows
 import splice.core.util.LogSink
 import splice.head.compact.CompactStats
 import splice.head.compact.ShadowClassifier
+import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
@@ -54,6 +55,7 @@ public fun headStores(
     clientWindows = clientWindows,
     wireTap = wireTap,
     trace = trace,
+    compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions$suffix"), log = { }),
 )
 
 /** No quota, no pool and no budget: the shape a head that neither observes nor emits quota runs as. */

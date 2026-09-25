@@ -46,10 +46,11 @@ class UpgradeCommandTest {
     private var servingVersion: ((Path) -> String?)? = null
 
     /** [unitJar] is what the fake user unit's ExecStart names; null = no unit supervises this install. */
-    private fun process(gh: Int = 0, unitJar: Path? = null) = UpgradeProcess { cmd, _ ->
+    /** [ghAuth] is `gh auth status`'s exit (127 = gh not installed), [ghVerify] `gh attestation verify`'s. */
+    private fun process(ghAuth: Int = 0, ghVerify: Int = 0, unitJar: Path? = null) = UpgradeProcess { cmd, _ ->
         calls += cmd
         when (cmd[0]) {
-            "gh" -> UpgradeExit(gh, "")
+            "gh" -> UpgradeExit(if (cmd[1] == "auth") ghAuth else ghVerify, "")
             "diff" -> UpgradeExit(1, "--- release\n+++ live\n-echo stock\n+echo patched\n")
             "systemctl" -> systemctl(cmd, unitJar)
             else -> java(cmd)
@@ -82,7 +83,8 @@ class UpgradeCommandTest {
         home: Path,
         base: String,
         fetch: UpgradeFetch = JdkUpgradeFetch(),
-        gh: Int = 0,
+        ghAuth: Int = 0,
+        ghVerify: Int = 0,
         supervised: Boolean = false,
         maxWaitMs: Long = 60_000,
     ): UpgradeCommand {
@@ -106,7 +108,7 @@ class UpgradeCommandTest {
             output = out,
             env = env,
             java = "java",
-            release = UpgradeRelease(out, fetch, process(gh), "java"),
+            release = UpgradeRelease(out, fetch, process(ghAuth, ghVerify), "java"),
             wrapper = UpgradeWrapper(out, process()),
             daemon = daemon,
             layout = UpgradeLayout(env),
@@ -215,9 +217,9 @@ class UpgradeCommandTest {
         val good = Path.of(java.net.URI(release(home)))
         val fake = UpgradeFetch { url -> Files.readAllBytes(good.resolve(url.substringAfterLast('/'))) }
         val remote = "https://example.invalid/releases/download/v9.9.9"
-        val (attested, out2) = captured { command(home, remote, fetch = fake, gh = 1).upgrade(emptyList()) }
+        val (attested, out2) = captured { command(home, remote, fetch = fake, ghVerify = 1).upgrade(emptyList()) }
         assertFalse(attested)
-        assertTrue(out2.contains("gh"), out2)
+        assertTrue(out2.contains("attestation verification FAILED"), out2)
         assertEquals("old-jar", read(home, "splice.jar"))
         assertFalse(Files.isSymbolicLink(home.resolve("share/splice.jar")))
         assertFalse(Files.exists(home.resolve("share/releases/9.9.9")))
@@ -227,6 +229,47 @@ class UpgradeCommandTest {
         assertEquals(0, leftovers)
         assertEquals(0, unitRestarts + verbRestarts)
         assertIntact(intact)
+    }
+
+    /** An upgrade from an https base whose assets are the good release's, with gh in a given state. */
+    private fun remoteUpgrade(home: Path, ghAuth: Int, ghVerify: Int = 0): Pair<Boolean, String> {
+        flatInstall(home)
+        pristine(home)
+        val good = Path.of(java.net.URI(release(home)))
+        val fake = UpgradeFetch { url -> Files.readAllBytes(good.resolve(url.substringAfterLast('/'))) }
+        val remote = "https://example.invalid/releases/download/v9.9.9"
+        val upgrade = command(home, remote, fetch = fake, ghAuth = ghAuth, ghVerify = ghVerify)
+        return captured { upgrade.upgrade(emptyList()) }
+    }
+
+    private fun attestations() = calls.filter { it.take(3) == listOf("gh", "attestation", "verify") }
+
+    @Test
+    fun `with no gh a remote upgrade activates on the sha256 match and prints the later check`(@TempDir home: Path) {
+        val (ok, out) = remoteUpgrade(home, ghAuth = 127)
+        assertTrue(ok, out)
+        assertTrue(out.contains("provenance not checked (gh is not installed)"), out)
+        val jar = home.resolve("share/releases/9.9.9/splice.jar")
+        assertTrue(out.contains("gh attestation verify $jar --repo torad-labs/splice"), out)
+        assertTrue(attestations().isEmpty(), "no gh, nothing to verify with")
+        assertEquals("new-jar", read(home, "splice.jar"))
+    }
+
+    @Test
+    fun `with gh signed out a remote upgrade activates without calling attestation verify`(@TempDir home: Path) {
+        val (ok, out) = remoteUpgrade(home, ghAuth = 1)
+        assertTrue(ok, out)
+        assertTrue(out.contains("provenance not checked (gh is not signed in)"), out)
+        assertTrue(attestations().isEmpty(), "a signed-out gh cannot fetch an attestation")
+    }
+
+    @Test
+    fun `with gh signed in both assets are attested and nothing is deferred`(@TempDir home: Path) {
+        val (ok, out) = remoteUpgrade(home, ghAuth = 0)
+        assertTrue(ok, out)
+        assertEquals(2, attestations().size, "splice.jar and splice-launch")
+        assertTrue(out.contains("sha256 ok, attestation ok"), out)
+        assertFalse(out.contains("provenance"), out)
     }
 
     /** The shim is version-locked to the jar (the launch handshake), so an edited one is refreshed

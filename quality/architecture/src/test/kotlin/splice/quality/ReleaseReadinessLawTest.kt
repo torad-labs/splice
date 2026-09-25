@@ -253,7 +253,11 @@ internal object ReleaseReadiness {
         Rule("install-no-or-true") { repo ->
             repo.onlyOn(INSTALL, OR_TRUE, ALLOWED_OR_TRUE, "a swallowed failure (`|| true`)")
         },
-        Rule("install-requires-gh") { repo -> repo.contains(INSTALL, "GitHub CLI (gh) is required") },
+        // V4-217: gh is optional, so what a release install must keep is its two refusals.
+        Rule("install-refuses-bad-bytes") { repo ->
+            repo.contains(INSTALL, "sha256 verification FAILED")
+                ?: repo.contains(INSTALL, "attestation verification FAILED")
+        },
         Rule("install-attests-jar") { repo -> repo.contains(INSTALL, "verify_attestation \"\$JAR_TMP\" splice.jar") },
         Rule("install-attests-shim") { repo ->
             repo.contains(INSTALL, "verify_attestation \"\$SHIM_TMP\" splice-launch")
@@ -311,7 +315,7 @@ private const val MIN_TRACKED = 100
 private const val MIN_KOTLIN = 100
 private const val CI_WORKFLOW = ".github/workflows/ci.yml"
 private const val INSTALL_RELEASE = "RELEASE_BASE=releases/download\n"
-private const val INSTALL_GH = "echo 'GitHub CLI (gh) is required'\n"
+private const val INSTALL_REFUSALS = "echo 'sha256 verification FAILED'; echo 'attestation verification FAILED'\n"
 private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" splice.jar\n"
 private const val INSTALL_SHIM = "verify_attestation \"\$SHIM_TMP\" splice-launch\n"
 private const val INSTALL_PREVIOUS = "  $ALLOWED_LINK\n  $ALLOWED_PREVIOUS\n"
@@ -350,7 +354,7 @@ private class Tree(val root: File) {
         file(RELEASE_WORKFLOW, "permissions: {}\n  draft: true\n  files: dist/THIRD_PARTY_LICENSES.txt\n")
         // The compliant installer CARRIES both allowed swallows: an allowlist never exercised on the
         // green side proves only that the file had nothing to match.
-        file(INSTALL, INSTALL_RELEASE + INSTALL_GH + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS)
+        file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS)
         file(GATE_LADDER, "gateOfRecord { dependsOn($INCLUDED_BUILD_TEST) }\n")
         file("${BUILD_LOGIC_TESTS}splice/discovery/TestDiscoveryTest.kt", "class TestDiscoveryTest\n")
         file(
@@ -446,7 +450,7 @@ private fun installerMutations(): List<Mutation> = listOf(
         append(INSTALL, "REPO=marcospaulo/splice\n")
     },
     Mutation("install.sh not downloading from releases", "install-downloads-from-releases", "releases/download") {
-        file(INSTALL, INSTALL_GH + INSTALL_JAR + INSTALL_SHIM)
+        file(INSTALL, INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM)
     },
     // Each of these was ACCEPTED by the narrowed regex this list replaced, and each is a swallow the
     // shell's bare grep rejected: a commit carrying none of the downloading commands, a download
@@ -460,14 +464,17 @@ private fun installerMutations(): List<Mutation> = listOf(
     Mutation("install.sh swallowing on a continuation line", "install-no-or-true", OR_TRUE) {
         append(INSTALL, "  verify_attestation \"\$JAR_TMP\" splice.jar \\\n    || true\n")
     },
-    Mutation("install.sh not requiring gh", "install-requires-gh", "GitHub CLI (gh) is required") {
+    Mutation("install.sh not refusing bad bytes", "install-refuses-bad-bytes", "verification FAILED") {
         file(INSTALL, INSTALL_RELEASE + INSTALL_JAR + INSTALL_SHIM)
     },
+    Mutation("install.sh installing a failed attestation", "install-refuses-bad-bytes", "attestation verification") {
+        file(INSTALL, INSTALL_RELEASE + "echo 'sha256 verification FAILED'\n" + INSTALL_JAR + INSTALL_SHIM)
+    },
     Mutation("install.sh not attesting the jar", "install-attests-jar", "splice.jar") {
-        file(INSTALL, INSTALL_RELEASE + INSTALL_GH + INSTALL_SHIM)
+        file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_SHIM)
     },
     Mutation("install.sh not attesting the shim", "install-attests-shim", "splice-launch") {
-        file(INSTALL, INSTALL_RELEASE + INSTALL_GH + INSTALL_JAR)
+        file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR)
     },
 )
 

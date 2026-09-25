@@ -588,6 +588,12 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
+  `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
+  empty, whatever was running. The gate now measures them: one live row per turn it holds (the
+  session's short tag and the model, its `compact` flag, and `connect` until the upstream answers,
+  then `streaming`, with its age and idle time), its counts since the head started, the mean queue
+  wait, and the head's stream-idle limit, all read in one snapshot.
 - **An install that cannot link says so in one line.** `splice install` and `splice setup` stopped
   with a JVM stack trace when the launch shim was missing, dangling or unreadable, when two heads
   shared a wrapper command, or when a command name held a real file. Each now prints the one

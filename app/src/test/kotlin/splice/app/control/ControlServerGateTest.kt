@@ -31,6 +31,7 @@ import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.head.GateHealth
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
@@ -56,9 +57,7 @@ private class GateFakeHead(
         running = running,
         port = port,
         version = "kt-1",
-        gateInflight = inflight,
-        gateQueued = queued,
-        gateLimit = limit,
+        gate = GateHealth(inflight = inflight, queued = queued, limit = limit),
     )
 }
 

@@ -35,4 +35,19 @@ class DoctorAuthProbeFailureTest {
         assertTrue(check.detail.contains("could not be run"), check.detail)
         assertFalse(check.detail.contains("not authenticated"), check.detail)
     }
+
+    @Test
+    fun `a signed-out gh is information, not a warning, because release installs no longer need it`(
+        @TempDir tmp: Path,
+    ) {
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val gh = bin.resolve("gh")
+        Files.writeString(gh, "#!/bin/sh\nexit 1\n")
+        Files.setPosixFilePermissions(gh, PosixFilePermissions.fromString("rwx------"))
+        val pathEnv = EnvReader { name -> if (name == "PATH") bin.toString() else null }
+        val check = DoctorInstallProbes(DoctorTestPorts.probes(), DoctorTestPorts.noJar).ghCheck(pathEnv)
+        assertEquals(CheckStatus.INFO, check.status)
+        assertTrue(check.detail.contains("not signed in"), check.detail)
+        assertFalse(check.detail.contains("abort"), check.detail)
+    }
 }

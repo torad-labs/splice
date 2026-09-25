@@ -2,7 +2,7 @@
   "_note": "AUTHORED BY HAND against SilentConstantsLawTest, MEASURED never estimated. Every entry is a numeric `const val` in main sources with no adjacent reason comment (see that file's WHAT COUNTS AS A REASON). The gate fails on GROWTH and on a STALE entry held above the measurement, so lowering an entry is how a fix is recorded. This file is a debt inventory with a one-way valve; it is meant to shrink to nothing.",
   "recorded": "2026-09-17",
   "denominator": 566,
-  "total": 394,
+  "total": 392,
   "files": {
     "integrations/claude-code/src/main/kotlin/splice/client/login/HookScriptFiles.kt": 1,
     "integrations/claude-code/src/main/kotlin/splice/client/login/LoginHookScripts.kt": 2,
@@ -48,7 +48,7 @@
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt": 2,
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt": 3,
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLayout.kt": 1,
-    "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeProcess.kt": 3,
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeProcess.kt": 1,
     "integrations/terminal/src/main/kotlin/splice/terminal/KeyReader.kt": 14,
     "integrations/terminal/src/main/kotlin/splice/terminal/NoteBox.kt": 1,
     "integrations/terminal/src/main/kotlin/splice/terminal/Spinner.kt": 1,

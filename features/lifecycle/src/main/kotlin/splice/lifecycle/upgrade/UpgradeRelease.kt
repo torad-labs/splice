@@ -1,9 +1,10 @@
 // NEW: v0.4.0 FEATURES.md §5 — fetch + verify a release EXACTLY as install.sh does — sha256 of
-// every asset against the published sha256sums.txt, then GitHub build-provenance attestation via an
-// authenticated gh for a remote base (a file:// base is an acceptance fixture and skips it), then
-// the candidate must answer `version` like a splice jar and run its own doctor. Everything lands in
-// a staging directory; a refusal at any step leaves nothing activated. Network and processes go
-// through two seams so the command is tested without a socket or a gh.
+// every asset against the published sha256sums.txt, then GitHub build-provenance attestation for a
+// remote base whenever gh is installed and signed in (a file:// base is an acceptance fixture and
+// skips it; without a signed-in gh the stage proceeds on the sha256 match and says how to verify
+// later, V4-217), then the candidate must answer `version` like a splice jar and run its own
+// doctor. Everything lands in a staging directory; a refusal at any step leaves nothing activated.
+// Network and processes go through two seams so the command is tested without a socket or a gh.
 package splice.lifecycle.upgrade
 
 import splice.core.terminal.GREEN
@@ -31,6 +32,10 @@ private const val JSON_DOCTOR_MINOR = 4
  *  path, a verdict), never bytes of a file it read — so it is printed as-is, not through SafeFailureText. */
 internal class UpgradeRefused(val reason: String) : RuntimeException(reason)
 
+/** A validated candidate. [provenanceGap] says why its attestation was not checked ("is not
+ *  installed", "is not signed in"), or is null when it was checked or the base is a local mirror. */
+internal data class Staged(val version: String, val provenanceGap: String?)
+
 internal class UpgradeRelease(
     private val output: TerminalOutput,
     private val fetch: UpgradeFetch,
@@ -43,23 +48,30 @@ internal class UpgradeRelease(
         override?.trim()?.takeIf { it.isNotEmpty() }?.trimEnd('/')
             ?: if (to == null) "$RELEASES/latest/download" else "$RELEASES/download/v${to.removePrefix("v")}"
 
-    /** Fetch, verify and validate the release into [staging]; returns the candidate's version. */
-    fun stage(base: String, staging: Path): String {
+    /** Fetch, verify and validate the release into [staging]. */
+    fun stage(base: String, staging: Path): Staged {
         val remote = !base.startsWith("file:")
-        if (remote) requireAuthedGh()
+        val gap = if (remote) attestationGap() else null
         val sums = String(fetched(base, SUMS_ASSET))
         Files.createDirectories(staging)
         for (asset in listOf(JAR_ASSET, SHIM_ASSET)) {
             val bytes = fetched(base, asset)
             verifySum(asset, bytes, sums)
             val file = Files.write(staging.resolve(asset), bytes)
-            if (remote) attest(file, asset)
-            val how = if (remote) "sha256 ok, attestation ok" else "sha256 ok (local release base, no attestation)"
+            if (remote && gap == null) attest(file, asset)
+            val how = when {
+                !remote -> "sha256 ok (local release base, no attestation)"
+                gap == null -> "sha256 ok, attestation ok"
+                else -> "sha256 ok, provenance not checked (gh $gap)"
+            }
             output.line("  $GREEN✓$RESET ${asset.padEnd(UPGRADE_PAD)} $how")
         }
         Files.setPosixFilePermissions(staging.resolve(SHIM_ASSET), PosixFilePermissions.fromString(SHIM_MODE))
-        return validate(staging.resolve(JAR_ASSET))
+        return Staged(validate(staging.resolve(JAR_ASSET)), gap)
     }
+
+    /** The command that checks an installed asset's build provenance, for a stage that could not. */
+    fun verifyLater(file: Path): String = "gh attestation verify $file --repo $GITHUB_REPO"
 
     /** Absent (null) and failed (a status class, a transport class) are different refusals: a 403
      *  or a DNS failure is not "no asset", and the operator's next step differs (review 2026-09-14). */
@@ -69,10 +81,13 @@ internal class UpgradeRelease(
         refuse("fetching $asset from $base failed: ${failed.why}")
     }
 
-    private fun requireAuthedGh() {
-        if (process(listOf("gh", "auth", "status"), false).code != 0) {
-            refuse("GitHub CLI (gh) must be installed and authenticated to verify release provenance: gh auth login")
-        }
+    /** Null when gh can verify an attestation, else why not. An attestation that gh checks and
+     *  rejects is still a refusal ([attest]); only the absence of a verifier is let through. */
+    private fun attestationGap(): String? = when (process(listOf("gh", "auth", "status"), false).code) {
+        0 -> null
+        NO_SUCH_COMMAND -> "is not installed"
+        TIMED_OUT -> "did not answer `gh auth status`"
+        else -> "is not signed in"
     }
 
     private fun verifySum(asset: String, bytes: ByteArray, sums: String) {

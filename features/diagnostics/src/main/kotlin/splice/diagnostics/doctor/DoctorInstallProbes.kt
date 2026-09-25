@@ -125,8 +125,10 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
         }
     }
 
-    // gh matters only when installing from a GitHub Release (attestation verification); an
-    // unauthenticated gh aborts that install — catch it here, before it costs a download.
+    // gh matters only when installing or upgrading from a GitHub Release: a signed-in gh verifies the
+    // build provenance attestation, and without one the install proceeds on the sha256 match alone
+    // (V4-217). So neither a missing nor a signed-out gh is a problem; each is the one fact that
+    // says whether the next release install checks provenance.
     internal fun ghCheck(envReader: EnvReader): DoctorCheck {
         val gh = path.binaryOnPath("gh", envReader)
             ?: return DoctorCheck("gh", CheckStatus.INFO, "not installed (only needed to verify release-mode installs)")
@@ -158,8 +160,8 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
         } else {
             DoctorCheck(
                 "gh",
-                CheckStatus.WARN,
-                "installed but not authenticated — release installs will abort",
+                CheckStatus.INFO,
+                "installed, not signed in — release installs and upgrades skip the provenance check",
                 "gh auth login",
             )
         }

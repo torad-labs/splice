@@ -15,6 +15,13 @@ private const val USER_ROW = """{"type":"user","sessionId":"s1","message":{"role
 private const val FOREIGN_ROW = """{"type":"assistant","sessionId":"s1","message":{"model":"k3-256k","content":[]}}"""
 private const val OWN_ROW = """{"type":"assistant","sessionId":"s1","message":{"model":"gpt-5.6-sol","content":[]}}"""
 private const val BROKEN_ROW = """{"type":"assistant","message":{"model":"k3-256k" this is not json"""
+private const val KIMI_THINKING_ROW = """{"type":"assistant","uuid":"a1","parentUuid":"u1","message":{"id":"msg_k",""" +
+    """"model":"k3","content":[{"type":"thinking","thinking":"plan","signature":"splice-synth-v1"},""" +
+    """{"type":"text","text":"answer"}]}}"""
+private const val FABLE_THINKING_ROW = """{"type":"assistant","uuid":"a2","parentUuid":"a1",""" +
+    """"message":{"id":"msg_f","model":"claude-fable-5",""" +
+    """"content":[{"type":"thinking","thinking":"plan","signature":"EqQBCkYIBxgC"},""" +
+    """{"type":"text","text":"answer"}]}}"""
 
 /** The roster of a head that serves one model: its pinned one. */
 private val SOL_ONLY = listOf("gpt-5.6-sol")
@@ -82,6 +89,60 @@ class TranscriptModelRewriteTest {
         assertEquals(1, rewritten)
         assertEquals(servedRow, rows(transcript)[0], "a served model is restored as it is, so its row is untouched")
         assertEquals(foreignRow.replace("claude-opus-5-5", "claude-fable-5"), rows(transcript)[1])
+    }
+
+    // A head that never signs thinking (Kimi) has splice stamp `splice-synth-v1` at close so Claude
+    // Code keeps the block. Retagged onto claude-splice's roster, the row claims to be Fable's, Claude
+    // Code replays the block, and Anthropic answers 400 "Invalid signature in thinking block" on every
+    // turn. The retag is the last moment the block is known to be foreign, so it leaves with the model.
+    @Test
+    fun `a foreign row loses its thinking with its model, and a served row keeps both`(@TempDir dir: Path) {
+        val transcript = write(dir.resolve("s1.jsonl"), KIMI_THINKING_ROW, FABLE_THINKING_ROW)
+
+        val rewritten = rewriter.rewrite(transcript, "claude-fable-5", listOf("claude-fable-5", "claude-opus-5"))
+
+        assertEquals(1, rewritten)
+        assertEquals(movedRow("a1", "u1", """[{"type":"text","text":"answer"}]"""), rows(transcript)[0])
+        assertEquals(FABLE_THINKING_ROW, rows(transcript)[1], "a served row's signature is Anthropic's: byte-identical")
+    }
+
+    // Claude Code writes one row per content block, so a row can hold ONLY thinking. The row stays (its
+    // uuid is the next row's parentUuid) and takes the block Claude Code 2.1.281 itself puts in a message
+    // it strips bare while recovering from this same 400 (aEt/kcr in the binary), so the shape is one
+    // Claude Code already loads, merges by message.id and replays.
+    @Test
+    fun `a foreign row that held only thinking keeps its place with Claude Code's own placeholder`(
+        @TempDir dir: Path,
+    ) {
+        val thinkingOnly = """{"type":"assistant","uuid":"a1","parentUuid":"u1","message":{"id":"msg_k",""" +
+            """"model":"k3","content":[{"type":"thinking","thinking":"plan","signature":"splice-synth-v1"}]}}"""
+        val redactedOnly = """{"type":"assistant","uuid":"a2","parentUuid":"a1","message":{"id":"msg_k",""" +
+            """"model":"k3","content":[{"type":"redacted_thinking","data":"gAAAA"}]}}"""
+        val transcript = write(dir.resolve("s1.jsonl"), thinkingOnly, redactedOnly)
+
+        assertEquals(2, rewriter.rewrite(transcript, "claude-fable-5", listOf("claude-fable-5")))
+
+        val placeholder = """[{"type":"text","text":"[Thinking removed]","citations":[]}]"""
+        assertEquals(
+            listOf(movedRow("a1", "u1", placeholder), movedRow("a2", "a1", placeholder), ""),
+            rows(transcript),
+            "no row is dropped: the parentUuid chain holds",
+        )
+    }
+
+    /** A `msg_k` row as the rewrite leaves it on claude-fable-5, [content] being its content JSON. */
+    private fun movedRow(uuid: String, parent: String, content: String): String =
+        """{"type":"assistant","uuid":"$uuid","parentUuid":"$parent",""" +
+            """"message":{"id":"msg_k","model":"claude-fable-5","content":$content}}"""
+
+    @Test
+    fun `a subagent transcript loses its foreign thinking too`(@TempDir dir: Path) {
+        val transcript = write(dir.resolve("s1.jsonl"), USER_ROW)
+        val subagent = write(dir.resolve("s1").resolve("subagents").resolve("agent-1.jsonl"), KIMI_THINKING_ROW)
+
+        assertEquals(1, rewriter.rewrite(transcript, "claude-fable-5", listOf("claude-fable-5")))
+
+        assertEquals(false, rows(subagent)[0].contains("thinking"), rows(subagent)[0])
     }
 
     @Test

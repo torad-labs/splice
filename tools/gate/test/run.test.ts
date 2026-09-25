@@ -32,8 +32,8 @@ describe("gate run", () => {
     expect(cancelledBySignal(0)).toBe(false);
   });
 
-  test("the invocation is pinned: no build cache, clean, the whole ladder, every leg reported", () => {
-    expect([...GATE_OF_RECORD_TASKS]).toEqual(["--no-build-cache", "clean", "gateOfRecord", "--continue"]);
+  test("the invocation is pinned: no build cache, clean, the whole ladder, every leg reported and timed", () => {
+    expect([...GATE_OF_RECORD_TASKS]).toEqual(["--no-build-cache", "clean", "gateOfRecord", "--continue", "--profile"]);
     expect(GATE_OF_RECORD_LABEL).toBe("gate-of-record");
     expect(read("tools/gate/src/lib/slot.ts")).toContain("--no-daemon");
   });

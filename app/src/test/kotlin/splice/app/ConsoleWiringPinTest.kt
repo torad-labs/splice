@@ -91,7 +91,7 @@ class ConsoleWiringPinTest {
     @Test
     fun `the control plane runs the console wiring on the server it constructs`() {
         assertTrue(
-            controlPlaneSource().contains("ConsoleWiring.wire(srv, topology, modelRosters)"),
+            controlPlaneSource().contains("ConsoleWiring.wire(srv, topology, modelRosters, log)"),
             "ControlPlane must call `ConsoleWiring.wire(srv, topology, modelRosters)` after constructing the " +
                 "ControlServer, or every console port is unwired while the build stays green",
         )
@@ -133,6 +133,16 @@ class ConsoleWiringPinTest {
             consoleWiringSource().contains("srv.ports.doctorFixes = DoctorWiring.fixes()"),
             "ConsoleWiring must assign `srv.ports.doctorFixes`, or POST /api/doctor/fix/{id} answers a named " +
                 "503 while /api/doctor lists fixes the daemon could run",
+        )
+    }
+
+    /** V4-220 item 3: every /api/add route reads this port. Unwired, the console's add answers a named
+     *  503 forever and the operator is back to the CLI for a new backend. */
+    @Test
+    fun `the control plane wires the console's add`() {
+        assertTrue(
+            consoleWiringSource().contains("srv.ports.add = AddWiring.console(log)"),
+            "ConsoleWiring must assign `srv.ports.add`, or every /api/add route answers a named 503",
         )
     }
 

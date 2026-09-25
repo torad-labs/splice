@@ -85,7 +85,7 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
             "project-prompt:$name",
             CheckStatus.WARN,
             "$name sets system_prompt_mode = \"strip\" ($source): the client's own system field is edited on " +
-                "every turn in this project — each paragraph a pattern matches is removed, and what is removed " +
+                "every turn in this project; each paragraph a pattern matches is removed, and what is removed " +
                 "is yours to own",
             stripFix,
         )

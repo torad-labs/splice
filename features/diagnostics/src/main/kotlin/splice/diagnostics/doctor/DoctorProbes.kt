@@ -51,7 +51,7 @@ internal class DoctorProbes(
         val status = wrappedHead.status()
         val detail = buildString {
             append(status.mode)
-            status.resolvesTo?.let { append(" — claude on PATH resolves to $it") }
+            status.resolvesTo?.let { append("; claude on PATH resolves to $it") }
         }
         return DoctorCheck("claude-head", CheckStatus.INFO, detail)
     }

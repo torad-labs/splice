@@ -86,8 +86,9 @@ public fun interface DaemonSupervised {
     public operator fun invoke(): Boolean
 }
 
-/** [restart] is the daemon's one wait-then-drain: every restart the daemon itself takes on goes through it. */
-public class DaemonRoutes(private val restart: RestartAfterCompactions) {
+/** [restarts] is the daemon's one decision and wait-then-drain: every restart the daemon itself takes
+ *  on goes through it, a console add's save included. */
+public class DaemonRoutes(private val restarts: DaemonRestarts) {
 
     /** [shutdown] and [supervised] ARRIVE AT CALL TIME: the routing lambda reads the server's own
      *  properties as it calls, so neither is captured, and a route that captured them would answer
@@ -97,26 +98,26 @@ public class DaemonRoutes(private val restart: RestartAfterCompactions) {
         shutdown: ShutdownDaemon,
         supervised: DaemonSupervised?,
     ) {
-        if (supervised == null) {
-            refuse(call, RESTART_SUPERVISION_UNWIRED, HttpStatusCode.ServiceUnavailable)
-            return
-        }
-        // THE DID-NOT-RUN, REFUSED. Taking the drain here would turn this route into a stop button on
-        // any daemon the operator started by hand, and the console would render a restart that never
-        // comes back.
-        if (!supervised()) {
-            refuse(call, RESTART_UNSUPERVISED, HttpStatusCode.Conflict)
-            return
-        }
         val now = call.request.queryParameters["now"] in NOW_VALUES
-        val phase = restart.request(now, shutdown)
-        call.respondText(phaseJson(phase).toString(), ContentType.Application.Json, HttpStatusCode.Accepted)
-        if (phase is RestartPhase.Draining) shutdown()
+        // THE DID-NOT-RUN, REFUSED (DaemonRestarts). Taking the drain on an unsupervised daemon would
+        // turn this route into a stop button on any daemon the operator started by hand, and the
+        // console would render a restart that never comes back.
+        when (val taken = restarts.take(now, shutdown, supervised)) {
+            is RestartTaken.Refused -> {
+                val status = if (taken.unwired) HttpStatusCode.ServiceUnavailable else HttpStatusCode.Conflict
+                refuse(call, taken.reason, status)
+            }
+            is RestartTaken.Accepted -> {
+                val body = phaseJson(taken.phase).toString()
+                call.respondText(body, ContentType.Application.Json, HttpStatusCode.Accepted)
+                if (taken.phase is RestartPhase.Draining) shutdown()
+            }
+        }
     }
 
     /** GET /api/daemon/restart: where a restart the daemon took on stands. */
     public suspend fun statusJson(call: ApplicationCall) {
-        call.respondText(phaseJson(restart.phase()).toString(), ContentType.Application.Json)
+        call.respondText(phaseJson(restarts.phase()).toString(), ContentType.Application.Json)
     }
 
     private fun phaseJson(phase: RestartPhase): JsonObject = buildJsonObject {

@@ -35,8 +35,8 @@ class DoctorConfigChecksTest {
 
         assertEquals(
             listOf(
-                "setting 'streamIdelMs' is ignored — unknown key; the knob keeps its default",
-                "setting 'heads.one.streamIdleMs' is ignored — not a valid number; the knob keeps its default",
+                "setting 'streamIdelMs' is ignored (unknown key); the knob keeps its default",
+                "setting 'heads.one.streamIdleMs' is ignored (not a valid number); the knob keeps its default",
             ),
             rows.map { it.detail },
         )

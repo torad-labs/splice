@@ -4,6 +4,7 @@
 package splice.app.control
 
 import splice.accounts.signin.ConsoleAccounts
+import splice.configuration.add.AddConsole
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.KeyStore
 import splice.core.topology.TopologyWriter
@@ -133,4 +134,8 @@ public class ConsolePorts {
      *  api-key heads read on every request, assigned by ConsoleWiring like [budgets]. Null answers the
      *  three routes with a named 503, never an empty key list. */
     public var keys: KeyStore? = null
+
+    /** V4-220 item 3: `splice add` as the console runs it, behind /api/add. Assigned by ConsoleWiring;
+     *  null answers every add route with a named 503, never an empty profile list. */
+    public var add: AddConsole? = null
 }

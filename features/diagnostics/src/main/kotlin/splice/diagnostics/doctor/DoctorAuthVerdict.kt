@@ -23,11 +23,14 @@ internal class DoctorAuthVerdict {
                 // Only genuine OAuth heads have a `<command> login` flow; api-key heads (env var known)
                 // must never be sent to that dead end, so the guard is isOAuth, not envVar == null.
                 auth.isOAuth -> DoctorCheck(auth.key, missingStatus, "not signed in", "${auth.command} login")
+                // V4-220: `splice key set` stores the key where the head reads it on its next request, prompts
+                // for the value masked and keeps it out of shell history; `export VAR=…` was a placeholder the
+                // report masked to `<redacted>`, so the console's Fix column could not paste it.
                 else -> DoctorCheck(
                     auth.key,
                     missingStatus,
                     "${auth.envVar} is not set",
-                    "export ${auth.envVar}=…   then: $FIX_RESTART",
+                    "splice key set ${auth.envVar}",
                 )
             }
         }
@@ -42,10 +45,10 @@ internal class DoctorAuthVerdict {
     // V4-220 item 6b: with the daemon read, the line says what upstream last answered instead.
     private fun credentialLabel(auth: DoctorHeadAuth): String = when {
         auth.selfManaged -> when (val verdict = auth.daemonVerdict) {
-            is CredentialVerdict.Accepted -> "client-native — upstream accepted the forwarded login${at(verdict)}"
+            is CredentialVerdict.Accepted -> "client-native: upstream accepted the forwarded login${at(verdict)}"
             CredentialVerdict.Unverified ->
-                "client-native — no forwarded turn answered since the daemon started, so the login is unverified"
-            else -> "client-native — declared auth.kind = client, so there is no key to set"
+                "client-native: no forwarded turn answered since the daemon started, so the login is unverified"
+            else -> "client-native: declared auth.kind = client, so there is no key to set"
         }
         auth.envVar != null -> "${auth.envVar} is set"
         else -> "signed in"

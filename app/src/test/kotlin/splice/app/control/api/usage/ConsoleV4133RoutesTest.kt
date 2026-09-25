@@ -152,7 +152,7 @@ class ConsoleV4133RoutesTest {
             }
         }
         assertEquals(HttpStatusCode.BadRequest, bad.status)
-        assertTrue(bad.bodyAsText().contains("must be one of"), bad.bodyAsText())
+        assertTrue(bad.bodyAsText().contains("The action must be warn or block, not 'yell'."), bad.bodyAsText())
         assertEquals(HttpStatusCode.Unauthorized, req { put("$url/api/budgets") { setBody("{}") } }.status)
     }
 
@@ -190,7 +190,8 @@ class ConsoleV4133RoutesTest {
             }
         }
         assertEquals(HttpStatusCode.BadRequest, bad.status)
-        assertTrue(bad.bodyAsText().contains("http(s)"), bad.bodyAsText())
+        assertTrue(bad.bodyAsText().contains("The webhook URL must start with https:// or http://."), bad.bodyAsText())
+        assertTrue("ftp://nope" !in bad.bodyAsText(), "a refused webhook URL is never echoed: ${bad.bodyAsText()}")
     }
 
     @Test
@@ -201,7 +202,7 @@ class ConsoleV4133RoutesTest {
 
         val noHook = req { post("$url/api/alerts/test") { auth() } }
         assertEquals(HttpStatusCode.Conflict, noHook.status)
-        assertTrue(noHook.bodyAsText().contains("PUT /api/alerts first"), noHook.bodyAsText())
+        assertTrue(noHook.bodyAsText().contains("Save a webhook URL before sending a test."), noHook.bodyAsText())
 
         var received: String? = null
         val hookServer = embeddedServer(Netty, port = 0, host = "127.0.0.1") {

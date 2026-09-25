@@ -35,20 +35,22 @@ class BudgetStoreTest {
         assertEquals(null, store.budgets().single().dailyUsd)
     }
 
+    // The console prints each reason under the row it refused, so it reads as UI words and never
+    // repeats the head the row already names (Hitstop's #271 critique, relayed by console).
     @Test
     fun `each bad row is refused by name, and nothing is written`(@TempDir tmp: Path) {
         val file = tmp.resolve("budgets.json")
         val store = BudgetStore(file)
         val cases = listOf(
-            listOf(Budget(head = " ", action = BudgetActions.WARN)) to "a budget needs a head",
+            listOf(Budget(head = " ", action = BudgetActions.WARN)) to "Every budget needs a head.",
             listOf(Budget(head = "codex", action = "yell")) to
-                "codex: action must be one of [warn, block], was 'yell'",
+                "The action must be warn or block, not 'yell'.",
             listOf(Budget(head = "codex", dailyUsd = -1.0, action = BudgetActions.WARN)) to
-                "codex: daily_usd must not be negative",
+                "The daily cap can't be negative.",
             listOf(
                 Budget(head = "codex", action = BudgetActions.WARN),
                 Budget(head = "codex", action = BudgetActions.BLOCK),
-            ) to "duplicate head(s) in one write: [codex]",
+            ) to "Each head can have only one budget (more than one for codex).",
         )
         for ((bad, reason) in cases) {
             val refused = assertThrows(BudgetRefusal::class.java) { store.replace(bad) }

@@ -88,10 +88,16 @@ internal class HeadAdmission(
     }
 
     private suspend fun serve(call: ApplicationCall, prepared: Preparation, admitted: Admitted) {
+        // V4-213: the slot was taken before the body was read; once the turn is prepared it names
+        // itself on the gate's live list (describe). A replay is always a compaction retry.
         when (prepared) {
             is Preparation.Rejected -> responses.respondInvalidRequest(call, prepared.message)
-            is Preparation.Local -> driver.answerLocally(call, prepared)
+            is Preparation.Local -> {
+                admitted.slot.describe(prepared.model, compact = false)
+                driver.answerLocally(call, prepared)
+            }
             is Preparation.Replay -> {
+                admitted.slot.describe(prepared.model, compact = true)
                 // A retry following a compaction still in flight is not an admission: the drive it
                 // follows holds a slot already (TurnStreamer.driveDetachable), so this one goes
                 // back before the wait — else one compaction counts twice against the gate for
@@ -101,6 +107,7 @@ internal class HeadAdmission(
                 driver.replay(call, prepared)
             }
             is Preparation.Ready -> {
+                admitted.slot.describe(prepared.built.meta.upstreamModel, prepared.built.meta.compact)
                 // V4-165: the turn ends when its admission slot is released — here on a refusal or
                 // an attached drive, inside TurnStreamer for a detached one. One registration
                 // covers every exit, because the slot already has to be released on each of them.

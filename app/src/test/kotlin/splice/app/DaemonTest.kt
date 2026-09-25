@@ -11,20 +11,29 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.app.daemon.DaemonLock
 import splice.core.auth.RefreshAttempt
+import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.testing.TestPorts
@@ -137,6 +146,70 @@ class DaemonTest {
         assertTrue(mock.upstreamAuths.any { it.second == "Bearer tok-1" })
         assertEquals("basic" to "acct-1", mock.upstreamAccountIds.last())
     }
+
+    /** V4-213: /api/heads wrote the gate's counters and live rows as literals (acquired 0, live [],
+     *  stream_idle_ms 0), so the console's in-flight list was always empty. A turn held open
+     *  mid-stream must read as ONE live row naming its model and phase, whose age grows while it is
+     *  held, counted by acquired; released, it leaves the list and is counted by released. */
+    @Test
+    fun `api heads reports a streaming turn as a live gate row with measured counters`() = runBlocking {
+        mock.resetHold()
+        val turn = async(Dispatchers.IO) {
+            client.post("http://127.0.0.1:$headPort/v1/messages") {
+                header("Content-Type", "application/json")
+                header("Authorization", "Bearer $key")
+                setBody(
+                    """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
+                        "system":"You are a test. SCENARIO:hold","messages":[{"role":"user","content":"go"}]}""",
+                )
+            }.bodyAsText()
+        }
+        val held: JsonObject
+        try {
+            held = awaitGate("one streaming live row") { it.live().singleOrNull()?.text("phase") == "streaming" }
+            val row = held.live().single()
+            assertEquals("gpt-5.6-sol", row.text("label"))
+            assertFalse(row["compact"]!!.jsonPrimitive.boolean)
+            // stream_idle_ms is the head's configured limit
+            assertEquals(Knob.STREAM_IDLE_MS.default, held.long("stream_idle_ms"))
+            assertTrue(held.long("acquired") >= 1, "the held turn was acquired: $held")
+            // acquired minus released is the live count
+            assertEquals(1L, held.long("acquired") - held.long("released"), "$held")
+            delay(250)
+            val later = gate().live().single()
+            assertTrue(later.long("age_ms") > row.long("age_ms"), "age grows while held: $row then $later")
+            assertTrue(later.long("idle_ms") > row.long("idle_ms"), "a silent stream's idle grows: $row then $later")
+        } finally {
+            mock.releaseHold()
+            turn.await()
+        }
+        val after = awaitGate("the released turn gone") { gate -> gate.live().isEmpty() }
+        assertEquals(held.long("released") + 1, after.long("released"), "the release is counted: $after")
+    }
+
+    private suspend fun gate(): JsonObject {
+        val body = client.get("http://127.0.0.1:$controlPort/api/heads") {
+            header("Authorization", "Bearer $key")
+        }.bodyAsText()
+        val heads = Json.parseToJsonElement(body).jsonObject["heads"]!!.jsonArray.map { it.jsonObject }
+        return heads.first { it.text("key") == "claudex" }["gate"]!!.jsonObject
+    }
+
+    private suspend fun awaitGate(what: String, ready: (JsonObject) -> Boolean): JsonObject {
+        var last = gate()
+        repeat(GATE_POLLS) {
+            if (ready(last)) return last
+            delay(GATE_POLL_MS)
+            last = gate()
+        }
+        return if (ready(last)) last else fail("timed out waiting for $what on /api/heads; last gate: $last")
+    }
+
+    private fun JsonObject.live() = this["live"]!!.jsonArray.map { it.jsonObject }
+
+    private fun JsonObject.long(field: String) = this[field]!!.jsonPrimitive.long
+
+    private fun JsonObject.text(field: String) = this[field]?.jsonPrimitive?.content
 
     @Test
     fun `AUTHENTICATION failure surfaces the per-head login hint`() = runBlocking {
@@ -284,3 +357,7 @@ class DaemonTest {
         }
     }
 }
+
+/** /api/heads is polled for up to 10 s: a held turn reaches the gate in well under a second. */
+private const val GATE_POLLS = 200
+private const val GATE_POLL_MS = 50L

@@ -46,6 +46,13 @@ internal class HeadDiagnostics(
             gateInflight = gateSnap.inflight,
             gateQueued = gateSnap.queued,
             gateLimit = gateSnap.limit,
+            gateAcquired = gateSnap.acquired,
+            gateReleased = gateSnap.released,
+            gateWaited = gateSnap.waited,
+            gateAvgWaitMs = gateSnap.avgWaitMs,
+            gateLive = gateSnap.live,
+            // restartRequired (Knob.STREAM_IDLE_MS): the budget the head was built with is the one in force.
+            streamIdleMs = provider.watchdog.streamIdle.inWholeMilliseconds,
         )
     }
 

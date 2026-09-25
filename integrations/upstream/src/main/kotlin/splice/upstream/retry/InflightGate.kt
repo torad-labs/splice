@@ -12,10 +12,18 @@
 // question — "do I get a slot" — so both answers ride its return type and the caller's `when` is
 // compiler-checked (kt-no-exception-as-outcome). Nothing about FIFO order or the permit hand-off
 // changed; only the channel the refusal travels on.
+// V4-213: the gate MEASURES what the Node gate reported and this port had dropped to literals —
+// acquired/released/waited, the mean queue wait, and one live reading per slot it holds (label,
+// compact, phase connect|streaming, age, idle) — and [snapshot] takes all of it under the lock.
+// A slot counts as acquired, and is listed, only once its permit is DELIVERED: a waiter cancelled
+// between admission and delivery hands its permit back through [returnUndelivered] and never
+// appears, and a waiter cancelled while queued never reaches either.
 package splice.upstream.retry
 
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
+import splice.core.head.GatePhase
+import splice.core.head.GateSlot
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import splice.upstream.TurnEnd
@@ -51,6 +59,14 @@ public class InflightGate(
     private var inflight = 0
     private val queue = ArrayDeque<Waiter>()
 
+    // V4-213, all guarded by [lock]. Insertion order is admission order, so [snapshot] lists the
+    // oldest slot first (the console reads the first live row as a head's current turn).
+    private val live = LinkedHashSet<Slot>()
+    private var acquired = 0L
+    private var released = 0L
+    private var waited = 0L
+    private var waitMsTotal = 0L
+
     // A resumable FIFO cell. MUST be a plain class: queue.remove() matches by reference IDENTITY,
     // which is the whole point — a data class gives structural equality over mutable fields, which
     // is exactly why the prior version bolted on a synthetic `id` to undo it (craft review). So
@@ -60,12 +76,36 @@ public class InflightGate(
     private class Waiter(
         var resumed: Boolean = false,
         var continuation: CancellableContinuation<Boolean>? = null,
+        /** When it entered the queue, on the gate's clock: its wait is measured from here. */
+        var queuedAt: Long = 0L,
     )
 
-    public data class Snapshot(val inflight: Int, val queued: Int, val limit: Int)
+    public data class Snapshot(
+        val inflight: Int,
+        val queued: Int,
+        val limit: Int,
+        /** Slots delivered, and slots released, since the gate was built. */
+        val acquired: Long,
+        val released: Long,
+        /** Deliveries that waited in the queue first, and their mean wait, rounded (0 while none has). */
+        val waited: Long,
+        val avgWaitMs: Long,
+        /** One reading per slot held, oldest first. */
+        val live: List<GateSlot>,
+    )
 
     public fun snapshot(): Snapshot = synchronized(lock) {
-        Snapshot(inflight = inflight, queued = queue.size, limit = maxInflight())
+        val now = clock()
+        Snapshot(
+            inflight = inflight,
+            queued = queue.size,
+            limit = maxInflight(),
+            acquired = acquired,
+            released = released,
+            waited = waited,
+            avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
+            live = live.map { it.reading(now) },
+        )
     }
 
     /** What [acquire] answers. The refusal is a VALUE, not a throw: a `RuntimeException` subclass
@@ -97,8 +137,39 @@ public class InflightGate(
             drained to canSelfAdmit
         }
         resumeAll(toResume)
-        if (!admitted && !awaitTurn()) return Admission.AtCapacity
-        return Admission.Acquired(Slot(this, clock))
+        val waitedMs = if (admitted) {
+            null
+        } else {
+            when (val turn = awaitTurn()) {
+                Turn.Refused -> return Admission.AtCapacity
+                Turn.Immediate -> null
+                is Turn.Queued -> turn.waitedMs
+            }
+        }
+        return Admission.Acquired(deliver(waitedMs))
+    }
+
+    /** How [awaitTurn] ended: refused by the bounded queue, admitted on its recheck without
+     *  queueing, or admitted after waiting in the queue for [Queued.waitedMs]. */
+    private sealed interface Turn {
+        data object Refused : Turn
+        data object Immediate : Turn
+        data class Queued(val waitedMs: Long) : Turn
+    }
+
+    /** A delivered permit becomes a live slot: counted, its wait added when it queued, and listed
+     *  until it is released. Only a caller that got its permit reaches here. */
+    private fun deliver(waitedMs: Long?): Slot {
+        val slot = Slot(this, clock)
+        synchronized(lock) {
+            acquired += 1
+            if (waitedMs != null) {
+                waited += 1
+                waitMsTotal += waitedMs
+            }
+            live.add(slot)
+        }
+        return slot
     }
 
     /** The one hand-off. The admitted permit transfers ONLY if the waiter actually uses the
@@ -109,7 +180,7 @@ public class InflightGate(
     private fun resumeAll(waiters: List<Waiter>) {
         for (w in waiters) {
             val cont = w.continuation ?: continue
-            cont.resume(true) { _, _, _ -> release() }
+            cont.resume(true) { _, _, _ -> returnUndelivered() }
         }
     }
 
@@ -120,12 +191,12 @@ public class InflightGate(
 
     private fun hasQueueCapacityLocked(): Boolean = maxQueued().let { it <= 0 || queue.size < it }
 
-    /** True once this waiter holds a permit; false when the bounded queue refused it outright. */
-    private suspend fun awaitTurn(): Boolean {
+    /** Whether, and how, this waiter came to hold a permit ([Turn]). */
+    private suspend fun awaitTurn(): Turn {
         val waiter = Waiter()
         var admittedNow = false
         var rejected = false
-        return suspendCancellableCoroutine { cont ->
+        val admitted = suspendCancellableCoroutine { cont ->
             synchronized(lock) {
                 // capacity may have appeared between the fast path and here
                 if (hasCapacityLocked() && queue.isEmpty()) {
@@ -134,6 +205,7 @@ public class InflightGate(
                     admittedNow = true
                 } else if (hasQueueCapacityLocked()) {
                     waiter.continuation = cont
+                    waiter.queuedAt = clock()
                     queue.addLast(waiter)
                 } else {
                     rejected = true
@@ -145,9 +217,9 @@ public class InflightGate(
             // flag then double-resumes the continuation ("Already resumed" ISE — caught by the
             // cancel-racing-admission hammer test on CI). Only the local flag is race-free.
             if (admittedNow) {
-                // Same undelivered-handler as release(): a waiter cancelled between inflight++ and
+                // Same undelivered-handler as resumeAll(): a waiter cancelled between inflight++ and
                 // delivery must return the permit or the head permanently loses one capacity slot.
-                cont.resume(true) { _, _, _ -> release() }
+                cont.resume(true) { _, _, _ -> returnUndelivered() }
                 return@suspendCancellableCoroutine
             }
             if (rejected) {
@@ -163,10 +235,31 @@ public class InflightGate(
                 synchronized(lock) { if (!waiter.resumed) queue.remove(waiter) }
             }
         }
+        return turnOf(admitted, admittedNow, waiter)
     }
 
-    internal fun release() {
+    private fun turnOf(admitted: Boolean, immediate: Boolean, waiter: Waiter): Turn = when {
+        !admitted -> Turn.Refused
+        immediate -> Turn.Immediate
+        else -> Turn.Queued(clock() - waiter.queuedAt)
+    }
+
+    /** A delivered slot ends: it leaves the live list, is counted, and its permit goes back. */
+    internal fun release(slot: Slot) {
+        returnPermit {
+            if (live.remove(slot)) released += 1
+        }
+    }
+
+    /** A permit whose waiter was cancelled between admission and delivery goes back. It was never a
+     *  slot, so nothing is counted and nothing leaves the live list. */
+    private fun returnUndelivered() {
+        returnPermit {}
+    }
+
+    private inline fun returnPermit(locked: () -> Unit) {
         val toResume = synchronized(lock) {
+            locked()
             inflight -= 1
             drainAdmissibleLocked()
         }
@@ -196,18 +289,44 @@ public class InflightGate(
         private val clock: ElapsedClock,
     ) {
         private val released = AtomicBoolean(false)
-        private val lastTouch = AtomicLong(clock())
+        private val admittedAt = clock()
+        private val lastTouch = AtomicLong(admittedAt)
         private val onRelease = ConcurrentLinkedQueue<TurnEnd>()
+
+        // V4-213: what the live reading says about this slot. The slot is taken BEFORE the request
+        // body is read (HeadAdmission), so the turn names itself through [describe] once it is
+        // prepared; until then it reads [UNREAD_LABEL]. Every touch comes from the upstream (its 2xx,
+        // its bytes, its WebSocket frames), so the first one is the phase's move to streaming.
+        @Volatile private var label: String = UNREAD_LABEL
+
+        @Volatile private var compact: Boolean = false
+
+        @Volatile private var streaming: Boolean = false
+
+        /** Names the turn this slot carries: `compact` for a compaction, else [model]. */
+        public fun describe(model: String, compact: Boolean) {
+            this.compact = compact
+            label = if (compact) COMPACT_LABEL else model
+        }
 
         public fun touch() {
             lastTouch.set(clock())
+            streaming = true
         }
 
         public fun idleForMs(): Long = clock() - lastTouch.get()
 
+        internal fun reading(now: Long): GateSlot = GateSlot(
+            label = label,
+            compact = compact,
+            phase = if (streaming) GatePhase.STREAMING else GatePhase.CONNECT,
+            ageMs = now - admittedAt,
+            idleMs = now - lastTouch.get(),
+        )
+
         public fun release() {
             if (released.compareAndSet(false, true)) {
-                gate.release()
+                gate.release(this)
                 drainOnRelease()
             }
         }
@@ -227,3 +346,8 @@ public class InflightGate(
         }
     }
 }
+
+/** The live label of a compaction turn, and of a slot whose request has not been read yet: the Node
+ *  gate's own two words (codex-proxy.mjs: `compactMode ? 'compact' : (model || 'req')`). */
+private const val COMPACT_LABEL = "compact"
+private const val UNREAD_LABEL = "req"

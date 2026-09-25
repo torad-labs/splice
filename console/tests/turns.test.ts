@@ -94,7 +94,7 @@ describe('waterfall bars', () => {
   test('files the stages into phase rows, in reading order', () => {
     const rows = barRows(waterfall(turn()), 4010);
     expect(rows.map((row) => [row.group, row.ms])).toEqual([
-      ['ingest', 8],
+      ['ingest', 10],
       ['queue', 30],
       ['upstream', 280],
       ['stream', 3680],
@@ -127,7 +127,7 @@ describe('waterfall bars', () => {
     const rows = barRows(stages, totalOf(stages));
     const flat = rows.flatMap((row) => row.bars);
     expect(flat.map((bar) => bar.key)).toEqual([
-      'parse', 'build', 'gate', 'headers', 'first_byte', 'first_frame', 'first_delta', 'stream_end', 'finish',
+      'recv', 'parse', 'build', 'gate', 'headers', 'first_byte', 'first_frame', 'first_delta', 'stream_end', 'finish',
     ]);
     expect(flat.every((bar) => bar.x >= 0 && bar.x + bar.w <= 1)).toBe(true);
   });
@@ -312,17 +312,17 @@ describe('turns board', () => {
   });
 
   test('time per stage is the difference between marks, never the marks added up', () => {
-    // Cumulative marks, ms since arrival: 2 ms of splice work, 7 queued, 100 waiting on the
-    // provider, 890 streaming, 1 closing. Summing the raw marks gave finish (1001) and stream end
-    // (1000) half of all time each.
+    // Cumulative marks, ms since arrival: 3 ms of splice work (arrival to build), 7 queued, 100
+    // waiting on the provider, 890 streaming, 1 closing. Summing the raw marks gave finish (1001)
+    // and stream end (1000) half of all time each.
     const row = { head: 'h', outcome: 'ok', recv: 1, parse: 2, build: 3, gate: 10, headers: 100, first_byte: 110, first_frame: 111, first_delta: 120, stream_end: 1000, finish: 1001 } as TurnRow;
     const stages = stageRowsOf([row, row]);
     expect(stages.map((stage) => [stage.label, stage.perTurn, shareText(stage.share)])).toEqual([
-      ['splice work', 2, '0.2%'],
+      ['splice work', 3, '0.3%'],
       ['waiting for slot', 7, '0.7%'],
-      ['waiting on provider', 100, '10%'],
+      ['waiting on provider', 100, '10.0%'],
       ['streaming reply', 890, '89%'],
-      ['closing', 1, '0.1%'],
+      ['closing', 1, '<0.1%'],
     ]);
   });
 
@@ -393,26 +393,26 @@ describe('logs board', () => {
 
   test('an empty tail names the path it read', () => {
     const out = board();
-    expect(out).toContain('no lines to show');
+    expect(out).toContain('No lines');
     expect(out).toContain('/home/user/.splice/logs/daemon.log');
     expect(out, 'an empty rack gives guidance, not a route').not.toContain('/api/');
   });
 
   test('a filter box prints only when it has a choice to offer', () => {
     // A head's own log carries one tag and, usually, no level: each box offered `all` and nothing.
-    expect(board()).not.toContain('>tag<');
-    expect(board()).not.toContain('>level<');
-    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>tag<');
-    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>level<');
+    expect(board()).not.toContain('>Tag<');
+    expect(board()).not.toContain('>Level<');
+    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>Tag<');
+    expect(board({ tags: ['claudex', 'daemon'], levels: ['error'] })).toContain('>Level<');
   });
 
   test('a chosen filter keeps its box, and its value, after the lines that offered it scroll out', () => {
     // level=error was picked, then the error lines left the tail: the filter still applies, so its
     // box must stay, still saying error, for the reader to clear it.
     const out = board({ filter: { ...NO_FILTER, level: 'error' }, levels: [] });
-    expect(out).toContain('>level<');
+    expect(out).toContain('>Level<');
     expect(out).toContain('>error<');
-    expect(board({ filter: { ...NO_FILTER, head: 'daemon' }, tags: ['claudex'] })).toContain('>tag<');
+    expect(board({ filter: { ...NO_FILTER, head: 'daemon' }, tags: ['claudex'] })).toContain('>Tag<');
   });
 
   test('a paused count adds what arrived, and a rotation starts it over rather than adding the window', () => {
@@ -423,7 +423,7 @@ describe('logs board', () => {
 
   test('the new-lines count prints while paused and never while following', () => {
     expect(board({ follow: true, appended: 200 })).not.toContain('new lines');
-    expect(board({ follow: false, appended: 12 })).toContain('new lines');
+    expect(board({ follow: false, appended: 12 })).toContain('12 new lines');
   });
 
   test('the drawer prints the tailed head\'s capture, and never another head\'s', () => {

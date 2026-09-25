@@ -24,7 +24,7 @@ import { Badge, Empty, PageHeader, Section, Segmented } from '@shared/ui';
 import { Choice, Fault, Input } from '@shared/controls';
 import { LogTail } from '@widgets/log-tail';
 import { RequestDrawer } from '@widgets/waterfall';
-import { S } from './strings';
+import { H, S } from './strings';
 import './logs.css';
 
 const TAIL_SIZES = [50, 200, 500, 1000];
@@ -78,9 +78,9 @@ export function LogsBoard({
   payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture, captureError = null,
   onCaptureSwitch, locked = false, error = null, lastRead = null, sample, onFilter, onFollow, onHead, onTail,
 }: LogsBoardProps) {
-  if (locked) return <Empty text="console locked" source="management key" />;
+  if (locked) return <Empty text={S.locked} source={H.locked} />;
   // A capture fixture IS the data: a live read that failed behind it must not blank the page.
-  if (error !== null && payload === null) return <Empty text="log unreadable" source={error} />;
+  if (error !== null && payload === null) return <Empty text={S.unreadable} source={error} />;
 
   return (
     <div

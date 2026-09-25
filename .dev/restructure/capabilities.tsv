@@ -2298,3 +2298,4 @@ console/src/shared/coverage/copy-scan.ts	e8bbbe602aab65a87409cca3b9156b5cd33e0bc
 console/tests/fixtures/walls/bad-copy.tsx	2391d41ac12241d35dd881cf556b98ac2584a6026e12ebb5d080be39b060b12d	created		planted bare copy the copy wall must find, and the forms it must not
 console/src/shared/ui/strings.ts	554a17ed7aedf63be2332f1caa3ca61c0dc3a35edf0d82c2e7ffc9ed619cf0ee	created		the kit words: the empty state info mark (voice ruling, 2026-09-25)
 console/src/widgets/knob-form/knobs.ts	a9466b80f23a88e7b089d07184e6db536f8ad44614726038ff433faa7088f62c	created		the knob data (group, unit, closed values) apart from its words, so the copy wall reads only words
+console/src/widgets/log-tail/perf-line.tsx	1ddff7da59899b4e1d64c46405d114aebe610de628ab5a21f92ad991050e336f	created		a perf line drawn as its turn in the log tail: waterfall, cache hit and tokens on the tail's scale (console redesign, 2026-09-25)

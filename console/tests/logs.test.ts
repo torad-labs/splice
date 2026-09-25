@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headOf, levelOf, timeOf } from '../src/entities/logs';
-import { LogColumns, LogLine, messageOf, partsOf, toneOfLevel, whenOf } from '../src/widgets/log-tail';
+import { cacheHitOf, LogColumns, LogLine, messageOf, partsOf, perfOfLine, scaleOf, toneOfLevel, totalOf, whenOf } from '../src/widgets/log-tail';
 
 const LINE = '[2026-09-18 01:14:02] [claude-deepseek] turn compact=false model=deepseek-flash ok';
 
@@ -64,17 +64,17 @@ describe('the stream prints its column names once', () => {
   test('a line prints no column name', () => {
     const row = renderToStaticMarkup(React.createElement(LogLine, { line: LINE }));
     expect(row).not.toContain('myx-lt-cols');
-    expect(cells(row)).not.toContain('time');
-    expect(cells(row)).not.toContain('message');
+    expect(cells(row)).not.toContain('Time');
+    expect(cells(row)).not.toContain('Message');
   });
 
   test('the column row prints its names in the line order, with no level column', () => {
     // The level is the dot's word; a column beside it printed it twice, and `-` on unmarked lines.
-    expect(cells(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['time', 'head', 'message']);
+    expect(cells(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['Time', 'Head', 'Message']);
   });
 
   test('a head\'s own log drops the head column from the names and from every row', () => {
-    expect(cells(renderToStaticMarkup(React.createElement(LogColumns, { tagged: false })))).toEqual(['time', 'message']);
+    expect(cells(renderToStaticMarkup(React.createElement(LogColumns, { tagged: false })))).toEqual(['Time', 'Message']);
     const row = renderToStaticMarkup(React.createElement(LogLine, { line: LINE, tagged: false }));
     expect(row.replace(/\saria-label="[^"]*"/g, '')).not.toContain('claude-deepseek');
   });
@@ -193,5 +193,82 @@ describe('a message splits into its key=value pairs', () => {
 
   test('a message with no pair is one piece of prose', () => {
     expect(partsOf('daemon started')).toEqual([{ text: 'daemon started' }]);
+  });
+});
+
+// A PERF LINE IS DRAWN, NOT PRINTED (the 2026-09-25 "show, then say" ruling: "a perf line becomes a
+// per-turn waterfall row with a cache-hit bar and token bars, the raw line one click away"). The line
+// below is the demo daemon's own, copied from its log on 2026-09-25, marks in the order it printed
+// them: gate is stamped at admission, before parse and build, so the bar must follow the clock.
+describe('a perf line is drawn as its turn', () => {
+  const PERF = '[2026-09-25 02:20:02] [bonsai-2-27b] perf outcome=ok compact=false model=bonsai-2-27b session=e5b7a0c4 '
+    + 'recv=2 parse=11 build=18 gate=1 headers=459 first_byte=470 first_frame=461 first_delta=473 stream_end=859 finish=866 total=869 '
+    + '| inflight=1 in_tokens=72448 out_tokens=370 cached_tokens=65203 cache_write_tokens=0 usage_ms=1';
+  const perf = perfOfLine(PERF);
+
+  test('the line reads as its facts, and any other line reads as none', () => {
+    expect(perf).not.toBeNull();
+    expect(perf?.model).toBe('bonsai-2-27b');
+    expect(perf?.outcome).toBe('ok');
+    expect(perf?.marks).toMatchObject({ gate: 1, recv: 2, total: 869 });
+    expect(perf?.inTokens).toBe(72448);
+    expect(perfOfLine(LINE)).toBeNull();
+    // `perf` inside a message is not a perf line: the daemon starts the message with it
+    expect(perfOfLine('[2026-09-25 02:20:02] [claudex] turn note=perf outcome=ok')).toBeNull();
+  });
+
+  test('the cache hit is cached over in, since in_tokens holds the cached part', () => {
+    if (perf === null) throw new Error('the demo line must parse');
+    expect(cacheHitOf(perf)).toBeCloseTo(65203 / 72448);
+    expect(cacheHitOf({ ...perf, inTokens: 0 })).toBeNull();
+    expect(cacheHitOf({ ...perf, cachedTokens: null })).toBeNull();
+  });
+
+  test('the length is the closing tally, else the last mark stamped', () => {
+    if (perf === null) throw new Error('the demo line must parse');
+    expect(totalOf(perf)).toBe(869);
+    const open = { ...perf.marks };
+    delete open.total;
+    expect(totalOf({ ...perf, marks: open })).toBe(866);
+  });
+
+  test('every row shares the tail\'s scale, so a slow turn is a long bar', () => {
+    if (perf === null) throw new Error('the demo line must parse');
+    const slow = { ...perf, marks: { ...perf.marks, total: 3476 }, inTokens: 144896, outTokens: 90 };
+    expect(scaleOf([perf, slow])).toEqual({ ms: 3476, inTokens: 144896, outTokens: 370 });
+    expect(scaleOf([])).toEqual({ ms: 0, inTokens: 0, outTokens: 0 });
+    const html = renderToStaticMarkup(React.createElement(LogLine, { line: PERF, scale: scaleOf([perf, slow]) }));
+    // the waterfall's last segment ends at 866 of 3476 ms, a quarter of the width
+    const ends = [...html.matchAll(/left:([\d.]+)%;width:([\d.]+)%/g)].map((m) => Number(m[1]) + Number(m[2]));
+    expect(Math.max(...ends)).toBeCloseTo((866 / 3476) * 100, 1);
+    expect(html).toContain('aria-valuenow="50"'); // 72k of the tail's 145k in
+  });
+
+  test('the row draws the waterfall, the cache hit and the tokens, and prints no pair', () => {
+    const html = renderToStaticMarkup(React.createElement(LogLine, { line: PERF }));
+    expect(html).toContain('class="myx-wf"');
+    expect(html).toContain('aria-label="Cache hit 90%"');
+    expect(html).toContain('aria-label="Tokens in 72k"');
+    expect(html).toContain('aria-label="Tokens out 370"');
+    expect(html).toContain('869ms');
+    expect(html, 'closed, the raw pairs stay one click away').not.toContain('myx-lt-key');
+    expect(html).toContain('aria-expanded="false"');
+  });
+
+  test('open, the daemon\'s own line shows under the drawing, every pair kept', () => {
+    const html = renderToStaticMarkup(React.createElement(LogLine, { line: PERF, open: true }));
+    expect(html).toContain('aria-expanded="true"');
+    const keys = [...html.matchAll(/class="myx-lt-key">([^<]*)=</g)].map((m) => m[1]);
+    expect(keys).toEqual(partsOf(messageOf(PERF)).flatMap((part) => (part.key === undefined ? [] : [part.key])));
+  });
+
+  test('an ok turn wears no outcome, a failed one wears it as a badge', () => {
+    expect(renderToStaticMarkup(React.createElement(LogLine, { line: PERF }))).not.toContain('myx-badge');
+    const failed = PERF.replace('outcome=ok', 'outcome=upstream_error').replace(/ stream_end=\d+ finish=\d+ total=\d+/, '');
+    const html = renderToStaticMarkup(React.createElement(LogLine, { line: failed }));
+    expect(html).toContain('myx-badge-danger');
+    expect(html).toContain('>upstream_error<');
+    // a failed turn stops where its last mark was stamped, never drawn as a finished one
+    expect(perfOfLine(failed)?.marks.total).toBeUndefined();
   });
 });

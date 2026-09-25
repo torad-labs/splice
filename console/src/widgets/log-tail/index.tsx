@@ -15,7 +15,11 @@
 // head's lines only, so the head column prints only for a tail that carries several tags, and the
 // head's colour rides on the stream's bar instead, the band a head's run takes on the sessions
 // board.
-import { useEffect, useRef } from 'react';
+//
+// A perf line is drawn, not printed (perf-line.tsx): the turn's waterfall, its cache hit and its
+// tokens, on one scale shared by every perf line in the tail, with the daemon's own line one click
+// away. The rows are measured, so an opened line simply grows its row.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { dateOf, headOf, levelOf, timeOf } from '@entities/logs';
 import type { LogLevel, LogsPayload } from '@entities/logs';
@@ -24,8 +28,13 @@ import { Fault, Flag } from '@shared/controls';
 import { cx, MONTHS } from '@shared/lib';
 import { Badge, Empty } from '@shared/ui';
 import type { Tone } from '@shared/ui';
-import { S } from './strings';
+import { LEGEND, PerfCells, perfOf, scaleOf } from './perf-line';
+import type { PerfLine, PerfScale } from './perf-line';
+import { H, S, U } from './strings';
 import './log-tail.css';
+
+export { cacheHitOf, perfOf, scaleOf, totalOf } from './perf-line';
+export type { PerfLine, PerfScale } from './perf-line';
 
 const ROW_H = 28;
 
@@ -52,10 +61,10 @@ export function partsOf(message: string): Array<{ text: string; key?: string }> 
   return parts;
 }
 
-function Message({ text }: { text: string }) {
+function Message({ parts }: { parts: ReadonlyArray<{ text: string; key?: string }> }) {
   return (
     <>
-      {partsOf(text).map((part, at) => (part.key === undefined
+      {parts.map((part, at) => (part.key === undefined
         ? <span key={at}>{part.text}</span>
         : (
           <span key={at} className="myx-lt-pair">
@@ -117,21 +126,56 @@ export function LogColumns({ tagged = true }: { tagged?: boolean }) {
   );
 }
 
+/** A perf line's facts, or null for any other line: what the tail reads once per line to draw it
+ *  and to size the shared scale. */
+export function perfOfLine(line: string): PerfLine | null {
+  const message = messageOf(line);
+  return perfOf(message, partsOf(message));
+}
+
 /** One log line. Exported because a virtualized list renders nothing without a viewport, so this
- *  is the part a test can hold. */
-export function LogLine({ line, tagged = true }: { line: string; tagged?: boolean }) {
+ *  is the part a test can hold. A perf line draws its turn against `scale` (its own when the caller
+ *  has none) and shows the daemon's line under it while `open`. */
+export function LogLine({ line, tagged = true, scale, open = false, onToggle }: {
+  line: string;
+  tagged?: boolean;
+  scale?: PerfScale;
+  open?: boolean;
+  onToggle?: (() => void) | undefined;
+}) {
   const level = levelOf(line);
   const tone = toneOfLevel(level);
   const head = headOf(line);
+  const message = messageOf(line);
+  const parts = partsOf(message);
+  const perf = perfOf(message, parts);
   return (
     <div className={cx('myx-lt-line', tagged && 'myx-lt-tagged', tone !== null && `myx-lt-${tone}`)} aria-label={line.slice(0, 120)}>
       <span className="myx-lt-time">{whenOf(line)}</span>
       {tagged ? <span className="myx-lt-head">{head === null ? null : <HeadMark head={head} />}</span> : null}
-      <span className="myx-lt-text">
-        {level === null || tone === null ? null : <Badge tone={tone} quiet>{level}</Badge>}
-        <Message text={messageOf(line)} />
-      </span>
+      {perf === null ? (
+        <span className="myx-lt-text">
+          {level === null || tone === null ? null : <Badge tone={tone} quiet>{level}</Badge>}
+          <Message parts={parts} />
+        </span>
+      ) : (
+        <PerfCells perf={perf} scale={scale ?? scaleOf([perf])} open={open} onToggle={onToggle} raw={<Message parts={parts} />} />
+      )}
     </div>
+  );
+}
+
+/** The three greys a perf line's waterfall is drawn in, named once on the tail's bar. */
+function Legend() {
+  return (
+    <span className="myx-lt-legend" role="list" aria-label={S.legend}>
+      {LEGEND.map((entry) => (
+        <span key={entry.mark} className="myx-lt-legend-key" role="listitem">
+          <span className={cx('myx-lt-swatch', `myx-mark-${entry.mark}`)} aria-hidden="true" />
+          {entry.label}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -155,6 +199,18 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
   const scrollRef = useRef<HTMLDivElement>(null);
   const hue = useHue(head ?? '');
   const filtered = payload === null ? [] : payload.lines;
+  // One scale for every perf line in view of the filter, so the rows compare; the lines a reader
+  // opened, by their own text, since a virtualized row forgets its state when it scrolls away.
+  const scale = useMemo(
+    () => scaleOf(filtered.flatMap((line) => perfOfLine(line) ?? [])),
+    [filtered],
+  );
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (line: string) => setOpened((previous) => {
+    const next = new Set(previous);
+    if (!next.delete(line)) next.add(line);
+    return next;
+  });
 
   const virtualizer = useVirtualizer({
     count: filtered.length,
@@ -178,8 +234,9 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
       <header className="myx-lt-bar">
         {head === null ? null : <HeadMark head={head} />}
         <span className="myx-lt-path">{payload?.path ?? ''}</span>
+        {scale.ms > 0 ? <Legend /> : null}
         {/* Only while paused: following, every line is already in view. */}
-        {follow ? null : <Badge tone="neutral">{`${appended} ${S.newLines}`}</Badge>}
+        {follow ? null : <Badge tone="neutral">{`${appended} ${U.newLines}`}</Badge>}
         {onFollow === undefined ? null : (
           <Flag on={follow} onLabel={S.follow} offLabel={S.paused} onChange={onFollow} />
         )}
@@ -187,8 +244,8 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
 
       {filtered.length === 0 ? (
         <Empty
-          text={payload === null ? 'reading the log' : 'no lines to show'}
-          source={payload === null ? "the last lines of this head's log show here" : `${payload.path} is empty, or no line matches the filters`}
+          text={payload === null ? S.reading : S.noLines}
+          source={payload === null ? H.reading : H.noLines}
         />
       ) : (
         <>
@@ -205,7 +262,13 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
                 ref={virtualizer.measureElement}
                 style={{ top: item.start }}
               >
-                <LogLine line={filtered[item.index]} tagged={tagged} />
+                <LogLine
+                  line={filtered[item.index]}
+                  tagged={tagged}
+                  scale={scale}
+                  open={opened.has(filtered[item.index])}
+                  onToggle={() => toggle(filtered[item.index])}
+                />
               </div>
             ))}
           </div>

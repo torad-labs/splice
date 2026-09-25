@@ -6,6 +6,7 @@ import splice.app.auth.SignInPlanner
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig
+import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -66,5 +67,36 @@ class HeadBuildInputsTest {
 
         assertEquals(head, build.head)
         assertEquals(provider, build.providerCfg)
+    }
+
+    /** V4-227: the command a 401 names ("— run: <this>") is the one that fixes it. For an api-key head
+     *  that is `splice key set` on the var the daemon reads, which the head picks up on its next
+     *  request; `<wrapper> login` only asked for the same key through a terminal prompt. An OAuth head
+     *  keeps its browser login. RED before: the api-key head's build carried "claude-router login". */
+    @Test
+    fun `a 401 on an api-key head names splice key set, an OAuth head keeps its login`() {
+        val config = ConfigService(
+            statePaths = StatePaths(baseOverride = Files.createTempDirectory("head-build-inputs")),
+            headOverrides = emptyMap(),
+            envReader = { null },
+        )
+        val inputs = HeadBuildInputs(config, SignInPlanner())
+        val models = listOf(splice.core.model.ModelEntry("m", contextWindow = 100_000))
+        val apiKey = ProviderConfig(Dialect.OPENAI_CHAT, "https://or.example", AuthConfig("api-key"), models = models)
+        val oauth = ProviderConfig(
+            Dialect.OPENAI_RESPONSES,
+            "https://codex.example",
+            AuthConfig("chatgpt-oauth"),
+            models = models,
+        )
+        val wrapper = ClaudeWrapperConfig("claude-router")
+        val router = HeadConfig("openrouter", 4107, "claude-router--", "m", claude = wrapper)
+        val codex = HeadConfig("codex", 4108, "claude-codex--", "m")
+
+        val keyed = inputs.providerContext("router", router, apiKey, legacyKnobsGovern = false)
+        val signed = inputs.providerContext("codex", codex, oauth, legacyKnobsGovern = false)
+
+        assertEquals("splice key set ROUTER_API_KEY", keyed.loginCommand)
+        assertEquals("codex login", signed.loginCommand)
     }
 }

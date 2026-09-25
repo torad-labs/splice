@@ -79,8 +79,9 @@ test('the address splice dashboard opens unlocks the console and leaves no key b
   // The fragment is what DashboardCommand's redirect page sends the browser to; no init script.
   const key = env('CONSOLE_E2E_KEY');
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#k=${encodeURIComponent(key)}`);
-  await expect(page.locator('main')).toContainText(STACK.oauthHead);
-  await expect(page.locator('main')).toContainText(STACK.keyHead);
+  // The landing page is sessions: a locked console could not have read these two from the daemon.
+  await expect(page.locator('main')).toContainText(STACK.sender.name);
+  await expect(page.locator('main')).toContainText(STACK.peer.name);
   expect(await page.getByText('management key required').count(), 'the handed-over key did not unlock').toBe(0);
   expect(page.url(), 'the key was left in the address').not.toContain(key);
   expect(await page.evaluate((storage) => localStorage.getItem(storage), KEY_STORAGE), 'the key was not kept').toBe(key);
@@ -362,9 +363,11 @@ test('projects opens the stack repository with the detail its own route reports'
 
 test('sessions prints each session\'s peer from the fleet-wide edges read, unopened', async ({ page }) => {
   const faults = await open(page, 'sessions');
-  // Neither strip is opened: the peer column comes from GET /api/sessions/edges for every row.
-  const sender = page.getByRole('button', { name: `sessions ${STACK.sender.name}` });
-  const peer = page.getByRole('button', { name: `sessions ${STACK.peer.name}` });
+  // Neither row is opened: the peer column comes from GET /api/sessions/edges for every row. Each
+  // row is found by its opener, and the peer is printed in the row beside it.
+  const row = (name: string) => page.getByRole('row').filter({ has: page.getByRole('button', { name: `sessions ${name}` }) });
+  const sender = row(STACK.sender.name);
+  const peer = row(STACK.peer.name);
   await expect(sender).toContainText(STACK.peer.name, { timeout: 15_000 });
   // The received edge names its SENDER by session id; the console resolves it to the session's name.
   await expect(peer).toContainText(STACK.sender.name);

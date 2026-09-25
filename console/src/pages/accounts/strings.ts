@@ -1,5 +1,6 @@
 // Every word this page prints. S: labels, three words or fewer, sentence case. H: help, one
-// sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure.
+// sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure. An
+// account row's own words (its columns, states and rules) are widgets/account-table's.
 export const S = {
   title: 'Accounts',
   sample: 'Sample data',
@@ -8,23 +9,13 @@ export const S = {
   byHead: 'By head',
   accounts: 'Accounts',
   account: 'Account',
-  provider: 'Provider',
-  plan: 'Plan',
   state: 'State',
-  /** The daemon's two window slots: up to six hours, and longer (AccountPool QuotaSlots). */
-  short: '5h',
-  long: '7d',
   heads: 'Heads',
   head: 'Head',
-  next: 'Next',
   aboutNext: 'About next',
   nearestLimit: 'Nearest limit',
   nextReset: 'Next reset',
   excluded: 'Excluded',
-  singleLogin: 'Single login',
-  primary: 'Primary',
-  pinned: 'Pinned',
-  stale: 'Stale',
   noHeads: 'No heads',
   claudeLogins: 'Claude logins',
   aboutClaude: 'About Claude logins',
@@ -37,9 +28,6 @@ export const S = {
   signedIn: 'Signed in',
   noCredential: 'No credential',
   note: 'Note',
-  windowsRead: 'Windows read',
-  reason: 'Reason',
-  command: 'Command',
   aboutKey: 'About this key',
   detail: 'Account detail',
   openAccount: 'Open account',
@@ -47,28 +35,12 @@ export const S = {
   close: 'Close',
   noAccounts: 'No accounts yet',
   poolsUnavailable: 'Pools unavailable',
-  /** An account's state in words: the badge beside the figures that decide it. */
-  stateName: {
-    ok: 'OK',
-    warn: 'Near limit',
-    spent: 'Spent',
-    excluded: 'Excluded',
-    unknown: 'Unknown',
-  },
-  /** Why the daemon takes an account next, in the order its selector walks (AccountPool.kt:163). */
-  ruleName: {
-    pinned: 'Pinned',
-    primary: 'Primary',
-    'last used': 'Last used',
-    'most weekly room': 'Most weekly room',
-  },
 } as const;
 
 export const H = {
   claude: 'A Claude head keeps its Claude Code login; it has no pool.',
   noAccounts: 'Open a head to sign one in, or run splice login <head>.',
   poolsUnavailable: 'This splice version does not serve pools; each head shows its login.',
-  stale: 'Its reset has passed, so the figure is from before it.',
   keyOne: 'This head signs every request with one API key.',
   keyFile: 'Replace the key in its file; a set variable still wins.',
   keyStore: 'No key yet; store one and the next request uses it.',

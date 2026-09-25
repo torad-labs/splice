@@ -1,87 +1,12 @@
-// The accounts page's pure half: each account's state as a tone and a mark, its windows as figures
-// and countdowns, how a saved view turns the payload into groups, the help an api-key head gets, and
-// how a capture fixture is selected. Kept out of the component so all of it is testable without a
-// renderer, and so the sort rule below is pinned rather than eyeballed.
-import {
-  COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT, SELECTOR_ORDER_TEXT, isExcluded, isStale, nearestWindow, windowLengthText,
-} from '@entities/account';
-import type { AccountRow, AccountWindow } from '@entities/account';
+// The accounts page's pure half: how a saved view turns the payload into groups, the help an
+// api-key head gets, and how a capture fixture is selected. An account's state and its windows are
+// widgets/account-table's, shared with the fleet's pool. Kept out of the component so all of it is
+// testable without a renderer, and so the sort rule below is pinned rather than eyeballed.
+import { SELECTOR_ORDER_TEXT, nearestWindow } from '@entities/account';
+import type { AccountRow } from '@entities/account';
 import type { View } from '@features/views';
-import { fmtDurationS } from '@shared/lib';
-import type { BarPart, Mark, Tone } from '@shared/ui';
+import { ACCOUNT_FIELDS } from '@widgets/account-table';
 import { H, S } from './strings';
-
-/** What an account is, for the selector: takeable with room, near its limit, spent, refused by the
- *  pool, or unknown because its provider reported no figure. */
-export type AccountStateKey = keyof typeof S.stateName;
-
-/** Order matters and is the whole design: an excluded account is excluded even when a window is
- *  nearly spent, because the pool will not take it at all, and reporting it as near its limit would
- *  point the operator at an account the daemon is already refusing. The thresholds are the entity's
- *  (COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT), so the page and the strip cannot disagree. */
-export function stateOf(account: AccountRow, nowMs: number): AccountStateKey {
-  if (isExcluded(account, nowMs)) return 'excluded';
-  const used = nearestWindow(account, nowMs)?.used_percent ?? null;
-  if (used === null) return 'unknown';
-  if (used >= EXHAUSTED_AT_PERCENT) return 'spent';
-  if (used >= COCK_AT_PERCENT) return 'warn';
-  return 'ok';
-}
-
-/** A state's badge tone and chart mark, from one mapping each. Unknown is never green: green would
- *  claim a health nobody measured. */
-export const TONE: Record<AccountStateKey, Tone> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'neutral', unknown: 'neutral' };
-export const MARK: Record<AccountStateKey, Mark> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'series-3', unknown: 'series-2' };
-
-const STATES: readonly AccountStateKey[] = ['ok', 'warn', 'spent', 'excluded', 'unknown'];
-
-/** The accounts by state as bar parts, in a fixed order so the colours never swap places. */
-export function stateParts(accounts: readonly AccountRow[], nowMs: number): BarPart[] {
-  const counts = new Map<AccountStateKey, number>();
-  for (const account of accounts) counts.set(stateOf(account, nowMs), (counts.get(stateOf(account, nowMs)) ?? 0) + 1);
-  return STATES.map((state) => ({ key: state, label: S.stateName[state], value: counts.get(state) ?? 0, mark: MARK[state] }));
-}
-
-/** A used figure's tone: the same thresholds as the account's state. */
-export function usedTone(percent: number): Tone {
-  if (percent >= EXHAUSTED_AT_PERCENT) return 'danger';
-  if (percent >= COCK_AT_PERCENT) return 'warn';
-  return 'ok';
-}
-
-/** A window's name: its reported length, prefixed by the model where the provider scopes one. The
- *  length is the window's own (Grok reports 30d), never assumed from its slot. */
-export function windowName(window: AccountWindow): string {
-  const length = windowLengthText(window.seconds);
-  return window.model === undefined ? length : `${window.model} ${length}`;
-}
-
-const DAY_S = 86_400;
-const HOUR_S = 3_600;
-
-/** How long until a window resets, or null when the provider sent no reset or it has passed. Two
- *  days and more read in days and hours: a weekly window's `111h 6m` is `4d 15h`. */
-export function countdown(resetEpochSeconds: number | null, nowMs: number): string | null {
-  if (resetEpochSeconds === null) return null;
-  const deltaS = resetEpochSeconds - Math.floor(nowMs / 1000);
-  if (deltaS <= 0) return null;
-  if (deltaS < 2 * DAY_S) return fmtDurationS(deltaS);
-  return `${Math.floor(deltaS / DAY_S)}d ${Math.floor((deltaS % DAY_S) / HOUR_S)}h`;
-}
-
-/** What a window cell draws: the used share and its reset, a stale reading, or nothing reported. */
-export type WindowFigure =
-  | { kind: 'used'; percent: number; resets: string | null }
-  | { kind: 'stale' }
-  | { kind: 'none' };
-
-export function windowFigure(window: AccountWindow | null, nowMs: number): WindowFigure {
-  if (window === null || window.used_percent === null) return { kind: 'none' };
-  // A window whose reset has passed is a reading of a window that no longer exists: its figure is
-  // from before the reset, so it is drawn as stale and never as its old share.
-  if (isStale(window, nowMs)) return { kind: 'stale' };
-  return { kind: 'used', percent: window.used_percent, resets: countdown(window.reset_epoch_seconds, nowMs) };
-}
 
 /** The order the selector walks, once for the page, from the entity's own rule list so the words
  *  cannot drift from the daemon's order. */
@@ -156,10 +81,6 @@ export function arrangeAccounts(accounts: readonly AccountRow[], view: View, now
   groups.sort((left, right) => left.key.localeCompare(right.key));
   return groups;
 }
-
-/** The columns a saved view may name. The state and window columns are not in this set: they are
- *  what the page is for, so a view cannot hide them. */
-export const ACCOUNT_FIELDS = ['provider', 'account', 'plan', 'heads', 'next'] as const;
 
 /** Which columns a view shows. An empty list means every column, so a view that never touched its
  *  fields is not a view that hides everything. */

@@ -1,21 +1,25 @@
-// The fleet page's pure half: how a saved view turns the head list into bays, how severe a head's
-// attention state is, how the two pending field sources are read when they exist, and which
-// accounts an opened head rides.
-import { isExcluded, nextRuleOf } from '@entities/account';
-import type { AccountRow, SelectorRule } from '@entities/account';
+// The fleet page's pure half: how a saved view turns the head list into groups, how severe a head's
+// state is and which colour says it, the latency series each head draws, how the two field sources
+// are read when they exist, and which accounts an opened head rides.
+import { isExcluded } from '@entities/account';
+import type { AccountRow } from '@entities/account';
 import { headAttention, providerFamily } from '@entities/heads';
 import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
+import type { TurnRow } from '@entities/perf';
+import type { HeadWindow } from '@entities/usage';
 import type { HeadStatus, ProviderAuth } from '@shared/api';
+import type { BarPart, Mark, Tone } from '@shared/ui';
 import type { View } from '@features/views';
+import { H, S } from './strings';
 
 export interface HeadGroup {
-  /** The provider family in the `by provider` view, and '' for the one bay of every other. */
+  /** The provider family in the `By provider` view, and '' for the one run of every other. */
   key: ProviderFamily | '';
   heads: HeadStatus[];
 }
 
 /**
- * How severe a head's state is, for the `attention first` view. Higher sorts first.
+ * How severe a head's state is, for the `Attention first` view. Higher sorts first.
  *
  * `down` outranks everything: a stopped head is not waiting on the operator to fix something, and
  * burying it under a swarm of amber warnings is exactly the failure this view exists to prevent.
@@ -38,13 +42,94 @@ export function attentionRank(head: HeadStatus, signals: HeadSignals): number {
   return SEVERITY[headAttention(head, signals).cause];
 }
 
+/** The four buckets the fleet's split bar counts: healthy, needing the operator, failing, stopped. */
+export type Health = keyof typeof S.healthName;
+
+/** Unhealthy is the only failing state: every other cause is a warning the operator can act on,
+ *  while an unhealthy head has already broken a promise it made (the entity's red). */
+export function healthOf(cause: HeadState): Health {
+  if (cause === 'ok') return 'ok';
+  if (cause === 'down') return 'down';
+  return cause === 'unhealthy' ? 'failing' : 'attention';
+}
+
+const HEALTH_TONE: Record<Health, Tone> = { ok: 'ok', attention: 'warn', failing: 'danger', down: 'neutral' };
+const HEALTH_MARK: Record<Health, Mark> = { ok: 'ok', attention: 'warn', failing: 'danger', down: 'series-3' };
+const HEALTHS: readonly Health[] = ['ok', 'attention', 'failing', 'down'];
+
+/** A state's badge tone. A stopped head is grey, never red: it is not failing, it is not running. */
+export function stateTone(cause: HeadState): Tone {
+  return HEALTH_TONE[healthOf(cause)];
+}
+
+/** A row's tint: only the states that need the operator. OK and down rows stay plain, and the badge
+ *  says which they are. */
+export function rowTone(cause: HeadState): Tone | null {
+  const health = healthOf(cause);
+  return health === 'attention' ? 'warn' : health === 'failing' ? 'danger' : null;
+}
+
+/** The heads by health as bar parts, in a fixed order so the colours never swap places. */
+export function healthParts(causes: readonly HeadState[]): BarPart[] {
+  const counts = new Map<Health, number>();
+  for (const cause of causes) counts.set(healthOf(cause), (counts.get(healthOf(cause)) ?? 0) + 1);
+  return HEALTHS.map((health) => ({ key: health, label: S.healthName[health], value: counts.get(health) ?? 0, mark: HEALTH_MARK[health] }));
+}
+
+/** A plan window's level as a tone: the daemon's own levels (UsageWarn.kt), not the console's. */
+export function windowTone(window: HeadWindow): Tone {
+  return window.level === 'critical' ? 'danger' : window.level === 'warn' ? 'warn' : 'ok';
+}
+
+/** The head whose plan window is fullest, or null when no head reports one: an absent window is
+ *  never a candidate, so a fleet that reports none says so rather than naming a 0%. */
+export function fullestWindow<T extends { window: HeadWindow }>(lines: readonly T[]): T | null {
+  let best: T | null = null;
+  for (const line of lines) {
+    if (line.window.pct === null) continue;
+    if (best === null || line.window.pct > (best.window.pct ?? 0)) best = line;
+  }
+  return best;
+}
+
+/** What the fleet has in flight against its ceiling. The ceiling is null when any running head's
+ *  gate is unlimited: a sum with an unlimited term has no ceiling. */
+export function inflightTotals(heads: readonly HeadStatus[]): { inflight: number; max: number | null } {
+  let inflight = 0;
+  let max: number | null = 0;
+  for (const head of heads) {
+    if (head.gate === null) continue;
+    inflight += head.gate.inflight;
+    max = max === null || head.gate.max === 'unlimited' ? null : max + head.gate.max;
+  }
+  return { inflight, max };
+}
+
 /**
- * The bay layout for one saved view.
+ * Time to first byte, in ms, per landed turn in the order they landed: the head's own when `head` is
+ * given, every head's otherwise. A turn that never got a first byte (it failed first) is left out
+ * rather than drawn as zero, which would read as the fastest turn of the day.
+ */
+export function firstBytes(landed: readonly TurnRow[], head?: string): number[] {
+  return landed
+    .filter((row) => head === undefined || row.head === head)
+    .flatMap((row) => (row.first_byte === undefined ? [] : [row.first_byte]));
+}
+
+/** The middle value, or null for an empty series. */
+export function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] ?? null : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+/**
+ * The groups for one saved view.
  *
- * `by head` (group: null, no sort) is the fleet itself: one bay, one strip per head, in the order
- * the daemon reports. `by provider` makes one bay per family. `attention first` sorts by severity
- * inside whatever grouping the view carries, so a head that needs the operator is never below the
- * fold.
+ * `By head` (group: null, no sort) is the fleet itself: one run of every head, by key. `By provider`
+ * makes one run per family. `Attention first` sorts by severity inside whatever grouping the view
+ * carries, so a head that needs the operator is never below the fold.
  */
 export function arrangeHeads(
   heads: readonly HeadStatus[],
@@ -65,7 +150,7 @@ export function arrangeHeads(
       group.heads = [...group.heads].sort((left, right) => {
         const delta = attentionRank(right, signalsFor(right)) - attentionRank(left, signalsFor(left));
         // Ties break on the key so two equally-severe heads do not swap places between polls and
-        // make the rack flicker under the operator's cursor.
+        // make the table flicker under the operator's cursor.
         return delta !== 0 ? delta : left.key.localeCompare(right.key);
       });
     } else {
@@ -75,6 +160,10 @@ export function arrangeHeads(
   groups.sort((left, right) => left.key.localeCompare(right.key));
   return groups;
 }
+
+/** The columns a saved view may name. The head and its state are not in this set: they are what
+ *  the table is for. The dialect and port are the opened head's facts. */
+export const HEAD_FIELDS = ['provider', 'model', 'account', 'inflight', 'window', 'latency', 'turn'] as const;
 
 /** Which columns a view shows. An empty list means every column. */
 export function columnsOf(view: View, every: readonly string[]): readonly string[] {
@@ -86,7 +175,7 @@ export function columnsOf(view: View, every: readonly string[]): readonly string
  *
  * Two hops, and both are in the file the daemon reads: `heads.<key>.provider` names a
  * `[providers.<name>]` block and that block carries `dialect` (FEATURES.md 2.3). Pure over a plain
- * object so it is testable while GET /api/topology is still V4-128 and gives nothing to read.
+ * object so it is testable without the route.
  */
 export function dialectOf(topology: Record<string, unknown> | null, headKey: string): string | null {
   const heads = asTable(topology?.heads);
@@ -104,6 +193,25 @@ function asTable(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/**
+ * The last-turn cell: the turn in flight if there is one, else how long ago the head's newest turn
+ * was (the perf summary's `last_ts`), `None` when it has never run one, and null when the daemon
+ * does not say. Its only source used to be `gate.live`, which the daemon serves empty, so a head
+ * with forty turns behind it said none.
+ */
+export type LastTurn =
+  | { kind: 'live'; phase: string; ageMs: number }
+  | { kind: 'ago'; ts: number }
+  | { kind: 'none' }
+  | { kind: 'unknown' };
+
+export function lastTurnOf(head: HeadStatus, lastTs: number | null | undefined): LastTurn {
+  const live = head.gate?.live[0];
+  if (live !== undefined) return { kind: 'live', phase: live.phase, ageMs: live.age_ms };
+  if (lastTs === undefined) return { kind: 'unknown' };
+  return lastTs === null ? { kind: 'none' } : { kind: 'ago', ts: lastTs };
+}
+
 // ── the opened head's account pool (M4-02) ──────────────────────────────────────────────────────
 
 /**
@@ -119,46 +227,31 @@ export function poolOf(accounts: readonly AccountRow[], headKey: string): Accoun
 
 /**
  * HeadSignals.accountExcluded, exactly as that field's contract states it: the head rides a pool
- * whose SELECTED account is excluded. `isExcluded` is the predicate that strikes the account's own
- * strip, so the rack and the pool can never disagree about the same account. A single login's
- * `selected` is null (no pool selects it), so it never trips this.
+ * whose SELECTED account is excluded. `isExcluded` is the predicate the account's own state uses, so
+ * the head and its pool can never disagree about the same account. A single login's `selected` is
+ * null (no pool selects it), so it never trips this.
  */
 export function selectedExcluded(pool: readonly AccountRow[], nowMs: number): boolean {
   return pool.some((account) => account.selected === true && isExcluded(account, nowMs));
 }
 
-export interface PoolNext {
-  label: string;
-  /** Why the daemon takes it: the selector rule that chose it, pin included. */
-  rule: SelectorRule;
-}
-
 /**
- * The pool's next target AS THE DAEMON ANSWERED IT, and the rule that explains it.
- *
- * THE MARK IS THE DAEMON'S FLAG, NOT A RE-DERIVATION. AccountsRoute writes `next_target` from the
- * pool's own nextTargetLabel (AccountPool.kt:163), and that walks the pin first, then primary, then
- * the caller's previous account, then lowest seven-day used with ties broken by label
- * (AccountPool.kt:179-186). A console-side derivation that skipped the pin, or broke a tie by array
- * order, would mark a strip the daemon will not take — a confident wrong answer about what happens
- * next. So the flag picks the account and the order only NAMES why: pinned, then primary, then the
- * lowest seven-day account; a target that is none of those can only have been the previous one,
- * which is the selector's sticky rule. The naming is the account entity's nextRuleOf, the same rule
- * the accounts page prints.
+ * A pool with labelled accounts and no next target: nothing is available, which is the state that
+ * fails the head's next turn. The mark is the daemon's own `next_target` flag (AccountPool.kt:163),
+ * never a re-derivation, so no flag is the daemon saying none. A single login has no pool to select
+ * from, so it never reads as none available.
  */
-export function poolNext(pool: readonly AccountRow[]): PoolNext | null {
-  const target = pool.find((account) => account.next_target === true);
-  const rule = target === undefined ? null : nextRuleOf(target, pool);
-  return target === undefined || target.label === null || rule === null ? null : { label: target.label, rule };
+export function noneAvailable(pool: readonly AccountRow[]): boolean {
+  return pool.some((account) => account.label !== null) && !pool.some((account) => account.next_target === true);
 }
 
 /** The families whose heads ride OAuth logins, so GET /api/accounts reports them (AuthKindRegistry
  *  .isOAuth, AccountsRoute.fold). Every other kind is outside the join by the daemon's own rule. */
 const OAUTH_FAMILIES: ReadonlySet<ProviderFamily> = new Set<ProviderFamily>(['chatgpt', 'grok', 'kimi', 'muse']);
 
-/** What the opened head says about its state: the cause in a sentence, and the one step that
- *  clears it, as a command to copy or a page to open. The strip's edge has room for one word; this
- *  is where the word is explained (walkthrough S1, S2). */
+/** What the opened head says about its state: the cause in one sentence, and the one step that
+ *  clears it, as a command to copy or a page to open. The badge has room for one word; this is where
+ *  the word is explained (walkthrough S1, S2). */
 export interface CauseHelp {
   text: string;
   command?: string;
@@ -167,74 +260,64 @@ export interface CauseHelp {
 }
 
 export function causeHelp(head: HeadStatus, cause: HeadState, auth: ProviderAuth | undefined): CauseHelp | null {
-  const logs = { href: `#/logs?head=${encodeURIComponent(head.key)}`, link: 'open log' };
+  const signIn = { href: '#/accounts', link: S.signIn };
   switch (cause) {
     case 'ok':
       return null;
     case 'down':
-      return { text: 'this head is not running; start it below' };
+      return { text: H.down };
     case 'unhealthy':
-      return { text: 'this head is running but failing its health check; its log says why', ...logs };
+      return { text: H.unhealthy, href: `#/logs?head=${encodeURIComponent(head.key)}`, link: S.openLog };
     case 'version mismatch':
-      return { text: 'this head runs a different splice version than the daemon; restart it below' };
+      return { text: H.mismatch };
     case 'signed out':
-      return { text: 'no login is saved for this head', href: '#/accounts', link: 'sign in on accounts' };
+      return { text: H.signedOut, ...signIn };
     case 'key missing': {
       // `splice key set` writes ~/.config/splice/keys.toml, and the next request reads it: no
       // restart (KeyCommand.kt). An exported variable would need the daemon restarted to be seen.
       const variable = auth?.env_var;
-      return variable === undefined
-        ? { text: 'this head has no api key; set one with splice key set' }
-        : { text: `no api key in ${variable}; set one with this command and the next request uses it, no restart needed`, command: `splice key set ${variable}` };
+      return variable === undefined ? { text: H.keyMissingBare } : { text: H.keyMissing, command: `splice key set ${variable}` };
     }
     case 'login expired':
-      return {
-        text: auth?.refresh_latched === undefined
-          ? 'the login could not be refreshed; sign in again'
-          : `the login could not be refreshed (${auth.refresh_latched}); sign in again`,
-        href: '#/accounts',
-        link: 'sign in on accounts',
-      };
+      return { text: H.loginExpired, ...signIn };
     case 'account excluded':
-      return { text: 'the account this head would use next is excluded; the pool below says why and until when' };
+      return { text: H.accountExcluded };
     case 'queue full':
-      return { text: 'every slot is busy and the queue is at its limit, so a new turn waits or is refused' };
+      return { text: H.queueFull };
     case 'restart needed':
-      return { text: 'splice.toml changed since this head started; restart it below to apply the change' };
+      return { text: H.restartNeeded };
   }
 }
 
 /**
+ * The page's empties, as data rather than inline JSX, so a test can assert each one names its
+ * source (CONTRACTS.md section 8): one line, and the help behind its info mark.
+ */
+export const EMPTIES = {
+  /** The model and dialect while GET /api/topology or GET /api/models answers 404: only a daemon
+   *  older than this console does, since the console ships inside the daemon's jar. */
+  fields: { text: S.fieldsUnavailable, source: H.fields },
+  /** The pooled accounts while GET /api/accounts answers 404 (entities/account marks it pending). */
+  pool: { text: S.poolsUnavailable, source: H.pools },
+  noHeads: { text: S.noHeads, source: H.noHeads },
+  oneLogin: { text: S.oneLogin, source: H.oneLogin },
+  noAccounts: { text: S.noAccounts, source: H.noAccounts },
+  apiKey: { text: S.noPool, source: H.apiKey },
+  local: { text: S.noPool, source: H.local },
+  noneAvailable: { text: S.noneAvailable, source: H.noneAvailable },
+} as const;
+
+/**
  * What an opened head's pool section says when GET /api/accounts names no row for it. Four
- * different facts, never one blank rack:
+ * different facts, never one blank table:
  *   - a Claude head is `client`: it uses the Claude Code login it was started with, and never pools;
  *   - an api-key head signs every request with its one key, so there is nothing to pool;
  *   - a local head needs no login at all;
  *   - an OAuth head with no row has no signed-in account yet, and the empty says where to add one.
  */
 export function poolEmpty(authKind: string): { text: string; source: string } {
-  if (authKind === 'client') return EMPTIES.claudeLogin;
+  if (authKind === 'client') return EMPTIES.oneLogin;
   if (OAUTH_FAMILIES.has(providerFamily(authKind))) return EMPTIES.noAccounts;
   if (authKind === 'api-key') return EMPTIES.apiKey;
   return EMPTIES.local;
 }
-
-/**
- * The page's honest empties, as data rather than inline JSX, so a test can assert each one names
- * its source (CONTRACTS.md section 8).
- */
-export const EMPTIES = {
-  /** The dialect and model columns while GET /api/topology or GET /api/models answers 404: only a
-   *  daemon older than this console does, since the console ships inside the daemon's jar. */
-  fields: { text: 'dialect and model unavailable', source: 'this splice version does not serve the topology or the model list' },
-  /** The pooled accounts while GET /api/accounts answers 404 (entities/account marks it pending). */
-  pool: { text: 'account pools unavailable', source: 'this splice version does not serve accounts' },
-  noHeads: { text: 'no heads yet', source: 'run splice setup in a terminal, then splice add for each further provider' },
-  claudeLogin: { text: 'one login, no pool', source: 'a claude head uses the claude code login it was started with' },
-  noAccounts: { text: 'no accounts signed in', source: 'sign one in on the accounts page' },
-  apiKey: { text: 'no account pool', source: 'an api-key head sends every request with its one key' },
-  local: { text: 'no account pool', source: 'this head needs no login' },
-  /** A pool with labeled accounts and no next target: nothing is available, which is the state that
-   *  fails the head's next turn in words naming the earliest reset. */
-  noneAvailable: { text: 'no account available', source: 'every account is signed out, excluded or at its limit, so the next turn fails until one resets' },
-} as const;

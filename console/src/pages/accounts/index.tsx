@@ -13,8 +13,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { exclusionText, nearestOverall, nextRuleOf, slotWindows, startAccountsPolling, useAccounts } from '@entities/account';
-import type { AccountRow, AccountsState, AccountWindow } from '@entities/account';
+import { nearestOverall, startAccountsPolling, useAccounts } from '@entities/account';
+import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { HeadMark } from '@entities/control-status';
 import { familyName } from '@entities/heads';
@@ -22,15 +22,16 @@ import { AccountActions, AccountLogin, HeadActions } from '@features/account-log
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Blank, Copy, Fault } from '@shared/controls';
-import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
+import { ABSENT, fmtInt } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
+import {
+  AccountFacts, AccountStateBadge, accountColumns, accountKey, accountName, accountTone, countdown, stateOf, stateParts,
+  usedTone, windowName,
+} from '@widgets/account-table';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
 import { dispositions } from './coverage';
-import {
-  arrangeAccounts, columnsOf, countdown, fixtureName, keyCommand, keyHelp, orderText, stateOf, stateParts,
-  TONE, usedTone, windowFigure, windowName,
-} from './model';
+import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp, orderText } from './model';
 import type { HeadRow } from './model';
 import { H, S, U } from './strings';
 import './accounts.css';
@@ -50,8 +51,7 @@ export const DEFAULT_VIEWS: readonly View[] = [
 
 /** The key the detail panel is showing. One thing open at a time, addressed by what it is. */
 export function openAccountKey(account: AccountRow): string {
-  // A single-login head has no label; its credential file (or its heads) is what it is.
-  return `account:${account.kind}:${account.label ?? account.credential_path ?? account.heads.join(',')}`;
+  return `account:${accountKey(account)}`;
 }
 
 export function openHeadKey(head: string): string {
@@ -71,87 +71,6 @@ function useNow(intervalMs: number, fixed: number | null): number {
     return () => clearInterval(id);
   }, [intervalMs, fixed]);
   return now;
-}
-
-/** An account's name: its pool label, or `Single login` for an OAuth head with no pool. */
-function accountName(account: AccountRow): string {
-  return account.label ?? S.singleLogin;
-}
-
-/** One window as a meter with its used share, the reset countdown beside it, and the window's own
- *  length where it is not the slot's (Grok reports 30d, a Claude window names its model). */
-function WindowCell({ window, slot, nowMs, label }: { window: AccountWindow | null; slot: string; nowMs: number; label: string }) {
-  const figure = windowFigure(window, nowMs);
-  if (figure.kind === 'none') return <>{ABSENT}</>;
-  if (figure.kind === 'stale') return <Badge tone="neutral" quiet>{S.stale}</Badge>;
-  const name = window === null ? slot : windowName(window);
-  return (
-    <span className="myx-ac-win">
-      <Meter
-        value={figure.percent / 100}
-        tone={usedTone(figure.percent)}
-        label={`${label} ${name}`}
-        figure={`${Math.round(figure.percent)}${U.used}`}
-      />
-      <span className="myx-ac-win-note">{[name === slot ? null : name, figure.resets].filter((part) => part !== null).join(' ')}</span>
-    </span>
-  );
-}
-
-function accountColumns(fields: readonly string[], grouped: string | null, nowMs: number, accounts: readonly AccountRow[]): Column<AccountRow>[] {
-  const wanted = new Set(fields);
-  const columns: (Column<AccountRow> | null)[] = [
-    {
-      key: 'account',
-      label: S.account,
-      width: '18%',
-      primary: true,
-      cell: (account) => (
-        <span className="myx-ac-name">
-          {wanted.has('account') ? accountName(account) : null}
-          {account.primary ? <Badge tone="neutral" quiet>{S.primary}</Badge> : null}
-          {account.pinned === true ? <Badge tone="accent" quiet>{S.pinned}</Badge> : null}
-        </span>
-      ),
-    },
-    wanted.has('provider') && grouped !== 'provider'
-      ? { key: 'provider', label: S.provider, width: '11%', cell: (account) => familyName(account.kind) }
-      : null,
-    wanted.has('plan') ? { key: 'plan', label: S.plan, width: '8%', cell: (account) => account.plan ?? ABSENT } : null,
-    {
-      key: 'state',
-      label: S.state,
-      width: '11%',
-      cell: (account) => {
-        const state = stateOf(account, nowMs);
-        return <Badge tone={TONE[state]} quiet>{S.stateName[state]}</Badge>;
-      },
-    },
-    { key: 'short', label: S.short, width: '18%', cell: (account) => <WindowCell window={slotWindows(account).short} slot={S.short} nowMs={nowMs} label={accountName(account)} /> },
-    { key: 'long', label: S.long, width: '18%', cell: (account) => <WindowCell window={slotWindows(account).long} slot={S.long} nowMs={nowMs} label={accountName(account)} /> },
-    wanted.has('heads') && grouped !== 'head'
-      ? {
-        key: 'heads',
-        label: S.heads,
-        cell: (account) => (account.heads.length === 0 ? ABSENT : (
-          <span className="myx-ac-heads">{account.heads.map((head) => <HeadMark key={head} head={head} />)}</span>
-        )),
-      }
-      : null,
-    wanted.has('next')
-      ? {
-        key: 'next',
-        label: S.next,
-        width: '12%',
-        cell: (account) => {
-          // The daemon's own flag, per pool (M4-08), and the rule inside that pool that explains it.
-          const rule = nextRuleOf(account, accounts);
-          return rule === null ? null : <Badge tone="accent">{S.ruleName[rule]}</Badge>;
-        },
-      }
-      : null,
-  ];
-  return columns.filter((column): column is Column<AccountRow> => column !== null);
 }
 
 /** The figures the page leads with: every account by state, the window nearest its limit with its
@@ -236,24 +155,6 @@ export function ApiKeyDetail({ row }: { row: HeadRow }) {
   );
 }
 
-/** Every fact an opened account carries: its provider and plan, every window it reported, when the
- *  windows were read, and the pool's reason where it refuses the account. */
-function AccountFacts({ account, nowMs }: { account: AccountRow; nowMs: number }) {
-  const rows: [string, ReactNode][] = [
-    [S.provider, familyName(account.kind)],
-    [S.plan, account.plan ?? ABSENT],
-    [S.heads, account.heads.length === 0 ? ABSENT : account.heads.join(' ')],
-    ...account.windows.map((window): [string, ReactNode] => [
-      windowName(window),
-      <WindowCell key={windowName(window)} window={window} slot={windowName(window)} nowMs={nowMs} label={accountName(account)} />,
-    ]),
-    [S.windowsRead, account.observed_at_epoch_seconds === null || account.observed_at_epoch_seconds === undefined
-      ? ABSENT : timeAgo(account.observed_at_epoch_seconds * 1000, nowMs)],
-    ...(stateOf(account, nowMs) === 'excluded' ? [[S.reason, exclusionText(account)] as [string, ReactNode]] : []),
-  ];
-  return <KeyValue rows={rows} />;
-}
-
 /** The board, drawn from a payload it is handed rather than from the store, so a test can hand it
  *  pools (a static render only ever sees a store's initial state). */
 export function AccountsBoard({ payload, headRows = [], nowMs, error = null, lastRead = null, sample }: {
@@ -296,7 +197,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, las
   // What the one detail panel holds: an account, an api-key head, or a head's own actions.
   const panel: { title: string; status?: ReactNode; body: ReactNode } | null = opened !== null ? {
     title: accountName(opened),
-    status: <Badge tone={TONE[stateOf(opened, nowMs)]}>{S.stateName[stateOf(opened, nowMs)]}</Badge>,
+    status: <AccountStateBadge account={opened} nowMs={nowMs} />,
     body: (
       <>
         <AccountFacts account={opened} nowMs={nowMs} />
@@ -345,17 +246,14 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, las
               <Figures accounts={accounts} nowMs={nowMs} />
               <Section title={S.accounts} count={accounts.length} info={{ text: orderText(), label: S.aboutNext }}>
                 <DataTable
-                  columns={accountColumns(columnsOf(active), active.group, nowMs, accounts)}
+                  columns={accountColumns({ fields: columnsOf(active), grouped: active.group, nowMs, accounts })}
                   groups={groups}
                   rowKey={openAccountKey}
                   label={S.accounts}
                   onOpen={(account) => toggle(openAccountKey(account))}
                   openLabel={(account) => `${S.openAccount} ${account.kind} ${accountName(account)}`}
                   selectedKey={openKey}
-                  rowTone={(account) => {
-                    const state = stateOf(account, nowMs);
-                    return state === 'spent' ? 'danger' : state === 'warn' ? 'warn' : null;
-                  }}
+                  rowTone={(account) => accountTone(account, nowMs)}
                 />
               </Section>
             </>

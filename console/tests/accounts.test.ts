@@ -27,16 +27,17 @@ import {
 import type { AccountRow, AccountWindow } from '../src/entities/account';
 import { LOGIN_PENDING_EMPTY, IDLE, canStart, next, stepMessage } from '../src/features/account-login/model';
 import { H as LOGIN } from '../src/features/account-login/strings';
-import { AccountStrip, windowFieldLabel } from '../src/widgets/account-strip';
-import { refusalOf } from '../src/features/account-login';
 import {
-  arrangeAccounts, columnsOf, countdown, fixtureName, keyCommand, keyHelp, stateOf, TONE, usedTone, windowFigure,
-} from '../src/pages/accounts/model';
+  ACCOUNT_FIELDS, ACCOUNT_WORDS as W, AccountFacts, accountColumns, accountKey, countdown, stateOf, TONE, usedTone,
+  windowFigure, windowName,
+} from '../src/widgets/account-table';
+import { refusalOf } from '../src/features/account-login';
+import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp } from '../src/pages/accounts/model';
 import { dispositions } from '../src/pages/accounts/coverage';
 import { AccountsBoard, ApiKeyDetail } from '../src/pages/accounts';
 import { H, S } from '../src/pages/accounts/strings';
 import { ABSENT } from '../src/shared/lib';
-import { Empty } from '../src/shared/ui';
+import { DataTable, Empty } from '../src/shared/ui';
 import type { View } from '../src/features/views';
 
 const h = React.createElement;
@@ -112,12 +113,12 @@ describe('the strip state', () => {
   });
 
   test('the longest reported length is never assumed to be weekly', () => {
-    expect(windowFieldLabel({ seconds: DAY_30, used_percent: 10, reset_epoch_seconds: null })).toBe('30d');
-    expect(windowFieldLabel({ seconds: HOUR_5, used_percent: 10, reset_epoch_seconds: null })).toBe('5h');
+    expect(windowName({ seconds: DAY_30, used_percent: 10, reset_epoch_seconds: null })).toBe('30d');
+    expect(windowName({ seconds: HOUR_5, used_percent: 10, reset_epoch_seconds: null })).toBe('5h');
   });
 
   test('a model-scoped window says which model', () => {
-    expect(windowFieldLabel({ seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' }))
+    expect(windowName({ seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' }))
       .toBe('opus 7d');
   });
 });
@@ -291,34 +292,31 @@ describe('pending routes render one line, and its help says what to do instead',
   });
 });
 
-describe('what one strip prints', () => {
-  test('the edge label, the window length and the not-reported text all reach the page', () => {
-    // M1-74 converged the word on the entity's NOT_REPORTED (one fact, one spelling). The assertion
-    // is the PROPERTY - the entity's word reaches the page - rather than the literal it used to be,
-    // so a future change of the word does not have to be chased through every test that shows it.
-    const out = render(h(AccountStrip, {
-      account: account({ label: 'quiet', windows: [window5h(null)] }),
-      isNext: false,
-      nextRule: '',
-      columns: ['provider', 'account'],
-      nowMs: NOW,
-    }));
-    expect(out).toContain('quiet');
-    expect(out).toContain('>5h<');
-    expect(out).toContain(NOT_REPORTED);
-    expect(out).toContain(NOT_REPORTED); // and it is PRINTED, not only labelled
+/** One account as a row of the shared account table (widgets/account-table), the row both the
+ *  accounts page and a fleet head's pool print. */
+function accountRow(one: AccountRow, fields: readonly string[] = ACCOUNT_FIELDS, pool: readonly AccountRow[] = [one]): string {
+  return render(h(DataTable<AccountRow>, {
+    columns: accountColumns({ fields, grouped: null, nowMs: NOW, accounts: pool }),
+    rows: [one],
+    rowKey: accountKey,
+    label: 'Pool',
+  }));
+}
+
+describe('what one account row prints', () => {
+  test('the name, the slot and the absence of an unreported window all reach the row, never a zero', () => {
+    const out = accountRow(account({ label: 'quiet', windows: [window5h(null)] }));
+    expect(out).toContain('>quiet<');
+    expect(out).toContain(`>${W.short}<`);
+    expect(out).toContain(`>${ABSENT}<`);
+    expect(out).not.toContain('>0%<');
+    expect(out).toContain(`>${W.stateName.unknown}<`);
   });
 
-  test('every strip has the same cells whatever windows it reports, so the columns line up', () => {
+  test('every row has the same cells whatever windows it reports, so the columns line up', () => {
     // Walkthrough B3: a cell per reported window made a no-window row one cell short, and the
     // account name landed under "resets".
-    const cells = (windows: AccountWindow[]) => (render(h(AccountStrip, {
-      account: account({ label: 'x', windows }),
-      isNext: false,
-      nextRule: '',
-      columns: ['provider', 'account', 'plan', 'heads', 'next'],
-      nowMs: NOW,
-    })).match(/class="myx-sfield/g) ?? []).length;
+    const cells = (windows: AccountWindow[]) => (accountRow(account({ label: 'x', windows })).match(/<td/g) ?? []).length;
     const none = cells([]);
     expect(cells([window5h(40)])).toBe(none);
     expect(cells([window5h(40), { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null }])).toBe(none);
@@ -329,43 +327,26 @@ describe('what one strip prints', () => {
     ])).toBe(none);
   });
 
-  test('the long track shows its fullest window under that window\'s own length', () => {
-    const out = render(h(AccountStrip, {
-      account: account({ label: 'g', windows: [
-        { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' },
-        { seconds: DAY_7, used_percent: 70, reset_epoch_seconds: null, model: 'sonnet' },
-      ] }),
-      isNext: false,
-      nextRule: '',
-      columns: [],
-      nowMs: NOW,
-    }));
+  test('the long slot shows its fullest window under that window\'s own length', () => {
+    const out = accountRow(account({ label: 'g', windows: [
+      { seconds: DAY_7, used_percent: 10, reset_epoch_seconds: null, model: 'opus' },
+      { seconds: DAY_7, used_percent: 70, reset_epoch_seconds: null, model: 'sonnet' },
+    ] }));
     expect(out).toContain('sonnet 7d');
-    expect(out).toContain('70%');
-    expect(out).toContain('>5h<'); // the empty short track still names its slot
+    expect(out).toContain('>70%<');
   });
 
-  test('the next target prints the rule that chose it', () => {
-    const out = render(h(AccountStrip, {
-      account: account({ label: 'primary', primary: true }),
-      isNext: true,
-      nextRule: 'primary',
-      columns: ['next'],
-      nowMs: NOW,
-    }));
-    expect(out).toContain('>primary<');
+  test('the next target prints the rule that chose it, and no other row prints one', () => {
+    const primary = account({ label: 'main', primary: true, next_target: true });
+    const other = account({ label: 'work' });
+    expect(accountRow(primary, ['next'], [primary, other])).toContain(`>${W.ruleName.primary}<`);
+    expect(accountRow(other, ['next'], [primary, other])).not.toContain('myx-badge-accent');
   });
 
-  test('an excluded strip is aria-disabled and prints its reason', () => {
-    const out = render(h(AccountStrip, {
-      account: account({ label: 'gone', available: false, auth_exclusion_reason: 'cooling down' }),
-      isNext: false,
-      nextRule: '',
-      columns: ['account'],
-      nowMs: NOW,
-    }));
-    expect(out).toContain('aria-disabled="true"');
-    expect(out).toContain('cooling down');
+  test('an excluded account prints its state on the row and its reason when opened', () => {
+    const gone = account({ label: 'gone', available: false, auth_exclusion_reason: 'cooling down' });
+    expect(accountRow(gone)).toContain(`>${W.stateName.excluded}<`);
+    expect(render(h(AccountFacts, { account: gone, nowMs: NOW }))).toContain('cooling down');
   });
 });
 
@@ -595,7 +576,7 @@ describe('the accounts table', () => {
   const accounts = table(out, S.accounts);
 
   test('names its columns once, with one cell per column in every row, grouped by provider by default', () => {
-    expect(accounts.names).toEqual([S.account, S.plan, S.state, S.short, S.long, S.heads, S.next]);
+    expect(accounts.names).toEqual([W.account, W.plan, W.state, W.short, W.long, W.heads, W.next]);
     expect(accounts.rows).toHaveLength(pool.length);
     for (const cells of accounts.cells) expect(cells).toHaveLength(accounts.names.length);
   });
@@ -634,12 +615,12 @@ describe('a window read before its reset', () => {
   const stale = { seconds: 7 * 86_400, used_percent: 99, reset_epoch_seconds: reset };
   const muse = account({ kind: 'muse-oauth', label: null, single_login: true, windows: [stale], observed_at_epoch_seconds: NOW / 1000 - 6.5 * 86_400 });
 
-  test('is no figure at all: no warn edge, and the track reads unknown on the stale basis', () => {
+  test('is no figure at all: no warn edge, and the row reads stale in its slot', () => {
     expect(accountState(muse, NOW).label).toBe(NOT_REPORTED);
     expect(accountState(muse, NOW).edge).toBe('grey');
-    const out = render(h(AccountStrip, { account: muse, isNext: false, nextRule: '', columns: ['provider'], nowMs: NOW }));
+    const out = accountRow(muse, ['provider']);
     expect(out).not.toContain('99%');
-    expect(out).toContain('>Stale<');
+    expect(out).toContain(`>${W.stale}<`);
     // the same window before its reset is the figure it was
     expect(accountState(muse, reset * 1000 - 1).label).toBe('warn 99%');
   });
@@ -647,9 +628,9 @@ describe('a window read before its reset', () => {
   test('the page draws it as stale, its state is unknown, and its old share is nowhere', () => {
     const out = render(h(AccountsBoard, { payload: { accounts: [muse] }, nowMs: NOW }));
     expect(stateOf(muse, NOW)).toBe('unknown');
-    expect(out).toContain(`>${S.stale}<`);
+    expect(out).toContain(`>${W.stale}<`);
     expect(out).not.toContain('99%');
-    expect(out).toContain(`>${S.stateName.unknown}<`);
+    expect(out).toContain(`>${W.stateName.unknown}<`);
   });
 
   test('ranks with the unknown, last in nearest exhaustion', () => {

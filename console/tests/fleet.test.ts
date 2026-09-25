@@ -1,20 +1,21 @@
 // WALLS for the fleet page. The load-bearing one is `one printed cause, and the worst one wins`:
-// ARRIVE on this page is "which head needs me", and a strip that printed a healthy edge while a
+// ARRIVE on this page is "which head needs me", and a row that printed a healthy badge while a
 // head was actually unhealthy would send the operator past the only thing they opened the page for.
 //
-// The second is `a stopped head is struck, never merely amber`. A down head is not a warning; it is
-// a head that cannot take work, and the world's grammar makes that the strike.
+// The second is `a stopped head is down, never merely amber`. A down head is not a warning; it is
+// a head that cannot take work.
 //
 // A `.ts` test cannot hold JSX (TS1161), so elements are built with React.createElement and
 // asserted against renderToStaticMarkup's string.
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
-import { NOT_REPORTED } from '../src/entities/account';
+import { nextRuleOf } from '../src/entities/account';
 import type { AccountRow } from '../src/entities/account';
 import {
   ATTENTION_CAUSES,
   EDGE_WORDS,
+  familyName,
   headAttention,
   inflightText,
   liveTurnText,
@@ -24,11 +25,18 @@ import {
   FAMILY_NAME,
 } from '../src/entities/heads';
 import type { HeadSignals } from '../src/entities/heads';
+import type { TurnRow } from '../src/entities/perf';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
-import { HeadStrip, lastTurnText, providerText } from '../src/widgets/head-strip';
-import { EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from '../src/pages/fleet/model';
+import {
+  EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, fullestWindow, healthOf, healthParts, inflightTotals,
+  lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone,
+} from '../src/pages/fleet/model';
 import { dispositions } from '../src/pages/fleet/coverage';
-import { ADD_COMMAND, AddHeadLine, CauseLine } from '../src/pages/fleet';
+import { ADD_COMMAND, AddHead, CauseLine, FleetBoard } from '../src/pages/fleet';
+import type { FleetSources } from '../src/pages/fleet';
+import { H, S } from '../src/pages/fleet/strings';
+import { ACCOUNT_WORDS } from '../src/widgets/account-table';
+import { ABSENT } from '../src/shared/lib';
 import { Empty } from '../src/shared/ui';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
 import type { View } from '../src/features/views';
@@ -128,7 +136,9 @@ describe('one printed cause, and the worst one wins', () => {
     expect(state.label).toBe('no key');
     const help = causeHelp(keyHead, state.cause, { kind: 'api-key', login: 'manual', present: false, env_var: 'DEEPSEEK_API_KEY' });
     expect(help?.command).toBe('splice key set DEEPSEEK_API_KEY');
-    expect(help?.text).toContain('DEEPSEEK_API_KEY');
+    expect(help?.text).toBe(H.keyMissing);
+    // With no variable named there is no command to copy, and the line says which one to run.
+    expect(causeHelp(keyHead, state.cause, undefined)).toEqual({ text: H.keyMissingBare });
     // A login head keeps `signed out`, and its step is the accounts page.
     const login = causeHelp(head(), headAttention(head(), signals({ credentialPresent: false })).cause, undefined);
     expect(login?.href).toBe('#/accounts');
@@ -302,12 +312,47 @@ describe('provider family', () => {
     const names = Object.values(FAMILY_NAME);
     expect(new Set(names).size).toBe(names.length);
     expect(FAMILY_NAME.key).toBe('api key');
-    expect(providerText('api-key')).toBe('api key');
-    expect(providerText('chatgpt-oauth')).toBe('chatgpt');
+    expect(familyName('api-key')).toBe('api key');
+    expect(familyName('chatgpt-oauth')).toBe('chatgpt');
   });
 });
 
-describe('what one strip prints', () => {
+const BOARD_NOW = Date.UTC(2026, 8, 24, 18, 0, 0);
+
+/** Every source unread: what the board sees before its first polls land. */
+const NO_SOURCES: FleetSources = {
+  auth: null,
+  usage: null,
+  accounts: null,
+  topology: null,
+  catalogs: null,
+  fieldsPending: false,
+  topologyStale: false,
+  landed: [],
+  lastTs: new Map(),
+  overrides: [],
+};
+
+function board(heads: readonly HeadStatus[] | null, over: Partial<FleetSources> = {}, openKey: string | null = null): string {
+  return render(h(FleetBoard, { heads, sources: { ...NO_SOURCES, ...over }, openKey, onOpen: () => undefined, nowMs: BOARD_NOW }));
+}
+
+/** A table's column names and its data rows (group title rows left out), one string per row. */
+function table(markup: string, label: string): { names: string[]; rows: string[] } {
+  const match = new RegExp(`<table[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</table>`).exec(markup);
+  const [top, body] = (match?.[1] ?? '').split('</thead>');
+  return {
+    names: [...(top ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1] ?? ''),
+    rows: (body ?? '').split('<tr').slice(1).filter((row) => !row.includes('myx-dt-group')),
+  };
+}
+
+/** One landed turn of `head`, `firstByte` ms to its first byte (absent for a turn that failed first). */
+function turn(key: string, ts: number, firstByte?: number): TurnRow {
+  return { head: key, ts, model: null, outcome: 'ok', compact: false, ...(firstByte === undefined ? {} : { first_byte: firstByte }) };
+}
+
+describe('what one head row prints', () => {
   const usage: UsagePayload = {
     window_hours: 5,
     warn_pct: 80,
@@ -315,78 +360,177 @@ describe('what one strip prints', () => {
     heads: [{ key: 'claudex', label: 'claudex', usage: { output_tokens_5h: 1, entries: 2, ratelimit: null, warn: { level: 'warn', pct: 84, source: 'headers', reset: null } } }],
   };
 
-  function strip(over: Partial<HeadStatus> = {}, signalsOver: Partial<HeadSignals> = {}): string {
-    const one = head(over);
-    return render(h(HeadStrip, {
-      head: one,
-      attention: headAttention(one, signals(signalsOver)),
-      window: headWindow(usage, one.key),
-      account: 'acct-a',
-      dialect: null,
-      model: null,
-      columns: [],
-    }));
+  function row(over: Partial<HeadStatus> = {}, sources: Partial<FleetSources> = {}): string {
+    return table(board([head(over)], { usage, ...sources }), S.heads).rows[0] ?? '';
   }
 
-  test('every field label reaches the markup', () => {
-    const out = strip();
-    for (const label of ['provider', 'head', 'port', 'dialect', 'model', 'account', 'in flight', 'window', 'last turn']) {
-      expect(out).toContain(`>${label}<`);
-    }
+  /** One cell of the row, found by its column's name rather than its position. */
+  function cell(column: string, over: Partial<HeadStatus> = {}, sources: Partial<FleetSources> = {}): string {
+    const heads = table(board([head(over)], { usage, ...sources }), S.heads);
+    return (heads.rows[0] ?? '').split('<td').slice(1)[heads.names.indexOf(column)] ?? '';
+  }
+
+  test('names every column once, and every row has one cell per column', () => {
+    const heads = table(board([head(), head({ key: 'other', gate: null })], { usage }), S.heads);
+    expect(heads.names).toEqual([S.head, S.provider, S.state, S.model, S.account, S.inflight, S.window, S.firstByte, S.lastTurn]);
+    for (const one of heads.rows) expect((one.match(/<td/g) ?? []).length).toBe(heads.names.length);
   });
 
   test('the provider family prints as its name, with no monogram before it', () => {
-    const out = strip();
-    expect(out).toContain('>chatgpt<');
-    expect(out).not.toContain('cg chatgpt');
+    expect(row()).toContain('>chatgpt<');
+    expect(row()).not.toContain('cg chatgpt');
   });
 
-  test('the window prints its percentage, and not reported when there is none', () => {
-    expect(strip()).toContain('84%');
-    expect(strip({ key: 'other' })).toContain(NOT_REPORTED);
+  test('the window is a meter with its percentage, and the absence when the head reports none, never 0%', () => {
+    expect(row()).toContain('>84%<');
+    expect(row()).toContain('role="meter"');
+    const quiet = row({ key: 'other' });
+    expect(quiet).not.toContain('>0%<');
+    expect(quiet).toContain(`>${ABSENT}<`);
   });
 
-  test('a field no source answered prints none rather than inventing a value or a stale row', () => {
-    const out = strip();
-    expect(out).toContain('>none<');
-    expect(out).not.toContain('not built');
+  test('a model the catalog writes as empty prints the absence, and a pinned one prints its name', () => {
+    const catalog = (pinned: string) => [{ head: 'claudex', provider: 'codex', pinned_model: pinned, models: [] }];
+    expect(cell(S.model, {}, { catalogs: catalog('') })).toContain(`>${ABSENT}<`);
+    expect(cell(S.model, {}, { catalogs: catalog('gpt-5.5') })).toContain('>gpt-5.5<');
   });
 
-  test('a struck head renders aria-disabled and its printed cause', () => {
-    const out = strip({ running: false });
-    expect(out).toContain('aria-disabled="true"');
-    expect(out).toContain('>down<');
+  test('a stopped head says down on a quiet row; a failing one is the only red', () => {
+    const down = row({ running: false });
+    expect(down).toContain(`>${S.stateName.down}<`);
+    expect(down).not.toContain('myx-dt-tone');
+    const failing = row({ healthy: false });
+    expect(failing).toContain(`>${S.stateName.unhealthy}<`);
+    expect(failing).toContain('myx-dt-tone-danger');
+    expect(row({ versionMatch: false })).toContain('myx-dt-tone-warn');
   });
 
-  test('a cocked head prints its cause beside the edge', () => {
-    const out = strip({ versionMatch: false });
-    expect(out).toContain('>mismatch<');
-    expect(out).toContain('myx-edge-amber');
+  test('in flight is a meter against the ceiling, and the count alone when there is none', () => {
+    expect(row()).toContain('>1/4<');
+    const open = row({ gate: gate({ max: 'unlimited' }) });
+    expect(open).toContain('>1<');
+    expect(open).not.toContain(`aria-label="${S.inflight} claudex"`);
   });
 
-  test('in-flight prints against the ceiling, and alone when there is none', () => {
-    expect(strip()).toContain('1/4');
-    expect(strip({ gate: gate({ max: 'unlimited' }) })).toContain('>1<');
-  });
-
-  test('a live turn prints its phase and age; an idle head prints the honest empty', () => {
-    const busy = strip({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
-    expect(busy).toContain('streaming');
-    expect(liveTurnText(head())).toBeNull();
+  test('first byte is the head\'s own series as a sparkline with its median beside it', () => {
+    const landed = [turn('claudex', 1, 400), turn('other', 2, 9000), turn('claudex', 3), turn('claudex', 4, 600)];
+    const out = row({}, { landed });
+    expect(out).toContain('myx-spark');
+    // the median of 400 and 600: the other head's turn and the turn that failed first are not in it
+    expect(out).toContain('>500ms<');
+    expect(row()).not.toContain('myx-spark');
   });
 
   test('an idle head prints when its last turn was, from the perf summary, not a bare none', () => {
     // gate.live is served empty, so this cell read `none` on every head, busy afternoon or not.
-    const now = Date.UTC(2026, 8, 24, 18, 0, 0);
-    expect(lastTurnText(head(), now - 3 * 3_600_000, now)).toBe('3h ago');
-    expect(lastTurnText(head(), null, now)).toBe('none');
-    expect(lastTurnText(head(), undefined, now)).toBe('–');
+    expect(row({}, { lastTs: new Map([['claudex', BOARD_NOW - 3 * 3_600_000]]) })).toContain('>3h ago<');
+    expect(row({}, { lastTs: new Map([['claudex', null]]) })).toContain(`>${S.none}<`);
+    const live = row({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
+    expect(live).toContain('streaming 1.5s');
+  });
+
+  test('the last turn is live, ago, none or unknown, and these are four different facts', () => {
     const busy = head({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
-    expect(lastTurnText(busy, now - 3 * 3_600_000, now)).toBe('streaming 1.5s');
+    expect(lastTurnOf(busy, 5)).toEqual({ kind: 'live', phase: 'streaming', ageMs: 1500 });
+    expect(lastTurnOf(head(), 5)).toEqual({ kind: 'ago', ts: 5 });
+    expect(lastTurnOf(head(), null)).toEqual({ kind: 'none' });
+    expect(lastTurnOf(head(), undefined)).toEqual({ kind: 'unknown' });
+    expect(liveTurnText(head())).toBeNull();
   });
 
   test('inflightText with no gate prints nothing rather than a zero', () => {
     expect(inflightText(head({ gate: null }))).toBe('');
+  });
+});
+
+describe('the figures', () => {
+  test('health is the state now, split four ways in a fixed order', () => {
+    expect(['ok', 'down', 'unhealthy', 'queue full'].map((cause) => healthOf(cause as never))).toEqual(['ok', 'down', 'failing', 'attention']);
+    const parts = healthParts(['ok', 'ok', 'unhealthy', 'down', 'restart needed']);
+    expect(parts.map((part) => [part.key, part.value])).toEqual([['ok', 2], ['attention', 1], ['failing', 1], ['down', 1]]);
+    expect(stateTone('down')).toBe('neutral');
+    expect(rowTone('down')).toBeNull();
+    expect(rowTone('ok')).toBeNull();
+  });
+
+  test('in flight sums against the ceiling, and an unlimited gate leaves the fleet with none', () => {
+    expect(inflightTotals([head(), head({ gate: gate({ inflight: 3, max: 8 }) }), head({ gate: null })])).toEqual({ inflight: 4, max: 12 });
+    expect(inflightTotals([head(), head({ gate: gate({ max: 'unlimited' }) })]).max).toBeNull();
+  });
+
+  test('the fullest window names its head, and a fleet reporting none names nobody', () => {
+    const quiet = { pct: null, level: 'none' as const, reset: null };
+    const lines = [{ key: 'a', window: quiet }, { key: 'b', window: { pct: 40, level: 'ok' as const, reset: null } }, { key: 'c', window: { pct: 12, level: 'ok' as const, reset: null } }];
+    expect(fullestWindow(lines)?.key).toBe('b');
+    expect(fullestWindow([{ key: 'a', window: quiet }])).toBeNull();
+  });
+
+  test('first byte leaves out a turn that never got one, and the median of nothing is nothing', () => {
+    expect(firstBytes([turn('a', 1, 100), turn('b', 2), turn('a', 3, 300)])).toEqual([100, 300]);
+    expect(firstBytes([turn('a', 1, 100), turn('b', 2, 50)], 'b')).toEqual([50]);
+    expect(median([])).toBeNull();
+    expect(median([3, 1, 2])).toBe(2);
+  });
+
+  test('the board leads with the heads by health, what is in flight, first byte and the nearest limit', () => {
+    const out = board([head(), head({ key: 'down', running: false })], { landed: [turn('claudex', 1, 250)] });
+    for (const label of [S.heads, S.inflight, S.firstByte, S.nearestLimit]) expect(out).toContain(`>${label}<`);
+    expect(out).toContain(`${S.heads}: ${S.healthName.ok} 1, ${S.healthName.attention} 0, ${S.healthName.failing} 0, ${S.healthName.down} 1`);
+    expect(out).toContain('>250ms<');
+  });
+});
+
+describe('the opened head', () => {
+  const pool = (over: Partial<AccountRow>[]): FleetSources['accounts'] => ({ accounts: over.map((one) => account(one)) });
+
+  test('is not mounted at rest: no detail landmark until a head is opened', () => {
+    expect(board([head()])).not.toContain(`aria-label="${S.detail}"`);
+    expect(board([head()], {}, 'claudex')).toContain(`aria-label="${S.detail}"`);
+  });
+
+  test('carries the facts the table leaves out, and the lifecycle keys for its state', () => {
+    const out = board([head()], { topology: { providers: { codex: { dialect: 'openai-responses' } }, heads: { claudex: { provider: 'codex' } } } }, 'claudex');
+    expect(out).toContain(`>${S.port}<`);
+    expect(out).toContain('>3099<');
+    expect(out).toContain('>openai-responses<');
+    expect(out).toContain(`>${S.restart}<`);
+    expect(out).toContain(`>${S.stop}<`);
+    expect(out).not.toContain(`>${S.start}<`);
+    const stopped = board([head({ running: false })], {}, 'claudex');
+    expect(stopped).toContain(`>${S.start}<`);
+    expect(stopped).toContain(`>${H.down}<`);
+  });
+
+  test('its pool is the accounts it rides, drawn as account rows with the daemon\'s next target', () => {
+    const out = board([head()], { accounts: pool([
+      { label: 'main', primary: true, next_target: true, windows: [{ seconds: 18000, used_percent: 30, reset_epoch_seconds: null }] },
+      { label: 'work' },
+      { label: 'elsewhere', heads: ['codex'] },
+    ]) }, 'claudex');
+    const accounts = table(out, S.pool);
+    expect(accounts.rows).toHaveLength(2);
+    const main = accounts.rows.find((one) => one.includes('>main<')) ?? '';
+    expect(main).toContain('>30%<');
+    // the state rides the name cell in the narrow pool, so no row is a cell short
+    expect(accounts.names).toEqual([ACCOUNT_WORDS.account, ACCOUNT_WORDS.short, ACCOUNT_WORDS.long]);
+    expect(main).toContain(`>${ACCOUNT_WORDS.stateName.ok}<`);
+    // the daemon's next target is one fact above the rows: the account, and the rule that chose it
+    const next = new RegExp(`<dt>${S.next}</dt><dd>(.*?)</dd>`).exec(out)?.[1] ?? '';
+    expect(next).toContain('main');
+    expect(next).toContain(`>${ACCOUNT_WORDS.ruleName.primary}<`);
+    expect(out).not.toContain('>elsewhere<');
+  });
+
+  test('a head no row names says why it has no pool, and an api-key head has none', () => {
+    const keyed = board([head({ authKind: 'api-key' })], { accounts: pool([]) }, 'claudex');
+    expect(keyed).toContain(`>${S.noPool}<`);
+    expect(keyed).not.toContain(`aria-label="${S.pool}"`);
+    expect(board([head()], { accounts: pool([]) }, 'claudex')).toContain('href="#/accounts"');
+  });
+
+  test('a pool with nothing available says so above the rows', () => {
+    const out = board([head()], { accounts: pool([{ label: 'main', available: false }]) }, 'claudex');
+    expect(out).toContain(`>${S.noneAvailable}<`);
   });
 });
 
@@ -450,7 +594,7 @@ describe('reading the pending topology', () => {
 describe('a route this daemon does not serve says so in words, not a row id', () => {
   test('the field empty names what is missing and why', () => {
     const out = render(h(Empty, EMPTIES.fields));
-    expect(out).toContain('dialect and model unavailable');
+    expect(out).toContain(`>${S.fieldsUnavailable}<`);
     expect(out).toContain('does not serve');
     expect(out).not.toMatch(/V4-\d+|\/api\//);
   });
@@ -523,31 +667,38 @@ describe('the opened head\'s account pool', () => {
   });
 
   test('a claude head uses one login and never pools', () => {
-    expect(poolEmpty('client').text).toBe('one login, no pool');
+    expect(poolEmpty('client')).toEqual({ text: S.oneLogin, source: H.oneLogin });
   });
 
   test('an oauth head with no row says where to sign one in', () => {
     for (const kind of ['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']) {
-      expect(poolEmpty(kind)).toEqual({ text: 'no accounts signed in', source: 'sign one in on the accounts page' });
+      expect(poolEmpty(kind)).toEqual({ text: S.noAccounts, source: H.noAccounts });
     }
+    expect(H.noAccounts).toContain('accounts page');
   });
 });
 
 describe('the next target is the daemon\'s own answer', () => {
   // AccountsRoute writes next_target = (label == the pool's nextTargetLabel), and the pool walks the
   // pin, then primary, then the caller's previous account, then lowest seven-day used with ties by
-  // label (AccountPool.kt:163-186). The mark is the daemon's flag; the rule only explains it.
+  // label (AccountPool.kt:163-186). The mark is the daemon's flag; the rule only explains it. The
+  // pool's Next column prints this rule (widgets/account-table), the same one the accounts page does.
+  /** The flagged row's rule, or null when no row is flagged. */
+  const ruleOf = (pool: readonly AccountRow[]) => {
+    const target = pool.find((one) => one.next_target === true);
+    return target === undefined ? null : nextRuleOf(target, pool);
+  };
+
   test('a pinned target is marked pinned, even over an available primary', () => {
     const pool = [
       account({ label: 'main', primary: true }),
       account({ label: 'work', pinned: true, next_target: true }),
     ];
-    expect(poolNext(pool)).toEqual({ label: 'work', rule: 'pinned' });
+    expect(ruleOf(pool)).toBe('pinned');
   });
 
   test('an unpinned primary target is explained by primary', () => {
-    expect(poolNext([account({ label: 'main', primary: true, next_target: true }), account({ label: 'work' })]))
-      .toEqual({ label: 'main', rule: 'primary' });
+    expect(ruleOf([account({ label: 'main', primary: true, next_target: true }), account({ label: 'work' })])).toBe('primary');
   });
 
   test('the lowest seven-day account is explained by that rule, ties broken by label as the daemon sorts', () => {
@@ -556,7 +707,7 @@ describe('the next target is the daemon\'s own answer', () => {
       account({ label: 'zeta', windows: [sevenDay(0)] }),
       account({ label: 'beta', windows: [], next_target: true }),
     ];
-    expect(poolNext(pool)).toEqual({ label: 'beta', rule: 'most weekly room' });
+    expect(ruleOf(pool)).toBe('most weekly room');
   });
 
   test('a target that is neither pinned, primary nor lowest was the sticky account', () => {
@@ -565,13 +716,13 @@ describe('the next target is the daemon\'s own answer', () => {
       account({ label: 'low', windows: [sevenDay(5)] }),
       account({ label: 'held', windows: [sevenDay(60)], next_target: true }),
     ];
-    expect(poolNext(pool)).toEqual({ label: 'held', rule: 'last used' });
+    expect(ruleOf(pool)).toBe('last used');
   });
 
-  test('no flagged row has no next target, and neither does a single login', () => {
-    expect(poolNext([account({ label: 'work' })])).toBeNull();
-    expect(poolNext([account({ label: null, single_login: true, next_target: null, selected: null, available: null })]))
-      .toBeNull();
+  test('no flagged row in a labelled pool is none available, and a single login never is', () => {
+    expect(noneAvailable([account({ label: 'work' })])).toBe(true);
+    expect(noneAvailable([account({ label: 'work', next_target: true })])).toBe(false);
+    expect(noneAvailable([account({ label: null, single_login: true, next_target: null, selected: null, available: null })])).toBe(false);
   });
 });
 
@@ -636,7 +787,7 @@ describe('the coverage manifest', () => {
 
 describe('how a head joins the fleet', () => {
   test('the page names the command that adds one, with a copy key, and no route', () => {
-    const markup = renderToStaticMarkup(React.createElement(AddHeadLine));
+    const markup = renderToStaticMarkup(React.createElement(AddHead));
     expect(ADD_COMMAND).toBe('splice add');
     expect(markup).toContain(`>${ADD_COMMAND}<`);
     expect(markup).toContain('>copy<');

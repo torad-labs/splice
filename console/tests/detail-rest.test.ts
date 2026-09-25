@@ -115,10 +115,9 @@ export function restState(tsx: string, css: string, cls: string): Rest {
 
 /** Must not hold width at rest. The wall proper. */
 export const NO_RESTING_COLUMN: Record<string, string> = {
-  fleet: 'COLLAPSES at rest since M1-116 -- its track is 0 and the -open class widens it, with '
-    + 'the gutter moving with the track. It read "M1-102 unmounted it" until M1-122: the mechanism '
-    + 'changed and the disposition did not, so the file documented a repair the code no longer '
-    + 'used. Dead region 13.5%.',
+  fleet: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`opened === null ? null :` gate and .myx-fl-board declares one track until -open adds the '
+    + 'second. It collapsed its track to 0 since M1-116 before; dead region 13.5% then.',
   models: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
     + '`opened === null ? null :` gate and .myx-md-board declares one track until -open adds the '
     + 'second. It collapsed its track to 0 since M1-116 before; dead region 21.5% then.',

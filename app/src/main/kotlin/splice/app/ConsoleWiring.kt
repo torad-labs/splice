@@ -39,6 +39,8 @@ import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
 import splice.app.sources.PerfRowsFileSource
 import splice.core.config.ConfigService
+import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
 import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.HeadDiscoveredModels
@@ -86,6 +88,7 @@ internal object ConsoleWiring {
         // instead of a quiet lie.
         srv.ports.declaredHeads = topology.declaredHeads
         srv.ports.doctor = DoctorReport(DoctorWiring::consoleJson)
+        srv.ports.doctorFixes = DoctorWiring.fixes()
         srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus(EnvReader(System::getenv))::json)
         // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
         // unassigned is SAFE BY CONSTRUCTION — ConsolePorts.supervised is null until set and the
@@ -107,6 +110,11 @@ internal object ConsoleWiring {
         // the four routes behind it answer a named 503 rather than a payload reading as "no
         // accounts".
         srv.ports.accounts = ConsoleAccountsImpl()
+
+        // V4-220 item 3: the SAME keys.toml every api-key head reads (ApiKeyAuthProvider's default is
+        // KeyStorePath.defaultPath() over this process's environment), so a console PUT lands in the
+        // file those heads read on their next request. Its unreadable-store line goes to the daemon log.
+        srv.ports.keys = KeyStore(KeyStorePath.defaultPath())
     }
 
     /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out

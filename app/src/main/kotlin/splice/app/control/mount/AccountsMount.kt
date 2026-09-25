@@ -1,5 +1,5 @@
 // NEW: LAYOUT-01 — the accounts capability's routes: auth status, sign-in, switching and editing a
-// head's accounts, and the pool listing (features/accounts).
+// head's accounts, and the pool listing (features/accounts). V4-220 item 3: and the key store.
 package splice.app.control.mount
 
 import io.ktor.server.routing.Route
@@ -7,7 +7,10 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import splice.accounts.edit.AccountEditRoutes
+import splice.accounts.keys.KeyRoutes
+import splice.accounts.keys.KeyStoreSource
 import splice.accounts.pool.AccountsRoute
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.ConsoleAccountsSource
@@ -17,12 +20,14 @@ import splice.app.control.AccountHeadAdapter
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.api.HeadResolver
+import splice.core.util.LogSink
 
 internal class AccountsMount(
     heads: Map<String, ManagedHead>,
     resolver: HeadResolver,
     ports: ConsolePorts,
     private val guard: ControlGuard,
+    log: LogSink,
 ) {
     private val accountHeads = AccountHeadAdapter.adapt(heads)
     private val accountResolver = AccountHeadAdapter.resolver(resolver)
@@ -33,6 +38,9 @@ internal class AccountsMount(
     private val switchRoute = SwitchRoute(accountResolver)
     private val accountEditRoutes = AccountEditRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val accountsRoute = AccountsRoute(accountHeads)
+
+    // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.
+    private val keyRoutes = KeyRoutes(accountHeads, KeyStoreSource { ports.keys }, log)
 
     /** V4-132: EXPLICIT constant segments (login, switch, accounts/{label}) ahead of the `{action}`
      *  catch-all — Ktor's routing tree scores a literal segment over a parameter, so POST .../login
@@ -54,5 +62,8 @@ internal class AccountsMount(
             guard.guarded(call) { accountEditRoutes.relabelAccount(call) }
         }
         route.post("/api/auth/{head}/{action}") { guard.guarded(call) { authStatusRoutes.authAction(call) } }
+        route.get("/api/keys") { guard.guarded(call) { keyRoutes.list(call) } }
+        route.put("/api/keys/{name}") { guard.guarded(call) { keyRoutes.set(call) } }
+        route.delete("/api/keys/{name}") { guard.guarded(call) { keyRoutes.unset(call) } }
     }
 }

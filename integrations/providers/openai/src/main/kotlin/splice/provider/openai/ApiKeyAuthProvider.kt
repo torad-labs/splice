@@ -27,6 +27,17 @@ import java.nio.file.Path
 private const val MASK_MIN = 8
 private const val MASK_KEEP = 4
 
+/** Which link of the read chain supplies the key (V4-220 item 3: `key_source` on describe()). The
+ *  console's key routes report it per head, because a key stored while the daemon's environment or a
+ *  key file sets the same name is shadowed, and a stored key that is not the one in use must not
+ *  read as applied. */
+private enum class KeySource(val wire: String) { ENVIRONMENT("environment"), FILE("file"), STORE("store") }
+
+// A data class whose toString names the source only: the generated one would print the key.
+private data class ResolvedKey(val value: String, val source: KeySource) {
+    override fun toString(): String = "ResolvedKey(source=$source)"
+}
+
 public class ApiKeyAuthProvider(
     private val envVar: String,
     private val keyFile: Path? = null,
@@ -45,19 +56,20 @@ public class ApiKeyAuthProvider(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun credentials(): Credentials? = readKey()?.let { Credentials.ApiKey(it) }
+    override suspend fun credentials(): Credentials? = resolveKey()?.let { Credentials.ApiKey(it.value) }
 
     override suspend fun refresh(): Credentials? = credentials()
 
     /** Non-suspend presence peek for launch-time decisions (the SessionStart advertiser is
      *  installed only while this is false). Same read chain as credentials(). */
-    public fun hasKeyNow(): Boolean = readKey() != null
+    public fun hasKeyNow(): Boolean = resolveKey() != null
 
     /** The key as configured right now, for a boot-time probe that runs before any turn (v0.4.0 §10). */
-    public fun keyNow(): String? = readKey()
+    public fun keyNow(): String? = resolveKey()?.value
 
     override suspend fun describe(): AuthDescription {
-        val key = readKey()
+        val resolved = resolveKey()
+        val key = resolved?.value
         return AuthDescription(
             present = key != null,
             kind = "api-key",
@@ -66,6 +78,7 @@ public class ApiKeyAuthProvider(
                 // Path only, never contents: a file-configured head can be told its key file is the
                 // fix instead of an env var that was never the mechanism.
                 keyFile?.let { put("key_file", it.toString()) }
+                put("key_source", resolved?.source?.wire ?: KEY_MISSING)
                 key?.let {
                     val m = if (it.length > MASK_MIN) "${it.take(MASK_KEEP)}…${it.takeLast(MASK_KEEP)}" else "set"
                     put("api_key_masked", m)
@@ -74,12 +87,12 @@ public class ApiKeyAuthProvider(
         )
     }
 
-    private fun readKey(): String? {
-        envReader(envVar)?.takeIf { it.isNotEmpty() }?.let { return it }
-        keyFile?.let { file -> readKeyFile(file)?.let { return it } }
+    private fun resolveKey(): ResolvedKey? {
+        envReader(envVar)?.takeIf { it.isNotEmpty() }?.let { return ResolvedKey(it, KeySource.ENVIRONMENT) }
+        keyFile?.let { file -> readKeyFile(file)?.let { return ResolvedKey(it, KeySource.FILE) } }
         // Durable fallback: `splice key set` / `<head> login` / token-capture wrote it once and
         // every later request picks it up — the export-then-restart dance is no longer load-bearing.
-        return keyStore.read(envVar)
+        return keyStore.read(envVar)?.let { ResolvedKey(it, KeySource.STORE) }
     }
 
     // DIRECT read, no Files.exists pre-gate (DR-57): an exists() check — bare OR NOFOLLOW — reads
@@ -109,3 +122,6 @@ public class ApiKeyAuthProvider(
             null
         }
 }
+
+/** `key_source` when no link of the chain supplies a key. */
+private const val KEY_MISSING = "missing"

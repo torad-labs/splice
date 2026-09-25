@@ -112,11 +112,11 @@ public class ControlServer(
     private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard, heads, log)
     private val configuration = ConfigurationMount(config, topologyStale, ports, guard)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
-    private val accounts = AccountsMount(heads, resolver, ports, guard)
+    private val accounts = AccountsMount(heads, resolver, ports, guard, log)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val sessionMount = SessionsMount(sessions, heads, config, ports, guard)
     private val events = EventsMount(ports, guard)
-    private val diagnostics = DiagnosticsMount(resolver, ports, guard)
+    private val diagnostics = DiagnosticsMount(resolver, ports, guard, log)
     private val models = ModelsMount(heads, ports, guard)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard)
     private val mcp = mcpHost?.let { McpMount(it, guard) }

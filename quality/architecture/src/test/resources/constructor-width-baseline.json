@@ -63,6 +63,14 @@
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt AccountView": {
       "params": 15,
       "subsystems": 0
+    },
+    "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt EconomicsBucket": {
+      "params": 14,
+      "subsystems": 0
+    },
+    "features/usage/src/main/kotlin/splice/usage/economics/HeadEconomicsSource.kt EconomicsRow": {
+      "params": 14,
+      "subsystems": 0
     }
   }
 }

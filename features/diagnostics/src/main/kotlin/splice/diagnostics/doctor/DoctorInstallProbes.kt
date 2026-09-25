@@ -19,6 +19,12 @@ import java.util.concurrent.TimeUnit
 
 internal const val FIX_RELINK = "splice install --all"
 
+// The only writers of the launch shim: install.sh copies it from a checkout or a release, and nothing
+// in the jar carries its bytes. `splice install --all` only LINKS wrappers onto the shim already
+// there, so naming it as the remedy for a stale shim sent the operator to a command that leaves the
+// shim exactly as stale (V4-220 item 4).
+private const val FIX_REINSTALL_SHIM = "./install.sh from a checkout, or re-run the release installer"
+
 /** Doctor's install-integrity probes as a constructed collaborator (Kotlin style law, 2026-08-15:
  *  main sources carry no top-level functions). [probes] is injected for one thing only: the
  *  malformed-PATH-entry parser this section shares with the prerequisite pipeline, which stays with
@@ -85,7 +91,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
                 "shim",
                 CheckStatus.FAIL,
                 "launch shim missing at $shim — every wrapper needs it",
-                "./install.sh from a checkout, or re-run the release installer",
+                FIX_REINSTALL_SHIM,
             )
             noSuch -> DoctorCheck(
                 "shim",
@@ -120,7 +126,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
                 "shim",
                 CheckStatus.WARN,
                 "stale (installed=${installed ?: "<unmarked>"}, expected=$expected)",
-                "$FIX_RELINK   (or ./install.sh)",
+                FIX_REINSTALL_SHIM,
             )
         }
     }

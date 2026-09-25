@@ -1,13 +1,11 @@
-/* The account actions. Buttons are raw here because the old Btn/ConfirmBtn primitives are what
-   M2 exists to retire (CONTRACTS.md section 2); the styling below is the same vocabulary they
-   used, so the two read alike while they coexist. Radius 0, tokens only, one easing. */
+/* The account actions. The buttons and fields are the console's Key and Input (@shared/controls),
+   which carry their own look; this sheet lays them out and sets the words around them. */
 
 .myx-acct-form,
 .myx-acct-actions {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-3);
 }
 
 .myx-acct-row {
@@ -16,13 +14,13 @@
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-
+/* A field and its key: the key stands level with the box, under the field's label. */
+.myx-acct-row-field { align-items: flex-end; }
 
 .myx-acct-note {
   margin: 0;
-  font-family: var(--font-label);
   font-size: var(--text-1);
-  color: var(--ink-mute);
+  color: var(--fg-muted);
 }
 
 .myx-acct-ticket {
@@ -32,40 +30,16 @@
   flex-wrap: wrap;
 }
 
+/* A login code is an id, and every id is in the mono face (docs/design/DESIGN.md section 4). */
 .myx-acct-code {
-  /* FIGURE: a login code is digits in a column. */
-  font-family: var(--font-figure);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--text-5);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-strong);
+  color: var(--fg);
 }
 
 .myx-acct-link {
-  /* CODE: a link is a URL, which is a path -- read and copied, not measured. */
-  font-family: var(--font-code);
+  font-family: var(--font-mono);
   font-size: var(--text-2);
-  color: var(--ink);
-}
-
-.myx-acct-btn {
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  color: var(--ink);
-  background: transparent;
-  border: var(--hair) solid var(--hairline-strong);
-  border-radius: 0;
-  padding: var(--space-1) var(--space-2);
-  cursor: pointer;
-}
-
-.myx-acct-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.myx-acct-btn:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
-.myx-acct-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-
-/* The armed state reads visibly more urgent than the resting control, so a scan cannot mistake
-   it for the idle remove (the same rule the old ConfirmBtn carried). */
-.myx-acct-btn-armed {
-  border-color: var(--edge-red);
-  color: var(--edge-red);
+  color: var(--fg);
 }

@@ -1,18 +1,16 @@
 // The account actions: start a login, finish it, pin the next account, relabel, remove, refresh.
 //
-// Buttons here are raw <button> elements styled from this feature's own CSS rather than the old
-// `Btn`/`ConfirmBtn` primitives. That is deliberate and matches CONTRACTS.md section 2: those
-// exports "keep working until M2 removes its last consumer", so an M2 page is exactly the consumer
-// they are waiting to lose. The shell's own features/views takes the same route.
+// Every button is the console's Key and every field its Input (@shared/controls), so the panel's
+// actions read like the Close beside them (the console redesign, 2026-09-25).
 //
-// Nothing here is modal. A destructive action arms in place and disarms on its own, the way
-// ConfirmBtn did, because the brief rules out a dialog over the room.
+// Nothing here is modal. Remove is a Confirm: it arms in place and disarms when the operator moves
+// on, because a dialog over the page is ruled out.
 import { useEffect, useReducer, useState } from 'react';
 import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount, unpinAccount } from '@entities/auth';
 import type { LoginStartPayload } from '@entities/auth';
-import { Empty, FieldBox, Reveal } from '@shared/ui';
+import { Empty, Reveal } from '@shared/ui';
 import { poll } from '@shared/lib';
-import { Copy } from '@shared/controls';
+import { Confirm, Copy, Input, Key } from '@shared/controls';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
 import type { LoginEvent } from './model';
 import { fetchAccounts } from '@entities/account';
@@ -92,8 +90,8 @@ function LoginTicket({ start }: { start: LoginStartPayload }) {
   );
 }
 
-/** Start a login for a new account on one head. The form stays behind a Reveal so the bay is a
- *  rack of strips and not a form with strips in it. */
+/** Start a login for a new account on one head. The form stays behind a Reveal, so the panel shows
+ *  one "Add account" until the operator asks for the form. */
 export function AccountLogin({ head }: { head: string }) {
   const [state, dispatch] = useReducer(next, IDLE);
   const loginId = state.start?.login_id;
@@ -114,27 +112,12 @@ export function AccountLogin({ head }: { head: string }) {
   return (
     <Reveal label={S.add}>
       <div className="myx-acct-form">
-        <FieldBox
-          label={S.label}
-          value={state.label}
-          provenance="state file"
-          hot
-          onChange={(value) => dispatch({ kind: 'label', value })}
-        />
+        <Input label={S.label} value={state.label} onChange={(value) => dispatch({ kind: 'label', value })} />
         <div className="myx-acct-row">
-          <button
-            type="button"
-            className="myx-acct-btn"
-            disabled={!canStart(state)}
-            onClick={() => void beginLogin(head, state.label.trim(), dispatch)}
-          >
+          <Key disabled={!canStart(state)} onClick={() => void beginLogin(head, state.label.trim(), dispatch)}>
             {S.start}
-          </button>
-          {state.step === 'idle' ? null : (
-            <button type="button" className="myx-acct-btn" onClick={() => dispatch({ kind: 'reset' })}>
-              {S.cancel}
-            </button>
-          )}
+          </Key>
+          {state.step === 'idle' ? null : <Key onClick={() => dispatch({ kind: 'reset' })}>{S.cancel}</Key>}
         </div>
         {state.start === null ? null : <LoginTicket start={state.start} />}
         {message === null ? null : <p className="myx-acct-note" role="status">{message}</p>}
@@ -168,7 +151,6 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
   pinned?: boolean;
 }) {
   const [nextLabel, setNextLabel] = useState(label);
-  const [armed, setArmed] = useState(false);
   const [note, setNote] = useState<{ text: string; failed: boolean } | null>(null);
 
   // Every action says what it did, and the accounts are read again at once: a switch used to answer
@@ -197,60 +179,24 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
     <div className="myx-acct-actions">
       {heads.map((head) => (
         <div className="myx-acct-row" key={head}>
-          <button type="button" className="myx-acct-btn" onClick={() => run(switchAccount(head, label), H.switched)}>
-            {`${S.switch} ${head}`}
-          </button>
-          {pinned ? (
-            <button type="button" className="myx-acct-btn" onClick={() => run(unpinAccount(head), H.unpinned)}>
-              {`${S.unpin} ${head}`}
-            </button>
-          ) : null}
-          <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head), H.refreshed)}>
-            {`${S.refresh} ${head}`}
-          </button>
+          <Key onClick={() => run(switchAccount(head, label), H.switched)}>{`${S.switch} ${head}`}</Key>
+          {pinned ? <Key onClick={() => run(unpinAccount(head), H.unpinned)}>{`${S.unpin} ${head}`}</Key> : null}
+          <Key onClick={() => run(refreshAuth(head), H.refreshed)}>{`${S.refresh} ${head}`}</Key>
         </div>
       ))}
 
-      <div className="myx-acct-row">
-        <FieldBox
-          label={S.relabel}
-          value={nextLabel}
-          provenance="state file"
-          hot
-          onChange={setNextLabel}
-        />
-        <button
-          type="button"
-          className="myx-acct-btn"
+      <div className="myx-acct-row myx-acct-row-field">
+        <Input label={S.relabel} value={nextLabel} onChange={setNextLabel} />
+        <Key
           disabled={nextLabel.trim() === '' || nextLabel === label}
           onClick={() => run(relabelAccount(kind, label, nextLabel.trim()), H.renamed)}
         >
           {S.relabel}
-        </button>
+        </Key>
       </div>
 
       <div className="myx-acct-row">
-        {armed ? (
-          <>
-            <button
-              type="button"
-              className="myx-acct-btn myx-acct-btn-armed"
-              onClick={() => {
-                setArmed(false);
-                run(removeAccount(kind, label), H.removed);
-              }}
-            >
-              {`${S.remove} ${label}`}
-            </button>
-            <button type="button" className="myx-acct-btn" onClick={() => setArmed(false)}>
-              {S.cancel}
-            </button>
-          </>
-        ) : (
-          <button type="button" className="myx-acct-btn" onClick={() => setArmed(true)}>
-            {S.remove}
-          </button>
-        )}
+        <Confirm label={S.remove} confirmLabel={`${S.remove} ${label}`} onConfirm={() => run(removeAccount(kind, label), H.removed)} />
       </div>
 
       {note === null ? null : <p className="myx-acct-note" role={note.failed ? 'alert' : 'status'}>{note.text}</p>}
@@ -263,9 +209,7 @@ export function HeadActions({ head }: { head: string }) {
   return (
     <div className="myx-acct-actions">
       <div className="myx-acct-row">
-        <button type="button" className="myx-acct-btn" onClick={() => void refreshAuth(head)}>
-          {S.refresh}
-        </button>
+        <Key onClick={() => void refreshAuth(head)}>{S.refresh}</Key>
       </div>
       <AccountLogin head={head} />
     </div>

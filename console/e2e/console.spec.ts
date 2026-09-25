@@ -100,6 +100,14 @@ async function expectWholeTip(trigger: Locator, where: string, subject?: Locator
   expect(seen, `${where}: the open tip must be whole in the window and on top`).toEqual({ inWindow: true, onTop: true });
 }
 
+/** Every stat figure on the page that its tile cuts, by its text: a figure is the point of its tile,
+ *  and a version or a count read as "2.1.2…" is a different value. */
+async function cutFigures(page: Page): Promise<string[]> {
+  return page.locator('main .myx-stat-value').evaluateAll((figures) => figures
+    .filter((figure) => figure.scrollWidth > figure.clientWidth)
+    .map((figure) => figure.textContent ?? ''));
+}
+
 test('the page set comes from the source', () => {
   expect(PAGES, `no page directories under ${PAGES_DIR}`).toContain('fleet');
 });
@@ -136,6 +144,7 @@ for (const name of PAGES) {
     const text = (await main.count()) > 0 ? await main.innerText() : '';
     expect.soft(text.trim().length, 'main printed nothing').toBeGreaterThan(0);
     expect.soft(text.match(LEAKED_VALUE)?.[0] ?? null, 'a value the console never received was printed').toBeNull();
+    expect.soft(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
     expect.soft(faults.pageErrors, 'uncaught page errors').toEqual([]);
     expect.soft([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
     expect.soft(faults.consoleErrors, 'console errors').toEqual([]);
@@ -408,6 +417,27 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   await expect(why, 'the masked fix is not on Needs you').toBeVisible({ timeout: 15_000 });
   await expectWholeTip(why, 'needs you, last column');
   expect(faults.pageErrors, 'a page threw').toEqual([]);
+});
+
+test('Doctor\'s figures read whole beside an open check', async ({ page }) => {
+  // The open panel narrows the four tiles: at 1600 the Claude Code tile cut its version to "2.1.2…"
+  // (Marlin, 2026-09-25).
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  // The stack's claude may print a shorter version than the one that was cut; the tile reads this one.
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { claude_code: { version: string | null } };
+    body.claude_code.version = '2.1.282 (Claude Code)';
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const row = page.locator('main').getByRole('table', { name: 'Checks', exact: true }).getByRole('row').nth(1);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole('button').click();
+  await expect(page.getByRole('complementary', { name: 'Check detail' })).toBeVisible();
+  await expect(page.locator('main .myx-stat-value')).not.toHaveCount(0);
+  expect(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });
 
 test('doctor\'s playground sends one prompt through a head to the upstream and shows both sides', async ({ page }) => {

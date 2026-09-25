@@ -282,6 +282,9 @@
   border-radius: var(--radius-3);
   min-width: 0;
 }
+/* A tile in the row is as wide as the grid makes it, never its content, so it can be the container
+   its figure's type is stepped against (below .myx-stat-value). */
+.myx-stats > .myx-stat { container-type: inline-size; }
 .myx-stat-label { margin: 0; font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
 /* a trend at the end of the label's line: the figure below keeps the tile's whole width */
 .myx-stat-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-4); }
@@ -298,6 +301,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A narrow tile steps its figure down the scale rather than cutting it: Doctor's Claude Code tile
+   beside an open check cut "2.1.282" to "2.1.2…" (2026-09-25). The ellipsis stays the last resort.
+   The widths are in the tile's own em, which is fluid, so each step holds at 1600 and at 3840
+   alike: a condition cannot read a token. Seven figures fit a tile 11.5em wide at text-7 and one
+   7.5em wide at text-6. */
+@container (inline-size < 11.5em) { .myx-stat-value { font-size: var(--text-6); } }
+@container (inline-size < 7.5em) { .myx-stat-value { font-size: var(--text-5); } }
 .myx-stat-unit { margin-inline-start: var(--space-2); font-size: var(--text-4); font-weight: 500; color: var(--fg-muted); letter-spacing: 0; }
 .myx-stat-sub { margin: var(--space-2) 0 0; font-size: var(--text-2); color: var(--fg-subtle); }
 .myx-stat-chart { margin-block-start: var(--space-4); }

@@ -546,6 +546,38 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   expect(faults.pageErrors, 'a page threw').toEqual([]);
 });
 
+test('Needs you opens each item on its page, and a link to another item opens it on the page already up', async ({ page }) => {
+  // V4-219: an item's page column links to the item itself, `#/<page>?open=<id>`, not only its page.
+  // The stack's key head has no key (a head item) and its wrappers are not linked (doctor items).
+  const faults = await open(page, 'needs-you');
+  const items = page.locator('main').getByRole('table', { name: 'Open items', exact: true });
+  const wrappers = items.getByRole('row').filter({ hasText: 'splice install --all' }).first();
+  await expect(wrappers, 'the wrappers are not on Needs you').toBeVisible({ timeout: 15_000 });
+  const check = (await wrappers.locator('th, td').first().innerText()).trim();
+  await wrappers.getByRole('link', { name: 'Doctor', exact: true }).click();
+  await expect(page).toHaveURL(/#\/doctor\?open=/);
+  await expect(page.getByRole('complementary', { name: 'Check detail' }).getByRole('heading', { level: 2 }).first()).toHaveText(check, { timeout: 15_000 });
+
+  await page.goBack();
+  const keyItem = items.getByRole('row').filter({ hasText: 'splice key set CONSOLE_E2E_NO_SUCH_KEY' });
+  await expect(keyItem, 'the key head is not on Needs you').toBeVisible({ timeout: 15_000 });
+  await keyItem.getByRole('link', { name: 'Fleet', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`#/fleet\\?open=${STACK.keyHead}$`));
+  // The panel's title is its first heading; the sections under it carry their own.
+  const head = page.getByRole('complementary', { name: 'Head detail' }).getByRole('heading', { level: 2 }).first();
+  await expect(head).toHaveText(STACK.keyHead, { timeout: 15_000 });
+
+  // A link to another head while Fleet is up: the route stays mounted, and the page opens that head.
+  await page.evaluate((to) => { window.location.hash = to; }, `#/fleet?open=${encodeURIComponent(STACK.oauthHead)}`);
+  await expect(head).toHaveText(STACK.oauthHead);
+  // Closed from the page, it stays closed: the link opens an item once, it does not hold it open.
+  await page.getByRole('complementary', { name: 'Head detail' }).getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Head detail' })).toHaveCount(0);
+  await page.waitForTimeout(2_500);
+  await expect(page.getByRole('complementary', { name: 'Head detail' })).toHaveCount(0);
+  expect(faults.pageErrors, 'a page threw').toEqual([]);
+});
+
 test('a check the daemon fixes itself runs its fix from the detail, and the answer is doctor re-run', async ({ page }) => {
   // V4-220 item 4: the stack's wrappers are not linked, so their rows carry fix_id install_all. The
   // stack's daemon runs with its own HOME and user.home, so install --all works inside that home, and

@@ -35,7 +35,7 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
 import { Blank, Confirm, Copy, Fault, Key, KeyLink } from '@shared/controls';
-import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo } from '@shared/lib';
+import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import {
   Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow, Tip,
 } from '@shared/ui';
@@ -514,7 +514,7 @@ export function FleetPage() {
     return () => stops.forEach((stop) => stop());
   }, []);
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useOpen(useLinkedId());
   const [adding, setAdding] = useState(false);
 
   // /health's flag is the one part of the topology contract every daemon serves, so it is read from

@@ -102,7 +102,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Restart the daemon
 - Copy a fix command
 - Open the page that holds an item
-- Open the item itself on its page (V4-219)
+- Open the item itself on its page
 - Apply a doctor check's fix
 
 ## projects

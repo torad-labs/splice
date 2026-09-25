@@ -25,6 +25,18 @@ import { cacheHitOf, LogColumns, LogLine, messageOf, partsOf, perfOfLine, rowsOf
 
 const LINE = '[2026-09-18 01:14:02] [claude-deepseek] turn compact=false model=deepseek-flash ok';
 
+/** A rendered fragment's text: its tags stripped until none is left, since one pass leaves a tag
+ *  that was split around another (`<sp<b>an>` comes back as `<span>`). */
+function textOf(html: string): string {
+  let text = html;
+  let last: string;
+  do {
+    last = text;
+    text = text.replace(/<[^>]*>/g, '');
+  } while (text !== last);
+  return text;
+}
+
 describe('a tail row prints each fact once', () => {
   test('the text cell drops the timestamp and head its own row already prints', () => {
     expect(messageOf(LINE)).toBe('turn compact=false model=deepseek-flash ok');
@@ -343,6 +355,6 @@ describe('a turn prints its numbers once', () => {
     expect(closed).not.toContain('hit=');
     const open = renderToStaticMarkup(React.createElement(LogLine, { line: PERF_A, folded: [TURN_A, CACHE_A], open: true }));
     const raw = [...open.matchAll(/class="myx-lt-raw-line">(.*?)<\/span><\/span>(?=<span class="myx-lt-raw-line">|<\/span>)/g)];
-    expect(raw.map((m) => m[1].replace(/<[^>]+>/g, ''))).toEqual([TURN_A, CACHE_A, PERF_A].map(messageOf));
+    expect(raw.map((m) => textOf(m[1]))).toEqual([TURN_A, CACHE_A, PERF_A].map(messageOf));
   });
 });

@@ -86,7 +86,7 @@ internal class ManagedHeadFactory(
         // no bypass. Caller auth rides upstream only on heads that do get it; every other head keeps
         // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
-        val server = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth)
+        val server = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings(key))
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.
@@ -144,8 +144,12 @@ internal class ManagedHeadFactory(
         accountQuotas = accountQuotas,
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),
-        compactionRecordings = FileCompactionRecordings(statePaths.compactionRecordingsDir(ctx.key), log),
     )
+
+    /** V4-216: the head's kept compaction answers. Not in [HeadStores]: only the head reads them, no
+     *  control-plane adapter, so there is no second holder that must share the instance. */
+    private fun recordings(key: String): FileCompactionRecordings =
+        FileCompactionRecordings(statePaths.compactionRecordingsDir(key), log)
 
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
      *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a

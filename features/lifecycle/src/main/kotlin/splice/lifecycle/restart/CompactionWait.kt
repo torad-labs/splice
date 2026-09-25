@@ -11,26 +11,28 @@ package splice.lifecycle.restart
 
 import splice.core.terminal.TerminalOutput
 import splice.lifecycle.upgrade.CompactionSlot
+import splice.lifecycle.upgrade.INFLIGHT_POLL_MS
 import splice.lifecycle.upgrade.InflightRead
 import splice.lifecycle.upgrade.UpgradeInflight
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 
-private const val POLL_MS = 2_000L
+// why: Claude Code aborts an auto-compaction at 600 s of wall clock and retries it; a slot older than
+// that has no client waiting on its answer, and the whole wait is held to the same span.
 private const val CAP_MS = 600_000L
-private const val NANOS_PER_MS = 1_000_000L
-private const val MS_PER_S = 1_000L
-private const val S_PER_MIN = 60L
 
 internal class CompactionWait(
     private val output: TerminalOutput,
     private val inflight: UpgradeInflight,
-    private val pollMs: Long = POLL_MS,
+    private val pollMs: Long = INFLIGHT_POLL_MS,
     private val capMs: Long = CAP_MS,
 ) {
     /** Returns once no compaction younger than [capMs] is in flight, or [capMs] has passed. A read
      *  that cannot see the slots is said and not waited on: the restart is what fixes a daemon too
      *  sick to answer /api/heads. */
     fun await() {
-        val start = System.nanoTime()
+        val start = TimeSource.Monotonic.markNow()
+        val cap = capMs.milliseconds
         while (true) {
             val read = inflight()
             if (read is InflightRead.Unknown) {
@@ -39,8 +41,9 @@ internal class CompactionWait(
             }
             val pending = (read as? InflightRead.Count)?.compactions.orEmpty().filter { it.ageMs < capMs }
             if (pending.isEmpty()) return
-            if ((System.nanoTime() - start) / NANOS_PER_MS >= capMs) {
-                output.line("splice: ${describe(pending)} still running after ${capMs / MS_PER_S}s; restarting anyway")
+            if (start.elapsedNow() >= cap) {
+                val after = cap.inWholeSeconds
+                output.line("splice: ${describe(pending)} still running after ${after}s; restarting anyway")
                 return
             }
             output.line("splice: waiting for ${describe(pending)}")
@@ -53,8 +56,7 @@ internal class CompactionWait(
         return "${slots.size} $noun (${slots.joinToString("; ") { "${it.head}, ${age(it.ageMs)} in" }})"
     }
 
-    private fun age(ms: Long): String {
-        val s = ms / MS_PER_S
-        return if (s < S_PER_MIN) "${s}s" else "${s / S_PER_MIN}m${s % S_PER_MIN}s"
+    private fun age(ms: Long): String = ms.milliseconds.toComponents { minutes, seconds, _ ->
+        if (minutes == 0L) "${seconds}s" else "${minutes}m${seconds}s"
     }
 }

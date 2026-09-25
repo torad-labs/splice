@@ -24,6 +24,11 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
+// why: how often a waiter re-reads the count — `splice upgrade` for every turn, `splice restart` for
+// compactions (V4-216). A read is one loopback GET; two seconds keeps the printed wait current
+// without polling a busy daemon several times a second.
+internal const val INFLIGHT_POLL_MS = 2_000L
+
 private const val PROBE_TIMEOUT_S = 5L
 private const val CONNECT_TIMEOUT_MS = 2_000
 private const val HTTP_OK = 200

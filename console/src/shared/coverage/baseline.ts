@@ -240,7 +240,7 @@ const PENDING: readonly PendingGroup[] = [
     kind: 'verb',
     // No route reads a provider's published roster (/api/models is the declared catalogue join),
     // a head's captured request bodies or its traces; the console only toggles capture.
-    where: 'V4-ROW',
+    where: 'V4-220',
     names: ['splice models', 'splice wire', 'splice trace'],
   },
 ];

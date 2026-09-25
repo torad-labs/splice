@@ -121,76 +121,48 @@ const DISPOSITIONS = {
   // (PR 5): the exit gate runs them from there, outside this denominator.
   'commands/scan.ts': { kind: LEG, why: 'the structural walls, through the wrapper that refuses a path they did not read' },
   'commands/leak.ts': { kind: LEG, why: 'a fixture byte in dist ships sample data to an operator' },
-  'commands/comp.ts': { kind: LEG, why: 'the comp\'s constants measured on live pages, at both frames' },
-  'commands/look.ts': { kind: LEG, why: 'the rendered rule pass over three frame-and-theme cells' },
+  // comp-check and look retired with the comp of record they measured against, and gate.ts and
+  // lib/typography.ts with them (the console redesign, 2026-09-25; docs/design/DESIGN.md section
+  // 12). What they held at a frame is the console e2e's FRAMES test now, outside this denominator.
 
   // ---- libraries of a disposed checker
-  'commands/gate.ts': {
-    kind: LIBRARY, of: 'commands/look.ts',
-    why: 'the static-and-capture half of the look pass, and (`gate sheets`) the contact sheets folded in from gate.mjs. look.ts runs it and the gate ' +
-      'reads its verdict through the look leg\'s failIf, so it is already gating — through its caller',
-  },
-  'commands/snapshot.ts': {
-    kind: LIBRARY, of: 'commands/look.ts',
-    why: 'look.mjs imports snapshot/LOOK_DIR/nameFor from it; it freezes the page the rules then read',
-  },
   'lib/cdp.ts': {
-    kind: LIBRARY, of: 'commands/look.ts',
-    why: 'the Chrome DevTools transport under every rendered checker — look, comp-check, snapshot, ' +
-      'capture, gate and scale all import it. Named against look.mjs because that is the LEG whose ' +
-      'failure would follow from breaking it',
+    kind: LIBRARY, of: 'commands/capture.ts',
+    why: 'the Chrome DevTools transport under every rendered tool here — capture, snapshot, theme ' +
+      'and scale all import it. Named against capture because a broken transport is a capture ' +
+      'that cannot prove its frame',
   },
   'lib/verbs.ts': { kind: LIBRARY, of: 'lib/coverage.ts', why: 'the verb -> file table this census resolves a leg\'s verb through; the dispatcher reads the same one' },
   'lib/proc.ts': { kind: LIBRARY, of: 'commands/exit.ts', why: 'the one process helper (Bun.spawnSync, no shell) every leg and every selftest child run goes through' },
-  'lib/png.ts': { kind: LIBRARY, of: 'commands/look.ts', why: 'decodePng and the colour-fraction maths the rendered legs measure with' },
-  'lib/fixtures.ts': { kind: LIBRARY, of: 'commands/comp.ts', why: 'the one address-to-fixture mapping; comp-check imports urlFor from it' },
-  'commands/capture.ts': {
-    kind: LIBRARY, of: 'commands/gate.ts',
-    why: 'gate.mjs imports capturePage from it. NOTE THIS ONE REACHES NO LEG: its caller is a tool, ' +
-      'so nothing in the exit gate exercises it. Its own blank-frame predicate is a real check and ' +
-      'the --sweep mode that runs it is invoked by rows, not by the gate. If a capture ever needs ' +
-      'gating, this is the entry that says it currently is not',
-  },
-
-  // ---- a row landed while this file was being written, and the PENDING disposition expired
-  // exactly as designed: M1-50 went `done` mid-row and the check said so by name on its next run.
-  'lib/typography.ts': {
-    kind: TOOL,
-    why: 'M1-50\'s type and spacing ladder. THIS RECORDS WHAT IT IS TODAY, not a judgement that it ' +
-      'should never gate: it prints `rungs off by more than RATIO_LIMIT: N` and exits 0 whatever N ' +
-      'is, so there is no verdict for a leg to read. It is the strongest leg candidate in this ' +
-      'column and the thing standing between it and a leg is a DECISION nobody has made — which ' +
-      'ratio delta fails a build. Give it that threshold and this entry becomes GATE LEG',
-  },
-
+  'lib/png.ts': { kind: LIBRARY, of: 'commands/capture.ts', why: 'decodePng and the colour-fraction maths a capture proves its frame with' },
   'lib/theme.ts': {
-    kind: LIBRARY, of: 'commands/look.ts',
-    why: 'M1-55\'s shared theme-seeding capability, which that row cut precisely so a fourth seat ' +
-      'would not rebuild it privately. THE SENTENCE HERE USED TO READ "its only consumer is a ' +
-      'row\'s review script", which was true when it was written and M1-60 made false: snapshot.mjs, ' +
-      'look.mjs, capture.mjs and gate.mjs now all import it, and gate.mjs needed a second export ' +
-      '(themeSeedSource) because it drives one Chrome across both rooms and cannot hand a theme to ' +
-      'withChrome. The disposition is UNCHANGED and still verifies — the named caller does reference ' +
-      'it — but the caller named below is no longer the only one, and it is the one furthest from ' +
-      'the gate. TWO SENTENCES DIED HERE, NOT ONE, and the second was mine: this entry also said ' +
-      '"no leg reaches it either way", which M1-60 falsified in the same commit — look.mjs IS a ' +
-      'leg, and it now imports themeValues AND themeLanded and runs both, so the gate exercises ' +
-      'this file on every look pass and blocks when the room it measured is not the room it names. ' +
-      'THE RE-POINT IS MADE (M1-76): `of` is now commands/look.ts, the caller that is a ' +
-      'LEG and exercises both exports on every look pass, rather than the review script that is ' +
-      'the furthest thing from the gate. M1-70 correctly left it alone as out of scope for a prose ' +
-      'row and named it as the next seat\'s one-line change; this is that seat. The count does not ' +
-      'move — 21 of 21 settled before and after — because the disposition KIND is unchanged and ' +
-      'only the named caller differs, which is the whole reason it could be deferred safely',
+    kind: LIBRARY, of: 'commands/capture.ts',
+    why: 'M1-55\'s shared theme-seeding capability: capture and snapshot seed the room they are ' +
+      'asked for through it, and its own verb captures both rooms',
   },
 
   // ---- tools that never gate
+  'commands/capture.ts': {
+    kind: TOOL,
+    why: 'one proven screenshot, and --sweep over frames on disk. Its blank-frame predicate is a ' +
+      'real check, but rows invoke it, not the gate: if a capture ever needs gating, this is the ' +
+      'entry that says it currently is not',
+  },
+  'commands/snapshot.ts': {
+    kind: TOOL,
+    why: 'freezes one address into one self-contained HTML file for a rendered detector to read; ' +
+      'it produces the artifact and no verdict',
+  },
+  'lib/fixtures.ts': {
+    kind: TOOL,
+    why: 'the one address-to-fixture table, printed and checked against the pages by its own verb; ' +
+      'its caller went with comp-check, and nothing in the gate reads it',
+  },
   'commands/scale.ts': {
     kind: TOOL,
-    why: 'measures what the console looks like at the operator\'s 3840 frame — bay width, strip ' +
-      'height, label size, text share. It REPORTS numbers and has no pass/fail to give. Its finding ' +
-      '(layout in vw, type in px) is now carried by the legs that do judge: FRAMES puts 3840x2160 ' +
-      'into comp-check and look',
+    why: 'measures what the console looks like across frames — widths, heights, label size, text ' +
+      'share. It REPORTS numbers and has no pass/fail to give. The frames it measures are judged ' +
+      'by the console e2e\'s FRAMES test',
   },
 };
 

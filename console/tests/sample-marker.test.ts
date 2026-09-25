@@ -87,8 +87,8 @@ describe('the marker on the page root', () => {
     const without = renderToStaticMarkup(h(TurnsBoard, {
       inflight: [], landed: null, summary: null, capture: null,
     }));
-    expect(withFixture).toContain('sample data');
-    expect(without).not.toContain('sample data');
+    expect(withFixture).toContain('Sample data');
+    expect(without).not.toContain('Sample data');
     expect(without).not.toContain('data-sample');
   });
 });

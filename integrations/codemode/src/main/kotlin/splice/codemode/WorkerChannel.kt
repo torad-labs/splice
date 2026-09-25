@@ -51,17 +51,27 @@ internal class WorkerChannel(
         exited.complete(Unit)
     }
 
-    suspend fun exchange(frame: JsonObject): JsonObject = try {
+    suspend fun exchange(frame: JsonObject): JsonObject = within(timeoutMs) {
+        CodeModeWire.write(output, frame)
+        CodeModeWire.read(input)
+    }
+
+    /** V4-226: the worker's first frame, awaited under its own [startTimeoutMs], so a JVM that is slow
+     *  to start never spends the script's advance deadline. A fatal frame is a start that failed. */
+    suspend fun awaitReady(startTimeoutMs: Long) {
+        CodeModeFrames.parseReady(within(startTimeoutMs) { CodeModeWire.read(input) })
+    }
+
+    private suspend fun within(deadlineMs: Long, io: () -> JsonObject): JsonObject = try {
         // A reply is never null: only this deadline maps to an ordinary worker failure.
-        withTimeoutOrNull(timeoutMs) {
+        withTimeoutOrNull(deadlineMs) {
             suspendCancellableCoroutine<JsonObject> { continuation ->
                 continuation.invokeOnCancellation { closeQuietly() }
                 ioDispatcher.dispatch(
                     continuation.context,
                     Runnable {
                         try {
-                            CodeModeWire.write(output, frame)
-                            val reply = CodeModeWire.read(input)
+                            val reply = io()
                             if (continuation.isActive) continuation.resumeWith(Result.success(reply))
                         } catch (error: CancellationException) {
                             throw error
@@ -73,7 +83,7 @@ internal class WorkerChannel(
                     },
                 )
             }
-        } ?: throw CodeModeTimeoutException(timeoutMs)
+        } ?: throw CodeModeTimeoutException(deadlineMs)
     } catch (error: CancellationException) {
         close()
         throw error

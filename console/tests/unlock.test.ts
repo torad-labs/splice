@@ -41,7 +41,7 @@ describe('the key gate', () => {
 
   test('the modal prints the refusal in words, and only when there was one', () => {
     const refused = renderToStaticMarkup(h(UnlockForm, { refused: true }));
-    expect(refused).toContain('that key was refused');
+    expect(refused).toContain('That key was refused.');
     expect(refused).toContain('role="alert"');
     expect(renderToStaticMarkup(h(UnlockForm, { refused: false }))).not.toContain('refused');
   });

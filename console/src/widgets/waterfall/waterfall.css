@@ -1,73 +1,24 @@
-/* The waterfall and the request drawer. Tokens only (CONTRACTS.md section 1); the chart is a dark
-   scope inset, the bars are ink on that ground, and no colour carries meaning on its own. */
+/* A turn's timing and the request drawer (docs/design/DESIGN.md section 9). The lanes share one
+   axis, each named on its left and spanned on its right; the drawer is the switch, its state as
+   badges, and the settings as key and value. */
 
-.myx-wf {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.myx-wf-svg {
-  display: block;
-  width: 100%;
-}
-
-/* The un-filled part of every row: the grid of the inset, one step quieter than the bars. */
-.myx-wf-track {
-  fill: var(--scope-grid);
-}
-/* The bars are one ink at full strength: phase identity is carried by the row each bar sits in and
-   by its printed name in the legend, never by a hue (the holder edge is the only place attention
-   is allowed to be a colour). */
-.myx-wf-bar {
-  fill: var(--scope-ink);
-}
-
-.myx-wf-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  margin-top: var(--space-2);
-}
-
-.myx-wf-legend-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
-.myx-wf-legend-name {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--scope-ink);
-}
-
-.myx-wf-legend-ms {
-  /* FIGURE: a duration in ms, tabular so the legend lines up. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-2);
-  font-variant-numeric: tabular-nums;
-  color: var(--scope-ink);
-}
-
-/* The capture sentences: off, on, and a write waiting on a restart. Printed on the room, not
-   framed: there is no body to look at and a frame would imply there was. */
-.myx-wf-off {
-  margin: 0;
-  color: var(--ink-mute);
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-}
-
-.myx-wf-drawer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.myx-wf-drawer-fields {
-  display: flex;
+.myx-tw { display: grid; gap: var(--space-5); }
+.myx-tw-lanes { display: grid; gap: var(--space-3); }
+.myx-tw-lane {
+  display: grid;
+  grid-template-columns: calc(9.375 * var(--u)) minmax(0, 1fr) calc(5 * var(--u));
   align-items: center;
-  gap: var(--space-2);
+  column-gap: var(--space-4);
 }
+.myx-tw-name { font-size: var(--text-2); color: var(--fg-muted); }
+.myx-tw-ms {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--fg);
+}
+
+.myx-rd { display: grid; gap: var(--space-4); }
+.myx-rd-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.myx-rd-cmd { font-family: var(--font-mono); font-size: var(--text-2); color: var(--fg); }

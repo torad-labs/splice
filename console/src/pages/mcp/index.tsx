@@ -1,26 +1,30 @@
-// The MCP page: the shared host's servers as a rack of strips.
+// MCP: the shared host's servers, drawn by state and load, and the four limits it runs under.
 //
-// Two things it refuses to do. It never offers a restart control, because there is no restart
-// route — a console that POSTed at /mcp/{name} would be speaking JSON-RPC initialize into the
-// protocol endpoint, not restarting a child. And it never restates the four host limits: they are
-// runtime knobs, so they are read from the config payload with their provenance like every other
-// knob, and a knob the running daemon does not carry shows its name with no value rather than a
-// default this page invented.
+// A live list (docs/design/DESIGN.md section 7): the servers by state as one split bar, how many
+// the host runs against its cap, the sessions and streams riding them, and one row per server with
+// its sessions drawn against the busiest. Two things it refuses to do. It offers no restart control,
+// because there is no restart route: /mcp/{name} is the JSON-RPC transport, and a console that
+// POSTed there would speak initialize into the protocol. And it never restates the four host limits:
+// they are runtime knobs read from the config payload, and a knob the running daemon does not carry
+// says so rather than printing a default this page invented.
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { fetchConfig, knobDispositions, useConfig } from '@entities/config';
-import type { KnobDisposition } from '@entities/config';
 import { startMcpPolling, useMcp } from '@entities/mcp';
-import type { McpHostedServer, McpRow } from '@entities/mcp';
+import type { McpPayload, McpRow } from '@entities/mcp';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
-import type { Edge } from '@shared/ui';
-import { KnobReadout, knobLabel } from '@widgets/knob-form';
-import { Blank, Fault } from '@shared/controls';
-import { timeAgo } from '@shared/lib';
-import { EMPTIES, RESPAWN_NOTE, arrangeServers, hostLimits, stateEdge, stateLabel, hosted } from './model';
+import { knobLabel } from '@widgets/knob-form';
+import { Blank, Fault, KeyLink } from '@shared/controls';
+import { ABSENT, fmtInt, ratio, timeAgo } from '@shared/lib';
+import {
+  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow,
+} from '@shared/ui';
+import type { Column } from '@shared/ui';
 import { dispositions } from './coverage';
-import { S } from './strings';
+import { arrangeServers, hosted, hostLimits, limitText, liveOf, maxServersOf, stateParts, stateText, totalsOf, TONE } from './model';
+import type { HostLimit, McpTotals } from './model';
+import { H, S, U } from './strings';
 import './mcp.css';
 
 export { dispositions };
@@ -28,116 +32,213 @@ export { dispositions };
 const PAGE_ID = 'mcp';
 const POLL_MS = 10000;
 
+/** The name this page accepts in the hash query. Declared HERE, not in the fixture module: a
+ *  static import of that module, even for one constant, is a real dependency edge, so the bundler
+ *  would include the fixture and its strings would ship (CONTRACTS.md section 4). */
+const FIXTURE = 'mcp';
+
+/** Whether the address asks for THIS page's fixture, by that fixture's own file name. The capture
+ *  marker rests on it (law 23): a name this page does not carry is not a fixture. */
+export function wantsFixture(search: string): boolean {
+  return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;
+}
+
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-name', name: S.byName, layout: 'bay', filter: {}, sort: null, group: null, fields: [] },
   { id: 'hosted-first', name: S.hostedFirst, layout: 'bay', filter: {}, sort: { field: 'state', dir: 'desc' }, group: null, fields: [] },
 ];
 
-const WIDE = 24;
-/** Wide enough for the widest number these columns carry. It was measured at `not running`, which
- *  three cells printed before the rack cells moved to the absence glyph (m1 design review B8), so
- *  every column here is now wider than anything it prints — clipping is the failure mode, not
- *  slack. */
-const NARROW = 13;
-/** ---- THE REASON SPANS THE FOUR NARROW TRACKS, AND IT IS DERIVED RATHER THAN CHOSEN (M1-73) --
- *  It was 46, "wide enough for the planner's longest reason", measured on the live host. That is
- *  a good reason for the number to be at least 46 and it is not the number the grid needs.
- *  THE GRID BELONGS TO THE RACK, NOT THE ROW, and on this page that is load-bearing rather than
- *  stylistic, because `.myx-mcp-bays .myx-sfield { flex: 1 1 auto }` (mcp.css:56, M1-39's
- *  strip-fills-its-bay rule carried here by M1-44) turns every declared ch into a SHARE of the
- *  leftover -- and flex-grow: 1 shares it EQUALLY PER CELL. So the two row shapes on this page
- *  got different first tracks: hosted is WIDE|NARROW x4 (76ch over 5 cells) and barred is
- *  WIDE|REASON (70ch over 2 cells), and the first cell renders 24ch + slack/5 against
- *  24ch + slack/2 -- a measured 87px apart, x 488 against x 575, on rows that both declare
- *  w={WIDE}.
- *  THE FIX IS TO MAKE EVERY ROW SHAPE DECLARE THE SAME TOTAL. A row maps onto a SUBSET of the
- *  rack's tracks and empties the ones it has nothing for, so a cell's share is the same in every
- *  row by construction and the declared grid is the rendered grid. WIDE + NARROW*4 = 76ch is the
- *  rack; the reason row spans the four narrow tracks, so it is NARROW * 4 and not a number. */
-const REASON = NARROW * 4;
+const SETTINGS_HREF = '#/settings';
 
-/** A number field that prints an absence rather than a zero. `0` sessions on a server that has
- *  never started is not the same fact as `0` on one that has, and the caller decides which it is.
- *  The absence is the glyph (m1 design review B8): the word `not running` said the same thing the
- *  holder edge already prints as `not started`, in prose, in every one of the three cells. */
-function countText(value: number | undefined, running: boolean): string {
-  if (!running) return S.absent;
-  return value === undefined ? S.absent : String(value);
+/** The figures the page leads with: every server by state, the hosted ones against the cap, and
+ *  the load riding them. A restart is the only evidence a child died, so any restart tints its tile. */
+function Figures({ totals, max }: { totals: McpTotals; max: number | null }) {
+  const servers = totals.byState.hosted + totals.byState.idle + totals.byState.ineligible;
+  const running = totals.byState.hosted;
+  return (
+    <StatRow>
+      <Stat
+        label={S.servers}
+        value={fmtInt(servers)}
+        chart={<StackedBar parts={stateParts(totals)} label={S.servers} legend format={fmtInt} />}
+      />
+      <Stat
+        label={S.hosted}
+        value={fmtInt(running)}
+        {...(max === null ? {} : {
+          unit: `${U.of} ${fmtInt(max)}`,
+          chart: <Meter value={ratio(running, max)} tone={running >= max ? 'warn' : 'ok'} label={S.hosted} />,
+        })}
+      />
+      <Stat label={S.sessions} value={fmtInt(totals.sessions)} />
+      <Stat label={S.streams} value={fmtInt(totals.streams)} />
+      <Stat label={S.restarts} value={fmtInt(totals.restarts)} {...(totals.restarts > 0 ? { tone: 'warn' as const } : {})} />
+    </StatRow>
+  );
 }
 
-function ServerStrip({ row, selected, onOpen }: { row: McpRow; selected: boolean; onOpen: () => void }) {
+/** Every fact the opened server carries. A direct server carries only the planner's reason. */
+function serverFacts(row: McpRow): [string, string][] {
   const live = hosted(row.server);
-  const running = live !== null && live.hosted;
+  if (live === null) return [[S.reason, row.server.eligible ? ABSENT : row.server.reason]];
+  const at = (ms: number | undefined) => (ms === undefined ? ABSENT : timeAgo(ms));
+  return [
+    [S.pid, live.pid === undefined ? ABSENT : String(live.pid)],
+    [S.sessions, live.hosted ? fmtInt(live.sessions) : ABSENT],
+    [S.streams, live.hosted ? fmtInt(live.streams) : ABSENT],
+    [S.restarts, fmtInt(live.restarts)],
+    [S.started, at(live.started_at)],
+    [S.lastCall, at(live.last_activity)],
+    [S.lastError, live.last_error ?? ABSENT],
+  ];
+}
 
+function ServersSection({ rows }: { rows: readonly McpRow[] }) {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const open = rows.find((row) => row.name === openKey) ?? null;
+  const busiest = Math.max(0, ...rows.map((row) => liveOf(row)?.sessions ?? 0));
+  const columns: Column<McpRow>[] = [
+    { key: 'server', label: S.server, width: '22%', mono: true, primary: true, cell: (row) => row.name },
+    { key: 'state', label: S.state, width: '14%', cell: (row) => <Badge tone={TONE[row.state]} quiet>{stateText(row.state)}</Badge> },
+    {
+      key: 'sessions',
+      label: S.sessions,
+      width: '28%',
+      cell: (row) => {
+        const live = liveOf(row);
+        if (live === null) return ABSENT;
+        return <Meter value={ratio(live.sessions, busiest)} tone="neutral" label={`${S.sessions} ${row.name}`} figure={fmtInt(live.sessions)} />;
+      },
+    },
+    {
+      key: 'streams',
+      label: S.streams,
+      width: '11%',
+      align: 'end',
+      mono: true,
+      cell: (row) => {
+        const live = liveOf(row);
+        return live === null ? ABSENT : fmtInt(live.streams);
+      },
+    },
+    {
+      key: 'restarts',
+      label: S.restarts,
+      width: '11%',
+      align: 'end',
+      mono: true,
+      cell: (row) => {
+        const live = hosted(row.server);
+        return live === null ? ABSENT : fmtInt(live.restarts);
+      },
+    },
+    {
+      key: 'call',
+      label: S.lastCall,
+      align: 'end',
+      mono: true,
+      cell: (row) => {
+        const at = hosted(row.server)?.last_activity;
+        return at === undefined ? ABSENT : timeAgo(at);
+      },
+    },
+  ];
   return (
-    <Strip
-      edge={stateEdge(row.state)}
-      edgeLabel={stateLabel(row.state)}
-      cocked={row.state === 'idle'}
-      selected={selected}
-      onOpen={onOpen}
-      ariaLabel={`${row.name} ${stateLabel(row.state)}`}
-    >
-      <StripField w={WIDE} label={S.name} value={row.name} mono={false} />
-      {/* The state field is gone: the holder edge above prints the identical word, 8 px away, on
-          every strip in the rack (m1 design review B10). The edge is where a state belongs. */}
-      {row.server.eligible ? (
-        <>
-          <StripField w={NARROW} label={S.pid} value={live?.pid === undefined ? S.absent : String(live.pid)} />
-          <StripField w={NARROW} label={S.sessions} value={countText(live?.sessions, running)} />
-          <StripField w={NARROW} label={S.streams} value={countText(live?.streams, running)} />
-          <StripField w={NARROW} label={S.restarts} value={String(live?.restarts ?? 0)} />
-        </>
-      ) : (
-        <StripField w={REASON} label={S.reason} value={row.server.reason} mono={false} />
-      )}
-    </Strip>
+    <Section title={S.servers} count={rows.length} info={{ text: H.restarts, label: S.aboutRestarts }}>
+      <div className={open === null ? 'myx-mcp-board' : 'myx-mcp-board myx-mcp-board-open'}>
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.name}
+          label={S.servers}
+          onOpen={(row) => setOpenKey(row.name === openKey ? null : row.name)}
+          openLabel={(row) => `${S.open} ${row.name}`}
+          selectedKey={openKey}
+          rowTone={(row) => (hosted(row.server)?.last_error === undefined ? null : 'warn')}
+        />
+        {/* Unmounted at rest: no track and no empty panel until a server is opened. */}
+        {open === null ? null : (
+          <DetailPanel
+            title={open.name}
+            label={S.detail}
+            status={(
+              <>
+                <Badge tone={TONE[open.state]}>{stateText(open.state)}</Badge>
+                {open.state === 'ineligible' ? <InfoTip text={H.direct} label={S.aboutDirect} /> : null}
+              </>
+            )}
+            onClose={() => setOpenKey(null)}
+            closeLabel={S.close}
+          >
+            <KeyValue rows={serverFacts(open)} />
+          </DetailPanel>
+        )}
+      </div>
+    </Section>
   );
 }
 
-/** The four host limits, read-only with their provenance. A knob the running daemon does not carry
- *  prints its name with no value: the default lives in the daemon's own enum, and this page is not
- *  a second place for it. */
-function HostLimits({ heads }: { heads: readonly { key: string; knob: KnobDisposition | null }[] }) {
+/** The four host limits, read-only. A knob the running daemon does not carry says so; the default
+ *  lives in the daemon's own enum, and this page is not a second place for it. */
+function LimitsSection({ limits }: { limits: readonly HostLimit[] }) {
+  const columns: Column<HostLimit>[] = [
+    { key: 'limit', label: S.limit, width: '40%', primary: true, cell: (limit) => knobLabel(limit.key) },
+    {
+      key: 'value',
+      label: S.value,
+      width: '30%',
+      mono: true,
+      cell: (limit) => (limit.knob === null ? <Badge tone="neutral" quiet>{S.notCarried}</Badge> : limitText(limit.knob)),
+    },
+    {
+      key: 'applies',
+      label: S.applies,
+      cell: (limit) => (limit.knob === null ? ABSENT : <Badge tone="neutral" quiet>{limit.knob.hot ? S.live : S.restart}</Badge>),
+    },
+  ];
   return (
-    <section className="myx-mcp-section">
-      <h2 className="myx-mcp-section-title">{S.limits}</h2>
-      {heads.map(({ key, knob }) => (
-        <div key={key}>
-          {/* the readout prints the knob's own restart verdict; the note speaks only for a knob
-              the daemon does not carry, which has no verdict to print */}
-          {knob === null ? (
-            <p className="myx-mcp-note">{knobLabel(key)} is not carried by this daemon</p>
-          ) : (
-            <KnobReadout knob={knob} />
-          )}
-        </div>
-      ))}
-      <p className="myx-mcp-note">Change these in <a href="#/settings">settings</a>, under shared mcp servers.</p>
-    </section>
+    <Section title={S.limits} actions={<KeyLink href={SETTINGS_HREF}>{S.editLimits}</KeyLink>}>
+      <DataTable columns={columns} rows={limits} rowKey={(limit) => limit.key} label={S.limits} />
+    </Section>
   );
 }
 
-/** A hosted server's process facts, two to a strip so each fits the detail column. */
-function DetailFacts({ server, edge }: { server: McpHostedServer; edge: Edge }) {
-  const at = (ms: number | undefined) => (ms === undefined ? S.absent : timeAgo(ms));
+/**
+ * The board takes its payload as a prop rather than reading the store (CONTRACTS.md section 4): a
+ * static render only ever sees a zustand store's initial state, so a board that read the store
+ * could not be rendered from data by a test or a capture.
+ */
+export function McpBoard({ payload, limits = [], view = null, sample }: {
+  payload: McpPayload | null;
+  limits?: readonly HostLimit[];
+  /** The active saved view; null is name order. */
+  view?: Pick<View, 'group' | 'sort'> | null;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
+  sample?: string | undefined;
+}) {
+  const rows = arrangeServers(payload, view ?? { group: null, sort: null });
+  const body = payload === null ? <Blank strips={3} />
+    : !payload.hosting ? (
+      <Empty text={S.hostingOff} source={H.hostingOff} action={<KeyLink href={SETTINGS_HREF}>{S.openSettings}</KeyLink>} />
+    )
+    : rows.length === 0 ? <Empty text={S.noServers} source={H.noServers} />
+    : (
+      <>
+        <Figures totals={totalsOf(rows)} max={maxServersOf(limits)} />
+        <ServersSection rows={rows} />
+      </>
+    );
   return (
-    <>
-      <Strip edge={edge} edgeLabel="" ariaLabel={S.pid}>
-        <StripField w={NARROW} label={S.pid} value={server.pid === undefined ? S.absent : String(server.pid)} />
-        <StripField w={NARROW} label={S.restarts} value={String(server.restarts)} />
-      </Strip>
-      <Strip edge={edge} edgeLabel="" ariaLabel={S.started}>
-        <StripField w={NARROW} label={S.started} value={at(server.started_at)} />
-        <StripField w={NARROW} label={S.activity} value={at(server.last_activity)} />
-      </Strip>
-    </>
+    <div className="myx-mcp" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
+      {body}
+      {limits.length === 0 ? null : <LimitsSection limits={limits} />}
+    </div>
   );
 }
 
 export function McpPage() {
-  const views = useViews(PAGE_ID, DEFAULT_VIEWS);
-  const active = views.active;
+  const { search } = useLocation();
+  const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const mcp = useMcp((state) => state);
   const config = useConfig((state) => state);
 
@@ -148,79 +249,40 @@ export function McpPage() {
     return () => clearInterval(id);
   }, []);
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
+  const [sample, setSample] = useState<{ name: string; payload: McpPayload } | null>(null);
 
-  const payload = mcp.data;
-  const groups = arrangeServers(payload, active);
-  const opened = groups.flatMap((group) => group.rows).find((row) => row.name === openKey) ?? null;
+  // The fixture loads through a DYNAMIC import inside the DEV branch, so a production build drops
+  // the branch and the fixture is not a dependency of anything that ships. The specifier is built at
+  // runtime: a literal import stays a dependency edge through the single-file build even when the
+  // branch around it is dead (measured 2026-09-18).
+  useEffect(() => {
+    if (!wantsFixture(search)) {
+      setSample(null);
+      return;
+    }
+    void import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`).then((module: { fixtureMcp?: McpPayload }) => {
+      setSample(module.fixtureMcp === undefined ? null : { name: FIXTURE, payload: module.fixtureMcp });
+    }).catch(() => undefined);
+  }, [search]);
+
   const limits = hostLimits(config.data === null ? [] : knobDispositions(config.data));
 
   return (
-    <div className="myx-mcp">
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
+    <>
+      <PageHeader
+        title={S.title}
+        {...(sample === null ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}
+      >
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-      </header>
-
-      {mcp.error === null ? null : <Fault message={mcp.error} lastRead={mcp.lastUpdated} />}
-      {payload === null && mcp.error === null ? <Blank strips={3} /> : null}
-
-      <div className="myx-mcp-body">
-        <div className="myx-mcp-bays">
-          {payload !== null && !payload.hosting ? (
-            <Empty text={EMPTIES.hostingOff.text} source={EMPTIES.hostingOff.source} />
-          ) : payload !== null && Object.keys(payload.servers).length === 0 ? (
-            <Empty text={EMPTIES.noServers.text} source={EMPTIES.noServers.source} />
-          ) : (
-            groups.map((group) => (
-              <Bay key={group.key === '' ? S.bay : group.key} label={group.key === '' ? S.bay : group.key} count={group.rows.length}>
-                {group.rows.map((row) => (
-                  <ServerStrip
-                    key={row.name}
-                    row={row}
-                    selected={openKey === row.name}
-                    onOpen={() => toggle(row.name)}
-                  />
-                ))}
-              </Bay>
-            ))
-          )}
-
-        </div>
-
-        <aside className="myx-mcp-detail" aria-label={S.detail}>
-          {/* "select a server" only where there is one to select: with hosting off or no servers it
-              asked for a click the page could not take (walkthrough S16). */}
-          {opened === null ? (
-            groups.some((group) => group.rows.length > 0)
-              ? <Empty text={EMPTIES.noOpened.text} source={EMPTIES.noOpened.source} />
-              : null
-          ) : (
-            <section className="myx-mcp-section">
-              <div className="myx-mcp-head">
-                <HolderEdge state={stateEdge(opened.state)} label={stateLabel(opened.state)} />
-                <span className="myx-mcp-note">{opened.name}</span>
-              </div>
-              {/* THE DETAIL IS ITS OWN GRID, NOT THE RACK'S. It drew the rack's 24ch name track empty
-                  before pid and restarts (M1-73), and in a 24rem column that track pushed pid past
-                  the edge and restarts out of view (console review, 2026-09-24). It now carries what
-                  the rack does not: when the process started and when a session last called it. */}
-              {opened.server.eligible ? <DetailFacts server={opened.server} edge={stateEdge(opened.state)} /> : null}
-              <p className="myx-mcp-note">
-                {opened.server.eligible ? (hosted(opened.server)?.last_error ?? S.noError) : opened.server.reason}
-              </p>
-              {/* There is no restart route, so where a restart control would stand the page says what
-                  the host does on its own. It printed `restart not built / no route; CLI only`,
-                  and no CLI command restarts one server. */}
-              {opened.server.eligible ? <p className="myx-mcp-note">{RESPAWN_NOTE}</p> : null}
-            </section>
-          )}
-
-          <HostLimits heads={limits} />
-        </aside>
-      </div>
-    </div>
+      </PageHeader>
+      {mcp.error === null ? null : <Fault message={mcp.error} lastRead={sample === null ? mcp.lastUpdated : null} />}
+      <McpBoard
+        payload={sample === null ? mcp.data : sample.payload}
+        limits={config.data === null ? [] : limits}
+        view={active}
+        {...(sample === null ? {} : { sample: sample.name })}
+      />
+    </>
   );
 }
 

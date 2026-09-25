@@ -40,14 +40,16 @@ import {
 import type { TopologyWriteResult } from '@entities/topology';
 import { HeadAddForm, HeadEditRow, headRows } from '@features/head-edit';
 import { useViews, ViewTabs } from '@features/views';
+import { HeadMark } from '@entities/control-status';
 import { cx } from '@shared/lib';
-import { Bay, Empty, HolderEdge } from '@shared/ui';
+import type { ClaudeHeadPayload } from '@entities/claude-head';
+import { Badge, Bay, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
 import { Blank, Fault, Input } from '@shared/controls';
 import { HEAD_WORDING, KnobRack, knobMatches } from '@widgets/knob-form';
 import { dispositions } from './coverage';
-import { changedPaths, DEFAULT_VIEWS, EMPTIES, knobsForView, withHeadOverride } from './model';
+import { changedPaths, DEFAULT_VIEWS, knobsForView, withHeadOverride } from './model';
 import { ClaudeModeSection, TopologySection } from './sections';
-import { S } from './strings';
+import { H, S } from './strings';
 import './settings.css';
 
 export { dispositions };
@@ -70,6 +72,7 @@ export function wantsFixture(search: string): boolean {
 interface SettingsFixture {
   config: ConfigPayload;
   topology: Record<string, unknown>;
+  claude: ClaudeHeadPayload;
 }
 
 const PAGE_ID = 'settings';
@@ -125,12 +128,13 @@ export function SettingsPage() {
     void import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`).then((module: {
       fixtureConfig?: ConfigPayload;
       fixtureTopology?: Record<string, unknown>;
+      fixtureClaudeHead?: ClaudeHeadPayload;
     }) => {
-      if (module.fixtureConfig === undefined || module.fixtureTopology === undefined) {
+      if (module.fixtureConfig === undefined || module.fixtureTopology === undefined || module.fixtureClaudeHead === undefined) {
         setSample(null);
         return;
       }
-      setSample({ name: FIXTURE, payload: { config: module.fixtureConfig, topology: module.fixtureTopology } });
+      setSample({ name: FIXTURE, payload: { config: module.fixtureConfig, topology: module.fixtureTopology, claude: module.fixtureClaudeHead } });
     }).catch(() => undefined);
   }, [search]);
 
@@ -194,13 +198,12 @@ export function SettingsPage() {
     if (configPayload === null) return null;
     if (perHeadView) {
       const shadow = shadowOfOverride(knob.key, configPayload);
-      if (shadow === 'console') return 'A value set in the console for every head outranks this head\'s own. Reset it in the global view first.';
-      if (shadow === 'environment') return 'The environment sets this for every head, which outranks this head\'s own value.';
+      if (shadow === 'console') return H.shadowConsole;
+      if (shadow === 'environment') return H.shadowEnv;
       return null;
     }
     const by = knob.overriddenBy;
-    if (by.length === 0) return null;
-    return `${by.join(', ')} ${by.length === 1 ? 'sets its own value' : 'set their own values'} in splice.toml. A value saved here replaces ${by.length === 1 ? 'it' : 'them'}.`;
+    return by.length === 0 ? null : `${S.overridden} ${by.join(', ')}. ${H.overridden}`;
   };
 
   const writeTopology = () => {
@@ -234,72 +237,63 @@ export function SettingsPage() {
       className="myx-settings"
       {...(import.meta.env.DEV && sample !== null ? { 'data-sample': sample.name } : {})}
     >
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
+      <PageHeader title={S.title} info={{ text: H.about, label: S.about }} actions={sample === null ? undefined : <Badge tone="neutral">{S.sample}</Badge>}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {sample === null ? null : <HolderEdge state="grey" label={S.sample} />}
-      </header>
+      </PageHeader>
 
       {config.error === null ? null : <Fault message={config.error} lastRead={sample === null ? config.lastUpdated : null} />}
       {topology.error === null ? null : <Fault message={topology.error} lastRead={sample === null ? topology.lastUpdated : null} />}
       {claude.error === null ? null : <Fault message={claude.error} lastRead={sample === null ? claude.lastUpdated : null} />}
       {claudeFault === null ? null : <Fault message={claudeFault} />}
 
-      <section className="myx-settings-section">
-        <h2 className="myx-settings-title">{S.knobs}</h2>
-        <div className="myx-settings-row">
-          {/* The rail's selector idiom: the active option prints a green holder edge and the rest
-              a grey one, so which head these knobs describe is a printed word and not a colour. */}
-          {headOptions(configPayload?.layers.perHead, heads.map((row) => row.key)).map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={cx('myx-settings-head-option', option === head && 'myx-settings-head-option-active')}
-              aria-pressed={option === head}
-              onClick={() => setHead(option)}
-            >
-              <HolderEdge state={option === head ? 'green' : 'grey'} label={option} />
-            </button>
-          ))}
-        </div>
-        {/* What saving reaches in this view. A sentence, not a label (CONTRACTS.md section 4). */}
-        <p className="myx-settings-note">
-          {perHeadView
-            ? `Values saved here become ${head}'s own, written to its overrides in splice.toml. They take effect after a daemon restart.`
-            : 'Values saved here apply to every head. Pick a head above to give it a value of its own.'}
-        </p>
-        <Input label={S.find} value={query} onChange={setQuery} w={32} placeholder={S.findHint} />
-        {configPayload === null ? <Blank strips={6} /> : null}
-        {pendingRestart.length === 0 ? null : (
-          <div className="myx-settings-row">
-            <HolderEdge state="amber" label={S.restart} />
-            <span className="myx-settings-note">{pendingRestart.join(', ')}</span>
+      <Section title={S.knobs} {...(configPayload === null ? {} : { count: shown.length })} className="myx-settings-section">
+        {/* The scope: every head's own values, or the global ones. Each head wears its colour mark
+            (DESIGN.md section 5); which one is chosen is the pressed state and the active ground. */}
+        <div className="myx-settings-scope-row">
+          <div className="myx-settings-scope" role="group" aria-label={S.scope}>
+            {headOptions(configPayload?.layers.perHead, heads.map((row) => row.key)).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={cx('myx-settings-head-option', option === head && 'myx-settings-head-option-active')}
+                aria-pressed={option === head}
+                onClick={() => setHead(option)}
+              >
+                {option === 'global' ? S.global : <HeadMark head={option} />}
+              </button>
+            ))}
           </div>
-        )}
-        <Bay
-          label={S.knobs}
-          count={shown.length}
-          empty={{ text: EMPTIES.noKnobs.text, source: EMPTIES.noKnobs.source }}
-        >
-          {configPayload === null ? null : (
-            <KnobRack
-              dispositions={shown}
-              pending={pendingRestart}
-              busyKey={busyKey}
-              onSave={perHeadView ? saveForHead : saveGlobal}
-              scopeNote={scopeNote}
-              {...(perHeadView ? { wording: HEAD_WORDING } : {})}
-              perHead={perHeadView}
-            />
+          {/* What saving reaches in this view, behind the mark beside the scope it describes. */}
+          <InfoTip text={perHeadView ? H.headScope : H.globalScope} label={S.scopeWhy} side="bottom" />
+        </div>
+        <div className="myx-settings-tools">
+          <Input label={S.find} value={query} onChange={setQuery} w={32} placeholder={S.findHint} />
+          {pendingRestart.length === 0 ? null : (
+            <p className="myx-settings-pending">
+              <Badge tone="warn">{S.restart}</Badge>
+              <span className="myx-settings-note">{pendingRestart.join(', ')}</span>
+            </p>
           )}
-        </Bay>
-      </section>
+        </div>
+        {configPayload === null ? <Blank strips={6} /> : shown.length === 0 ? (
+          <Empty text={S.noKnobs} source={H.noKnobs} />
+        ) : (
+          <KnobRack
+            dispositions={shown}
+            pending={pendingRestart}
+            busyKey={busyKey}
+            onSave={perHeadView ? saveForHead : saveGlobal}
+            scopeNote={scopeNote}
+            {...(perHeadView ? { wording: HEAD_WORDING } : {})}
+            perHead={perHeadView}
+          />
+        )}
+      </Section>
 
-      <section className="myx-settings-section">
-        <h2 className="myx-settings-title">{S.topology}</h2>
+      <Section title={S.topology} className="myx-settings-section">
         {topologyState === null ? <Blank strips={4} /> : null}
         {fixture === null && topologyState === null ? (
-          <Empty text={EMPTIES.noConfig.text} source={EMPTIES.noConfig.source} />
+          <Empty text={S.noConfig} source={H.noConfig} />
         ) : (
           <>
             <TopologySection
@@ -314,7 +308,7 @@ export function SettingsPage() {
             <Bay
               label={S.topology}
               count={heads.length}
-              empty={{ text: EMPTIES.noHeads.text, source: EMPTIES.noHeads.source }}
+              empty={{ text: S.noHeads, source: H.noHeads }}
             >
               {heads.map((row) => (
                 <HeadEditRow
@@ -329,29 +323,17 @@ export function SettingsPage() {
             </Bay>
           </>
         )}
-      </section>
+      </Section>
 
-      <section className="myx-settings-section">
-        <h2 className="myx-settings-title">{S.claudeHead}</h2>
+      <Section title={S.claudeHead} className="myx-settings-section">
         <ClaudeModeSection
-          state={fixture === null ? claude.data : {
-            mode: 'separate',
-            resolves_to: '~/.local/share/claude/versions/2.1.257',
-            shim_path: '~/.local/share/splice/splice-launch',
-            real_binary_path: null,
-            claude_logins: {
-              count: 2,
-              selected: 'work',
-              labels: ['personal', 'work'],
-              constraint: 'one login per Claude head at a time, chosen at session launch; no mid-session switch',
-            },
-          }}
+          state={fixture === null ? claude.data : fixture.claude}
           result={claudeResult}
           busy={busyClaude}
           onWrap={() => action(wrapClaudeHead)}
           onUnwrap={() => action(unwrapClaudeHead)}
         />
-      </section>
+      </Section>
     </div>
   );
 }

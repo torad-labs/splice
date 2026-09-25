@@ -1,107 +1,77 @@
-// One turn's waterfall: a stage bar from arrival to finish, the phase rows that make queue wait,
-// upstream wait and streaming separate, and the counters beside it.
+// One turn's timing: a lane per part of the turn on one shared axis, so the queue wait, the
+// upstream wait and the streaming read as separate bars (FEATURES.md 4.3), and the counters beside
+// them.
 //
-// The bars are drawn from data at runtime inside a ScopeInset (its contract), and the SVG carries
-// GEOMETRY ONLY: every label is HTML beside it. That is deliberate - the axis is scaled to the
-// widget's width (preserveAspectRatio="none"), and text inside such a viewBox would be stretched
-// with it. It is also what keeps the chart readable in grayscale: the rows are named in words.
-import { ScopeInset, Strip, StripField } from '@shared/ui';
-import { ABSENT } from '@shared/lib';
-import { STAGE_NAMES, waterfall } from '@entities/perf';
+// Each lane is the kit's waterfall with only that part's segments drawn, scaled to the whole turn,
+// in the part's grey (@entities/perf STAGE_MARKS). The lane names and spans are HTML beside the
+// bars, so the chart reads in grayscale and at any width.
+import { STAGE_MARKS, STAGE_NAMES, waterfall } from '@entities/perf';
 import type { TurnRow } from '@entities/perf';
+import { fmtBytes, fmtMs } from '@shared/lib';
+import { Empty, KeyValue, Waterfall } from '@shared/ui';
 import { barRows, totalOf } from './model';
-import { S } from './strings';
+import { H, S } from './strings';
 import './waterfall.css';
 
 // The drawer rides with the waterfall: both are a turn's detail, and the logs page opens the same
-// drawer for a line that names a turn (FEATURES.md 4.9).
-export { CAPTURE_AT_RESTART, CAPTURE_OFF, CAPTURE_ON, RequestDrawer } from './request-drawer';
+// drawer for the head it tails (FEATURES.md 4.9).
+export { CAPTURE_AT_RESTART, CAPTURE_ON, RequestDrawer } from './request-drawer';
 
-const ROW_H = 18;
-const AXIS = 1000;
-
-/** 0 in, 0 out: a counter the row does not carry prints the absence dash, never a zero it did not
+/** A counter's figure, or undefined when the row does not carry it: never a zero it did not
  *  report. */
-function count(value: number | undefined): string {
-  return value === undefined ? ABSENT : String(value);
+function count(value: number | undefined, format: (n: number) => string = String): string | undefined {
+  return value === undefined ? undefined : format(value);
 }
 
-/** The counters FEATURES.md 4.3 puts beside the bar. */
-function counterFields(row: TurnRow): { key: string; label: string; value: string }[] {
+/** The counters FEATURES.md 4.3 puts beside the bar, those the row carries. A counter the daemon
+ *  did not write for this turn is left out rather than printed as a dash: ten rows, six of them
+ *  dashes, spent the panel on what the turn did not say. */
+export function counterRows(row: TurnRow): [string, string][] {
   const tools = row.tools_eager === undefined && row.tools_deferred === undefined
-    ? ABSENT
+    ? undefined
     : `${row.tools_eager ?? 0} / ${(row.tools_eager ?? 0) + (row.tools_deferred ?? 0)}`;
-  return [
-    { key: 'retries', label: S.retries, value: count(row.retries) },
-    { key: 'refreshes', label: S.refreshes, value: count(row.refreshes) },
-    { key: 'backoff', label: S.backoff, value: count(row.backoff_ms) },
-    { key: 'post_send', label: S.postSend, value: count(row.post_send_retries) },
-    { key: 'req_bytes', label: S.requestBytes, value: count(row.req_bytes) },
-    { key: 'upstream_bytes', label: S.upstreamBytes, value: count(row.upstream_req_bytes) },
-    { key: 'frames', label: S.frames, value: count(row.frames_out) },
-    { key: 'tools', label: S.tools, value: tools },
-    { key: 'search_rounds', label: S.searchRounds, value: count(row.search_rounds) },
-    { key: 'async_io_drops', label: S.dropped, value: count(row.async_io_drops) },
+  const rows: [string, string | undefined][] = [
+    [S.retries, count(row.retries)],
+    [S.refreshes, count(row.refreshes)],
+    [S.backoff, count(row.backoff_ms, fmtMs)],
+    [S.postSend, count(row.post_send_retries)],
+    [S.requestBytes, count(row.req_bytes, fmtBytes)],
+    [S.upstreamBytes, count(row.upstream_req_bytes, fmtBytes)],
+    [S.frames, count(row.frames_out)],
+    [S.tools, tools],
+    [S.searchRounds, count(row.search_rounds)],
+    [S.dropped, count(row.async_io_drops)],
   ];
+  return rows.flatMap(([label, value]) => (value === undefined ? [] : [[label, value] as [string, string]]));
 }
 
-export function Waterfall({ row }: { row: TurnRow }) {
+export function TurnWaterfall({ row }: { row: TurnRow }) {
   const stages = waterfall(row);
   const total = totalOf(stages);
-  const rows = barRows(stages, total);
+  const lanes = barRows(stages, total);
 
-  if (rows.length === 0) {
-    // A row with no marks is not a turn that took no time: it is a row whose telemetry the daemon
-    // did not write, which is what a turn killed before the first mark looks like.
-    return <ScopeInset title={S.phases} basis="unavailable">no stage marks on this turn</ScopeInset>;
-  }
+  // A row with no marks is not a turn that took no time: it is a row whose telemetry the daemon
+  // did not write, which is what a turn killed before the first mark looks like.
+  if (lanes.length === 0) return <Empty text={S.noMarks} source={H.noMarks} />;
 
   return (
-    <div className="myx-wf">
-      <ScopeInset title={S.phases} basis="measured">
-        <svg
-          className="myx-wf-svg"
-          viewBox={`0 0 ${AXIS} ${rows.length * ROW_H}`}
-          height={rows.length * ROW_H}
-          preserveAspectRatio="none"
-          role="img"
-          aria-label={`${S.phases}: ${rows.map((r) => `${STAGE_NAMES[r.group]} ${r.ms}ms`).join(', ')}`}
-        >
-          {rows.map((row_, index) => (
-            <g key={row_.group}>
-              <rect className="myx-wf-track" x={0} y={index * ROW_H + 2} width={AXIS} height={ROW_H - 4} />
-              {row_.bars.map((bar) => (
-                <rect
-                  key={bar.key}
-                  className="myx-wf-bar"
-                  x={bar.x * AXIS}
-                  y={index * ROW_H + 2}
-                  width={Math.max(1, bar.w * AXIS)}
-                  height={ROW_H - 4}
-                />
-              ))}
-            </g>
-          ))}
-        </svg>
-        <div className="myx-wf-legend">
-          {rows.map((row_) => (
-            <div className="myx-wf-legend-row" key={row_.group}>
-              <span className="myx-wf-legend-name">{STAGE_NAMES[row_.group]}</span>
-              <span className="myx-wf-legend-ms">{row_.ms}ms</span>
-            </div>
-          ))}
-        </div>
-      </ScopeInset>
-
-      <Strip
-        edge="grey"
-        edgeLabel={S.counters}
-        ariaLabel={`${S.counters} for ${row.head}`}
-      >
-        {counterFields(row).map((field) => (
-          <StripField key={field.key} w={12} label={field.label} value={field.value} />
+    <div className="myx-tw">
+      <div className="myx-tw-lanes" role="list" aria-label={S.phases}>
+        {lanes.map((lane) => (
+          <div key={lane.group} className="myx-tw-lane" role="listitem">
+            <span className="myx-tw-name">{STAGE_NAMES[lane.group]}</span>
+            <Waterfall
+              stages={stages
+                .filter((stage) => stage.group === lane.group)
+                .map((stage) => ({ key: stage.key, label: stage.label, start: stage.start, end: stage.end, mark: STAGE_MARKS[stage.group] }))}
+              scale={total}
+              label={`${STAGE_NAMES[lane.group]} ${fmtMs(lane.ms)}`}
+            />
+            <span className="myx-tw-ms">{fmtMs(lane.ms)}</span>
+          </div>
         ))}
-      </Strip>
+      </div>
+      {counterRows(row).length === 0 ? null : <KeyValue rows={counterRows(row)} />}
     </div>
   );
 }

@@ -13,13 +13,9 @@
   "excused": {},
   "baseline": {
     "console/tools/src/commands/capture.ts": 1,
-    "console/tools/src/commands/comp.ts": 1,
-    "console/tools/src/commands/exit.ts": 5,
-    "console/tools/src/commands/gate.ts": 2,
     "console/tools/src/commands/leak.ts": 1,
     "console/tools/src/commands/scan.ts": 6,
     "console/tools/src/lib/coverage.ts": 3,
-    "console/tools/src/lib/typography.ts": 17,
     "tools/e2e/docker/mock_chat.ts": 1,
     "tools/e2e/docker/receipt-selftest.ts": 3,
     "tools/e2e/fixtures/loopback_control.ts": 5,

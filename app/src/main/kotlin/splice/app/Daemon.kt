@@ -33,6 +33,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
@@ -104,7 +105,10 @@ public class Daemon(
             digest = topologyDigest,
             path = topologyPath,
             declaredHeads = DeclaredHeads {
-                topology.heads.mapValues { (_, head) -> DeclaredHead(head.provider, head.models) }
+                topology.heads.mapValues { (_, head) ->
+                    val family = topology.providers[head.provider]?.let { ProviderFamilyRule().of(head.provider, it) }
+                    DeclaredHead(head.provider, head.models, family)
+                }
             },
             running = topologyWindows,
         ),

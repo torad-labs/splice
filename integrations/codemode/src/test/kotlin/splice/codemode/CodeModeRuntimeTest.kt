@@ -131,7 +131,11 @@ class CodeModeRuntimeTest {
             DataOutputStream(process.outputStream.buffered()).use { input ->
                 CodeModeWire.write(input, buildJsonObject { put("type", "start") })
             }
-            val reply = DataInputStream(process.inputStream.buffered()).use(CodeModeWire::read)
+            val reply = DataInputStream(process.inputStream.buffered()).use { output ->
+                // V4-226: a worker's first frame is its ready; the fault answers the start that follows.
+                CodeModeFrames.parseReady(CodeModeWire.read(output))
+                CodeModeWire.read(output)
+            }
             assertEquals(setOf("type", "category", "faultClass"), reply.keys)
             val fault = assertThrows(CodeModeInfrastructureException::class.java) {
                 CodeModeFrames.parseReply(reply, emptySet(), 1)

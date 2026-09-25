@@ -10,7 +10,7 @@ import { captureView, fetchCapture, putCapture } from '../src/entities/perf';
 import type { CaptureState, CaptureWire } from '../src/entities/perf';
 import { afterRead, afterWrite } from '../src/entities/perf/model/capture';
 import { captureStore } from '../src/entities/perf/model/store';
-import { CAPTURE_AT_RESTART, CAPTURE_OFF, CAPTURE_ON, RequestDrawer } from '../src/widgets/waterfall';
+import { CAPTURE_AT_RESTART, CAPTURE_ON, RequestDrawer } from '../src/widgets/waterfall';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -106,21 +106,21 @@ describe('capture reads and writes', () => {
 });
 
 describe('the request drawer', () => {
-  test('capture is off by default and the drawer says so, with the switch named and unchecked', () => {
+  test('capture is off by default: the switch, named and unchecked, says so alone', () => {
+    // Off and running off is the switch's own word; a badge beside it said the same thing twice.
     const out = render(h(RequestDrawer, { capture: state(), onSwitch: () => undefined }));
-    expect(out).toContain(CAPTURE_OFF);
     expect(out).toContain('role="switch"');
     expect(out).toContain('aria-checked="false"');
-    expect(out).toContain('aria-label="body capture"');
+    expect(out).toContain('aria-label="Body capture"');
+    expect(out).not.toContain(CAPTURE_ON);
     expect(out).toContain('4,194,304 chars');
     expect(out).toContain('7 d');
     expect(out).not.toContain(CAPTURE_AT_RESTART);
   });
 
-  test('a write waiting on a restart checks the switch and still says capture is off', () => {
+  test('a write waiting on a restart checks the switch and says it runs only after one', () => {
     const out = render(h(RequestDrawer, { capture: state({ written: wire({ enabled: true }) }), onSwitch: () => undefined }));
     expect(out).toContain('aria-checked="true"');
-    expect(out).toContain(CAPTURE_OFF);
     expect(out).toContain(CAPTURE_AT_RESTART);
     expect(out).not.toContain(CAPTURE_ON);
   });
@@ -128,7 +128,7 @@ describe('the request drawer', () => {
   test('capture running says so, and names the CLI as where bodies are read, since no route serves one', () => {
     const out = render(h(RequestDrawer, { capture: state({ running: wire({ enabled: true }) }), onSwitch: () => undefined }));
     expect(out).toContain(CAPTURE_ON);
-    expect(out).toContain('read captured bodies with this command');
+    expect(out).toContain('>Read bodies<');
     expect(out).toContain('splice trace e2e-codex');
   });
 

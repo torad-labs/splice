@@ -14,7 +14,7 @@
      hairline tokens are the ROOM's. Paper's line is --strip-field-line, which is what the other
      81 hairline borders in this tree pair with --hair. */
   border: var(--hair) solid var(--strip-field-line);
-  max-height: 34rem;
+  max-height: calc(34 * var(--u));
   overflow: auto;
 }
 

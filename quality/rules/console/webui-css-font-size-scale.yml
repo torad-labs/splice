@@ -1,0 +1,23 @@
+# The type scale is an ALLOW-list (2026-09-25, console redesign, splice-lead's amendment 2). The
+# spacing wall rejected font-size by a deny-list of units, (?i)^(px|rem|em)$, so the team board's
+# eighteen cqh font-sizes (board.css, views.css) never matched and the console shipped 9px labels.
+# Fixing the class, not the unit: a font-size is exactly one rung of the scale, or inherited.
+id: webui-css-font-size-scale
+language: css
+severity: error
+message: "font-size must be exactly var(--text-N) or inherit: the type scale lives in shared/tokens.css."
+note: |
+  Body copy and table cells sit at var(--text-2)/var(--text-3), captions and column names at
+  var(--text-1), section titles var(--text-4), page titles var(--text-6), a number that is the
+  point var(--text-7). A size between rungs is a new rung in tokens.css, never a local value.
+files:
+  - console/src/**/*.css
+ignores:
+  - console/src/shared/tokens.css
+rule:
+  kind: declaration
+  has:
+    kind: property_name
+    regex: '^font-size$'
+  not:
+    regex: '^font-size\s*:\s*(var\(--text-[0-9]+\)|inherit)\s*(!important\s*)?;?$'

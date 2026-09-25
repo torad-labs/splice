@@ -12,12 +12,8 @@
 //
 // So a leg here does not pass because its command exited 0. It passes because we could
 // first PROVE the tool is there and runnable (`probe`), and then the check itself came
-// back clean. A missing tool, a missing dev server, a silent no-op: DID NOT RUN, which
-// exits non-zero with the remedy printed. `--selftest` mutation-proves that claim.
-//
-// Legs that drive a browser need the dev server the campaign's capture recipe uses:
-//   npm run dev -w webui -- --port 5173 --strictPort
-// Host must be localhost — vite binds ::1 only and 127.0.0.1 is refused.
+// back clean. A missing tool or a silent no-op: DID NOT RUN, which exits non-zero with the
+// remedy printed. `--selftest` mutation-proves that claim.
 //
 // M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file.
 //   SHAPE ONE, does every FAIL reach the exit code? NOW YES, AND IT DID NOT — in the runner that
@@ -53,9 +49,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const CONSOLE = path.join(ROOT, 'console');
 /** The console's own CLI (this file's siblings), by verb — the one spelling every leg below uses. */
 const tool = (verb, ...args) => sh('bun', [path.join(ROOT, 'console/tools'), verb, ...args], ROOT);
-// --port exists so the browser legs' DID NOT RUN path can be exercised deliberately against a
-// dead port (M1-23's check) without stopping the dev server every other seat is capturing from.
-const PORT = Number(process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : 5173);
 
 const ARGS = process.argv.slice(2);
 const has = (f) => ARGS.includes(`--${f}`);
@@ -63,28 +56,9 @@ const flag = (f, d) => { const i = ARGS.indexOf(`--${f}`); return i === -1 ? d :
 
 const PASSED = 'PASSED', FAILED = 'FAILED', DID_NOT_RUN = 'DID NOT RUN';
 
-/** The page the look leg reads: the campaign's own comp-of-record surface. */
-const LOOK_URL = 'http://localhost:5173/#/teams?fixture=hero';
-
-/**
- * The frames every rendered leg runs at. The comp's own, and the operator's.
- *
- * Added 2026-09-18 after M1-33 measured what was missing: `comp-check.mjs` carried a hardcoded
- * `FRAMES = [[1536, 1024]]` of which only `[0]` was ever read, and `look.mjs` defaulted to the
- * same size, so NOTHING in this gate had ever rendered at a second viewport. The operator uses
- * 3840x2160 monitors. Every finding of the 3840 blind pass — 13.7% mean paper coverage, 9px of
- * ink on knob names and column headers, 801px gaps in the rule bar — passed all nine legs green.
- *
- * This is the gate's own instance of the campaign's oldest defect: not a check that lied, a check
- * whose DENOMINATOR came from itself. One frame, measured perfectly, forever.
- */
-const FRAMES = ['1536x1024', '3840x2160'];
-/** comp-check's per-frame summary, with a non-zero compared count so a run that read nothing
- *  cannot pass as a run that read everything. One frame's worth, so the leg can say WHICH. */
-const frameSummary = (f) => new RegExp(`at ${f}[^\\n]*?, [1-9]\\d* compared against the comp`);
-
-/** The rendered-rule pass's cells: [frame, theme]. See the `look` leg for why this is a diagonal. */
-const LOOKS = [['1536x1024', 'dark'], ['3840x2160', 'dark'], ['3840x2160', 'light']];
+// The comp-check and look legs retired with the comp of record they measured against (the console
+// redesign, 2026-09-25; docs/design/DESIGN.md section 12). The rendered frames are held by the
+// console's own e2e now (console/e2e, FRAMES: 3840x2060, 2560x1380 and 1600x1000).
 
 /**
  * Run a command; never throw. Returns {code, out} with stdout and stderr merged.
@@ -102,17 +76,6 @@ function sh(cmd, args, cwd) {
   // lib/proc.ts carries the rule: both streams on every outcome, and a binary that never started
   // is a named non-zero code rather than a null read as a clean run
   return run([cmd, ...args], cwd);
-}
-
-async function serverUp(port) {
-  // A TCP probe with no dependency and no shell: the gate must not need the thing it checks.
-  try {
-    const socket = await Bun.connect({ hostname: '127.0.0.1', port, socket: { data() {}, open(s) { s.end(); } } });
-    socket.end();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -246,77 +209,6 @@ const LEGS = [
     proof: /gate-coverage: [1-9]\d* checker\(s\) under console\/tools\/src, [1-9]\d* leg\(s\)/,
   },
   {
-    name: 'comp-check',
-    why: "the comp's constants measured on live pages; needs the dev server",
-    needsServer: true,
-    probe: () => tool('comp', '--list'),
-    probeProof: /rail/,
-    // BOTH FRAMES, and the second one is the whole point. Until 2026-09-18 this leg ran
-    // comp-check's hardcoded `FRAMES = [[1536, 1024]]` and look.mjs's identical default, so
-    // NOTHING in this gate rendered at a second size — M1-33's coverage finding. The operator's
-    // monitors are 3840x2160; every defect the 3840 blind pass found passed all nine legs.
-    run: () => {
-      const runs = FRAMES.map((f) => [f, tool('comp', '--frame', f)]);
-      // NAME THE FRAME THAT WENT SILENT. The proof below spans BOTH frames, so one missing summary
-      // read as "produced no evidence it ran" for the whole leg with no way to tell which frame was
-      // quiet — the leg failing in the exact way it exists to catch. Measured 2026-09-18 12:20: both
-      // frames summarise correctly when run by hand and the concatenation matches the proof, so a
-      // gate run that reported no evidence had one silent frame and could not say so.
-      const silent = runs.filter(([f, r]) => !frameSummary(f).test(r.out));
-      const audit = silent.map(([f, r]) =>
-        `comp-check: ${f} produced NO summary line (exit ${r.code}) — last line: ${r.out.trim().split('\n').pop() || '(no output at all)'}`);
-      return { code: runs.some(([, r]) => r.code !== 0) || silent.length > 0 ? 1 : 0, out: [...runs.map(([, r]) => r.out), ...audit].join('\n') };
-    },
-    // The proof is the summary line with a NON-ZERO compared count, once per frame. It used to be
-    // /^(?:PASS|FAIL) /m — and comp-check prints no PASS line at all, so that regex could only ever
-    // match a FAILURE. The gate would have gone unproven at the exact moment the build went green,
-    // which is the one direction none of tonight's other holes pointed in.
-    proof: new RegExp(FRAMES.map((f) => frameSummary(f).source).join('[\\s\\S]*'), 'm'),
-    // A silent frame is now a FAILURE that names itself, not an unattributable DID NOT RUN.
-    failIf: /^FAIL |produced NO summary line/m,
-    failHint: 'comp-check found a comp constant off on a live page; those belong on the punch list, not in a weakened proof',
-  },
-  {
-    name: 'look',
-    why: 'the rendered rule pass and the look gate; needs the dev server',
-    needsServer: true,
-    probe: () => tool('look', '--help'),
-    // was /./ , which matches the usage text and therefore any output at all: a probe that cannot
-    // fail. The usage line is the proof that the file runs and still takes a url.
-    probeProof: /usage: bun console\/tools look '<url>'/,
-    // it takes a URL: called with none it prints usage and exits 2, which the old wiring reported
-    // as a FAILED look pass rather than as a missing argument
-    // THREE CELLS, and the shape is deliberate: a diagonal, not a full cross.
-    //
-    //   dark  1536x1024   the historical baseline, so a regression against every past run shows
-    //   dark  3840x2160   the size the console is actually used at
-    //   light 3840x2160   the room no automatic check in this campaign has ever rendered
-    //
-    // Two axes were missing, both found by M1-33. look.mjs defaulted to 1536x1024 with no way to
-    // ask for another size, and NOTHING here seeded a theme — so the rendered rules that care
-    // about size (clipped-overflow-container, text-occlusion, cramped-padding, line-length) only
-    // ever saw one frame, and the rules that care about tone (low-contrast, design-system-color)
-    // only ever saw one room. Light is the room with 9.2 L of headroom above its paper against
-    // dark's 216.7, where three of twelve materials clip and the ghost that recedes on dark
-    // advances on light.
-    //
-    // light-at-1536 is the omitted cell. The light defects measured so far are tonal rather than
-    // size-dependent, so the 3840 light run reaches them; if one ever turns out to need the comp
-    // frame specifically, this is the cell to add and this comment is the reason it was not here.
-    run: () => {
-      const runs = LOOKS.map(([frame, theme]) => {
-        const [w, h] = frame.split('x');
-        return tool('look', LOOK_URL, '--width', w, '--height', h, '--theme', theme);
-      });
-      return { code: runs.some((r) => r.code !== 0) ? 1 : 0, out: runs.map((r, i) => `--- ${LOOKS[i].join(' ')}\n${r.out}`).join('\n') };
-    },
-    // One headline per cell, each naming its own frame and room. A single /look — \S+/ would have
-    // been satisfied by one run out of three, which is how a gate reports three passes over one.
-    proof: new RegExp(LOOKS.map(([f, t]) => `look — [^\\n]*${f} ${t}`).join('[\\s\\S]*'), 'm'),
-    failIf: /LOOK: BLOCKED|look-gate\s+FAIL/,
-    failHint: 'the look gate found blocking findings on this page; fix them or put them on the punch list',
-  },
-  {
     // LAST ON PURPOSE, AND THE POSITION IS THE POINT (M1-49). This leg asks whether every row that
     // reads `done` has its receipted bytes reachable from HEAD. That question only has one meaning
     // at the MILESTONE BOUNDARY, after the orchestrator has committed the milestone's rows: a red
@@ -337,9 +229,6 @@ const LEGS = [
 ];
 
 async function runLeg(leg) {
-  if (leg.needsServer && !(await serverUp(PORT))) {
-    return { status: DID_NOT_RUN, detail: `no dev server on localhost:${PORT} — bun run --cwd console dev -- --port ${PORT} --strictPort` };
-  }
   const p = leg.probe();
   if (p.code !== 0 || (leg.probeProof && !leg.probeProof.test(p.out))) {
     return { status: DID_NOT_RUN, detail: `probe failed: ${p.out.trim().split('\n').slice(-2).join(' ').slice(0, 200)}` };

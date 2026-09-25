@@ -59,6 +59,7 @@ export function fmtBytes(n: number): string {
 }
 
 export function fmtTokens(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 10_000) return `${Math.round(n / 1000)}k`;
   if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
@@ -82,6 +83,12 @@ export function fmtShare(share: number): string {
   if (value === 0) return '0%';
   if (value < 0.1) return '<0.1%';
   return `${value < 10 ? value.toFixed(1) : value.toFixed(0)}%`;
+}
+
+/** A value against the largest of its column, 0..1 for a meter, and 0 when the column is empty
+ *  rather than the NaN a bare division gives. */
+export function ratio(value: number, max: number): number {
+  return max <= 0 ? 0 : value / max;
 }
 
 /** Month names as the console prints a date (`sep 21`), one table for every page that dates a row. */
@@ -142,4 +149,24 @@ export function poll(fn: () => void | Promise<void>, intervalMs: number): () => 
     pause();
     doc?.removeEventListener('visibilitychange', onVisibility);
   };
+}
+
+/**
+ * How a write ended, and the only answer a write gives: the daemon's answer when it applied, the
+ * v0.4.0 item that will serve a route not built yet, or the reason it failed in the daemon's words.
+ * Writes that answered `null` or `false` for all three read as success to every caller, and the
+ * panels printed "Saved" over a refusal (Marlin's HOLD, 2026-09-25). The wall
+ * `webui-write-never-swallows` keeps it the only answer; `writeFailure` (shared/api) builds the
+ * failures.
+ */
+export type WriteResult<T> =
+  | { status: 'applied'; answer: T }
+  | { status: 'pending'; item: string }
+  | { status: 'failed'; reason: string };
+
+/** The one line a panel prints for a write's result: `done` when it applied, `pending` for a route
+ *  not built yet, and the reason when it failed. Only an applied write reads as success. */
+export function writeNote(result: WriteResult<unknown>, words: { done: string; pending: string }): { text: string; failed: boolean } {
+  if (result.status === 'applied') return { text: words.done, failed: false };
+  return { text: result.status === 'pending' ? words.pending : result.reason, failed: true };
 }

@@ -2,7 +2,7 @@
    section 1), which are already 0ms under prefers-reduced-motion; the JS side refuses
    to pair or schedule there too, so neither half animates alone.
 
-   Every gesture is under --dur-3 (400ms) and none of them loops. */
+   Every gesture is at most --dur-3 (240ms) and none of them loops. */
 
 /* PRINT: a strip enters from the top edge of its bay. It slides down into its own
    place rather than fading in, so the row reads as printed onto the rack. */

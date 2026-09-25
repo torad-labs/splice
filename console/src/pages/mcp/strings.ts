@@ -1,43 +1,55 @@
-// Every label this page prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall).
-//
-// Sentences that are not labels live in the component or in model.ts: the honest empties are
-// statements, not chrome, and section 4 exempts them.
-import { ABSENT } from '@shared/lib';
-
+// Every word this page prints. S: labels, three words or fewer, sentence case. H: help, one
+// sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure.
 export const S = {
-  title: 'mcp',
-  bay: 'servers',
-  byName: 'by name',
-  hostedFirst: 'hosted first',
-  detail: 'server detail',
-  name: 'server',
-  pid: 'pid',
-  sessions: 'sessions',
-  streams: 'streams',
-  started: 'started',
-  activity: 'last call',
-  restarts: 'restarts',
-  error: 'error',
-  reason: 'reason',
-  limits: 'host limits',
-  /** The detail's line for a hosted server that has not failed. */
-  noError: 'no errors',
-  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
-   *  It replaces two phrasings this page used for one fact: `not running` in the rack and `none`
-   *  in the detail. */
-  absent: ABSENT,
+  title: 'MCP',
+  sample: 'Sample data',
+  byName: 'By name',
+  hostedFirst: 'Hosted first',
+  servers: 'Servers',
+  server: 'Server',
+  state: 'State',
+  hosted: 'Hosted',
+  sessions: 'Sessions',
+  sessionsByServer: 'Sessions by server',
+  streams: 'Streams',
+  restarts: 'Restarts',
+  aboutRestarts: 'About restarts',
+  lastCall: 'Last call',
+  started: 'Started',
+  pid: 'PID',
+  lastError: 'Last error',
+  reason: 'Reason',
+  aboutDirect: 'About direct servers',
+  detail: 'Server detail',
+  open: 'Open server',
+  close: 'Close',
+  limits: 'Host limits',
+  limit: 'Limit',
+  value: 'Value',
+  applies: 'Applies',
+  live: 'Live',
+  restart: 'On restart',
+  notCarried: 'Not carried',
+  editLimits: 'Edit in settings',
+  openSettings: 'Open settings',
+  hostingOff: 'Sharing is off',
+  noServers: 'No MCP servers',
+  /** A server's state in words. `Unused`: nothing has asked for it yet, which is not a stop.
+   *  `Direct`: splice does not share it, and each client reaches it itself. */
+  stateName: {
+    hosted: 'Hosted',
+    idle: 'Unused',
+    ineligible: 'Direct',
+  },
 } as const;
 
-// THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
-// These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
-// these meanings is how the console reached eleven phrasings for "nothing here".
-//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
-//              default. It was `n/r`, which no reader could expand.
-//   none       the question was asked and its answer is nothing (no tier hands this model out).
-//   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
-//   unavailable  it exists and we cannot reach it.
-//   ineligible   it does not apply here.
-//   not built    it does not exist yet; a pending route names its row.
-// A site whose fact cannot be told from the code KEEPS the word it has and gets a note beside it.
-// Renaming an absence you have not understood is how `unknown` silently becomes `none`.
+export const H = {
+  hostingOff: 'Set mcp_hosting = true under [daemon] to share servers.',
+  noServers: "Stdio servers from Claude Code's MCP settings appear here.",
+  restarts: 'Exited servers restart on their next call, backing off up to 60s.',
+  direct: 'Clients reach a direct server themselves; splice does not share it.',
+} as const;
+
+export const U = {
+  of: 'of',
+} as const;

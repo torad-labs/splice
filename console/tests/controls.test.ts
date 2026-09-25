@@ -49,9 +49,15 @@ function rules(sheet: string): Map<string, string> {
   const bare = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
   const found = new Map<string, string>();
   for (const match of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selector = match[1].trim().replace(/\s+/g, ' ');
-    if (selector.startsWith('@')) continue;
-    found.set(selector, match[2].trim().replace(/\s+/g, ' '));
+    const body = match[2].trim().replace(/\s+/g, ' ');
+    // A grouped rule (`a, b { ... }`) declares its body for each selector in the group, and a later
+    // rule for the same selector adds to it, so `declared` reads what the cascade would apply.
+    for (const part of match[1].split(',')) {
+      const selector = part.trim().replace(/\s+/g, ' ');
+      if (selector.startsWith('@') || selector === '') continue;
+      const held = found.get(selector);
+      found.set(selector, held === undefined ? body : `${held}; ${body}`);
+    }
   }
   return found;
 }
@@ -107,9 +113,9 @@ describe('Key', () => {
     // The defect was the reverse: every armed declaration was also a hover declaration.
     const armedOnly = Object.entries(armed).filter(([property, value]) => hovered[property] !== value);
     expect(armedOnly.length).toBeGreaterThan(0);
-    // And the edge is not what hover uses: hover touches only the box line.
-    expect(declared(css, '.myx-key:hover')['--nothing']).toBeUndefined();
-    expect(Object.keys(declared(css, '.myx-key:hover'))).toEqual(['border-color']);
+    // And the armed line is not what hover uses: hover touches only the ground, armed the line too.
+    expect(Object.keys(declared(css, '.myx-key:hover'))).toEqual(['background']);
+    expect(declared(css, '.myx-key-armed')['border-color']).toBe('var(--warn)');
   });
 
   test('D4: a busy key is not disabled, keeps focus, and prints that it is working', () => {
@@ -154,7 +160,7 @@ describe('Confirm', () => {
   test('armed it is TWO keys: the second label and a cancel, never a dialog', () => {
     const out = keys(true);
     expect(out).toContain('confirm stop');
-    expect(out).toContain('cancel');
+    expect(out).toContain('>Cancel<');
     expect(out.match(/<button/g)).toHaveLength(2);
     expect(out).toContain('myx-key-armed'); // the cocked key is visibly cocked
     expect(out).not.toContain('role="dialog"');
@@ -216,57 +222,51 @@ describe('Input', () => {
     expect(out).toContain('myx-input-invalid');
   });
 
-  test('D7: its label wears the paper ink, not the room ink', () => {
-    // Measured 1.98:1 for --ink-mute over --strip against a 4.5:1 bar.
-    expect(declared(css, '.myx-input-label').color).toBe('var(--strip-ink-mute)');
+  test('D7: its label wears an ink the contrast wall measures on its ground', () => {
+    // Measured 1.98:1 for the old --ink-mute over --strip against a 4.5:1 bar. The label now sits on
+    // the page ground in --fg-muted, a pair tests/contrast.test.ts holds at 4.5:1 in both themes.
+    expect(declared(css, '.myx-input-label').color).toBe('var(--fg-muted)');
   });
 });
 
 describe('Blank', () => {
-  test('prints n unprinted strips and says what is loading', () => {
+  test('prints one bar per row it holds and says what is loading', () => {
     const out = render(h(Blank, { strips: 3, label: 'reading heads' }));
-    expect(out.match(/myx-blank-strip/g)).toHaveLength(3);
+    expect(out.match(/myx-blank-row/g)).toHaveLength(3);
     expect(out).toContain('aria-busy="true"');
     expect(out).toContain('aria-label="reading heads"');
-    expect(out).not.toContain('myx-skeleton');
   });
 
-  test('D7: its height is the strip module itself, not a sum of font sizes', () => {
-    const out = render(h(Blank, { strips: 1 }));
-    // The same structure a real strip has, so the two cannot disagree.
-    expect(out).toContain('myx-strip');
-    expect(out).toContain('myx-strip-fields');
-    expect(out).toContain('myx-sfield');
-    expect(out).toContain('myx-sfield-label');
-    expect(out).toContain('myx-sfield-value');
-    // And nothing printed on it: strip the two non-breaking spaces and not one glyph is left.
-    expect(out.replace(/&nbsp;|\u00a0/g, '')).toBe(
-      '<div class="myx-blank" aria-busy="true" role="status">'
-      + '<span class="myx-strip myx-blank-strip" aria-hidden="true">'
-      + '<span class="myx-strip-fields"><span class="myx-sfield">'
-      + '<span class="myx-sfield-label"></span>'
-      + '<span class="myx-sfield-value"><span class="myx-sfield-text"></span></span>'
-      + '</span></span></span></div>',
+  test('a bar is a shape, never a row that lost its words', () => {
+    // The 2026-09-25 baseline caught doctor mid-read as four bordered cards with a dot and a rule and
+    // nothing in them: the strip shell, unprinted. A bar carries no structure a row has, so nothing on
+    // it can be read as an empty finding.
+    expect(render(h(Blank, { strips: 1 }))).toBe(
+      '<div class="myx-blank" aria-busy="true" role="status"><span class="myx-blank-row" aria-hidden="true"></span></div>',
     );
-    // The old derivation summed font sizes and came up 27% short of the strip it stood in for.
-    expect(declared(css, '.myx-blank-strip').height).toBeUndefined();
+    const bar = declared(css, '.myx-blank-row');
+    expect(bar.border).toBeUndefined();
+    expect(bar.height).toBe('var(--row-board)'); // a row's height, so the page does not jump when rows land
+    // `declared` folds the reduced-motion rule into the bar's, so each of the two is read as written
+    expect(css).toMatch(/\n\.myx-blank-row \{[^}]*animation: myx-blank-breathe /);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.myx-blank-row \{ animation: none; \}/);
   });
 
   test('zero strips is an empty rack, not a negative one', () => {
-    expect(render(h(Blank, { strips: 0 }))).not.toContain('myx-blank-strip');
-    expect(render(h(Blank, { strips: -2 }))).not.toContain('myx-blank-strip');
+    expect(render(h(Blank, { strips: 0 }))).not.toContain('myx-blank-row');
+    expect(render(h(Blank, { strips: -2 }))).not.toContain('myx-blank-row');
   });
 });
 
 describe('Fault', () => {
   const long = 'the daemon closed the connection while a turn was streaming: upstream returned 502 after 43s of held bytes, and the head has been marked retryable';
 
-  test('carries a red holder edge with its word printed beside it', () => {
+  test('is one alert line: a danger mark that is an icon as well as a colour, then the words', () => {
     const out = render(h(Fault, { message: 'daemon unreachable' }));
-    expect(out).toContain('myx-edge-red');
-    expect(out).toContain('>fault<');
-    expect(out).toContain('daemon unreachable');
     expect(out).toContain('role="alert"');
+    expect(out).toMatch(/<svg[^>]*class="myx-fault-icon"/);
+    expect(out).toContain('>daemon unreachable<');
+    expect(declared(css, '.myx-fault-icon').color).toBe('var(--danger)');
   });
 
   test('D2: a long message prints whole and wraps, and is never clipped', () => {
@@ -282,8 +282,8 @@ describe('Fault', () => {
   });
 
   test('the retry key is offered only when there is something to retry', () => {
-    expect(render(h(Fault, { message: 'HTTP 404', onRetry: () => undefined }))).toContain('retry');
-    expect(render(h(Fault, { message: 'row V4-127' }))).not.toContain('>retry<');
+    expect(render(h(Fault, { message: 'HTTP 404', onRetry: () => undefined }))).toContain('>Retry<');
+    expect(render(h(Fault, { message: 'row V4-127' }))).not.toContain('>Retry<');
   });
 });
 
@@ -330,7 +330,10 @@ describe('Choice', () => {
   });
 
   test('the chosen option is marked in ink as well as in words', () => {
-    expect(declared(css, '.myx-choice-chosen')['border-color']).toBe('var(--strip-ink)');
+    // the other options print in the muted ink; the chosen one in full ink, and heavier
+    expect(declared(css, '.myx-choice-option').color).toBe('var(--fg-muted)');
+    expect(declared(css, '.myx-choice-chosen').color).toBe('var(--fg)');
+    expect(declared(css, '.myx-choice-chosen')['font-weight']).toBe('500');
   });
 });
 
@@ -342,7 +345,8 @@ describe('the focus ring', () => {
     test(`${selector} draws its ring inside the box`, () => {
       const ring = declared(css, `${selector}:focus-visible`);
       expect(ring.outline).toContain('var(--focus)');
-      expect(parseFloat(ring['outline-offset'] ?? '0')).toBeLessThan(0);
+      // inward by the ring's own width, or any negative length: either keeps the ring in the box
+      expect(ring['outline-offset'] ?? '0').toMatch(/^(-\d[\d.]*[a-z]*|calc\(var\(--focus-width\) \* -1\))$/);
     });
   }
 });
@@ -373,10 +377,10 @@ describe('Flag', () => {
 describe('the copy key', () => {
   test('an answer holds only for the value it was given for', () => {
     const copied = { outcome: 'copied' as const, value: 'splice key set A_KEY' };
-    expect(controls.copyLabel(copied, 'splice key set A_KEY', 'copy')).toBe('copied');
+    expect(controls.copyLabel(copied, 'splice key set A_KEY', 'copy')).toBe('Copied');
     // the detail column opened another head: its command was never copied
     expect(controls.copyLabel(copied, 'splice key set B_KEY', 'copy')).toBe('copy');
-    expect(controls.copyLabel({ outcome: 'refused', value: 'x' }, 'x', 'copy')).toBe('copy by hand');
+    expect(controls.copyLabel({ outcome: 'refused', value: 'x' }, 'x', 'copy')).toBe('Copy by hand');
     expect(controls.copyLabel(null, 'x', 'copy')).toBe('copy');
   });
 });

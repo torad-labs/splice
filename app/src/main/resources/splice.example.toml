@@ -114,7 +114,7 @@ zstd_request_body = true
 # The JAR-bundled JavaScript worker pool, shown with its code defaults. Each is an OVERLAY:
 # leave it out and the default below rides. All are code-mode only (chatgpt-oauth + responses).
 #   code_mode_workers = 4      the GraalJS child-JVM pool size
-#   code_mode_timeout_ms = 5000 ms one worker exchange may wait for the child's answer
+#   code_mode_timeout_ms = 5000 ms a running script may take to answer (its worker's start is not counted)
 #   code_mode_heap = 128       MB each child JVM's -Xmx
 #   code_mode_models = ["gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol"]  models offered the runner
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every

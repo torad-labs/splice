@@ -1,157 +1,121 @@
-/* The turns page: three bays beside a detail column that swells open, the same geometry as the
-   sessions and projects pages. Tokens only (CONTRACTS.md section 1). */
+/* The turns page (docs/design/DESIGN.md section 7): the in-flight set, the window summary, where the
+   loaded turns' time went beside what their prompts cost, and the landed table, which narrows to
+   put an opened turn beside it, the geometry of the sessions board. */
 
-.myx-tn {
-  display: flex;
-  flex-direction: column;
+.myx-tn { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
+.myx-tn .myx-ph { margin-block-end: 0; }
+.myx-tn .myx-sec + .myx-sec { margin-block-start: 0; }
+
+/* the figures beside a shape: tabular, end-aligned, the second of a pair quieter */
+.myx-tn-figure {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--fg);
+}
+.myx-tn-quiet { color: var(--fg-subtle); }
+.myx-tn-danger { color: var(--danger); }
+.myx-tn-badges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.myx-tn-slots { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); }
+
+/* each head's gate, a tile per head */
+.myx-tn-gates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(20 * var(--u)), 1fr));
   gap: var(--space-4);
-  min-width: 0;
+}
+.myx-tn-gate {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  font-size: var(--text-2);
+}
+/* the turns the gates count and the daemon does not list */
+.myx-tn-unlisted { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-4) 0 0; }
+
+/* a daemon that lists its live turns puts their table under the tiles */
+.myx-tn-gates + * { margin-block-start: var(--space-5); }
+
+/* a turn's waterfall with its length; a percentile pair; an input split with its total */
+.myx-tn-timing,
+.myx-tn-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(4.6875 * var(--u));
+  align-items: center;
+  column-gap: var(--space-3);
+}
+.myx-tn-spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(4.6875 * var(--u)) calc(4.6875 * var(--u));
+  align-items: center;
+  column-gap: var(--space-3);
 }
 
+/* the idle heads, named once under the summary */
+.myx-tn-idle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
+}
+.myx-tn-idle-name { color: var(--fg-muted); }
+.myx-tn-idle-head { display: inline-flex; align-items: center; gap: var(--space-2); }
 
+/* where the time went beside what the prompts cost */
+.myx-tn-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-7);
+  align-items: start;
+}
+.myx-tn-stages { display: grid; gap: var(--space-5); }
+.myx-tn-stage-heads { display: grid; gap: var(--space-3); }
+.myx-tn-stage-head {
+  display: grid;
+  grid-template-columns: calc(11.25 * var(--u)) minmax(0, 1fr) calc(4.6875 * var(--u));
+  align-items: center;
+  column-gap: var(--space-4);
+  font-size: var(--text-2);
+}
 
-/* A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-119, mirroring M1-116's mechanism rather than
-   choosing a fourth repair). The track collapses to literal 0 at rest, but `gap` was still
-   var(--space-4), and gap is paid BETWEEN a 1fr track and a 0 track like any other pair - so the
-   rack was 12px narrower than the board on every rest render. Measured at 1536 dark before this:
-   board 1366, bays 1354, columnGap 12.0004px, tracks "1353.77px 0px". The gutter is the OPEN
-   column's, so it moves with the column: column-gap 0 at rest, var(--space-4) when open, and the
-   transition carries both so the room is taken rather than snapped. */
+/* an opened turn's prompt: the split with its figures, then the totals */
+.myx-tn-turn-tokens { display: grid; gap: var(--space-5); }
+
+/* the landed table, and the opened turn beside it */
 .myx-tn-board {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 0;
-  column-gap: 0;
-  row-gap: var(--space-4);
-  align-items: start;
-  transition: grid-template-columns var(--dur-2) var(--ease-out),
-              column-gap var(--dur-2) var(--ease-out);
-}
-.myx-tn-board-open {
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
-  column-gap: var(--space-4);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .myx-tn-board { transition: none; }
-}
-
-.myx-tn-bays {
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
-  min-width: 0;
+  align-items: start;
+}
+.myx-tn-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(30 * var(--u)), 34%); }
+.myx-tn-board-open .myx-panel {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--space-8) * 3);
 }
 
-/* The landed rack: a fixed viewport so the virtualizer has one, scrolling both ways because the
-   turn's field grid is wider than the room and a strip never wraps. */
-.myx-tn-scroll {
-  height: 52vh;
-  overflow: auto;
-  border-top: var(--hair) solid var(--hairline-strong);
-  border-bottom: var(--hair) solid var(--hairline-strong);
-}
-.myx-tn-inner { position: relative; width: 100%; }
-
-.myx-tn-item { position: absolute; inset-inline: 0; top: 0; }
-
-/* The band between groups: the name of what follows, and its count. */
-.myx-tn-band {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: var(--room-deep);
-}
-.myx-tn-band-count {
-  font-family: var(--font-figure);
-  font-size: var(--text-1);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-mute);
-}
-
-.myx-tn-detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-  overflow: hidden;
-}
-
-.myx-tn-detail-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.myx-tn-detail-name {
-  font-family: var(--font-figure);
-  font-size: var(--text-3);
-  color: var(--ink-strong);
-}
-
-.myx-tn-close {
-  padding: var(--space-1) var(--space-3);
-  background: var(--strip);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease-out);
-}
-.myx-tn-close:hover { border-color: var(--strip-ink); }
-.myx-tn-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-/* ONE breakpoint for every page body (m1 design review B13): the detail column drops beneath the
-   bay below 1120px, the width at which the rail, a bay and a detail column stop fitting side by
-   side. The bays scroll their racks (review B7), so a narrow bay scrolls instead of cutting the
-   tail off a strip, and the brief's own topology — one detail column, the opened strip swelling
-   into it on the right — holds at every width above this floor. The rule belongs in the shell, in
-   one place, for every page row; until it is hoisted there it is repeated here with this note. */
-@media (max-width: 1120px) {
+@media (max-width: 1100px) {
+  .myx-tn-pair,
   .myx-tn-board-open { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* The heads a window holds no turns for, named once under the summary rack instead of one strip of
-   dashes each. Quiet ink: it is an absence, said for completeness, not a reading. */
-.myx-tn-idle {
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  background: var(--room-deep);
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  color: var(--ink-mute);
-}
-
-/* The landed rack's column names: once, stuck to the top of the scroller so they stay over their
-   columns while the rows scroll under them, and scrolled sideways with the rows because they live
-   inside the same scroller. The start padding is the strip's edge column, as .myx-bay-fields. */
-.myx-tn-names {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  padding-block: var(--space-2);
-  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2));
-  background: var(--room-deep);
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-}
-/* A name box is sized exactly as the cell under it: `ch` resolves against the cell's own anchor
-   face (the code face at --text-3, .myx-sfield), with the cell's padding and its divider's width,
-   so the declared widths and the shared growth land on the same x. The name inside is set in the
-   label face; it is only the BOX that must match. */
-.myx-tn-col {
-  flex: 0 0 auto;
-  overflow: hidden;
-  white-space: nowrap;
-  padding-inline: var(--space-3);
-  border-inline-end: var(--hair) solid transparent;
-  font-family: var(--font-code);
-  font-size: var(--text-3);
-  line-height: 1;
-}
-.myx-tn-col-name {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
+/* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
+   Past 3000 the landed turns keep a readable measure on the left and the summaries stack beside
+   them: in flight, the last day by head, the time per stage and the tokens. */
+@media (min-width: 3000px) {
+  /* the landed list spans every row down to a last flexible one, which takes its height: spread
+     over the summaries' auto rows instead, it pushed them thousands of pixels apart */
+  .myx-tn { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); grid-template-rows: auto auto auto auto 1fr; align-items: start; }
+  .myx-tn > .myx-ph { grid-column: 1 / -1; }
+  .myx-tn > .myx-tn-board { grid-column: 1; grid-row: 2 / -1; }
+  .myx-tn > :not(.myx-ph, .myx-tn-board) { grid-column: 2; }
+  .myx-tn-pair { grid-template-columns: minmax(0, 1fr); }
 }

@@ -1,88 +1,246 @@
-// Compaction: what the daemon's compactions did, as strips, and the instruction rules in effect.
+// Compaction: what the daemon's compactions did, drawn, and the instruction rules in effect.
 //
-// This page is a reader. It shows the outcome totals and the event tail from GET /api/compact, with
-// the one thing an operator needs to know about the feature printed beside them: compaction runs on
-// the session's OWN model and effort, and the console will never offer a knob to change that. The
-// reason is not policy for its own sake — a pin moves the reasoning off the session's model and the
-// backend's prompt cache then misses the whole transcript on the most expensive turn class there is
-// (the retired `compact_effort` quirk, refused loudly at load, carries the same story).
+// A reader, and a numbers page (docs/design/DESIGN.md section 7): the week's outcomes as one split
+// bar, the tail's time and summary length as sparklines, each head's own split, the rules with their
+// lengths as bars you can compare, and the recent compactions one per row. The one fact an operator
+// needs about the feature (it runs on the session's own model, and the console offers no knob to
+// move it) sits behind an info mark: a pin would move the reasoning off the session's model and miss
+// the provider's prompt cache on the whole transcript, the most expensive request a session makes.
 //
-// Above the feed, the rules GET /api/compaction/instructions reports (FEATURES.md 4.10, "effective
-// instructions"): one strip per configured rule with its scope, its source label, its live length
-// and the heads it applies to. Never its text: the route carries none, and the source names the
-// file an operator opens to read it.
+// The rules come from GET /api/compaction/instructions: scope, source label, live length and the
+// heads each applies to. Never the rule's text: the route carries none.
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
-import type { CompactPayload } from '@shared/api';
+import type { CompactPayload, CompactRow } from '@shared/api';
 import { startCompactPolling, startInstructionsPolling, useCompact, useInstructions } from '@entities/compact-stats';
-import { fetchHeads, useHeads } from '@entities/heads';
 import type { InstructionsState } from '@entities/compact-stats';
+import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { Blank, Fault } from '@shared/controls';
-import { Bay, Reveal } from '@shared/ui';
-import { CompactFeed } from '@widgets/compact-feed';
-import { CompactionRuleStrip } from '@widgets/compaction-rule';
+import { ABSENT, fmtInt, fmtMs, fmtShare, ratio, timeAgo } from '@shared/lib';
+import {
+  Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Section, Sparkline, StackedBar, Stat, StatRow,
+} from '@shared/ui';
+import type { Column } from '@shared/ui';
 import { dispositions } from './coverage';
-import { S } from './strings';
+import {
+  failedOf, headRows, medianOf, outcomeCounts, outcomeParts, outcomeRows, outcomeText, seriesOf, shareText, stateOf, TONE,
+} from './model';
+import type { HeadOutcomes } from './model';
+import { H, S, U } from './strings';
+import { CompactionRules } from '@widgets/compaction-rule';
 import './compaction.css';
 
 export { dispositions };
 
 /** The name this page accepts in the hash query. Declared HERE, not in the fixture module: a
- *  static import of that module — even for one constant — is a real dependency edge, so the
- *  bundler would include the fixture and its strings would ship (CONTRACTS.md section 4). */
+ *  static import of that module, even for one constant, is a real dependency edge, so the bundler
+ *  would include the fixture and its strings would ship (CONTRACTS.md section 4). */
 const FIXTURE = 'compaction';
 
-/** Whether the address asks for THIS page's fixture, by that fixture's own FILE name. Exported
- *  because the capture marker's whole value rests on it (law 23): a name this page does not carry
- *  is not a fixture, so the page must end with no marker rather than a stale one, and a test pins
- *  that here rather than inferring it from a rendered label. */
+/** Whether the address asks for THIS page's fixture, by that fixture's own file name. Exported
+ *  because the capture marker rests on it (law 23): a name this page does not carry is not a
+ *  fixture, so the page must end with no marker rather than a stale one. */
 export function wantsFixture(search: string): boolean {
   return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;
 }
 
-
-/** The law, in words. A sentence, so it lives here and not in the string table. */
-export const LAW_TEXT =
-  "Compaction always runs on the session's own model and effort. Sending it to another model would "
-  + "leave the session's reasoning behind and miss the provider's prompt cache on the whole "
-  + 'transcript, the most expensive request a session makes. So this page reports what each '
-  + 'compaction did and has no model setting.';
-
-/** No rule on any head, in the words the project detail uses for one repo (CLIENT_OWN). */
-export const NO_RULE = {
-  text: 'no compaction rules',
-  source: "claude code's own summary instructions apply; a rule goes under [compaction] in splice.toml",
-};
-
-/** The rules bay: a rule per strip, every head that could not be asked named in the daemon's
- *  words, and no rule at all said as what it means. */
-export function InstructionsBay({ instructions, error = null, lastRead = null }: {
+/** The rules in effect: one row per configured rule, every head that could not be asked named with
+ *  the daemon's reason, and no rule at all said as one line. */
+export function RulesSection({ instructions, error = null, lastRead = null }: {
   instructions: InstructionsState | null;
   error?: string | null;
   /** When the rules on screen were read, which the fault prints as stale while `error` stands. */
   lastRead?: number | null;
 }) {
+  const rules = instructions?.rules ?? [];
   return (
-    <section className="myx-compaction-rules">
+    <Section title={S.rules} {...(instructions === null ? {} : { count: rules.length })}>
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
-      {instructions?.unread.map((unread) => (
-        <Fault key={unread.head} message={`${unread.head}: ${unread.reason}`} />
-      ))}
-      <Bay
-        label={S.instructions}
-        {...(instructions === null
-          ? {}
-          : {
-            count: instructions.rules.length,
-            // No configured rule: the client's own compaction instructions stand on every head.
-            empty: NO_RULE,
-          })}
-      >
-        {instructions?.rules.map((rule) => (
-          <CompactionRuleStrip key={`${rule.scope}:${rule.source}`} rule={rule} heads={rule.heads} />
-        ))}
-      </Bay>
-    </section>
+      {instructions?.unread.map((unread) => <Fault key={unread.head} message={`${unread.head}: ${unread.reason}`} />)}
+      {instructions === null ? null : rules.length === 0 ? (
+        <Empty text={S.noRules} source={H.noRules} />
+      ) : (
+        <CompactionRules rules={rules} headsOf={(rule) => rule.heads} label={S.rules} />
+      )}
+    </Section>
+  );
+}
+
+function eventKey(row: CompactRow, index: number): string {
+  return `${row.head}-${row.ts}-${index}`;
+}
+
+/** The opened compaction: every field the row carries, the error text included, because the point
+ *  of the tail is the one that went wrong. */
+function eventFacts(row: CompactRow): [string, string][] {
+  return [
+    [S.when, timeAgo(row.ts)],
+    [S.took, row.ms === undefined ? ABSENT : fmtMs(row.ms)],
+    [S.summary, row.chars === undefined ? ABSENT : `${fmtInt(row.chars)} ${U.chars}`],
+    [S.instructions, row.instructions_source === 'client' ? S.clientDefault : row.instructions_source ?? ABSENT],
+    [S.error, row.error ?? ABSENT],
+  ];
+}
+
+/** The recent compactions, one row each, newest first; a failure takes the danger tint. */
+function RecentSection({ tail }: { tail: readonly CompactRow[] }) {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const rows = [...tail].sort((a, b) => b.ts - a.ts).map((row, index) => ({ row, key: eventKey(row, index) }));
+  const open = rows.find((entry) => entry.key === openKey)?.row ?? null;
+  const maxMs = Math.max(0, ...tail.map((row) => row.ms ?? 0));
+  const maxChars = Math.max(0, ...tail.map((row) => row.chars ?? 0));
+  type Entry = (typeof rows)[number];
+  const columns: Column<Entry>[] = [
+    { key: 'when', label: S.when, width: '12%', mono: true, primary: true, cell: ({ row }) => timeAgo(row.ts) },
+    { key: 'head', label: S.head, width: '20%', cell: ({ row }) => <HeadMark head={row.head} /> },
+    {
+      key: 'outcome',
+      label: S.outcome,
+      width: '20%',
+      cell: ({ row }) => <Badge tone={TONE[stateOf(row.outcome ?? 'unknown')]} quiet>{outcomeText(row.outcome ?? 'unknown')}</Badge>,
+    },
+    {
+      key: 'summary',
+      label: S.summary,
+      width: '24%',
+      cell: ({ row }) => (row.chars === undefined ? ABSENT : (
+        <Meter value={ratio(row.chars, maxChars)} tone="neutral" label={S.summary} figure={fmtInt(row.chars)} />
+      )),
+    },
+    {
+      key: 'took',
+      label: S.took,
+      cell: ({ row }) => (row.ms === undefined ? ABSENT : (
+        <Meter value={ratio(row.ms, maxMs)} tone="neutral" label={S.took} figure={fmtMs(row.ms)} />
+      )),
+    },
+  ];
+  return (
+    <Section title={S.recent} count={tail.length}>
+      {tail.length === 0 ? <Empty text={S.none} source={H.none} /> : (
+        <div className={open === null ? 'myx-cp-board' : 'myx-cp-board myx-cp-board-open'}>
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(entry) => entry.key}
+            label={S.recent}
+            onOpen={(entry) => setOpenKey(entry.key === openKey ? null : entry.key)}
+            openLabel={(entry) => `${S.open} ${timeAgo(entry.row.ts)}`}
+            selectedKey={openKey}
+            rowTone={({ row }) => (stateOf(row.outcome ?? 'unknown') === 'fail' ? 'danger' : null)}
+          />
+          {/* Unmounted at rest: no track and no empty panel until a row is opened. */}
+          {open === null ? null : (
+            <DetailPanel
+              title={<HeadMark head={open.head} />}
+              label={S.detail}
+              status={<Badge tone={TONE[stateOf(open.outcome ?? 'unknown')]}>{outcomeText(open.outcome ?? 'unknown')}</Badge>}
+              onClose={() => setOpenKey(null)}
+              closeLabel={S.close}
+            >
+              <KeyValue rows={eventFacts(open)} />
+            </DetailPanel>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/** The outcomes, one row each with its share drawn, and each head's own split. */
+function OutcomesSection({ stats }: { stats: CompactPayload['stats'] }) {
+  const hueOf = useHues();
+  const { counts, total } = outcomeCounts(stats);
+  const heads = headRows(stats);
+  const outcomeColumns: Column<{ outcome: string; count: number }>[] = [
+    {
+      key: 'outcome',
+      label: S.outcome,
+      width: '28%',
+      cell: ({ outcome }) => <Badge tone={TONE[stateOf(outcome)]} quiet>{outcomeText(outcome)}</Badge>,
+    },
+    {
+      key: 'share',
+      label: S.share,
+      cell: ({ outcome, count }) => (
+        <Meter value={ratio(count, total)} tone={TONE[stateOf(outcome)]} label={`${S.share} ${outcomeText(outcome)}`} figure={shareText(count, total)} />
+      ),
+    },
+    { key: 'count', label: S.count, width: '14%', align: 'end', mono: true, cell: ({ count }) => fmtInt(count) },
+  ];
+  const headColumns: Column<HeadOutcomes>[] = [
+    { key: 'head', label: S.head, width: '24%', cell: (row) => <HeadMark head={row.head} /> },
+    {
+      key: 'outcomes',
+      label: S.outcomes,
+      cell: (row) => <StackedBar parts={outcomeParts(row.counts)} label={`${S.outcomes} ${row.head}`} format={fmtInt} />,
+    },
+    { key: 'compactions', label: S.compactions, width: '14%', align: 'end', mono: true, cell: (row) => fmtInt(row.total) },
+    { key: 'failed', label: S.failed, width: '12%', align: 'end', mono: true, cell: (row) => fmtInt(row.failed) },
+  ];
+  return (
+    <>
+      <Section title={S.outcomes} count={total}>
+        {total === 0 ? <Empty text={S.none} source={H.none} /> : (
+          <DataTable columns={outcomeColumns} rows={outcomeRows(counts)} rowKey={(row) => row.outcome} label={S.outcomes} />
+        )}
+      </Section>
+      {heads.length === 0 ? null : (
+        <Section title={S.heads} count={heads.length}>
+          <DataTable
+            columns={headColumns}
+            rows={heads}
+            rowKey={(row) => row.head}
+            label={S.heads}
+            rowHue={(row) => hueClass(hueOf(row.head))}
+          />
+        </Section>
+      )}
+    </>
+  );
+}
+
+/** The figures the page leads with: the week's compactions and their split, the failed share, and
+ *  the tail's time and summary length as a middle value over a sparkline. Without seven-day counts
+ *  the first tile is the counted rows, which carry no date, so its label says so. */
+function Figures({ stats }: { stats: CompactPayload['stats'] }) {
+  const { counts, total, week } = outcomeCounts(stats);
+  const failed = failedOf(counts);
+  const ms = medianOf(stats.tail, 'ms');
+  const chars = medianOf(stats.tail, 'chars');
+  return (
+    <StatRow>
+      <Stat
+        label={week ? S.week : S.counted}
+        value={fmtInt(total)}
+        chart={<StackedBar parts={outcomeParts(counts)} label={S.outcomes} format={fmtInt} />}
+      />
+      <Stat
+        label={S.failed}
+        value={total === 0 ? ABSENT : fmtShare(failed / total)}
+        {...(failed > 0 ? { tone: 'danger' as const } : {})}
+      />
+      <Stat
+        label={S.took}
+        value={ms === null ? ABSENT : fmtMs(ms)}
+        chart={<Sparkline values={seriesOf(stats.tail, 'ms')} label={S.took} format={fmtMs} />}
+      />
+      <Stat
+        label={S.summary}
+        value={chars === null ? ABSENT : fmtInt(chars)}
+        {...(chars === null ? {} : { unit: U.chars })}
+        chart={<Sparkline values={seriesOf(stats.tail, 'chars')} label={S.summary} format={fmtInt} />}
+      />
+      {/* Beside a dated week, every row the stats files still hold, undated: its own tile and its
+          own split, so an old failure rate never reads as this week's. */}
+      {week && stats.total > 0 ? (
+        <Stat
+          label={S.counted}
+          value={fmtInt(stats.total)}
+          chart={<StackedBar parts={outcomeParts(stats.by_outcome)} label={S.counted} format={fmtInt} />}
+        />
+      ) : null}
+    </StatRow>
   );
 }
 
@@ -91,7 +249,7 @@ export function InstructionsBay({ instructions, error = null, lastRead = null }:
  * static render only ever sees a zustand store's initial state, so a board that read the store
  * could not be rendered from data by a test or a capture.
  */
-export function CompactionBoard({ payload, instructions = null, instructionsError = null, instructionsRead = null, sample, labels }: {
+export function CompactionBoard({ payload, instructions = null, instructionsError = null, instructionsRead = null, sample }: {
   payload: CompactPayload | null;
   /** The rules in effect; null until read, and null behind a sample (no sample rules exist). */
   instructions?: InstructionsState | null;
@@ -100,24 +258,24 @@ export function CompactionBoard({ payload, instructions = null, instructionsErro
   instructionsRead?: number | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
-  /** Head key to label, from /api/heads; the rack prints a key as itself until it arrives. */
-  labels?: ReadonlyMap<string, string>;
 }) {
+  // No compaction counted and none in the tail: one line says so, instead of a page of empty tiles.
+  const none = payload !== null && payload.stats.total === 0 && payload.stats.tail.length === 0;
   return (
-    <div
-      className="myx-compaction"
-      {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
-    >
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
-      </header>
-      {/* Behind a Reveal, not inline: the brief allows a paragraph on a page only as an honest
-          empty or a Doctor fix, and explanation is on demand (m1 design review B16). The copy is
-          also the page's whole reason to be here, so it is kept — one click away, and out of the
-          rack's way. */}
-      <Reveal label={S.law}>{<p className="myx-compaction-law">{LAW_TEXT}</p>}</Reveal>
-      {sample === undefined ? <InstructionsBay instructions={instructions} error={instructionsError} lastRead={instructionsRead} /> : null}
-      {payload === null ? <Blank strips={4} /> : <CompactFeed payload={payload} sample={sample !== undefined} {...(labels === undefined ? {} : { labels })} />}
+    <div className="myx-cp" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
+      <PageHeader
+        title={S.title}
+        info={{ text: H.model, label: S.aboutModel }}
+        {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}
+      />
+      {payload === null ? <Blank strips={4} /> : none ? <Empty text={S.none} source={H.none} /> : (
+        <>
+          <Figures stats={payload.stats} />
+          <OutcomesSection stats={payload.stats} />
+        </>
+      )}
+      {sample === undefined ? <RulesSection instructions={instructions} error={instructionsError} lastRead={instructionsRead} /> : null}
+      {payload === null || none ? null : <RecentSection tail={payload.stats.tail} />}
     </div>
   );
 }
@@ -126,36 +284,24 @@ export default function CompactionPage() {
   const { search } = useLocation();
   const compact = useCompact((state) => state);
   const instructions = useInstructions((state) => state);
-  const heads = useHeads((state) => state.data);
   useEffect(() => {
-    // Labels only: a head's label does not change while the page is open, so one read is enough.
-    void fetchHeads();
     const stops = [startCompactPolling(5000), startInstructionsPolling(15000)];
     return () => stops.forEach((stop) => stop());
   }, []);
 
   const [sample, setSample] = useState<{ name: string; payload: CompactPayload } | null>(null);
 
-  // The fixture loads through a DYNAMIC import inside the DEV branch, so the module is a build-time
-  // nothing: `import.meta.env.DEV` is statically false in a production build, the branch is dropped,
-  // and the fixture is not a dependency of anything that ships. The board renders the store's
-  // payload while the module loads, and the fixture replaces it when it arrives.
+  // The fixture loads through a DYNAMIC import inside the DEV branch, so a production build drops
+  // the branch and the fixture is not a dependency of anything that ships. The specifier is built at
+  // runtime: a literal `import('./fixtures/compaction')` stays a dependency edge through the
+  // single-file build even when the branch around it is dead (measured 2026-09-18).
   useEffect(() => {
     if (!wantsFixture(search)) {
-    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
-    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
-    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
-    // return left the previous state in place; a static render cannot see an effect, so the suite
-    // was green while it happened).
+      // The address no longer asks for the fixture, so the marker must go (a stale marker is the
+      // defect the capture marker exists to prevent).
       setSample(null);
       return;
     }
-    // The specifier is BUILT AT RUNTIME and not written as a literal: a statically analyzable
-    // `import('./fixtures/compaction')` stays a dependency edge through the single-file build even
-    // when the branch around it is dead, so the module's bytes end up inlined in dist/index.html
-    // (measured 2026-09-18: this page shipped 2 of its own literals that way, and the four pages
-    // that load by a runtime-composed specifier shipped none). CONTRACTS.md section 4's rule is the
-    // dynamic import; this is the half of it that the bundler can actually drop.
     void import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`).then((module: { fixtureCompact?: CompactPayload }) => {
       setSample(module.fixtureCompact === undefined ? null : { name: FIXTURE, payload: module.fixtureCompact });
     }).catch(() => undefined);
@@ -170,7 +316,6 @@ export default function CompactionPage() {
         instructionsError={instructions.error}
         instructionsRead={instructions.lastUpdated}
         sample={sample?.name}
-        labels={new Map((heads ?? []).map((head) => [head.key, head.label]))}
       />
     </>
   );

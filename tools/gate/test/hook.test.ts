@@ -96,8 +96,13 @@ describe("gate rules --stdin: the write-time wall", () => {
   test("tsx and css rules route", () => {
     const tsx = runHook("pretooluse", writeEvent("console/src/widgets/UsageMeter/ui.tsx", "export const L = () => <span>usage — live</span>;\n"));
     expect(expectBlock(tsx)).toContain("webui-no-emdash-ui-text");
-    const css = runHook("pretooluse", writeEvent("console/src/app/app.css", ".myx-panel { font-size: 13px; }\n"));
-    expect(expectBlock(css)).toContain("webui-css-tokens-only");
+    // Two CSS routes, each probed with a value only its own rule catches: a spacing length off the
+    // token scale, and a type size off the text scale (webui-css-font-size-scale took font-size out
+    // of tokens-only in the console redesign, so one probe can no longer stand for both).
+    const spacing = runHook("pretooluse", writeEvent("console/src/app/app.css", ".myx-panel { padding: 13px; }\n"));
+    expect(expectBlock(spacing)).toContain("webui-css-tokens-only");
+    const type = runHook("pretooluse", writeEvent("console/src/app/app.css", ".myx-panel { font-size: 13px; }\n"));
+    expect(expectBlock(type)).toContain("webui-css-font-size-scale");
   });
 
   test("edit introducing a violation blocks", () => {

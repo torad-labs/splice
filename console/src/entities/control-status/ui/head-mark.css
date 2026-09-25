@@ -1,0 +1,50 @@
+/* The head mark and the hue binding (docs/design/DESIGN.md section 5). A mark is a rounded bar,
+   never a dot: a round dot is status, and the two must not be mistaken for each other. A class is
+   a family's slot and, for its second and third head, the tone: myx-hue-3, myx-hue-3-up, -down. */
+.myx-hue-0 { --hue: var(--head-none); }
+.myx-hue-1 { --hue: var(--head-1); }
+.myx-hue-2 { --hue: var(--head-2); }
+.myx-hue-3 { --hue: var(--head-3); }
+.myx-hue-4 { --hue: var(--head-4); }
+.myx-hue-5 { --hue: var(--head-5); }
+.myx-hue-6 { --hue: var(--head-6); }
+.myx-hue-7 { --hue: var(--head-7); }
+.myx-hue-8 { --hue: var(--head-8); }
+.myx-hue-1-up { --hue: var(--head-up-1); }
+.myx-hue-2-up { --hue: var(--head-up-2); }
+.myx-hue-3-up { --hue: var(--head-up-3); }
+.myx-hue-4-up { --hue: var(--head-up-4); }
+.myx-hue-5-up { --hue: var(--head-up-5); }
+.myx-hue-6-up { --hue: var(--head-up-6); }
+.myx-hue-7-up { --hue: var(--head-up-7); }
+.myx-hue-8-up { --hue: var(--head-up-8); }
+.myx-hue-1-down { --hue: var(--head-down-1); }
+.myx-hue-2-down { --hue: var(--head-down-2); }
+.myx-hue-3-down { --hue: var(--head-down-3); }
+.myx-hue-4-down { --hue: var(--head-down-4); }
+.myx-hue-5-down { --hue: var(--head-down-5); }
+.myx-hue-6-down { --hue: var(--head-down-6); }
+.myx-hue-7-down { --hue: var(--head-down-7); }
+.myx-hue-8-down { --hue: var(--head-down-8); }
+
+.myx-hm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.myx-hm-mark {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-5);
+  border-radius: var(--radius-1);
+  background: var(--hue);
+}
+.myx-hm-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

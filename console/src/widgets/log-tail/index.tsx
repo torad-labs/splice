@@ -6,28 +6,75 @@
 // view exist, which is why the strips are uniform height and the line's text clips with an
 // ellipsis instead of wrapping.
 //
-// Severity is the holder edge AND a printed word (the world's rule): an ERROR line carries a red
-// edge with `error` printed on it, a WARN line amber, everything the daemon left unmarked grey and
-// wordless. Color never carries the state alone. There is no level column: it printed the edge's
-// word a second time, and `-` on the 996 of 1,000 live lines the daemon leaves unmarked.
-import { useEffect, useRef } from 'react';
+// Severity is a dot AND a printed word: an ERROR line carries a red dot with `error` beside it and a
+// faint red tint, a WARN line amber, and a line the daemon left unmarked carries no mark at all.
+// Colour never carries the state alone. There is no level column: it printed the word a second
+// time, and `-` on the 996 of 1,000 live lines the daemon leaves unmarked.
+//
+// The stream wears its head (DESIGN.md section 5): the daemon's /api/logs/{head} answers with that
+// head's lines only, so the head column prints only for a tail that carries several tags, and the
+// head's colour rides on the stream's bar instead, the band a head's run takes on the sessions
+// board.
+//
+// A perf line is drawn, not printed (perf-line.tsx): the turn's waterfall, its cache hit and its
+// tokens, on one scale shared by every perf line in the tail. The turn's `turn` and `cache:` lines
+// print only numbers that row draws, so they fold into it (rowsOf), and the daemon's lines sit one
+// click away. The rows are measured, so an opened line simply grows its row.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { dateOf, headOf, levelOf, timeOf } from '@entities/logs';
-import type { LogFilter, LogLevel, LogsPayload } from '@entities/logs';
+import type { LogLevel, LogsPayload } from '@entities/logs';
+import { HeadMark, hueClass, useHue } from '@entities/control-status';
 import { Fault, Flag } from '@shared/controls';
-import { MONTHS } from '@shared/lib';
-import { Empty, Figure, Strip, StripField } from '@shared/ui';
-import type { Edge } from '@shared/ui';
-import { S } from './strings';
+import { cx, MONTHS } from '@shared/lib';
+import { Badge, Empty, Legend } from '@shared/ui';
+import type { Tone } from '@shared/ui';
+import { LEGEND, PerfCells, perfOf, scaleOf } from './perf-line';
+import type { PerfLine, PerfScale } from './perf-line';
+import { H, S, U } from './strings';
 import './log-tail.css';
 
-const ROW_H = 30;
+export { cacheHitOf, perfOf, scaleOf, totalOf } from './perf-line';
+export type { PerfLine, PerfScale } from './perf-line';
 
-/** One line's edge: the daemon's own severity, or the quiet grey of a line it left unmarked. */
-export function edgeOfLevel(level: LogLevel | null): Edge {
-  if (level === 'error' || level === 'fatal') return 'red';
-  if (level === 'warn') return 'amber';
-  return 'grey';
+const ROW_H = 36;
+
+/** One line's status: the daemon's own severity, or no mark at all on a line it left unmarked. */
+export function toneOfLevel(level: LogLevel | null): Tone | null {
+  if (level === 'error' || level === 'fatal') return 'danger';
+  if (level === 'warn') return 'warn';
+  return level === null ? null : 'neutral';
+}
+
+/** A message split into its `key=value` pairs and the prose between them, so a perf line reads as
+ *  fields: the key in the quiet ink and the value in full ink (DESIGN.md section 7). */
+export function partsOf(message: string): Array<{ text: string; key?: string }> {
+  const parts: Array<{ text: string; key?: string }> = [];
+  const pair = /([A-Za-z_][\w.-]*)=(\S+)/g;
+  let at = 0;
+  for (const match of message.matchAll(pair)) {
+    const index = match.index ?? 0;
+    if (index > at) parts.push({ text: message.slice(at, index) });
+    parts.push({ key: match[1], text: match[2] });
+    at = index + match[0].length;
+  }
+  if (at < message.length) parts.push({ text: message.slice(at) });
+  return parts;
+}
+
+function Message({ parts }: { parts: ReadonlyArray<{ text: string; key?: string }> }) {
+  return (
+    <>
+      {parts.map((part, at) => (part.key === undefined
+        ? <span key={at}>{part.text}</span>
+        : (
+          <span key={at} className="myx-lt-pair">
+            <span className="myx-lt-key">{part.key}=</span>
+            <span className="myx-lt-value">{part.text}</span>
+          </span>
+        )))}
+    </>
+  );
 }
 
 /** The line with the two brackets its own row already prints removed (M2-30).
@@ -51,19 +98,6 @@ export function messageOf(line: string): string {
   return line;
 }
 
-/** One log line as a printed strip. Exported because a virtualized list renders nothing without a
- *  viewport, so this is the part a test can hold. */
-/* THE RACK PRINTS ITS COLUMNS ONCE (M3-04, the finish review's item 5; m1 design review B9). Every
-   one of the tail's lines carried its own `time head level text` row, fifteen times down a capture,
-   and the rack is homogeneous -- one row shape -- which is the case StripField's own `label` doc
-   names for omitting it. The names print once, on the strip below, above the scroll.
-   AND THE LINE WRAPS INSIDE ITS CELL. The text cell was 160ch in a rack that scrolled sideways, so
-   at 1536 every long line was cut at the bay's edge (`first_byt…`) and read only by scrolling. The
-   virtualizer measures each row, so a wrapped line takes its own height; the cell declares a modest
-   ch count and takes the rack's slack, and the other three keep the grid. */
-const COLS = { time: 15, head: 18, text: 60 } as const;
-
-
 /** The reader's own day as the daemon stamps it (local, `YYYY-MM-DD`). */
 function localDay(now: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -81,111 +115,199 @@ export function whenOf(line: string, now = new Date()): string {
   return `${MONTHS[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))} ${time}`;
 }
 
-/** The rack's column names, once, on a strip of the same grid as the lines under it. The head
- *  column prints only when the tail carries more than one head's lines: a head's own log is all
- *  its own tag, and the column repeated the head picked above it on every row. */
+/** The stream's column names, once, above the lines. The head column prints only when the tail
+ *  carries more than one head's lines: a head's own log is all its own tag. */
 export function LogColumns({ tagged = true }: { tagged?: boolean }) {
   return (
-    <Strip className="myx-lt-cols" edge="grey" edgeLabel="" ariaLabel="log columns">
-      <StripField w={COLS.time} label={S.time} value="" />
-      {tagged ? <StripField w={COLS.head} label={S.head} value="" /> : null}
-      <StripField w={COLS.text} label={S.text} value="" />
-    </Strip>
+    <div className={cx('myx-lt-line', 'myx-lt-cols', tagged && 'myx-lt-tagged')} aria-hidden="true">
+      <span className="myx-lt-time">{S.time}</span>
+      {tagged ? <span className="myx-lt-head">{S.head}</span> : null}
+      <span className="myx-lt-text">{S.text}</span>
+    </div>
   );
 }
 
-export function LogLine({ line, tagged = true }: { line: string; tagged?: boolean }) {
+/** A perf line's facts, or null for any other line: what the tail reads once per line to draw it
+ *  and to size the shared scale. */
+export function perfOfLine(line: string): PerfLine | null {
+  const message = messageOf(line);
+  return perfOf(message, partsOf(message));
+}
+
+/** One row of the tail: a line, and the lines of its turn folded under it. */
+export interface TailRow {
+  line: string;
+  /** The turn's own `turn` and `cache:` lines, oldest first; empty on every row but a perf row. */
+  folded: readonly string[];
+}
+
+/** How far back a perf line looks for its turn's lines. On the live log (7,594 perf lines,
+ *  2026-09-25) the farthest sat 5 lines back, behind lines of turns running beside it. */
+const FOLD_REACH = 12;
+
+/** Which of its turn's lines `line` is for `perf`, or null. A success `turn` line and a `cache:`
+ *  line print only numbers the perf row draws, so they fold under it. They match on those numbers,
+ *  never on position or second: turns running at once interleave, and 30 in 7,594 crossed a second.
+ *  A failed or abandoned turn's line carries words the row does not, so it stays a line. */
+function foldOf(line: string, head: string | null, perf: PerfLine): 'turn' | 'cache' | null {
+  if (!line.includes('] turn compact=') && !line.includes('] cache: ')) return null;
+  if (headOf(line) !== head) return null;
+  const message = messageOf(line);
+  const fields = new Map<string, string>();
+  for (const part of partsOf(message)) if (part.key !== undefined && !fields.has(part.key)) fields.set(part.key, part.text);
+  const same = (key: string, value: number | null) => value !== null && fields.get(key) === String(value);
+  if (fields.get('model') !== (perf.model ?? undefined)) return null;
+  if (message.startsWith('cache: ')) {
+    return same('input', perf.inTokens) && same('cached', perf.cachedTokens) && same('output', perf.outTokens) ? 'cache' : null;
+  }
+  const ok = message.startsWith('turn compact=') && / ok out=\d+ /.test(message);
+  return ok && fields.get('compact') === String(perf.compact) && same('out', perf.outTokens) ? 'turn' : null;
+}
+
+/** The tail as rows: each perf line takes its turn's `turn` and `cache:` lines under it, so a turn
+ *  prints its numbers once, drawn, with the daemon's lines one click away. Every other line is a
+ *  row of its own, and no line is dropped: a folded line is in its perf row's `folded`. */
+export function rowsOf(lines: readonly string[]): TailRow[] {
+  const taken = new Set<number>();
+  const under = new Map<number, number[]>();
+  lines.forEach((line, at) => {
+    const perf = perfOfLine(line);
+    if (perf === null) return;
+    const head = headOf(line);
+    const found = new Set<'turn' | 'cache'>();
+    const own: number[] = [];
+    for (let back = at - 1; back >= Math.max(0, at - FOLD_REACH) && found.size < 2; back -= 1) {
+      if (taken.has(back)) continue;
+      const fold = foldOf(lines[back], head, perf);
+      if (fold === null || found.has(fold)) continue;
+      found.add(fold);
+      taken.add(back);
+      own.unshift(back);
+    }
+    if (own.length > 0) under.set(at, own);
+  });
+  return lines.flatMap((line, at) => (taken.has(at) ? [] : [{ line, folded: (under.get(at) ?? []).map((back) => lines[back]) }]));
+}
+
+/** One log line. Exported because a virtualized list renders nothing without a viewport, so this
+ *  is the part a test can hold. A perf line draws its turn against `scale` (its own when the caller
+ *  has none) and shows the daemon's lines under it while `open`: the `folded` lines of its turn,
+ *  then its own. */
+export function LogLine({ line, folded = [], tagged = true, scale, open = false, onToggle }: {
+  line: string;
+  folded?: readonly string[];
+  tagged?: boolean;
+  scale?: PerfScale;
+  open?: boolean;
+  onToggle?: (() => void) | undefined;
+}) {
   const level = levelOf(line);
-  // ariaLabel keeps the WHOLE line: the cell drops what the row prints beside it, and a screen
-  // reader reading the row aloud should still get the daemon's line as the daemon wrote it.
+  const tone = toneOfLevel(level);
+  const head = headOf(line);
+  const message = messageOf(line);
+  const parts = partsOf(message);
+  const perf = perfOf(message, parts);
   return (
-    <Strip edge={edgeOfLevel(level)} edgeLabel={level ?? ''} ariaLabel={line.slice(0, 120)}>
-      <StripField w={COLS.time} value={whenOf(line)} />
-      {tagged ? <StripField w={COLS.head} value={headOf(line) ?? ''} mono={false} /> : null}
-      <StripField w={COLS.text} value={messageOf(line)} />
-    </Strip>
+    <div className={cx('myx-lt-line', tagged && 'myx-lt-tagged', tone !== null && `myx-lt-${tone}`)} aria-label={line.slice(0, 120)}>
+      <span className="myx-lt-time">{whenOf(line)}</span>
+      {tagged ? <span className="myx-lt-head">{head === null ? null : <HeadMark head={head} />}</span> : null}
+      {perf === null ? (
+        <span className="myx-lt-text">
+          {level === null || tone === null ? null : <Badge tone={tone} quiet>{level}</Badge>}
+          <Message parts={parts} />
+        </span>
+      ) : (
+        <PerfCells
+          perf={perf}
+          scale={scale ?? scaleOf([perf])}
+          open={open}
+          onToggle={onToggle}
+          raw={[...folded, line].map((raw, at) => (
+            <span key={at} className="myx-lt-raw-line"><Message parts={partsOf(messageOf(raw))} /></span>
+          ))}
+        />
+      )}
+    </div>
   );
 }
+
+
 
 export interface LogTailProps {
   payload: LogsPayload | null;
-  filter: LogFilter;
   /** Lines that arrived since the last poll: what follow mode is reacting to. */
   appended: number;
   reset: boolean;
   follow: boolean;
   /** Whether the tail carries more than one head's lines, so the head column says something. */
   tagged?: boolean;
+  /** The head this tail is read from: its mark and colour head the stream. */
+  head?: string | null;
   error?: string | null;
-  /** `| undefined` on the optional callbacks: this tree runs `exactOptionalPropertyTypes`, so a
+  /** `| undefined` on the optional callback: this tree runs `exactOptionalPropertyTypes`, so a
    *  caller that forwards its own optional prop must be able to pass the undefined through. */
-  onFilter?: ((filter: LogFilter) => void) | undefined;
   onFollow?: ((follow: boolean) => void) | undefined;
 }
 
-export function LogTail({ payload, filter, appended, reset, follow, tagged = true, error = null, onFilter, onFollow }: LogTailProps) {
+export function LogTail({ payload, appended, reset, follow, tagged = true, head = null, error = null, onFollow }: LogTailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hue = useHue(head ?? '');
   const filtered = payload === null ? [] : payload.lines;
+  // One scale for every perf line in view of the filter, so the rows compare; the lines a reader
+  // opened, by their own text, since a virtualized row forgets its state when it scrolls away.
+  const scale = useMemo(
+    () => scaleOf(filtered.flatMap((line) => perfOfLine(line) ?? [])),
+    [filtered],
+  );
+  const rows = useMemo(() => rowsOf(filtered), [filtered]);
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (line: string) => setOpened((previous) => {
+    const next = new Set(previous);
+    if (!next.delete(line)) next.add(line);
+    return next;
+  });
 
   const virtualizer = useVirtualizer({
-    count: filtered.length,
+    count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_H,
-    getItemKey: (index) => `${index}:${filtered[index].slice(0, 40)}`,
+    getItemKey: (index) => `${index}:${rows[index].line.slice(0, 40)}`,
     overscan: 8,
   });
 
   // Follow mode: keep the last line in view when new ones land. Off, the reader keeps their place
   // and the header prints how many lines arrived while they were not looking.
   useEffect(() => {
-    if (!follow || filtered.length === 0) return;
-    virtualizer.scrollToIndex(filtered.length - 1, { align: 'end' });
-  }, [follow, filtered.length, virtualizer, reset]);
+    if (!follow || rows.length === 0) return;
+    virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
+  }, [follow, rows.length, virtualizer, reset]);
 
   if (error !== null) return <Fault message={error} />;
 
   return (
-    <div className="myx-lt">
-      <header className="myx-lt-head">
-        <StripField w={44} label={S.path} value={payload?.path ?? ''} />
-        {onFilter === undefined ? null : (
-          <div className="myx-lt-controls">
-            <label className="myx-lt-field">
-              <span className="myx-lt-field-label">{S.search}</span>
-              <input
-                value={filter.substring}
-                onChange={(event) => onFilter({ ...filter, substring: event.target.value })}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-          </div>
-        )}
-        {/* THE FOLLOW TOGGLE IS THE WORLD'S FLAG (M1-103). It was an `<input type="checkbox">` --
-            system-blue browser chrome inside the console, the defect Flag was written for and names
-            in its own header ("the log tail still rendered a system-blue checkbox"). The PLACEMENT
-            was not made because the widget predates the primitive, which is D7's prediction come
-            due. Flag renders a button with role="switch" and aria-checked, so it keeps the native
-            checkbox's contract -- Enter and Space toggle it, a reader hears a switch -- while the
-            state prints as the paper trap: a HolderEdge, green while it follows and grey while it
-            does not, with the word beside it. Neither signal is colour alone. */}
+    <div className={cx('myx-lt', head !== null && 'myx-lt-hued', head !== null && hueClass(hue))}>
+      <header className="myx-lt-bar">
+        {head === null ? null : <HeadMark head={head} />}
+        <span className="myx-lt-path">{payload?.path ?? ''}</span>
+        {scale.ms > 0 ? <Legend items={LEGEND} label={S.legend} /> : null}
+        {/* Only while paused: following, every line is already in view. */}
+        {follow ? null : <Badge tone="neutral">{`${appended} ${U.newLines}`}</Badge>}
         {onFollow === undefined ? null : (
           <Flag on={follow} onLabel={S.follow} offLabel={S.paused} onChange={onFollow} />
         )}
-        {/* Only while paused: following, every line is already in view, and the count read `200 new
-            lines` on the first read of a tail the reader had just opened. */}
-        {follow ? null : <Figure value={appended} unit={S.newLines} basis="measured" />}
       </header>
 
       {filtered.length === 0 ? (
         <Empty
-          text={payload === null ? 'reading the log' : 'no lines to show'}
-          source={payload === null ? "the last lines of this head's log show here" : `${payload.path} is empty, or no line matches the filters`}
+          text={payload === null ? S.reading : S.noLines}
+          source={payload === null ? H.reading : H.noLines}
         />
       ) : (
         <>
         <LogColumns tagged={tagged} />
-        <div className="myx-lt-scroll" ref={scrollRef}>
+        {/* Scrolled off the top, the first rows fade under the column names instead of being sliced
+            by them: a cut row reads as more above, not as a broken one. */}
+        <div className={cx('myx-lt-scroll', (virtualizer.scrollOffset ?? 0) > 0 && 'myx-lt-scrolled')} ref={scrollRef}>
           <div className="myx-lt-inner" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((item) => (
               <div
@@ -193,12 +315,16 @@ export function LogTail({ payload, filter, appended, reset, follow, tagged = tru
                 className="myx-lt-row"
                 data-index={item.index}
                 ref={virtualizer.measureElement}
-                // `top`, not a translate (M3-04): a row's time, head and level stick while any of the
-                // row is in view (log-tail.css), and sticky resolves in layout space, where a
-                // translated row still sits at 0 and every value was pushed to its cell's floor
                 style={{ top: item.start }}
               >
-                <LogLine line={filtered[item.index]} tagged={tagged} />
+                <LogLine
+                  line={rows[item.index].line}
+                  folded={rows[item.index].folded}
+                  tagged={tagged}
+                  scale={scale}
+                  open={opened.has(rows[item.index].line)}
+                  onToggle={() => toggle(rows[item.index].line)}
+                />
               </div>
             ))}
           </div>

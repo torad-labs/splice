@@ -1,38 +1,49 @@
-// The fixed rule: who the console is, what time it is, whether the daemon is
-// answering, whether a saved knob is still waiting for a restart, and the plan
-// window closest to running out. It never scrolls and it never guesses: every
-// figure carries its basis, and a window no head reports says so instead of
-// reading zero.
+// The status strip (docs/design/DESIGN.md section 6): whether the link is live, whether the daemon is
+// answering, the plan window closest to running out and when it resets, whether a saved knob is
+// still waiting for a restart, and the time. It sits over every page, never scrolls and never
+// guesses: a window no head reports says so instead of reading zero.
 //
 // The rule reads entities through their public exports and owns nothing: the
 // only state it keeps is the clock, and the only reads it starts are the ones
 // nothing else starts for it.
 //
-// The window derivation is NOT computed here. It arrives from @entities/usage
-// (M2-01), which is the slice that owns /api/usage: this widget used to carry
-// its own copy, and two implementations of "nearest window" is one more than can
-// stay in agreement. The cells are exported so a test can render them from
+// The window derivation is NOT computed here. It arrives from @features/nearest-limit,
+// the one definition the fleet and accounts pages print too: this widget used to
+// carry its own copy, and then read only /api/usage while the accounts page read
+// every pooled account, and two definitions of "nearest limit" printed two numbers
+// (review of #264). The cells are exported so a test can render them from
 // payloads rather than from the stores (a static render sees a store's initial
 // state and never its current one).
 import { useEffect, useState } from 'react';
-import { startControlStatusPolling, useControlStatus } from '@entities/control-status';
-import { useHeads } from '@entities/heads';
+import type { ReactNode } from 'react';
+import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle';
+import { GaugeIcon } from '@phosphor-icons/react/dist/csr/Gauge';
+import { KeyIcon } from '@phosphor-icons/react/dist/csr/Key';
+import { TimerIcon } from '@phosphor-icons/react/dist/csr/Timer';
+import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle';
+import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle';
+import { HeadMark, hueClass, startControlStatusPolling, useControlStatus, useHues, type Hue } from '@entities/control-status';
+import { startHeadsPolling, useHeads } from '@entities/heads';
+import { startAccountsPolling, useAccounts } from '@entities/account';
+import type { AccountRow } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { headsReportingNone, nearestWindow, startUsagePolling, useUsage } from '@entities/usage';
+import { headsReportingNone, planLevel, startUsagePolling, useUsage } from '@entities/usage';
+import { nearestLimit } from '@features/nearest-limit';
 import { useRestartPending } from '@entities/config';
 import { useSession } from '@entities/session';
 import { connect, useEvents } from '@entities/events';
 import { wireLive } from './wire';
 import type { ConnectionStatus } from '@entities/events';
 import { timeAgo } from '@shared/lib';
-import { Figure, HolderEdge } from '@shared/ui';
-import type { AuthPayload, UsagePayload } from '@shared/api';
-import { S } from './strings';
+import { Badge, Braid, Meter, Tip } from '@shared/ui';
+import type { Strand, Tone } from '@shared/ui';
+import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
+import { S, U } from './strings';
 import './rule.css';
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
-/** HH:MM:SS, local or UTC. The rule prints both, the way the strip bay does. */
+/** HH:MM:SS, local or UTC. The strip prints both. */
 export function clockText(epochMs: number, utc: boolean): string {
   const at = new Date(epochMs);
   const hours = utc ? at.getUTCHours() : at.getHours();
@@ -58,6 +69,17 @@ function useClock(): { local: string; utc: string } {
  */
 export type HealthState = 'green' | 'amber' | 'red' | 'grey';
 
+/** The status colour each health state prints beside its word. */
+const HEALTH_TONE: Record<HealthState, Tone> = { green: 'ok', amber: 'warn', red: 'danger', grey: 'neutral' };
+
+/** A glyph per health state, so the state reads in greyscale as well as in colour. */
+const HEALTH_GLYPH: Record<HealthState, ReactNode> = {
+  green: <CheckCircleIcon weight="fill" aria-hidden="true" />,
+  amber: <WarningCircleIcon weight="fill" aria-hidden="true" />,
+  red: <XCircleIcon weight="fill" aria-hidden="true" />,
+  grey: <KeyIcon aria-hidden="true" />,
+};
+
 export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: boolean): HealthState {
   // A 401 is the daemon ANSWERING: without the key the console cannot say how the daemon is, and
   // the red "unreachable" it printed over the key gate was a claim the answer had just disproved.
@@ -66,26 +88,62 @@ export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: bo
   return anyHeadDown ? 'amber' : 'green';
 }
 
-/** The plan window nearest exhaustion, at its reported length. */
-export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: AuthPayload | null }) {
-  const nearest = nearestWindow(usage, auth);
+/** Whether the reads the limit cell rests on have answered: both answered is `read`; one still out
+ *  and none failed is `reading`; one failed with nothing to show is `unread`. */
+export type LimitsRead = 'reading' | 'unread' | 'read';
+
+export function limitsOf(usageAnswered: boolean, poolsAnswered: boolean, anyFailed: boolean): LimitsRead {
+  if (usageAnswered && poolsAnswered) return 'read';
+  return anyFailed ? 'unread' : 'reading';
+}
+
+/** The nearest limit (the one definition the fleet and accounts pages print): the head, the account,
+ *  the window, how full it is as a meter and a figure, and when it resets. What the strip does not
+ *  print (how many heads report no limit) shows on hover and focus. */
+export function WindowCell({ accounts, usage, auth, limits }: {
+  accounts: readonly AccountRow[];
+  usage: UsagePayload | null;
+  auth: AuthPayload | null;
+  /** Whether the reads a "no limit" answer rests on have answered. "No plan limits" is a finding,
+   *  printed only after both did; while they have not, or when one failed, the cell says so (Marlin,
+   *  2026-09-25: it printed "No plan limits" before the usage read landed). */
+  limits: LimitsRead;
+}) {
+  const nearest = nearestLimit({ accounts, usage, auth }, Date.now());
+  const none = headsReportingNone(usage);
+  const tip = none === null || none === 0 ? S.limit : `${S.limit}, ${none} ${U.withoutLimit}`;
+  const glyph = <Tip text={tip} side="bottom"><GaugeIcon className="myx-rule-glyph" aria-label={S.limit} /></Tip>;
+  if (nearest === null) {
+    return (
+      <p className="myx-rule-cell myx-rule-window">
+        {glyph}
+        <span className="myx-rule-absent">{limits === 'read' ? S.noLimit : limits === 'reading' ? S.readingLimits : S.limitsUnread}</span>
+      </p>
+    );
+  }
+  const tone = pctTone(nearest.pct, usage?.warn_pct ?? 0);
   return (
     <p className="myx-rule-cell myx-rule-window">
-      <span className="myx-rule-word">{S.nearest}</span>
-      {nearest === null ? (
-        <span className="myx-rule-absent">no head reports a limit</span>
-      ) : (
-        <>
-          <span className="myx-rule-head">{nearest.head}</span>
-          {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
-          <span className="myx-rule-period">{nearest.window}</span>
-          <Figure value={nearest.pct} unit="%" basis="measured" />
-          <span className="myx-rule-word">{S.used}</span>
-          {nearest.reset !== null ? <span className="myx-rule-reset">resets {nearest.reset}</span> : null}
-        </>
-      )}
+      {glyph}
+      {nearest.head !== null ? <HeadMark head={nearest.head} /> : null}
+      {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
+      <span className="myx-rule-period">{nearest.window}</span>
+      <span className="myx-rule-meter">
+        <Meter value={nearest.pct / 100} tone={tone === 'neutral' ? 'accent' : tone} label={`${nearest.window} ${nearest.pct}%`} />
+      </span>
+      <span className={`myx-rule-figure myx-rule-pct-${tone}`}>{nearest.pct}%</span>
+      {nearest.reset !== null ? (
+        <span className="myx-rule-reset"><TimerIcon className="myx-rule-glyph" aria-label={U.resets} />{nearest.reset}</span>
+      ) : null}
     </p>
   );
+}
+
+/** A plan share's tone, from the daemon's own lines: danger at the critical line, warn past its warn
+ *  line, the plain ink below both. */
+export function pctTone(pct: number, warnPct: number): Tone {
+  const level = planLevel(pct, warnPct);
+  return level === 'critical' ? 'danger' : level === 'warn' ? 'warn' : 'neutral';
 }
 
 /** How long the link may be silent before it is in doubt: the daemon writes a heartbeat after
@@ -109,36 +167,44 @@ export function ConnectionCell({ status, lastFrameAt, lastBeatAt = null, now = D
   lastBeatAt?: number | null;
   now?: number;
 }) {
-  const edge = status === 'live' ? 'green' : status === 'reconnecting' ? 'amber' : 'grey';
-  const word = status === 'live' ? S.live : status === 'reconnecting' ? S.reconnecting : S.off;
-  const silent = lastBeatAt !== null && now - lastBeatAt > LINK_SILENT_MS;
+  const silent = status === 'live' && lastBeatAt !== null && now - lastBeatAt > LINK_SILENT_MS;
+  const tone: Tone = silent ? 'warn' : status === 'live' ? 'ok' : status === 'reconnecting' ? 'warn' : 'neutral';
+  const word = silent ? S.silent : status === 'live' ? S.live : status === 'reconnecting' ? S.reconnecting : S.off;
+  // the age of the last event is detail, not state: it shows on hover and focus
+  const tip = lastFrameAt === null ? S.noEvents : `${S.lastEvent} ${timeAgo(lastFrameAt, now)}`;
   return (
     <p className="myx-rule-cell myx-rule-connection">
-      <HolderEdge state={edge} label={word} />
-      {lastFrameAt === null ? (
-        <span className="myx-rule-absent">no events yet</span>
-      ) : (
-        <>
-          <span className="myx-rule-word">{S.lastEvent}</span>
-          <Figure value={timeAgo(lastFrameAt, now)} basis={silent ? 'stale' : 'measured'} />
-        </>
-      )}
+      <Tip text={tip} side="bottom"><Badge tone={tone} quiet>{word}</Badge></Tip>
     </p>
   );
 }
 
-/** How many heads report no window at all. Null until the route answers. */
-export function NoneCell({ usage }: { usage: UsagePayload | null }) {
-  const none = headsReportingNone(usage);
-  // Nothing at all until the route answers: an empty cell would take a slot in the rule's grid and
-  // read as a readout that is present and blank, which is the one thing this bar never does.
-  if (none === null) return null;
+/** The daemon's health as a glyph and a word: the word is the daemon while it is fine, and the
+ *  state itself when it is not, so a problem reads without hovering. */
+export function HealthCell({ health }: { health: HealthState }) {
   return (
-    <p className="myx-rule-cell myx-rule-none">
-      <Figure value={none} basis="measured" />
-      <span className="myx-rule-word">{S.noneTail}</span>
+    <p className={`myx-rule-cell myx-rule-health myx-rule-health-${HEALTH_TONE[health]}`}>
+      <Tip text={S.health[health]} side="bottom">
+        <span className="myx-rule-state">
+          {HEALTH_GLYPH[health]}
+          <span>{health === 'green' ? S.daemon : S.health[health]}</span>
+        </span>
+      </Tip>
     </p>
   );
+}
+
+/** Every running head as a strand of its colour, as long as its turns in flight, pulsing when one
+ *  lands (the gate's `released` count moves). Registry order, so the strands keep their places. */
+export function strandsOf(heads: readonly HeadStatus[] | null, hueOfHead: (head: string) => Hue | number): Strand[] {
+  if (heads === null) return [];
+  return heads.filter((head) => head.running).map((head) => ({
+    key: head.key,
+    name: head.label,
+    hue: hueClass(hueOfHead(head.key)),
+    count: head.gate?.inflight ?? 0,
+    landed: head.gate?.released ?? 0,
+  }));
 }
 
 /**
@@ -146,18 +212,17 @@ export function NoneCell({ usage }: { usage: UsagePayload | null }) {
  * knob except three at start, so a saved restart-only value does nothing until
  * the daemon restarts, and the console must not let that read as "applied".
  *
- * The cell is the same gesture as everywhere else in this world - a holder edge
- * that cocks, with a printed label and the count of pending keys as a figure. It
- * reads the store a page's save left behind, so the rule starts no route and no
- * poll of its own; when the store clears (what a restart does to it, and the
- * only thing that honestly can) the cell is gone.
+ * The cell is a warn badge with the count of pending keys. It reads the store a
+ * page's save left behind, so the strip starts no route and no poll of its own;
+ * when the store clears (what a restart does to it, and the only thing that
+ * honestly can) the cell is gone.
  */
 export function PendingRestartCell({ pending }: { pending: readonly string[] }) {
   if (pending.length === 0) return null;
   return (
     <p className="myx-rule-cell myx-rule-pending">
-      <HolderEdge state="amber" label={S.restartPending} />
-      <Figure value={pending.length} basis="measured" />
+      <Badge tone="warn">{S.restartPending}</Badge>
+      <span className="myx-rule-figure">{pending.length}</span>
     </p>
   );
 }
@@ -167,17 +232,28 @@ export function Rule() {
   const heads = useHeads((state) => state.data);
   const usage = useUsage((state) => state.data);
   const auth = useAuth((state) => state.data);
+  const pools = useAccounts((state) => state.data);
+  const poolsError = useAccounts((state) => state.error);
+  const usageError = useUsage((state) => state.error);
   const pendingRestart = useRestartPending((state) => state.pending);
   const locked = useSession((state) => state.locked);
   const connection = useEvents((state) => state);
+  const hues = useHues();
   const { local, utc } = useClock();
 
   useEffect(() => {
     // The daemon's identity and registry are near-static, but the health cell is whether it
-    // answers, so the status read is polled with the two routes the readout needs: the rule is
-    // chrome and outlives every page it is drawn over.
-    const stops = [startControlStatusPolling(10_000), startUsagePolling(15_000), startAuthPolling(30_000)];
-    // The live stream is opened here because the rule is the chrome that outlives every page and
+    // answers, so the status read is polled with the routes the readout needs: the strip is
+    // chrome and outlives every page it is drawn over. The heads read feeds the braid: a turn
+    // ending arrives as an event (wire.ts), a turn starting only on the next read.
+    const stops = [
+      startControlStatusPolling(10_000),
+      startUsagePolling(15_000),
+      startAccountsPolling(15_000),
+      startAuthPolling(30_000),
+      startHeadsPolling(5_000),
+    ];
+    // The live stream is opened here because the strip is the chrome that outlives every page and
     // the surface that prints the connection; connect() is idempotent, so whoever else asks for it
     // gets the same one stream.
     connect();
@@ -192,43 +268,35 @@ export function Rule() {
 
   const anyHeadDown = heads !== null && heads.some((head) => !head.running || !head.healthy);
   const health = healthOf(status.error !== null, anyHeadDown, locked);
+  const strands = strandsOf(heads, hues);
 
   return (
     <header className="myx-rule">
-      <p className="myx-rule-cell myx-rule-wordmark">{S.wordmark}</p>
+      {strands.length === 0 ? null : (
+        <div className="myx-rule-cell myx-rule-braid">
+          <Braid strands={strands} label={S.braid} unit={U.inFlight} />
+        </div>
+      )}
+
+      <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} lastBeatAt={connection.lastBeatAt} />
+
+      <HealthCell health={health} />
+
+      <WindowCell
+        accounts={pools !== null && 'accounts' in pools ? pools.accounts : []}
+        usage={usage}
+        auth={auth}
+        limits={limitsOf(usage !== null, pools !== null, usageError !== null || poolsError !== null)}
+      />
+
+      <PendingRestartCell pending={pendingRestart} />
 
       <p className="myx-rule-cell myx-rule-clocks">
-        <span className="myx-rule-clock">{local}</span>
-        <span className="myx-rule-clock-word">{S.local}</span>
-        <span className="myx-rule-clock">{utc}</span>
-        <span className="myx-rule-clock-word">{S.utc}</span>
+        <span className="myx-rule-figure">{local}</span>
+        <span className="myx-rule-word">{S.local}</span>
+        <span className="myx-rule-figure">{utc}</span>
+        <span className="myx-rule-word">{S.utc}</span>
       </p>
-
-      <div className="myx-rule-cell myx-rule-health">
-        <HolderEdge state={health} label={S.health[health]} />
-      </div>
-
-      {/* THE FIVE MEASURED CELLS SIT AT THE COMP'S OWN X, and the two signals the comp never had
-          take the tail of the no-window slot. This replaced a row that flowed window and none from
-          41% to 99%: flowing kept everything visible but moved two MEASURED cells by +18.8 and
-          +18.7 points on all thirteen addresses (M1-28's punch list). The window cell now takes its
-          measured 41% and 30%, and the no-window cell its measured 72% and 27%, leaving the band's
-          own numbers at delta 0.00. */}
-      <WindowCell usage={usage} auth={auth} />
-
-      <div className="myx-rule-tail">
-        <NoneCell usage={usage} />
-
-        {/* The two signals the comp never had. They ride in the tail of the no-window slot because
-            that is the only room the comp's own measurements leave: its 27% slot measures 414.7 px
-            and the count inside it 127.8 px, while this signal measures 157.8 px, so the pair sits
-            8.4 points clear. The connection signal is the daemon's live state and belongs beside
-            `daemon ok` by meaning, but that cell's 10% slot is 154 px and already carries the
-            health word — there is no room there. */}
-        <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} lastBeatAt={connection.lastBeatAt} />
-
-        <PendingRestartCell pending={pendingRestart} />
-      </div>
     </header>
   );
 }

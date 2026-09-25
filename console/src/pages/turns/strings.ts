@@ -1,81 +1,96 @@
-// Labels of the turns page. Three words or fewer, lowercase, no em-dash (the label
-// wall globs this file). The pending empties, the "telemetry dropped" gap and the
-// capture sentences are not labels and live in the component (CONTRACTS.md
-// section 4).
+// Every word the turns page prints (docs/design/DESIGN.md section 10). S holds labels: three words or
+// fewer, sentence case. H holds help: one sentence of twelve words or fewer. U holds the unit words
+// printed beside a figure. tests/copy.test.ts holds all three.
 import { ABSENT } from '@shared/lib';
 
 export const S = {
-  title: 'turns',
-  locked: 'console locked',
-  sample: 'sample data',
-  inflight: 'in flight',
-  landed: 'landed',
-  summary: 'summary',
-  /** THE TWO NEW MEMBERS (M2-20). Each is a small table with its own header, which is what M1-109
-   *  measured the comp earning its printed area with -- not a wider rack. */
-  stages: 'time per stage',
-  stage: 'stage',
-  share: 'share',
-  perTurn: 'per turn',
-  tokens: 'tokens',
-  tokIn: 'in',
-  tokCached: 'cached',
-  tokWrite: 'cache write',
-  tokOut: 'out',
-  hit: 'hit',
-  detail: 'turn detail',
-  close: 'close',
-  /** The strip fields, in the order the views declare them. */
-  time: 'time',
-  head: 'head',
-  model: 'model',
-  outcome: 'outcome',
-  session: 'session',
-  compact: 'compact',
-  phase: 'phase',
-  age: 'age',
-  idle: 'idle',
-  account: 'account',
-  total: 'total',
-  firstByte: 'first byte',
-  tokensIn: 'in',
-  cached: 'cached',
-  cacheWrite: 'cache write',
-  tokensOut: 'out',
-  retries: 'retries',
-  attempts: 'attempts',
-  inflightCount: 'inflight',
-  dropped: 'dropped',
-  /** The summary bay. */
-  failureShare: 'failed',
-  cacheHit: 'cache hit',
-  turnTime: 'turn time',
-  turnTimeP95: 'turn time p95',
-  firstByteP95: 'first byte p95',
-  /** Printed before the heads a window holds no turns for, on one line under the rack. */
-  noTurnsIn: 'no turns in',
-  peakInflight: 'peak concurrent',
-  ioDrops: 'lost log rows',
-  rows: 'turns',
-  coverage: 'coverage',
-  refreshes: 'refreshes',
-  /** What any cell with no value prints: the approved comp's own glyph (m1 design review B8,
-   *  which found thirteen phrasings across the console for one fact). Two characters carry the
-   *  whole statement — the basis word that used to sit beside it was a second sentence saying
-   *  the same thing, and printed as "- unavailable" it read as a typo. A cell that has a value
-   *  but a qualified one still prints its basis: `estimated` and `stale` qualify something. */
+  title: 'Turns',
+  about: 'About turns',
+  locked: 'Console locked',
+  sample: 'Sample data',
+  /** The views. */
+  table: 'Table',
+  timeline: 'Timeline',
+  byModel: 'By model',
+  byOutcome: 'By outcome',
+  /** The sections. */
+  inflight: 'In flight',
+  summary: 'Last 24 hours',
+  summaryWhy: 'About the summary',
+  stages: 'Time per stage',
+  stagesKey: 'Stage key',
+  stagesWhy: 'About stages',
+  tokensWhy: 'About tokens',
+  /** The legend's name for the two waits, which share a grey. */
+  waits: 'Waits',
+  tokens: 'Tokens',
+  tokensKey: 'Token key',
+  landed: 'Landed',
+  detail: 'Turn detail',
+  timing: 'Timing',
+  capture: 'Request capture',
+  close: 'Close',
+  undated: 'Undated',
+  /** The empties, one factual line each. */
+  nothingInFlight: 'Nothing in flight',
+  noSummary: 'No summary yet',
+  noTurns: 'No turns yet',
+  historyUnavailable: 'History unavailable',
+  /** The columns. */
+  time: 'Time',
+  head: 'Head',
+  model: 'Model',
+  outcome: 'Outcome',
+  session: 'Session',
+  slots: 'Slots in use',
+  unlistedWhy: 'About unlisted turns',
+  phase: 'Phase',
+  age: 'Age',
+  idle: 'Idle',
+  turns: 'Turns',
+  firstByte: 'First byte',
+  turnTime: 'Turn time',
+  failed: 'Failed',
+  cacheHit: 'Cache hit',
+  peak: 'Peak concurrent',
+  retries: 'Retries',
+  refreshes: 'Refreshes',
+  lostRows: 'Lost log rows',
+  input: 'Input',
+  output: 'Output',
+  /** The input split and the stage bars' names. */
+  cached: 'Cached',
+  written: 'Cache write',
+  uncached: 'Uncached',
+  /** The badges a turn wears. */
+  stalled: 'Stalled',
+  compaction: 'Compaction',
+  dropped: 'Telemetry dropped',
+  /** Printed before the heads a window holds no turns for. */
+  noTurnsIn: 'No turns',
+  never: 'Never',
+  /** What any cell with no value prints (ABSENT in @shared/lib). */
   absent: ABSENT,
 } as const;
 
-// THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
-// These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
-// these meanings is how the console reached eleven phrasings for "nothing here".
-//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
-//              default. It was `n/r`, which no reader could expand.
-//   none       the question was asked and its answer is nothing (no tier hands this model out).
-//   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
-//   unavailable  it exists and we cannot reach it.
-//   ineligible   it does not apply here.
-//   not built    it does not exist yet; a pending route names its row.
-// A site whose fact cannot be told from the code KEEPS the word it has and gets a note beside it.
-// Renaming an absence you have not understood is how `unknown` silently becomes `none`.
+export const H = {
+  about: "What runs now, what landed, and where each turn's time went.",
+  summary: 'Solid bar is the median; the pale end reaches p95.',
+  nothingInFlight: 'A turn shows here while it runs.',
+  noSummary: 'Waiting for the daemon to answer.',
+  noTurns: 'Turns land here as the heads serve them.',
+  historyUnavailable: 'This splice version does not serve turn history.',
+  stalled: "Idle past its head's stream idle limit: hung, or still reasoning.",
+  unlisted: 'This daemon counts turns in flight but does not list them yet.',
+  stages: 'The average landed turn below, in its parts, per head.',
+  tokens: 'The landed turns below; the strong grey is priced in full.',
+} as const;
+
+export const U = {
+  window: 'window',
+  idle: 'idle hours',
+  retries: 'retries',
+  queued: 'queued',
+  unlisted: 'not listed',
+  last: 'last',
+} as const;

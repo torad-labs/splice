@@ -18,10 +18,13 @@ import { describe, expect, test } from 'vitest';
 import type { View } from '../src/features/views';
 import type { SessionRow } from '../src/entities/session';
 import type { TranscriptMessage } from '../src/entities/transcript';
-import { NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
+import { DEFAULT_VIEWS, NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
+
+/** The board view these tests are about: the lanes are the page's default now, the table a view. */
+const BY_HEAD = DEFAULT_VIEWS.filter((view) => view.id === 'by-head')[0];
 import { ProjectsBoard } from '../src/pages/projects';
 import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, windowOf } from '../src/pages/sessions/select';
-import { edgeOf, fieldsOf, headText, startedText } from '../src/pages/sessions/strip';
+import { fieldsOf, headText, startedText, toneOf } from '../src/pages/sessions/strip';
 import { Conversation } from '../src/widgets/conversation';
 import { FileView } from '../src/widgets/file-view';
 
@@ -164,24 +167,25 @@ describe('session strip', () => {
   test('a measured value carries the measured basis and no suffix word', () => {
     const fields = fieldsOf(session({ repo: { root: '/dev/atlas' } }), 'gs-backend-claude', ['project', 'peer']);
     expect(fields.map((f) => [f.label, f.value, f.basis])).toEqual([
-      ['project', 'atlas', 'measured'],
-      ['last hand-off', 'gs-backend-claude', 'measured'],
+      ['Project', 'atlas', 'measured'],
+      ['Last hand-off', 'gs-backend-claude', 'measured'],
     ]);
   });
 
-  test('gone is grey, never struck', () => {
-    expect(edgeOf(session({ availability: 'live' }))).toBe('green');
-    expect(edgeOf(session({ availability: 'stale' }))).toBe('amber');
-    expect(edgeOf(session({ availability: 'gone' }))).toBe('grey');
+  test('gone is neutral, never struck', () => {
+    expect(toneOf(session({ availability: 'live' }))).toBe('ok');
+    expect(toneOf(session({ availability: 'stale' }))).toBe('warn');
+    expect(toneOf(session({ availability: 'gone' }))).toBe('neutral');
   });
 });
 
 // ── the boards ───────────────────────────────────────────────────────────────
 
 describe('sessions board', () => {
-  test('prints the availability word on every strip, and cocks the stale one', () => {
+  test('prints the availability word on every row, and marks the stale one', () => {
     const out = render(
       h(SessionsBoard, {
+        view: BY_HEAD,
         payload: payload([
           session({ session_id: 'live-one', availability: 'live' }),
           session({ session_id: 'stale-one', availability: 'stale' }),
@@ -190,33 +194,36 @@ describe('sessions board', () => {
       }),
     );
 
-    expect(out).toContain('>live<');
-    expect(out).toContain('>stale<');
-    expect(out).toContain('>gone<');
-    expect(out).toContain('myx-strip-cocked'); // stale is the one that needs the operator
-    expect(out).not.toContain('myx-strip-struck'); // a gone session is read, not disabled
-    expect(out).toContain('head: claudex');
+    expect(out).toContain('>Live<');
+    expect(out).toContain('>Stale<');
+    expect(out).toContain('>Gone<');
+    // stale is the one that needs the operator: its row, and only its row, carries the warn tint
+    expect(out.match(/myx-dt-tone-warn/g)?.length).toBe(1);
+    expect(out).not.toContain('myx-dt-tone-danger'); // a gone session is read, not disabled
+    expect(out).not.toContain('line-through');
+    expect(out).toContain('myx-hm-name">claudex<'); // the group names its head with the head mark
   });
 
   test('the peer is unknown, and prints the absence glyph, until the board edges are read', () => {
-    const out = render(h(SessionsBoard, { payload: payload([session({ session_id: 'a' })]) }));
+    const out = render(h(SessionsBoard, { view: BY_HEAD, payload: payload([session({ session_id: 'a' })]) }));
     expect(out).toContain('>–<');
     expect(out).not.toContain('unavailable');
   });
 
   test('an empty registry says what fills it, in words and never a route, and never a fixture', () => {
     const out = render(h(SessionsBoard, { payload: payload([]) }));
-    expect(out).toContain('no sessions yet');
+    expect(out).toContain('>No sessions<');
     expect(out).not.toContain('/api/');
     expect(out).not.toContain('sample data');
   });
 
   test('sessions the daemon ties to no head are one group that says why, with no head to open', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ head: 'unknown head' }), session({ session_id: 'b', head: 'claudex' })]) }));
-    expect(out).toContain('no splice head');
-    expect(out).toContain('splice did not start these sessions');
-    expect(out).not.toContain('head: unknown head');
-    expect(out).toContain('head: claudex');
+    expect(out).toContain('No splice head');
+    // the reason rides in the group's tip, not on the page
+    expect(out).toMatch(/role="tooltip"[^>]*>Splice did not start these, or cannot tell which head did\.</);
+    expect(out).not.toContain('unknown head'); // the daemon's sentinel is never printed as a name
+    expect(out).toContain('myx-hm-name">claudex<');
   });
 
   test('a daemon that reports the route says which sessions splice did not start and which it could not read', () => {
@@ -225,11 +232,10 @@ describe('sessions board', () => {
       session({ session_id: 'b', head: 'unknown head', route: 'direct' }),
       session({ session_id: 'c', head: 'unknown head', route: 'unknown' }),
     ];
-    expect(noHeadWhy(rows)).toBe('2 started with claude directly, not with a splice head; '
-      + '1 could not be read, so splice cannot tell which head started them');
+    expect(noHeadWhy(rows)).toBe('2 started directly, 1 unreadable');
     expect(noHeadWhy([session({ head: 'unknown head' })])).toBe(NO_HEAD_WHY);
-    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('started directly');
-    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('no splice head');
+    expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('Started directly');
+    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('No splice head');
     expect(headText(session({ head: 'claudex', route: 'head' }))).toBe('claudex');
   });
 
@@ -239,13 +245,15 @@ describe('sessions board', () => {
     expect(startedText(session({ started_at: new Date(2026, 8, 20, 9, 35, 29).getTime() }), now)).toBe('sep 20 09:35:29');
   });
 
-  test('the headless note is behind a reveal, and a sample board says so', () => {
+  test('the daemon\'s note is a tip beside the title, never page text, and a sample board says so', () => {
     // The sample prop IS the fixture's own file name (M1-20): the chrome and the capture marker
     // are the same value, so a board cannot claim a sample it was not handed.
     const out = render(h(SessionsBoard, { payload: payload([]), sample: 'board' }));
-    expect(out).toContain('myx-reveal-btn');
-    expect(out).not.toContain('headless `claude -p` runs never register');
-    expect(out).toContain('sample data');
+    const note = 'headless `claude -p` runs never register';
+    expect(out).toContain('myx-info-btn');
+    expect(out.split(note)).toHaveLength(2); // printed once
+    expect(out).toMatch(new RegExp(`role="tooltip"[^>]*>${note.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<`));
+    expect(out).toContain('>Sample<');
   });
 });
 
@@ -254,12 +262,12 @@ describe('projects board', () => {
     const out = render(h(ProjectsBoard, { payload: null, error: 'HTTP 404' }));
     expect(out).toContain('HTTP 404');
     expect(out).not.toContain('V4-131');
-    expect(out).not.toContain('sample data');
+    expect(out).not.toContain('>Sample<');
   });
 
   test('an empty list says what fills it, never the route it read', () => {
     const out = render(h(ProjectsBoard, { payload: { projects: [] } }));
-    expect(out).toContain('no projects yet');
+    expect(out).toContain('No projects yet');
     expect(out).not.toContain('/api/');
   });
 
@@ -307,14 +315,21 @@ describe('conversation', () => {
     );
     expect(out).toContain('myx-reveal-btn');
     expect(out).not.toContain('BODY-TEXT-NOT-IN-MARKUP');
-    expect(out).toContain('>assistant<');
+    expect(out).toContain('>Assistant<');
     expect(out).toContain('/home/user/.claude/projects/x/s1.jsonl');
   });
 
   test('a transcript this daemon does not serve says so, without a row id', () => {
     const out = render(h(Conversation, { sessionId: 's1', slice: { pending: 'V4-130' } }));
-    expect(out).toContain('transcript unavailable');
+    expect(out).toContain('Transcript unavailable');
     expect(out).not.toContain('V4-130');
+  });
+
+  test('a session with no file names where the daemon looked, and is not a fault', () => {
+    const out = render(h(Conversation, { sessionId: 's1', slice: { missing: ['/home/user/.claude/projects/x'] } }));
+    expect(out).toContain('>No transcript<');
+    expect(out).toContain('Looked in: /home/user/.claude/projects/x');
+    expect(out).not.toContain('role="alert"');
   });
 
   test('a finished transcript offers no load more', () => {
@@ -329,7 +344,7 @@ describe('conversation', () => {
         },
       }),
     );
-    expect(out).not.toContain('load more');
+    expect(out).not.toContain('Load more');
   });
 });
 
@@ -346,7 +361,7 @@ describe('file view', () => {
         },
       }),
     );
-    expect(empty).toContain('client memory is switched off');
+    expect(empty).toContain('Client memory off');
     expect(empty).toContain('/home/user/.claude/projects/x/memory');
   });
 
@@ -362,23 +377,9 @@ describe('file view', () => {
       }),
     );
     expect(out).toContain('/repo/CLAUDE.md');
-    expect(out).toContain('>repo<'); // a head-less file belongs to the repo, and says so
+    expect(out).toContain('>Repo<'); // a head-less file belongs to the repo, and says so
     expect(out).toContain('myx-reveal-btn');
     expect(out).not.toContain('FILE-BODY-NOT-IN-MARKUP');
-  });
-});
-
-describe('the session rack budget', () => {
-  const ALL = ['name', 'head', 'project', 'started', 'seen', 'peer'];
-  const width = (order: string[]) => fieldsOf(session({}), 'peer-session', order).reduce((sum, field) => sum + field.w, 0);
-
-  test('no view passes 122ch, the ones that print head included', () => {
-    // by team prints all six; at the widths the head-less view uses it measured 151ch
-    expect(width(ALL)).toBe(122);
-    expect(width(ALL.filter((key) => key !== 'head'))).toBe(122);
-    for (let drop = 0; drop < ALL.length; drop += 1) {
-      expect(width(ALL.filter((_, at) => at !== drop))).toBeLessThanOrEqual(122);
-    }
   });
 });
 

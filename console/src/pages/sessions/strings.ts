@@ -1,61 +1,75 @@
-// Labels of the sessions page. Three words or fewer, lowercase, no em-dash (the
-// label wall globs this file). The pending empties, the daemon's own sentence
-// about headless runs, and the data values a strip prints are not labels and
-// live in the component (CONTRACTS.md section 4).
+// Copy of the sessions page. The copy gate reads this file: `S` holds labels (three words or fewer,
+// sentence case), `H` the one-line help a tip shows on hover and focus, `U` the fragments printed
+// beside a figure.
 import { ABSENT } from '@shared/lib';
 
 export const S = {
-  title: 'sessions',
-  locked: 'console locked',
-  /** Opens the daemon's own note on what the list holds and what live, stale and gone mean. */
-  headless: 'about this list',
-  registry: 'session registry',
-  sample: 'sample data',
-  detail: 'session detail',
-  close: 'close',
-  openHead: 'open head',
-  /** The group of sessions the daemon ties to no head: splice did not start them, or could not
-   *  tell which head did. Printed where `head: unknown head` was. */
-  noHead: 'no splice head',
+  title: 'Sessions',
+  /** The default view: one strand per head, sessions as cards, hand-offs as arcs. */
+  lanes: 'Lanes',
+  locked: 'Console locked',
+  /** The info mark beside the title: the daemon's own note on what the list holds. */
+  about: 'About this list',
+  registry: 'Session registry',
+  sample: 'Sample',
+  detail: 'Session detail',
+  close: 'Close',
+  openHead: 'Open head',
+  openProject: 'Open project',
+  openTeam: 'Open team',
+  /** The group of sessions the daemon ties to no head. */
+  noHead: 'No splice head',
   /** A session's head cell when it was started with `claude` directly, not through a head. */
-  direct: 'started directly',
-  openProject: 'open project',
-  openTeam: 'open team',
-  conversation: 'conversation',
-  files: 'files',
-  handoffs: 'hand-offs',
-  /** The strip fields, in the order the views declare them. */
-  name: 'name',
-  head: 'head',
-  project: 'project',
-  team: 'team',
-  started: 'started',
-  seen: 'seen',
+  direct: 'Started directly',
+  conversation: 'Conversation',
+  files: 'Files',
+  handoffs: 'Hand-offs',
+  /** The fleet's hand-offs: the two ends of each message. */
+  from: 'From',
+  to: 'To',
+  /** The board's columns, in the order the views declare them. */
+  name: 'Name',
+  head: 'Head',
+  project: 'Project',
+  team: 'Team',
+  /** One bar per row on the board's shared time axis: started, last seen, now. */
+  life: 'Lifetime',
+  started: 'Started',
+  seen: 'Last seen',
   /** The session this one last handed off to or heard from. */
-  peer: 'last hand-off',
-  address: 'address',
-  at: 'at',
-  sent: 'sent',
-  /** `recv` and not `received`: the holder edge prints this word, and the contract budgets a
-   *  holder edge at 6 characters (CONTRACTS.md section 2). */
-  received: 'recv',
-  /** What any cell with no value prints. The approved comp's own glyph (m1 design review B8):
-   *  the hyphen it replaces was printed with the basis word `unavailable` beside it, which is
-   *  one fact in two sentences. `–` is not a label and lives in strip.tsx with the cells. */
+  peer: 'Last hand-off',
+  address: 'Address',
+  at: 'At',
+  sent: 'Sent',
+  received: 'Received',
+  /** What any cell with no value prints. */
   absent: ABSENT,
-  idle: 'idle',
-  undated: 'not dated',
+  undated: 'Not dated',
+  status: 'Status',
+  live: 'Live',
+  stale: 'Stale',
+  gone: 'Gone',
+  way: 'Direction',
+  noSessions: 'No sessions',
+  noHandoffs: 'No hand-offs',
+  noSessionId: 'No session id',
+  noCwd: 'No working directory',
+  /** The tally bar's name. */
+  availability: 'Availability',
 } as const;
 
-// THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
-// These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
-// these meanings is how the console reached eleven phrasings for "nothing here".
-//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
-//              default. It was `n/r`, which no reader could expand.
-//   none       the question was asked and its answer is nothing (no tier hands this model out).
-//   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
-//   unavailable  it exists and we cannot reach it.
-//   ineligible   it does not apply here.
-//   not built    it does not exist yet; a pending route names its row.
-// A site whose fact cannot be told from the code KEEPS the word it has and gets a note beside it.
-// Renaming an absence you have not understood is how `unknown` silently becomes `none`.
+export const H = {
+  noSessions: 'Start Claude Code through a splice head to see it here.',
+  noHead: 'Splice did not start these, or cannot tell which head did.',
+  registry: 'Sessions Claude Code registered on this machine.',
+} as const;
+
+export const U = {
+  /** The timeline's span and its empty hours, after their figures. */
+  hours: 'h',
+  window: 'window',
+  idle: 'idle',
+  /** Beside a count in the headless group's tip. */
+  direct: 'started directly',
+  unread: 'unreadable',
+} as const;

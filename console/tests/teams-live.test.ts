@@ -6,12 +6,12 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { SessionRow } from '../src/entities/session';
-import type { TurnRow } from '../src/entities/perf';
+import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import type { TeamActivityPayload, TeamChatPayload, TeamEconomicsPayload, TeamPanels, TeamRow, TeamSlot } from '../src/entities/team';
 import { draftOf, keyFor, saveDraft, unbindSession, unbindsOf, writeOf } from '../src/features/team-compose';
-import { UNLISTED, activityOf, boardOf, lastHourOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
+import { UNLISTED, activityOf, boardOf, dayStartOf, hhmm, hhmmss, lastHourOf, liveTurnsOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
+import { dayAxis } from '../src/widgets/team-board';
 import { panelStates } from '../src/pages/teams';
-import { headBays } from '../src/widgets/team-board';
 
 const NOW = Date.UTC(2026, 8, 23, 14, 0, 0);
 const DAY = Date.UTC(2026, 8, 23);
@@ -118,15 +118,17 @@ describe('the members', () => {
   });
 
   test("the registry gives the state, start, uptime and workspace, and an unlisted session says so", () => {
-    expect(members[0]).toMatchObject({ state: 'busy', created: '11:55:00', uptime: '2h 5m', workspace: '/repo' });
-    expect(members[1]).toMatchObject({ state: UNLISTED, created: null, uptime: null, workspace: null });
+    expect(members[0]).toMatchObject({ state: 'busy', created: hhmmss(NOW - 2 * 3_600_000 - 5 * 60_000), uptime: '2h 5m', workspace: '/repo' });
+    expect(members[0].startedAt).toBe(SESSIONS[0].started_at); // the epoch the lanes order it by
+    expect(members[0].startedAt).not.toBeNull();
+    expect(members[1]).toMatchObject({ state: UNLISTED, created: null, startedAt: null, uptime: null, workspace: null });
     const gone = membersOf(TEAM, [registry('aaaaaaaa-1111', { availability: 'gone' })], ECONOMICS, NOW)[0];
     expect(gone.state).toBe('gone');
     expect(gone.uptime).toBeNull();
   });
 
   test("a slot's tally prints on its session only when the slot has held no other session", () => {
-    expect(members[0]).toMatchObject({ turns: 3, tokensIn: 1110, tokensOut: 50, costEst: 0.5, checks: 'pass', lastTurn: '13:59' });
+    expect(members[0]).toMatchObject({ turns: 3, tokensIn: 1110, tokensOut: 50, costEst: 0.5, checks: 'pass', lastTurn: hhmm(NOW - 60_000) });
     // s-build held zzzzzzzz before: its 9 turns are not bbbbbbbb's alone.
     expect(members[1]).toMatchObject({ turns: null, tokensIn: null, tokensOut: null, costEst: null, checks: null, lastTurn: null });
   });
@@ -163,8 +165,8 @@ describe('the messages and the activity', () => {
   test('the sender resolves by session and the recipient by slot; a stranger keeps its own string', () => {
     const messages = messagesOf(members, CHAT);
     expect(messages.map((m) => [m.time, m.from, m.to, m.fromHead])).toEqual([
-      ['13:50', 'lead-seat', 'bbbbbbbb-2222', 'claude'],
-      ['13:55', 'cccccccc-9999', 'someone-else', '–'],
+      [hhmm(NOW - 600_000), 'lead-seat', 'bbbbbbbb-2222', 'claude'],
+      [hhmm(NOW - 300_000), 'cccccccc-9999', 'someone-else', '–'],
     ]);
   });
 
@@ -176,14 +178,14 @@ describe('the messages and the activity', () => {
   });
 
   test('a sample lands under its member', () => {
-    expect(activityOf(members, ACTIVITY)).toEqual([{ time: '13:59:30', member: 'lead-seat', activity: 'editing', detail: '' }]);
+    expect(activityOf(members, ACTIVITY)).toEqual([{ time: hhmmss(NOW - 30_000), member: 'lead-seat', activity: 'editing', detail: '' }]);
   });
 
   test("panels answered for ANOTHER team are not this team's", () => {
     const board = boardOf(TEAM, SESSIONS, { ...PANELS, teamId: 'team-2' }, NOW);
     expect(board.messages).toEqual([]);
     expect(board.members[0].turns).toBeNull();
-    expect(viewDataOf(board, [], { ...PANELS, teamId: 'team-2' }, NOW)).toBeNull();
+    expect(viewDataOf(board, [], [], { ...PANELS, teamId: 'team-2' }, NOW)).toBeNull();
     expect(panelStates(board, { ...PANELS, teamId: 'team-2' }).chat).toBeNull();
   });
 
@@ -191,7 +193,6 @@ describe('the messages and the activity', () => {
     const board = boardOf(TEAM, SESSIONS, { ...PANELS, chat: { error: 'HTTP 500' } }, NOW);
     const states = panelStates(board, { ...PANELS, chat: { error: 'HTTP 500' } });
     expect(states.chat).toEqual({ error: 'HTTP 500' });
-    expect(states.unread).toEqual({ chat: 'HTTP 500' });
     expect(states.feed).toMatchObject({ clientMatching: true });
   });
 });
@@ -206,7 +207,8 @@ describe('the turn log', () => {
     compact: false,
     ...(session === undefined ? {} : { session }),
     total,
-    ...(tokens ? { in_tokens: 10, cached_tokens: 100, cache_write_tokens: 1, out_tokens: 7 } : {}),
+    // A row's in_tokens already holds its cache reads and writes (PerfKeys.kt IN_TOKENS).
+    ...(tokens ? { in_tokens: 111, cached_tokens: 100, cache_write_tokens: 1, out_tokens: 7 } : {}),
   });
   const ROWS = [
     row('aaaaaaaa', NOW - 120_000, 90_000),
@@ -217,31 +219,94 @@ describe('the turn log', () => {
   ];
 
   test("the day's turns of the team's sessions, joined on the 8-character tag, oldest first", () => {
-    expect(turnsOf(members, ROWS, DAY).map((t) => [t.member, t.time, t.duration, t.input, t.output])).toEqual([
-      ['bbbbbbbb-2222', '13:25', '5m 00s', null, null],
-      ['lead-seat', '13:56', '1m 30s', 111, 7],
+    expect(turnsOf(members, ROWS, DAY).map((t) => [t.member, t.start, t.ms, t.input, t.output])).toEqual([
+      ['bbbbbbbb-2222', NOW - 35 * 60_000, 5 * 60_000, null, null],
+      ['lead-seat', NOW - 210_000, 90_000, 111, 7],
     ]);
   });
 
+  test('a turn is its input as the row counts it, cache reads and writes already inside', () => {
+    // Summing them again doubled a cached turn's input (the row carried 111, the board printed 212).
+    expect(turnsOf(members, ROWS, DAY)[1].input).toBe(111);
+  });
+
   test('the last hour counts a turn from its start to its end', () => {
-    const hour = lastHourOf(members, ROWS, NOW);
+    const hour = lastHourOf(members, ROWS, [], NOW);
     expect(hour).toHaveLength(61);
-    expect(hour[0].at).toBe('13:00');
-    expect(hour[60].at).toBe('14:00');
-    const at = (stamp: string) => hour.find((point) => point.at === stamp)?.turns;
-    expect(at('13:24')).toBe(0);
-    expect(at('13:26')).toBe(1);
-    expect(at('13:57')).toBe(1);
-    expect(at('13:59')).toBe(0);
+    expect(hour[0].at).toBe(hhmm(NOW - 60 * 60_000));
+    expect(hour[60].at).toBe(hhmm(NOW));
+    const at = (minutesAgo: number) => hour.find((point) => point.at === hhmm(NOW - minutesAgo * 60_000))?.turns;
+    expect(at(36)).toBe(0);
+    expect(at(34)).toBe(1);
+    expect(at(3)).toBe(1);
+    expect(at(1)).toBe(0);
   });
 });
 
-describe('the head bays', () => {
-  test('every head is racked: past the two measured bays the rest share the second', () => {
-    const members = membersOf(TEAM, SESSIONS, ECONOMICS, NOW);
-    expect(headBays(members)).toEqual([['claude'], ['claudex']]);
-    const third = { ...members[1], slot: 's-3', head: 'claude-deepseek' };
-    expect(headBays([...members, third])).toEqual([['claude'], ['claudex', 'claude-deepseek']]);
+describe('the clock the page prints', () => {
+  // Marlin, 2026-09-25: every Teams time was UTC beside the rule's local clock, with the word only
+  // behind the timeline's info tip. The times are the operator's; the day read stays the daemon's.
+  const zone = process.env.TZ;
+  afterEach(() => {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+
+  test("times print on the operator's own clock, and the day's window stays the UTC day", () => {
+    process.env.TZ = 'America/Chicago';
+    expect(hhmm(NOW)).toBe('09:00'); // 14:00 UTC, in September's CDT
+    expect(hhmmss(NOW - 30_000)).toBe('08:59:30');
+    expect(dayStartOf(NOW)).toBe(DAY);
+    expect(dayAxis([NOW - 5 * 3_600_000], NOW).ticks[0].label).toBe('04:00');
+  });
+
+  test('the axis ticks stand on the local hour where the zone is off the hour', () => {
+    process.env.TZ = 'Asia/Kolkata';
+    expect(hhmm(NOW)).toBe('19:30');
+    const ticks = dayAxis([NOW - 5 * 3_600_000], NOW).ticks;
+    expect(ticks.length).toBeGreaterThan(1);
+    expect(ticks.every((tick) => tick.label.endsWith(':00'))).toBe(true);
+  });
+});
+
+describe('the turns running now', () => {
+  // Marlin, 2026-09-25: In flight printed 0 and no turn ever read Running, because the board counted
+  // landed perf rows only (a turn has no row until it ends) and stamped every turn `live: false`.
+  const members = membersOf(TEAM, SESSIONS, ECONOMICS, NOW);
+  const slot = (label: string, ageMs: number, head = 'claude'): InflightTurn => ({
+    head, label, compact: false, phase: 'streaming', ageMs, idleMs: 0, streamIdleMs: 300_000,
+  });
+  const GATES = [
+    slot('aaaaaaaa fable', 5 * 60_000),
+    slot('bbbbbbbb gpt-5', 90_000, 'claudex'),
+    slot('dddddddd fable', 60_000), // a session of no member
+    slot('fable', 60_000), // a client that sent no session
+    slot('req', 1_000), // a request not read yet
+  ];
+
+  test("each gate slot lands under its member on the session tag, and no other slot is the team's", () => {
+    expect(liveTurnsOf(members, GATES, NOW).map((t) => [t.member, t.start, t.ms, t.live])).toEqual([
+      ['lead-seat', NOW - 5 * 60_000, 5 * 60_000, true],
+      ['bbbbbbbb-2222', NOW - 90_000, 90_000, true],
+    ]);
+  });
+
+  test('the count is the running turns, and it is unknown, not none, before the heads answer', () => {
+    const board = boardOf(TEAM, SESSIONS, PANELS, NOW);
+    const data = viewDataOf(board, [], GATES, PANELS, NOW);
+    expect(data?.inFlight).toBe(2);
+    expect(data?.turns.filter((t) => t.live)).toHaveLength(2);
+    expect(viewDataOf(board, [], [], PANELS, NOW)?.inFlight).toBe(0);
+    expect(viewDataOf(board, [], null, PANELS, NOW)?.inFlight).toBeNull();
+  });
+
+  test('the last hour counts a running turn from its start to now', () => {
+    const hour = lastHourOf(members, [], liveTurnsOf(members, GATES, NOW), NOW);
+    const at = (minutesAgo: number) => hour.find((point) => point.at === hhmm(NOW - minutesAgo * 60_000))?.turns;
+    expect(at(6)).toBe(0);
+    expect(at(5)).toBe(1);
+    expect(at(1)).toBe(2);
+    expect(at(0)).toBe(2);
   });
 });
 

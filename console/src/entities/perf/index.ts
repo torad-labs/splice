@@ -43,3 +43,4 @@ export const usePerfSummary = perfSummaryStore.use;
 export const usePerfTurns = perfTurnsStore.use;
 export const useCapture = captureStore.use;
 export { STAGE_NAMES } from './strings';
+export { STAGE_MARKS } from './marks';

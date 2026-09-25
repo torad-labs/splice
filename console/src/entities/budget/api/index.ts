@@ -1,5 +1,6 @@
 // The budget entity's HTTP segment. Both routes are pending V4-133.
-import { pendingOf, request } from '@shared/api';
+import { pendingOf, request, writeFailure } from '@shared/api';
+import type { WriteResult } from '@shared/lib';
 import { poll } from '@shared/lib';
 import { budgetsStore } from '../model/store';
 import type { Budget, BudgetsPayload } from '../model/types';
@@ -28,23 +29,21 @@ export function startBudgetsPolling(intervalMs = 30000): () => void {
 /**
  * Write the whole budget set. The daemon answers with the budgets it now holds, and the store
  * takes THAT rather than the request: a value the daemon clamped or refused must not read as
- * applied (the same reason the config entity re-reads after a patch).
+ * applied (the same reason the config entity re-reads after a patch). A refused write leaves the
+ * store as the daemon last answered, since those budgets still run, and its reason goes to the
+ * caller, which prints it on the row; it is not a failed read of the budgets.
  */
-export async function putBudgets(budgets: readonly Budget[]): Promise<BudgetsPayload | null> {
+export async function putBudgets(budgets: readonly Budget[]): Promise<WriteResult<BudgetsPayload>> {
   try {
     const applied = await request<BudgetsPayload>('/api/budgets', {
       method: 'PUT',
       body: JSON.stringify({ budgets }),
     });
     budgetsStore.setData(applied);
-    return applied;
+    return { status: 'applied', answer: applied };
   } catch (err) {
-    const pending = pendingOf(err, PENDING_BUDGETS);
-    if (pending !== null) {
-      budgetsStore.setData(pending);
-      return null;
-    }
-    budgetsStore.setError(err instanceof Error ? err.message : String(err));
-    return null;
+    const result = writeFailure(err, PENDING_BUDGETS);
+    if (result.status === 'pending') budgetsStore.setData({ pending: result.item });
+    return result;
   }
 }

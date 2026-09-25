@@ -40,8 +40,8 @@ describe('DELETE /api/auth/{head}/switch through the real client', () => {
 describe('the unpin key', () => {
   test('is offered on a pinned account, per head, and nowhere else', () => {
     const pinned = renderToStaticMarkup(createElement(AccountActions, { kind: 'chatgpt-oauth', label: 'work', heads: ['claudex'], pinned: true }));
-    expect(pinned).toContain('unpin claudex');
+    expect(pinned).toContain('Unpin claudex');
     const free = renderToStaticMarkup(createElement(AccountActions, { kind: 'chatgpt-oauth', label: 'work', heads: ['claudex'] }));
-    expect(free).not.toContain('unpin');
+    expect(free).not.toContain('Unpin');
   });
 });

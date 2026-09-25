@@ -7,21 +7,21 @@
 // PUT /api/teams/{id}/sessions. The save stays disabled while the draft breaks a rule the form can
 // check, and a refusal the daemon gives anyway is printed in its own words.
 //
-// THE FIELDS ARE FORM FIELDS, NOT STRIPS. A strip is a focusable button (shared/ui/strip.tsx) and
-// an input inside one is a nested interactive element, which is the same reason the settings page
-// composes field boxes rather than racks.
+// It is a kit section: the title with a close key, the team's fields, one bordered block per slot,
+// and the save with the daemon's answer beside it (docs/design/DESIGN.md section 9).
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { bindSessions, createTeam, replaceTeam } from '@entities/team';
 import type { TeamRow } from '@entities/team';
 import { Choice, Flag, Input, Key } from '@shared/controls';
 import type { ChoiceOption } from '@shared/controls';
+import { Section } from '@shared/ui';
 import {
   addSlot, bindSession, blankDraft, draftOf, editSlot, featuresOf, keyFor, removeSlot, setArchived, setLead,
   unbindsOf, validateDraft, writeOf,
 } from './model';
 import type { TeamDraft } from './model';
-import { S } from './strings';
+import { H, S, U } from './strings';
 import './team-compose.css';
 
 export {
@@ -71,7 +71,7 @@ export function optionsFor(listed: readonly ChoiceOption[], current: string, bla
  *  hears the team the daemon answered and the line printed for it, so the page can open the team
  *  and hand the line to the composer it opens it in: a create re-keys this form onto the new team,
  *  and the answer would otherwise go with the form it was printed in. */
-export function TeamCompose({ team = null, initial, answer: printed = null, onSaved, heads = [], sessions = [] }: {
+export function TeamCompose({ team = null, initial, answer: printed = null, onSaved, onClose, heads = [], sessions = [] }: {
   team?: TeamRow | null;
   /** The heads a slot can run on, from the daemon. Empty (not loaded, or a fixture) falls back to
    *  a typed head key. */
@@ -83,6 +83,8 @@ export function TeamCompose({ team = null, initial, answer: printed = null, onSa
   /** The daemon's answer to the save that opened this form. */
   answer?: string | null;
   onSaved?: (saved: TeamRow, answer: string) => void;
+  /** Puts the form away; without it the form has no close key. */
+  onClose?: () => void;
 }) {
   const [draft, setDraft] = useState<TeamDraft>(() => initial ?? (team === null ? blankDraft(mint()) : draftOf(team)));
   const [busy, setBusy] = useState(false);
@@ -96,7 +98,7 @@ export function TeamCompose({ team = null, initial, answer: printed = null, onSa
     setAnswer(null);
     saveDraft(draft, team, attempt.current.key).then(
       (saved) => {
-        const line = `saved ${saved.name} as ${saved.id}`;
+        const line = `${S.saved} ${saved.name} ${U.as} ${saved.id}`;
         setAnswer(line);
         onSaved?.(saved, line);
       },
@@ -106,85 +108,85 @@ export function TeamCompose({ team = null, initial, answer: printed = null, onSa
 
   const title = team === null ? S.compose : `${S.edit} ${team.name}`;
   return (
-    <form className="myx-compose" aria-label={title} onSubmit={(event) => event.preventDefault()}>
-      <h3 className="myx-compose-title">{title}</h3>
+    <Section title={title} className="myx-compose-sec" {...(onClose === undefined ? {} : { actions: <Key onClick={onClose}>{S.close}</Key> })}>
+      <form className="myx-compose" aria-label={title} onSubmit={(event) => event.preventDefault()}>
+        <div className="myx-compose-head">
+          <Input label={S.name} value={draft.name} w={24} placeholder={H.name} onChange={(name) => setDraft({ ...draft, name })} />
+          <Input label={S.repo} value={draft.repo} w={40} placeholder={H.repo} onChange={(repo) => setDraft({ ...draft, repo })} />
+          <Input label={S.goal} value={draft.goal} w={40} placeholder={H.goal} onChange={(goal) => setDraft({ ...draft, goal })} />
+          <Lines label={S.features} rows={3} placeholder={H.features} value={draft.features.join('\n')} onChange={(text) => setDraft({ ...draft, features: featuresOf(text) })} />
+        </div>
 
-      <div className="myx-compose-head">
-        <Input label={S.name} value={draft.name} w={24} placeholder="a short name" onChange={(name) => setDraft({ ...draft, name })} />
-        <Input label={S.repo} value={draft.repo} w={40} placeholder="path to the repo" onChange={(repo) => setDraft({ ...draft, repo })} />
-        <Input label={S.goal} value={draft.goal} w={40} placeholder="what the team is here to finish" onChange={(goal) => setDraft({ ...draft, goal })} />
-        <Lines label={S.features} rows={3} placeholder="one feature per line" value={draft.features.join('\n')} onChange={(text) => setDraft({ ...draft, features: featuresOf(text) })} />
-      </div>
-
-      <fieldset className="myx-compose-slots">
-        <legend>{S.slots}</legend>
-        {draft.slots.map((slot, index) => (
-          <div className="myx-compose-slot" key={slot.id}>
-            <Input label={S.role} value={slot.role} w={14} placeholder="lead, builder, reviewer" onChange={(role) => setDraft(editSlot(draft, index, { role }))} />
-            {heads.length === 0 ? (
-              <Input label={S.head} value={slot.head} w={18} onChange={(head) => setDraft(editSlot(draft, index, { head }))} />
-            ) : (
-              <Choice
-                label={S.head}
-                value={slot.head}
-                w={18}
-                options={optionsFor(heads, slot.head, { value: '', label: S.pickHead })}
-                onChange={(head) => setDraft(editSlot(draft, index, { head }))}
+        <fieldset className="myx-compose-slots">
+          <legend>{S.slots}</legend>
+          {draft.slots.map((slot, index) => (
+            <div className="myx-compose-slot" key={slot.id}>
+              <Input label={S.role} value={slot.role} w={14} placeholder={H.role} onChange={(role) => setDraft(editSlot(draft, index, { role }))} />
+              {heads.length === 0 ? (
+                <Input label={S.head} value={slot.head} w={18} onChange={(head) => setDraft(editSlot(draft, index, { head }))} />
+              ) : (
+                <Choice
+                  label={S.head}
+                  value={slot.head}
+                  w={18}
+                  options={optionsFor(heads, slot.head, { value: '', label: S.pickHead })}
+                  onChange={(head) => setDraft(editSlot(draft, index, { head }))}
+                />
+              )}
+              {/* Choosing `open seat` (or clearing the typed id) unbinds: one gesture, where the form
+                  used to carry a separate unbind key beside the field that already did it. */}
+              {sessions.length === 0 ? (
+                <Input
+                  label={S.session}
+                  value={slot.session ?? ''}
+                  w={22}
+                  placeholder={S.open}
+                  onChange={(session) => setDraft(bindSession(draft, index, session))}
+                />
+              ) : (
+                <Choice
+                  label={S.session}
+                  value={slot.session ?? ''}
+                  w={22}
+                  options={optionsFor(sessions, slot.session ?? '', { value: '', label: S.open })}
+                  onChange={(session) => setDraft(bindSession(draft, index, session))}
+                />
+              )}
+              {/* The lead flag is exclusive: setting it here clears it on every other slot. */}
+              <Flag
+                on={slot.lead}
+                onLabel={S.lead}
+                offLabel={S.notLead}
+                onChange={(on) => setDraft(on ? setLead(draft, index) : { ...draft, slots: draft.slots.map((s, at) => (at === index ? { ...s, lead: false } : s)) })}
               />
-            )}
-            {/* Choosing `open seat` (or clearing the typed id) unbinds: one gesture, where the form
-                used to carry a separate unbind key beside the field that already did it. */}
-            {sessions.length === 0 ? (
-              <Input
-                label={S.session}
-                value={slot.session ?? ''}
-                w={22}
-                placeholder={S.open}
-                onChange={(session) => setDraft(bindSession(draft, index, session))}
-              />
-            ) : (
-              <Choice
-                label={S.session}
-                value={slot.session ?? ''}
-                w={22}
-                options={optionsFor(sessions, slot.session ?? '', { value: '', label: S.open })}
-                onChange={(session) => setDraft(bindSession(draft, index, session))}
-              />
-            )}
-            {/* The lead flag is exclusive: setting it here clears it on every other slot. */}
-            <Flag
-              on={slot.lead}
-              onLabel={S.lead}
-              offLabel={S.notLead}
-              onChange={(on) => setDraft(on ? setLead(draft, index) : { ...draft, slots: draft.slots.map((s, at) => (at === index ? { ...s, lead: false } : s)) })}
-            />
-            <Lines label={S.instructions} rows={2} placeholder="what this role owns and how it hands work on" value={slot.instructions} onChange={(instructions) => setDraft(editSlot(draft, index, { instructions }))} />
-            <div className="myx-compose-slot-actions">
-              <Key onClick={() => setDraft(removeSlot(draft, index))}>{S.removeSlot}</Key>
+              <Lines label={S.instructions} rows={2} placeholder={H.instructions} value={slot.instructions} onChange={(instructions) => setDraft(editSlot(draft, index, { instructions }))} />
+              <div className="myx-compose-slot-actions">
+                <Key onClick={() => setDraft(removeSlot(draft, index))}>{S.removeSlot}</Key>
+              </div>
             </div>
+          ))}
+          <div className="myx-compose-slot-actions">
+            <Key onClick={() => setDraft(addSlot(draft, mint()))}>{S.addSlot}</Key>
           </div>
-        ))}
-        <div className="myx-compose-slot-actions">
-          <Key onClick={() => setDraft(addSlot(draft, mint()))}>{S.addSlot}</Key>
+        </fieldset>
+
+        {/* Archive is a flag and nothing more: the team, its slots and their bindings all stay. */}
+        <div className="myx-compose-foot">
+          <Flag on={draft.archived} onLabel={S.archived} offLabel={S.live} onChange={(on) => setDraft(setArchived(draft, on))} />
         </div>
-      </fieldset>
 
-      {/* Archive is a flag and nothing more: the team, its slots and their bindings all stay. */}
-      <div className="myx-compose-foot">
-        <Flag on={draft.archived} onLabel={S.archived} offLabel={S.live} onChange={(on) => setDraft(setArchived(draft, on))} />
-      </div>
+        {problems.length > 0 ? (
+          <div className="myx-compose-problems">
+            <span className="myx-compose-problems-label">{S.problems}</span>
+            <ul>{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>
+          </div>
+        ) : null}
 
-      {problems.length > 0 ? (
-        <div className="myx-compose-problems">
-          <span className="myx-compose-problems-label">{S.problems}</span>
-          <ul>{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>
+        <div className="myx-compose-foot">
+          <Key onClick={save} disabled={busy || problems.length > 0}>{team === null ? S.create : S.save}</Key>
+          {answer === null ? null : <p className="myx-compose-answer" role="status">{answer}</p>}
         </div>
-      ) : null}
-
-      <div className="myx-compose-foot">
-        <Key onClick={save} disabled={busy || problems.length > 0}>{team === null ? S.create : S.save}</Key>
-        {answer === null ? null : <p className="myx-compose-answer" role="status">{answer}</p>}
-      </div>
-    </form>
+      </form>
+    </Section>
   );
 }

@@ -72,45 +72,6 @@ export function selectionOf(rows: readonly TurnRow[], view: View, now: number): 
   return { kind: 'groups', groups: groupTurns(newest, by).map((g) => ({ key: g.key, count: g.count, rows: g.turns })) };
 }
 
-/** One line of the virtualized list: either a row, or a band that names what follows it. */
-export type Item =
-  | { kind: 'row'; key: string; index: number; row: TurnRow }
-  | { kind: 'band'; key: string; label: string; count: number };
-
-/**
- * The selection as one flat list, so EVERY view virtualizes through the same loop: a grouped or
- * time-bucketed view with thousands of rows would otherwise be the one page that renders every
- * strip it holds.
- *
- * A bucket or group that holds no rows contributes NO band: an empty band would read as "this
- * hour has turns, they are just not listed". The idle-bucket count is printed in the page header
- * instead, where a number can say it without pretending to be a rack.
- */
-export function itemsOf(selection: Selection): Item[] {
-  const rowKey = rowKeyer();
-  if (selection.kind === 'table') {
-    return selection.rows.map((row, index) => ({ kind: 'row', key: rowKey(row), index, row }));
-  }
-  if (selection.kind === 'timeline') {
-    const items: Item[] = [];
-    selection.timeline.buckets.forEach((bucket) => {
-      if (bucket.rows.length === 0) return;
-      items.push({ kind: 'band', key: `band:${bucket.start}`, label: clockOf(bucket.start), count: bucket.rows.length });
-      bucket.rows.forEach((row, index) => items.push({ kind: 'row', key: rowKey(row), index, row }));
-    });
-    selection.timeline.undated.forEach((row, index) =>
-      items.push({ kind: 'row', key: rowKey(row), index, row }),
-    );
-    return items;
-  }
-  const items: Item[] = [];
-  selection.groups.forEach((group) => {
-    items.push({ kind: 'band', key: `band:${group.key}`, label: `${group.key}`, count: group.count });
-    group.rows.forEach((row, index) => items.push({ kind: 'row', key: rowKey(row), index, row }));
-  });
-  return items;
-}
-
 /**
  * A row's key: its head and ts, plus an ordinal only among rows that share both (a per-head file can
  * hold two turns in the same millisecond, and a wrong key is a row React reuses for another row's

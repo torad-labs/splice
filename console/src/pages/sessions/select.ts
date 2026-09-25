@@ -3,7 +3,7 @@
 // place that reads those three fields and says what the board should be: the
 // page renders the answer, the test asserts it without a DOM.
 import type { View } from '@features/views';
-import { groupSessions, timeline } from '@entities/session';
+import { groupSessions, timeline, UNKNOWN_HEAD } from '@entities/session';
 import type { GroupBy, SessionGroup, SessionRow, Timeline } from '@entities/session';
 
 /** The grouping a view asks for, or null when it does not group at all. */
@@ -21,6 +21,11 @@ export function groupByOf(view: View): GroupBy | null {
 /** A timeline is a layout, not a group: the same rows, placed on a clock. */
 export function isTimeline(view: View): boolean {
   return view.layout === 'timeline';
+}
+
+/** The lanes are a layout too: one strand per head, the sessions as cards on it. */
+export function isLanes(view: View): boolean {
+  return view.layout === 'lanes';
 }
 
 /** Hours from a view's filter word ("24h"), or null when it is not one. */
@@ -78,6 +83,22 @@ export function selectionOf(rows: readonly SessionRow[], view: View, now: number
   }
   const groups: SessionGroup[] = groupSessions(rows, groupByOf(view) ?? 'head');
   return { kind: 'groups', groups: groups.map((g) => ({ key: g.key, count: g.count, rows: g.sessions })) };
+}
+
+/**
+ * The lanes, one per head: every head the daemon runs, in its registry order and with or without
+ * sessions, so the fleet keeps its shape from one read to the next; then a head the registry does
+ * not list; then the sessions no head carries, last.
+ */
+export function lanesOf(rows: readonly SessionRow[], registry: readonly string[]): BoardGroup[] {
+  const groups = groupSessions(rows, 'head');
+  const byKey = new Map(groups.map((group) => [group.key, group]));
+  const unlisted = groups.map((group) => group.key).filter((key) => !registry.includes(key) && key !== UNKNOWN_HEAD);
+  const order = [...registry, ...unlisted, ...(byKey.has(UNKNOWN_HEAD) ? [UNKNOWN_HEAD] : [])];
+  return order.map((key) => {
+    const group = byKey.get(key);
+    return { key, count: group?.count ?? 0, rows: group?.sessions ?? [] };
+  });
 }
 
 /** The address a group header opens: the page that group belongs to. */

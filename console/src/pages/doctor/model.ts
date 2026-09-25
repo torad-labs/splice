@@ -7,9 +7,11 @@
 // console must not either. A pure machine that returns the response inside its own state is a
 // thing a test can prove holds nothing anywhere else; a component that quietly wrote to the store
 // or to localStorage could not be.
-import type { DoctorCheck, DoctorPayload, DoctorStatus, Leak } from '@entities/doctor';
+import type { DoctorCheck, DoctorPayload, DoctorStatus, Leak, UpgradePayload } from '@entities/doctor';
 import { checkFix, checkSection, leaksIn } from '@entities/doctor';
-import type { Edge } from '@shared/ui';
+import { ABSENT, fmtInt } from '@shared/lib';
+import type { BarPart, Mark, Tone } from '@shared/ui';
+import { H, S } from './strings';
 
 /** What the board may print of a report, and why it may print nothing. */
 export interface GatedReport {
@@ -34,19 +36,49 @@ export function gateReport(report: DoctorPayload | null): GatedReport {
   return { shown: leaks.length === 0 ? report : null, leaks };
 }
 
-/** The holder edge for a check's status. `info` is grey rather than green: it is a statement, not a
- *  pass, and a report that painted it green would make "3 checks passed" out of "2 passed, 1 had
- *  something to say". */
-export function statusEdge(status: DoctorStatus): Edge {
-  if (status === 'ok') return 'green';
-  if (status === 'warn') return 'amber';
-  if (status === 'fail') return 'red';
-  return 'grey';
-}
+/** A status's badge tone and chart mark. `info` is neutral rather than green: it is a statement,
+ *  not a pass, and a report that painted it green would make "3 checks passed" out of "2 passed, 1
+ *  had something to say". */
+export const TONE: Record<DoctorStatus, Tone> = { ok: 'ok', info: 'neutral', warn: 'warn', fail: 'danger' };
+export const MARK: Record<DoctorStatus, Mark> = { ok: 'ok', info: 'series-2', warn: 'warn', fail: 'danger' };
 
-/** Whether a check wants the operator: warn and fail cock the strip, ok and info do not. */
+/** The order statuses are drawn and counted in, so the colours never swap places. */
+const STATUSES: readonly DoctorStatus[] = ['ok', 'info', 'warn', 'fail'];
+
+/** Whether a check wants the operator: warn and fail do, ok and info do not. */
 export function wantsAttention(status: DoctorStatus): boolean {
   return status === 'fail' || status === 'warn';
+}
+
+/** A row's tint: only a check that wants the operator. */
+export function rowTone(status: DoctorStatus): Tone | null {
+  return status === 'fail' ? 'danger' : status === 'warn' ? 'warn' : null;
+}
+
+/** The checks by status as bar parts: the report's state at a glance, and each section's. */
+export function statusParts(checks: readonly DoctorCheck[]): BarPart[] {
+  const counts: Record<DoctorStatus, number> = { ok: 0, info: 0, warn: 0, fail: 0 };
+  for (const check of checks) counts[check.status] += 1;
+  return STATUSES.map((status) => ({ key: status, label: S.statusName[status], value: counts[status], mark: MARK[status] }));
+}
+
+/** Claude Code's version as its tile prints it. The daemon reports `claude --version` verbatim,
+ *  `2.1.282 (Claude Code)`, and the tile's label already names the product. */
+export function claudeVersionText(version: string): string {
+  return version.replace(/\s*\(Claude Code\)$/, '');
+}
+
+/** The newest release as the page prints it: the version, `None` when the check looked and found
+ *  nothing newer, and the absence when it never looked (never "nothing newer" by default). */
+export function latestText(upgrade: UpgradePayload | null): string {
+  if (upgrade === null || upgrade.latest_basis !== 'measured') return ABSENT;
+  return upgrade.latest ?? S.none;
+}
+
+/** The release to roll back to, by the same rule: measured and null is none on disk. */
+export function rollbackText(upgrade: UpgradePayload | null): string {
+  if (upgrade === null || upgrade.rollback_basis !== 'measured') return ABSENT;
+  return upgrade.rollback_target ?? S.none;
 }
 
 export interface CheckGroup {
@@ -138,6 +170,16 @@ export function logsHeadOf(fix: string | null): string | null {
 /** How many checks are not `ok`. The report's one number, and the one the page leads with. */
 export function attentionCount(checks: readonly DoctorCheck[]): number {
   return checks.filter((check) => wantsAttention(check.status)).length;
+}
+
+/** What the attention count is made of, worst first (`6 Fail · 2 Warn`): a bare number said how
+ *  many and not what (splice-lead, 2026-09-25). Null when nothing wants the operator. */
+export function attentionParts(checks: readonly DoctorCheck[]): string | null {
+  const parts = [...STATUSES].reverse().filter(wantsAttention).flatMap((status) => {
+    const count = checks.filter((check) => check.status === status).length;
+    return count === 0 ? [] : [`${fmtInt(count)} ${S.statusName[status]}`];
+  });
+  return parts.length === 0 ? null : parts.join(' · ');
 }
 
 /**
@@ -274,6 +316,6 @@ export function fixtureName(search: string, dev: boolean): string | null {
  * source (CONTRACTS.md section 8).
  */
 export const EMPTIES = {
-  noReport: { text: 'doctor unavailable', source: 'this splice version does not serve the doctor report' },
-  noChecks: { text: 'no checks reported', source: 'the daemon returned an empty report; run splice doctor in a terminal to compare' },
+  noReport: { text: S.unavailable, source: H.noReport },
+  noChecks: { text: S.noChecks, source: H.noChecks },
 } as const;

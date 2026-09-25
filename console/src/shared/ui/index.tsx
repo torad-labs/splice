@@ -1,9 +1,6 @@
 // Hand-authored instrument primitives (.myx-*). No component library (locked).
 // Every data-driven surface designs its full state cycle: loading skeletons
 // shaped like the final layout, composed empty states, inline errors.
-import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
-import { cx } from '../lib';
 import './ui.css';
 
 /* PANEL AND EMPTYSTATE WERE EXPORTED AND PLACED NOWHERE, AND ARE DELETED (M1-101).
@@ -24,111 +21,29 @@ import './ui.css';
    SkeletonRows, Stale and MeterBar. Their last consumers were widgets/head-plate and
    features/edit-config, which this row deletes -- so the orphan list could only be measured AFTER
    those went, and it was: re-grepped with both gone, each of the six has zero references under
-   console/src and console/tests outside this file. Btn, Field, Well and ConfirmBtn stay, because live
-   code still imports them (account-login, unlock-mgmt, the turns/sessions/projects strips). Their
-   sheet rules went with them; every class they carried was checked to appear in no other file. */
+   console/src and console/tests outside this file. Their sheet rules went with them; every class
+   they carried was checked to appear in no other file. */
 
-export function Btn({ children, onClick, busy, disabled, kind = 'control', type = 'button' }: {
-  children: ReactNode;
-  onClick?: () => void;
-  busy?: boolean;
-  disabled?: boolean;
-  kind?: 'control' | 'primary' | 'danger';
-  type?: 'button' | 'submit';
-}) {
-  return (
-    <button
-      type={type}
-      className={cx('myx-btn', `myx-btn-${kind}`, busy && 'myx-btn-busy')}
-      onClick={onClick}
-      disabled={disabled || busy}
-      aria-busy={busy || undefined}
-    >
-      {busy ? 'working' : children}
-    </button>
-  );
-}
+/* BTN, FIELD, WELL, CONFIRMBTN, STRIP AND STRIPFIELD ARE DELETED (console redesign, 2026-09-25).
+   The first four had no JSX site left on feat/v0.4.0 either; Strip and StripField lost their last
+   eighteen when every rack became a kit DataTable. Only the rules no live class shares went with
+   them (.myx-field, .myx-well, the armed button, the strip's selected state, the field's basis):
+   the strip and field classes still dress controls/blank.tsx. */
 
-export function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
-  return (
-    <label className="myx-field" htmlFor={htmlFor}>
-      <span className="myx-field-label">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-export function Well({ children }: { children: ReactNode }) {
-  return <div className="myx-well">{children}</div>;
-}
-
-
-/** Two-step destructive control: first click arms (danger styling + cancel,
- * auto-disarms after 4s), second click fires. For actions that interrupt a
- * live session (stop/restart) where a single misclick is costly. */
-export function ConfirmBtn({ children, onConfirm, busy }: {
-  children: ReactNode;
-  onConfirm: () => void;
-  busy?: boolean;
-}) {
-  const [armed, setArmed] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-  }, []);
-
-  const disarm = () => {
-    setArmed(false);
-    if (timerRef.current) clearTimeout(timerRef.current);
-  };
-
-  const arm = () => {
-    setArmed(true);
-    timerRef.current = setTimeout(() => setArmed(false), 4000);
-  };
-
-  if (!armed) {
-    return (
-      <button
-        type="button"
-        className="myx-btn myx-btn-danger"
-        onClick={arm}
-        disabled={busy}
-        aria-busy={busy || undefined}
-      >
-        {busy ? 'working' : children}
-      </button>
-    );
-  }
-
-  return (
-    <span className="myx-confirm">
-      <button
-        type="button"
-        className="myx-btn myx-btn-danger myx-btn-armed"
-        onClick={() => { disarm(); onConfirm(); }}
-        disabled={busy}
-        aria-busy={busy || undefined}
-      >
-        {busy ? 'working' : 'confirm'}
-      </button>
-      <button type="button" className="myx-btn" onClick={disarm} disabled={busy}>cancel</button>
-    </span>
-  );
-}
-
-// The Strip Bay world (v0.4.0). One file per primitive; the barrel above stays
-// for the old instruments, which keep working unchanged until M2 removes their
-// last consumer. New code imports from here and never from a primitive's file.
+// The Strip Bay world (v0.4.0). One file per primitive; new code imports from here and never from
+// a primitive's file.
 export { HolderEdge } from './holder-edge';
-export { Strip } from './strip';
-export { StripField } from './strip-field';
 export { Bay } from './bay';
 export { ScopeInset } from './scope-inset';
 export { FieldBox } from './field-box';
 export { Reveal } from './reveal';
 export { Empty } from './empty';
 export { Figure } from './figure';
+export { Badge, BasisTag, DataTable, DetailPanel, KeyValue, Meter, PageHeader, Section, Segmented, Stat, StatRow, Tally, weightedColumns } from './kit';
+export type { Column, RowGroup, Tone } from './kit';
+export { Braid, InfoTip, LayerChip, Legend, LifetimeBar, Pips, Ring, Sparkline, StackedBar, Tip, Waterfall } from './charts';
+export type { BarPart, Mark, Strand, WaterfallStage } from './charts';
+export { Lanes } from './lanes';
+export type { Lane, LaneCard, LaneMessage } from './lanes';
 export type { Provenance } from './field-box';
 export type { Edge, Basis } from './types';

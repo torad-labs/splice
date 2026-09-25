@@ -1,11 +1,17 @@
-// An honest empty. The world's rule is that every empty names its source, so
-// source is a required prop and not a default: a blank bay can always answer
-// "which thing did I look at and find nothing in".
-export function Empty({ text, source }: { text: string; source: string }) {
+// An empty state: one factual line ("No sessions") and the action that fills it when there is one.
+// `source` says what would fill it, behind an info mark rather than as a sentence on the page.
+import type { ReactNode } from 'react';
+import { InfoTip } from './charts';
+import { S } from './strings';
+
+export function Empty({ text, source, action }: { text: string; source?: string | undefined; action?: ReactNode }) {
   return (
-    <p className="myx-empt" role="status">
-      <span className="myx-empt-text">{text}</span>
-      <span className="myx-empt-source">{source}</span>
-    </p>
+    <div className="myx-empt" role="status">
+      <span className="myx-empt-line">
+        <span className="myx-empt-text">{text}</span>
+        {source === undefined ? null : <InfoTip text={source} label={S.why} />}
+      </span>
+      {action === undefined ? null : <span className="myx-empt-action">{action}</span>}
+    </div>
   );
 }

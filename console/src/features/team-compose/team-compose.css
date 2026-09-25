@@ -1,21 +1,14 @@
-/* The composer: a form printed on the strip's paper, built from the world's controls (Input, Key,
-   Flag in shared/controls) and the section 1 tokens only. Radius 0, both themes. The inputs bring
-   their own box and label; this sheet lays them out and nothing else. */
+/* The composer (docs/design/DESIGN.md section 9): the team's fields in one wrapping row, one bordered
+   block per slot, and the save with the daemon's answer beside it. The inputs bring their own box
+   and label; this sheet lays them out and nothing else. */
 .myx-compose {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  background: var(--strip);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-}
-.myx-compose-title {
-  margin: 0;
-  font-family: var(--font-label);
-  font-size: var(--text-3);
-  font-weight: 500;
-  color: var(--strip-ink);
+  gap: var(--space-5);
+  padding: var(--space-5);
+  background: var(--bg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
 }
 .myx-compose-head,
 .myx-compose-slot {
@@ -29,29 +22,32 @@
    share. */
 .myx-compose-lines { flex: 1 1 100%; }
 /* A field keeps its ch width until the form is narrower than it, then shrinks to the form: on a
-   390 phone the 40ch repo and goal boxes measured 367px and ran 19px past the paper's inner edge
+   390 phone the 40ch repo and goal boxes measured 367px and ran 19px past the form's inner edge
    (S12). The field is a flex item, so its min-content floor has to be lifted before the box can
    take the narrower width. */
 .myx-compose .myx-input { min-width: 0; max-width: 100%; }
 .myx-compose .myx-input-box { max-width: 100%; }
-.myx-compose-lines .myx-input-box { width: 100%; resize: vertical; font-family: var(--font-label); }
+.myx-compose-lines .myx-input-box { width: 100%; resize: vertical; font-family: var(--font-sans); }
 .myx-compose-slots {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   margin: 0;
-  padding: var(--space-3);
-  border: var(--hair) solid var(--strip-field-line);
+  padding: 0;
+  border: 0;
 }
 .myx-compose-slots legend {
-  padding-inline: var(--space-2);
-  font-family: var(--font-label);
+  padding: 0;
+  margin-block-end: var(--space-3);
   font-size: var(--text-2);
-  color: var(--strip-ink-mute);
+  font-weight: 500;
+  color: var(--fg-muted);
 }
 .myx-compose-slot {
-  padding-block-end: var(--space-3);
-  border-bottom: var(--hair) solid var(--strip-field-line);
+  padding: var(--space-4);
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
 }
 .myx-compose-slot-actions,
 .myx-compose-foot {
@@ -60,24 +56,11 @@
   gap: var(--space-3);
 }
 .myx-compose-problems {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: var(--space-1);
-  font-family: var(--font-label);
   font-size: var(--text-2);
-  color: var(--strip-ink);
+  color: var(--fg);
 }
-.myx-compose-problems-label { color: var(--strip-ink-mute); font-size: var(--text-1); }
-/* the reasons are printed lines on the paper, not a browser bullet list */
+.myx-compose-problems-label { font-weight: 500; color: var(--warn); }
 .myx-compose-problems ul { margin: 0; padding: 0; list-style: none; }
-/* THE FLAG'S WORD TAKES THE PAPER'S INK HERE. A Flag is a key on --strip paper, and its holder
-   edge's label inherits ui.css:196 (`.myx-edge-label { color: var(--ink) }`), the ROOM's light
-   ink, so the printed state was near-invisible on the key in this form's capture. shared/controls
-   is outside this row's fence, so the fix is scoped here and the primitive is reported. */
-.myx-compose .myx-flag .myx-edge-label { color: var(--strip-ink); }
-.myx-compose-answer {
-  margin: 0;
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  color: var(--strip-ink);
-}
+.myx-compose-answer { margin: 0; font-size: var(--text-2); color: var(--fg-muted); }

@@ -60,3 +60,14 @@ export function Key({ children, onClick, variant = 'plain', type = 'button', dis
     </button>
   );
 }
+
+/** A key that goes somewhere: the same box as a Key, as a link, for an action that is another page
+ *  (open the log, sign in on accounts, edit the limits in settings). A reader can open it in a new
+ *  tab, which a button that navigates would not allow. */
+export function KeyLink({ href, children, className }: { href: string; children: ReactNode; className?: string | undefined }) {
+  return (
+    <a className={cx('myx-key', className)} href={href}>
+      <span className="myx-key-label">{children}</span>
+    </a>
+  );
+}

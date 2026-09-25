@@ -1,57 +1,50 @@
-/* The file view: a stack of file strips, each with its reveal under it. Tokens
-   only (CONTRACTS.md section 1); no radius, no shadow. */
-
-.myx-fv {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
+/* The file view: one row per file, its kind, path and head on a line, its contents behind a reveal
+   under them. */
+.myx-fv { display: grid; margin: 0; padding: 0; list-style: none; }
 .myx-fv-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--text-2);
 }
+.myx-fv-head { color: var(--fg-muted); white-space: nowrap; }
+.myx-fv-text-cell { grid-column: 1 / -1; min-width: 0; }
 
-/* The contents are read, not measured: the figure face would set every line as
-   a value. They stay on the room, inside the reveal's own body, and scroll
-   rather than stretching the column. */
+/* A PATH IDENTIFIES BY ITS TAIL, SO IT CLIPS AT ITS START. Two files in one repo share every byte
+   but the last segment (`.../atlas/repo/CLAUDE.md`, `.../atlas/repo/AGENTS.md`), so clipping from
+   the right printed two different files as one string. `direction: rtl` on the clipping box moves
+   the overflow and its ellipsis to the start; `direction: ltr` on the text keeps the path itself
+   in reading order. `unicode-bidi: plaintext` does not work here: it takes the direction from the
+   path's first letter and puts the ellipsis back on the tail. */
+.myx-fv-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.myx-fv-path-text { direction: ltr; unicode-bidi: embed; }
+
+/* The contents are read, not measured: the code face, wrapped, and scrolled rather than stretching
+   the column. */
 .myx-fv-text {
   margin: 0;
-  padding: var(--space-3);
+  padding: var(--space-4);
   max-height: 40vh;
   overflow: auto;
-  background: var(--scope);
-  color: var(--scope-ink);
-  border: var(--hair) solid var(--scope-grid);
-  /* CODE: a file's contents are read, not measured. */
-  font-family: var(--font-code);
+  background: var(--bg-raised);
+  color: var(--fg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
   font-size: var(--text-2);
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-/* A PATH IDENTIFIES BY ITS TAIL, SO THIS ONE COLUMN CLIPS AT THE OTHER END.
-   Found by opening the capture on M2-31, not by a gate: at 1536 with a project open, the path
-   column holds 82ch of absolute path in 31ch of paper, and clipping from the right removed the
-   only bytes that carry information. Both instruction files in one repo printed as
-   `/home/user/Documents/dev/projects/...` -- two different files, one string, and the console
-   lying to its reader. Every path in this tree shares that prefix; none of them share the tail.
-
-   The mechanism is the box and the text pulling in opposite directions. `direction: rtl` on the
-   clipping box moves the overflow -- and therefore the ellipsis -- to the START of the line;
-   `direction: ltr` on the text inside it keeps the path itself in reading order, so it renders
-   `...v/projects/atlas/repo/CLAUDE.md` rather than reversed. The primitive's own span is the
-   inner element, so this needs no markup: myx-sfield-text is already there (shared/ui).
-   `unicode-bidi: plaintext` does NOT work here and was measured doing nothing: it takes the
-   paragraph direction from the first strong character, which for a path is a Latin letter, so it
-   puts the box back to ltr and the ellipsis back on the tail.
-
-   FIRST-CHILD IS THE DECLARATION, not a coincidence: path is the first field this widget renders
-   (index.tsx), and it is the only one of the two whose value is a path. `head` keeps clipping at
-   its tail, which is correct for a name. */
-.myx-fv .myx-strip-fields > .myx-sfield:first-child .myx-sfield-value { direction: rtl; }
-.myx-fv .myx-strip-fields > .myx-sfield:first-child .myx-sfield-text {
-  direction: ltr;
-  unicode-bidi: embed;
 }

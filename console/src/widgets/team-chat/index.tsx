@@ -1,14 +1,14 @@
-// The team's group chat: every hand-off between its sessions, oldest first, as GET
+// The team's chat: every hand-off between its sessions today, oldest first, as GET
 // /api/teams/{id}/chat serves it (FEATURES 4.13, served since V4-131).
 //
 // THE TEXT IS BEHIND A REVEAL. A hand-off's text is read from the sender's transcript on demand
-// and never stored by the daemon, so the panel prints who wrote to whom and when, and shows the
-// words only when asked. The rows are therefore NOT strips: a strip is a focusable button, and a
-// reveal inside one would be a button inside a button.
-import { HolderEdge, Empty, Reveal } from '@shared/ui';
+// and never stored by the daemon, so the list prints who wrote to whom and when, and shows the
+// words only when asked.
+import { ArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight';
+import { Empty, Reveal, Section } from '@shared/ui';
 import type { PendingRoute } from '@shared/api';
 import type { TeamMessage } from '@entities/team';
-import { S } from './strings';
+import { H, S, U } from './strings';
 import './team-chat.css';
 
 export interface TeamChatPayload {
@@ -33,36 +33,35 @@ export function chatOrder(messages: readonly TeamMessage[]): TeamMessage[] {
     .map(({ message }) => message);
 }
 
-export function TeamChat({ state }: { state: TeamChatState }) {
-  let body;
-  if (state === null) body = <Empty text="reading the chat" source="the messages this team's sessions send each other" />;
-  else if ('pending' in state) body = <Empty text="chat unavailable" source="this splice version does not serve team chat" />;
-  else if ('error' in state) body = <Empty text="chat unreadable" source={state.error} />;
-  else if (state.messages.length === 0) body = <Empty text="no messages yet" source="a message one of this team's sessions sends another shows here" />;
-  else {
-    body = (
-      <ol className="myx-chat-rows">
-        {chatOrder(state.messages).map((message) => (
-          <li key={`${message.time}-${message.from}-${message.to}`} className="myx-chat-row">
-            <HolderEdge state={message.fromHead === 'claude' ? 'green' : 'grey'} label="" />
-            <dl className="myx-chat-cells">
-              <div className="myx-chat-cell"><dt>{S.time}</dt><dd className="myx-chat-fig">{message.time}</dd></div>
-              <div className="myx-chat-cell"><dt>{S.from}</dt><dd>{message.from}</dd></div>
-              <div className="myx-chat-cell"><dt>{S.to}</dt><dd>{message.to}</dd></div>
-              <div className="myx-chat-cell myx-chat-text">
-                <dt>{S.message}</dt>
-                <dd><Reveal label={S.reveal}>{message.text}</Reveal></dd>
-              </div>
-            </dl>
-          </li>
-        ))}
-      </ol>
-    );
-  }
+function body(state: TeamChatState) {
+  if (state === null) return <Empty text={S.reading} />;
+  if ('pending' in state) return <Empty text={S.unavailable} source={H.unavailable} />;
+  if ('error' in state) return <Empty text={S.unreadable} source={state.error} />;
+  if (state.messages.length === 0) return <Empty text={S.noMessages} source={H.noMessages} />;
   return (
-    <section className="myx-chat" aria-label={S.chat}>
-      <h3 className="myx-chat-title">{S.chat}</h3>
-      {body}
-    </section>
+    <ol className="myx-chat">
+      {chatOrder(state.messages).map((message) => (
+        <li key={`${message.time}-${message.from}-${message.to}`} className="myx-chat-row" aria-label={`${message.from} ${U.to} ${message.to}`}>
+          <span className="myx-chat-time">{message.time}</span>
+          <span className="myx-chat-route">
+            <span className="myx-chat-party">{message.from}</span>
+            <ArrowRightIcon className="myx-chat-arrow" aria-hidden="true" />
+            <span className="myx-chat-party">{message.to}</span>
+          </span>
+          <span className="myx-chat-text">
+            <Reveal label={S.reveal}><p className="myx-chat-words">{message.text}</p></Reveal>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function TeamChat({ state }: { state: TeamChatState }) {
+  const count = state !== null && 'messages' in state ? state.messages.length : undefined;
+  return (
+    <Section title={S.chat} {...(count === undefined ? {} : { count })} info={{ text: H.chat, label: S.chatWhy }}>
+      {body(state)}
+    </Section>
   );
 }

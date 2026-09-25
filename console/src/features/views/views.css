@@ -1,73 +1,74 @@
-/* View tabs: the page's saved views beside its title, default first. Tabs are
-   printed labels, not chips: a hairline under the active one, no radius. */
+/* View tabs: the page's saved views as one segmented control, default first, with the view editor
+   beside it. The current view takes the active ground and full ink. */
 
 .myx-views {
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-4);
   flex-wrap: wrap;
-  border-bottom: var(--hair) solid var(--hairline);
 }
 
-.myx-views-tabs { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.myx-views-tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  flex-wrap: wrap;
+}
 
 .myx-views-tab {
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  color: var(--ink-mute);
+  padding: var(--space-1) var(--space-4);
   background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: var(--space-2) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
   cursor: pointer;
+  transition: background-color var(--dur-1) ease, color var(--dur-1) ease;
 }
-.myx-views-tab:hover { color: var(--ink); }
-.myx-views-tab-active {
-  color: var(--ink-strong);
-  border-bottom-color: var(--ink-strong);
-}
-.myx-views-tab:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+.myx-views-tab:hover { color: var(--fg); }
+.myx-views-tab-active,
+.myx-views-tab-active:hover {
+  background: var(--bg-active);
+  color: var(--fg);
+  font-weight: 500;
 }
 
 .myx-views-edit {
-  margin-inline-start: auto;
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  color: var(--ink-mute);
+  padding: var(--space-1) var(--space-2);
   background: none;
-  border: none;
-  padding: var(--space-2) var(--space-1);
+  border: 0;
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
   cursor: pointer;
 }
-.myx-views-edit:hover { color: var(--ink); }
+.myx-views-edit:hover { color: var(--fg); }
 
 .myx-views-panel {
   flex-basis: 100%;
   display: flex;
   align-items: end;
-  gap: var(--space-3);
+  gap: var(--space-4);
   flex-wrap: wrap;
   padding: var(--space-3) 0;
 }
 
-.myx-views-rename { display: flex; align-items: end; gap: var(--space-2); }
+.myx-views-rename { display: flex; align-items: end; gap: var(--space-3); }
 
-.myx-views-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.myx-views-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
 .myx-views-action {
-  font-family: var(--font-label);
+  padding: var(--space-1) var(--space-4);
+  background: var(--bg);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  font: inherit;
   font-size: var(--text-2);
-  color: var(--ink);
-  background: none;
-  border: var(--hair) solid var(--hairline-strong);
-  border-radius: 0;
-  padding: var(--space-1) var(--space-2);
+  color: var(--fg);
   cursor: pointer;
 }
-.myx-views-action:hover:not(:disabled) { border-color: var(--ink); color: var(--ink-strong); }
-.myx-views-action:disabled { color: var(--ink-mute); cursor: not-allowed; }
-.myx-views-action:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
+.myx-views-action:hover:not(:disabled) { background: var(--bg-hover); }
+.myx-views-action:disabled { color: var(--fg-subtle); cursor: not-allowed; }

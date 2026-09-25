@@ -84,7 +84,9 @@ internal class ControlPayloads(
         put("topologyStale", topologyStale())
     }.toString()
 
-    fun statusJson(): String = buildJsonObject {
+    /** [families] is each head's vendor family by key (the declared roster's), null where splice
+     *  names none; the console colours heads by it and falls back to registry order on a null. */
+    fun statusJson(families: Map<String, String?> = emptyMap()): String = buildJsonObject {
         put("server", "control")
         put("version", GATEWAY_VERSION)
         putJsonArray(HEADS) { heads.keys.forEach { add(it) } }
@@ -94,6 +96,7 @@ internal class ControlPayloads(
                     put(KEY, m.head.key)
                     put(LABEL, m.head.label)
                     put("authKind", m.authKind)
+                    put("family", families[m.head.key])
                 }
             }
         }

@@ -12,6 +12,7 @@
 import { fmtDurationS, timeAgo } from '@shared/lib';
 import type { Edge } from '@shared/ui';
 import type { AccountRow, AccountWindow } from './types';
+import { H, S } from './strings';
 
 /** What a window with no figure is called. The world's rule: never 0 (FEATURES 2.2, 4.5), and the
  *  word is `unknown` - "we asked and were NOT TOLD" - which is the same fact this site used to spell
@@ -74,6 +75,9 @@ export function slotWindows(account: AccountRow): { short: AccountWindow | null;
 export function isStale(window: AccountWindow, nowMs: number): boolean {
   return window.reset_epoch_seconds !== null && window.reset_epoch_seconds * 1000 <= nowMs;
 }
+
+/** What a stale window says in its slot, on the accounts table and the usage plan cards alike. */
+export const NOT_REREAD = S.notReread;
 
 /**
  * The window closest to exhaustion, or null when the account reports no used figure at all. A
@@ -173,7 +177,7 @@ export const COCK_AT_PERCENT = 90;
 export const EXHAUSTED_AT_PERCENT = 100;
 
 /** Printed when the pool excludes an account and the daemon sent no reason of its own. */
-export const EXCLUDED_REASON = 'excluded by the pool';
+export const EXCLUDED_REASON = H.excluded;
 
 /**
  * Whether the pool will pass this account over. `available` is the pool's OWN verdict, so a false

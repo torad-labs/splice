@@ -105,8 +105,7 @@ function oldTokens(): Set<string> {
 }
 
 /** The old primitives: what @shared/ui exports minus the world's own re-exports. */
-function oldPrimitives(): Set<string> {
-  const barrel = readFileSync(path.join(webuiRoot, 'src/shared/ui/index.tsx'), 'utf8');
+function oldPrimitives(barrel = readFileSync(path.join(webuiRoot, 'src/shared/ui/index.tsx'), 'utf8')): Set<string> {
   const exported = [...barrel.matchAll(/export (?:function|const) ([A-Z][A-Za-z]*)/g)].map((match) => match[1]);
   const world = new Set([...barrel.matchAll(/export \{ ([A-Za-z]+) \} from '\.\//g)].map((match) => match[1]));
   return new Set(exported.filter((name) => !world.has(name)));
@@ -120,9 +119,8 @@ const DELETION_LIST = [
   // glob matches every directory and the single-file build inlines every chunk. An entry naming a
   // path that is gone is a denominator that lies about what it excludes, so the three come out.
   // M3-04 deleted widgets/head-plate, widgets/fleet-banner, features/edit-config and
-  // features/refresh-auth, so their four entries came out by the same rule. unlock-mgmt stays:
-  // it is live and still renders the old Field and Well.
-  'src/features/unlock-mgmt',
+  // features/refresh-auth, so their four entries came out by the same rule. unlock-mgmt came out
+  // when the key gate moved onto the controls (2026-09-25): it renders no old Field or Well.
   'src/shared/tokens.css', 'src/shared/fonts.css',
 ];
 
@@ -179,17 +177,18 @@ describe('the world wall', () => {
 
     // A zero would mean the parse broke, not that the tree is clean.
     expect(tokens.size).toBeGreaterThan(0);
-    expect(primitives.size).toBeGreaterThan(0);
-    // Spot checks against the sources the denominators are derived from: the plate palette and the
-    // old button are exactly what this wall exists to keep out.
+    // Spot checks against the sources the denominators are derived from: the plate palette is
+    // exactly what this wall exists to keep out.
     expect([...tokens]).toContain('--paper-0');
     expect([...tokens]).toContain('--surface-raised');
     // And what the world sanctions must NOT be in it.
     expect([...tokens]).not.toContain('--strip-field');
     expect([...tokens]).not.toContain('--room');
-    expect([...primitives]).toContain('Btn');
-    expect([...primitives]).not.toContain('Strip');
-    expect([...primitives]).not.toContain('StripField');
+    // Every old primitive is deleted (the console redesign, 2026-09-25: Btn, Field, Well and
+    // ConfirmBtn were the last), so this denominator is empty because the tree is. The parse is held
+    // on a barrel that still has one, so an empty set cannot come from a broken match instead.
+    expect([...primitives]).toEqual([]);
+    expect([...oldPrimitives("export function Btn() {}\nexport { Empty } from './empty';\n")]).toEqual(['Btn']);
   });
 
   test('nothing under console/src paints or imports the old world', () => {

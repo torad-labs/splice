@@ -56,28 +56,29 @@ describe('settings: the knob form', () => {
   test('each knob prints where its value came from, in the operator\'s words', () => {
     for (const knob of knobs) {
       const row = rowOf(rack, knob.key);
-      expect(row, `${knob.key} row`).toContain(`>${SOURCE_LABELS[knob.provenance]}<`);
+      expect(row, `${knob.key} row`).toContain(`aria-label="Source: ${SOURCE_LABELS[knob.provenance]}"`);
     }
     // The spread the fixture sets up, asserted by name so a mapping mistake cannot hide. The
     // state file and the runtime layer are both what a save in the console writes, so they read
     // alike; every other layer keeps a word of its own.
-    expect(rowOf(rack, 'maxInflight')).toContain('>head override<');
-    expect(rowOf(rack, 'usageWarnPct')).toContain('>set in console<');
-    expect(rowOf(rack, 'debug')).toContain('>environment<');
-    expect(rowOf(rack, 'quotaPoll')).toContain('>set in console<');
+    const source = (key: string) => /aria-label="Source: ([^"]*)"/.exec(rowOf(rack, key))?.[1];
+    expect(source('maxInflight')).toBe('Head override');
+    expect(source('usageWarnPct')).toBe('Console');
+    expect(source('debug')).toBe('Environment');
+    expect(source('quotaPoll')).toBe('Console');
     // `port` is in the fixture's `[defaults]` layer, so it is the TOML layer and not the enum
     // default; `maxQueued` is in no layer at all, which is the only honest 'default'.
-    expect(rowOf(rack, 'port')).toContain('>splice.toml<');
-    expect(rowOf(rack, 'maxQueued')).toContain('>default<');
+    expect(source('port')).toBe('TOML');
+    expect(source('maxQueued')).toBe('Default');
   });
 
   test('hot and restart-only knobs print different words', () => {
     const live = knobs.filter((knob) => knob.hot).map((knob) => knob.key);
     expect(live).toEqual(['budgetDefaultAction', 'maxInflight', 'maxQueued', 'statuslineGitRoots']);
-    expect(rack.split('applies live').length - 1).toBe(live.length);
-    expect(rack.split('applies on restart').length - 1).toBe(knobs.length - live.length);
-    for (const key of live) expect(rowOf(rack, key)).toContain('applies live');
-    expect(rowOf(rack, 'port')).toContain('applies on restart');
+    expect(rack.split('aria-label="Applies live"').length - 1).toBe(live.length);
+    expect(rack.split('aria-label="Applies on restart"').length - 1).toBe(knobs.length - live.length);
+    for (const key of live) expect(rowOf(rack, key)).toContain('aria-label="Applies live"');
+    expect(rowOf(rack, 'port')).toContain('aria-label="Applies on restart"');
   });
 
   test('the live view shows the hot knobs and nothing else', () => {
@@ -141,14 +142,14 @@ describe('settings: the topology section', () => {
 
   test('the file and its restart are said once for the section, not under every value', () => {
     expect(section.split('~/.config/splice/splice.toml').length - 1).toBe(1);
-    expect(section).toContain('take effect after a daemon restart');
     expect(section).not.toContain('>defaults table<');
     // once, on the stale-file edge this state sets, never once per value
-    expect(section.split('>restart to apply<').length - 1).toBe(1);
+    expect(section.split('>Restart to apply<').length - 1).toBe(1);
   });
 
-  test('the backup note is printed before any write', () => {
-    expect(section).toContain('backs up ~/.config/splice/splice.toml first');
+  test('the backup note is on hand before any write, behind the mark beside the file', () => {
+    expect(section).toContain('Writing backs the file up first');
+    expect(section).toContain('aria-label="About writing"');
   });
 
   test('a pending topology route names the row that will serve it', () => {
@@ -228,11 +229,11 @@ describe('settings: the Claude head modes', () => {
     );
     // The mutant this arm exists for: `wrap` instead of `wrapped` reads as `separate` on screen,
     // which told the operator their claude command was untouched while the shim was installed.
-    expect(markup).toContain('wrapped');
-    expect(markup).not.toContain('separate leaves the vanilla setup untouched');
+    expect(markup).toContain('>Wrapped<');
+    expect(markup).not.toContain('Leaves claude on PATH alone');
     expect(markup).toContain('~/.local/share/claude/versions/2.1.257');
-    expect(markup).toContain('shadowed the claude command');
-    expect(markup).toContain('unwrap');
+    expect(markup).toContain('shims claude');
+    expect(markup).toContain('>Unwrap<');
   });
 
   test('a wrapped head with no readable state says so rather than hiding the row', () => {
@@ -251,8 +252,8 @@ describe('settings: the Claude head modes', () => {
         busy: false,
       }),
     );
-    expect(markup).toContain('real binary');
-    expect(markup).toContain('unknown');
+    expect(markup).toContain('>Real binary<');
+    expect(markup).toContain('>Unknown<');
   });
 
   test('separate says what it does not touch, and prints the stored logins with the constraint', () => {
@@ -271,14 +272,17 @@ describe('settings: the Claude head modes', () => {
         busy: false,
       }),
     );
-    expect(separate).toContain('nothing outside');
-    expect(separate).toContain('nothing named claude');
+    // what separate leaves alone, and what it still shares by default (Marlin, 2026-09-25: it was
+    // said to touch nothing, while ten items and its sessions are shared with ~/.claude)
+    expect(separate).toContain('Leaves claude on PATH alone; shares ~/.claude setup and sessions by default.');
+    expect(separate).not.toContain('touches nothing');
+    expect(separate).toContain('>Not found<');
     expect(separate).toContain('no mid-session switch');
-    // A client-auth head holds no account, so `none` here is an answer, never a missing pool.
-    expect(separate).toContain('none');
+    // A client-auth head holds no account, so `None` here is an answer, never a missing pool.
+    expect(separate).toContain('>None<');
     // real_binary_path is separate mode's null BY DEFINITION; printing it would be printing a
     // question nobody asked.
-    expect(separate).not.toContain('real binary');
+    expect(separate).not.toContain('Real binary');
   });
 
   test("wrap's two backup paths are printed, and only wrap carries them", () => {
@@ -323,7 +327,7 @@ describe('settings: the Claude head modes', () => {
     const unread = render(
       h(ClaudeModeSection, { state: null, result: null, onWrap: () => undefined, onUnwrap: () => undefined, busy: false }),
     );
-    expect(unread).toContain('waiting for the daemon to answer');
+    expect(unread).toContain('Waiting for the daemon to answer');
     expect(unread).not.toContain('/api/');
     expect(unread).not.toContain('V4-129');
   });

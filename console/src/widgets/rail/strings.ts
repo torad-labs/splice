@@ -1,6 +1,16 @@
-// Labels of the rail. Every label is three words or fewer, lowercase, no
-// em-dash (the label wall globs this file).
+// Copy of the sidebar. The copy gate reads this file: every value is a label (three words or
+// fewer, sentence case).
 export const S = {
-  /** The rail's accessible name: the bays, not "navigation". */
-  nav: 'bays',
+  /** The sidebar's accessible name. */
+  nav: 'Pages',
+  /** The button that opens the palette; the shortcut prints beside it. */
+  jump: 'Jump to',
+  /** The theme switch, named for what it switches to. */
+  toDark: 'Dark theme',
+  toLight: 'Light theme',
+} as const;
+
+export const U = {
+  /** The palette's shortcut, printed beside the jump button. */
+  jumpKey: '⌘K',
 } as const;

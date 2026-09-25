@@ -23,5 +23,7 @@ export type {
   SwitchPayload,
 } from './model/types';
 export { LIVE_KINDS } from './model/live';
+export { isClientLogin, signInOf } from './model/sign-in';
+export type { SignIn, SignInState } from './model/sign-in';
 export const useAuth = authStore.use;
 export const useAuthAction = authActionStore.use;

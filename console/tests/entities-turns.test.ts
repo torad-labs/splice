@@ -91,7 +91,7 @@ afterEach(() => {
 // ── waterfall ────────────────────────────────────────────────────────────────
 
 describe('waterfall', () => {
-  test('splits a turn into consecutive mark pairs in pipeline order', () => {
+  test('splits a turn into consecutive segments, the first from arrival', () => {
     const row = turn({
       recv: 2,
       parse: 8,
@@ -105,6 +105,7 @@ describe('waterfall', () => {
       finish: 4010,
     });
     expect(waterfall(row).map((s) => [s.key, s.ms])).toEqual([
+      ['recv', 2],
       ['parse', 6],
       ['build', 2],
       ['gate', 30],
@@ -129,17 +130,38 @@ describe('waterfall', () => {
     // A turn that died mid-stream: no stream_end, so neither it nor finish can be measured.
     const row = turn({ recv: 1, parse: 3, build: 4, gate: 5, headers: 90, first_byte: 95, first_frame: 96, first_delta: 200 });
     const keys = waterfall(row).map((s) => s.key);
-    expect(keys).toEqual(['parse', 'build', 'gate', 'headers', 'first_byte', 'first_frame', 'first_delta']);
+    expect(keys).toEqual(['recv', 'parse', 'build', 'gate', 'headers', 'first_byte', 'first_frame', 'first_delta']);
     expect(keys).not.toContain('stream_end');
     expect(keys).not.toContain('finish');
   });
 
-  test('drops a mark pair that runs backwards rather than drawing a negative duration', () => {
-    const row = turn({ recv: 1, parse: 2, build: 3, gate: 4, headers: 300, first_byte: 100, first_frame: 101 });
+  test('follows the clock, not the key order: a live row keeps its queue wait', () => {
+    // A line the demo daemon wrote on 2026-09-25. Admission stamps gate as the turn opens, before
+    // parse and build (AdmissionTelemetry.kt), and the first frame goes out at upstream handoff,
+    // before the provider's first byte (ClientChannel.kt). Read in key order, build(18) -> gate(1)
+    // ran backwards and the queue wait was dropped from every real turn.
+    const row = turn({ recv: 2, parse: 11, build: 18, gate: 1, headers: 459, first_byte: 470, first_frame: 461, first_delta: 473, stream_end: 859, finish: 866 });
     const segments = waterfall(row);
-    expect(segments.map((s) => s.key)).not.toContain('first_byte'); // headers(300) -> first_byte(100)
-    expect(segments.map((s) => s.key)).toContain('headers');
+    expect(segments.map((s) => [s.key, s.start, s.end])).toEqual([
+      ['gate', 0, 1],
+      ['recv', 1, 2],
+      ['parse', 2, 11],
+      ['build', 11, 18],
+      ['headers', 18, 459],
+      ['first_frame', 459, 461],
+      ['first_byte', 461, 470],
+      ['first_delta', 470, 473],
+      ['stream_end', 473, 859],
+      ['finish', 859, 866],
+    ]);
+    // contiguous, never negative, and ending where the turn did
     expect(segments.every((s) => s.ms >= 0)).toBe(true);
+    expect(segments.every((s, at) => at === 0 || s.start === segments[at - 1]?.end)).toBe(true);
+    expect(segments.map((s) => s.group)).toContain('queue');
+  });
+
+  test('a negative mark is a defect in the row and ends no segment', () => {
+    expect(waterfall(turn({ recv: 2, parse: -5, build: 8 })).map((s) => s.key)).toEqual(['recv', 'build']);
   });
 
   test('a row with no marks has no segments', () => {

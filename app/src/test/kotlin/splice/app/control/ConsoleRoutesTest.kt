@@ -297,6 +297,28 @@ class ConsoleRoutesTest {
         }
     }
 
+    // ── GET /api/status: each head's family ─────────────────────────────────────────────────────
+
+    @Test
+    fun `the registry carries each head's family from the roster, and null where it names none`() = runBlocking {
+        awaitPort()
+        control.ports.declaredHeads = DeclaredHeads {
+            mapOf(HEAD_KEY to DeclaredHead("deepseek", null, "deepseek"), "bare" to DeclaredHead("proxy", null))
+        }
+        val registry = json.parseToJsonElement(get("/api/status").bodyAsText()).jsonObject["registry"]!!.jsonArray
+            .associate { it.jsonObject["key"]!!.jsonPrimitive.content to it.jsonObject["family"] }
+        assertEquals("deepseek", registry[HEAD_KEY]?.jsonPrimitive?.content)
+        assertEquals(JsonNull, registry["bare"], "a head with no family is an explicit null, not a guess")
+
+        // The status read every page polls must answer without a roster: no families, never a 5xx.
+        control.ports.declaredHeads = null
+        val unwired = get("/api/status")
+        assertEquals(HttpStatusCode.OK, unwired.status)
+        val families = json.parseToJsonElement(unwired.bodyAsText()).jsonObject["registry"]!!.jsonArray
+            .map { it.jsonObject["family"] }
+        assertEquals(listOf(JsonNull, JsonNull), families)
+    }
+
     // ── GET /api/doctor and GET /api/upgrade ────────────────────────────────────────────────────
 
     @Test

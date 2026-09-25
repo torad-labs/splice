@@ -1,16 +1,21 @@
-// The rail: every address as a bay, in the order the console reads them. Each
-// tab is a holder edge with the address word printed on it, green on the bay
-// you are standing in and grey on the rest, so "where am I" survives a
-// grayscale screenshot. Arrow keys walk the rail; Enter opens, because every
-// tab is a real link.
+// The sidebar (docs/design/DESIGN.md section 6): the wordmark, a button that opens the palette, the
+// pages in four groups named for splice's own objects, and the theme switch at the foot. The
+// current page takes the active ground and full ink, and says so to a reader with
+// aria-current="page", so "where am I" survives a greyscale screenshot. Arrow keys walk the pages
+// across the groups; Enter opens, because every item is a real link.
 //
-// The addresses arrive as a prop rather than an import: the table lives in the
-// app layer, and a widget may not reach upward for it.
+// The groups, their icons and the theme arrive as props: the address table lives in the app layer,
+// and a widget may not reach upward for it.
 import { useEffect, useRef } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
+import { MagnifyingGlassIcon } from '@phosphor-icons/react/dist/csr/MagnifyingGlass';
+import { MoonIcon } from '@phosphor-icons/react/dist/csr/Moon';
+import { SunIcon } from '@phosphor-icons/react/dist/csr/Sun';
 import { cx } from '@shared/lib';
-import { HolderEdge } from '@shared/ui';
-import { S } from './strings';
+import { S, U } from './strings';
+
+/** The product's name as its mark: a brand, set lowercase on purpose, so it is not copy. */
+const WORDMARK = 'splice';
 import './rail.css';
 
 const STEP: Record<string, number> = {
@@ -28,50 +33,91 @@ export function revealBy(box: { start: number; size: number }, item: { start: nu
   return item.start + item.size / 2 - (box.start + box.size / 2);
 }
 
-export function Rail({ active, addresses }: { active: string; addresses: readonly string[] }) {
-  const tabs = useRef<Array<HTMLAnchorElement | null>>([]);
+export interface RailGroup {
+  label: string;
+  items: ReadonlyArray<{ address: string; label: string; icon: ReactNode }>;
+}
+
+export function Rail({ active, groups, theme, onTheme, onJump }: {
+  active: string;
+  groups: readonly RailGroup[];
+  theme: 'dark' | 'light';
+  onTheme: (theme: 'dark' | 'light') => void;
+  onJump: () => void;
+}) {
+  const addresses = groups.flatMap((group) => group.items.map((item) => item.address));
+  const links = useRef<Array<HTMLAnchorElement | null>>([]);
   const nav = useRef<HTMLElement>(null);
 
-  // The bay you are standing in is on the rail's screen (S12). On a phone the rail is one sideways
-  // line of thirteen plates, and from accounts on the current one opened past the right edge: 0% of
-  // it visible on 8 of 13 addresses at 390. Only the rail's own scroll moves, never the page, and a
-  // tab already in view is left where it is, so a tap does not jump the strip under the thumb.
+  // On a phone the pages are one sideways row, and the current one can open past the right edge:
+  // only the row's own scroll moves, never the page, and an item already in view is left alone.
   useEffect(() => {
     const box = nav.current;
-    const tab = tabs.current[addresses.indexOf(active)];
-    if (box === null || tab === undefined || tab === null) return;
+    const link = links.current[addresses.indexOf(active)];
+    if (box === null || link === undefined || link === null) return;
     const b = box.getBoundingClientRect();
-    const t = tab.getBoundingClientRect();
+    const t = link.getBoundingClientRect();
     box.scrollLeft += revealBy({ start: b.left + box.clientLeft, size: box.clientWidth }, { start: t.left, size: t.width });
-    box.scrollTop += revealBy({ start: b.top + box.clientTop, size: box.clientHeight }, { start: t.top, size: t.height });
   }, [active, addresses]);
 
   const step = (event: KeyboardEvent<HTMLAnchorElement>, index: number) => {
     const delta = STEP[event.key];
     if (delta === undefined) return;
     event.preventDefault();
-    const next = (index + delta + addresses.length) % addresses.length;
-    tabs.current[next]?.focus();
+    links.current[(index + delta + addresses.length) % addresses.length]?.focus();
   };
 
+  const next = theme === 'dark' ? 'light' : 'dark';
+  let index = -1;
+
   return (
-    <nav className="myx-rail" aria-label={S.nav} ref={nav}>
-      <div className="myx-rail-tabs">
-        {addresses.map((address, index) => (
-          <a
-            key={address}
-            ref={(el) => {
-              tabs.current[index] = el;
-            }}
-            className={cx('myx-rail-tab', address === active && 'myx-rail-tab-active')}
-            href={`#/${address}`}
-            aria-current={address === active ? 'page' : undefined}
-            onKeyDown={(event) => step(event, index)}
-          >
-            <HolderEdge state={address === active ? 'green' : 'grey'} label={address} />
-          </a>
-        ))}
+    <aside className="myx-side">
+      <div className="myx-side-top">
+        <p className="myx-side-wordmark">{WORDMARK}</p>
+        <button type="button" className="myx-side-jump" onClick={onJump}>
+          <MagnifyingGlassIcon className="myx-side-icon" aria-hidden="true" />
+          <span className="myx-side-jump-word">{S.jump}</span>
+          <kbd className="myx-side-kbd">{U.jumpKey}</kbd>
+        </button>
       </div>
-    </nav>
+
+      <nav className="myx-side-nav" aria-label={S.nav} ref={nav}>
+        {groups.map((group) => (
+          <div className="myx-side-group" key={group.label}>
+            <p className="myx-side-group-label">{group.label}</p>
+            <ul className="myx-side-list">
+              {group.items.map((item) => {
+                index += 1;
+                const at = index;
+                const current = item.address === active;
+                return (
+                  <li key={item.address}>
+                    <a
+                      ref={(el) => {
+                        links.current[at] = el;
+                      }}
+                      className={cx('myx-side-link', current && 'myx-side-link-current')}
+                      href={`#/${item.address}`}
+                      aria-current={current ? 'page' : undefined}
+                      onKeyDown={(event) => step(event, at)}
+                    >
+                      <span className="myx-side-icon" aria-hidden="true">{item.icon}</span>
+                      <span className="myx-side-word">{item.label}</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+
+      <div className="myx-side-foot">
+        <button type="button" className="myx-side-theme" onClick={() => onTheme(next)}>
+          {theme === 'dark' ? <SunIcon className="myx-side-icon" aria-hidden="true" /> : <MoonIcon className="myx-side-icon" aria-hidden="true" />}
+          <span>{next === 'dark' ? S.toDark : S.toLight}</span>
+        </button>
+      </div>
+    </aside>
   );
 }

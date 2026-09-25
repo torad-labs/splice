@@ -1,29 +1,24 @@
-// The MCP page's pure half: how one hosted server reads, and how the four host knobs are read out
-// of the config payload.
+// What the MCP page computes from GET /api/mcp and the config payload, as shapes rather than
+// sentences: each server's state as a tone and a mark, the split of servers by state, the totals the
+// figures lead with, and the four host limits read out of config.
 import { MCP_HOST_KNOBS, serverRows } from '@entities/mcp';
 import type { McpHostedServer, McpPayload, McpRow, McpState } from '@entities/mcp';
 import type { KnobDisposition } from '@entities/config';
-import type { Edge } from '@shared/ui';
+import { KNOB_META, unitText } from '@widgets/knob-form';
+import { ABSENT, fmtInt } from '@shared/lib';
+import type { BarPart, Mark, Tone } from '@shared/ui';
+import { S } from './strings';
 
-/** The holder edge for a server's state. An ineligible server is grey rather than red: the planner
- *  declining to host something is a decision, not a fault, and its reason is printed beside it. */
-export function stateEdge(state: McpState): Edge {
-  if (state === 'hosted') return 'green';
-  if (state === 'idle') return 'amber';
-  return 'grey';
-}
+/** A state's badge tone and chart mark. Only a hosted server is green. An unused one is waiting and
+ *  a direct one was declined by the planner; neither is a fault, so neither is warn or danger. */
+export const TONE: Record<McpState, Tone> = { hosted: 'ok', idle: 'neutral', ineligible: 'neutral' };
+export const MARK: Record<McpState, Mark> = { hosted: 'ok', idle: 'series-2', ineligible: 'series-3' };
 
-/** The state's printed label. Every word is inside the contract's 6ch edge budget (CONTRACTS.md
- *  section 2): a holder edge that clips its own state is worse than a shorter state.
- *
- *  `unused` and not `idle`, because nothing has asked for this server yet and "idle" would sound
- *  like it had run and stopped. `direct` for a server splice does not share: each client reaches it
- *  itself (an http server already serves many clients; a cwd-bound one is per session). It read
- *  `barred`, which sounded like a fault on a server that works; the reason is printed beside it. */
-export function stateLabel(state: McpState): string {
-  if (state === 'hosted') return 'hosted';
-  if (state === 'idle') return 'unused';
-  return 'direct';
+/** The order states are drawn and counted in, hosted first. */
+const STATES: readonly McpState[] = ['hosted', 'idle', 'ineligible'];
+
+export function stateText(state: McpState): string {
+  return S.stateName[state];
 }
 
 /** A hosted server as the live half of its row, or null when it is not the hosted variant. */
@@ -31,49 +26,87 @@ export function hosted(server: McpRow['server']): McpHostedServer | null {
   return server.eligible ? server : null;
 }
 
-export interface McpGroup {
-  key: string;
-  rows: McpRow[];
+/** The live half of a server that is running now, or null. A count on a server that is not running
+ *  is an absence, never a zero: `0` sessions on a server that never started is not the same fact as
+ *  `0` on one that has. */
+export function liveOf(row: McpRow): McpHostedServer | null {
+  const live = hosted(row.server);
+  return live !== null && live.hosted ? live : null;
 }
 
 /**
- * The bay layout for one saved view.
+ * The rows for one saved view.
  *
- * `by name` is one rack in name order; `hosted first` puts the servers actually carrying sessions
- * above the ones waiting, which is the order an operator scanning for load wants. Both keep the
- * name order inside a group so the rack does not reshuffle between polls.
+ * `By name` keeps name order. `Hosted first` puts the servers actually carrying sessions above the
+ * waiting ones, which is the order an operator scanning for load wants. Both keep name order inside
+ * a state so the table does not reshuffle between polls.
  */
-export function arrangeServers(payload: McpPayload | null, view: { group: string | null; sort: { field: string; dir: 'asc' | 'desc' } | null }): McpGroup[] {
+export function arrangeServers(payload: McpPayload | null, view: { group: string | null; sort: { field: string; dir: 'asc' | 'desc' } | null }): McpRow[] {
   const rows = serverRows(payload);
-  if (view.sort?.field !== 'state') return [{ key: '', rows }];
+  if (view.sort?.field !== 'state') return rows;
   const rank: Record<McpState, number> = { hosted: 2, idle: 1, ineligible: 0 };
-  return [{ key: '', rows: [...rows].sort((l, r) => rank[r.state] - rank[l.state] || l.name.localeCompare(r.name)) }];
+  return [...rows].sort((l, r) => rank[r.state] - rank[l.state] || l.name.localeCompare(r.name));
+}
+
+/** What the figures lead with. Sessions, streams and restarts are summed over the eligible servers;
+ *  a direct server has none of them, because splice does not run it. */
+export interface McpTotals {
+  byState: Record<McpState, number>;
+  sessions: number;
+  streams: number;
+  restarts: number;
+}
+
+export function totalsOf(rows: readonly McpRow[]): McpTotals {
+  const byState: Record<McpState, number> = { hosted: 0, idle: 0, ineligible: 0 };
+  let sessions = 0;
+  let streams = 0;
+  let restarts = 0;
+  for (const row of rows) {
+    byState[row.state] += 1;
+    const live = hosted(row.server);
+    if (live === null) continue;
+    sessions += live.sessions;
+    streams += live.streams;
+    restarts += live.restarts;
+  }
+  return { byState, sessions, streams, restarts };
+}
+
+/** The servers by state as bar parts, in the fixed state order so the colours never swap places. */
+export function stateParts(totals: McpTotals): BarPart[] {
+  return STATES.map((state) => ({ key: state, label: stateText(state), value: totals.byState[state], mark: MARK[state] }));
 }
 
 /**
  * The four host limits, read from the config payload rather than restated.
  *
- * They are runtime knobs (`mcpIdleTimeoutMs` and friends, Knob.kt:331-358), so they carry the
- * provenance and hot/restart verdict of every other knob. A knob the running daemon does not carry
- * is simply absent from `effective`; the page then shows the knob's NAME with no value rather than
- * a default this console made up, because the default lives in the daemon's enum and nowhere else.
+ * They are runtime knobs (`mcpIdleTimeoutMs` and friends, Knob.kt:331-358). A knob the running
+ * daemon does not carry is absent from `effective`, and the page then shows the knob's name with no
+ * value rather than a default this console made up: the default lives in the daemon's enum.
  */
-export function hostLimits(dispositions: readonly KnobDisposition[]): { key: string; knob: KnobDisposition | null }[] {
+export interface HostLimit {
+  key: string;
+  knob: KnobDisposition | null;
+}
+
+export function hostLimits(dispositions: readonly KnobDisposition[]): HostLimit[] {
   const byKey = new Map(dispositions.map((knob) => [knob.key, knob]));
   return MCP_HOST_KNOBS.map((key) => ({ key, knob: byKey.get(key) ?? null }));
 }
 
-/**
- * The page's honest empties, as data rather than inline JSX, so a test can assert each names its
- * source (CONTRACTS.md section 8).
- */
-export const EMPTIES = {
-  hostingOff: { text: 'mcp sharing is off', source: 'set mcp_hosting = true under [daemon] in splice.toml to run one copy of each server for every session' },
-  noServers: { text: 'no mcp servers', source: "the stdio servers in claude code's mcp settings show here, shared across sessions" },
-  noOpened: { text: 'select a server', source: 'its process, restarts and last error show here' },
-} as const;
+/** A limit's value as the settings page reads it: a duration in its largest units, a count as a
+ *  number, and an unset knob as an absence rather than a zero. */
+export function limitText(knob: KnobDisposition): string {
+  if (knob.value === null || knob.value === '') return ABSENT;
+  if (typeof knob.value !== 'number') return String(knob.value);
+  const { suffix, readable } = unitText(KNOB_META[knob.key]?.unit, knob.value);
+  if (readable !== null) return readable;
+  return suffix === null ? fmtInt(knob.value) : `${fmtInt(knob.value)} ${suffix}`;
+}
 
-/** What happens to a hosted server that exits, in place of a restart control (no route restarts
- *  one: /mcp/{name} is the JSON-RPC transport). HostedServer.spawn respawns on the next call and
- *  backs off 5-60 s when it keeps crashing. */
-export const RESPAWN_NOTE = 'A server that exits starts again on its next call. One that keeps crashing waits up to a minute between tries.';
+/** The most servers the host will run, when the daemon carries the knob and it holds a number. */
+export function maxServersOf(limits: readonly HostLimit[]): number | null {
+  const value = limits.find((limit) => limit.key === 'mcpMaxServers')?.knob?.value;
+  return typeof value === 'number' && value > 0 ? value : null;
+}

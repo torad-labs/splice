@@ -6,13 +6,20 @@
 // opens the console with it in the address's fragment (takeLaunchKey below), so
 // the operator never pastes it; the gate's paste is the fallback.
 
+import type { WriteResult } from '@shared/lib';
+import { H } from './strings';
+
 const KEY_STORAGE = 'myx-mgmt-key';
 
 export class MgmtError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** The daemon's whole error envelope, when it sent one: an entity reads a structured field of its
+   *  own route's refusal (a transcript's `searched` directories) rather than matching the sentence. */
+  readonly body: unknown;
+  constructor(status: number, message: string, body: unknown = null) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -93,7 +100,7 @@ function errorMessage(body: unknown, status: number): string {
  *  one per engine) name the transport and not the fact, and every page printed them verbatim
  *  (console walkthrough, 2026-09-24). Mapped here, once, so no store ever holds them; status 0 is
  *  the response that never came. */
-const NOT_ANSWERING = 'splice is not answering';
+const NOT_ANSWERING = H.notAnswering;
 
 /** What an HTTP header value may hold here: printable ASCII, no space. */
 const HEADER_SAFE = /^[\x21-\x7e]*$/;
@@ -133,7 +140,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const body = (await res.json().catch(() => null)) as T | ErrorBody | null;
   if (!res.ok) {
-    throw new MgmtError(res.status, errorMessage(body, res.status));
+    throw new MgmtError(res.status, errorMessage(body, res.status), body);
   }
   return body as T;
 }
@@ -153,12 +160,23 @@ export function pendingOf(err: unknown, row: string): PendingRoute | null {
   return null;
 }
 
+/** A write's failure as its result (WriteResult, shared/lib): a route not built yet is `pending` on
+ *  `row`, anything else is `failed` with the error's own words. */
+export function writeFailure(err: unknown, row: string): WriteResult<never> {
+  const pending = pendingOf(err, row);
+  if (pending !== null) return { status: 'pending', item: pending.pending };
+  return { status: 'failed', reason: err instanceof Error ? err.message : String(err) };
+}
+
 // ── payload types ────────────────────────────────────────────────────────────
 
 export interface RegistryEntry {
   key: string;
   label: string;
   authKind: string;
+  /** The provider's vendor family (`openai`, `local`, ...), null where the daemon names none; an
+   *  older daemon omits it. The console colours a head by it. */
+  family?: string | null;
 }
 
 export interface ControlStatusPayload {
@@ -345,10 +363,22 @@ export interface CompactPayload {
   };
 }
 
+/** What the daemon knows of a credential (V4-220 6b, CredentialVerdictJson.kt): `held` when splice
+ *  holds it itself and `present` is the whole fact; for a client head's forwarded Claude login,
+ *  `unverified` until upstream answers a forwarded turn, then `accepted` or `rejected` at the time of
+ *  that answer. A 403, 429, 5xx or 400 leaves the last verdict standing. */
+export type CredentialVerdict =
+  | { state: 'held' }
+  | { state: 'unverified' }
+  | { state: 'accepted' | 'rejected'; at_epoch_ms: number };
+
 export interface ProviderAuth {
   kind: string;
   login: string;
+  /** False only when the credential is known missing: for a client head, once upstream rejected it. */
   present: boolean;
+  /** Absent on a daemon older than V4-220 6b, whose client heads said `present` unconditionally. */
+  verdict?: CredentialVerdict;
   account_id_masked?: string;
   last_refresh?: string;
   auth_path?: string;

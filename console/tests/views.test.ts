@@ -57,6 +57,35 @@ describe('what a page opens with', () => {
     expect(store.get().views.map((v) => v.id)).toEqual(['by-head', 'by-role']);
   });
 
+  test('a default the page introduced after the save is offered once, in place, and opened as the page default', () => {
+    const lanes: View = { ...view('lanes', 'lanes'), introduced: '2026-09-25' };
+    const saved = JSON.stringify({ views: [view('by-head'), view('by-role')], activeId: 'by-role' });
+    const storage = memoryStorage();
+    storage.setItem(viewsKey('teams'), saved);
+    const store = createViewStore('teams', [lanes, ...DEFAULTS], storage);
+    expect(store.get().views.map((v) => v.id)).toEqual(['lanes', 'by-head', 'by-role']);
+    expect(store.get().active.id).toBe('lanes');
+
+    // Removed after the offer, it stays removed: the offer is recorded with the set.
+    store.remove('lanes');
+    const again = createViewStore('teams', [lanes, ...DEFAULTS], storage);
+    expect(again.get().views.map((v) => v.id)).toEqual(['by-head', 'by-role']);
+  });
+
+  test('an introduced default that is not the first is added without taking the page over', () => {
+    const later: View = { ...view('by-model', 'by model'), introduced: '2026-09-25' };
+    const saved = JSON.stringify({ views: [view('by-head'), view('by-role')], activeId: 'by-role' });
+    const { store } = storeWith({ [viewsKey('teams')]: saved });
+    const grown = createViewStore('teams', [...DEFAULTS, later], (() => {
+      const storage = memoryStorage();
+      storage.setItem(viewsKey('teams'), saved);
+      return storage;
+    })());
+    expect(store.get().views.map((v) => v.id)).toEqual(['by-head', 'by-role']);
+    expect(grown.get().views.map((v) => v.id)).toEqual(['by-head', 'by-role', 'by-model']);
+    expect(grown.get().active.id).toBe('by-role');
+  });
+
   test('the defaults are not mutated by a page that edits its own views', () => {
     const { store } = storeWith();
     store.rename('by-head', 'renamed');

@@ -20,6 +20,10 @@ export interface View {
   sort: ViewSort | null;
   group: string | null;
   fields: string[];
+  /** On a page's default only: the date the page added it. A browser that saved its views before
+   *  then is offered it once (offerIntroduced), so a new default reaches an operator whose saved
+   *  set would otherwise hide it forever. */
+  introduced?: string;
 }
 
 /** The slice of Storage the views need. */
@@ -32,6 +36,8 @@ export interface ViewStorage {
 export interface StoredViews {
   views: View[];
   activeId: string;
+  /** The introduced defaults this browser was already offered, so one it removed stays removed. */
+  offered?: string[];
 }
 
 /** The contract's key: localStorage['splice.views.<pageId>']. */
@@ -74,7 +80,8 @@ export function parseStored(raw: string | null): StoredViews | null {
   if (!Array.isArray(stored.views) || stored.views.length === 0) return null;
   if (!stored.views.every(isView)) return null;
   const activeId = typeof stored.activeId === 'string' ? stored.activeId : stored.views[0].id;
-  return { views: stored.views, activeId };
+  const offered = Array.isArray(stored.offered) && stored.offered.every((id) => typeof id === 'string') ? stored.offered : undefined;
+  return { views: stored.views, activeId, ...(offered === undefined ? {} : { offered }) };
 }
 
 const cloneView = (view: View): View => ({
@@ -85,6 +92,27 @@ const cloneView = (view: View): View => ({
 });
 
 const cloneAll = (views: readonly View[]): View[] => views.map(cloneView);
+
+/**
+ * A saved set with the defaults the page introduced since, each offered ONCE: inserted where the
+ * page ships it, and opened when it is the page's own default (its first view). A default the page
+ * shipped from the start is never re-added: a saved set that lacks one had it removed. And one that
+ * was offered stays offered, so removing it after the offer is final.
+ */
+export function offerIntroduced(stored: StoredViews, defaults: readonly View[]): StoredViews {
+  const offered = new Set(stored.offered ?? []);
+  const have = new Set(stored.views.map((view) => view.id));
+  let views = [...stored.views];
+  let activeId = stored.activeId;
+  defaults.forEach((view, at) => {
+    if (view.introduced === undefined || offered.has(view.id)) return;
+    offered.add(view.id);
+    if (have.has(view.id)) return;
+    views = [...views.slice(0, at), cloneView(view), ...views.slice(at)];
+    if (at === 0) activeId = view.id;
+  });
+  return { views, activeId, offered: [...offered] };
+}
 
 /** An id that is not taken in this page's view set. */
 function freshId(views: readonly View[]): string {
@@ -123,9 +151,12 @@ export function createViewStore(
   storage: ViewStorage,
 ): ViewStore {
   const listeners = new Set<() => void>();
-  const stored = parseStored(safeGet(storage, viewsKey(pageId)));
+  const saved = parseStored(safeGet(storage, viewsKey(pageId)));
+  const stored = saved === null ? null : offerIntroduced(saved, defaults);
   let views: View[] = stored === null ? cloneAll(defaults) : cloneAll(stored.views);
   let activeId: string = stored?.activeId ?? views[0]?.id ?? '';
+  // A fresh page shows every default, so each one it introduced counts as offered from the start.
+  const offered: string[] = stored?.offered ?? defaults.flatMap((view) => (view.introduced === undefined ? [] : [view.id]));
 
   let snapshot: ViewsSnapshot = build();
   function build(): ViewsSnapshot {
@@ -135,7 +166,7 @@ export function createViewStore(
 
   function commit(): void {
     snapshot = build();
-    safeSet(storage, viewsKey(pageId), JSON.stringify({ views, activeId }));
+    safeSet(storage, viewsKey(pageId), JSON.stringify({ views, activeId, offered }));
     for (const listener of listeners) listener();
   }
 

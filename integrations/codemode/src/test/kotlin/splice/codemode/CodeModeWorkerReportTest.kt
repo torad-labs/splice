@@ -49,8 +49,10 @@ class CodeModeWorkerReportTest {
         }
     }
 
+    // A hang guard, and it has to sit above SCRIPT_DEADLINE_MS: the worker's own start is inside it, and a
+    // 3 s guard read a loaded runner's JVM start as a hang.
     @Test
-    @Timeout(3)
+    @Timeout(60)
     fun `output past the text ceiling is truncated behind a marker not fatal`() = runBlocking {
         runtime().use { runtime ->
             val source = "console.log(\"x\".repeat(65537)); console.log(\"tail\"); return \"done\";"
@@ -62,7 +64,8 @@ class CodeModeWorkerReportTest {
         }
     }
 
-    private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(workerClasspath = testClasspath)
+    private fun runtime(): JvmCodeModeRuntime =
+        JvmCodeModeRuntime(advanceTimeoutMs = SCRIPT_DEADLINE_MS, workerClasspath = testClasspath)
 
     private fun completed(step: CodeModeStep): CodeModeStep.Completed {
         assertTrue(step is CodeModeStep.Completed)

@@ -61,7 +61,8 @@ internal class DoctorProbes(
      *  name on the JVM's own PATH, and an absent binary's failure to start read "present (version
      *  probe failed: ...)" (CI run 36184525303). */
     internal fun claudeVersion(envReader: EnvReader): String =
-        path.binaryOnPath(CLAUDE, envReader)?.let { install.capturedVersion(listOf(it.toString(), FLAG_VERSION)) }
+        path.binaryOnPath(CLAUDE_BINARY, envReader)
+            ?.let { install.capturedVersion(listOf(it.toString(), FLAG_VERSION)) }
             ?: CLAUDE_NOT_FOUND
 
     private fun binaryCheck(spec: BinarySpec, envReader: EnvReader): DoctorCheck {

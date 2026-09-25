@@ -4,7 +4,7 @@
 package splice.diagnostics.doctor
 
 internal const val FLAG_VERSION = "--version"
-internal const val CLAUDE = "claude"
+internal const val CLAUDE_BINARY = "claude"
 
 /** The report's `claude_code.version` when no claude is on the doctor's PATH. */
 internal const val CLAUDE_NOT_FOUND = "not found on PATH"
@@ -27,7 +27,7 @@ internal data class BinarySpec(
 // FILE SCOPE ON PURPOSE: the probe table is a constant shared by every doctor run.
 internal val binaries = listOf(
     BinarySpec(
-        CLAUDE,
+        CLAUDE_BINARY,
         listOf(FLAG_VERSION),
         "Claude Code not found on PATH; splice wraps it",
         "install it: $CLAUDE_CODE_DOCS",

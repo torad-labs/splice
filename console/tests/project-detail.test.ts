@@ -8,16 +8,14 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchProject } from '../src/entities/project';
 import type { ProjectRow } from '../src/entities/project';
 import { projectStore } from '../src/entities/project/model/store';
+import { H, S } from '../src/pages/projects/strings';
 import {
-  CLIENT_OWN,
-  COMPACTION_UNWIRED,
   ProjectCompaction,
-  ProjectDetail,
   ProjectStatusline,
   compactionViewOf,
+  costText,
   dayText,
-  detailFieldsOf,
-  statuslineFieldsOf,
+  detailRowsOf,
 } from '../src/pages/projects/detail';
 
 const h = React.createElement;
@@ -40,42 +38,27 @@ function row(over: Partial<ProjectRow> = {}): ProjectRow {
   };
 }
 
-const values = (fields: { label: string; value: string; basis?: string | undefined }[]) =>
-  fields.map((field) => [field.label, field.value, field.basis ?? null]);
-
 describe('the project detail', () => {
   test('prints the counts and the day the daemon counted from', () => {
-    const fields = detailFieldsOf(row(), NOW);
-    expect(values(fields.counts)).toEqual([
-      ['live sessions', '2', 'measured'],
-      ['teams', '0', 'measured'],
-      ['turns today', '1', 'measured'],
-    ]);
-    expect(values(fields.today)).toEqual([
-      ['cost today', '–', null],
-      ['day start', '2026-09-23 UTC', 'measured'],
-      ['last seen', '1m ago', 'measured'],
+    expect(detailRowsOf(row(), NOW)).toEqual([
+      ['Sessions running', '2'],
+      ['Teams', '0'],
+      ['Turns today', '1'],
+      ['Cost today', '–'],
+      ['Day', '2026-09-23 UTC'],
+      ['Last seen', '1m ago'],
     ]);
   });
 
-  test('a dollar figure from declared rates is an estimate, and no activity is an absence', () => {
-    const fields = detailFieldsOf(row({ cost_today_usd: 12.844, last_activity: null }), NOW);
-    expect(values(fields.today)).toEqual([
-      ['cost today', '$12.84', 'estimated'],
-      ['day start', '2026-09-23 UTC', 'measured'],
-      ['last seen', '–', null],
-    ]);
+  test('a dollar figure from declared rates prints, and no rates or no activity is an absence', () => {
+    const rows = new Map(detailRowsOf(row({ cost_today_usd: 12.844, last_activity: null }), NOW));
+    expect(rows.get('Cost today')).toBe('$12.84');
+    expect(rows.get('Last seen')).toBe('–');
+    expect(costText(0), 'declared rates that came to nothing are a figure, not an absence').toBe('$0.00');
   });
 
   test('the day is the UTC day, never the reader\'s local midnight', () => {
     expect(dayText(Date.UTC(2026, 0, 1))).toBe('2026-01-01 UTC');
-  });
-
-  test('a sample row renders as the detail with nothing read', () => {
-    const out = renderToStaticMarkup(h(ProjectDetail, { id: row().id, row: row() }));
-    expect(out).toContain('live sessions');
-    expect(out).toContain('2026-09-23 UTC');
-    expect(out).toContain(`aria-label="activity ${row().root}"`);
   });
 });
 
@@ -90,37 +73,45 @@ describe('what governs the repo', () => {
     expect(compactionViewOf(row({ compaction: null }))).toEqual({ kind: 'unwired' });
   });
 
-  test('each rule prints as the compaction page prints it, its length in the same words', () => {
+  test('the rules print as one table, their lengths in the compaction page\'s words', () => {
     const rules = [rule, { scope: 'model' as const, source: 'model:grok-4.3', chars: 0 }, { ...rule, source: 'x unreadable', chars: null }];
-    const out = renderToStaticMarkup(h(ProjectCompaction, { id: row().id, row: row({ compaction: rules }) }));
-    expect(out).toContain(`aria-label="instruction ${rule.source}"`);
+    const out = renderToStaticMarkup(h(ProjectCompaction, { row: row({ compaction: rules }) }));
+    expect(out).toContain('aria-label="Compaction rules"');
+    expect(out).toContain(`>${rule.source}<`);
     expect(out).toContain('>9<');
-    expect(out).toContain('client default');
-    expect(out).toContain('unavailable');
-    expect(out, 'the project view has no per-head list for a rule').not.toContain('heads');
+    expect(out).toContain('Client default');
+    expect(out).toContain('Unavailable');
+    expect(out, 'the project view has no per-head list for a rule').not.toContain('>Heads<');
   });
 
   test('no rule is the client instructions, and an unwired table says so rather than showing no rule', () => {
-    const client = renderToStaticMarkup(h(ProjectCompaction, { id: row().id, row: row({ compaction: [] }) }));
-    expect(client).toContain(CLIENT_OWN.text);
-    const unwired = renderToStaticMarkup(h(ProjectCompaction, { id: row().id, row: row({ compaction: null }) }));
-    expect(unwired).toContain(COMPACTION_UNWIRED);
-    expect(unwired).not.toContain(CLIENT_OWN.text);
+    const client = renderToStaticMarkup(h(ProjectCompaction, { row: row({ compaction: [] }) }));
+    expect(client).toContain(S.noRule);
+    const unwired = renderToStaticMarkup(h(ProjectCompaction, { row: row({ compaction: null }) }));
+    expect(unwired).toContain(H.unwired);
+    expect(unwired).not.toContain(S.noRule);
   });
 
-  test('one statusline entry per head, and none where no trusted root covers the repo', () => {
+  test('one statusline entry per head, and no branch where no trusted root covers the repo', () => {
     const roots = [
       { head: 'claudex', root: '/tmp', entry: 'tmp' as const },
       { head: 'grok', root: null, entry: null },
     ];
-    expect(statuslineFieldsOf(row({ statusline_roots: roots }))).toEqual([
-      { head: 'claudex', root: '/tmp', entry: 'tmp' },
-      { head: 'grok', root: 'none', entry: 'none' },
-    ]);
-    const out = renderToStaticMarkup(h(ProjectStatusline, { id: row().id, row: row({ statusline_roots: roots }) }));
-    expect(out).toContain('aria-label="statusline roots claudex"');
-    expect(out).toContain('trusted');
-    expect(out).toContain('no branch');
+    const out = renderToStaticMarkup(h(ProjectStatusline, { row: row({ statusline_roots: roots }) }));
+    const rows = out.split('<tbody')[1]?.split('<tr').slice(1) ?? [];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain('claudex');
+    expect(rows[0]).toContain('>/tmp<');
+    expect(rows[0], 'the badge names the trusted entry that covers the repo').toContain('>Temp<');
+    expect(rows[1]).toContain('grok');
+    expect(rows[1]).toContain('>No branch<');
+    expect(rows[1], 'a head with no root prints the absence, never a path').toContain('>–<');
+  });
+
+  test('no heads is one line and the way to add one', () => {
+    const out = renderToStaticMarkup(h(ProjectStatusline, { row: row({ statusline_roots: [] }) }));
+    expect(out).toContain(S.noHeads);
+    expect(out).toContain('href="#/settings"');
   });
 });
 

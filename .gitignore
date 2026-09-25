@@ -15,6 +15,8 @@ __pycache__/
 /console/dist/
 /console/build/
 /console/e2e/.results/
+# the console tools' regenerable review output (snapshot, theme): bytes that may hold live daemon data
+/console/.review/
 /.cache/
 
 # gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts
@@ -22,8 +24,6 @@ __pycache__/
 .gradle/
 .kotlin/
 build/
-# the look tooling's committed runtime inputs are not a build output
-!console/.impeccable/build/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/

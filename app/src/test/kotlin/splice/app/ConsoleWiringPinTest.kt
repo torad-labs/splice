@@ -74,9 +74,15 @@ class ConsoleWiringPinTest {
                 "file, which can diverge from the heads that were actually built",
         )
         assertTrue(
-            daemon.contains("DeclaredHead(head.provider, head.models)"),
-            "each entry carries BOTH the provider key and the declared model list: the models page " +
-                "groups by the first and reports missing tiers from the second",
+            daemon.contains("DeclaredHead(head.provider, head.models, family)"),
+            "each entry carries the provider key, the declared model list and the provider's family: " +
+                "the models page groups by the first and reports missing tiers from the second, and " +
+                "the console colours the head by the third",
+        )
+        assertTrue(
+            daemon.contains("topology.providers[head.provider]?.let { ProviderFamilyRule().of(head.provider, it) }"),
+            "the family must come from the provider this daemon booted with, so a head is coloured by " +
+                "the vendor it actually talks to",
         )
     }
 
@@ -104,6 +110,29 @@ class ConsoleWiringPinTest {
             consoleWiringSource().contains("srv.ports.supervised = DrainingRestartAdapter()"),
             "ConsoleWiring must assign `srv.ports.supervised`, or POST /api/daemon/restart refuses forever " +
                 "on a supervised host — and a refusal is indistinguishable from the guard working",
+        )
+    }
+
+    /** V4-220 item 3: the key routes must write the file the api-key heads READ, which is
+     *  KeyStorePath.defaultPath() over the daemon's own environment (ApiKeyAuthProvider's default). A
+     *  store at any other path would answer every PUT with 200 and change nothing a head uses. */
+    @Test
+    fun `the control plane wires the key store the api-key heads read`() {
+        assertTrue(
+            consoleWiringSource().contains("srv.ports.keys = KeyStore(KeyStorePath.defaultPath())"),
+            "ConsoleWiring must assign `srv.ports.keys` to the heads' own keys.toml, or /api/keys answers " +
+                "a named 503 forever — or, at another path, stores keys no head reads",
+        )
+    }
+
+    /** V4-220 item 4: the fix route must run over the daemon's own doctor and environment, the ones
+     *  /api/doctor reports from. Unwired, the console's Fix button answers a named 503 forever. */
+    @Test
+    fun `the control plane wires the doctor fixes the console runs`() {
+        assertTrue(
+            consoleWiringSource().contains("srv.ports.doctorFixes = DoctorWiring.fixes()"),
+            "ConsoleWiring must assign `srv.ports.doctorFixes`, or POST /api/doctor/fix/{id} answers a named " +
+                "503 while /api/doctor lists fixes the daemon could run",
         )
     }
 

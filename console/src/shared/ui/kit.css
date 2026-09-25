@@ -1,0 +1,431 @@
+/* The building blocks (kit.tsx). Flat grounds and one hairline; hierarchy is type size and weight.
+   Sizes and gaps only through var(--space-N) and var(--text-N) (wall: webui-css-tokens-only). */
+
+/* ---------- page head ---------- */
+.myx-ph { margin-block-end: var(--space-6); }
+.myx-ph-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+.myx-ph-titles { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.myx-ph-title {
+  margin: 0;
+  font-size: var(--text-6);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.myx-ph-actions { display: flex; align-items: center; gap: var(--space-3); flex: none; }
+.myx-ph-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-block-start: var(--space-5);
+  flex-wrap: wrap;
+}
+
+/* ---------- section ---------- */
+.myx-sec + .myx-sec { margin-block-start: var(--space-7); }
+.myx-sec-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-block-end: var(--space-3);
+  min-height: var(--space-7);
+}
+.myx-sec-titles { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.myx-sec-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-3);
+  font-weight: 600;
+  color: var(--fg);
+}
+.myx-sec-meta { font-weight: 400; color: var(--fg-subtle); }
+.myx-sec-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A figure's basis beside its label, a section's title or a column's name (BasisTag). */
+.myx-basis { flex: none; margin-inline-start: var(--space-2); font-size: var(--text-1); font-weight: 400; color: var(--fg-subtle); }
+.myx-sec-count {
+  align-self: center;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
+  font-size: var(--text-1);
+  font-weight: 500;
+  line-height: var(--leading);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.myx-sec-actions { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-2); }
+
+/* ---------- data table ---------- */
+.myx-dt-wrap {
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  overflow-x: auto;
+  background: var(--bg);
+}
+.myx-dt {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.myx-dt-fixed { table-layout: fixed; }
+.myx-dt th {
+  height: var(--row-head);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-raised);
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--text-1);
+  font-weight: 500;
+  text-align: start;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+.myx-dt td {
+  height: var(--row-board);
+  padding: var(--space-4);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.myx-dt tbody tr + tr td { border-top: var(--hair) solid var(--line); }
+.myx-dt .myx-dt-end { text-align: end; }
+.myx-dt .myx-dt-mono { font-family: var(--font-mono); font-size: var(--text-2); }
+.myx-dt td.myx-dt-break { white-space: normal; overflow-wrap: anywhere; }
+.myx-dt .myx-dt-primary { color: var(--fg); font-weight: 500; }
+
+/* An openable table: the primary cell's button stretches over its row. */
+.myx-dt-open tbody tr { position: relative; }
+.myx-dt-open tbody tr:hover td { background: var(--bg-hover); }
+.myx-dt-opener {
+  all: unset;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.myx-dt-opener::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-1);
+}
+.myx-dt-opener:focus-visible { outline: none; }
+.myx-dt-opener:focus-visible::after {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-width));
+}
+.myx-dt tbody tr.myx-dt-selected td { background: var(--bg-active); }
+.myx-dt tbody tr.myx-dt-tone-warn td { background: var(--warn-soft); }
+.myx-dt tbody tr.myx-dt-tone-danger td { background: var(--danger-soft); }
+/* A head's row carries the head's colour as a bar on its leading edge (DESIGN.md section 5). */
+.myx-dt tbody tr.myx-dt-hued td:first-child {
+  box-shadow: inset var(--space-2) 0 0 var(--hue);
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+}
+/* The band already carries the colour, so the title's own mark would say it twice. */
+.myx-dt-run.myx-dt-hued .myx-dt-group .myx-hm-mark { display: none; }
+/* A run titled by a head takes a faint wash of the head's colour: the board's airline band. */
+.myx-dt-run.myx-dt-hued .myx-dt-group th {
+  background: color-mix(in srgb, var(--hue) 9%, var(--bg));
+  box-shadow: inset var(--space-2) 0 0 var(--hue);
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+}
+
+/* A grouped table: each run opens with a title row (a head's mark and name, a project, an hour). */
+.myx-dt-run + .myx-dt-run .myx-dt-group th { border-top: var(--hair) solid var(--line); }
+.myx-dt-group th {
+  padding: var(--space-5) var(--space-4) var(--space-3);
+  background: var(--bg);
+  font-size: var(--text-3);
+  font-weight: 600;
+  color: var(--fg);
+  text-align: start;
+  white-space: normal;
+}
+.myx-dt-group-head { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.myx-dt-group-title { display: inline-flex; align-items: center; min-width: 0; }
+.myx-dt-group-count {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+.myx-dt-group-actions { margin-inline-start: auto; font-size: var(--text-2); font-weight: 400; }
+.myx-dt-group-actions a { color: var(--fg-muted); text-decoration: none; }
+.myx-dt-group-actions a:hover { color: var(--fg); }
+.myx-dt-group-note {
+  display: block;
+  margin-block-start: var(--space-2);
+  font-size: var(--text-2);
+  font-weight: 400;
+  color: var(--fg-subtle);
+}
+.myx-dt-run .myx-dt-group + tr td { border-top: var(--hair) solid var(--line); }
+
+/* ---------- tally: the counts a page is about ---------- */
+.myx-tally { display: flex; flex-wrap: wrap; gap: var(--space-8); margin: 0; }
+.myx-tally-item { display: grid; gap: var(--space-1); }
+.myx-tally-value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-7);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.myx-tally-label { font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-tally-ok .myx-tally-value { color: var(--ok); }
+.myx-tally-warn .myx-tally-value { color: var(--warn); }
+.myx-tally-danger .myx-tally-value { color: var(--danger); }
+
+/* ---------- the page head every page not yet rebuilt still prints ---------- */
+.myx-page-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-5);
+  margin-block-end: var(--space-6);
+}
+.myx-page-title {
+  margin: 0;
+  font-size: var(--text-6);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: -.015em;
+  color: var(--fg);
+}
+
+/* ---------- segmented ---------- */
+.myx-seg {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+}
+.myx-seg-item {
+  padding: var(--space-1) var(--space-4);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.myx-seg-item:hover { color: var(--fg); }
+.myx-seg-item-on,
+.myx-seg-item-on:hover { background: var(--bg-active); color: var(--fg); font-weight: 500; }
+
+/* ---------- badge ---------- */
+.myx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-1);
+  font-weight: 500;
+  line-height: var(--leading);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.myx-badge-dot { width: calc(.5 * var(--u)); height: calc(.5 * var(--u)); border-radius: var(--radius-full); background: currentColor; flex: none; }
+.myx-badge-ok { background: var(--ok-soft); color: var(--ok); }
+.myx-badge-warn { background: var(--warn-soft); color: var(--warn); }
+.myx-badge-danger { background: var(--danger-soft); color: var(--danger); }
+.myx-badge-accent { background: var(--accent-soft); color: var(--accent); }
+.myx-badge-neutral { background: var(--bg-active); color: var(--fg-muted); }
+.myx-badge-neutral .myx-badge-dot { background: var(--fg-subtle); }
+/* quiet: the dot keeps the colour, the word takes the row's ink */
+.myx-badge-quiet { padding: 0; background: none; color: var(--fg-muted); font-weight: 400; font-size: inherit; }
+.myx-badge-quiet.myx-badge-ok .myx-badge-dot { background: var(--ok); }
+.myx-badge-quiet.myx-badge-warn .myx-badge-dot { background: var(--warn); }
+.myx-badge-quiet.myx-badge-danger .myx-badge-dot { background: var(--danger); }
+.myx-badge-quiet.myx-badge-accent .myx-badge-dot { background: var(--accent); }
+
+/* ---------- stat ---------- */
+.myx-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(10.5 * var(--u)), 1fr));
+  gap: var(--space-4);
+  margin-block-end: var(--space-7);
+  /* A row that wraps claims no width of its own: at its automatic minimum it asked a phone-wide
+     parent for five tiles' worth (1074px) and pushed the page past the window. */
+  min-width: 0;
+}
+.myx-stat {
+  padding: var(--space-5);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  min-width: 0;
+}
+.myx-stat-label { margin: 0; font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
+/* a trend at the end of the label's line: the figure below keeps the tile's whole width */
+.myx-stat-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+.myx-stat-trend { flex: none; }
+.myx-stat-value {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-7);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.myx-stat-unit { margin-inline-start: var(--space-2); font-size: var(--text-4); font-weight: 500; color: var(--fg-muted); letter-spacing: 0; }
+.myx-stat-sub { margin: var(--space-2) 0 0; font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-stat-chart { margin-block-start: var(--space-4); }
+/* a ring beside the figure: label, figure and note stack on the left, the shape sits on the right */
+.myx-stat-figured {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-content: start;
+}
+.myx-stat-figured > :not(.myx-stat-figure) { grid-column: 1; }
+.myx-stat-figure { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+.myx-stat-ok .myx-stat-value { color: var(--ok); }
+.myx-stat-warn .myx-stat-value { color: var(--warn); }
+.myx-stat-danger .myx-stat-value { color: var(--danger); }
+
+/* ---------- meter ---------- */
+.myx-meter {
+  display: block;
+  width: 100%;
+  height: var(--meter-h);
+  border-radius: var(--radius-full);
+  background: var(--track);
+  overflow: hidden;
+}
+.myx-meter-row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.myx-meter-row .myx-meter { flex: 1 1 auto; min-width: calc(2.5 * var(--u)); }
+.myx-meter-figure {
+  flex: none;
+  min-width: 3.5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--fg-muted);
+}
+.myx-meter-fill { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.myx-meter-ok .myx-meter-fill { background: var(--ok); }
+.myx-meter-warn .myx-meter-fill { background: var(--warn); }
+.myx-meter-danger .myx-meter-fill { background: var(--danger); }
+.myx-meter-neutral .myx-meter-fill { background: var(--fg-subtle); }
+
+/* ---------- detail panel ---------- */
+.myx-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--bg);
+  overflow: hidden;
+}
+.myx-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-bottom: var(--hair) solid var(--line);
+}
+.myx-panel-titles { min-width: 0; display: grid; gap: var(--space-2); }
+.myx-panel-title {
+  margin: 0;
+  font-size: var(--text-4);
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.myx-panel-status { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-2); color: var(--fg-muted); }
+.myx-panel-close {
+  flex: none;
+  padding: var(--space-2) var(--space-4);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.myx-panel-close:hover { background: var(--bg-hover); color: var(--fg); }
+.myx-panel-body { padding: var(--space-5); overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); align-content: start; }
+.myx-panel-body .myx-sec + .myx-sec { margin-block-start: 0; }
+
+/* ---------- key / value ---------- */
+.myx-kv { margin: 0; display: grid; }
+.myx-kv-row {
+  display: grid;
+  grid-template-columns: minmax(calc(8.75 * var(--u)), 38%) 1fr;
+  gap: var(--space-4);
+  padding-block: var(--space-3);
+  font-size: var(--text-2);
+}
+.myx-kv-row + .myx-kv-row { border-top: var(--hair) solid var(--line); }
+.myx-kv dt { color: var(--fg-subtle); }
+.myx-kv dd { margin: 0; color: var(--fg); min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+/* ---------- empty (shared/ui/empty.tsx) ---------- */
+.myx-empt {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+  /* a phone's board is narrower than a daemon path: the sentence wraps inside its box (S12) */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: var(--space-6);
+  border: var(--hair) dashed var(--line-strong);
+  border-radius: var(--radius-3);
+  font-size: var(--text-3);
+}
+.myx-empt-line { display: inline-flex; align-items: center; gap: var(--space-2); justify-self: start; }
+.myx-empt-text { font-weight: 500; color: var(--fg); }
+.myx-empt-action { justify-self: start; margin-block-start: var(--space-2); }
+
+/* ---------- reveal (shared/ui/reveal.tsx) ---------- */
+.myx-reveal { display: grid; gap: var(--space-3); justify-items: start; }
+.myx-reveal-btn {
+  padding: var(--space-2) var(--space-4);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.myx-reveal-btn:hover { background: var(--bg-hover); color: var(--fg); }
+.myx-reveal-body { font-size: var(--text-2); color: var(--fg-muted); max-width: 72ch; }

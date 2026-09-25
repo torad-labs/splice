@@ -9,20 +9,26 @@ import type { TranscriptPage, TranscriptState } from '../model/types';
 /** The v0.4.0 item that serves the transcript route, named for a daemon older than it. */
 export const PENDING_TRANSCRIPT = 'V4-130';
 
-/** The daemon's own answer for a session with no transcript on disk (SessionsRoutes.kt, a 404). The
- *  route exists and answered: that is not the pending route a 404 from an older daemon means. */
-export const TRANSCRIPT_MISSING = 'no transcript for this session id';
+/** The directories the daemon searched, when a 404 is its own answer for a session with no
+ *  transcript on disk (SessionsRoutes.transcript writes `searched` beside the error); null for any
+ *  other failure. Read from the envelope's structure, never by matching its sentence. */
+export function searchedOf(err: unknown): string[] | null {
+  if (!(err instanceof MgmtError) || err.status !== 404) return null;
+  const searched = (err.body as { searched?: unknown } | null)?.searched;
+  return Array.isArray(searched) ? searched.filter((dir): dir is string => typeof dir === 'string') : null;
+}
 
-/** The loaded state, or null when nothing is loaded yet or the route is pending. */
+/** The loaded state, or null when nothing is loaded yet, the route is pending or there is no file. */
 function loadedState(): TranscriptState | null {
   const data = transcriptStore.get().data;
-  if (data === null || 'pending' in data) return null;
+  if (data === null || 'pending' in data || 'missing' in data) return null;
   return data;
 }
 
 function resolveFailure(err: unknown): void {
-  if (err instanceof MgmtError && err.status === 404 && err.message === TRANSCRIPT_MISSING) {
-    transcriptStore.setError(TRANSCRIPT_MISSING);
+  const searched = searchedOf(err);
+  if (searched !== null) {
+    transcriptStore.setData({ missing: searched });
     return;
   }
   const pending = pendingOf(err, PENDING_TRANSCRIPT);

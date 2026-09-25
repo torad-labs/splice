@@ -1,37 +1,54 @@
-// The fleet page: one rack of head strips. ARRIVE is "which head needs me", so the holder edge
-// carries one printed cause and the `attention first` view puts the worst head at the top.
+// Fleet: every head, drawn by the state it is in and how fast and how full it runs. The question on
+// arrival is "which head needs me", so the figures lead with the heads split by health and the
+// `Attention first` view puts the worst head at the top.
 //
-// Two of this page's fields come from routes that were rows (the model catalog, the topology file).
-// While either is unread the page prints one honest empty naming the rows, rather than inventing a
-// value for a source nobody can read yet. The account pool is read (GET /api/accounts, M4-02): an
-// opened head shows the accounts it rides, and a head whose selected account is excluded says so on
-// the rack.
+// Health is the head's state NOW, never a history the daemon does not keep: a badge per head and one
+// split bar for the fleet. Latency does have a history, the landed turns (GET /api/perf/turns), so
+// each head draws its time to first byte as a sparkline over its recent turns.
+//
+// An opened head holds its facts, the step that clears its state, the lifecycle keys, the settings
+// it overrides and the accounts it rides (GET /api/accounts, M4-02), drawn by the same account rows
+// the accounts page prints.
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
-import { FAMILY_NAME, headAttention } from '@entities/heads';
-import { restartHead, startHead, startHeadsPolling, stopHead, useHeads } from '@entities/heads';
-import type { HeadSignals } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
+import type { KnobDisposition } from '@entities/config';
+import { HeadMark } from '@entities/control-status';
+import {
+  FAMILY_NAME, familyName, headAttention, inflightText, restartHead, startHead, startHeadsPolling, stopHead, useHeads,
+} from '@entities/heads';
+import type { HeadAttention, HeadSignals } from '@entities/heads';
 import { startModelsPolling, useModels } from '@entities/model';
+import type { HeadCatalog } from '@entities/model';
+import { startPerfSummaryPolling, startPerfTurnsPolling, usePerfSummary, usePerfTurns } from '@entities/perf';
+import type { TurnRow } from '@entities/perf';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import { headWindow, startUsagePolling, useUsage } from '@entities/usage';
-import { startPerfSummaryPolling, usePerfSummary } from '@entities/perf';
+import type { HeadWindow } from '@entities/usage';
 import { DaemonRestart } from '@features/daemon-restart';
+import { limitText, limitTone, nearestLimit } from '@features/nearest-limit';
+import type { NearestLimit } from '@features/nearest-limit';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { poll } from '@shared/lib';
-import type { HeadStatus } from '@shared/api';
-import { Bay, Empty, HolderEdge } from '@shared/ui';
+import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
+import { Blank, Confirm, Copy, Fault, Key, KeyLink } from '@shared/controls';
+import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo } from '@shared/lib';
+import {
+  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow,
+} from '@shared/ui';
+import type { Column, RowGroup } from '@shared/ui';
+import { NextRule, accountColumns, accountKey, accountName, accountTone } from '@widgets/account-table';
 import { KnobReadout } from '@widgets/knob-form';
-import { Blank, Copy, Fault, Key } from '@shared/controls';
-import { ACCOUNT_COLUMNS, AccountStrip } from '@widgets/account-strip';
-import { HeadStrip, HEAD_COLUMNS } from '@widgets/head-strip';
-import { EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, poolEmpty, poolNext, poolOf, selectedExcluded } from './model';
-import type { CauseHelp } from './model';
 import { dispositions } from './coverage';
-import { S } from './strings';
+import {
+  EMPTIES, HEAD_FIELDS, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
+  inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone, windowTone,
+} from './model';
+import type { CauseHelp, LastTurn } from './model';
+import { H, S } from './strings';
 import './fleet.css';
 
 export { dispositions };
@@ -41,160 +58,423 @@ const HEADS_MS = 2000;
 const USAGE_MS = 5000;
 /** The accounts page's own cadence: windows move per turn, not per second. */
 const POOL_MS = 15000;
+/** Latency is read per turn landed, and a sparkline of the last turns does not need a faster eye. */
+const TURNS_MS = 15000;
 const SLOW_MS = 30000;
 const LAST_TURN_MS = 60000;
 
-/** The three views this page ships with. `by head` is first because it is the default. */
+/** The three views this page ships with. `By head` is first because it is the default. */
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-head', name: S.byHead, layout: 'bay', filter: {}, sort: null, group: null, fields: [] },
   { id: 'by-provider', name: S.byProvider, layout: 'bay', filter: {}, sort: null, group: 'provider', fields: [] },
   { id: 'attention', name: S.attentionFirst, layout: 'bay', filter: {}, sort: { field: 'attention', dir: 'desc' }, group: null, fields: [] },
 ];
 
-/** The lifecycle controls. Raw buttons for the same reason the accounts feature uses them: the old
- *  Btn/ConfirmBtn exports are what M2 exists to retire (CONTRACTS.md section 2). Stop and restart
- *  interrupt live sessions, so both arm in place before they fire. */
-function Lifecycle({ head }: { head: HeadStatus }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [armed, setArmed] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const run = (name: string, work: (key: string) => Promise<unknown>) => {
-    setBusy(name);
-    setError(null);
-    setArmed(null);
-    work(head.key).then(
-      () => setNote(`${name} sent`),
-      (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
-    ).finally(() => setBusy(null));
-  };
-
-  const live = head.gate?.live.length ?? 0;
-
-  return (
-    <div className="myx-fleet-life">
-      {!head.running ? (
-        <button type="button" className="myx-fleet-btn" disabled={busy !== null} onClick={() => run(S.start, startHead)}>
-          {S.start}
-        </button>
-      ) : armed === null ? (
-        <>
-          <button type="button" className="myx-fleet-btn" disabled={busy !== null} onClick={() => setArmed(S.restart)}>
-            {S.restart}
-          </button>
-          <button type="button" className="myx-fleet-btn" disabled={busy !== null} onClick={() => setArmed(S.stop)}>
-            {S.stop}
-          </button>
-        </>
-      ) : (
-        <>
-          {/* The confirmation names what it interrupts. A stop with live turns is not the same
-              action as a stop without, and the operator decides on that number. */}
-          <span className="myx-fleet-warn" role="alert">
-            {`${armed}, ${live} live`}
-          </span>
-          <button
-            type="button"
-            className="myx-fleet-btn myx-fleet-btn-armed"
-            disabled={busy !== null}
-            onClick={() => run(armed, armed === S.stop ? stopHead : restartHead)}
-          >
-            {`${armed} now`}
-          </button>
-          <button type="button" className="myx-fleet-btn" onClick={() => setArmed(null)}>{'cancel'}</button>
-        </>
-      )}
-      {error === null ? null : <Fault message={error} />}
-      {note === null ? null : <p className="myx-fleet-note" role="status">{note}</p>}
-    </div>
-  );
-}
-
-/** Why the opened head is in the state its edge names, and the step that clears it. */
-export function CauseLine({ help }: { help: CauseHelp | null }) {
-  if (help === null) return null;
-  return (
-    <div className="myx-fleet-cause">
-      <p className="myx-fleet-note">{help.text}</p>
-      {help.command === undefined ? null : (
-        <p className="myx-fleet-cause-row">
-          <code className="myx-fleet-cause-command">{help.command}</code>
-          <Copy value={help.command} />
-        </p>
-      )}
-      {help.href === undefined ? null : <a className="myx-fleet-cause-link" href={help.href}>{help.link}</a>}
-    </div>
-  );
-}
-
 /** How a head joins the fleet. `splice add` signs in, checks the provider answers and writes the
  *  head, and no route does that yet, so the page names the command; run bare it lists the providers
  *  it knows (AddPrepare.usage). The settings topology edits heads that exist, it cannot add one. */
 export const ADD_COMMAND = 'splice add';
 
-export function AddHeadLine() {
+export function AddHead() {
   return (
-    <div className="myx-fleet-add">
-      <span className="myx-fleet-note">another provider is added from a terminal</span>
-      <code className="myx-fleet-cause-command">{ADD_COMMAND}</code>
+    <span className="myx-fl-add">
+      <span className="myx-fl-add-label">{S.addHead}</span>
+      <InfoTip text={H.add} label={S.aboutAdd} side="bottom" />
+      <code className="myx-fl-command">{ADD_COMMAND}</code>
       <Copy value={ADD_COMMAND} />
+    </span>
+  );
+}
+
+/** Why the opened head is in the state its badge names, and the step that clears it: one line, then
+ *  the command to copy or the page to open. */
+export function CauseLine({ help }: { help: CauseHelp | null }) {
+  if (help === null) return null;
+  return (
+    <p className="myx-fl-cause" role="status">
+      <span>{help.text}</span>
+      {help.command === undefined ? null : (
+        <>
+          <code className="myx-fl-command">{help.command}</code>
+          <Copy value={help.command} />
+        </>
+      )}
+      {help.href === undefined ? null : <KeyLink href={help.href}>{help.link}</KeyLink>}
+    </p>
+  );
+}
+
+/** The lifecycle keys. Stop and restart interrupt live sessions, so both arm in place before they
+ *  fire (the world's inline two-step); the head's in-flight count is in its facts right above. */
+function Lifecycle({ head }: { head: HeadStatus }) {
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = (work: (key: string) => Promise<unknown>) => {
+    setBusy(true);
+    setSent(false);
+    setError(null);
+    work(head.key).then(
+      () => setSent(true),
+      (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
+    ).finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="myx-fl-life">
+      <div className="myx-fl-keys">
+        {head.running ? (
+          <>
+            <Confirm label={S.restart} confirmLabel={S.restartNow} busy={busy} onConfirm={() => run(restartHead)} />
+            <Confirm label={S.stop} confirmLabel={S.stopNow} busy={busy} onConfirm={() => run(stopHead)} />
+          </>
+        ) : (
+          <Key busy={busy} onClick={() => run(startHead)}>{S.start}</Key>
+        )}
+        {sent ? <Badge tone="ok">{S.sent}</Badge> : null}
+      </div>
+      {error === null ? null : <Fault message={error} />}
     </div>
   );
 }
 
-/** The key one account strip holds in the pool rack: the label within a pool, else the credential
- *  file a single login is joined on. */
-function poolKey(account: AccountRow): string {
-  return `${account.kind}:${account.label ?? account.credential_path ?? account.heads.join(',')}`;
+/** One head as the table and its detail read it: every source joined once, per render. */
+export interface HeadLine {
+  head: HeadStatus;
+  attention: HeadAttention;
+  window: HeadWindow;
+  /** The masked account id the auth card names, or null. */
+  account: string | null;
+  /** The head's pinned model, or null when it pins none or the catalog is unread. */
+  model: string | null;
+  dialect: string | null;
+  /** Time to first byte per landed turn, oldest first. */
+  latency: readonly number[];
+  last: LastTurn;
 }
 
-/** The opened head's account pool: the accounts entity filtered to this head, printed as the same
- *  strips the accounts page prints (so an exclusion is struck and its reason printed the same way),
- *  with the daemon's own next target named above the rack, where a 24rem column can show it. */
+function Latency({ line }: { line: HeadLine }) {
+  const middle = median(line.latency);
+  if (middle === null) return <>{ABSENT}</>;
+  return (
+    <span className="myx-fl-lat">
+      <Sparkline values={line.latency} label={`${S.firstByte} ${line.head.label}`} format={fmtMs} />
+      <span className="myx-fl-figure">{fmtMs(middle)}</span>
+    </span>
+  );
+}
+
+/** Up to this many slots, each is a pip the eye can count; past it, a meter. */
+const PIPS_MAX = 16;
+
+function InFlight({ head }: { head: HeadStatus }) {
+  const gate = head.gate;
+  if (gate === null) return <>{ABSENT}</>;
+  if (gate.max === 'unlimited') return <span className="myx-fl-figure">{inflightText(head)}</span>;
+  if (gate.max <= PIPS_MAX) {
+    return (
+      <span className="myx-fl-slots">
+        <Pips used={gate.inflight} total={gate.max} label={`${S.inflight} ${head.label}`} mark={gate.inflight >= gate.max ? 'warn' : 'series-1'} />
+        <span className="myx-fl-figure">{inflightText(head)}</span>
+      </span>
+    );
+  }
+  return (
+    <Meter
+      value={ratio(gate.inflight, gate.max)}
+      tone={gate.inflight >= gate.max ? 'warn' : 'accent'}
+      label={`${S.inflight} ${head.label}`}
+      figure={inflightText(head)}
+    />
+  );
+}
+
+function WindowFigure({ window, label }: { window: HeadWindow; label: string }) {
+  if (window.pct === null) return <>{ABSENT}</>;
+  return <Meter value={window.pct / 100} tone={windowTone(window)} label={label} figure={`${Math.round(window.pct)}%`} />;
+}
+
+function LastTurnCell({ last, nowMs }: { last: LastTurn; nowMs: number }) {
+  switch (last.kind) {
+    case 'live':
+      return <Badge tone="accent" quiet>{`${last.phase} ${fmtMs(last.ageMs)}`}</Badge>;
+    case 'ago':
+      return <>{timeAgo(last.ts, nowMs)}</>;
+    case 'none':
+      return <>{S.none}</>;
+    case 'unknown':
+      return <>{ABSENT}</>;
+  }
+}
+
+function StateBadge({ attention, quiet = false }: { attention: HeadAttention; quiet?: boolean }) {
+  return <Badge tone={stateTone(attention.cause)} quiet={quiet}>{S.stateName[attention.cause]}</Badge>;
+}
+
+/** The columns an opened head's facts repeat, so an open panel takes their width and the figures
+ *  keep theirs: its identity, and its plan window, which reads `–` on every head without a login. */
+const IDENTITY_FIELDS: ReadonlySet<string> = new Set(['provider', 'model', 'account', 'window']);
+
+function headColumns(fields: readonly string[], grouped: string | null, nowMs: number, opened: boolean): Column<HeadLine>[] {
+  const wanted = new Set(fields.filter((field) => !opened || !IDENTITY_FIELDS.has(field)));
+  // Every column but the head's name takes a width in rem, sized to what it draws (a meter with its
+  // figure, a sparkline with its median), so opening the panel narrows the names and never clips a
+  // figure; the name shares whatever is left.
+  const columns: (Column<HeadLine> | null)[] = [
+    { key: 'head', label: S.head, primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
+    wanted.has('provider') && grouped !== 'provider'
+      ? { key: 'provider', label: S.provider, width: 'calc(6.5 * var(--u))', cell: (line) => familyName(line.head.authKind) }
+      : null,
+    { key: 'state', label: S.state, width: 'calc(6 * var(--u))', cell: (line) => <StateBadge attention={line.attention} quiet /> },
+    wanted.has('model') ? { key: 'model', label: S.model, width: 'calc(10 * var(--u))', mono: true, cell: (line) => line.model ?? ABSENT } : null,
+    wanted.has('account') ? { key: 'account', label: S.account, width: 'calc(7.5 * var(--u))', mono: true, cell: (line) => line.account ?? ABSENT } : null,
+    wanted.has('inflight') ? { key: 'inflight', label: S.inflight, width: 'calc(12 * var(--u))', cell: (line) => <InFlight head={line.head} /> } : null,
+    wanted.has('window')
+      ? { key: 'window', label: S.window, width: 'calc(9 * var(--u))', cell: (line) => <WindowFigure window={line.window} label={`${S.window} ${line.head.label}`} /> }
+      : null,
+    wanted.has('latency') ? { key: 'latency', label: S.firstByte, width: 'calc(9.5 * var(--u))', cell: (line) => <Latency line={line} /> } : null,
+    wanted.has('turn') ? { key: 'turn', label: S.lastTurn, width: 'calc(6.5 * var(--u))', cell: (line) => <LastTurnCell last={line.last} nowMs={nowMs} /> } : null,
+  ];
+  return columns.filter((column): column is Column<HeadLine> => column !== null);
+}
+
+/** The figures the page leads with: the heads by health, what is in flight against the ceiling, the
+ *  fleet's time to first byte, and the nearest limit (the one definition the strip and the accounts
+ *  page print). */
+function Figures({ lines, landed, limit }: { lines: readonly HeadLine[]; landed: readonly TurnRow[]; limit: NearestLimit | null }) {
+  const totals = inflightTotals(lines.map((line) => line.head));
+  const fleet = firstBytes(landed);
+  const middle = median(fleet);
+  return (
+    <StatRow>
+      <Stat
+        label={S.heads}
+        value={fmtInt(lines.length)}
+        chart={<StackedBar parts={healthParts(lines.map((line) => line.attention.cause))} label={S.heads} legend format={fmtInt} />}
+      />
+      <Stat
+        label={S.inflight}
+        value={fmtInt(totals.inflight)}
+        {...(totals.max === null ? {} : {
+          unit: `/${fmtInt(totals.max)}`,
+          chart: <Meter value={ratio(totals.inflight, totals.max)} label={S.inflight} />,
+        })}
+      />
+      <Stat
+        label={S.firstByte}
+        value={middle === null ? ABSENT : fmtMs(middle)}
+        {...(fleet.length === 0 ? {} : { chart: <Sparkline values={fleet} label={S.firstByte} format={fmtMs} /> })}
+      />
+      {limit === null ? <Stat label={S.nearestLimit} value={ABSENT} /> : (
+        <Stat
+          label={S.nearestLimit}
+          value={`${Math.round(limit.pct)}%`}
+          {...(limitTone(limit) === 'ok' ? {} : { tone: limitTone(limit) })}
+          chart={<Meter value={limit.pct / 100} tone={limitTone(limit)} label={S.nearestLimit} />}
+          sub={limitText(limit)}
+        />
+      )}
+    </StatRow>
+  );
+}
+
+/** Every fact an opened head carries. The dialect and port are here rather than in the table: they
+ *  identify a head, they do not tell the operator whether it needs them. */
+function headFacts(line: HeadLine, auth: AuthPayload | null, nowMs: number): [string, ReactNode][] {
+  const latched = auth?.[line.head.key]?.refresh_latched ?? null;
+  const middle = median(line.latency);
+  return [
+    [S.provider, familyName(line.head.authKind)],
+    [S.port, String(line.head.port)],
+    [S.dialect, line.dialect ?? ABSENT],
+    [S.model, line.model ?? ABSENT],
+    [S.version, line.head.version ?? ABSENT],
+    [S.account, line.account ?? ABSENT],
+    [S.inflight, <InFlight key="inflight" head={line.head} />],
+    [S.window, <WindowFigure key="window" window={line.window} label={`${S.window} ${line.head.label}`} />],
+    [S.firstByte, middle === null ? ABSENT : <Latency key="latency" line={line} />],
+    [S.lastTurn, <LastTurnCell key="turn" last={line.last} nowMs={nowMs} />],
+    ...(latched === null ? [] : [[S.refreshError, latched] as [string, ReactNode]]),
+  ];
+}
+
+/** The opened head's account pool: the accounts entity filtered to this head, drawn as the rows the
+ *  accounts page draws, so an exclusion, a window and the next target read the same in both. */
 function Pool({ head, payload, nowMs }: { head: HeadStatus; payload: AccountsState | null; nowMs: number }) {
   if (payload === null) return <Blank strips={1} />;
   if ('pending' in payload) return <Empty text={EMPTIES.pool.text} source={EMPTIES.pool.source} />;
   const pool = poolOf(payload.accounts, head.key);
   if (pool.length === 0) {
     const empty = poolEmpty(head.authKind);
-    return <Empty text={empty.text} source={empty.source} />;
+    return (
+      <Empty
+        text={empty.text}
+        source={empty.source}
+        {...(empty === EMPTIES.noAccounts ? { action: <KeyLink href="#/accounts">{S.signIn}</KeyLink> } : {})}
+      />
+    );
   }
-  const next = poolNext(pool);
-  // A single login has no pool to select from, so "no next target" is a fact about it only when the
-  // rack holds a labeled pool account.
-  const pooled = pool.some((account) => account.label !== null);
+  // The daemon's own next target, named once above the rows with the rule that chose it: the panel
+  // is too narrow for a Next column, and one fact needs no column.
+  const target = pool.find((account) => account.next_target === true) ?? null;
   return (
     <>
-      {next !== null ? (
-        // The rule in brackets only when it is not the label itself: an account labelled `primary`
-        // chosen because it is primary printed `next target primary, primary` (walkthrough polish).
-        <p className="myx-fleet-note">{next.label === next.rule ? `${S.nextTarget} ${next.label}` : `${S.nextTarget} ${next.label} (${next.rule})`}</p>
-      ) : pooled ? (
-        <Empty text={EMPTIES.noneAvailable.text} source={EMPTIES.noneAvailable.source} />
-      ) : null}
-      <Bay label={S.accounts} count={pool.length} compact>
-        {pool.map((account) => {
-          const isNext = next !== null && next.label === account.label;
-          return (
-            <AccountStrip
-              key={poolKey(account)}
-              account={account}
-              isNext={isNext}
-              nextRule={isNext ? next.rule : ''}
-              columns={ACCOUNT_COLUMNS}
-              nowMs={nowMs}
-            />
-          );
-        })}
-      </Bay>
+      {target === null ? null : (
+        <KeyValue rows={[[S.next, <span key="next" className="myx-fl-next">{accountName(target)}<NextRule account={target} accounts={pool} /></span>]]} />
+      )}
+      {noneAvailable(pool) ? <Empty text={EMPTIES.noneAvailable.text} source={EMPTIES.noneAvailable.source} /> : null}
+      <DataTable
+        columns={accountColumns({ fields: ['account'], grouped: null, nowMs, accounts: pool, compact: true })}
+        rows={pool}
+        rowKey={accountKey}
+        label={S.pool}
+        rowTone={(account) => accountTone(account, nowMs)}
+      />
     </>
   );
 }
 
+/** What the board reads besides the heads: each a store's data, handed in so a test can render the
+ *  board without a store (a static render only ever sees a store's initial state). */
+export interface FleetSources {
+  auth: AuthPayload | null;
+  usage: UsagePayload | null;
+  accounts: AccountsState | null;
+  accountsError?: string | null;
+  accountsRead?: number | null;
+  /** The topology file as the daemon reads it, or null while unread or not served. */
+  topology: Record<string, unknown> | null;
+  catalogs: readonly HeadCatalog[] | null;
+  /** A daemon older than this console answered 404 for the topology or the model list. */
+  fieldsPending: boolean;
+  topologyStale: boolean;
+  landed: readonly TurnRow[];
+  /** Each head's newest turn, epoch ms, from the perf summary; a head it does not name is unknown. */
+  lastTs: ReadonlyMap<string, number | null>;
+  /** The settings the opened head overrides. */
+  overrides: readonly KnobDisposition[];
+}
+
+export function FleetBoard({ heads, error = null, lastRead = null, sources, openKey, onOpen, nowMs }: {
+  /** Null while the first read is out. */
+  heads: readonly HeadStatus[] | null;
+  error?: string | null;
+  lastRead?: number | null;
+  sources: FleetSources;
+  openKey: string | null;
+  onOpen: (key: string | null) => void;
+  nowMs: number;
+}) {
+  const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
+  const accounts: readonly AccountRow[] = sources.accounts !== null && 'accounts' in sources.accounts ? sources.accounts.accounts : [];
+
+  const signalsFor = (head: HeadStatus): HeadSignals => ({
+    credentialPresent: sources.auth?.[head.key]?.present ?? null,
+    refreshLatched: sources.auth?.[head.key]?.refresh_latched ?? null,
+    // Until GET /api/accounts answers, `accounts` is empty and this is false: a head must not read
+    // as excluded on a route nobody has read yet.
+    accountExcluded: selectedExcluded(poolOf(accounts, head.key), nowMs),
+    topologyStale: sources.topologyStale,
+  });
+
+  const lineOf = (head: HeadStatus): HeadLine => {
+    const pinned = sources.catalogs?.find((entry) => entry.head === head.key)?.pinned_model ?? '';
+    return {
+      head,
+      attention: headAttention(head, signalsFor(head)),
+      window: headWindow(sources.usage, head.key, nowMs),
+      account: sources.auth?.[head.key]?.account_id_masked ?? null,
+      // The catalog writes "" for a head that pins no model: that is an absence, not a name.
+      model: pinned === '' ? null : pinned,
+      dialect: dialectOf(sources.topology, head.key),
+      latency: firstBytes(sources.landed, head.key),
+      last: lastTurnOf(head, sources.lastTs.has(head.key) ? sources.lastTs.get(head.key) : undefined),
+    };
+  };
+
+  const all = heads ?? [];
+  const lines = new Map(all.map((head) => [head.key, lineOf(head)]));
+  const lineFor = (head: HeadStatus): HeadLine => lines.get(head.key) ?? lineOf(head);
+  const groups: RowGroup<HeadLine>[] = arrangeHeads(all, active, signalsFor).map((group) => ({
+    key: group.key === '' ? S.heads : group.key,
+    title: group.key === '' ? S.heads : FAMILY_NAME[group.key],
+    count: group.heads.length,
+    rows: group.heads.map(lineFor),
+  }));
+  const opened = openKey === null ? null : lines.get(openKey) ?? null;
+  const help = opened === null ? null : causeHelp(opened.head, opened.attention.cause, sources.auth?.[opened.head.key]);
+
+  return (
+    <div className="myx-fl">
+      <PageHeader title={S.title} actions={all.length === 0 ? undefined : <AddHead />}>
+        <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
+      </PageHeader>
+
+      {error === null ? null : <Fault message={error} lastRead={lastRead} />}
+
+      <div className={opened === null ? 'myx-fl-board' : 'myx-fl-board myx-fl-board-open'}>
+        <div className="myx-fl-main">
+          {heads === null ? <Blank strips={4} /> : heads.length === 0 ? (
+            <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} action={<AddHead />} />
+          ) : (
+            <>
+              <Figures lines={[...lines.values()]} landed={sources.landed} limit={nearestLimit({ accounts, usage: sources.usage, auth: sources.auth }, nowMs)} />
+              <Section title={S.heads} count={all.length} info={{ text: H.firstByte, label: S.aboutFirstByte }}>
+                <DataTable
+                  columns={headColumns(columnsOf(active, HEAD_FIELDS), active.group, nowMs, opened !== null)}
+                  {...(active.group === null ? { rows: groups.flatMap((group) => group.rows) } : { groups })}
+                  rowKey={(line) => line.head.key}
+                  label={S.heads}
+                  onOpen={(line) => onOpen(openKey === line.head.key ? null : line.head.key)}
+                  openLabel={(line) => `${S.openHead} ${line.head.label}`}
+                  selectedKey={openKey}
+                  rowTone={(line) => rowTone(line.attention.cause)}
+                />
+              </Section>
+              {/* The two field sources, when a daemon older than them answered 404: named once here
+                  rather than left as a bare absence in every row. Still loading, or a read that
+                  failed, is not that answer (M4-06). */}
+              {sources.fieldsPending ? <Empty text={EMPTIES.fields.text} source={EMPTIES.fields.source} /> : null}
+            </>
+          )}
+        </div>
+
+        {/* Unmounted at rest: no track and no empty panel until a head is opened. */}
+        {opened === null ? null : (
+          <DetailPanel
+            title={opened.head.label}
+            label={S.detail}
+            status={<StateBadge attention={opened.attention} />}
+            onClose={() => onOpen(null)}
+            closeLabel={S.close}
+          >
+            <CauseLine help={help} />
+            <KeyValue rows={headFacts(opened, sources.auth, nowMs)} />
+            <Section title={S.lifecycle}>
+              <Lifecycle head={opened.head} />
+              {/* The daemon-level restart (POST /api/daemon/restart), distinct from the head restart
+                  above: it drains every head's turns and the daemon's supervisor brings it back. The
+                  same control the doctor mounts. */}
+              <DaemonRestart />
+            </Section>
+            {/* The count is the state: a head that overrides nothing is a 0, not a box saying so. */}
+            <Section title={S.knobs} count={sources.overrides.length}>
+              {sources.overrides.map((knob) => <KnobReadout key={knob.key} knob={knob} />)}
+            </Section>
+            <Section title={S.pool}>
+              {sources.accountsError === null || sources.accountsError === undefined
+                ? null : <Fault message={sources.accountsError} lastRead={sources.accountsRead ?? null} />}
+              <Pool head={opened.head} payload={sources.accounts} nowMs={nowMs} />
+            </Section>
+          </DetailPanel>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function FleetPage() {
-  const views = useViews(PAGE_ID, DEFAULT_VIEWS);
-  const active = views.active;
   const headsResource = useHeads((state) => state);
   const usageResource = useUsage((state) => state);
   const authResource = useAuth((state) => state);
@@ -202,6 +482,7 @@ export function FleetPage() {
   const topologyResource = useTopology((state) => state);
   const modelsResource = useModels((state) => state);
   const accountsResource = useAccounts((state) => state);
+  const turnsResource = usePerfTurns((state) => state);
   // Only for each head's last turn (`last_ts`), which the summary carries whatever its window.
   const summaryResource = usePerfSummary((state) => state);
 
@@ -213,6 +494,7 @@ export function FleetPage() {
       startAuthPolling(SLOW_MS),
       startTopologyPolling(SLOW_MS),
       startModelsPolling(SLOW_MS),
+      startPerfTurnsPolling(undefined, TURNS_MS),
       // The summary is read only for each head's last turn, which prints to the minute, and one read
       // costs the daemon ~300ms (measured 2026-09-24, against 14ms for /api/heads): once a minute.
       startPerfSummaryPolling('24h', LAST_TURN_MS),
@@ -221,20 +503,9 @@ export function FleetPage() {
   }, []);
 
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
 
-  const heads: readonly HeadStatus[] = headsResource.data ?? [];
-  const auth = authResource.data;
-  const topology = topologyResource.data;
-  const topologyTable = topology !== null && 'topology' in topology ? topology.topology : null;
-  const catalogs = modelsResource.data !== null && 'heads' in modelsResource.data
-    ? modelsResource.data.heads
-    : null;
-  const fieldsPending = (topology !== null && 'pending' in topology)
-    || (modelsResource.data !== null && 'pending' in modelsResource.data);
-
-  // /health's flag is the one part of the topology contract that EXISTS today, so it is read from
-  // the config entity's own pass-through rather than from the pending /api/topology route.
+  // /health's flag is the one part of the topology contract every daemon serves, so it is read from
+  // the config entity's own pass-through rather than from GET /api/topology.
   const [topologyStale, setTopologyStale] = useState(false);
   useEffect(() => poll(() => {
     void fetchTopologyStale().then(setTopologyStale, () => undefined);
@@ -247,142 +518,38 @@ export function FleetPage() {
     return poll(() => { void fetchConfig(openKey); }, SLOW_MS);
   }, [openKey]);
 
-  // Read once per render: the heads poll re-renders this page every two seconds, which is finer than
-  // any exclusion expiry or reset line it is compared against.
-  const nowMs = Date.now();
-  const accounts: readonly AccountRow[] = accountsResource.data !== null && 'accounts' in accountsResource.data
-    ? accountsResource.data.accounts
-    : [];
-
-  const signalsFor = (head: HeadStatus): HeadSignals => ({
-    credentialPresent: auth?.[head.key]?.present ?? null,
-    refreshLatched: auth?.[head.key]?.refresh_latched ?? null,
-    // GET /api/accounts is served (V4-132 landed). Until it answers, `accounts` is empty and this is
-    // false: a head must not read as excluded on a route nobody has read yet.
-    accountExcluded: selectedExcluded(poolOf(accounts, head.key), nowMs),
-    topologyStale,
-  });
-
-  const groups = arrangeHeads(heads, active, signalsFor);
-  const columns = columnsOf(active, HEAD_COLUMNS);
-  const opened = heads.find((head) => head.key === openKey) ?? null;
-  const overrides = opened === null || configResource.data === null
+  const topology = topologyResource.data;
+  const models = modelsResource.data;
+  const turns = turnsResource.data;
+  const overrides = openKey === null || configResource.data === null
     ? []
-    : knobDispositions(configResource.data, opened.key).filter((knob) => knob.provenance === 'head override');
+    : knobDispositions(configResource.data, openKey).filter((knob) => knob.provenance === 'head override');
 
   return (
-    <div className="myx-fleet">
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
-        <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-      </header>
-
-      {headsResource.error === null ? null : <Fault message={headsResource.error} lastRead={headsResource.lastUpdated} />}
-      {headsResource.data === null ? <Blank strips={4} /> : null}
-
-      <div className={opened === null ? 'myx-fleet-body' : 'myx-fleet-body myx-fleet-body-open'}>
-        <div className="myx-fleet-bays">
-          {headsResource.data !== null && heads.length === 0 ? (
-            <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} />
-          ) : (
-            groups.map((group) => (
-              <Bay
-                key={group.key === '' ? S.bay : group.key}
-                label={group.key === '' ? S.bay : FAMILY_NAME[group.key]}
-                count={group.heads.length}
-                compact
-              >
-                {group.heads.map((head) => (
-                  <HeadStrip
-                    key={head.key}
-                    head={head}
-                    attention={headAttention(head, signalsFor(head))}
-                    window={headWindow(usageResource.data, head.key)}
-                    account={auth?.[head.key]?.account_id_masked ?? null}
-                    dialect={dialectOf(topologyTable, head.key)}
-                    model={catalogs?.find((entry) => entry.head === head.key)?.pinned_model ?? null}
-                    lastTs={summaryResource.data?.heads.find((row) => row.key === head.key)?.last_ts}
-                    columns={columns}
-                    selected={openKey === head.key}
-                    onOpen={() => toggle(head.key)}
-                  />
-                ))}
-              </Bay>
-            ))
-          )}
-
-          {/* The two field sources, when a daemon older than them answered 404: named here rather
-              than left as a bare `none` in every strip, so the operator learns which work item brings
-              them. Still loading, or a read that failed, is not that answer (M4-06). */}
-          {fieldsPending ? (
-            <Empty text={EMPTIES.fields.text} source={EMPTIES.fields.source} />
-          ) : null}
-          {heads.length === 0 ? null : <AddHeadLine />}
-        </div>
-
-        {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M1-116 rules collapse over the
-            unmount M1-102 shipped here; the measurement below is M1-102's and still stands). The
-            resting column cost 25.0% of the frame - 384 of 1536 - to carry a card covering 3.5% of
-            itself, and the rack paid for it: this rack's own field grid declares 1200px and the bay
-            had 969.8px, so `window` was cut 126px past the bay edge and `last turn` sat 308px past
-            it, entirely invisible. At rest the rack now measures 1365.8px and fits its own grid.
-            THE ASIDE STAYS MOUNTED AND EMPTY, which is the difference and the whole point: it gives
-            the track something to transition FROM, so CONTRACTS section 6's swell is one
-            declaration on grid-template-columns rather than a mount followed by a fade that pops if
-            the mount lands a frame late. This shape is turns', sessions' and projects'.
-            THE EMPTY STAYS GONE, deliberately rather than by oversight: an honest empty says what a
-            panel is missing and which source would supply it, and at rest there is no panel to be
-            missing anything - the console has not been asked for a head yet, so a card captioned
-            "no head opened" describes a panel that does not exist. The strips are the affordance;
-            the comp of record has no resting detail column either. `EMPTIES.noOpened` went with it:
-            M1-102 could not delete it because model.ts was outside that fence, and M2-28 did. */}
-        {/* THE EMPTY LANDMARK IS HIDDEN WHILE IT IS EMPTY (M1-123, one shape across five pages).
-            At rest this aside is mounted and holds nothing, and an <aside> with a label is a
-            COMPLEMENTARY LANDMARK whatever else it carries — measured in the live accessibility
-            tree: role=complementary, ignored=false, children=0 — so a reader's landmark list
-            carried an empty "fleet detail". aria-hidden is gated by the SAME `opened === null` that
-            gates the content, so the exposure and the content cannot desync: they are one
-            expression, not two facts kept in step. The element stays mounted, which is what gives
-            the track something to transition from — the whole reason collapse beat unmount. */}
-        <aside className="myx-fleet-detail myx-swell" aria-label={S.detail} aria-hidden={opened === null}>
-          {opened === null ? null : (
-            <>
-              <Key className="myx-swell-close" onClick={() => setOpenKey(null)}>{S.close}</Key>
-              <div className="myx-fleet-detail-head">
-                <HolderEdge state={headAttention(opened, signalsFor(opened)).edge} label={headAttention(opened, signalsFor(opened)).label} />
-                <span className="myx-fleet-detail-name">{opened.label}</span>
-                <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
-              </div>
-              <CauseLine help={causeHelp(opened, headAttention(opened, signalsFor(opened)).cause, auth?.[opened.key])} />
-
-              <section className="myx-fleet-section">
-                <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>
-                <Lifecycle head={opened} />
-                {/* The daemon-level restart (POST /api/daemon/restart), distinct from the head
-                    restart above: it drains every head's turns and the daemon's supervisor brings
-                    it back. The same control the doctor's upgrade section mounts. */}
-                <DaemonRestart />
-              </section>
-
-              <section className="myx-fleet-section">
-                <h2 className="myx-fleet-section-title">{S.knobs}</h2>
-                {overrides.length === 0 ? (
-                  <p className="myx-fleet-note">{S.noOverrides}</p>
-                ) : (
-                  overrides.map((knob) => <KnobReadout key={knob.key} knob={knob} />)
-                )}
-              </section>
-
-              <section className="myx-fleet-section">
-                <h2 className="myx-fleet-section-title">{S.pool}</h2>
-                {accountsResource.error === null ? null : <Fault message={accountsResource.error} lastRead={accountsResource.lastUpdated} />}
-                <Pool head={opened} payload={accountsResource.data} nowMs={nowMs} />
-              </section>
-            </>
-          )}
-        </aside>
-      </div>
-    </div>
+    <FleetBoard
+      heads={headsResource.data}
+      error={headsResource.error}
+      lastRead={headsResource.lastUpdated}
+      sources={{
+        auth: authResource.data,
+        usage: usageResource.data,
+        accounts: accountsResource.data,
+        accountsError: accountsResource.error,
+        accountsRead: accountsResource.lastUpdated,
+        topology: topology !== null && 'topology' in topology ? topology.topology : null,
+        catalogs: models !== null && 'heads' in models ? models.heads : null,
+        fieldsPending: (topology !== null && 'pending' in topology) || (models !== null && 'pending' in models),
+        topologyStale,
+        landed: turns !== null && 'landed' in turns ? turns.landed : [],
+        lastTs: new Map((summaryResource.data?.heads ?? []).flatMap((row) => (row.last_ts === undefined ? [] : [[row.key, row.last_ts] as const]))),
+        overrides,
+      }}
+      openKey={openKey}
+      onOpen={setOpenKey}
+      // Read once per render: the heads poll re-renders this page every two seconds, which is finer
+      // than any exclusion expiry or reset line it is compared against.
+      nowMs={Date.now()}
+    />
   );
 }
 

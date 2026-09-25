@@ -6,6 +6,7 @@
 // answer (GET /api/config) and the topology is a plausible splice.toml — so the capture shows the
 // page the daemon will actually produce and not a flattering rearrangement of it.
 import type { ConfigPayload } from '@shared/api';
+import type { ClaudeHeadPayload } from '@entities/claude-head';
 
 
 /** Every runtime knob, with the provenance spread the real daemon produces. */
@@ -80,5 +81,19 @@ export const fixtureTopology: Record<string, unknown> = {
       provider: 'codex', port: 3099, discovery_prefix: 'claude', pinned_model: 'gpt-5.6-sol',
       context_window: 400000, overrides: { effort: 'high' },
     },
+  },
+};
+
+/** The Claude head card the sample shows: separate mode, two stored logins. */
+export const fixtureClaudeHead: ClaudeHeadPayload = {
+  mode: 'separate',
+  resolves_to: '~/.local/share/claude/versions/2.1.257',
+  shim_path: '~/.local/share/splice/splice-launch',
+  real_binary_path: null,
+  claude_logins: {
+    count: 2,
+    selected: 'work',
+    labels: ['personal', 'work'],
+    constraint: 'one login per Claude head at a time, chosen at session launch; no mid-session switch',
   },
 };

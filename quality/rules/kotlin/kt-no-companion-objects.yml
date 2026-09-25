@@ -22,4 +22,12 @@ note: >
 files:
   - "**/src/main/**/*.kt"
 rule:
-  kind: companion_object
+  any:
+    - kind: companion_object
+    # V4-220 (2026-09-25, measured on ast-grep 0.45.3): tree-sitter-kotlin reads a `public sealed class`
+    # or an `object` that holds a visibility-modified companion as INFIX EXPRESSIONS, so the companion
+    # has no companion_object node and the kind alone never saw it. CredentialVerdict's `public
+    # companion object` passed this wall that way. The misread companion is an infix_expression whose
+    # text starts with the modifier; the rule-test file carries both shapes.
+    - kind: infix_expression
+      regex: '^(public|internal|protected|private)\s+companion\s+object\b'

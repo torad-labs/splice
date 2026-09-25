@@ -1,5 +1,6 @@
 // The alert entity's HTTP segment. All three calls are pending V4-133.
-import { pendingOf, request } from '@shared/api';
+import { pendingOf, request, writeFailure } from '@shared/api';
+import type { WriteResult } from '@shared/lib';
 import { alertsStore } from '../model/store';
 import type { AlertSettings } from '../model/types';
 
@@ -20,23 +21,20 @@ export async function fetchAlerts(): Promise<void> {
   }
 }
 
-/** Write the settings; the daemon answers with what it now holds, and the store takes that. */
-export async function putAlerts(settings: AlertSettings): Promise<AlertSettings | null> {
+/** Write the settings; the daemon answers with what it now holds, and the store takes that. A
+ *  refused write leaves the store as the daemon last answered and hands its reason to the caller. */
+export async function putAlerts(settings: AlertSettings): Promise<WriteResult<AlertSettings>> {
   try {
     const applied = await request<AlertSettings>('/api/alerts', {
       method: 'PUT',
       body: JSON.stringify(settings),
     });
     alertsStore.setData(applied);
-    return applied;
+    return { status: 'applied', answer: applied };
   } catch (err) {
-    const pending = pendingOf(err, PENDING_ALERTS);
-    if (pending !== null) {
-      alertsStore.setData(pending);
-      return null;
-    }
-    alertsStore.setError(err instanceof Error ? err.message : String(err));
-    return null;
+    const result = writeFailure(err, PENDING_ALERTS);
+    if (result.status === 'pending') alertsStore.setData({ pending: result.item });
+    return result;
   }
 }
 
@@ -48,17 +46,13 @@ export async function putAlerts(settings: AlertSettings): Promise<AlertSettings 
  * No poller in this slice: settings change when the operator changes them, and a timer would only
  * race their own edit.
  */
-export async function sendTestAlert(): Promise<boolean> {
+export async function sendTestAlert(): Promise<WriteResult<null>> {
   try {
     await request<unknown>('/api/alerts/test', { method: 'POST' });
-    return true;
+    return { status: 'applied', answer: null };
   } catch (err) {
-    const pending = pendingOf(err, PENDING_ALERTS);
-    if (pending !== null) {
-      alertsStore.setData(pending);
-      return false;
-    }
-    alertsStore.setError(err instanceof Error ? err.message : String(err));
-    return false;
+    const result = writeFailure(err, PENDING_ALERTS);
+    if (result.status === 'pending') alertsStore.setData({ pending: result.item });
+    return result;
   }
 }

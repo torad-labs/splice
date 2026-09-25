@@ -52,6 +52,20 @@ class ApiKeyAuthProviderTest {
         assertTrue(p.hasKeyNow())
     }
 
+    // V4-220 item 3: describe() names the link that supplies the key, so the console's key routes can
+    // tell a stored key in use from one the environment or a key file shadows.
+    @Test
+    fun `describe names which link of the chain supplies the key`(@TempDir tmp: Path) = runBlocking {
+        val store = KeyStore(tmp.resolve("keys.toml")).apply { write("OPENROUTER_API_KEY", "sk-store") }
+        val file = tmp.resolve("key").also { Files.writeString(it, "sk-file") }
+        val empty = KeyStore(tmp.resolve("empty.toml"))
+        val fromEnv = provider(mapOf("OPENROUTER_API_KEY" to "sk-env"), file, store)
+        assertEquals("environment", fromEnv.describe().fields["key_source"])
+        assertEquals("file", provider(emptyMap(), file, store).describe().fields["key_source"])
+        assertEquals("store", provider(emptyMap(), null, store).describe().fields["key_source"])
+        assertEquals("missing", provider(emptyMap(), null, empty).describe().fields["key_source"])
+    }
+
     @Test
     fun `blank env value falls through to the store`(@TempDir tmp: Path) = runBlocking {
         val store = KeyStore(tmp.resolve("keys.toml")).apply { write("OPENROUTER_API_KEY", "sk-store") }

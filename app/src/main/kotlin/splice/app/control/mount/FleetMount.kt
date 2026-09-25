@@ -7,6 +7,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import splice.app.control.ConsolePorts
 import splice.app.control.DashboardPage
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlPayloads
@@ -25,6 +26,8 @@ internal class FleetMount(
     audit: ControlAudit,
     private val dashboardHtml: DashboardPage,
     private val guard: ControlGuard,
+    /** Read at CALL time for the declared roster's families: ControlPlane assigns it after construction. */
+    private val ports: ConsolePorts,
 ) {
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val listHeads = ListHeads(HeadStatusListing(resolver::headStatuses))
@@ -35,11 +38,18 @@ internal class FleetMount(
         route.get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }
         route.get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
         route.get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
-        route.get("/api/status") { guard.guarded(call) { ControlReplies.respond(call, payloads.statusJson()) } }
+        route.get("/api/status") {
+            guard.guarded(call) { ControlReplies.respond(call, payloads.statusJson(families())) }
+        }
         route.get("/api/heads") { guard.guarded(call) { listHeads.handle(call) } }
         route.post("/api/heads/{head}/{action}") { guard.guarded(call) { headRoutes.headAction(call) } }
         route.get("/api/logs/{head}") {
             guard.guarded(call) { headRoutes.logsJson(call, ControlReplies.tail(call, DEFAULT_LOG_TAIL)) }
         }
     }
+
+    /** Each head's family from the declared roster; an unwired roster is no families, never a 5xx,
+     *  because the status read every page polls must not fail over a colour. */
+    private fun families(): Map<String, String?> =
+        ports.declaredHeads?.invoke()?.mapValues { (_, declared) -> declared.family }.orEmpty()
 }

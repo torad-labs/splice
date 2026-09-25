@@ -1,14 +1,6 @@
-// MODELS, THE CATALOG RACK (row M2-33). What is proved here is the rack's SHAPE, because that is
-// what the page's own comments already claimed and the code did not do.
-//
-// components.tsx has said since m1 that "the bay head prints these once and the strips below carry
-// values only (B9)", and it exported MODEL_COLUMNS for exactly that. No bay was ever given a names
-// row, every strip was given `label={column.label}`, and the struck row for a vacant tier rendered
-// the first TWO columns of six. So the rack printed its six column names thirteen times and then
-// stopped being a grid at the third column. Measured at 1536 dark before the change: a strip stood
-// 63.8px of which 42px was the values; a vacant row ended at x=553 where its neighbours ran to
-// x=1137; every strip left 345.8px of bare bay; and with a names row added but the strips still at
-// their own width, the last name sat 301.9px right of the column it names.
+// The models page on the kit: one table of every head's models, the window and both prices drawn
+// against their column's largest so heads compare, each head's four tiers as chips, the provider
+// view grouping on what the daemon reports, and the opened model reading its own head's windows.
 //
 // CONTRACTS.md section 4: a .ts test holds no JSX (TS1161), so elements are built with
 // createElement and asserted on the markup react-dom/server returns; and a BOARD takes its payload
@@ -16,110 +8,193 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
-
-import { MODEL_COLUMNS, vacantText } from '../src/pages/models/components';
+import { slotTiers, windowSourceText } from '../src/entities/model';
+import type { HeadCatalog } from '../src/entities/model';
 import { ModelsBoard } from '../src/pages/models';
 import { fixtureCatalog } from '../src/pages/models/fixtures/models';
-import { S } from '../src/pages/models/strings';
+import {
+  byProvider, columnMax, entriesOf, findModel, headWindows, rateText, tiersFilled, windowFromText,
+} from '../src/pages/models/model';
+import { H, S } from '../src/pages/models/strings';
+import { ABSENT } from '../src/shared/lib';
+import { tableOf } from './lib/markup';
 
 const h = createElement;
+const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => renderToStaticMarkup(element);
 
-interface Rack { label: string; names: { w: number; text: string }[]; rows: number[][]; labels: number }
-
-/** Every bay in a rendered board, as the three things B9 is about: the names row, the cell widths
- *  under it, and how many per-cell labels survive. Bounded at the bay's own `</section>`, because a
- *  region that runs to the end of the markup sweeps in whatever the page draws below the rack --
- *  the measurement-reads-past-its-object defect this campaign has now made three times. */
-function racks(markup: string): Rack[] {
-  // a bay's class list may carry a modifier (a compact rack is `myx-bay myx-bay-compact`)
-  return markup.split(/<section class="myx-bay[ "]/).slice(1).map((part) => {
-    const head = /<span class="myx-bay-label">([^<]*)</.exec(part);
-    const fields = /<div class="myx-bay-fields">([\s\S]*?)<\/div><div class="myx-bay-rows">/.exec(part);
-    const rowsAt = part.indexOf('<div class="myx-bay-rows">');
-    const end = part.indexOf('</section>');
-    const region = rowsAt < 0 ? '' : part.slice(rowsAt, end < 0 ? undefined : end);
-    return {
-      label: head === null ? '?' : head[1],
-      names: fields === null ? [] : [...fields[1].matchAll(/width:(\d+)ch[^>]*>([^<]*)</g)]
-        .map((m) => ({ w: Number(m[1]), text: m[2] })),
-      // SPLIT ON THE CLASS, NOT ON THE CLASS PLUS ITS CLOSING QUOTE: a modified row is
-      // `class="myx-strip myx-strip-selected"`, so the quoted form misses exactly the rows this
-      // file exists to check and silently folds their cells into the previous row -- the first
-      // run reported a twelve-cell strip in a six-column rack. The character class is the other
-      // half: a bare prefix also matches `myx-strip-fields`, the strip's OWN inner box, and the
-      // second run reported an empty row. Found both times by the assertion, which is the point of
-      // asserting the list rather than its length.
-      rows: region.split(/<div class="myx-strip[ "]/).slice(1)
-        .map((strip) => [...strip.matchAll(/class="myx-sfield" style="width:(\d+)ch/g)].map((m) => Number(m[1]))),
-      labels: (region.match(/myx-sfield-label/g) ?? []).length,
-    };
-  });
+/** The first element, or a named failure: the strict preset forbids a non-null assertion. */
+function first<T>(items: readonly T[]): T {
+  const value = items[0];
+  if (value === undefined) throw new Error('expected at least one element');
+  return value;
 }
 
-describe('the catalog rack is a grid, and its names are printed once', () => {
-  const markup = renderToStaticMarkup(h(ModelsBoard, { catalog: fixtureCatalog }));
-  const bays = racks(markup);
-  const widths = MODEL_COLUMNS.map((column) => column.w);
+const models = fixtureCatalog.heads.reduce((sum, head) => sum + head.models.length, 0);
 
-  test('the board renders every head as a bay, so a green below is not an empty denominator', () => {
-    // Law 34: if the board drew nothing, every assertion here would pass vacuously and the suite
-    // would report a rack with no repeated labels and no ragged rows. The denominator is named.
-    expect(bays.map((bay) => bay.label)).toEqual(fixtureCatalog.heads.map((head) => head.head));
-    expect(bays.every((bay) => bay.rows.length > 0)).toBe(true);
-    expect(bays.length).toBeGreaterThan(0);
+describe('the catalog table', () => {
+  const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
+  const catalog = tableOf(markup, S.models);
+
+  test('every head is a group and every model a row, so a green below is not an empty denominator', () => {
+    expect(catalog.groups).toHaveLength(fixtureCatalog.heads.length);
+    for (const head of fixtureCatalog.heads) expect(catalog.groups.some((group) => group.includes(`>${head.head}<`))).toBe(true);
+    expect(catalog.rows).toHaveLength(models);
   });
 
-  test('every bay prints the six column names once, from the same table the cells use', () => {
-    for (const bay of bays) {
-      expect(`${bay.label}: ${bay.names.map((name) => name.text).join()}`)
-        .toBe(`${bay.label}: ${MODEL_COLUMNS.map((column) => column.label).join()}`);
-    }
+  test('names its columns once, in the head row, with one cell per column in every row', () => {
+    // The strip rack printed its six names on every strip until M2-33; a table names them once.
+    expect(catalog.names).toEqual([S.model, S.tier, S.contextWindow, S.windowFrom, S.input, S.output]);
+    for (const row of catalog.rows) expect([...row.matchAll(/<td/g)].length).toBe(catalog.names.length);
   });
 
-  test('and therefore prints no label on any cell', () => {
-    for (const bay of bays) expect(`${bay.label}: ${bay.labels} labels`).toBe(`${bay.label}: 0 labels`);
+  test('a head\'s rows run in the client\'s tier order, then the models no tier selects', () => {
+    const claudex = fixtureCatalog.heads.find((head) => head.head === 'claudex');
+    if (claudex === undefined) throw new Error('the fixture catalog lost claudex');
+    expect(entriesOf(claudex).map((entry) => entry.model.id)).toEqual(['gpt-5.6-sol', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.6-mini']);
   });
 
-  test('EVERY row has six cells, the vacant tier included (M1-107)', () => {
-    // A view decides what a cell SHOWS, never how many cells a row has. The struck row used to
-    // carry two of six, which ended it 584px short of its neighbours in the same rack.
-    for (const bay of bays) {
-      for (const row of bay.rows) {
-        expect(`${bay.label} ${row.join()}`).toBe(`${bay.label} ${widths.join()}`);
-      }
-    }
+  test('the window and both prices are bars against their column across every head', () => {
+    const max = columnMax(fixtureCatalog.heads.flatMap(entriesOf));
+    expect(max).toEqual({ window: 400_000, input: 1.25, output: 10 });
+    const sol = catalog.rows.find((row) => row.includes('>gpt-5.6-sol<')) ?? '';
+    // the widest window and the dearest prices fill their bars; a cheaper head's bar is shorter
+    expect((sol.match(/aria-valuenow="100"/g) ?? []).length).toBe(3);
+    const flash = catalog.rows.find((row) => row.includes('>deepseek-flash<')) ?? '';
+    expect(flash).toContain('aria-valuenow="32"');
   });
 
-  test('a name is declared at the ch of the column it names', () => {
-    for (const bay of bays) expect(bay.names.map((name) => name.w)).toEqual(widths);
+  test('a model with no rate card prints the absence in both price cells, never a zero', () => {
+    const mini = catalog.rows.find((row) => row.includes('>gpt-5.6-mini<')) ?? '';
+    expect((mini.match(/role="meter"/g) ?? []).length).toBe(1);
+    expect((mini.match(new RegExp(`>${ABSENT}<`, 'g')) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(mini).not.toContain('>$0<');
   });
 
-  test('the tiers no model fills are named on one line, and no strip is dashes alone', () => {
-    // FEATURES 4.8: the page says which tiers Claude Code will not get on a head. It said so with a
-    // strip of dashes per tier; it says it once, by name, and every strip left carries a model.
-    expect(markup).toContain('no model fills the fable tier here');
-    const strips = markup.split(/<div class="myx-strip[ "]/).slice(1);
-    for (const strip of strips) {
-      const values = [...strip.slice(0, strip.indexOf('</div></div>') + 12)
-        .matchAll(/<span class="myx-sfield-text">([^<]*)</g)].map((m) => m[1]);
-      expect(values.filter((value) => value !== S.absent).length).toBeGreaterThan(1);
-    }
-    expect(vacantText([])).toBeNull();
-    expect(vacantText(['opus', 'haiku'])).toContain('no model fills the opus, haiku tiers');
+  test('a price prints in cents at least, and a cheap model keeps every digit the daemon sent', () => {
+    expect(rateText(0.014)).toBe('$0.014');
+    expect(rateText(0.4)).toBe('$0.40');
+    expect(rateText(10)).toBe('$10.00');
+    expect(rateText(1.25)).toBe('$1.25');
   });
 
-  test('the wall can fail: a short row and a labelled cell are both reported by name', () => {
-    // The planted violations are the two states this page was in an hour ago. A wall nobody has
-    // seen go red on the defect it was written for is not yet a wall.
-    const planted = '<section class="myx-bay"><header class="myx-bay-head"><span class="myx-bay-label">planted</span>'
-      + '</header><div class="myx-bay-fields"><span style="width:24ch;flex-grow:24">model</span></div>'
-      + '<div class="myx-bay-rows"><div class="myx-strip"><div class="myx-sfield" style="width:24ch">'
-      + '<span class="myx-sfield-label">model</span></div></div>'
-      + '<div class="myx-strip"><div class="myx-sfield" style="width:24ch"></div>'
-      + '<div class="myx-sfield" style="width:8ch"></div></div></div></section>';
-    const bay = racks(planted)[0];
-    expect(bay?.label).toBe('planted');
-    expect(bay?.labels).toBe(1);
-    expect(bay?.rows).toEqual([[24], [24, 8]]);
+  test('the pinned model carries its badge, once per head that pins one', () => {
+    const pinned = fixtureCatalog.heads.filter((head) => head.pinned_model !== '').length;
+    expect(catalog.rows.filter((row) => row.includes(`>${S.pinned}<`))).toHaveLength(pinned);
+  });
+});
+
+describe('the tiers', () => {
+  test('each head\'s four tiers are chips, green where a model fills one and grey where none does', () => {
+    const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
+    const claudex = first(tableOf(markup, S.models).groups.filter((group) => group.includes('>claudex<')));
+    for (const tier of ['Opus', 'Sonnet', 'Haiku']) expect(claudex).toMatch(new RegExp(`myx-badge-ok[^"]*"[^>]*>(<[^>]*>)*${tier}<`));
+    expect(claudex).toMatch(/myx-badge-neutral[^"]*"[^>]*>(<[^>]*>)*Fable</);
+  });
+
+  test('the tiers come from the daemon vocabulary, and an unfilled tier is a value and not a gap', () => {
+    const tiers = slotTiers(first(fixtureCatalog.heads));
+    expect(tiers.map((tier) => tier.slot)).toEqual(['opus', 'sonnet', 'haiku', 'fable']);
+    expect(tiers[3]?.model).toBeNull();
+    expect(tiers[0]?.model?.pinned).toBe(true);
+  });
+
+  test('the figure counts filled tiers of every tier every head could fill', () => {
+    expect(tiersFilled(fixtureCatalog.heads)).toEqual({ filled: 5, total: 12 });
+    expect(render(h(ModelsBoard, { catalog: fixtureCatalog }))).toContain('>of 12<');
+  });
+});
+
+describe('the words', () => {
+  test('the window source reads as words, whatever label the daemon sends', () => {
+    // ModelsRoute.kt WINDOW_FROM_*, plus `head` from splice-lead's S15 change.
+    expect(['model', 'head', 'rule', 'extra-window', 'default', 'unknown'].map(windowFromText)).toEqual([
+      'Model catalog', 'Head setting', 'Prefix rule', 'Extra window', 'Provider default', 'Unknown',
+    ]);
+    expect(windowFromText('some-new-label')).toBe(windowSourceText('some-new-label'));
+    expect(render(h(ModelsBoard, { catalog: fixtureCatalog }))).not.toContain('extra-window');
+  });
+
+  test('a catalog this daemon does not serve says so without a row id, and nothing else is drawn', () => {
+    const markup = render(h(ModelsBoard, { catalog: { pending: 'V4-127' } }));
+    expect(markup).toContain(`>${S.catalogPending}<`);
+    expect(markup).toContain(H.pending);
+    expect(markup).not.toContain('V4-127');
+    expect(markup).not.toContain('<table');
+    expect(markup).not.toContain('myx-stat');
+  });
+
+  test('no heads at all is one line, not a page of empty tiles', () => {
+    const markup = render(h(ModelsBoard, { catalog: { heads: [] } }));
+    expect(markup).toContain(`>${S.noHeads}<`);
+    expect(markup).not.toContain('myx-stat');
+  });
+
+  test('a fixture-fed board carries the capture marker with the fixture name', () => {
+    expect(render(h(ModelsBoard, { catalog: fixtureCatalog, sample: 'models' }))).toContain('data-sample="models"');
+    expect(render(h(ModelsBoard, { catalog: fixtureCatalog }))).not.toContain('data-sample');
+  });
+});
+
+describe('grouping and the opened model', () => {
+  test('the by-provider view groups on the reported provider and never guesses one', () => {
+    const groups = byProvider(fixtureCatalog.heads);
+    expect(groups.map((group) => group.provider)).toEqual(['api-key', 'chatgpt-oauth', 'kimi-oauth']);
+    // An empty provider is grouped under the honest label, never under the head key.
+    const withoutProvider: HeadCatalog = { ...first(fixtureCatalog.heads), provider: '' };
+    expect(byProvider([withoutProvider])[0]?.provider).toBe(S.providerUnknown);
+  });
+
+  test('a head\'s windows come from its topology, joined on the head and provider keys', () => {
+    const head = first(fixtureCatalog.heads);
+    const topology = {
+      heads: { [head.head]: { provider: head.provider, context_window: 400_000 } },
+      providers: { [head.provider]: { default_context_window: 200_000, extra_windows: [{ id: 'x', context_window: 1 }], window_rules: [] } },
+    };
+    expect(headWindows(topology, head)).toEqual({ headWindow: 400_000, defaultWindow: 200_000, extraWindows: 1, windowRules: 0 });
+    // A window the topology does not set is an absence, never the daemon's internal zero.
+    const bare = { heads: { [head.head]: {} }, providers: { [head.provider]: { default_context_window: 0 } } };
+    expect(headWindows(bare, head)).toEqual({ headWindow: null, defaultWindow: null, extraWindows: 0, windowRules: 0 });
+    expect(headWindows(null, head)).toBeNull();
+    expect(headWindows({ heads: {}, providers: {} }, head)).toBeNull();
+  });
+
+  test('the opened model is found under the head it was opened on, and a pending payload finds nothing', () => {
+    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
+    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'nope' })).toBeNull();
+    expect(findModel(fixtureCatalog, { head: 'no-such-head', id: 'kimi-k2.5' })).toBeNull();
+    expect(findModel({ pending: 'V4-127' }, { head: 'claude-kimi', id: 'kimi-k2.5' })).toBeNull();
+  });
+
+  test('two heads serving one model id each open their own, so the detail reads the right head windows', () => {
+    const kimi = fixtureCatalog.heads.find((head) => head.head === 'claude-kimi');
+    if (kimi === undefined) throw new Error('the fixture catalog lost claude-kimi');
+    const twin = { ...kimi, head: 'claude-kimi-twin' };
+    const catalog = { heads: [kimi, twin] };
+    expect(findModel(catalog, { head: 'claude-kimi-twin', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi-twin');
+    expect(findModel(catalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
+    // and their rows carry distinct keys, so opening one never selects the other
+    expect(entriesOf(twin)[0]?.key).not.toBe(entriesOf(kimi)[0]?.key);
+  });
+});
+
+describe('the rate columns are drawn only when a model has a rate card', () => {
+  // splice-lead at 2560, 2026-09-25: with no rate card on any model, Input and Output were two
+  // full-width columns of dashes, a third of the table. The Priced figure carries what they said.
+  const unpriced = { ...fixtureCatalog, heads: fixtureCatalog.heads.map((head) => ({ ...head, models: head.models.map((model) => ({ ...model, rates: null })) })) };
+  const headers = (markup: string): string[] => [...markup.matchAll(/<th scope="col"[^>]*>([^<]*)/g)].map((m) => m[1]);
+
+  test('a priced catalog draws Input and Output, and counts its priced models', () => {
+    const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
+    expect(headers(markup)).toEqual(expect.arrayContaining([S.input, S.output]));
+    const priced = fixtureCatalog.heads.flatMap((head) => head.models).filter((model) => model.rates !== null && model.rates !== undefined).length;
+    expect(priced).toBeGreaterThan(0);
+    expect(markup).toMatch(new RegExp(`${S.priced}</p><p class="myx-stat-value">${priced}<span class="myx-stat-unit">of ${models}<`));
+  });
+
+  test('an unpriced catalog draws neither, and says none of its models is priced', () => {
+    const markup = render(h(ModelsBoard, { catalog: unpriced }));
+    expect(headers(markup)).not.toContain(S.input);
+    expect(headers(markup)).not.toContain(S.output);
+    expect(markup).toMatch(new RegExp(`${S.priced}</p><p class="myx-stat-value">0<span class="myx-stat-unit">of ${models}<`));
   });
 });

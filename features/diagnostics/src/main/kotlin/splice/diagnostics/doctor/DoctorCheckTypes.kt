@@ -12,12 +12,24 @@ import splice.daemonclient.DaemonProbe
 internal const val CHECK_DAEMON = "daemon"
 internal const val FIX_RESTART = "splice restart"
 
+/** [fixId] names a fix the daemon can run itself (POST /api/doctor/fix/{id}); [fix] stays the
+ *  sentence an operator reads, and a row whose remedy is theirs alone (edit a shell rc, fix access,
+ *  move a foreign file) carries no id. */
 internal data class DoctorCheck(
     val name: String,
     val status: CheckStatus,
     val detail: String,
     val fix: String? = null,
+    val fixId: DoctorFix? = null,
 )
+
+/** V4-220 item 4: the fixes the console may ask the daemon to run, each one the CLI verb it runs.
+ *  Only a verb that is safe unattended belongs here — it creates or relinks splice's own files and
+ *  refuses rather than replacing anything else. */
+public enum class DoctorFix(public val wire: String) {
+    /** `splice install --all`: links every head's wrapper and `splice` onto the installed shim. */
+    INSTALL_ALL("install_all"),
+}
 
 /** Resolved control port + the version the listener there reports (null = nothing answering).
  *  Computed ONCE in doctor() and threaded into both the daemon and auth sections so the port is

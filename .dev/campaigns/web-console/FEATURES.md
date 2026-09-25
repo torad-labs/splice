@@ -44,7 +44,7 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | Route | Serves | Console coverage today |
 |---|---|---|
 | `GET /health` | ok, version, heads ready/failed, topology digest and stale flag | banner only |
-| `GET /api/status` | version, head registry (key, label, authKind) | header |
+| `GET /api/status` | version, head registry (key, label, authKind, family: the provider's vendor family or null) | header |
 | `GET /api/heads` | per head: running, healthy, version match, gate snapshot with live turns, error counters, pids | fleet plates |
 | `POST /api/heads/{head}/{start,stop,restart}` | lifecycle | fleet plates |
 | `POST /api/daemon/shutdown` | stop the daemon | none |

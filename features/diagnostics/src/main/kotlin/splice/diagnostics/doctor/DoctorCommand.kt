@@ -191,8 +191,11 @@ public class DoctorCommand(
         envReader: EnvReader,
         live: Boolean = false,
         withLogs: Boolean = false,
-    ): String {
-        val run = collect(envReader, live)
+    ): String = reportJson(collect(envReader, live), envReader, withLogs)
+
+    /** The same report over a run already collected: DoctorFixes reads the rows that still need its
+     *  fix and serves the report of that SAME run, never a second collection that could disagree. */
+    internal fun reportJson(run: DoctorRun, envReader: EnvReader, withLogs: Boolean = false): String {
         val report = jsonReport(envReader)
         return report.jsonText(report.build(run, withLogs))
     }

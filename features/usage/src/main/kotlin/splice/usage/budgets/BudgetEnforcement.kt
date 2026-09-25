@@ -13,11 +13,12 @@
 // silently — the head's log names the model once a day, and a refusal says how many it could not count.
 //
 // THE FILES: this one holds the two ports and the entry point; BudgetLedger.kt one head's ledger,
-// BudgetDay.kt its day, TurnPrice.kt the price of a turn and BudgetText.kt every sentence it says.
+// BudgetDay.kt its day, core's TurnPrice the price of a turn and BudgetText.kt every sentence it says.
 package splice.usage.budgets
 
 import splice.core.budget.HeadBudget
 import splice.core.model.ModelCatalog
+import splice.core.model.TurnPrice
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.usage.perf.PerfRowsSource

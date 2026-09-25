@@ -9,23 +9,37 @@
 // redirect and the discovery map ARE the routing contract, and they are tested
 // without a router, a DOM or a page.
 
+import { S } from './strings';
+
+// In the sidebar's order (docs/design/DESIGN.md section 6), so the first address, the one the
+// console opens on, is the first object: the session in flight.
 export const ADDRESSES = [
-  'fleet',
-  'turns',
   'sessions',
+  'turns',
   'teams',
   'projects',
+  'fleet',
+  'models',
+  'compaction',
   'accounts',
   'usage',
   'settings',
-  'models',
-  'logs',
-  'compaction',
   'mcp',
+  'logs',
   'doctor',
 ] as const;
 
 export type Address = (typeof ADDRESSES)[number];
+
+/** The sidebar's four groups, each named for the splice object its pages are about: the session in
+ *  flight, the head it runs on, the plan it spends, and the daemon under all of them. Every address
+ *  sits in exactly one group, in ADDRESSES order (tests/router.test.ts holds both). */
+export const NAV_GROUPS: ReadonlyArray<{ label: string; addresses: readonly Address[] }> = [
+  { label: S.inFlight, addresses: ['sessions', 'turns', 'teams', 'projects'] },
+  { label: S.routing, addresses: ['fleet', 'models', 'compaction'] },
+  { label: S.plans, addresses: ['accounts', 'usage'] },
+  { label: S.daemon, addresses: ['settings', 'mcp', 'logs', 'doctor'] },
+];
 
 /** The row that will create each page directory, printed in its honest empty. */
 export const PAGE_ROW: Record<Address, string> = {

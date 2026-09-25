@@ -72,7 +72,8 @@ export function Choice({ label, value, options, onChange, w = 18, id, disabled, 
   value: string;
   options: readonly ChoiceOption[];
   onChange: (next: string) => void;
-  /** The box's width in `ch`, as every field's is. */
+  /** The box's least width in `ch`. It grows to hold its value and state word, which never clip:
+   *  the padding and the state word are not counted in `ch`, and grow with the type scale. */
   w?: number;
   id?: string;
   disabled?: boolean;
@@ -184,7 +185,7 @@ export function Choice({ label, value, options, onChange, w = 18, id, disabled, 
         type="button"
         id={id}
         className={cx('myx-choice-box', open && 'myx-choice-open')}
-        style={{ width: `${w}ch` }}
+        style={{ minWidth: `${w}ch` }}
         role="combobox"
         aria-expanded={open}
         aria-controls={`${base}-options`}

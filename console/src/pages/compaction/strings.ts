@@ -1,23 +1,52 @@
-// Every label this page prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall). The law line is a sentence and lives in the component.
+// Every word this page prints. S: labels, three words or fewer, sentence case. H: help, one
+// sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure.
 export const S = {
-  title: 'compaction',
-  /** The reveal's label for the page's one explanation. */
-  law: 'which model compacts',
-  sample: 'sample data',
-  /** The rules bay (GET /api/compaction/instructions). */
-  instructions: 'compaction rules',
+  title: 'Compaction',
+  sample: 'Sample data',
+  aboutModel: 'About the model',
+  week: 'Last 7 days',
+  counted: 'Counted',
+  failed: 'Failed',
+  took: 'Time',
+  summary: 'Summary',
+  outcomes: 'Outcomes',
+  outcome: 'Outcome',
+  share: 'Share',
+  count: 'Count',
+  heads: 'Heads',
+  head: 'Head',
+  compactions: 'Compactions',
+  rules: 'Rules',
+  recent: 'Recent',
+  when: 'When',
+  instructions: 'Instructions',
+  error: 'Error',
+  detail: 'Compaction',
+  open: 'Open compaction',
+  close: 'Close',
+  noRules: 'No rules',
+  none: 'No compactions yet',
+  clientDefault: 'Client default',
+  /** The daemon's outcome names in words. The set stays open: a name missing here prints as the
+   *  daemon spells it (model.ts outcomeText). */
+  outcomeName: {
+    model_text: 'Summary written',
+    model_thinking: 'From reasoning',
+    model_text_weak: 'Weak summary',
+    tooled_no_text: 'Tool call',
+    empty_model: 'Empty reply',
+    stream_error: 'Stream failed',
+    upstream_error: 'Provider error',
+  },
 } as const;
 
-// THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
-// These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
-// these meanings is how the console reached eleven phrasings for "nothing here".
-//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
-//              default. It was `n/r`, which no reader could expand.
-//   none       the question was asked and its answer is nothing (no tier hands this model out).
-//   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
-//   unavailable  it exists and we cannot reach it.
-//   ineligible   it does not apply here.
-//   not built    it does not exist yet; a pending route names its row.
-// A site whose fact cannot be told from the code KEEPS the word it has and gets a note beside it.
-// Renaming an absence you have not understood is how `unknown` silently becomes `none`.
+export const H = {
+  model: "Compaction runs on the session's own model and effort.",
+  noRules: "Claude Code's own instructions apply until a [compaction] rule exists.",
+  none: "A compaction lands here when a session's context fills.",
+} as const;
+
+export const U = {
+  ms: 'ms',
+  chars: 'chars',
+} as const;

@@ -21,6 +21,8 @@ import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
 import { DoctorBoard, openIdOf } from '../src/pages/doctor';
 import { EMPTIES, collapseChecks } from '../src/pages/doctor/model';
 import type { CheckRow } from '../src/pages/doctor/model';
+import { S } from '../src/pages/doctor/strings';
+import { ABSENT } from '../src/shared/lib';
 
 const h = React.createElement;
 
@@ -94,14 +96,14 @@ describe('a refused report prints nothing of itself', () => {
   test('the secret planted in a fix never reaches the markup, whichever check is open', () => {
     for (const open of [null, ...ids]) {
       const out = board(planted, open);
-      expect(out, `open: ${open}`).toContain('report refused');
+      expect(out, `open: ${open}`).toContain(S.refused);
       expect(out, `open: ${open}`).not.toContain(FIX_SECRET);
     }
   });
 
   test('the secret planted in a detail never reaches the markup, with its check opened', () => {
     const out = board(planted, ids[1] ?? '');
-    expect(out).toContain('report refused');
+    expect(out).toContain(S.refused);
     expect(out).not.toContain(DETAIL_SECRET);
   });
 
@@ -116,7 +118,7 @@ describe('a refused report prints nothing of itself', () => {
 
   test('the control shows the same surfaces are printed when the report passes', () => {
     const rack = board(clean);
-    expect(rack).not.toContain('report refused');
+    expect(rack).not.toContain(S.refused);
     for (const id of ids) expect(rack).toContain(id);
     expect(rack).toContain('splice login planted-codex');
     expect(rack).toContain('0.0.0-planted');
@@ -125,11 +127,15 @@ describe('a refused report prints nothing of itself', () => {
   });
 
   test('a refused report is not described as one with no fixes or no attention', () => {
-    // "no fix offered" and "0 need attention" are claims about a report; the page cannot make them
-    // about one it refused to read.
+    // "No fix offered" and a "Need attention" count are claims about a report; the page cannot make
+    // them about one it refused to read, so its figures print the absence.
+    const figure = (label: string, out: string) => new RegExp(`>${label}</p><p class="myx-stat-value">([^<]*)<`).exec(out)?.[1];
     const out = board(planted);
-    expect(out).not.toContain('no fix offered');
-    expect(out).not.toMatch(/\d+ need attention/);
+    expect(out).not.toContain(S.noFix);
+    expect(figure(S.needAttention, out)).toBe(ABSENT);
+    expect(figure(S.checks, out)).toBe(ABSENT);
+    // the control: a report the page read is counted
+    expect(figure(S.needAttention, board(clean))).toBe('2');
   });
 
   test('the refusal names where and which shape, never what', () => {
@@ -184,7 +190,7 @@ describe('the CLI\'s own mask is not a leak', () => {
 
   test('the masked report renders its checks, not a refusal', () => {
     const out = board(report([check('auth/e2e-openrouter', 'fail', STACK_DETAIL)]));
-    expect(out).not.toContain('report refused');
+    expect(out).not.toContain(S.refused);
     expect(out).toContain('auth/e2e-openrouter');
   });
 });

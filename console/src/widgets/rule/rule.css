@@ -1,189 +1,64 @@
-/* The fixed rule, bound to the measured top-rule region and the five cells
-   inside it (.impeccable/build/scaffold/layout.css): the rule is the full-width
-   band across the top of the frame, and the wordmark, clocks, health, nearest
-   window and no-window cells sit at their measured x and width. The measured y
-   (1.2%) and height (3.4%) are held as percentages OF THE BAND, which is where
-   they are read from. */
+/* The status strip (docs/design/DESIGN.md section 6): one quiet line over every page. Cells flow
+   left to right and wrap on a narrow window; the clocks keep the right edge. Figures are in the
+   mono face so a ticking clock or countdown never shifts the words after it. */
 
-/* THE BAND IS FOUR DIVIDERS AND TWO END CAPS (M1-36, E-7). The comp does not hold its
-   top chrome together with spacing; it holds it with structure. Six vertical rules turn
-   one 1536px span into five named cells, and that is what stops the gaps between the
-   readouts from reading as voids - the same move the bay makes, where a container that
-   reads as a container keeps its interior from reading as emptiness.
-
-   Measured on team-board-a.png, all six at y5..58 of the 59px band (8.5% down, running to
-   the band's own bottom hairline) and one to three pixels wide:
-
-     cap-left   x  6   0.39%      d3   x 620   40.36%
-     d1         x139   9.05%      d4   x1106   72.01%
-     d2         x452  29.43%      cap-right x1529  99.54%
-
-   Those six x land on the five cells this sheet already positions: the cap opens the
-   wordmark (0.5%), d1 closes it (0.5+8.5=9.0), d2 closes the clocks (10+19=29.0), d3
-   closes health (30+10=40.0), d4 opens the tail (72.0), and the right cap closes it
-   (72+27=99.0). So the dividers are drawn at the comp's own numbers rather than at the
-   cells', and the two agree to within half a point everywhere except the right cap.
-
-   THEY ARE A BACKGROUND, NOT SIX NODES: the rules are one ornament of the band the way
-   the rail plate's two dots are one ornament of the plate, they carry no state and no
-   word, and a cell's own border cannot draw them - the cells are 58.6% of the band tall
-   and these run 91.5%.
-
-   The ink is --hairline-strong and not --hairline: over --room that token resolves to
-   (61,62,61) against the comp's own measured (61,64,58), (67,65,61), (62,61,59),
-   (82,80,76), (52,52,50) and (65,64,61) - a median of 63.5. --hairline at .10 resolves
-   to (34,36,35), a third of the presence the comp draws, which is why the band has read
-   as an undivided span. */
 .myx-rule {
-  /* THE BAND IS A GRID (2026-09-23, console design pass). The cells used to be absolutely placed at
-     the comp's measured x, each a fixed share of the frame, so a word longer than its share printed
-     over the next cell: "daemon unreachable" ran through "nearest window" on every page the moment
-     the daemon went away, which is exactly when the operator reads it. A grid keeps the comp's
-     proportions as each cell's FLOOR (the vw minimums below are its measured shares) and lets a
-     cell grow instead of overprint; only the window cell gives, and it clips with an ellipsis.
-     The dividers are the cells' own right edges, so they move with the cells they divide. */
-  display: grid;
-  grid-template-columns: auto auto auto minmax(0, 1fr) auto;
-  align-items: stretch;
-  background-color: var(--room);
-  border-bottom: var(--hair) solid var(--hairline);
-  font-size: var(--text-4);
-}
-.myx-rule-cell {
   display: flex;
-  align-items: baseline;
-  align-self: center;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-6);
+  row-gap: var(--space-2);
+  min-height: var(--space-8);
+  padding: var(--space-3) var(--space-7);
+  border-bottom: var(--hair) solid var(--line);
+  background: var(--bg);
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+}
+
+.myx-rule-cell {
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-3);
-  min-width: 0;
   margin: 0;
-  padding-inline: var(--space-5);
+  min-width: 0;
   white-space: nowrap;
 }
-/* The divider runs the band's height less the comp's margin, so it is drawn on a stretched box
-   around the cell rather than on the centred cell itself. */
-.myx-rule > .myx-rule-cell {
-  align-self: stretch;
-  align-items: center;
-  border-inline-end: var(--hair) solid var(--hairline-strong);
-  margin-block: var(--space-2);
-}
-/* the wordmark cell is exactly the rail's column, so the first divider continues the rail's edge */
-.myx-rule-wordmark {
-  min-width: max(var(--rail-min), var(--rail-w));
-  padding-inline: var(--space-3);
-  font-family: var(--font-label);
-  font-size: var(--text-6);
+
+.myx-rule-clocks { margin-inline-start: auto; }
+
+/* a glyph stands for a word the strip does not print: the limit, the countdown, the daemon's state */
+.myx-rule-glyph { flex: none; font-size: var(--text-4); color: var(--fg-subtle); }
+.myx-rule-state { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--fg); }
+.myx-rule-state svg { flex: none; font-size: var(--text-4); }
+.myx-rule-health-ok .myx-rule-state svg { color: var(--ok); }
+.myx-rule-health-warn .myx-rule-state svg { color: var(--warn); }
+.myx-rule-health-danger .myx-rule-state svg { color: var(--danger); }
+.myx-rule-health-neutral .myx-rule-state svg { color: var(--fg-subtle); }
+.myx-rule-meter { display: inline-flex; width: calc(5 * var(--u)); }
+.myx-rule-reset { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono); color: var(--fg-muted); }
+
+.myx-rule-word { color: var(--fg-subtle); }
+.myx-rule-absent { color: var(--fg-subtle); }
+.myx-rule-account,
+.myx-rule-period { color: var(--fg-muted); }
+
+.myx-rule-figure {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
   font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--ink-strong);
-}
-/* The cells' floors are rem, the widths they rendered at 1440 when they were 19, 11 and 27 vw:
-   a share of the window put 700px of air between two clocks at 3840 (2026-09-24, fixed root). */
-.myx-rule-clocks {
-  min-width: 17rem;
-  font-family: var(--font-figure);
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  color: var(--fg);
 }
-/* The comp prints "14:02:11 local" at one size on one baseline: the word is quieter by ink, not by
-   size, which is what kept it from riding up like a superscript. */
-.myx-rule-clock-word {
-  font-family: var(--font-label);
-  color: var(--ink-mute);
-}
-.myx-rule-clock-word + .myx-rule-clock { margin-inline-start: var(--space-3); }
-.myx-rule-health { min-width: 10rem; }
-.myx-rule-health .myx-edge-label { font-size: inherit; }
-.myx-rule-window {
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.myx-rule-window .myx-rule-word,
-.myx-rule-none .myx-rule-word,
-.myx-rule-connection .myx-rule-word {
-  font-family: var(--font-label);
-  color: var(--ink-mute);
-}
-.myx-rule-reset { color: var(--ink-mute); }
-.myx-rule-absent {
-  font-family: var(--font-label);
-  color: var(--ink-mute);
-}
-.myx-rule-none {
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-/* The tail holds the no-window count and the two signals the comp never had (the live connection,
-   a pending restart). Its floor is the comp's 27% share at 1440; the count leads and the signals
-   follow. */
-.myx-rule-tail {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
-  min-width: 24rem;
-  padding-inline: var(--space-5);
-}
-.myx-rule-tail > .myx-rule-cell {
-  flex: 0 0 auto;
-  padding-inline: 0;
-}
+.myx-rule-pct-warn { color: var(--warn); }
+.myx-rule-pct-danger { color: var(--danger); }
 
-/* The state word prints in the room's full ink: it is the colorblind fallback and the only thing
-   telling a quiet daemon from a dead stream (index.tsx), so the cell declares no mute of its own. */
-.myx-rule-connection,
-.myx-rule-pending {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.myx-rule-connection .myx-edge-label,
-.myx-rule-pending .myx-edge-label { font-size: inherit; }
-/* a holder edge in the rule is a mark beside a word, not a bar the height of the band */
-.myx-rule .myx-edge { align-items: center; }
-.myx-rule .myx-edge-mark { align-self: stretch; margin-block: var(--space-1); }
+.myx-rule .myx-hm-name { color: var(--fg); }
+/* A state word is the colorblind fallback for its dot, so in the strip it prints in the full ink
+   while the labels around it stay quiet (tests/primitives.test.ts holds it). */
+.myx-rule .myx-badge-quiet { color: var(--fg); }
 
-/* ---------- THE PHONE (M3-03): THE RULE STACKS ----------
-   The five measured cells are shares of a 1536 band, and at 390 they overprint each other: the
-   clocks ran into health, and health into the window line. Below 720 the band is a small grid in
-   the rule's own reading order: the wordmark holds the left, the clocks sit OVER health beside it,
-   and the window line and the tail each take a full row. The six dividers are drawn at the comp's
-   x and would cut through words in this arrangement, so the band draws none; one hairline sets the
-   readouts under the wordmark apart from the clock block above them. */
 @media (max-width: 720px) {
-  .myx-rule {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      'mark clocks'
-      'mark health'
-      'window window'
-      'tail tail';
-    align-items: center;
-    column-gap: var(--space-5);
-    row-gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    background-image: none;
-  }
-  .myx-rule .myx-rule-cell,
-  .myx-rule-tail {
-    min-width: 0;
-    padding-inline: 0;
-    margin-block: 0;
-    border-inline-end: 0;
-  }
-  .myx-rule-wordmark { grid-area: mark; }
-  .myx-rule-clocks { grid-area: clocks; }
-  .myx-rule-health { grid-area: health; }
-  .myx-rule-window {
-    grid-area: window;
-    border-top: var(--hair) solid var(--hairline);
-    padding-top: var(--space-2);
-    text-overflow: ellipsis;
-  }
-  .myx-rule-tail { grid-area: tail; }
+  .myx-rule { padding: var(--space-3) var(--space-4); column-gap: var(--space-5); }
+  .myx-rule-clocks { margin-inline-start: 0; }
 }

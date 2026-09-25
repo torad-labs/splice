@@ -13,6 +13,7 @@ package splice.diagnostics.doctor.report
 
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.diagnostics.doctor.doctorLinks
 import java.net.URI
 import java.nio.file.Path
 
@@ -33,6 +34,10 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
     private val events = DoctorLogEvents()
 
     private val allowedPrefixes = ALLOWED_PATH_PREFIXES + spliceDirs.map { it.toString().replace(home.toString(), "~") }
+
+    // The public pages doctor's own fixes link to, as the path pass sees them: everything after the
+    // scheme's colon. Only these exact links pass; any other URL keeps its host-and-path mask.
+    private val links = doctorLinks.map { it.substringAfter(':') }.toSet()
 
     private val jwt = Regex("eyJ[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}")
     private val bearer = Regex("(?i)\\bbearer\\s+\\S+")
@@ -69,7 +74,8 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
         .replace(pathToken) { m -> if (allowedPath(m.groupValues[1])) m.value else "<redacted:path>" }
 
     private fun allowedPath(path: String): Boolean =
-        path == "/" || path == "~" || allowedPrefixes.any { path == it || path.startsWith("$it/") }
+        path == "/" || path == "~" || allowedPrefixes.any { path == it || path.startsWith("$it/") } ||
+            path in links
 
     /** A rendered failure (SafeFailureText already drops messages that quote bytes; the path a
      *  FileSystemException names still goes through the path allowlist here). */

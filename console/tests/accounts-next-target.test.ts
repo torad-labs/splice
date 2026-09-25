@@ -15,6 +15,8 @@ import { describe, expect, test } from 'vitest';
 import { SELECTOR_ORDER_TEXT, nextRuleOf } from '../src/entities/account';
 import type { AccountRow, AccountWindow } from '../src/entities/account';
 import { AccountsBoard } from '../src/pages/accounts';
+import { orderText } from '../src/pages/accounts/model';
+import { tableOf } from './lib/markup';
 
 const h = React.createElement;
 const DAY_7 = 604800;
@@ -55,10 +57,13 @@ const POOLS: AccountRow[] = [
   account({ label: 'spare', next_target: true, heads: ['codex-b'], windows: [sevenDay(30)] }),
 ];
 
-/** The `next` cell of every strip on the board, in document order. */
+/** The `Next` cell's text in every account row of the board, in document order, found by the
+ *  column's position in the head row so a moved column cannot silently read another. */
 function nextCells(markup: string): string[] {
-  const cell = /<span class="myx-sfield-label">next<\/span><span class="[^"]*"><span class="myx-sfield-text">([^<]*)<\/span>/g;
-  return [...markup.matchAll(cell)].map((match) => match[1] ?? '');
+  const table = tableOf(markup, 'Accounts');
+  const at = table.names.indexOf('Next');
+  if (at < 0) throw new Error('the accounts table has no Next column');
+  return table.cells.map((cells) => cells[at] ?? '');
 }
 
 function board(accounts: AccountRow[]): string {
@@ -68,7 +73,7 @@ function board(accounts: AccountRow[]): string {
 describe('each pool carries its own next target, the daemon\'s', () => {
   test('two pools, each marked where its own next_target is, and nowhere else', () => {
     // The default view is one bay per kind, in payload order: codex-a's two strips, then codex-b's.
-    expect(nextCells(board(POOLS))).toEqual(['', 'pinned', '', 'most weekly room']);
+    expect(nextCells(board(POOLS))).toEqual(['', 'Pinned', '', 'Most weekly room']);
   });
 
   test('the derivation the board reads names each pool\'s own rule', () => {
@@ -85,6 +90,8 @@ describe('each pool carries its own next target, the daemon\'s', () => {
 describe('the selector order is printed as the daemon walks it', () => {
   test('the pin first, then primary, then the previous account, then the lowest seven-day', () => {
     expect(SELECTOR_ORDER_TEXT).toBe('pinned, then primary, then last used, then most weekly room');
-    expect(board(POOLS)).toContain(SELECTOR_ORDER_TEXT);
+    // printed once, behind the accounts section's info mark, from the entity's own rule list
+    expect(orderText()).toBe('Pinned, then primary, then last used, then most weekly room.');
+    expect(board(POOLS)).toContain(orderText());
   });
 });

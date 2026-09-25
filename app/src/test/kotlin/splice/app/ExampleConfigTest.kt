@@ -121,8 +121,8 @@ class ExampleConfigTest {
     @Test
     fun `an explicit empty head model list is rejected rather than exposing the provider`() {
         val toml = exampleToml().replace(
-            "models = [{ id = \"grok-4.6\", slot = \"opus\" }, { id = \"grok-4.5\", slot = \"sonnet\" }, " +
-                "{ id = \"grok-build-latest\", slot = \"haiku\" }]",
+            "models = [{ id = \"grok-4.7\", slot = \"opus\" }, { id = \"grok-4.6\", slot = \"sonnet\" }, " +
+                "{ id = \"grok-build-0.1\", slot = \"haiku\" }]",
             "models = []",
         )
         val topology = TopologyLoader.parse(toml)
@@ -145,7 +145,7 @@ class ExampleConfigTest {
 
         assertEquals(listOf("opus", "sonnet", "haiku"), slots("claude-grok"))
         assertEquals(
-            "grok-build-latest",
+            "grok-build-0.1",
             topology.heads.getValue("claude-grok").models.orEmpty().first { it.slot == "haiku" }.id,
         )
         assertEquals(listOf("opus", "sonnet", "haiku"), slots("claude-kimi"))
@@ -215,10 +215,9 @@ class ExampleConfigTest {
         val rawModels = xai.models.map { it.id to it.contextWindow }
         assertEquals(
             listOf(
+                "grok-4.7" to 500_000L,
                 "grok-4.6" to 500_000L,
-                "grok-4.5" to 500_000L,
-                "grok-4.3" to 1_000_000L,
-                "grok-build-latest" to 256_000L,
+                "grok-build-0.1" to 256_000L,
             ),
             rawModels,
             "every declared provider row, exactly once and in source order",
@@ -229,9 +228,9 @@ class ExampleConfigTest {
         val catalog = xai.catalogFor(head)
         val selectedIds = head.models.orEmpty().map { it.id }
         assertEquals(
-            listOf("grok-4.6", "grok-4.5", "grok-build-latest"),
+            listOf("grok-4.7", "grok-4.6", "grok-build-0.1"),
             selectedIds,
-            "the head selects exactly these three rows (grok-4.3 is declared but NOT served here)",
+            "the head selects exactly these three rows, one per tier it serves",
         )
         assertEquals(
             selectedIds.associateWith { rawWindows.getValue(it) },
@@ -242,18 +241,18 @@ class ExampleConfigTest {
         assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row keeps its declared 500k")
         assertEquals(
             500_000L,
-            catalog.clientContextWindowFor("grok-build-latest"),
+            catalog.clientContextWindowFor("grok-build-0.1"),
             "non-[1m] rows use the window the launch plants: the pinned row's 500k",
         )
-        assertEquals(1.0, catalog.usageScale("grok-4.6"), "the pinned row rides raw: client 500k / real 500k")
-        assertEquals(500_000.0 / 256_000.0, catalog.usageScale("grok-build-latest"), "client 500k / real 256k")
+        assertEquals(1.0, catalog.usageScale("grok-4.7"), "the pinned row rides raw: client 500k / real 500k")
+        assertEquals(500_000.0 / 256_000.0, catalog.usageScale("grok-build-0.1"), "client 500k / real 256k")
 
         // Undeclared [1m] selectors strip to the row's real ceiling while the client uses literal 1m.
-        assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"))
-        assertEquals(2.0, catalog.usageScale("grok-4.6[1m]"), "client 1m / real 500k")
-        assertEquals(256_000L, catalog.contextWindowFor("grok-build-latest[1m]"))
-        assertEquals(1_000_000.0 / 256_000.0, catalog.usageScale("grok-build-latest[1m]"), "client 1m / real 256k")
-        assertEquals(1_000_000L, catalog.clientContextWindowFor("grok-build-latest[1m]"))
+        assertEquals(500_000L, catalog.contextWindowFor("grok-4.7[1m]"))
+        assertEquals(2.0, catalog.usageScale("grok-4.7[1m]"), "client 1m / real 500k")
+        assertEquals(256_000L, catalog.contextWindowFor("grok-build-0.1[1m]"))
+        assertEquals(1_000_000.0 / 256_000.0, catalog.usageScale("grok-build-0.1[1m]"), "client 1m / real 256k")
+        assertEquals(1_000_000L, catalog.clientContextWindowFor("grok-build-0.1[1m]"))
     }
 
     // DR-44b: ktoml unions duplicate keys instead of rejecting them (TOML spec: duplicates are an
@@ -279,7 +278,7 @@ class ExampleConfigTest {
     fun `a duplicated models key in one head fails loud instead of silently unioning`() {
         val valid = exampleToml()
         val roster =
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
         val malformed = valid.replace(roster, roster + "\n" + """models = [{ id = "grok-4.3", slot = "haiku" }]""")
         assertTrue(malformed != valid, "test must duplicate the shipped inline roster")
 
@@ -292,7 +291,7 @@ class ExampleConfigTest {
     fun `a braces-dropped inline model roster fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -308,7 +307,7 @@ class ExampleConfigTest {
     fun `a quoted models key with a bare roster also fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
             """"models" = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -328,7 +327,7 @@ class ExampleConfigTest {
         )
         assertEquals("claude-grok--\"", TopologyLoader.parse(valid).heads.getValue("claude-grok").discoveryPrefix)
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
 
@@ -346,21 +345,21 @@ class ExampleConfigTest {
             provider = "xai"
             port = 3100
             discovery_prefix = "claude-grok--"
-            pinned_model = "grok-4.6"
-            models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
+            pinned_model = "grok-4.7"
+            models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]
             [heads.claude-grok.claude]
             command = "claude-grok"
             isolate = ["commands"]         # this head gets its own commands/, everything else shared
         """.trimIndent()
         val inlineRoster =
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
         val inlineHead = """
             [heads]
-            claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.6", $inlineRoster, claude = { command = "claude-grok", isolate = ["commands"] } }
+            claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.7", $inlineRoster, claude = { command = "claude-grok", isolate = ["commands"] } }
         """.trimIndent()
         val valid = exampleToml().replace(tableHead, inlineHead)
         assertTrue(valid != exampleToml(), "test must rewrite the shipped head as an inline table")
-        assertEquals("grok-4.6", TopologyLoader.parse(valid).heads.getValue("claude-grok").pinnedModel)
+        assertEquals("grok-4.7", TopologyLoader.parse(valid).heads.getValue("claude-grok").pinnedModel)
 
         val malformed = valid.replace(inlineRoster, """models = ["grok-4.6", "grok-4.5"]""")
         lateinit var failure: IllegalArgumentException
@@ -373,12 +372,12 @@ class ExampleConfigTest {
     @Test
     fun `valid multiline model rosters ignore comments and quoted text`() {
         val inlineRoster =
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
         val multilineRoster = """
             models = [
                 # models = ["comment", "text"]
-                { id = "grok-4.6", slot = "opus" },
-                { id = "grok-4.5", slot = "sonnet" },
+                { id = "grok-4.7", slot = "opus" },
+                { id = "grok-4.6", slot = "sonnet" },
             ]
         """.trimIndent()
         val quotedText = "discovery_prefix = \"\"\"\n\"models\" = [\"quoted\", \"text\"]\n" +
@@ -388,7 +387,7 @@ class ExampleConfigTest {
             .replace("discovery_prefix = \"claude-grok--\"", quotedText)
 
         val head = TopologyLoader.parse(toml).heads.getValue("claude-grok")
-        assertEquals(listOf("grok-4.6", "grok-4.5"), head.models?.map(HeadModel::id))
+        assertEquals(listOf("grok-4.7", "grok-4.6"), head.models?.map(HeadModel::id))
     }
 
     @Test
@@ -396,11 +395,11 @@ class ExampleConfigTest {
         val topology = TopologyLoader.parse(exampleToml())
         val headProfiles = mapOf(
             "claudex" to (
-                listOf("gpt-5.6-sol" to "opus", "gpt-5.6-terra" to "sonnet", "gpt-5.6-luna" to "haiku", "gpt-6-astra" to "fable") to
-                    400_000L
+                listOf("gpt-6-sol" to "opus", "gpt-5.6-terra" to "sonnet", "gpt-6-luna" to "haiku", "gpt-6-astra" to "fable") to
+                    272_000L
                 ),
             "claude-grok" to (
-                listOf("grok-4.6" to "opus", "grok-4.5" to "sonnet", "grok-build-latest" to "haiku") to
+                listOf("grok-4.7" to "opus", "grok-4.6" to "sonnet", "grok-build-0.1" to "haiku") to
                     null
                 ),
             "openrouter" to (listOf("meta-llama/llama-4-maverick" to "opus", "z-ai/glm-5.3" to "sonnet") to null),
@@ -412,11 +411,11 @@ class ExampleConfigTest {
                 ),
             "claude-splice" to (
                 listOf(
-                    "claude-fable-5" to "fable",
-                    "claude-opus-5" to "opus",
+                    "claude-fable-5-1" to "fable",
+                    "claude-opus-5-5" to "opus",
                     "claude-sonnet-5" to "sonnet",
                     "claude-haiku-4-5" to "haiku",
-                ) to 200_000L
+                ) to 1_000_000L
                 ),
         )
         headProfiles.forEach { (key, profile) ->
@@ -448,11 +447,19 @@ class ExampleConfigTest {
         assertNull(anthropic.quirks.mapThinkingAdaptive)
         assertNull(anthropic.quirks.blockAllowlist)
         assertEquals("2023-06-01", anthropic.staticHeaders["anthropic-version"])
-        assertEquals("claude-fable-5", topology.heads["claude-splice"]!!.pinnedModel)
+        assertEquals("claude-fable-5-1", topology.heads["claude-splice"]!!.pinnedModel)
+        // V4-224: each row is the window Claude Code itself uses for that id (platform.claude.com models
+        // overview; code.claude.com model-config: 1M on every plan), since a claude-* id ignores our env
+        // and its counts ride raw.
         assertEquals(
-            setOf(200_000L),
-            anthropic.models.map { it.contextWindow }.toSet(),
-            "all claude-splice rows must equal the real window: a claude-* id ignores our env, so its counts ride raw",
+            mapOf(
+                "claude-fable-5-1" to 1_000_000L,
+                "claude-opus-5-5" to 1_000_000L,
+                "claude-sonnet-5" to 1_000_000L,
+                "claude-haiku-4-5" to 200_000L,
+            ),
+            anthropic.models.associate { it.id to it.contextWindow },
+            "every claude-splice row must equal the window the client uses for it",
         )
         assertEquals(3104, topology.heads["claude-splice"]!!.port)
         // shadowing the real binary would make the wrapper invoke itself

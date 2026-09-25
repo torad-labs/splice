@@ -40,6 +40,9 @@ describe('formatters', () => {
     expect(fmtTokens(1500)).toBe('1.5k');
     expect(fmtTokens(231000)).toBe('231k');
     expect(fmtTokens(1_000_000)).toBe('1.00M');
+    // a day's tokens past a billion read in billions, not as `1166.17M`
+    expect(fmtTokens(1_166_170_000)).toBe('1.17B');
+    expect(fmtTokens(999_990_000)).toBe('999.99M');
   });
   test('fmtMs scales', () => {
     expect(fmtMs(250)).toBe('250ms');

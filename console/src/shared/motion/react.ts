@@ -26,14 +26,15 @@ import type { Rect } from './registry';
 import './motion.css';
 
 /**
- * The gesture durations, mirroring the `--dur-N` tokens (CONTRACTS.md section 1: 120, 240, 400 ms).
+ * The gesture durations, mirroring the `--dur-N` token each gesture's rule in motion.css reads
+ * (tokens.css: 120, 180, 240 ms), and held to them by tests/motion.test.ts.
  *
  * Mirrored rather than read, because the timers have to end when the animation ends and a CSS
  * variable cannot be read synchronously at the moment it is needed. Under `prefers-reduced-motion`
  * the tokens are `0ms`; this hook returns early there, so no class is applied and no timer is
  * scheduled, and the two halves can never disagree about whether a gesture happened.
  */
-export const MOTION_MS = { print: 240, strike: 240, handoff: 400 } as const;
+export const MOTION_MS = { print: 180, strike: 180, handoff: 240 } as const;
 
 export interface MotionRow {
   key: string;

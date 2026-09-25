@@ -1,32 +1,33 @@
-// Labels of the world's controls. Three words or fewer, lowercase, no em-dash (the label wall
-// globs this file). A caller's own button text is the caller's copy; only the words these controls
-// say by themselves live here.
+// Copy of the world's controls. The copy gate reads this file: `S` holds labels (three words or
+// fewer, sentence case), `U` the fragments spoken beside a figure. A caller's own button text is the
+// caller's copy; only the words these controls say by themselves live here.
 export const S = {
   /** What an armed destructive key prints second. */
-  confirm: 'confirm',
+  confirm: 'Confirm',
   /** What a cocked key's holder edge prints: the edge is the state, and a state needs a word. */
-  armed: 'armed',
-  cancel: 'cancel',
+  armed: 'Armed',
+  cancel: 'Cancel',
   /** What a busy key prints beside its own label: a working key is visible, not merely disabled. */
-  busy: 'working',
+  busy: 'Working',
   /** The retry key a Fault may carry. */
-  retry: 'retry',
-  /** The holder edge's printed word on a fault strip. */
-  fault: 'fault',
-  /** The single field a fault strip carries: the daemon's own message. */
-  message: 'message',
+  retry: 'Retry',
   /** What a fault prints before the age of the rows a failed read left on screen. */
-  lastRead: 'last read',
+  lastRead: 'Last read',
   /** What a Choice's box says while its rack is shut, and while it is open. */
-  open: 'open',
-  close: 'close',
+  open: 'Open',
+  close: 'Close',
   /** What a chosen option's holder edge prints: the mark is a line, and a line needs a word. */
-  chosen: 'chosen',
+  chosen: 'Chosen',
   /** The copy key's three words: its default label, what it prints once the value is on the
    *  clipboard, and what it prints when there is no clipboard to put it on (plain http). */
-  copy: 'copy',
-  copied: 'copied',
-  copyByHand: 'copy by hand',
+  copy: 'Copy',
+  copied: 'Copied',
+  copyByHand: 'Copy by hand',
+} as const;
+
+export const U = {
+  /** The basis a fault's held rows are spoken with. */
+  stale: 'stale',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

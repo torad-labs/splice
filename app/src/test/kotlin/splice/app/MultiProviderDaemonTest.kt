@@ -33,6 +33,7 @@ import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
 /** A minimal OpenAI Chat Completions upstream (records the auth header the daemon sent). */
@@ -70,13 +71,19 @@ private class ChatUpstream {
     }
 }
 
-/** An Anthropic Messages upstream that records what the daemon forwarded (campaign claude-head). */
+/** One request an upstream received, whole: its headers (names lowercased) and its body. */
+private data class Forwarded(val headers: Map<String, List<String>>, val body: String)
+
+/** An Anthropic Messages upstream that records what the daemon forwarded (campaign claude-head).
+ *  Each request is ONE record, appended once it is read in full, to a list the handler threads
+ *  share safely. It was two unsynchronized lists appended one after the other, so a test could
+ *  pair one turn's headers with another turn's body (gate run 36171410103). */
 private class AnthropicUpstream {
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val pool = Executors.newCachedThreadPool()
+    private val recorded = CopyOnWriteArrayList<Forwarded>()
     val baseUrl get() = "http://127.0.0.1:${server.address.port}"
-    val seen = mutableListOf<Map<String, List<String>>>()
-    val bodies = mutableListOf<String>()
+    val forwarded: List<Forwarded> get() = recorded
 
     init {
         server.executor = pool
@@ -90,8 +97,8 @@ private class AnthropicUpstream {
     }
 
     private fun handle(ex: HttpExchange) {
-        seen.add(ex.requestHeaders.entries.associate { it.key.lowercase() to it.value.toList() })
-        bodies.add(ex.requestBody.readBytes().toString(Charsets.UTF_8))
+        val headers = ex.requestHeaders.entries.associate { it.key.lowercase() to it.value.toList() }
+        recorded.add(Forwarded(headers, ex.requestBody.readBytes().toString(Charsets.UTF_8)))
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         val frames = listOf(
@@ -114,7 +121,12 @@ class MultiProviderDaemonTest {
     private val codexMock = MockChatGptUpstream()
     private val grokMock = MockChatGptUpstream() // grok is the responses dialect too
     private val chatMock = ChatUpstream()
-    private val anthropicMock = AnthropicUpstream()
+
+    // One upstream per Anthropic-dialect provider, so each head's count covers every request that
+    // provider made and no other head's turn can land in it.
+    private val claudeUpstream = AnthropicUpstream()
+    private val neutralUpstream = AnthropicUpstream()
+    private val kimiUpstream = AnthropicUpstream()
     private val client = HttpClient(CIO)
     private lateinit var daemon: Daemon
     private lateinit var key: String
@@ -206,7 +218,7 @@ class MultiProviderDaemonTest {
 
         [providers.anthropic]
         dialect = "anthropic-passthrough"
-        base_url = "${anthropicMock.baseUrl}"
+        base_url = "${claudeUpstream.baseUrl}"
         auth = { kind = "client" }
         extra_headers = { anthropic-version = "2023-06-01" }
         [[providers.anthropic.models]]
@@ -217,7 +229,7 @@ class MultiProviderDaemonTest {
     private fun apiKeyPassthroughProvidersToml(neutralKey: Path, kimiKey: Path): String = """
         [providers.neutral]
         dialect = "anthropic-passthrough"
-        base_url = "${anthropicMock.baseUrl}"
+        base_url = "${neutralUpstream.baseUrl}"
         auth = { kind = "api-key", file = "${neutralKey.esc()}" }
         extra_headers = { X-Vendor = "neutral" }
         [[providers.neutral.models]]
@@ -226,7 +238,7 @@ class MultiProviderDaemonTest {
 
         [providers.kimi]
         dialect = "anthropic-passthrough"
-        base_url = "${anthropicMock.baseUrl}"
+        base_url = "${kimiUpstream.baseUrl}"
         auth = { kind = "api-key", file = "${kimiKey.esc()}" }
         [[providers.kimi.models]]
         id = "kimi-model"
@@ -279,7 +291,9 @@ class MultiProviderDaemonTest {
         codexMock.stop()
         grokMock.stop()
         chatMock.stop()
-        anthropicMock.stop()
+        claudeUpstream.stop()
+        neutralUpstream.stop()
+        kimiUpstream.stop()
     }
 
     // DR-81 redo (codex gap): the WIRING must be pinned end-to-end, not just LaunchService's gate —
@@ -367,7 +381,7 @@ class MultiProviderDaemonTest {
 
     @Test
     fun `the claude head serves a turn on the caller's own credential`() = runBlocking {
-        val before = anthropicMock.seen.size
+        val before = claudeUpstream.forwarded.size
         val body = client.post("http://127.0.0.1:$claudePort/v1/messages") {
             // deliberately NOT the mgmt key: this head has no splice-held credential to present
             header("Authorization", "Bearer callers-own-credential")
@@ -380,8 +394,8 @@ class MultiProviderDaemonTest {
         }.bodyAsText()
         assertTrue(body.contains("hi"), body)
 
-        assertEquals(before + 1, anthropicMock.seen.size, "one turn must produce one upstream request")
-        val sent = anthropicMock.seen[before]
+        assertEquals(before + 1, claudeUpstream.forwarded.size, "one turn must produce one upstream request")
+        val sent = claudeUpstream.forwarded[before].headers
         // the caller's credential rode through, exactly once
         assertTrue(sent["authorization"] == listOf("Bearer callers-own-credential"), sent.toString())
         assertTrue(sent["anthropic-beta"] == listOf("oauth-2025-04-20"), sent.toString())
@@ -393,7 +407,7 @@ class MultiProviderDaemonTest {
 
     @Test
     fun `generic api-key passthrough keeps vendor headers neutral`() = runBlocking {
-        val before = anthropicMock.seen.size
+        val before = neutralUpstream.forwarded.size
         val body = client.post("http://127.0.0.1:$neutralPort/v1/messages") {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
@@ -405,19 +419,19 @@ class MultiProviderDaemonTest {
         }.bodyAsText()
         assertTrue(body.contains("hi"), body)
 
-        assertEquals(before + 1, anthropicMock.seen.size)
-        val sent = anthropicMock.seen[before]
+        assertEquals(before + 1, neutralUpstream.forwarded.size)
+        val (sent, sentBody) = neutralUpstream.forwarded[before]
         assertEquals(listOf("Bearer neutral-daemon-key"), sent["authorization"])
         assertEquals(listOf("neutral"), sent["x-vendor"])
         assertTrue(sent["anthropic-version"].isNullOrEmpty(), sent.toString())
         assertTrue(sent.keys.none { it.startsWith("x-msh-") }, sent.keys.toString())
         assertTrue(sent["user-agent"].orEmpty().none { it.contains("KimiCLI") }, sent.toString())
-        assertTrue(anthropicMock.bodies[before].contains("cache_control"), anthropicMock.bodies[before])
+        assertTrue(sentBody.contains("cache_control"), sentBody)
     }
 
     @Test
     fun `kimi api-key passthrough retains Moonshot identity headers`() = runBlocking {
-        val before = anthropicMock.seen.size
+        val before = kimiUpstream.forwarded.size
         val body = client.post("http://127.0.0.1:$kimiPort/v1/messages") {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
@@ -429,13 +443,13 @@ class MultiProviderDaemonTest {
         }.bodyAsText()
         assertTrue(body.contains("hi"), body)
 
-        assertEquals(before + 1, anthropicMock.seen.size)
-        val sent = anthropicMock.seen[before]
+        assertEquals(before + 1, kimiUpstream.forwarded.size)
+        val (sent, sentBody) = kimiUpstream.forwarded[before]
         assertEquals(listOf("Bearer kimi-daemon-key"), sent["authorization"])
         assertEquals(listOf("2023-06-01"), sent["anthropic-version"])
         assertEquals(listOf("KimiCLI/1.5"), sent["user-agent"])
         assertEquals(listOf("splice"), sent["x-msh-platform"])
-        assertTrue(!anthropicMock.bodies[before].contains("cache_control"), anthropicMock.bodies[before])
+        assertTrue(!sentBody.contains("cache_control"), sentBody)
     }
 
     @Test

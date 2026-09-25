@@ -89,7 +89,7 @@ describe("the gradle slot", () => {
     const code = await runUnderSlot({ layout: fake.layout, label: "V4-108", args: [":app:test"], env: { CI: "1", PATH: fake.path } });
     expect(code).toBe(0);
     const receipt = readFileSync(fake.receipt, "utf8");
-    expect(receipt).toContain("ARGS:--no-daemon :app:test");
+    expect(receipt).toContain("ARGS:--parallel --no-daemon :app:test");
     expect(receipt).toMatch(/V4-108 pid=\d+ since=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/);
     expect(existsSync(join(fake.dir, ".gradle-slot.lock.holder"))).toBe(false);
   });
@@ -105,7 +105,16 @@ describe("the gradle slot", () => {
     expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline --no-daemon help");
     const ci = fakeBuildRoot();
     await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
-    expect(readFileSync(ci.receipt, "utf8")).toContain("ARGS:--no-daemon help");
+    expect(readFileSync(ci.receipt, "utf8")).not.toContain("--offline");
+  });
+
+  test("--parallel is CI's alone: on this box one project builds at a time", async () => {
+    const local = fakeBuildRoot();
+    await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
+    expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline --no-daemon help");
+    const ci = fakeBuildRoot();
+    await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
+    expect(readFileSync(ci.receipt, "utf8")).toContain("ARGS:--parallel --no-daemon help");
   });
 
   test("the shell script's flock and this CLI's cannot both hold the slot", async () => {
@@ -179,13 +188,13 @@ describe("the gradle slot", () => {
 
     await runUnderSlot({ layout: fake.layout, label: "wrapped", args: ["help"], env: { CI: "1", PATH: `${binDir}:${fake.path}` } });
     expect(existsSync(marker)).toBe(true);
-    expect(readFileSync(fake.receipt, "utf8")).toContain("ARGS:--no-daemon help");
+    expect(readFileSync(fake.receipt, "utf8")).toContain("ARGS:--parallel --no-daemon help");
 
     rmSync(marker);
     const bare = fakeBuildRoot();
     await runUnderSlot({ layout: bare.layout, label: "bare", args: ["help"], env: { CI: "1", PATH: bare.path } });
     expect(existsSync(marker)).toBe(false);
-    expect(readFileSync(bare.receipt, "utf8")).toContain("ARGS:--no-daemon help");
+    expect(readFileSync(bare.receipt, "utf8")).toContain("ARGS:--parallel --no-daemon help");
   });
 
   // ── the signal path ───────────────────────────────────────────────────────────────────────────

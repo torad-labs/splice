@@ -152,6 +152,9 @@ function spawnGradle(
   }
   // `-n "${CI:-}"` in the script: an empty CI is not CI.
   const offline = childEnv.CI ? [] : ["--offline"];
+  // Projects build in parallel on CI only. The runner is the job's alone; on this box the slot's JVMs
+  // run in buildgate.slice, which hostshield makes earlyoom's first victim, so here one project at a time.
+  const parallel = childEnv.CI ? ["--parallel"] : [];
   // `command -v buildgate` — resolved against the child's PATH, because buildgate is this MACHINE's
   // memory-containment wrapper and nothing in the tree provides it. Calling it unconditionally is
   // what took every gradle leg on CI down with `buildgate: command not found` (gradle-slot.sh:37-42).
@@ -159,7 +162,7 @@ function spawnGradle(
   const gradlew = `${buildRoot}/gradlew`;
   if (!existsSync(gradlew)) throw new Error(`gate: no gradle wrapper at ${gradlew}`);
   const argv = buildgate
-    ? [buildgate, gradlew, ...offline, "--no-daemon", ...args]
-    : [gradlew, ...offline, "--no-daemon", ...args];
+    ? [buildgate, gradlew, ...offline, ...parallel, "--no-daemon", ...args]
+    : [gradlew, ...offline, ...parallel, "--no-daemon", ...args];
   return Bun.spawn(argv, { cwd: buildRoot, stdio: ["inherit", "inherit", "inherit"], env: childEnv });
 }

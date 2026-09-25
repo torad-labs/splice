@@ -120,6 +120,10 @@ class DrainingRestartTest {
         val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
         // The phase it is ENTERING, never a completion: the drain outlives this response.
         assertEquals("draining", body["status"]!!.jsonPrimitive.content)
+        // The route writes the 202 BEFORE it requests the drain (DaemonRoutes.restartJson), so the drain
+        // lands after this client already holds its answer. Reading the counter at once raced that order,
+        // and a loaded CI runner lost it (run 36167036978: 0). Waited for, then exactly one.
+        awaitDrains(1)
         assertEquals(1, drains.get(), "the drain was actually requested, not merely reported")
     }
 
@@ -189,6 +193,11 @@ class DrainingRestartTest {
         warnPct = 80,
         warnTokens5h = 0,
     )
+
+    private suspend fun awaitDrains(expected: Int) {
+        val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
+        while (drains.get() < expected && System.nanoTime() < deadline) delay(POLL_MS)
+    }
 
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000

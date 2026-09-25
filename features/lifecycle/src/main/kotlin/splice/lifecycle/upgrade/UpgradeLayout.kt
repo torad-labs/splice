@@ -45,11 +45,14 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
      *  "..", an absolute path, a leading zero or an empty identifier is refused BEFORE a path is built,
      *  whoever supplies it — a candidate jar's version line, --to, or a previous link's target. */
     fun versionDir(version: String): Path {
-        if (!semver.matches(version)) {
+        if (!isVersion(version)) {
             throw UpgradeRefused("release version '$version' is not a normalized SemVer version")
         }
         return releases.resolve(version)
     }
+
+    /** Whether [version] is one normalized SemVer segment: what [versionDir] accepts. */
+    fun isVersion(version: String): Boolean = semver.matches(version)
 
     fun stagingDir(): Path = releases.resolve("$STAGING_PREFIX${ProcessHandle.current().pid()}")
 

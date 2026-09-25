@@ -829,74 +829,7 @@
 }
 .myx-fbox-editable .myx-fbox-input { border-bottom: var(--hair) solid var(--strip-field-line); }
 
-/* --- Reveal: the bytes are not in the DOM until the reader asks. --- */
-.myx-reveal {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.myx-reveal-btn {
-  align-self: flex-start;
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  color: var(--ink);
-  background: transparent;
-  border: var(--hair) solid var(--hairline-strong);
-  border-radius: 0;
-  padding: var(--space-1) var(--space-2);
-  cursor: pointer;
-}
-/* The room's one pressable measure, shared with features/views' actions (identical box, face and
-   line): the comp shows no Reveal, so the floor's hover state decides, and it is the move the rest
-   of the room's pressables make. */
-.myx-reveal-btn:hover { border-color: var(--ink); color: var(--ink-strong); }
-.myx-reveal-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.myx-reveal-body { color: var(--ink); }
-
-/* --- Empty: an unprinted strip in the rack. ---
-   It was the retired EmptyState rebuilt - centred text in a dashed box (m1 design review B15, and
-   C2 in the same report) - in a world with no centred text and no cards, and two of them stacked
-   on fleet.png read as the page's furniture rather than as a rack with nothing in it. An empty
-   bay is a strip that carries no data: the same paper, the same hairline, the same radius 0, cut
-   to its content like every other strip, its text where a field's value sits and its source under
-   it in the mute. It starts at the rack's own field origin - the font on this box is the LABEL
-   face at --text-1 on purpose, so the 8ch below resolves to the same width the edge column
-   budgets and the empty lines up with the columns above it. That gutter belongs to the rack: an
-   empty standing alone (a page with nothing to rack, an aside) has no columns to line up with, and
-   with it the text sat at the right of a box that was mostly blank. */
-.myx-empt {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  align-self: flex-start;
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  width: max-content;
-  /* Cut to its content, but never past its rack: an empty's text is a sentence, not a cell, so on
-     a phone it wraps inside the box instead of running under the rack's edge (S12, measured at 390:
-     accounts' "one login per claude head" ran 61px past the clip, compaction's rules empty 132). */
-  max-width: 100%;
-  background: var(--strip);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-}
-.myx-bay-rows > .myx-empt {
-  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2) + var(--space-3));
-}
-.myx-empt-text {
-  /* FIGURE: an honest empty is printed words, not code, so it takes the display face. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-3);
-  color: var(--strip-ink);
-}
-.myx-empt-source {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--strip-ink-mute);
-}
+/* Reveal and Empty are styled in kit.css. */
 
 /* --- Figure: value, unit and basis, all as text, all at the sentence's own size. ---
    ONE SIZE (m1 design review B5): this rule used to be the retired Metric's ladder token for

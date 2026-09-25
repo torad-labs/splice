@@ -1,36 +1,21 @@
-/* The two faces of the strip bay, embedded in the single-file build.
-   A compact workhorse grotesque for labels and copy (Archivo, variable), and a
-   tabular monospace for figures (JetBrains Mono, variable). Both are variable
-   files, so one @font-face rule covers the whole axis range and the build
-   inlines two files instead of six.
-
-   Archivo carries BOTH of its axes here: wght 100-900 and wdth 62-125. The
-   wdth axis is not decoration -- the comp's lettering is condensed (its strip
-   type measures about 0.31em of advance per character against a full-height
-   ascender), and a face without a width axis can only be squeezed with a
-   transform, which scales the glyph and lies to every size check downstream
-   (design review B2). The first cut loaded the wght-only file; this one is the
-   full variable font, same family, same OFL-Archivo.txt beside it.
-
-   url() rather than a bare path keeps them under Vite's assetsInlineLimit, so
-   the shipped artifact carries no font request. These two faces and their two
-   licences (OFL-Archivo.txt, OFL-JetBrainsMono.txt) are the whole of fonts/: the
-   finish row (M3-04) deleted the retired IBM Plex Mono files and their OFL.txt,
-   which had stood beside them unreferenced since the world changed faces. */
+/* The console's two faces, embedded in the single-file build: Geist for every word and number,
+   Geist Mono for code, paths and identifiers that must line up. Both are the variable files from
+   the geist package (1.7.2, SIL OFL 1.1, OFL-Geist.txt beside them), so one rule covers each whole
+   weight axis. url() keeps them under Vite's assetsInlineLimit, so the shipped artifact makes no
+   font request: the console is served offline from the jar. */
 
 @font-face {
-  font-family: 'Archivo';
+  font-family: 'Geist';
   font-style: normal;
   font-weight: 100 900;
-  font-stretch: 62% 125%;
   font-display: swap;
-  src: url('./fonts/archivo-var.woff2') format('woff2-variations');
+  src: url('./fonts/geist-var.woff2') format('woff2-variations');
 }
 
 @font-face {
-  font-family: 'JetBrains Mono';
+  font-family: 'Geist Mono';
   font-style: normal;
-  font-weight: 100 800;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('./fonts/jetbrains-mono-var.woff2') format('woff2-variations');
+  src: url('./fonts/geist-mono-var.woff2') format('woff2-variations');
 }

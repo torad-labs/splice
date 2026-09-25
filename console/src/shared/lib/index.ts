@@ -45,6 +45,20 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
  *  words (none, unknown, unavailable, ineligible) are different facts and stay words. */
 export const ABSENT = '–';
 
+/** Words a label prints in capitals wherever they fall. */
+const ACRONYMS: Record<string, string> = {
+  api: 'API', id: 'ID', ids: 'IDs', mcp: 'MCP', utc: 'UTC', url: 'URL', ui: 'UI', cpu: 'CPU', gpu: 'GPU',
+  ttl: 'TTL', http: 'HTTP', json: 'JSON', toml: 'TOML', oauth: 'OAuth', sse: 'SSE', ok: 'OK', pid: 'PID',
+};
+
+/** A label as the chrome prints it: sentence case, acronyms in capitals. The words themselves stay
+ *  lowercase in each slice's strings.ts (the label wall), so this is display and nothing else. */
+export function sentence(label: string): string {
+  const words = label.split(' ').map((word) => ACRONYMS[word] ?? word);
+  const text = words.join(' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function fmtInt(n: number): string {
   return new Intl.NumberFormat('en-US').format(n);
 }

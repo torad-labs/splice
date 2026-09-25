@@ -130,5 +130,7 @@ export { FieldBox } from './field-box';
 export { Reveal } from './reveal';
 export { Empty } from './empty';
 export { Figure } from './figure';
+export { Badge, DataTable, DetailPanel, KeyValue, Meter, PageHeader, Section, Stat, StatRow } from './kit';
+export type { Column, Tone } from './kit';
 export type { Provenance } from './field-box';
 export type { Edge, Basis } from './types';

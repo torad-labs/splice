@@ -2,6 +2,7 @@
 package splice.terminal
 
 import splice.core.terminal.GREEN
+import splice.core.terminal.RED
 import splice.core.terminal.RESET
 import java.util.Timer
 import java.util.TimerTask
@@ -56,7 +57,17 @@ public class Spinner(
         if (tty && running) redraw()
     }
 
+    /** The step succeeded: the line ends with a green check. */
     public fun stop(finalMessage: String) {
+        finish(GREEN + CHECK, finalMessage)
+    }
+
+    /** The step failed: a red cross, so a failure never reads as done. */
+    public fun fail(finalMessage: String) {
+        finish(RED + CROSS, finalMessage)
+    }
+
+    private fun finish(mark: String, finalMessage: String) {
         running = false
         pulses?.close()
         pulses = null
@@ -65,7 +76,7 @@ public class Spinner(
             return
         }
         out.append(ERASE)
-        out.append(GREEN).append(CHECK).append(RESET)
+        out.append(mark).append(RESET)
         out.append(' ').append(finalMessage).append('\n')
     }
 
@@ -82,4 +93,5 @@ public class Spinner(
 
 private const val PULSE_MS = 80L
 private const val CHECK = "✓"
+private const val CROSS = "✗"
 private const val ERASE = "\r\u001B[2K"

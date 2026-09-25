@@ -105,14 +105,15 @@ origin.
 - **`splice setup` can hand an NVIDIA card to rig.** On Linux x86_64 with a card nvidia-smi can
   name, an interactive setup asks (default no) whether to run a local model through
   [rig](https://github.com/torad-labs/rig): rig installs into `~/.local/share/rig`, downloads
-  bonsai-2-27b (about 7 GB), builds the engine for the card and serves it on 127.0.0.1. Setup then
-  adds a `bonsai` head (`claude-bonsai`) through `splice add`'s own checks, atomic save and restart,
-  from what `rig describe` reports: its base URL, its advertised window, and its server facts as
-  quirks (`reasoning_effort` off where the server rejects it, `slot_affinity` where it pins slots).
+  bonsai-2-27b (about 8 GB; about 18 GB of disk in all), builds the engine for the card and serves
+  it on 127.0.0.1. Setup then adds a `bonsai` head (`claude-bonsai`) through `splice add`'s own
+  checks, atomic save and restart, from what `rig describe` reports: its base URL, its advertised
+  window, and its server facts as quirks (`reasoning_effort` off where the server rejects it,
+  `slot_affinity` where it pins slots).
   The endpoint takes no key, so `BONSAI_API_KEY` in keys.toml gets a placeholder, only when absent.
   A headless setup never offers it, a configured `bonsai` is left alone, and a rig failure is said
-  in plain words (rig's exit codes mapped, its last stderr lines shown) without failing the rest of
-  setup.
+  in plain words (rig's exit codes mapped, its last stderr lines shown; a card or disk too small for
+  the model is refused in rig's own sentence before the download) without failing the rest of setup.
 - **The project page says what governs the repo.** `GET /api/projects/{id}` (and each row of the
   list) now carries `compaction`, the rules a compaction in that repo resolves to in the daemon's own
   precedence (core's `CompactionInstructions.rulesFor`: a project rule shadows the model and global
@@ -571,6 +572,12 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **An install that cannot link says so in one line.** `splice install` and `splice setup` stopped
+  with a JVM stack trace when the launch shim was missing, dangling or unreadable, when two heads
+  shared a wrapper command, or when a command name held a real file. Each now prints the one
+  sentence it already carried (`splice: launch shim not found at … (run install.sh)`) and exits 1.
+  A failed setup step (the install, a rig call) now ends its line with a red ✗ rather than the ✓
+  a finished step shows.
 - **Budgets warn and block (V4-133 review).** `PUT /api/budgets` stored a head's daily budget and
   nothing on the turn path read it, so a `block` head kept serving turns. Each head now weighs its
   turns against its budget per UTC day, priced from the model's rate card the way `/api/projects`

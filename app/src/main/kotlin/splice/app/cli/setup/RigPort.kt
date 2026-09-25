@@ -6,7 +6,7 @@
 //
 // A small INTERFACE rather than one `fun interface` per verb: the five calls are one collaborator.
 // A test replaces them together with one fake and production runs them through one process runner
-// (ProcessRig). EVERY test hands over its own: the real one downloads a 7 GB model, and on the
+// (ProcessRig). EVERY test hands over its own: the real one downloads an 8 GB model, and on the
 // operator's box a model is already serving on rig's port.
 package splice.app.cli.setup
 

@@ -82,7 +82,7 @@ internal class SetupCommand(
         prompts.spinner.start("Installing")
         val result = Cancellables.runCatchingBestEffort { runInstall() }
         val installed = result.fold(onSuccess = { it }, onFailure = { false })
-        prompts.spinner.stop(if (installed) "Installed wrappers" else "Install failed")
+        if (installed) prompts.spinner.stop("Installed wrappers") else prompts.spinner.fail("Install failed")
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false
         lanes.apply(lane, picker.addAll(heads))?.let { println(it) }

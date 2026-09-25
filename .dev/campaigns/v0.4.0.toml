@@ -6484,3 +6484,19 @@ title = "Every splice path honors $HOME, not only the passwd home. Main sources 
 files = ["core/src/main/kotlin/splice/core/config/InstallPaths.kt", "core/src/main/kotlin/splice/core/config/StatePaths.kt", "integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt", "app/src/main/dist/bin/splice-launch"]
 status = "todo"
 verify = "bun tools/gate run --only walls && a CLI test that runs splice add under HOME=<tmp> with user.home pointing elsewhere and asserts every file it writes is under <tmp>"
+
+[[items]]
+id = "V4-219"
+phase = "release"
+title = "Every console page is built around the user's job, not the daemon's data (operator 2026-09-25: 'I feel like it's missing a user perspective. What's the goal of each screen, what's the user supposed to do? ... everything is very at a surface level'). ROOT CAUSE, from the source: the console's coverage wall (console/src/shared/coverage/baseline.ts:1-8) takes its denominator from Knob.kt entries, the topology @SerialName values and the routes, so every page was built to DISPLAY every field; nothing enumerates the user's jobs, and docs/design/PRODUCT.md Principle 2 reads 'Read-only by default'. FIX: (1) each page opens with its one job: the question the user brings, what they leave knowing, and the actions that answer it, recorded in docs/design/JOBS.md and in the page's coverage.ts; (2) a first screen, 'Needs you', ranks everything that needs the operator across heads, accounts, sessions, turns, teams and doctor, each item with its one-click fix; (3) Sessions, Turns, Teams and Projects answer 'what is each agent doing, is any stuck or waiting on me, why was that slow, who is waiting on whom' and end in actions (open transcript, message, stop a turn, resume on another head, rebind a slot, edit a project's prompt or compaction instructions); (4) PRODUCT.md Principle 2 becomes 'Every CLI capability has a console action; a mutation confirms first and names the live sessions it interrupts'. The operator sees renders of Needs you, Sessions and Fleet before the rollout (docs/design/look-gate.md layer 4)."
+files = ["docs/design/PRODUCT.md", "docs/design/JOBS.md", "console/src/pages/", "console/src/shared/coverage/"]
+status = "todo"
+verify = "bun tools/gate run --only console"
+
+[[items]]
+id = "V4-220"
+phase = "release"
+title = "The console does everything the CLI does (operator 2026-09-25: 'why is it read only? Why cant I do everything the cli can in it?'). INVENTORY from the source: the CLI's verbs are CommandParser.kt:28-50 (doctor version shim-version init install uninstall login setup add add-model models upgrade status restart dashboard key logs sessions perf wire trace). The console already writes through 20 calls (sign in, switch, remove and relabel an account; start, stop and restart a head; daemon restart; config PATCH; topology PUT; wrap and unwrap the Claude head; teams; budgets; alerts; capture; playground). MISSING, each needing a daemon route plus a console action: add a backend (splice add: profile, sign-in, verify, save, restart); add-model; key set (masked, replace-only); upgrade and rollback (splice upgrade, run out of process so the daemon can replace its own jar); the doctor fixes (install --all, the PATH line, the shim), so every failing check that has a command has a Fix button; uninstall stays CLI-only with the reason recorded. A WALL keeps it: the console coverage denominator gains every CLI verb parsed from CommandParser.kt, and each verb gets a disposition (the page and action that covers it, or excluded with a written reason), so a new CLI verb with no console answer fails the build by name."
+files = ["app/src/main/kotlin/splice/app/control/", "features/configuration/src/main/kotlin/splice/configuration/add/", "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/", "console/src/shared/coverage/", "console/src/features/", "console/src/entities/"]
+status = "todo"
+verify = "bun tools/gate run"

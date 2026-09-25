@@ -174,6 +174,8 @@ export interface TeamMemberRow {
   /** The session's printed name (the client's own label), or its id when it has none. */
   name: string;
   role: string;
+  /** The slot's lead flag (TeamSlot.lead). The lead is this flag, never a role named `lead`. */
+  lead: boolean;
   head: string;
   model: string | null;
   account: string | null;
@@ -205,6 +207,8 @@ export interface TeamMemberRow {
 
 /** One message of the team as the board prints it. */
 export interface TeamMessage {
+  /** Epoch ms it was sent: where the timeline places it. */
+  at: number;
   time: string;
   from: string;
   to: string;
@@ -231,6 +235,9 @@ export interface TeamPayload {
   /** True when the sender's next turn is a cold cache after an instructions edit. */
   coldCacheHint?: boolean;
 }
+
+/** The member state of a bound session the registry does not list (pages/teams/board.ts). */
+export const UNLISTED = 'unlisted';
 
 /** What a store holds: the payload, or the honest empty naming the work item. */
 export type TeamsState = TeamsPayload | PendingRoute;

@@ -4,10 +4,11 @@
 // economics, and the day's perf rows of the team's sessions. Pure: no store and no clock (the
 // caller passes `now`), so the suite holds every join against fixed payloads.
 //
-// EVERY STAMP IS UTC, because the daemon's day is (TeamsReads.kt reads `?day=` as a UTC date) and
-// the board's own stamps already are (widgets/team-board/parts.tsx).
+// EVERY STAMP IS UTC, because the daemon's day is (TeamsReads.kt reads `?day=` as a UTC date), and
+// the page says so once, on its timeline's help.
 import type { SessionRow } from '@entities/session';
 import type { TurnRow } from '@entities/perf';
+import { UNLISTED } from '@entities/team';
 import type {
   TeamActivity,
   TeamActivityPayload,
@@ -26,8 +27,7 @@ import { ABSENT } from '@shared/lib';
 const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 
-/** The member state printed for a bound session the registry does not list. */
-export const UNLISTED = 'unlisted';
+export { UNLISTED };
 
 const iso = (epochMs: number): string => new Date(epochMs).toISOString();
 export const hhmm = (epochMs: number): string => iso(epochMs).slice(11, 16);
@@ -75,6 +75,7 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
       slot: slot.id,
       name: row?.name ?? session,
       role: slot.role,
+      lead: slot.lead,
       head: slot.head,
       model: slot.model,
       account: slot.account,
@@ -109,6 +110,7 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
 export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayload | null): TeamMessage[] {
   if (chat === null) return [];
   return chat.messages.map((message) => ({
+    at: message.at,
     time: hhmm(message.at),
     from: members.find((m) => m.sessionId === message.from)?.name ?? message.from,
     to: (message.to_slot === null ? undefined : members.find((m) => m.slot === message.to_slot)?.name) ?? message.to,
@@ -149,23 +151,21 @@ const startOf = (row: TurnRow): number => row.ts - (row.total ?? 0);
 const memberOf = (members: readonly TeamMemberRow[], row: TurnRow): TeamMemberRow | undefined =>
   row.session === undefined ? undefined : members.find((m) => m.sessionId.slice(0, SESSION_TAG_CHARS) === row.session);
 
-/** The day's landed turns of the team's members, oldest first. */
+/** The day's landed turns of the team's members, oldest first. A row's `in_tokens` already holds
+ *  its cache reads and writes (PerfKeys.kt IN_TOKENS), so it is the turn's whole input as it is. */
 export function turnsOf(members: readonly TeamMemberRow[], rows: readonly TurnRow[], dayStart: number): TeamTurn[] {
   return rows
     .filter((row) => row.ts >= dayStart && memberOf(members, row) !== undefined)
     .sort((a, b) => startOf(a) - startOf(b))
-    .map((row) => {
-      const input = row.in_tokens === undefined ? null : row.in_tokens + (row.cached_tokens ?? 0) + (row.cache_write_tokens ?? 0);
-      return {
-        id: hhmmss(startOf(row)),
-        member: memberOf(members, row)?.name ?? '',
-        time: hhmm(startOf(row)),
-        duration: span(row.total ?? 0),
-        input,
-        output: row.out_tokens ?? null,
-        live: false,
-      };
-    });
+    .map((row) => ({
+      id: `${row.session ?? ''}-${row.ts}`,
+      member: memberOf(members, row)?.name ?? '',
+      start: startOf(row),
+      ms: row.total ?? 0,
+      input: row.in_tokens ?? null,
+      output: row.out_tokens ?? null,
+      live: false,
+    }));
 }
 
 /** The team's turns in flight at each minute of the last hour: a turn counts from its start to its
@@ -187,6 +187,6 @@ export function viewDataOf(board: TeamPayload, rows: readonly TurnRow[], panels:
     turns: turnsOf(board.members, rows, dayStartOf(now)),
     economics: panels.economics,
     lastHour: lastHourOf(board.members, rows, now),
-    now: hhmm(now),
+    now,
   };
 }

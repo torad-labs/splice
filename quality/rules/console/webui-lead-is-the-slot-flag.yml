@@ -1,0 +1,30 @@
+# The lead is TeamSlot.lead, never a role's name. compose lets a role be any text, so a check on
+# the name printed a lead slot called 'architect' grey and focused members[0] instead (#257 fixed
+# four such sites; the PR #260 review found no test pinned the flag at membersOf, board.ts:78).
+# The console redesign rebuilds the team board, so the fix is held by a wall, not by memory.
+id: webui-lead-is-the-slot-flag
+language: typescript
+severity: error
+message: "The lead is the slot's lead flag (TeamSlot.lead / TeamMemberRow.lead), never a role named 'lead'."
+note: |
+  Read member.lead or slot.lead. A role is free text in compose, so a role-name check misses a
+  lead slot named 'architect' and marks a slot whose role happens to be 'lead'.
+files:
+  - console/src/**/*.ts
+rule:
+  kind: binary_expression
+  all:
+    - has:
+        field: operator
+        regex: '^(===|!==|==|!=)$'
+    - has:
+        kind: string
+        regex: '^[''"]lead[''"]$'
+    - has:
+        any:
+          - kind: identifier
+            regex: '^role$'
+          - kind: member_expression
+            has:
+              field: property
+              regex: '^role$'

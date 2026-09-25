@@ -2,7 +2,7 @@ import type { PendingRoute } from '@shared/api';
 import { teamPanelsStore, teamsStore } from './model/store';
 
 export { bindSessions, createTeam, fetchTeamPanels, fetchTeams, replaceTeam } from './api';
-export { PENDING_TEAMS } from './model/types';
+export { PENDING_TEAMS, UNLISTED } from './model/types';
 export type {
   TeamActivity,
   TeamActivityEntry,

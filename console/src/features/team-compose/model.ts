@@ -8,6 +8,7 @@
 // and no function in this file returns a team with fewer slots than it was given except
 // removeSlot, which edits a draft the operator is still writing.
 import type { TeamRow, TeamWrite } from '@entities/team';
+import { H, S } from './strings';
 
 export interface DraftSlot {
   /** The slot's id: the daemon refuses a slot without one, keys its tallies and bindings on it, and
@@ -64,21 +65,22 @@ export function draftOf(team: TeamRow): TeamDraft {
   };
 }
 
-/** What stops the draft being saved, in the order the form shows its fields. Empty means valid. */
+/** What stops the draft being saved, one line each, in the order the form shows its fields. Empty
+ *  means valid. */
 export function validateDraft(draft: TeamDraft): string[] {
   const problems: string[] = [];
-  if (draft.name.trim() === '') problems.push('the team needs a name');
-  if (draft.repo.trim() === '') problems.push('the team needs a repo');
-  if (draft.slots.length === 0) problems.push('the team needs a slot');
+  if (draft.name.trim() === '') problems.push(S.noName);
+  if (draft.repo.trim() === '') problems.push(S.noRepo);
+  if (draft.slots.length === 0) problems.push(S.noSlot);
   const leads = draft.slots.filter((slot) => slot.lead).length;
-  if (draft.slots.length > 0 && leads !== 1) problems.push(`one slot must lead, ${leads} do`);
+  if (draft.slots.length > 0 && leads !== 1) problems.push(H.oneLead);
   draft.slots.forEach((slot, index) => {
-    if (slot.role.trim() === '') problems.push(`slot ${index + 1} needs a role`);
-    if (slot.head.trim() === '') problems.push(`slot ${index + 1} needs a head`);
+    if (slot.role.trim() === '') problems.push(`${S.slot} ${index + 1} · ${S.noRole}`);
+    if (slot.head.trim() === '') problems.push(`${S.slot} ${index + 1} · ${S.noHead}`);
   });
   const bound = draft.slots.map((slot) => slot.session).filter((session): session is string => session !== null);
   const twice = bound.find((session, index) => bound.indexOf(session) !== index);
-  if (twice !== undefined) problems.push(`${twice} is bound to two slots`);
+  if (twice !== undefined) problems.push(`${twice} · ${S.onTwoSlots}`);
   return problems;
 }
 

@@ -1,0 +1,105 @@
+/* A team's views on the kit (docs/design/DESIGN.md section 7): the members table, which narrows to
+   put an opened seat beside it, the day's lanes on one clock, and the cost per role. */
+
+/* ---------- cells ---------- */
+.myx-tb-role { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.myx-tb-role-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.myx-tb-lead { display: inline-flex; flex: none; color: var(--accent); }
+.myx-tb-open { color: var(--fg-subtle); font-weight: 400; }
+.myx-tb-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.75rem;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+.myx-tb-figure {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--fg);
+}
+.myx-tb-code { font-family: var(--font-mono); font-size: var(--text-2); overflow-wrap: anywhere; }
+.myx-tb-instructions { margin: 0; white-space: pre-wrap; font-size: var(--text-2); color: var(--fg); }
+
+/* ---------- the members table, and the opened seat beside it ---------- */
+.myx-tb-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.myx-tb-board-open { grid-template-columns: minmax(0, 1fr) minmax(24rem, 34%); }
+.myx-tb-board-open .myx-panel {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--space-8) * 3);
+}
+
+/* ---------- the lifetime note under the cost table ---------- */
+.myx-tb-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
+}
+.myx-tb-note-part { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* ---------- the day's lanes ---------- */
+.myx-tt { display: grid; gap: var(--space-2); }
+.myx-tt-row {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-5);
+  min-height: var(--space-6);
+}
+.myx-tt-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-2); color: var(--fg); }
+.myx-tt-quiet { color: var(--fg-subtle); }
+.myx-tt-axis { min-height: 0; }
+.myx-tt-scale { position: relative; height: var(--space-5); }
+.myx-tt-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+.myx-tt-tick:first-child { transform: none; }
+.myx-tt-tick:last-child { transform: translateX(-100%); }
+.myx-tt-track {
+  position: relative;
+  height: var(--space-5);
+  background: var(--track);
+  border-radius: var(--radius-1);
+}
+.myx-tt-grid { position: absolute; top: 0; bottom: 0; width: var(--hair); background: var(--line); }
+/* A turn is a bar from its start as long as it ran, never thinner than a mark can be seen. */
+.myx-tt-turn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: var(--space-1);
+  background: var(--mark);
+  border-radius: var(--radius-1);
+}
+.myx-tt-msg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--space-2);
+  transform: translateX(-50%);
+  background: var(--mark);
+  border-radius: var(--radius-1);
+}
+
+@media (max-width: 1100px) {
+  .myx-tb-board-open { grid-template-columns: minmax(0, 1fr); }
+  .myx-tt-row { grid-template-columns: 9rem minmax(0, 1fr); }
+}

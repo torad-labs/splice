@@ -22,6 +22,7 @@ design constraint, 2026-07-13).
 | rule | scope | wall |
 |---|---|---|
 | webui-fetch-only-in-api(-tsx) | console/src | FSD: UI strictly via state |
+| webui-lead-is-the-slot-flag(-tsx) | console/src | the lead is the slot's lead flag, never a role named 'lead' |
 | webui-no-emdash-ui-text | console/src *.tsx | locked copy gate |
 | webui-css-tokens-only | console/src *.css | spacing from --space-N; the only unit a spacing value may carry is % |
 | webui-css-font-size-scale | console/src *.css | font-size is exactly var(--text-N) or inherit (an allow-list) |

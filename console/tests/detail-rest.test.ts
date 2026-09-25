@@ -136,6 +136,9 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
   sessions: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind '
     + 'an `open === null ? null :` gate, so no track and no empty landmark exist until a row is '
     + 'opened. It collapsed its track to 0 before; dead region 10.2% then.',
+  'team-board': 'UNMOUNTED at rest since Teams moved onto the kit (2026-09-25): the seat\'s '
+    + 'DetailPanel sits behind an `opened === null ? null :` gate, the sessions pattern, so the '
+    + 'members table takes the whole width until a seat is opened.',
   projects: 'already collapses its track to 0 at rest and transitions it open. Its 43.7% dead '
     + 'region is the empty slot rails below four repo strips -- a different defect with a '
     + 'different remedy, and not this column.',

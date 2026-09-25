@@ -111,19 +111,22 @@ export interface BarPart {
 /** Parts of a whole side by side: in and out tokens, live and stale sessions. `total` leaves the
  *  rest of the bar as track when the parts do not fill it (a budget); `legend` prints each part's
  *  swatch, figure and name under the bar. */
-export function StackedBar({ parts, label, total, legend = false, format = String }: {
+export function StackedBar({ parts, label, total, legend = false, format = String, said }: {
   parts: readonly BarPart[];
   label: string;
   total?: number;
   legend?: boolean;
   format?: (value: number) => string;
+  /** The bar's whole accessible name, where its parts' own figures would mislead: a percentile
+   *  spread whose second part is a difference, not a figure. */
+  said?: string;
 }) {
   const sum = parts.reduce((held, part) => held + Math.max(0, part.value), 0);
   const whole = Math.max(total ?? sum, sum);
-  const said = parts.map((part) => `${part.label} ${format(part.value)}`).join(', ');
+  const name = said ?? `${label}: ${parts.map((part) => `${part.label} ${format(part.value)}`).join(', ')}`;
   return (
     <span className="myx-stack-wrap">
-      <span className="myx-stack" role="img" aria-label={`${label}: ${said}`}>
+      <span className="myx-stack" role="img" aria-label={name}>
         {parts.filter((part) => part.value > 0).map((part) => (
           <span key={part.key} className={cx('myx-stack-part', markClass(part.mark))} style={{ width: pct(part.value, whole) }} />
         ))}
@@ -139,6 +142,38 @@ export function StackedBar({ parts, label, total, legend = false, format = Strin
           ))}
         </span>
       ) : null}
+    </span>
+  );
+}
+
+// --------------------------------------------------------------------------------------- pips
+
+/** A small count against its capacity, one pip per unit, so it can be counted at a glance: a
+ *  head's slots in use of its limit. The pips past `used` are track. */
+export function Pips({ used, total, label, mark = 'series-1' }: { used: number; total: number; label: string; mark?: Mark }) {
+  const units = Math.max(0, Math.floor(total));
+  return (
+    <span className={cx('myx-pips', markClass(mark))} role="img" aria-label={`${label}: ${used} of ${units}`}>
+      {Array.from({ length: units }, (_, at) => (
+        <span key={at} className={cx('myx-pip', at < used && 'myx-pip-on')} />
+      ))}
+    </span>
+  );
+}
+
+// ------------------------------------------------------------------------------------- legend
+
+/** The marks a set of charts is drawn in, named once for all of them: a table of bars, a column of
+ *  waterfalls. A chart that carries its own figures prints its own legend (StackedBar `legend`). */
+export function Legend({ items, label }: { items: readonly { mark: Mark; label: string }[]; label: string }) {
+  return (
+    <span className="myx-legend" role="list" aria-label={label}>
+      {items.map((item) => (
+        <span key={item.label} className={cx('myx-legend-key', markClass(item.mark))} role="listitem">
+          <span className="myx-legend-swatch" aria-hidden="true" />
+          {item.label}
+        </span>
+      ))}
     </span>
   );
 }
@@ -213,7 +248,8 @@ export function Waterfall({ stages, scale, label }: { stages: readonly Waterfall
     .map((stage) => `${stage.label} ${Math.round(stage.end - stage.start)} ms`).join(', ');
   return (
     <span className="myx-wf" role="img" aria-label={said === '' ? label : `${label}: ${said}`}>
-      {stages.map((stage) => (
+      {/* A stage that took no time has no width to draw: the segment's floor would paint it. */}
+      {stages.filter((stage) => stage.end > stage.start).map((stage) => (
         <span
           key={stage.key}
           className={cx('myx-wf-seg', markClass(stage.mark))}

@@ -26,7 +26,7 @@ import type { LogLevel, LogsPayload } from '@entities/logs';
 import { HeadMark, hueClass, useHue } from '@entities/control-status';
 import { Fault, Flag } from '@shared/controls';
 import { cx, MONTHS } from '@shared/lib';
-import { Badge, Empty } from '@shared/ui';
+import { Badge, Empty, Legend } from '@shared/ui';
 import type { Tone } from '@shared/ui';
 import { LEGEND, PerfCells, perfOf, scaleOf } from './perf-line';
 import type { PerfLine, PerfScale } from './perf-line';
@@ -165,19 +165,7 @@ export function LogLine({ line, tagged = true, scale, open = false, onToggle }: 
   );
 }
 
-/** The three greys a perf line's waterfall is drawn in, named once on the tail's bar. */
-function Legend() {
-  return (
-    <span className="myx-lt-legend" role="list" aria-label={S.legend}>
-      {LEGEND.map((entry) => (
-        <span key={entry.mark} className="myx-lt-legend-key" role="listitem">
-          <span className={cx('myx-lt-swatch', `myx-mark-${entry.mark}`)} aria-hidden="true" />
-          {entry.label}
-        </span>
-      ))}
-    </span>
-  );
-}
+
 
 export interface LogTailProps {
   payload: LogsPayload | null;
@@ -234,7 +222,7 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
       <header className="myx-lt-bar">
         {head === null ? null : <HeadMark head={head} />}
         <span className="myx-lt-path">{payload?.path ?? ''}</span>
-        {scale.ms > 0 ? <Legend /> : null}
+        {scale.ms > 0 ? <Legend items={LEGEND} label={S.legend} /> : null}
         {/* Only while paused: following, every line is already in view. */}
         {follow ? null : <Badge tone="neutral">{`${appended} ${U.newLines}`}</Badge>}
         {onFollow === undefined ? null : (

@@ -138,21 +138,10 @@
   white-space: pre-wrap;
 }
 
-/* The waterfall's three greys, named once on the bar. */
-.myx-lt-legend {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: var(--text-1);
-  color: var(--fg-subtle);
-  white-space: nowrap;
-}
-.myx-lt-legend-key { display: inline-flex; align-items: center; gap: var(--space-2); }
-.myx-lt-swatch { width: var(--space-3); height: var(--space-3); border-radius: var(--radius-0); background: var(--mark); }
 
 @media (max-width: 900px) {
   .myx-lt-bar { flex-wrap: wrap; }
-  .myx-lt-legend { order: 1; flex-basis: 100%; }
+  .myx-lt-bar .myx-legend { order: 1; flex-basis: 100%; }
   .myx-lt-perf-row {
     grid-template-columns: var(--space-6) repeat(3, minmax(0, 1fr));
     grid-template-areas: 'toggle model model ms' '. wf wf wf' '. hit in out';

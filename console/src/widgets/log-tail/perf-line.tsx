@@ -8,14 +8,12 @@
 // as the turns page, so the two surfaces cannot draw one turn two ways. A mark the line did not carry
 // is absent, never zero: waterfall() gives its time to the next mark stamped.
 //
-// The colours are greys, because a stage is a kind of thing and not a head (DESIGN.md section 9):
-// the proxy's own work is the lightest, a wait (for a slot, for the provider) the middle, the reply
-// streaming the strongest. Neighbouring stages never share a grey, and the legend on the tail's bar
-// names the three.
+// The colours are the stage greys every turn surface draws in (@entities/perf STAGE_MARKS), and the
+// legend on the tail's bar names the three.
 import type { ReactNode } from 'react';
 import { CaretRightIcon } from '@phosphor-icons/react/dist/csr/CaretRight';
-import { MARK_KEYS, waterfall } from '@entities/perf';
-import type { MarkKey, StageGroup, TurnRow } from '@entities/perf';
+import { MARK_KEYS, STAGE_MARKS, waterfall } from '@entities/perf';
+import type { MarkKey, TurnRow } from '@entities/perf';
 import { ABSENT, cx, fmtMs, fmtShare, fmtTokens } from '@shared/lib';
 import { Badge, Meter, Waterfall } from '@shared/ui';
 import type { Mark, WaterfallStage } from '@shared/ui';
@@ -41,20 +39,11 @@ export interface PerfScale {
   outTokens: number;
 }
 
-/** The grey of each part of a turn: work light, waits middle, the reply strongest. */
-const MARK_OF: Record<StageGroup, Mark> = {
-  ingest: 'series-3',
-  queue: 'series-2',
-  upstream: 'series-2',
-  stream: 'series-1',
-  finish: 'series-3',
-};
-
 /** The legend's three greys, in the order a turn meets them. */
 export const LEGEND: ReadonlyArray<{ mark: Mark; label: string }> = [
-  { mark: 'series-3', label: S.work },
-  { mark: 'series-2', label: S.waiting },
-  { mark: 'series-1', label: S.streaming },
+  { mark: STAGE_MARKS.ingest, label: S.work },
+  { mark: STAGE_MARKS.upstream, label: S.waiting },
+  { mark: STAGE_MARKS.stream, label: S.streaming },
 ];
 
 const count = (text: string | undefined): number | null => {
@@ -142,7 +131,7 @@ export function PerfCells({ perf, scale, open, onToggle, raw }: {
     label: stage.label,
     start: stage.start,
     end: stage.end,
-    mark: MARK_OF[stage.group],
+    mark: STAGE_MARKS[stage.group],
   }));
   const total = totalOf(perf);
   const hit = cacheHitOf(perf);

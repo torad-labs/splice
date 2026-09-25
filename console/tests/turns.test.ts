@@ -16,16 +16,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import type { View } from '../src/features/views';
 import { inflightFrom, waterfall } from '../src/entities/perf';
+import type { GateSnapshot } from '../src/shared/api';
 import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import { applyFilter, headOf, headsPresent, levelOf, levelsPresent, timeOf } from '../src/entities/logs';
 import type { LogFilter } from '../src/entities/logs';
 import { IdleHeads, TurnsBoard } from '../src/pages/turns';
-import { shareText, stageRowsOf } from '../src/pages/turns/index';
+import { badgesOf, isStalled, landedKeysOf, shareText, slotsFrom, stageRowsOf, tokenRowsOf } from '../src/pages/turns/index';
 import { LogsBoard, unseenAfter } from '../src/pages/logs';
-import { itemsOf, selectionOf, windowOf } from '../src/pages/turns/select';
-import { edgeOfInflight, fieldsOf, inflightFieldsOf } from '../src/pages/turns/strip';
+import { rowKeyer, selectionOf, windowOf } from '../src/pages/turns/select';
 import { barRows, totalOf } from '../src/widgets/waterfall/model';
-import { CAPTURE_OFF, RequestDrawer, Waterfall } from '../src/widgets/waterfall';
+import { counterRows, RequestDrawer, TurnWaterfall } from '../src/widgets/waterfall';
 import { LogLine } from '../src/widgets/log-tail';
 
 const h = React.createElement;
@@ -102,6 +102,17 @@ describe('waterfall bars', () => {
     ]);
   });
 
+  test('a phase row is the time spent in it, not the span from its first segment to its last', () => {
+    // The daemon sends the client's first frame at upstream handoff, before the provider's first
+    // byte: the stream group's first segment sits inside the provider wait. Its span ran from there
+    // to the stream's end and read 7.5s of streaming on a turn that streamed for 0.4s.
+    const live = turn({ headers: 459, first_frame: 461, first_byte: 7_470, first_delta: 7_473, stream_end: 7_859, finish: 7_866, total: 7_869 });
+    const rows = barRows(waterfall(live), 7_866);
+    expect(rows.find((row) => row.group === 'stream')?.ms).toBe(2 + 3 + 386);
+    expect(rows.find((row) => row.group === 'upstream')?.ms).toBe(419 + 7_009);
+    expect(rows.reduce((sum, row) => sum + row.ms, 0)).toBe(7_866);
+  });
+
   test('a phase the row does not carry has no row at all, and no zero-length bar', () => {
     // Killed before the stream ended: no stream_end, so the close is NOT measurable and its row is
     // absent (an empty row would read as "the close took no time"). The streaming row is still
@@ -112,14 +123,14 @@ describe('waterfall bars', () => {
     expect(rows.every((row) => row.bars.length > 0 && row.ms > 0)).toBe(true);
   });
 
-  test('a row with no marks has no geometry to draw', () => {
+  test('a row with no marks has no geometry to draw, and says so in one line', () => {
     const bare = without(
       turn(), 'recv', 'parse', 'build', 'gate', 'headers', 'first_byte', 'first_frame',
       'first_delta', 'stream_end', 'finish', 'total',
     );
     expect(waterfall(bare)).toEqual([]);
     expect(barRows([], totalOf([]))).toEqual([]);
-    expect(render(h(Waterfall, { row: bare }))).toContain('>Unavailable<');
+    expect(render(h(TurnWaterfall, { row: bare }))).toContain('>No stage marks<');
   });
 
   test('bar fractions are of the turn, so the rows share one axis', () => {
@@ -132,74 +143,110 @@ describe('waterfall bars', () => {
     expect(flat.every((bar) => bar.x >= 0 && bar.x + bar.w <= 1)).toBe(true);
   });
 
-  test('the chart prints every row it draws, so the bar survives grayscale', () => {
-    const out = render(h(Waterfall, { row: turn() }));
-    // The same names as the stage table beside it (entities/perf STAGE_NAMES), not a second set.
-    expect(out).toContain('>waiting for slot<');
-    expect(out).toContain('>waiting on provider<');
-    expect(out).toContain('>streaming reply<');
-    expect(out).toContain('30ms'); // the legend prints each row's span
-    expect(out).toContain('myx-wf-svg');
+  test('the chart names every lane it draws and prints its time, so the bar survives grayscale', () => {
+    const out = render(h(TurnWaterfall, { row: turn() }));
+    // The same names as the stage bars on the page (entities/perf STAGE_NAMES), not a second set.
+    expect(out).toContain('>Slot wait<');
+    expect(out).toContain('>Provider wait<');
+    expect(out).toContain('>Streaming<');
+    expect(out).toContain('>30ms<');
+    expect(out.match(/class="myx-wf"/g)).toHaveLength(5);
+  });
+
+  test('a counter the turn did not report is left out, not printed as a dash', () => {
+    expect(counterRows(turn())).toEqual([]);
+    expect(counterRows(turn({ retries: 2, req_bytes: 2048 }))).toEqual([['Retries', '2'], ['Request size', '2.0 KiB']]);
   });
 });
 
 // ── the in-flight set ────────────────────────────────────────────────────────
 
 describe('in-flight turns', () => {
-  test('reads the gate snapshots and cocks a turn past its head idle threshold', () => {
-    const live = inflightFrom([
-      {
-        key: 'claudex', label: 'claudex', name: 'claudex', port: 3096, authKind: 'chatgpt-oauth',
-        wantVersion: '0.4.0', running: true, healthy: true, version: '0.4.0', versionMatch: true,
-        mode: null, maxInflight: 8, health: { localOriginErrors: 0, providerErrors: 0 }, pids: [1],
-        gate: {
-          inflight: 2, queued: 0, max: 8, acquired: 2, released: 0, waited: 0, avg_wait_ms: 0,
-          stream_idle_ms: 300_000,
-          live: [
-            { label: 'a', compact: false, phase: 'streaming', age_ms: 1000, idle_ms: 400 },
-            { label: 'b', compact: true, phase: 'connect', age_ms: 90_000, idle_ms: 331_000 },
-          ],
-        },
-      },
-    ]);
-    expect(live).toHaveLength(2);
-    expect(edgeOfInflight(live[0])).toBe('green');
-    expect(edgeOfInflight(live[1])).toBe('amber');
+  const head = (key: string, gate: Partial<GateSnapshot> | null) => ({
+    key, label: `claude-${key}`, name: key, port: 3096, authKind: 'chatgpt-oauth',
+    wantVersion: '0.4.0', running: true, healthy: true, version: '0.4.0', versionMatch: true,
+    mode: null, maxInflight: 8, health: { localOriginErrors: 0, providerErrors: 0 }, pids: [1],
+    gate: gate === null ? null : {
+      inflight: 0, queued: 0, max: 12, acquired: 0, released: 0, waited: 0, avg_wait_ms: 0, live: [], stream_idle_ms: 0, ...gate,
+    },
   });
 
-  test('prints the phase and the idle time, and no outcome it does not have', () => {
-    const fields = inflightFieldsOf(inflight(), ['session', 'phase', 'age', 'outcome']);
-    expect(fields.map((f) => [f.label, f.basis])).toEqual([
-      ['session', 'measured'],
-      ['phase', 'measured'],
-      ['age', 'measured'],
+  test('every head with a gate says its slots in use, its limit and its queue', () => {
+    // This daemon writes each gate's live list empty (HeadStatus.kt) and its counts true: the page
+    // said "nothing in flight" beside five running turns before it read the counts.
+    const slots = slotsFrom([head('x', { inflight: 3, queued: 1 }), head('y', { max: 'unlimited', inflight: 2 }), head('z', null)]);
+    expect(slots).toEqual([
+      { head: 'x', label: 'claude-x', inflight: 3, queued: 1, max: 12 },
+      { head: 'y', label: 'claude-y', inflight: 2, queued: 0, max: null },
     ]);
+    const out = render(h(TurnsBoard, { slots, inflight: [], landed: null, summary: null, capture: null }));
+    expect(out).toContain('aria-label="claude-x Slots in use: 3 of 12"');
+    expect(out.match(/myx-pip myx-pip-on/g)).toHaveLength(3);
+    expect(out).toContain('>1 queued<');
+    expect(out).toContain('>2<'); // no limit: the count alone, no pips
+    expect(out).not.toContain('Nothing in flight');
+  });
+
+  test('a listed live turn past its head idle limit is stalled, and says so', () => {
+    const live = inflightFrom([head('claudex', {
+      stream_idle_ms: 300_000,
+      live: [
+        { label: 'a', compact: false, phase: 'streaming', age_ms: 1000, idle_ms: 400 },
+        { label: 'b', compact: true, phase: 'connect', age_ms: 90_000, idle_ms: 331_000 },
+      ],
+    })]);
+    expect(live).toHaveLength(2);
+    expect(isStalled(live[0])).toBe(false);
+    expect(isStalled(live[1])).toBe(true);
+    const out = render(h(TurnsBoard, { inflight: live, landed: null, summary: null, capture: null }));
+    expect(out.match(/>Stalled</g)).toHaveLength(1);
+    expect(out).toContain('>Compaction<');
+    expect(out).toContain('>connect<');
   });
 });
 
 // ── the landed table ─────────────────────────────────────────────────────────
 
-describe('turn strips', () => {
-  test('a row that lost telemetry says so in words, never with smaller numbers', () => {
-    expect(fieldsOf(turn({ async_io_drops: 3 }), ['dropped'])[0].value).toBe('telemetry dropped');
-    expect(fieldsOf(turn({ async_io_drops: 0 }), ['dropped'])[0].value).toBe('–');
-    expect(fieldsOf(turn(), ['dropped'])[0].value).toBe('–');
-  });
-
-  test('a column the row does not carry is absent and says so in one glyph', () => {
-    // The glyph is the whole statement, so an absent cell carries no basis word (m1 design review
-    // B8): `- unavailable` was one fact in two sentences and read as a typo.
-    const fields = fieldsOf(without(turn(), 'total', 'in_tokens'), ['total', 'tokensIn', 'head']);
-    expect(fields.map((f) => [f.value, f.basis])).toEqual([
-      ['–', undefined],
-      ['–', undefined],
-      ['claudex', 'measured'],
+describe('landed turns', () => {
+  test('a turn wears its outcome, and the badges its row calls for', () => {
+    expect(badgesOf(turn())).toEqual([{ key: 'outcome', tone: 'ok', text: 'ok' }]);
+    expect(badgesOf(turn({ outcome: 'conn-reset', compact: true, retries: 2, async_io_drops: 3 })).map((b) => [b.tone, b.text])).toEqual([
+      ['danger', 'conn-reset'],
+      ['neutral', 'Compaction'],
+      ['warn', '2 retries'],
+      // lost telemetry is SAID: the row's numbers are short by an unknown amount
+      ['warn', 'Telemetry dropped'],
     ]);
   });
 
-  test('scales a duration and a token count so the column reads without a unit', () => {
-    const fields = fieldsOf(turn({ total: 12_820, in_tokens: 453_608 }), ['total', 'tokensIn']);
-    expect(fields.map((f) => f.value)).toEqual(['12.8s', '454k']);
+  test('a saved view\'s old fields land on the columns that now show them, once each', () => {
+    expect(landedKeysOf(['time', 'total', 'cached', 'cacheWrite', 'retries', 'tokensIn', 'nope'])).toEqual(['time', 'timing', 'cache', 'tokensIn']);
+  });
+
+  test('every waterfall in the table shares one axis, so the long turn is the long bar', () => {
+    const out = render(h(TurnsBoard, {
+      inflight: [],
+      landed: { inflight: [], landed: [turn({ ts: T0 - 1000 }), turn({ ts: T0, finish: 8020, total: 8020, stream_end: 8010 })], unread: [] },
+      summary: null,
+      capture: null,
+    }));
+    const ends = [...out.matchAll(/<span class="myx-wf" role="img"[^>]*>(.*?)<\/span><span class="myx-tn-figure">/g)]
+      .map((m) => Math.max(...[...m[1].matchAll(/left:([\d.]+)%;width:([\d.]+)%/g)].map((seg) => Number(seg[1]) + Number(seg[2]))));
+    expect(ends).toHaveLength(2);
+    expect(ends[0]).toBeCloseTo(100, 0); // newest first: the 8.0s turn
+    expect(ends[1]).toBeCloseTo((4010 / 8020) * 100, 0);
+  });
+
+  test('a cell the row does not carry prints one dash, and durations and counts are scaled', () => {
+    const out = render(h(TurnsBoard, {
+      inflight: [],
+      landed: { inflight: [], landed: [without(turn({ first_byte: 12_820, out_tokens: 453_608 }), 'in_tokens')], unread: [] },
+      summary: null,
+      capture: null,
+    }));
+    expect(out).toContain('>12.8s<');
+    expect(out).toContain('>454k<');
+    expect(out).toContain('>–<');
   });
 });
 
@@ -209,8 +256,6 @@ describe('turn views', () => {
   test('the default view is the flat table', () => {
     const selection = selectionOf(rows, view(), T0);
     expect(selection.kind).toBe('table');
-    if (selection.kind !== 'table') return;
-    expect(itemsOf(selection).map((item) => item.kind)).toEqual(['row', 'row']);
   });
 
   test('the table and each group list the newest turn first, whatever order the rows arrived in', () => {
@@ -224,7 +269,12 @@ describe('turn views', () => {
   });
 
   test('a row keeps its key when a newer turn lands above it, and two turns in one millisecond differ', () => {
-    const keys = (list: TurnRow[]) => itemsOf(selectionOf(list, view(), T0)).map((item) => item.key);
+    const keys = (list: TurnRow[]) => {
+      const selection = selectionOf(list, view(), T0);
+      if (selection.kind !== 'table') throw new Error('expected the table');
+      const keyer = rowKeyer();
+      return selection.rows.map(keyer);
+    };
     const before = keys(rows);
     const after = keys([...rows, turn({ ts: T0 - 5_000 })]);
     // the opened row is found by key on every poll; the new turn sits first and moves nobody's key
@@ -233,16 +283,19 @@ describe('turn views', () => {
     expect(new Set(twins).size).toBe(2);
   });
 
-  test('a grouped view puts a band before each group, and no band for an empty one', () => {
+  test('a grouped view files every row under its group, biggest first, ties by name', () => {
     const selection = selectionOf(rows, view({ group: 'outcome' }), T0);
-    const items = itemsOf(selection);
-    expect(items[0].kind).toBe('band');
-    // Ties are broken by key, so the two single-row groups land in alphabetical order.
-    expect(items.filter((item) => item.kind === 'band').map((item) => item.label)).toEqual(['conn-reset', 'ok']);
-    expect(items.filter((item) => item.kind === 'row')).toHaveLength(2);
+    if (selection.kind !== 'groups') throw new Error('expected groups');
+    expect(selection.groups.map((group) => group.key)).toEqual(['conn-reset', 'ok']);
+    expect(selection.groups.flatMap((group) => group.rows)).toHaveLength(2);
   });
 
-  test('the timeline bands by hour and reports the undated rows', () => {
+  test('a grouped table prints each group once, and not again as a column', () => {
+    const out = render(h(TurnsBoard, { inflight: [], landed: { inflight: [], landed: rows, unread: [] }, summary: null, capture: null }));
+    expect(out).toContain('>Model<');
+  });
+
+  test('the timeline buckets by hour and keeps the undated rows apart', () => {
     const selection = selectionOf([...rows, without(turn(), 'ts')], view({ layout: 'timeline', filter: { window: '2h', bucket: '1h' } }), T0);
     expect(selection.kind).toBe('timeline');
     if (selection.kind !== 'timeline') return;
@@ -250,9 +303,6 @@ describe('turn views', () => {
     expect(selection.timeline.buckets[0].rows).toHaveLength(0); // the idle hour is present
     expect(selection.timeline.buckets[1].rows).toHaveLength(2);
     expect(selection.timeline.undated).toHaveLength(1);
-    const items = itemsOf(selection);
-    expect(items[0].kind).toBe('band'); // only the bucket that holds rows bands
-    expect(items.filter((item) => item.kind === 'row')).toHaveLength(3);
     expect(windowOf(view({ filter: { window: 'nope' } }), T0).hours).toBe(24);
   });
 });
@@ -265,12 +315,12 @@ describe('turns board', () => {
 
   test('a route this daemon does not serve says so in words, not a row id', () => {
     const out = board({ landed: { pending: 'V4-127' } });
-    expect(out).toContain('turn history unavailable');
+    expect(out).toContain('History unavailable');
     expect(out).not.toContain('V4-127');
-    expect(out).not.toContain('myx-tn-scroll');
+    expect(out).not.toContain('myx-tn-table');
   });
 
-  test('the summary names its window, prints readable units, and names the idle heads once', () => {
+  test('the summary names its window, draws its percentiles, and names the idle heads once', () => {
     const out = board({
       summary: {
         window: '24h',
@@ -287,14 +337,22 @@ describe('turns board', () => {
         ],
       },
     });
-    expect(out).toContain('summary 24h');
+    expect(out).toContain('>Last 24 hours<');
     expect(out).toContain('>489ms<');
+    expect(out).toContain('>3.2s<'); // p95, the bar's pale end
     expect(out).toContain('>10.6s<');
     expect(out).toContain('>25%<');
     expect(out).toContain('>98%<');
-    // An idle head is named once and gets no strip of dashes: an empty window never reads as fast.
-    expect(out).toContain('no turns in 24h: claude-grok, claude-kimi');
-    expect(out).not.toContain('summary claude-grok');
+    expect(out).toContain('aria-label="First byte p50 489ms, p95 3.2s"');
+    // Refreshes and lost rows are columns only when a head has some.
+    expect(out).not.toContain('>Refreshes<');
+    expect(out).not.toContain('>Lost log rows<');
+    // An idle head is named once, on one line, and gets no row: an empty window never reads as fast.
+    const idle = out.slice(out.indexOf('myx-tn-idle'));
+    expect(idle).toContain('>No turns<');
+    expect(idle).toContain('>claude-grok<');
+    expect(idle).toContain('>claude-kimi<');
+    expect(out.match(/>claude-grok</g)).toHaveLength(1);
   });
 
   test('a head is printed by its label everywhere on the page, not the key its rows carry', () => {
@@ -303,12 +361,8 @@ describe('turns board', () => {
       landed: { inflight: [], landed: [turn({ head: 'bonsai' })], unread: [] },
       summary: { window: '24h', heads: [{ key: 'bonsai', label: 'claude-bonsai', window: '24h', count: 0, empty: true, coverage_known: true, clamped: false, covers_ms: 0 }] },
     });
-    // The tokens bay names it by label. The landed strips are virtualized, so a static render draws
-    // none; their cell is pinned through fieldsOf below.
     expect(out).toContain('>claude-bonsai<');
     expect(out).not.toContain('>bonsai<');
-    expect(fieldsOf(turn({ head: 'bonsai' }), ['head'], 'claude-bonsai')[0]?.value).toBe('claude-bonsai');
-    expect(fieldsOf(turn({ head: 'bonsai' }), ['head'])[0]?.value).toBe('bonsai');
   });
 
   test('time per stage is the difference between marks, never the marks added up', () => {
@@ -318,22 +372,30 @@ describe('turns board', () => {
     const row = { head: 'h', outcome: 'ok', recv: 1, parse: 2, build: 3, gate: 10, headers: 100, first_byte: 110, first_frame: 111, first_delta: 120, stream_end: 1000, finish: 1001 } as TurnRow;
     const stages = stageRowsOf([row, row]);
     expect(stages.map((stage) => [stage.label, stage.perTurn, shareText(stage.share)])).toEqual([
-      ['splice work', 3, '0.3%'],
-      ['waiting for slot', 7, '0.7%'],
-      ['waiting on provider', 100, '10.0%'],
-      ['streaming reply', 890, '89%'],
-      ['closing', 1, '<0.1%'],
+      ['Splice work', 3, '0.3%'],
+      ['Slot wait', 7, '0.7%'],
+      ['Provider wait', 100, '10.0%'],
+      ['Streaming', 890, '89%'],
+      ['Closing', 1, '<0.1%'],
     ]);
   });
 
   test('a part no turn reached is not printed, and no rows is no stages', () => {
     const failed = { head: 'h', outcome: 'upstream_error', recv: 1, parse: 2, build: 3, gate: 10 } as TurnRow;
-    expect(stageRowsOf([failed]).map((stage) => stage.label)).toEqual(['splice work', 'waiting for slot']);
+    expect(stageRowsOf([failed]).map((stage) => stage.label)).toEqual(['Splice work', 'Slot wait']);
     expect(stageRowsOf([])).toEqual([]);
   });
 
-  test('nothing in flight is an honest empty, not an empty bay', () => {
-    expect(board({ inflight: [] })).toContain('nothing in flight');
+  test('the tokens split each head\'s input into what the cache served, wrote and missed', () => {
+    const rows = [turn({ in_tokens: 1000, cached_tokens: 700, cache_write_tokens: 100, out_tokens: 50 }), turn({ in_tokens: 500, cached_tokens: 500, cache_write_tokens: 0, out_tokens: 10 })];
+    expect(tokenRowsOf(rows)).toEqual([{ head: 'claudex', in: 1500, cached: 1200, write: 100, out: 60 }]);
+    const out = board({ landed: { inflight: [], landed: rows, unread: [] } });
+    expect(out).toContain('aria-label="Input: Cached 1.2k, Cache write 100, Uncached 200"');
+  });
+
+  test('nothing in flight is one line, not an empty table', () => {
+    const out = board({ inflight: [], slots: [] });
+    expect(out).toContain('Nothing in flight');
   });
 });
 
@@ -433,9 +495,10 @@ describe('logs board', () => {
       refused: null,
       writing: false,
     });
-    expect(render(h(RequestDrawer, { capture: capture('claudex') }))).toContain(CAPTURE_OFF);
-    expect(board({ capture: capture('claudex') })).toContain(CAPTURE_OFF);
-    expect(board({ capture: capture('other-head') })).not.toContain(CAPTURE_OFF);
+    const drawer = 'aria-label="Body capture"';
+    expect(render(h(RequestDrawer, { capture: capture('claudex') }))).toContain(drawer);
+    expect(board({ capture: capture('claudex') })).toContain(drawer);
+    expect(board({ capture: capture('other-head') })).not.toContain(drawer);
   });
 
   test('a rotated tail says it restarted', () => {
@@ -452,8 +515,8 @@ describe('an idle head says when it last ran a turn', () => {
     const out = renderToStaticMarkup(h(IdleHeads, {
       summary: { window: '24h', heads: [row('bonsai', Date.now() - 50 * 3_600_000), row('bonsai-vast', null), row('old', undefined)] },
     }));
-    expect(out).toContain('bonsai (last 2d ago)');
-    expect(out).toContain('bonsai-vast (never)');
-    expect(out).toMatch(/old<|old,|old$/);
+    expect(out).toMatch(/>bonsai<\/span><\/span><span class="myx-tn-quiet">last 2d ago</);
+    expect(out).toMatch(/>bonsai-vast<\/span><\/span><span class="myx-tn-quiet">Never</);
+    expect(out).toMatch(/>old<\/span><\/span><\/span>/);
   });
 });

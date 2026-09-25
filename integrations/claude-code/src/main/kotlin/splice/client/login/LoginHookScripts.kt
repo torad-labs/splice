@@ -112,17 +112,17 @@ internal object LoginHookScripts {
     private fun leadText(hook: LoginHookSpec): String =
         when {
             hook.viaBrowser ->
-                "Opening your browser to sign in to ${hook.signInLabel} — finish there, then continue. " +
+                "Opening your browser to sign in to ${hook.signInLabel}. Finish there, then continue. " +
                     "If it did not open, run: ${hook.loginCommand}. To sign in another account: " +
                     "/login --label NAME"
             hook.canCapturePaste ->
                 "Paste your ${hook.signInLabel} API key as your next message. splice stores it to " +
                     "~/.config/splice/keys.toml (0600) and BLOCKS it before it reaches the model, " +
                     "so it is never sent upstream. Note: the session log on disk still records the " +
-                    "pasted line — for a fully masked entry, run `${hook.loginCommand}` in a terminal " +
+                    "pasted line. For a fully masked entry, run `${hook.loginCommand}` in a terminal " +
                     "instead. Then wait."
             else ->
-                "This head signs in with an API key. Run `${hook.loginCommand}` in a terminal — it asks " +
+                "This head signs in with an API key. Run `${hook.loginCommand}` in a terminal; it asks " +
                     "for the key with a masked prompt. It cannot be asked for from inside this " +
                     "session."
         }
@@ -133,7 +133,7 @@ internal object LoginHookScripts {
             val lead = leadText(hook)
             val label = oneLine(hook.signInLabel)
             appendLine("#!/usr/bin/env bash")
-            appendLine("# NEW (splice): /login interception — route to this head's $label sign-in,")
+            appendLine("# NEW (splice): /login interception: route to this head's $label sign-in,")
             appendLine("# not Claude Code's disabled Anthropic login. Blocks the model turn.")
             appendLine("input=\"$d(cat)\"")
             // THE LOGIN RECEIPT (2026-08-01). The sign-in runs detached, so everything it prints is
@@ -339,7 +339,7 @@ internal object LoginHookScripts {
     fun captureHookScript(spec: TokenCaptureSpec): String = buildString {
         val d = "$" // keep the shell $ out of Kotlin interpolation
         appendLine("#!/usr/bin/env bash")
-        appendLine("# NEW (splice): api-key capture — a BARE ${oneLine(spec.providerLabel)} token pasted as the whole")
+        appendLine("# NEW (splice): api-key capture: a BARE ${oneLine(spec.providerLabel)} token pasted as the whole")
         appendLine("# message is stored to keys.toml (0600) via `splice key set --stdin` and BLOCKED before")
         appendLine("# it reaches the model context, so it never travels upstream. The session transcript")
         appendLine("# still records the paste; the fully masked path is `<head> login`.")
@@ -352,12 +352,12 @@ internal object LoginHookScripts {
         // envVar to match KeyStore's own ENV_NAME regex, so it cannot carry a shell metacharacter.
         appendLine("  if printf '%s' \"${d}token\" | splice key set ${spec.envVar} --stdin >/dev/null 2>&1; then")
         appendLine("    nohup splice restart >/dev/null 2>&1 &")
-        val stored = "${spec.providerLabel} key received — stored to ~/.config/splice/keys.toml (0600) " +
+        val stored = "${spec.providerLabel} key received and stored to ~/.config/splice/keys.toml (0600) " +
             "and the daemon is restarting. It was NOT forwarded to the model. Note: this session log " +
             "still contains the pasted line; the fully masked path is <head> login."
         appendLine("    printf '%s' ${shellSingleQuote(blockDecision(stored))}")
         appendLine("  else")
-        val failed = "${spec.providerLabel} key detected but storing it failed — " +
+        val failed = "${spec.providerLabel} key detected but storing it failed; " +
             "run <head> login in a terminal instead."
         appendLine("    printf '%s' ${shellSingleQuote(blockDecision(failed))}")
         appendLine("  fi")
@@ -369,7 +369,7 @@ internal object LoginHookScripts {
     // removes it once configured), so printing unconditionally is correct.
     fun keySetupScript(spec: TokenCaptureSpec, loginCommand: String): String = buildString {
         appendLine("#!/usr/bin/env bash")
-        appendLine("# NEW (splice): key-missing advertiser for ${spec.envVar} — installed only while unconfigured.")
+        appendLine("# NEW (splice): key-missing advertiser for ${spec.envVar}, installed only while unconfigured.")
         val advert = "splice: ${spec.envVar} is not configured for this head. Tell the user ONCE, plainly: " +
             "paste your ${spec.providerLabel} API key as your next message and splice will store it " +
             "to keys.toml without it reaching the model, or run $loginCommand in a terminal for a " +

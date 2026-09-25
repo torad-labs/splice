@@ -69,7 +69,7 @@ internal class GrokAuthJson(
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
         }.onFailure {
             log(
-                "[grok-auth] re-read of $authPath for merge failed: ${SafeFailureText.render(it)} — " +
+                "[grok-auth] re-read of $authPath for merge failed: ${SafeFailureText.render(it)}; " +
                     "writing tokens-only file",
             )
         }.getOrNull() ?: JsonObject(emptyMap())
@@ -113,7 +113,7 @@ internal class GrokAuthJson(
             !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent) {
             log(
-                "[grok-auth] failed to read $authPath: ${SafeFailureText.render(failure)} — " +
+                "[grok-auth] failed to read $authPath: ${SafeFailureText.render(failure)}; " +
                     "no credentials served (NOT a logged-out state)",
             )
         }
@@ -172,7 +172,7 @@ internal class GrokAuthJson(
         }
             .onFailure {
                 log(
-                    "[grok-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
+                    "[grok-auth] stat of $authPath failed: ${SafeFailureText.render(it)}; " +
                         "skipping peer rotation, refreshing instead",
                 )
             }

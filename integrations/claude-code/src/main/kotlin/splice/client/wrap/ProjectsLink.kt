@@ -107,7 +107,7 @@ private class MigrationPlan {
     }
 
     fun parkedLine(globalProjects: Path): String =
-        "[projects] ${parked.size} entries already existed in $globalProjects — kept the global copy, " +
+        "[projects] ${parked.size} entries already existed in $globalProjects; kept the global copy, " +
             "parked this head's beside it: " +
             parked.joinToString(", ") { globalProjects.relativize(it).toString() } + "\n"
 }
@@ -140,8 +140,8 @@ internal class ProjectsLink(
         if (Files.exists(dst, NOFOLLOW_LINKS)) {
             if (dst.isSymbolicLink()) {
                 log(
-                    "[projects] $dst is a link although this head isolates projects; left as found — " +
-                        "move it aside and relaunch for a private tree\n",
+                    "[projects] $dst is a link although this head isolates projects; left as found. " +
+                        "Move it aside and relaunch for a private tree\n",
                 )
             }
             return
@@ -149,7 +149,7 @@ internal class ProjectsLink(
         val created = Cancellables.runCatchingCancellable { Files.createDirectories(dst) }
         created.exceptionOrNull()?.let { cause ->
             log(
-                "[projects] could not create $dst (${SafeFailureText.render(cause)}) — Claude Code creates it " +
+                "[projects] could not create $dst (${SafeFailureText.render(cause)}); Claude Code creates it " +
                     "on first write\n",
             )
         }
@@ -171,7 +171,7 @@ internal class ProjectsLink(
             // Unexpected content is preserved, but never SILENTLY (DR-39): the caller's contract is
             // that link() logs its own declines.
             log(
-                "[materialize] projects transcripts NOT linked — $dst is unexpected non-directory " +
+                "[materialize] projects transcripts NOT linked: $dst is unexpected non-directory " +
                     "content, kept as-is; move it aside to share transcripts\n",
             )
             return
@@ -192,7 +192,7 @@ internal class ProjectsLink(
             // in-flight outcome. Same rule as SessionRegistryLink and LoginInterception's teardown.
             Cancellables.discard(
                 Cancellables.runCatchingCleanup { Files.deleteIfExists(staged) },
-                "staged-link cleanup — the link outcome must stand",
+                "staged-link cleanup: the link outcome must stand",
             )
         }
     }
@@ -203,14 +203,14 @@ internal class ProjectsLink(
     private fun ensureGlobalProjects(globalProjects: Path, log: LogSink): Boolean {
         if (Files.isDirectory(globalProjects, NOFOLLOW_LINKS)) return true
         if (Files.exists(globalProjects, NOFOLLOW_LINKS)) {
-            log("[projects] $globalProjects exists but is not a directory — this head keeps private transcripts\n")
+            log("[projects] $globalProjects exists but is not a directory, so this head keeps private transcripts\n")
             return false
         }
         val created = Cancellables.runCatchingCancellable { Files.createDirectories(globalProjects) }
         created.exceptionOrNull()?.let { cause ->
             log(
                 "[projects] could not create the global projects dir $globalProjects " +
-                    "(${SafeFailureText.render(cause)}) — this head keeps private transcripts\n",
+                    "(${SafeFailureText.render(cause)}), so this head keeps private transcripts\n",
             )
         }
         return created.isSuccess
@@ -225,7 +225,7 @@ internal class ProjectsLink(
         if (refusal != null) {
             // SAFE-RENDER-EXEMPT[2026-09-16]: `refusal` here is a String this class composes from a file NAME and a fixed phrase, not a throwable — no exception text reaches it
             log(
-                "[projects] REFUSED to migrate $dst into $globalProjects ($refusal) — " +
+                "[projects] REFUSED to migrate $dst into $globalProjects ($refusal), so " +
                     "this head keeps private transcripts\n",
             )
             return false
@@ -242,7 +242,7 @@ internal class ProjectsLink(
             val undone = rollback(dst, aside, created, plan.newGlobalDirs)
             log(
                 "[projects] migration of $dst failed " +
-                    "(${commit.exceptionOrNull()?.let { SafeFailureText.render(it) }}) — " +
+                    "(${commit.exceptionOrNull()?.let { SafeFailureText.render(it) }}); " +
                     "$undone; this head keeps private transcripts\n",
             )
             return false
@@ -361,7 +361,7 @@ internal class ProjectsLink(
         outcome.exceptionOrNull()?.let { cause ->
             log(
                 "[projects] straggler sweep of $aside into $globalProjects stopped " +
-                    "(${SafeFailureText.render(cause)}) — the head link is already serving; " +
+                    "(${SafeFailureText.render(cause)}); the head link is already serving; " +
                     "the leftover tree is retried at the next launch\n",
             )
         }
@@ -376,7 +376,7 @@ internal class ProjectsLink(
             Files.newDirectoryStream(parent, ".${dst.fileName}$ASIDE_MARK*").use { stream -> stream.toList() }
         }.onFailure { failure ->
             log(
-                "[projects] leftover asides beside $dst NOT swept — $parent unlistable " +
+                "[projects] leftover asides beside $dst NOT swept: $parent unlistable " +
                     "(${SafeFailureText.render(failure)})\n",
             )
         }.getOrDefault(emptyList())

@@ -99,7 +99,7 @@ public class CodexAuthProvider(
         if (synthLoggedMtime != mtimeMs) {
             synthLoggedMtime = mtimeMs
             log(
-                "[codex-auth] access token carries no decodable exp — synthesized expiry " +
+                "[codex-auth] access token carries no decodable exp; synthesized expiry " +
                     "mtime+4h (auth.json shape drifted?)",
             )
         }

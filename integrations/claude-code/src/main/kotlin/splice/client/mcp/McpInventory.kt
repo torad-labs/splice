@@ -67,7 +67,7 @@ public class McpInventory(
     init {
         val missing = McpSourceKind.entries - readers.keys
         check(missing.isEmpty()) {
-            "McpInventory built without a reader for ${missing.joinToString()} — refusing to census; " +
+            "McpInventory built without a reader for ${missing.joinToString()}, so it refuses to census: " +
                 "a partial reader map would report a smaller number as if it were complete (V4-146)"
         }
     }
@@ -143,7 +143,7 @@ internal object McpDispositionReasons {
     const val PLUGIN: String =
         "plugin-owned manifest (read-only input); Claude Code's plugin precedence matches by ENDPOINT, not name, so " +
             "a user-scope entry pointing at the daemon would ADD a shared process rather than replace the plugin's " +
-            "stdio one — migrating this kind needs disabledMcpServers plus a user-scope override, never a rewrite " +
+            "stdio one; migrating this kind needs disabledMcpServers plus a user-scope override, never a rewrite " +
             "of the plugin's own file (docs: Scope hierarchy and precedence)"
     const val OTHER_HOME: String =
         "declared in a different Claude Code identity's .claude.json; this daemon's materializer reads only its own " +
@@ -162,6 +162,6 @@ internal object McpDispositionReasons {
             "its hosting or the bearer changed since that head launched), and that head runs this copy until " +
             "its next launch rewrites it"
     const val RACE: String =
-        "read on a separate pass over the same file that disagreed with the plan just computed — most likely an " +
+        "read on a separate pass over the same file that disagreed with the plan just computed, most likely an " +
             "operator edit mid-census; recompute on the next call"
 }

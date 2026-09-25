@@ -71,11 +71,11 @@ internal class DashboardCommand(
         is MgmtKeyRead.Present -> if (terminal()) {
             "splice: dashboard key (paste if prompted): ${read.key}"
         } else {
-            "splice: dashboard key not printed — this output is not a terminal, and a transcript or log " +
+            "splice: dashboard key not printed: this output is not a terminal, and a transcript or log " +
                 "would keep it; run `splice dashboard` in a terminal to see it"
         }
         is MgmtKeyRead.Unreadable ->
-            "splice: dashboard key unreadable (${read.reason}) — fix its permissions; " +
+            "splice: dashboard key unreadable (${read.reason}). Fix its permissions; " +
                 "the dashboard will prompt and there is nothing to paste until you do"
         is MgmtKeyRead.Absent -> null
     }

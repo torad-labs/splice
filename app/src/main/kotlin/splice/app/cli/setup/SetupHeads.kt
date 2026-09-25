@@ -76,7 +76,7 @@ internal class SetupHeads(
     private fun announceExcluded(catalog: List<AddProfile>) {
         for (profile in catalog) {
             val reason = TICK_EXCLUDED[profile.name] ?: continue
-            frame.step("splice add ${profile.name} — $reason")
+            frame.step("splice add ${profile.name}: $reason")
         }
     }
 

@@ -86,7 +86,7 @@ class RuntimeSlotCountTest {
             listOf(
                 "[bonsai] slot affinity: the runtime runs 4 slots; each conversation keeps its own\n",
                 "[bonsai] slot affinity paused: http://127.0.0.1:8099/props answered HTTP 401 without a slot " +
-                    "count — turns go out unpinned until it answers with a slot count\n",
+                    "count; turns go out unpinned until it answers with a slot count\n",
                 "[bonsai] slot affinity: the runtime runs 2 slots; each conversation keeps its own\n",
             ),
             logged,

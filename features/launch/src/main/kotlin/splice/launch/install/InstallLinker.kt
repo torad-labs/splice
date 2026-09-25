@@ -123,7 +123,7 @@ internal class InstallLinker(
         } catch (e: java.io.IOException) {
             val restored = previous == null ||
                 Cancellables.runCatchingCancellable { ExclusiveSymlinkClaim(link, previous) }.isSuccess
-            if (!restored) output.line("splice: warning — the previous wrapper at $link could not be restored")
+            if (!restored) output.line("splice: warning: the previous wrapper at $link could not be restored")
             throw e
         }
     }

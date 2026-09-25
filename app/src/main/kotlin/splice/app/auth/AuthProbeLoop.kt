@@ -83,13 +83,13 @@ public class AuthProbeLoop(
             recordRestart()
         }
         if (n <= MAX_RESTARTS) {
-            log("[$key][auth-probe] loop died: $cause — restarting ($n/$MAX_RESTARTS)\n")
+            log("[$key][auth-probe] loop died: $cause; restarting ($n/$MAX_RESTARTS)\n")
             synchronized(lifecycle) {
                 if (!stopped && job === launched) launchSupervised(scope)
             }
         } else {
             log(
-                "[$key][auth-probe] loop died: $cause — restart budget exhausted " +
+                "[$key][auth-probe] loop died: $cause; restart budget exhausted " +
                     "($MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m); probe permanently down\n",
             )
         }

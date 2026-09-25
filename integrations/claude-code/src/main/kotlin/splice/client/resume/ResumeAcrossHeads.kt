@@ -136,7 +136,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, roster.pinned, roster.served) }
         outcome.exceptionOrNull()?.let { cause ->
             log(
-                "[resume] $transcript could not be moved onto ${roster.pinned} (${SafeFailureText.render(cause)}) — " +
+                "[resume] $transcript could not be moved onto ${roster.pinned} (${SafeFailureText.render(cause)}); " +
                     "the session resumes on this head's default model after Claude Code's restore notice\n",
             )
         }
@@ -233,7 +233,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         }
         copied.exceptionOrNull()?.let { cause ->
             log(
-                "[resume] skipped linked $entry (${SafeFailureText.render(cause)}) — it is not part of " +
+                "[resume] skipped linked $entry (${SafeFailureText.render(cause)}): it is not part of " +
                     "the copy; the session still resumes without it\n",
             )
         }
@@ -247,7 +247,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         }
         entries.exceptionOrNull()?.let { cause ->
             log(
-                "[resume] could not list $path (${SafeFailureText.render(cause)}) — that tree was NOT " +
+                "[resume] could not list $path (${SafeFailureText.render(cause)}), so that tree was NOT " +
                     "searched for the session; fix its permissions and relaunch to search it\n",
             )
         }

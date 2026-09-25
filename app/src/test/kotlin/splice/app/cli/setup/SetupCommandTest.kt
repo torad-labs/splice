@@ -192,7 +192,7 @@ class SetupCommandTest {
                 }
             }
         }
-        assertTrue("unofficial; use at your own risk" in log, log)
+        assertTrue("Unofficial; use at your own risk" in log, log)
         assertTrue("own credential file" in log, log)
     }
 

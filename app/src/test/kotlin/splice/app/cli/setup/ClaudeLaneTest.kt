@@ -155,7 +155,7 @@ class ClaudeWrapReplyTest {
 
     @Test
     fun `the unconfigured-head refusal reaches the operator verbatim`() {
-        val reason = "the 'claude-splice' head is not configured — wrap needs its catalog to materialize"
+        val reason = "the 'claude-splice' head is not configured, and wrap needs its catalog to materialize"
         val said = DaemonClaudeWrap().replyLine(ControlReply(503, """{"error":"$reason"}"""))
 
         assertEquals("not wrapping: $reason", said)

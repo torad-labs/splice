@@ -29,7 +29,7 @@ public class MuseMintPersistence {
         val current = readObject(authPath, log) ?: return false
         val access = JsonScalars.strIfString(current["access_token"])
         if (access != expectedAccessToken) {
-            log("[muse-auth] credential changed while key mint was in flight — minted key discarded")
+            log("[muse-auth] credential changed while key mint was in flight; minted key discarded")
             return false
         }
         val replacements = buildJsonObject {

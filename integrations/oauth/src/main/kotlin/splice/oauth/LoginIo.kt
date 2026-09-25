@@ -141,7 +141,7 @@ internal class LoginIo(
         }.getOrNull()
         val token = parsed?.let(::accessTokenOf)
         if (token.isNullOrBlank()) {
-            output.line("splice: token endpoint returned no access token — NOT signed in, nothing written")
+            output.line("splice: token endpoint returned no access token; NOT signed in, nothing written")
             return false
         }
         val target = Cancellables.runCatchingCancellable {
@@ -155,14 +155,14 @@ internal class LoginIo(
             output.line("splice: credential persistence error: ${SafeFailureText.render(failure)}")
             null
         } ?: return false
-        output.line("splice: signed in — credentials written to $target")
+        output.line("splice: signed in; credentials written to $target")
         return true
     }
 
     private fun persistLabeled(path: Path, account: OAuthLoginAccount, parsed: JsonObject): Path? {
         val label = account.resolvedLabel(parsed)
         if (label.isNullOrBlank()) {
-            output.line("splice: token endpoint returned no stable account id — NOT signed in, nothing written")
+            output.line("splice: token endpoint returned no stable account id; NOT signed in, nothing written")
             return null
         }
         val files = OAuthAccountFiles(loginJson)
@@ -172,7 +172,7 @@ internal class LoginIo(
             val written = files.writeTokenDerived(account.kind, path, label, parsed, account.identity)
             written.retainedQuota?.let { quota ->
                 output.line(
-                    "splice: retained quota in ${quota.fileName} — saved credentials as ${written.file.fileName}",
+                    "splice: retained quota in ${quota.fileName}; saved credentials as ${written.file.fileName}",
                 )
             }
             written.file

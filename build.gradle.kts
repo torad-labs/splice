@@ -8,6 +8,19 @@
 import groovy.json.JsonSlurper
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+// TRANSITIVE CVE FLOOR — freemarker (2026-09-25, GHSA-27j2-h3m2-8237, critical). kover, applied below,
+// puts freemarker 2.3.32 on THIS script's classpath through its coverage reporter, and build-logic is a
+// separate included build whose constraints never reach it, so the floor sits on the root classpath.
+buildscript {
+    dependencies {
+        constraints {
+            classpath("org.freemarker:freemarker:${libs.versions.freemarker.get()}") {
+                because("GHSA-27j2-h3m2-8237; kover 0.9.9's coverage-report pins freemarker 2.3.32")
+            }
+        }
+    }
+}
+
 plugins {
     // apply false: put the Kotlin Gradle plugin on THIS build script's classpath (so KotlinCompile is
     // typeable here) without applying it to the root project itself.

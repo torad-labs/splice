@@ -343,12 +343,21 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
   await expect(page.locator('.myx-tm-team')).toContainText(name);
   await expect(page.getByRole('img', { name: 'Slots bound: 2 of 2' })).toBeVisible();
-  // Both sessions are seated under their head by the names the registry gives them.
+  // The lanes are the team's default view: both sessions are seated as cards on their head's strand,
+  // by the names the registry gives them.
+  const lanes = page.getByRole('group', { name: 'Members', exact: true });
+  const card = (who: string) => lanes.getByRole('button', { name: new RegExp(` ${who.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, `) });
+  await expect(card(STACK.sender.name)).toBeVisible({ timeout: 15_000 });
+  await expect(card(STACK.peer.name)).toBeVisible();
+  // The day's chat carries the hand-off, sender to recipient, both resolved to their seats, and the
+  // lanes draw it as the one arc between their cards once they are laid out.
+  await expect(page.getByRole('listitem', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible();
+  await expect(lanes.locator('path.myx-lanes-arc')).toHaveCount(1, { timeout: 15_000 });
+  // The table is a view behind the lanes, where each seat's turns are counted.
+  await page.getByRole('tab', { name: 'By head' }).click();
   const members = page.getByRole('table', { name: 'Members' });
   await expect(members).toContainText(STACK.sender.name, { timeout: 15_000 });
   await expect(members).toContainText(STACK.peer.name);
-  // The day's chat carries the hand-off, sender to recipient, both resolved to their seats.
-  await expect(page.getByRole('listitem', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible();
   // Activity was READ for this team: the stack runs no client to answer a label query, so it is
   // empty, never unreadable.
   await expect(main).toContainText('Nothing sampled today');

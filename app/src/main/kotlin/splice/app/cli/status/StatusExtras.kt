@@ -11,6 +11,7 @@ import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.diagnostics.doctor.AccountPoolRead
 import splice.diagnostics.doctor.AccountPoolText
+import splice.diagnostics.doctor.AccountPoolsRead
 
 internal class StatusExtras(private val accountPools: AccountPoolRead) {
     private val accountText = AccountPoolText()
@@ -18,10 +19,17 @@ internal class StatusExtras(private val accountPools: AccountPoolRead) {
     /** v0.4.0 (FEATURES.md §11): a head holding more than one account says which one it is on; a
      *  projection this process could not read says so rather than passing for "one account". */
     fun printAccounts(port: Int, envReader: EnvReader) {
-        val pools = accountPools(port, envReader)
-        if (pools == null) println("  accounts  ${YELLOW}not readable$RESET — the daemon's /api/auth did not answer")
-        if (!pools.isNullOrEmpty()) println()
-        pools?.forEach { (key, view) -> println("  accounts  $BOLD$key$RESET ${accountText.summary(view)}") }
+        when (val read = accountPools(port, envReader)) {
+            is AccountPoolsRead.Unread -> println(
+                "  accounts  ${YELLOW}not readable$RESET — ${read.reason}" + read.fix?.let { " (fix: $it)" }.orEmpty(),
+            )
+            is AccountPoolsRead.Read -> {
+                if (read.pools.isNotEmpty()) println()
+                read.pools.forEach { (key, view) ->
+                    println("  accounts  $BOLD$key$RESET ${accountText.summary(view)}")
+                }
+            }
+        }
     }
 
     /** DR-86: the status table is a reporter — a jar it cannot stat must say so, not render as

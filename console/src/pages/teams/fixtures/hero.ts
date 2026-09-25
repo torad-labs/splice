@@ -256,5 +256,6 @@ export const sampleData: TeamViewData = {
   turns: TURNS,
   economics: ECONOMICS,
   lastHour: LAST_HOUR,
+  inFlight: TURNS.filter((t) => t.live).length,
   now: NOW,
 };

@@ -15,7 +15,9 @@ export const S = {
 export const H = {
   chat: "Today's hand-offs between members; each text is read on demand.",
   unavailable: 'This splice version does not serve team chat.',
-  noMessages: 'A message one member sends another shows here.',
+  // A plain `claude` member's own messages never pass through splice, so they never show (README,
+  // the Teams paragraph); an empty chat that did not say so read as nobody having talked (Marlin).
+  noMessages: "Messages sent through splice show here; plain claude members' sends do not.",
 } as const;
 
 export const U = {

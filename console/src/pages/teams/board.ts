@@ -7,7 +7,7 @@
 // EVERY STAMP IS UTC, because the daemon's day is (TeamsReads.kt reads `?day=` as a UTC date), and
 // the page says so once, on its timeline's help.
 import type { SessionRow } from '@entities/session';
-import type { TurnRow } from '@entities/perf';
+import type { InflightTurn, TurnRow } from '@entities/perf';
 import { UNLISTED } from '@entities/team';
 import type {
   TeamActivity,
@@ -169,25 +169,55 @@ export function turnsOf(members: readonly TeamMemberRow[], rows: readonly TurnRo
     }));
 }
 
-/** The team's turns in flight at each minute of the last hour: a turn counts from its start to its
- *  end, both included. */
-export function lastHourOf(members: readonly TeamMemberRow[], rows: readonly TurnRow[], now: number): TeamHourPoint[] {
+/** The session tag a live gate slot names, or null: the slot's label is the tag then the model, the
+ *  model alone for a client that sent no session, and `req` before the request was read
+ *  (InflightGate.describe, HeadAdmission.tag). */
+const tagOf = (label: string): string | null => {
+  const space = label.indexOf(' ');
+  return space < 0 ? null : label.slice(0, space);
+};
+
+/** The team's turns running now, off the heads' gates (GET /api/heads, `gate.live`), each under its
+ *  member on the same 8-character tag the perf rows carry. A slot of no member, or one that names no
+ *  session, is not the team's. Its start is `now` less its age, so it is as recent as the heads read. */
+export function liveTurnsOf(members: readonly TeamMemberRow[], inflight: readonly InflightTurn[], now: number): TeamTurn[] {
+  return inflight.flatMap((slot, index): TeamTurn[] => {
+    const tag = tagOf(slot.label);
+    const member = tag === null ? undefined : members.find((m) => m.sessionId.slice(0, SESSION_TAG_CHARS) === tag);
+    if (member === undefined) return [];
+    return [{ id: `live-${slot.head}-${slot.label}-${index}`, member: member.name, start: now - slot.ageMs, ms: slot.ageMs, input: null, output: null, live: true }];
+  });
+}
+
+/** The team's turns in flight at each minute of the last hour: a landed turn counts from its start
+ *  to its end, both included, and a running one from its start on. */
+export function lastHourOf(members: readonly TeamMemberRow[], rows: readonly TurnRow[], live: readonly TeamTurn[], now: number): TeamHourPoint[] {
   const team = rows.filter((row) => memberOf(members, row) !== undefined);
   const end = Math.floor(now / MINUTE_MS) * MINUTE_MS;
   return Array.from({ length: 61 }, (_, index) => {
     const at = end - (60 - index) * MINUTE_MS;
-    return { at: hhmm(at), turns: team.filter((row) => startOf(row) <= at && at <= row.ts).length };
+    const landed = team.filter((row) => startOf(row) <= at && at <= row.ts).length;
+    return { at: hhmm(at), turns: landed + live.filter((turn) => turn.start <= at).length };
   });
 }
 
 /** What the by-role and timeline views read beyond the board, once this team's panels answered;
- *  null until then, which the views print as reading. */
-export function viewDataOf(board: TeamPayload, rows: readonly TurnRow[], panels: TeamPanels | null, now: number): TeamViewData | null {
+ *  null until then, which the views print as reading. `inflight` is the heads' gates, null until the
+ *  heads read answered: the running turns then stay off the timeline and the count is unknown. */
+export function viewDataOf(
+  board: TeamPayload,
+  rows: readonly TurnRow[],
+  inflight: readonly InflightTurn[] | null,
+  panels: TeamPanels | null,
+  now: number,
+): TeamViewData | null {
   if (panels === null || panels.teamId !== board.team.id) return null;
+  const live = inflight === null ? [] : liveTurnsOf(board.members, inflight, now);
   return {
-    turns: turnsOf(board.members, rows, dayStartOf(now)),
+    turns: [...turnsOf(board.members, rows, dayStartOf(now)), ...live].sort((a, b) => a.start - b.start),
     economics: panels.economics,
-    lastHour: lastHourOf(board.members, rows, now),
+    lastHour: lastHourOf(board.members, rows, live, now),
+    inFlight: inflight === null ? null : live.length,
     now,
   };
 }

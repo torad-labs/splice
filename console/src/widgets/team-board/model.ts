@@ -34,6 +34,9 @@ export interface TeamViewData {
   turns: TeamTurn[];
   economics: TeamEconomicsPayload | { error: string };
   lastHour: TeamHourPoint[];
+  /** The team's turns in flight now, read off the heads' gates; null until the heads read answered,
+   *  which the stat prints as unknown rather than as none. */
+  inFlight: number | null;
   /** Epoch ms the views were read at: the right end of the day's timeline. */
   now: number;
 }

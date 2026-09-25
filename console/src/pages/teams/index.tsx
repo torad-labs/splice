@@ -14,7 +14,7 @@ import { useLocation } from 'react-router';
 import { fetchTeamPanels, fetchTeams, isPending, useTeamPanels, useTeams } from '@entities/team';
 import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/session';
 import { fetchHeads, useHeads } from '@entities/heads';
-import { fetchPerfTurns, usePerfTurns } from '@entities/perf';
+import { fetchPerfTurns, inflightFrom, usePerfTurns } from '@entities/perf';
 import { ViewTabs, useViews, type View } from '@features/views';
 import { CostPerRole, TeamLanes, TeamMembers, TeamStats, TeamTimeline } from '@widgets/team-board';
 import type { TeamViewData } from '@widgets/team-board';
@@ -320,7 +320,7 @@ export function TeamsPage() {
     error: fixture === null ? teams.error : null,
     lastRead: teams.lastUpdated,
     board,
-    data: sample !== null ? sample.data : live === null ? null : viewDataOf(live, rows, panels.data, now),
+    data: sample !== null ? sample.data : live === null ? null : viewDataOf(live, rows, heads === null ? null : inflightFrom(heads), panels.data, now),
     ...states,
     onEdit: () => setComposing('edit'),
     onNew: () => setComposing('new'),

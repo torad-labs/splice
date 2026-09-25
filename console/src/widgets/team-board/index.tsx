@@ -102,7 +102,6 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
   const bound = slots.filter((slot) => slot.session !== null).length;
   const table = data === null || 'error' in data.economics ? null : costTable(data.economics);
   const hour = data?.lastHour ?? [];
-  const latest = hour[hour.length - 1];
   return (
     <StatRow>
       <Stat
@@ -140,7 +139,7 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
       />
       <Stat
         label={S.inFlight}
-        value={latest === undefined ? S.absent : latest.turns}
+        value={data === null || data.inFlight === null ? S.absent : data.inFlight}
         {...(hour.length === 0 ? {} : { trend: <Sparkline values={hour.map((point) => point.turns)} label={S.lastHour} /> })}
       />
       <Stat label={S.messages} value={board.messages.length} unit={U.today} />

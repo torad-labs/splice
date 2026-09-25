@@ -76,6 +76,12 @@ describe('the opened team', () => {
     expect(stats).toContain('>3<span class="myx-stat-unit">today');
   });
 
+  test('in flight is the running count, and a dash, never a zero, before the heads answer', () => {
+    const inFlight = (html: string) => /In flight[\s\S]*?myx-stat-value">([^<]*)</.exec(html)?.[1];
+    expect(inFlight(render(createElement(TeamStats, { board: sampleBoard, data: sampleData })))).toBe('3');
+    expect(inFlight(render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, inFlight: null } })))).toBe('–');
+  });
+
   test('every seat is a row, an open one included, grouped under the head it runs on', () => {
     for (const member of sampleBoard.members) expect(pageHtml, member.name).toContain(member.name);
     expect(pageHtml).toContain('Open seat');
@@ -452,5 +458,13 @@ describe('a Teams dollar is an estimate, and says so', () => {
     if (seat === undefined) return;
     const detail = render(createElement(SeatDetail, { board: sampleBoard, seat }));
     expect(dollars(detail)).toBe(tagged(detail));
+  });
+});
+
+describe('an empty chat says what it cannot show', () => {
+  test('a plain claude member\'s own messages never reach the chat, and the empty says so', () => {
+    const html = render(createElement(TeamChat, { state: { messages: [] } }));
+    expect(html).toContain('No messages today');
+    expect(html).toContain("plain claude members' sends do not");
   });
 });

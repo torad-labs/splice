@@ -6,10 +6,10 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { SessionRow } from '../src/entities/session';
-import type { TurnRow } from '../src/entities/perf';
+import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import type { TeamActivityPayload, TeamChatPayload, TeamEconomicsPayload, TeamPanels, TeamRow, TeamSlot } from '../src/entities/team';
 import { draftOf, keyFor, saveDraft, unbindSession, unbindsOf, writeOf } from '../src/features/team-compose';
-import { UNLISTED, activityOf, boardOf, lastHourOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
+import { UNLISTED, activityOf, boardOf, lastHourOf, liveTurnsOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
 import { panelStates } from '../src/pages/teams';
 
 const NOW = Date.UTC(2026, 8, 23, 14, 0, 0);
@@ -184,7 +184,7 @@ describe('the messages and the activity', () => {
     const board = boardOf(TEAM, SESSIONS, { ...PANELS, teamId: 'team-2' }, NOW);
     expect(board.messages).toEqual([]);
     expect(board.members[0].turns).toBeNull();
-    expect(viewDataOf(board, [], { ...PANELS, teamId: 'team-2' }, NOW)).toBeNull();
+    expect(viewDataOf(board, [], [], { ...PANELS, teamId: 'team-2' }, NOW)).toBeNull();
     expect(panelStates(board, { ...PANELS, teamId: 'team-2' }).chat).toBeNull();
   });
 
@@ -230,7 +230,7 @@ describe('the turn log', () => {
   });
 
   test('the last hour counts a turn from its start to its end', () => {
-    const hour = lastHourOf(members, ROWS, NOW);
+    const hour = lastHourOf(members, ROWS, [], NOW);
     expect(hour).toHaveLength(61);
     expect(hour[0].at).toBe('13:00');
     expect(hour[60].at).toBe('14:00');
@@ -239,6 +239,47 @@ describe('the turn log', () => {
     expect(at('13:26')).toBe(1);
     expect(at('13:57')).toBe(1);
     expect(at('13:59')).toBe(0);
+  });
+});
+
+describe('the turns running now', () => {
+  // Marlin, 2026-09-25: In flight printed 0 and no turn ever read Running, because the board counted
+  // landed perf rows only (a turn has no row until it ends) and stamped every turn `live: false`.
+  const members = membersOf(TEAM, SESSIONS, ECONOMICS, NOW);
+  const slot = (label: string, ageMs: number, head = 'claude'): InflightTurn => ({
+    head, label, compact: false, phase: 'streaming', ageMs, idleMs: 0, streamIdleMs: 300_000,
+  });
+  const GATES = [
+    slot('aaaaaaaa fable', 5 * 60_000),
+    slot('bbbbbbbb gpt-5', 90_000, 'claudex'),
+    slot('dddddddd fable', 60_000), // a session of no member
+    slot('fable', 60_000), // a client that sent no session
+    slot('req', 1_000), // a request not read yet
+  ];
+
+  test("each gate slot lands under its member on the session tag, and no other slot is the team's", () => {
+    expect(liveTurnsOf(members, GATES, NOW).map((t) => [t.member, t.start, t.ms, t.live])).toEqual([
+      ['lead-seat', NOW - 5 * 60_000, 5 * 60_000, true],
+      ['bbbbbbbb-2222', NOW - 90_000, 90_000, true],
+    ]);
+  });
+
+  test('the count is the running turns, and it is unknown, not none, before the heads answer', () => {
+    const board = boardOf(TEAM, SESSIONS, PANELS, NOW);
+    const data = viewDataOf(board, [], GATES, PANELS, NOW);
+    expect(data?.inFlight).toBe(2);
+    expect(data?.turns.filter((t) => t.live)).toHaveLength(2);
+    expect(viewDataOf(board, [], [], PANELS, NOW)?.inFlight).toBe(0);
+    expect(viewDataOf(board, [], null, PANELS, NOW)?.inFlight).toBeNull();
+  });
+
+  test('the last hour counts a running turn from its start to now', () => {
+    const hour = lastHourOf(members, [], liveTurnsOf(members, GATES, NOW), NOW);
+    const at = (stamp: string) => hour.find((point) => point.at === stamp)?.turns;
+    expect(at('13:54')).toBe(0);
+    expect(at('13:55')).toBe(1);
+    expect(at('13:59')).toBe(2);
+    expect(at('14:00')).toBe(2);
   });
 });
 

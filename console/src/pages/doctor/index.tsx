@@ -17,6 +17,7 @@ import type { CheckRow, DoctorCheck, DoctorPayload, UpgradePayload } from '@enti
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
+import { DaemonUpgrade } from '@features/daemon-upgrade';
 import { DoctorFix } from '@features/doctor-fix';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
@@ -288,6 +289,8 @@ export function DoctorBoard({ report, pending = null, error = null, lastRead = n
                 [S.rollback, rollbackText(upgrade)],
                 [S.lastChecked, checkedAt === null ? ABSENT : timeAgo(checkedAt)],
               ]} />
+              {/* `splice upgrade` and its rollback, run out of process (V4-220 item 4). */}
+              <DaemonUpgrade upgrade={upgrade} />
               {/* The draining restart (WC-08), the same control the fleet's head detail mounts. */}
               <DaemonRestart />
             </Section>

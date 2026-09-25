@@ -41,7 +41,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Send a test prompt through a head
 - Open a head's log
 - Run a check's fix
-- Upgrade or roll back splice (V4-220)
+- Upgrade or roll back splice
 
 ## fleet
 

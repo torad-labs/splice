@@ -4,7 +4,7 @@ import { poll } from '@shared/lib';
 import { doctorStore, upgradeStore } from '../model/store';
 import { PENDING_UPGRADE } from '../model/upgrade';
 import type { DoctorPayload } from '../model/types';
-import type { UpgradePayload } from '../model/upgrade';
+import type { UpgradeAsk, UpgradePayload, UpgradeRun } from '../model/upgrade';
 
 /** The v0.4.0 item that will serve GET /api/doctor. */
 export const PENDING_DOCTOR = 'V4-127';
@@ -80,6 +80,30 @@ export async function runDoctorFix(id: string): Promise<DoctorFixAnswer> {
     if (report === null) throw err;
     doctorStore.setData(report);
     return { applied: false, refusal: err.message };
+  }
+}
+
+/**
+ * POST /api/upgrade (V4-220 item 4): starts `splice upgrade` out of process and answers 202 with the
+ * run. A refusal rejects with the daemon's one sentence: 400 a version that is not a release, 409 a
+ * run already going, 500 a run that could not start, 503 a daemon that does not wire it.
+ */
+export async function startUpgrade(ask: UpgradeAsk): Promise<UpgradeRun> {
+  return (await request<{ run: UpgradeRun }>('/api/upgrade', { method: 'POST', body: JSON.stringify(ask) })).run;
+}
+
+/** A read of the newest run: the run, null before the console ever started one, or `away` when no
+ *  daemon answered, which is what the restart the run causes looks like from here. */
+export type UpgradeRunRead = { run: UpgradeRun | null } | { away: true };
+
+/** GET /api/upgrade/run. No answer at all is `away`; a daemon that answers with a refusal rejects
+ *  with its sentence, because that daemon is up and said no. */
+export async function readUpgradeRun(): Promise<UpgradeRunRead> {
+  try {
+    return { run: (await request<{ run: UpgradeRun | null }>('/api/upgrade/run')).run };
+  } catch (err) {
+    if (err instanceof MgmtError && err.status === 0) return { away: true };
+    throw err;
   }
 }
 

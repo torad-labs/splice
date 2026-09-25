@@ -144,6 +144,13 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     is manifest.py's `stale-claims`: the same rows as JSON lines plus its summary, exit 1 when any,
     nothing written. Its time is `claimed_at`, which delta 10's migration sets at the cutover, so on
     an unmigrated ledger it will not agree with py's note-time answer — by that ruling. Two mutants.
+17. **MOD.45 is inert by a switch, not by a count (2026-09-25).** `MACHINERY_WALL_INERT = true` and one
+    early return in `isMachineryRow`; the tables stay verbatim. The 2026-09-18 ruling below held the wall
+    inert because it classified 0 of 156 rows, and a count rots: on 2026-09-25 it classified 4 of 213
+    (V4-60, V4-82, V4-120 closed, and V4-199 open, fenced `.github/workflows/`), and refused V4-199's
+    receipt from claude-builder, handing a release row to `scout-campaign-mod`, a seat splice does not
+    have. Red first: the selftest check "an apparatus-only row is added, receipted and done by a builder
+    seat" read 179/180 on the unmodified wall and 180/180 with the switch.
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the
@@ -175,8 +182,8 @@ remove, the backfills).
 
 **Deliberately NOT changed — the MOD.45 machinery wall.** `ledger.ts` carries grailseeker's own ruling
 that rows fenced entirely inside its apparatus roots (`.claude/`, `.dev/campaigns/`, `.github/`, …) belong
-to one seat, `scout-campaign-mod`. The tables are left verbatim, and on the splice ledger they classify
-**0 of 156 rows** as machinery, so the wall is inert here. Renaming its `.dev/campaigns/` root to this
+to one seat, `scout-campaign-mod`. The tables are left verbatim. At vendoring they classified **0 of 156
+rows** as machinery, so the wall was inert by count; delta 17 makes it inert by a switch. Renaming its `.dev/campaigns/` root to this
 repo's `.dev/campaigns/` would have silently switched it on for V4-143 and V4-154. Whether splice wants a
 wall of its own is a cutover question for the orchestrator, not a vendoring side effect.
 

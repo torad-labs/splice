@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
@@ -23,6 +24,7 @@ import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeTimeoutException
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -244,30 +246,31 @@ class CodeModeRuntimeTest {
 
     @Test
     @Timeout(10)
-    fun `cancelling startup reaps the worker and releases capacity`() = runBlocking {
+    fun `cancelling startup reaps the worker and has its permit back when the cancel returns`() = runBlocking {
+        // V4-214: the permit came back on the process's async onExit callback, so a start() made the
+        // moment the cancel returned could still find capacity 0 (the coverage job's race). Every such
+        // callback is held here until the end: only the cancelled start() itself can return it.
+        val spawn = HeldExitSpawn()
         JvmCodeModeRuntime(
             maxWorkers = 1,
             advanceTimeoutMs = 5_000,
             workerClasspath = testClasspath,
+            spawn = spawn,
         ).use { runtime ->
-            val before = ProcessHandle.current().children().use { children -> children.map { it.pid() }.toList() }
-            val startup = async { runtime.start("while (true) {}", emptySet()) }
-            val child = withTimeout(2_000) {
-                var spawned: ProcessHandle? = null
-                while (spawned == null) {
-                    yield()
-                    spawned = ProcessHandle.current().children().use { children ->
-                        children.filter { it.pid() !in before }.findFirst().orElse(null)
-                    }
-                }
-                spawned
-            }
-            startup.cancelAndJoin()
-            child.onExit().get(1, TimeUnit.SECONDS)
-            assertTrue(reaped(child), "cancelled startup must reap the observed child")
+            try {
+                val startup = async { runtime.start("while (true) {}", emptySet()) }
+                val worker = spawn.first.await()
+                worker.frameSent.await() // the start frame is out: start() is waiting on its reply
+                startup.cancelAndJoin()
 
-            val replacement = runtime.start("return \"reaped\";", emptySet())
-            assertEquals("reaped", completed(replacement.advance()).output)
+                val replacement = runtime.start("return \"reaped\";", emptySet())
+                assertEquals("reaped", completed(replacement.advance()).output)
+                val child = worker.toHandle()
+                child.onExit().get(1, TimeUnit.SECONDS)
+                assertTrue(reaped(child), "cancelled startup must reap the observed child")
+            } finally {
+                spawn.releaseExits()
+            }
         }
     }
 
@@ -519,5 +522,67 @@ class CodeModeRuntimeTest {
         }
 
         override fun isAlive(): Boolean = !exit.isDone
+    }
+
+    /** Spawns the real worker, but holds every async exit observer (each onExit() future the runtime
+     *  chains a callback on) until [releaseExits] — the JDK's reaper running as late as it likes. */
+    private class HeldExitSpawn : WorkerSpawn {
+        val first = CompletableFuture<HeldExitProcess>()
+        private val exits = CompletableFuture<Unit>()
+
+        override fun invoke(builder: ProcessBuilder): Process =
+            HeldExitProcess(builder.start(), exits).also { first.complete(it) }
+
+        fun releaseExits() {
+            exits.complete(Unit)
+        }
+    }
+
+    /** A real worker whose onExit() completes only once [exits] does, and which reports [frameSent]
+     *  when the runtime first flushes a frame to its stdin: start() is then waiting in exchange. */
+    private class HeldExitProcess(
+        private val real: Process,
+        private val exits: CompletableFuture<Unit>,
+    ) : Process() {
+        val frameSent = CompletableFuture<Unit>()
+        private val stdin = object : FilterOutputStream(real.outputStream) {
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                out.write(bytes, offset, length)
+            }
+
+            override fun flush() {
+                out.flush()
+                frameSent.complete(Unit)
+            }
+        }
+
+        override fun onExit(): CompletableFuture<Process> = real.onExit().thenCombine(exits) { _, _ -> this }
+
+        override fun getOutputStream(): OutputStream = stdin
+
+        override fun getInputStream(): InputStream = real.inputStream
+
+        override fun getErrorStream(): InputStream = real.errorStream
+
+        override fun waitFor(): Int = real.waitFor()
+
+        override fun waitFor(timeout: Long, unit: TimeUnit): Boolean = real.waitFor(timeout, unit)
+
+        override fun exitValue(): Int = real.exitValue()
+
+        override fun destroy() {
+            real.destroy()
+        }
+
+        override fun destroyForcibly(): Process {
+            real.destroyForcibly()
+            return this
+        }
+
+        override fun isAlive(): Boolean = real.isAlive
+
+        override fun pid(): Long = real.pid()
+
+        override fun toHandle(): ProcessHandle = real.toHandle()
     }
 }

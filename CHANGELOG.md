@@ -588,6 +588,11 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **A cancelled code-mode cell gives its worker slot back before the cancel returns.** A cell
+  started the moment another's startup was cancelled could fail with `Code-mode worker capacity
+  reached`: the slot came back only when the JDK's process reaper got round to the killed worker.
+  The cancelled start now kills its worker and waits for the exit itself, off the caller's thread,
+  so its slot is free when it finishes.
 - **An install that cannot link says so in one line.** `splice install` and `splice setup` stopped
   with a JVM stack trace when the launch shim was missing, dangling or unreadable, when two heads
   shared a wrapper command, or when a command name held a real file. Each now prints the one

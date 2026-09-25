@@ -231,6 +231,43 @@ test('accounts shows the OAuth account with the windows its provider reported', 
     .toHaveAccessibleDescription('Pinned, then primary, then last used, then most weekly room.');
 });
 
+test('a table cell lets its open tip out, and twelve slots stand six and six', async ({ page }) => {
+  // Fleet at 1600, 2026-09-25: a gate of twelve wrapped its pips nine and three, and "streaming 3.2s"
+  // ran past the Last turn column's edge. The cell says Running now, with the phase in its tip, and
+  // a cell's own clip cut every tip in a table to a sliver until the cell let an open one out.
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.route('**/api/heads', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { heads: { gate: Record<string, unknown> | null }[] };
+    const head = body.heads.find((entry) => entry.gate !== null);
+    if (head?.gate != null) {
+      head.gate = { ...head.gate, max: 12, inflight: 1, live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 3_200, idle_ms: 20 }] };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'fleet');
+  const table = page.getByRole('table', { name: 'Heads', exact: true });
+  const running = table.getByText('Running', { exact: true }).first();
+  await expect(running).toBeVisible({ timeout: 15_000 });
+  await running.hover();
+  const tip = table.getByRole('tooltip').filter({ hasText: 'streaming 3.2s' });
+  await expect(tip).toBeVisible();
+  // Seen, not only laid out: the top of the tip, above its cell, is the tip and not what a clip
+  // leaves. A tip takes no pointer, so hit-testing would pass through it; it takes one for the probe,
+  // and hit-testing still honours every clip.
+  const seen = await tip.evaluate((body) => {
+    (body as HTMLElement).style.pointerEvents = 'auto';
+    const box = body.getBoundingClientRect();
+    return body.contains(document.elementFromPoint(box.x + box.width / 2, box.y + 2));
+  });
+  expect(seen, 'the open tip must not be clipped by its cell').toBe(true);
+  const rows = await table.getByRole('img', { name: /: 1 of 12$/ }).first().evaluate((pips) => {
+    const tops = [...pips.children].map((pip) => Math.round(pip.getBoundingClientRect().top));
+    return [...new Set(tops)].map((top) => tops.filter((at) => at === top).length);
+  });
+  expect(rows, 'twelve pips in two even rows').toEqual([6, 6]);
+});
+
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {
   await open(page, 'fleet');
   const main = page.locator('main');

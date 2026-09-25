@@ -98,6 +98,8 @@
 .myx-pips { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
 .myx-pip { width: calc(.625 * var(--u)); height: calc(.9375 * var(--u)); border-radius: var(--radius-0); background: var(--track); }
 .myx-pip-on { background: var(--mark); }
+/* Even rows: as many columns as the longest row, set by the component. */
+.myx-pips-rack { display: inline-grid; grid-template-columns: repeat(var(--pip-cols), auto); }
 
 /* ---------- legend: marks named once for a set of charts ---------- */
 .myx-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); font-size: var(--text-1); color: var(--fg-subtle); }

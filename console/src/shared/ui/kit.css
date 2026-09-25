@@ -106,6 +106,10 @@
 .myx-dt .myx-dt-end { text-align: end; }
 .myx-dt .myx-dt-mono { font-family: var(--font-mono); font-size: var(--text-2); }
 .myx-dt td.myx-dt-break { white-space: normal; overflow-wrap: anywhere; }
+/* A cell clips its overflow for the ellipsis, and a tip's body is laid out inside its cell: the
+   cell lets it out while the tip is open, and clips again when it closes. */
+.myx-dt td:has(.myx-tip:hover),
+.myx-dt td:has(.myx-tip:focus-within) { overflow: visible; }
 .myx-dt .myx-dt-primary { color: var(--fg); font-weight: 500; }
 
 /* An openable table: the primary cell's button stretches over its row. */

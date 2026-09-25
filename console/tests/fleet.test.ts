@@ -424,7 +424,9 @@ describe('what one head row prints', () => {
     expect(row({}, { lastTs: new Map([['claudex', BOARD_NOW - 3 * 3_600_000]]) })).toContain('>3h ago<');
     expect(row({}, { lastTs: new Map([['claudex', null]]) })).toContain(`>${S.none}<`);
     const live = row({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
-    expect(live).toContain('streaming 1.5s');
+    // The column holds a word: the cell says Running, and the phase and age stand in its tip.
+    expect(live).toContain(`>${S.running}<`);
+    expect(live).toMatch(/role="tooltip"[^>]*>streaming 1\.5s</);
   });
 
   test('the last turn is live, ago, none or unknown, and these are four different facts', () => {

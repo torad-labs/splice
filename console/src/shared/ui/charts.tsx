@@ -150,10 +150,19 @@ export function StackedBar({ parts, label, total, legend = false, format = Strin
 
 /** A small count against its capacity, one pip per unit, so it can be counted at a glance: a
  *  head's slots in use of its limit. The pips past `used` are track. */
-export function Pips({ used, total, label, mark = 'series-1' }: { used: number; total: number; label: string; mark?: Mark }) {
+export function Pips({ used, total, label, mark = 'series-1', rows = 1 }: {
+  used: number;
+  total: number;
+  label: string;
+  mark?: Mark;
+  /** Rows of even length, for a cell too narrow for one: twelve slots stand six and six, never the
+   *  nine and three a wrap leaves (Fleet at 1600, 2026-09-25). */
+  rows?: number;
+}) {
   const units = Math.max(0, Math.floor(total));
+  const rack = rows > 1 ? { className: 'myx-pips-rack', style: { '--pip-cols': Math.ceil(units / rows) } as CSSProperties } : null;
   return (
-    <span className={cx('myx-pips', markClass(mark))} role="img" aria-label={`${label}: ${used} of ${units}`}>
+    <span className={cx('myx-pips', markClass(mark), rack?.className)} style={rack?.style} role="img" aria-label={`${label}: ${used} of ${units}`}>
       {Array.from({ length: units }, (_, at) => (
         <span key={at} className={cx('myx-pip', at < used && 'myx-pip-on')} />
       ))}

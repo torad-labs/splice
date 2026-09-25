@@ -10,66 +10,51 @@ Paths are relative to `webui/`. Layers and their import direction are the existi
 eslint-plugin-boundaries wall: `app > pages > widgets > features > entities > shared`.
 HTTP only in `entities/*/api` through `shared/api`.
 
-## 1. Tokens (`src/shared/tokens.css`, row M1-01)
+## 1. Tokens (`src/shared/tokens.css`, rewritten 2026-09-25 for the console redesign)
 
-Both themes are complete token sets on the root element: `:root, :root[data-theme="dark"]`
-is the dark room and the default; `:root[data-theme="light"]` is the paper bay.
-Every color below exists in both. Spacing and type sizes are only ever used through
-`var(--space-N)` and `var(--text-N)` (ast-grep wall `webui-css-tokens-only`).
+The design is `docs/design/DESIGN.md`; this section is the names two rows must agree on. Both
+themes are complete token sets on the root element: `:root, :root[data-theme="dark"]` is dark and
+the default, `:root[data-theme="light"]` is light. Every colour below exists in both. Spacing, type
+size and colour are only ever read through `var(--space-N)`, `var(--text-N)` and the colour tokens
+(ast-grep walls `webui-css-tokens-only`, `webui-css-font-size-scale`, `webui-css-no-color-literals`).
 
-Scales (values are the dark theme's; the light theme keeps the same scale):
+Scales (shared by both themes):
 
 | token | value | use |
 |---|---|---|
-| `--space-1` .. `--space-8` | 2, 4, 8, 12, 16, 24, 32, 48 px | every gap, pad, inset |
-| `--text-1` .. `--text-6` | 12, 14, 16, 18, 20, 23 px (re-derived 2026-09-18 from the comp's measured cap heights in build/scaffold/layout.css: chat label 14, bay label 16, rule text 17 to 18, wordmark 23; the first ladder was authored, not measured, and rendered 22% small) | captions, labels, field values and figures, rule text and headers, page title, wordmark |
-| `--space-0`, `--space-5` | kept, current values | read by the live sheet; `--space-11` and `--text-10` were on this row until the finish row (M3-04) measured 0 readers each and deleted them, M2 having closed |
+| `--space-0` .. `--space-8` | shared: 0, 2, 4, 8, 12, 16, 24, 32, 48 px | every gap, pad, inset |
+| `--text-1` .. `--text-7` | shared: 12, 13, 14, 16, 20, 24, 32 px | captions, table cells, body, section titles, sub-titles, page titles, a number that is the point |
+| `--leading`, `--leading-tight` | shared: 1.5, 1.25 | line height |
+| `--radius-0` .. `--radius-3`, `--radius-full` | shared: 0, 4, 6, 8 px, pill | marks, controls, panels |
+| `--hair`, `--focus-width`, `--focus-offset` | shared: 1, 2, 2 px | hairline width; the focus ring |
+| `--dur-1` .. `--dur-3`, `--ease-out` | shared: 120, 180, 240 ms | every transition; `0ms` under reduced motion |
+| `--font-sans`, `--font-mono` | shared: IBM Plex Sans, IBM Plex Mono | words; every figure |
+| `--sidebar-width` | shared: 232 px | the nav column |
 
-Colors (name, role):
+Colours (name, role):
 
 | token | role |
 |---|---|
-| `--room` | page ground (dark: the comp's room, measured `#0C1010`, shipped `#0B0E0E`; light: the comp's matte panel) |
-| `--room-deep` | rail ground, one step darker than the room |
-| `--hairline`, `--hairline-strong` | the COLOR of hairline rails and rules (`--hair` stays the existing 1px width token, used by about twenty old rules; a rail is `border-top: var(--hair) solid var(--hairline)`) |
-| `--ink`, `--ink-mute`, `--ink-strong` | text on the room |
-| `--strip` | strip paper. Dark: the comp's strips, measured `#DDD8C6`..`#DFD9C8`. Light: NOT a colour, two constraints — cream cast `R - B` within a step of `+24`, and `L <= 242` so the paper can carry its own lit edge. (`#F6F6F3` stood here and was authored: only 232 of the comp's 1,572,864 pixels are within 6 of it, 0.015%. The comp's real paper is `#DED6C4`. The defect was not lightness but the loss of the cream — R-B is +26 in the comp, +24 in the dark token, and was +3 in the light one, so the light theme's strip had silently become white card.) |
-| `--strip-ink`, `--strip-ink-mute` | text on a strip |
-| `--strip-field`, `--strip-field-line` | boxed field fill and its box line |
-| `--edge-green`, `--edge-amber`, `--edge-red`, `--edge-grey` | holder edge states |
-| `--scope`, `--scope-ink`, `--scope-grid` | chart inset ground, ink, grid |
-| `--focus` | the visible focus ring, 2px, offset 1px |
-| `--font-label` | Archivo (variable), labels and copy |
-| `--font-figure` | the figure face, `font-variant-numeric: tabular-nums` (JetBrains Mono was authored, not measured, and row M1-15 is re-deriving it from the comp's own advance) |
-| `--dur-1`, `--dur-2`, `--dur-3` | 120, 240, 400 ms; every transition under `--dur-3` |
-| `--ease-out` | the one easing |
+| `--bg`, `--bg-raised`, `--bg-hover`, `--bg-active` | grounds: the page; the sidebar, panels and table heads; a row under the pointer; a selected row |
+| `--line`, `--line-strong` | the hairline, and a boundary that must hold (inputs) |
+| `--fg`, `--fg-muted`, `--fg-subtle` | text: every one clears 4.5:1 on every ground |
+| `--accent`, `--accent-hover`, `--accent-fg`, `--accent-soft` | the ink itself as the accent: the primary button and the focus ring carry no hue |
+| `--ok`, `--warn`, `--danger`, `--ok-soft`, `--warn-soft`, `--danger-soft` | status, always beside its word or number |
+| `--head-1` .. `--head-8`, `--head-none` | one hue per head in registry order (DESIGN.md section 5); a mark, 3:1 on the grounds |
+| `--series-1` .. `--series-3` | chart greys for kinds that are not heads; marks, 3:1 on the grounds |
+| `--track`, `--chart-grid` | the unfilled part of a meter or bar, and a chart's grid: not data, no floor |
+| `--focus` | the focus ring's colour |
+| `--overlay`, `--shadow-float` | the scrim under a modal, and the one floating shadow |
 
-EVERY NUMBER IN THIS TABLE IS A MEASUREMENT OFF `webui/.impeccable/mocks/team-board-a.png`, NEVER A
-NAME. This paragraph exists because three of them once were names: the room was written up as
-"graphite `#1B1D1C` class" and the strips as "pale `#ECEAE2` class", and neither was ever sampled
-from the comp, which measures `#0C1010` and `#DDD8C6`..`#DFD9C8`. The m1 design review's finding
-B12 then read the build against this prose, called the room "near-black, not graphite", and was
-withdrawn on remeasurement: the build sits 0.98 of a luminance point from the comp, and the
-CONTRACT was the thing that disagreed. When a token and this table diverge, sample the comp and
-correct whichever one the comp contradicts.
-
-AND FOR THE LIGHT THEME THERE IS NO COMP TO SAMPLE, so a light value is written as a RELATIONSHIP to a
-measured dark one and never as a colour of its own. All three comps of record are dark; the only light-ground
-artifacts in the tree are under `decision/`, which comp-spec excludes because they are the REJECTED incumbent —
-`decision/canon.png` is the blue-accent, pill-button, icon-nav look this world replaced. It is an anti-reference.
-Headroom is the reason this is a rule and not a preference: a dark plane has the whole range above it and a light
-plane has almost none (paper has 216.7 L below it in dark and 9.2 above it in light), so a material carried across
-unchanged clips. Magnitude comes from the comp, sign comes from headroom, and the value is written as an alpha or a
-`color-mix` against its own ground — never a hex, which fixes the sign, and never a `filter`, which fixes the
-direction. See campaign law 26.
-
-Old tokens: `--font-mono` alone still stands, aliased to `--font-code` and read twice. `--paper-0`, `--ink-900` and `--surface` are GONE, deleted by the finish row (M3-04)
-once their last consumer went. New code never uses them. `--ink-900` is the one worth remembering: it read as live because `--tick` named it, and `--tick` itself had no reader anywhere -- dead one level down is still dead.
+Old tokens: the strip-bay names (`--room`, `--ink`, `--strip`, `--plate`, `--edge-*` and their
+siblings) are kept only as aliases in the block after the light theme, each pointing at its nearest
+new role, so a page not yet rebuilt renders in the new palette. New code never uses them. The block
+is deleted when the last page moves, and `tests/world.test.ts` then fails by name on any reader.
 
 Theme switch (`src/features/theme`): `useTheme(): { theme: 'dark' | 'light', set(theme) }`.
 Opens dark regardless of the OS. A manual choice is stored under `localStorage['splice.theme']`.
-Switching is a cut: no transition on `--room` or `--strip`. `prefers-reduced-motion` sets every
-`--dur-N` to `0ms`.
+Switching is a cut: nothing transitions across it. `prefers-reduced-motion` sets every `--dur-N`
+to `0ms`.
 
 ## 2. Primitives (`src/shared/ui`, row M1-02)
 

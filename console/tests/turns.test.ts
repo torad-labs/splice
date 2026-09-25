@@ -342,18 +342,20 @@ describe('turns board', () => {
 describe('log lines', () => {
   const line = '[2026-09-18 01:14:05] [claude-deepseek] turn ERROR conn-reset compact=false latency=2827ms';
 
-  test('a line is a strip of time, tag, level and the line itself', () => {
+  test('a line is its time, its tag, its level and the line itself', () => {
     const out = render(h(LogLine, { line }));
     expect(out).toContain('01:14:05');
     expect(out).toContain('claude-deepseek');
     expect(out).toContain('>error<');
-    expect(out).toContain('myx-edge-red'); // the severity is also the edge, and the word is printed
+    expect(out).toContain('myx-badge-danger'); // the severity is also the dot and the row's tint, and the word is printed
+    expect(out).toContain('myx-lt-danger');
   });
 
-  test('an unmarked line is grey and wordless, never `info`', () => {
-    // It printed `-` in a level column and `line` on its edge; the grey edge alone says unmarked.
+  test('an unmarked line is unmarked and wordless, never `info`', () => {
+    // It printed `-` in a level column and `line` on its edge; now it carries no mark at all.
     const out = render(h(LogLine, { line: '[2026-09-18 01:14:01] [claudex] turn latency=3052ms ok' }));
-    expect(out).toContain('myx-edge-grey');
+    expect(out).not.toContain('myx-badge');
+    expect(out).not.toMatch(/myx-lt-(danger|warn)/);
     expect(out).not.toContain('>info<');
     expect(out).not.toContain('>-<');
   });

@@ -112,7 +112,8 @@
   --series-1: #ededf0;
   --series-2: #a3a6ae;
   --series-3: #6b6f78;
-  --series-4: #3d4048;
+  /* the unfilled part of a meter or bar: not a data mark, so it is held to no contrast floor */
+  --track: #24262c;
   --chart-grid: #1d1f24;
 
   --focus: #ededf0;
@@ -155,12 +156,12 @@
   --head-6: #7d56b8;
   --head-7: #007eaf;
   --head-8: #8e6900;
-  --head-none: #8e919a;   /* 3.1:1 on --bg */
+  --head-none: #84878f;   /* 3.4:1 on --bg-raised */
 
   --series-1: #15161a;
   --series-2: #50535c;
-  --series-3: #8e919a;
-  --series-4: #c9ccd2;
+  --series-3: #84878f;
+  --track: #e4e5e9;
   --chart-grid: #eceef1;
 
   --focus: #15161a;

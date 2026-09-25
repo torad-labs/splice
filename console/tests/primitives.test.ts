@@ -260,9 +260,12 @@ describe('Figure', () => {
 // the fourth -- the log tail's Flag, a key on --strip paper -- did not: 1.24:1 in the dark room,
 // invisible, and green in every capture because the light theme reads 15.08:1. The fix moved the
 // default (the label inherits its ground's ink); this wall resolves the cascade from the sheets
-// themselves, for the two grounds a bare HolderEdge stands on -- a key on paper and the room --
-// in BOTH themes, and fails when either falls under 4.5:1. The planted arm feeds it the unfixed
-// rule and must see the 1.24, so a wall that could not fail would fail here first.
+// themselves, for the grounds a bare HolderEdge stands on -- a key, the room, a bay's plate -- in
+// BOTH themes, and fails when any falls under 4.5:1.
+//
+// The redesign (DESIGN.md section 8) put one ink family on every ground, so the paper-versus-room
+// split this wall was written for cannot recur; the wall stays because the cascade can still hand
+// a word a ground's colour. The planted arm does exactly that and must see it vanish.
 const webui = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sheet = (rel: string): string => readFileSync(path.join(webui, rel), 'utf8');
 
@@ -275,15 +278,19 @@ function declared(css: string, selector: string, prop: string): string | null {
   return hits.length === 0 ? null : hits[hits.length - 1][1].trim();
 }
 
-/** A token's hex in one theme block of tokens.css. */
+/** A token's hex in one theme block of tokens.css. A name the theme block does not hold is read
+ *  through the legacy block (`--strip-ink: var(--fg)`), which maps the old world's names onto the
+ *  new tokens until the last old primitive is gone. */
 function token(theme: 'dark' | 'light', name: string): string {
   const tokens = sheet('src/shared/tokens.css');
   const open = theme === 'dark' ? ':root[data-theme="dark"] {' : ':root[data-theme="light"] {';
   const start = tokens.indexOf(open);
   const block = tokens.slice(start, tokens.indexOf('\n}', start));
   const hit = new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`).exec(block);
-  if (hit === null) throw new Error(`--${name} has no hex in the ${theme} block`);
-  return hit[1];
+  if (hit !== null) return hit[1];
+  const alias = new RegExp(`^\\s*--${name}:\\s*var\\(--([a-z0-9-]+)\\);`, 'm').exec(tokens);
+  if (alias === null) throw new Error(`--${name} has no hex in the ${theme} block and no alias`);
+  return token(theme, alias[1]);
 }
 
 function contrast(a: string, b: string): number {
@@ -296,6 +303,8 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+const name = (value: string) => /var\(--([a-z0-9-]+)\)/.exec(value)?.[1] ?? '';
+
 /** The label's ink and its ground, for a HolderEdge standing on `host` (a key, or the body). */
 function edgeOn(ui: string, theme: 'dark' | 'light', host: { css: string; selector: string }): number {
   const base = declared(ui, '.myx-edge-label', 'color');
@@ -305,7 +314,6 @@ function edgeOn(ui: string, theme: 'dark' | 'light', host: { css: string; select
   const hostGround = declared(host.css, host.selector, 'background') ?? declared(host.css, host.selector, 'background-color');
   if (base === null || hostInk === null || hostGround === null) throw new Error('a rule the wall reads is gone');
   const ink = base === 'inherit' ? hostInk : base;
-  const name = (value: string) => /var\(--([a-z-]+)\)/.exec(value)?.[1] ?? '';
   return contrast(token(theme, name(ink)), token(theme, name(hostGround)));
 }
 
@@ -313,6 +321,8 @@ describe('the holder edge label', () => {
   const KEY = { css: sheet('src/shared/controls/controls.css'), selector: '.myx-key' };
   const ROOM = { css: sheet('src/app/app.css'), selector: 'body' };
   const ui = sheet('src/shared/ui/ui.css');
+  // THE BAY'S HEAD PLATE (M3-04): the compaction bay's grey `sample data` edge stands on it.
+  const PLATE = { css: ui, selector: '.myx-bay-head' };
 
   for (const theme of ['dark', 'light'] as const) {
     test(`a Flag on its key reads in the ${theme} room`, () => {
@@ -321,35 +331,21 @@ describe('the holder edge label', () => {
     test(`a HolderEdge standing in the ${theme} room reads`, () => {
       expect(edgeOn(ui, theme, ROOM)).toBeGreaterThanOrEqual(4.5);
     });
-  }
-
-  test('the wall can fail: the unfixed rule puts the Flag at 1.24:1 in the dark room', () => {
-    const unfixed = ui.replace(/(^\.myx-edge-label\s*\{[^}]*?)color:\s*inherit;/m, '$1color: var(--ink);');
-    expect(unfixed).not.toBe(ui);
-    expect(edgeOn(unfixed, 'dark', KEY)).toBeLessThan(1.3);
-  });
-
-  // THE BAY'S HEAD PLATE (M3-04). The cascade detector's scan found the third paper ground an edge
-  // stands on: the compaction bay's grey `sample data` edge on the plate, which declared no ink, so
-  // the label inherited body's --ink at 1.14:1 in the dark room.
-  const PLATE = { css: ui, selector: '.myx-bay-head' };
-  for (const theme of ['dark', 'light'] as const) {
     test(`a HolderEdge on a bay's head plate reads in the ${theme} room`, () => {
       expect(edgeOn(ui, theme, PLATE)).toBeGreaterThanOrEqual(4.5);
     });
   }
-  test('the wall can fail: a plate that declares no ink puts the edge at 1.14:1 in the dark room', () => {
-    const unfixed = ui.replace(/(^\.myx-bay-head\s*\{[^}]*?)\n\s*color:\s*var\(--strip-ink\);/m, '$1');
-    expect(unfixed).not.toBe(ui);
-    expect(edgeOn(unfixed, 'dark', { css: unfixed, selector: '.myx-bay-head' })).toBeLessThan(1.2);
+
+  test('the wall can fail: a label handed a ground\'s colour vanishes on its key', () => {
+    const planted = ui.replace(/(^\.myx-edge-label\s*\{[^}]*?)color:\s*inherit;/m, '$1color: var(--bg-active);');
+    expect(planted).not.toBe(ui);
+    expect(edgeOn(planted, 'dark', KEY)).toBeLessThan(1.5);
   });
 });
 
-// THE CHOICE'S LABEL READS ON THE ROOM IT STANDS ON (M3-04). The edge defect run the other way:
-// `.myx-choice-label` printed --strip-ink-mute, a PAPER ink, while the label is a sibling of the paper
-// box in the choice's column, so on the logs head (Choice's one consumer) it stood on the room at
-// 2.67:1 in the dark. It now inherits; resolved from the sheets, both themes, and the planted arm
-// feeds it the paper ink back and must see the 2.67.
+// THE CHOICE'S LABEL READS ON THE ROOM IT STANDS ON (M3-04). `.myx-choice-label` once printed a PAPER
+// ink while it stood on the room, 2.67:1 in the dark. It now names the room's muted ink; resolved from
+// the sheets, both themes, and the planted arm hands it a ground's colour and must see it vanish.
 describe("the choice's label", () => {
   const controls = sheet('src/shared/controls/controls.css');
   const app = sheet('src/app/app.css');
@@ -359,7 +355,6 @@ describe("the choice's label", () => {
     const ground = declared(app, 'body', 'background') ?? declared(app, 'body', 'background-color');
     if (own === null || room === null || ground === null) throw new Error('a rule the wall reads is gone');
     const ink = own === 'inherit' ? room : own;
-    const name = (value: string) => /var\(--([a-z-]+)\)/.exec(value)?.[1] ?? '';
     return contrast(token(theme, name(ink)), token(theme, name(ground)));
   };
   for (const theme of ['dark', 'light'] as const) {
@@ -367,89 +362,86 @@ describe("the choice's label", () => {
       expect(onRoom(controls, theme)).toBeGreaterThanOrEqual(4.5);
     });
   }
-  test('the wall can fail: the paper ink puts it at 2.67:1 in the dark room', () => {
-    const unfixed = controls.replace(/(^\.myx-choice-label\s*\{[^}]*?)color:\s*inherit;/m, '$1color: var(--strip-ink-mute);');
-    expect(unfixed).not.toBe(controls);
-    expect(onRoom(unfixed, 'dark')).toBeLessThan(2.8);
+  test('the wall can fail: a ground\'s colour puts it under 1.5:1 in the dark room', () => {
+    const planted = controls.replace(/(^\.myx-choice-label\s*\{[^}]*?)color:\s*var\(--fg-muted\);/m, '$1color: var(--bg-active);');
+    expect(planted).not.toBe(controls);
+    expect(onRoom(planted, 'dark')).toBeLessThan(1.5);
   });
 });
 
-// The log tail's head is strip paper without being a .myx-strip, so the Figure beside the Flag
-// took ui.css's room ink: `15 new lines` measured 1.15:1 (value) and 1.98:1 (unit) in the dark room,
-// in the same capture that showed the Flag. Resolved from the sheets like the edge above.
-describe('the log tail head prints its count in paper ink', () => {
-  const ui = sheet('src/shared/ui/ui.css');
+// THE LOG TAIL'S BAR READS (M2R-01's second defect: `15 new lines` measured 1.15:1 on the old paper
+// head). The bar prints the file's path and, while paused, a neutral badge with the count of lines
+// that arrived; both are resolved from the sheets on the grounds they stand on.
+describe('the log tail bar prints its path and its count in inks that read', () => {
   const lt = sheet('src/widgets/log-tail/log-tail.css');
-  const name = (value: string) => /var\(--([a-z-]+)\)/.exec(value)?.[1] ?? '';
-  const onHead = (css: string, theme: 'dark' | 'light', part: 'value' | 'unit') => {
-    const ink = declared(css, `.myx-lt-head .myx-fig-${part}`, 'color') ?? declared(ui, `.myx-fig-${part}`, 'color');
-    const ground = declared(css, '.myx-lt-head', 'background');
+  const kit = sheet('src/shared/ui/kit.css');
+  const onBar = (css: string, theme: 'dark' | 'light') => {
+    const ink = declared(css, '.myx-lt-path', 'color');
+    const ground = declared(css, '.myx-lt-bar', 'background');
+    if (ink === null || ground === null) throw new Error('a rule the wall reads is gone');
+    return contrast(token(theme, name(ink)), token(theme, name(ground)));
+  };
+  const count = (theme: 'dark' | 'light') => {
+    const ink = declared(kit, '.myx-badge-neutral', 'color');
+    const ground = declared(kit, '.myx-badge-neutral', 'background');
     if (ink === null || ground === null) throw new Error('a rule the wall reads is gone');
     return contrast(token(theme, name(ink)), token(theme, name(ground)));
   };
 
   for (const theme of ['dark', 'light'] as const) {
-    for (const part of ['value', 'unit'] as const) {
-      test(`the count's ${part} reads in the ${theme} room`, () => {
-        expect(onHead(lt, theme, part)).toBeGreaterThanOrEqual(4.5);
-      });
-    }
+    test(`the path reads on the bar in the ${theme} room`, () => {
+      expect(onBar(lt, theme)).toBeGreaterThanOrEqual(4.5);
+    });
+    test(`the count reads on its badge in the ${theme} room`, () => {
+      expect(count(theme)).toBeGreaterThanOrEqual(4.5);
+    });
   }
 
-  test('the wall can fail: without the head rule the count falls back to room ink, 1.15:1', () => {
-    const unfixed = lt.replace(/^\.myx-lt-head \.myx-fig-value[^\n]*\n/m, '');
-    expect(unfixed).not.toBe(lt);
-    expect(onHead(unfixed, 'dark', 'value')).toBeLessThan(1.2);
+  test('the wall can fail: a path in the bar\'s own ground reads 1:1', () => {
+    const planted = lt.replace(/(^\.myx-lt-path \{[^}]*?)color: var\(--fg-muted\);/m, '$1color: var(--bg-raised);');
+    expect(planted).not.toBe(lt);
+    expect(onBar(planted, 'dark')).toBeLessThan(1.1);
   });
 });
 
-// HEALTH'S SIZE REACHES ITS WORD (M3-04). The health cell's only text is its holder edge's label, and
-// `.myx-edge-label` sets its own --text-1, so the cell's --text-4 sized an empty box and the hero gate
-// read the cap at 9.3px against the comp's 12.4. The word's size resolves from the sheets here.
+// HEALTH'S SIZE REACHES ITS WORD (M3-04). The health cell's only text is its state word, and the
+// badge sets its own --text-1, so a cell could size an empty box while the word stayed small. A quiet
+// badge inherits its row's size, so the word prints at the strip's --text-2.
 describe("the rule's health word takes the cell's size", () => {
-  const ui = sheet('src/shared/ui/ui.css');
+  const kit = sheet('src/shared/ui/kit.css');
   const rule = sheet('src/widgets/rule/rule.css');
-  const wordSize = (css: string) => {
-    const own = declared(css, '.myx-rule-health .myx-edge-label', 'font-size') ?? declared(ui, '.myx-edge-label', 'font-size');
-    // an inherited size resolves up the tree: the cell, then the band the cells share
-    return own === 'inherit'
-      ? declared(css, '.myx-rule-health', 'font-size') ?? declared(css, '.myx-rule', 'font-size')
-      : own;
+  const wordSize = (sheetKit: string) => {
+    const own = declared(sheetKit, '.myx-badge-quiet', 'font-size') ?? declared(sheetKit, '.myx-badge', 'font-size');
+    // an inherited size resolves up the tree to the band the cells share
+    return own === 'inherit' ? declared(rule, '.myx-rule', 'font-size') : own;
   };
 
-  test('the word prints at the cell size, --text-4', () => {
-    expect(wordSize(rule)).toBe('var(--text-4)');
+  test('the word prints at the strip size, --text-2', () => {
+    expect(wordSize(kit)).toBe('var(--text-2)');
   });
 
-  test('the wall can fail: without the rule the edge label keeps --text-1', () => {
-    const unfixed = rule.replace(/^\.myx-rule-health \.myx-edge-label[^\n]*\n/m, '');
-    expect(unfixed).not.toBe(rule);
-    expect(wordSize(unfixed)).toBe('var(--text-1)');
+  test('the wall can fail: without the quiet rule\'s inherit the word keeps the badge\'s --text-1', () => {
+    const planted = kit.replace(/(^\.myx-badge-quiet \{[^}]*?) font-size: inherit;/m, '$1');
+    expect(planted).not.toBe(kit);
+    expect(wordSize(planted)).toBe('var(--text-1)');
   });
 });
 
-// The rule's connection and pending cells declared --ink-mute for the whole cell, written for the
-// age beside the word. Once the edge label took its ground's ink, the STATE WORD inherited that
-// mute (11.03 -> 6.93:1 dark): passing AA, and still wrong, because the word is the colorblind
-// fallback. The word's ink must resolve to the room's full --ink, whatever the cell declares.
-describe('the rule prints its state words in the room ink', () => {
-  const ui = sheet('src/shared/ui/ui.css');
+// The rule's cells print their labels ("last event", "used") in the quiet inks, and the STATE WORD
+// beside its dot must not inherit that quiet: the word is the colorblind fallback for the dot, so in
+// the strip it prints in the full ink, whatever the quiet badge declares for a table row.
+describe('the rule prints its state words in the full ink', () => {
+  const kit = sheet('src/shared/ui/kit.css');
   const rule = sheet('src/widgets/rule/rule.css');
-  const labelInk = (css: string) => {
-    const base = declared(ui, '.myx-edge-label', 'color');
-    if (base !== 'inherit') return base;
-    // the two cells share one rule, whose selector list starts with the connection cell
-    return declared(css, '.myx-rule-connection,\n.myx-rule-pending', 'color') ?? declared(sheet('src/app/app.css'), 'body', 'color');
-  };
+  const wordInk = (css: string) => declared(css, '.myx-rule .myx-badge-quiet', 'color') ?? declared(kit, '.myx-badge-quiet', 'color');
 
-  test('reconnecting, live, off and restart pending print in --ink', () => {
-    expect(labelInk(rule)).toBe('var(--ink)');
+  test('reconnecting, live, off and restart pending print in --fg', () => {
+    expect(wordInk(rule)).toBe('var(--fg)');
   });
 
-  test('the wall can fail: a muted cell mutes the word', () => {
-    const muted = rule.replace(/(\.myx-rule-pending \{[^}]*gap: var\(--space-2\);)/, '$1\n  color: var(--ink-mute);');
-    expect(muted).not.toBe(rule);
-    expect(labelInk(muted)).toBe('var(--ink-mute)');
+  test('the wall can fail: without the strip\'s rule the word takes the quiet badge\'s muted ink', () => {
+    const planted = rule.replace(/^\.myx-rule \.myx-badge-quiet \{[^\n]*\n/m, '');
+    expect(planted).not.toBe(rule);
+    expect(wordInk(planted)).toBe('var(--fg-muted)');
   });
 });
-

@@ -72,6 +72,10 @@ export function detailColumns(): { unit: string; dir: string; cls: string }[] {
       // the only one.
       const m = /<aside className="(myx-[a-z-]+-detail)(?:\s[^"]*)?"/.exec(tsx);
       if (m !== null) found.push({ unit, dir, cls: m[1] });
+      // The redesign's kit renders the column as <DetailPanel> (an <aside class="myx-panel">), so a
+      // rebuilt page carries the component and not a page-prefixed class. It is the same second
+      // track and the same defect can live in it, so it joins the denominator by its own shape.
+      else if (/<DetailPanel\b/.test(tsx)) found.push({ unit, dir, cls: 'DetailPanel' });
     }
   }
   return found;
@@ -92,7 +96,7 @@ function sheetOf(dir: string): string {
  * RESTING:   neither -- the track is declared at its full width unconditionally. The defect.
  */
 export function restState(tsx: string, css: string, cls: string): Rest {
-  const at = tsx.indexOf(`<aside className="${cls}`);
+  const at = cls === 'DetailPanel' ? tsx.indexOf('<DetailPanel') : tsx.indexOf(`<aside className="${cls}`);
   if (at < 0) return 'absent';
   // the gate, if there is one, is the nearest preceding `? null : (` -- and it has to be NEAR:
   // a ternary four hundred characters back belongs to something else on the page.
@@ -126,7 +130,9 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
     + 'rest and the -open class widens it, with column-gap moving with the track so the collapse '
     + 'leaves no gutter of its own (M1-117, mirroring sessions and M1-119).',
   turns: 'already collapses its track to 0 at rest and transitions it open. Dead region 17.7%.',
-  sessions: 'already collapses its track to 0 at rest and transitions it open. Dead region 10.2%.',
+  sessions: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind '
+    + 'an `open === null ? null :` gate, so no track and no empty landmark exist until a row is '
+    + 'opened. It collapsed its track to 0 before; dead region 10.2% then.',
   projects: 'already collapses its track to 0 at rest and transitions it open. Its 43.7% dead '
     + 'region is the empty slot rails below four repo strips -- a different defect with a '
     + 'different remedy, and not this column.',

@@ -380,6 +380,9 @@
   margin: 0;
   display: grid;
   gap: var(--space-2);
+  /* a phone's board is narrower than a daemon path: the sentence wraps inside its box (S12) */
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: var(--space-6);
   border: var(--hair) dashed var(--line-strong);
   border-radius: var(--radius-3);

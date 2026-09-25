@@ -95,20 +95,9 @@ function gridOf(markup: string): Cell[][] {
   }).filter((cells) => cells.length > 0);
 }
 
+// Sessions left the strip rack with the redesign (DESIGN.md section 7): it is a fixed-layout table
+// now, held by its own block at the end of this file. Projects keeps its rack until it is rebuilt.
 const RACKS: { page: string; budget: number; markup: () => string }[] = [
-  {
-    page: 'sessions',
-    budget: 122,
-    markup: () =>
-      renderToStaticMarkup(
-        h(SessionsBoard, {
-          payload: {
-            note: 'headless `claude -p` runs never register',
-            sessions: [session({ session_id: 'a' }), session({ session_id: 'b', name: 'splice-design' })],
-          },
-        }),
-      ),
-  },
   {
     page: 'projects',
     budget: 102,
@@ -148,5 +137,34 @@ describe.each(RACKS)('$page declares its rack', ({ page, budget, markup }) => {
     // numbers, which is the whole difference between a red test and a useful one.
     const tight = gridOf(markup())[0].filter((cell) => cell.w < cell.label.length);
     expect({ page, tight }).toEqual({ page, tight: [] });
+  });
+});
+
+// THE SESSIONS TABLE KEEPS THE RACK'S TWO PROPERTIES IN A TABLE'S TERMS. The budget becomes the
+// colgroup: its widths are percentages of a fixed-layout table and must fill it exactly, so no view
+// ends early and leaves bare ground, and none overflows its board. The grid becomes the row shape:
+// every row prints one cell per named column.
+describe('sessions declares its table', () => {
+  const markup = () => renderToStaticMarkup(
+    h(SessionsBoard, {
+      payload: {
+        note: 'headless `claude -p` runs never register',
+        sessions: [session({ session_id: 'a' }), session({ session_id: 'b', name: 'splice-design' })],
+      },
+    }),
+  );
+
+  test('the colgroup fills the table exactly, and there is one to read', () => {
+    const widths = [...markup().matchAll(/<col style="width:(\d+)%"/g)].map((m) => Number(m[1]));
+    expect(widths.length).toBeGreaterThanOrEqual(2); // the denominator: no colgroup is not a pass
+    expect(widths.reduce((sum, w) => sum + w, 0)).toBe(100);
+  });
+
+  test('every row prints one cell per named column', () => {
+    const html = markup();
+    const names = [...html.matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1]);
+    const rows = html.split('</thead>')[1]?.split('<tr').slice(1).filter((row) => !row.includes('myx-dt-group')) ?? [];
+    expect(rows.length).toBe(2);
+    for (const row of rows) expect([...row.matchAll(/<td/g)].length).toBe(names.length);
   });
 });

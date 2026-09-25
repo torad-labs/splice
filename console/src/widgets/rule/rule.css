@@ -44,6 +44,9 @@
 .myx-rule-pct-danger { color: var(--danger); }
 
 .myx-rule .myx-hm-name { color: var(--fg); }
+/* A state word is the colorblind fallback for its dot, so in the strip it prints in the full ink
+   while the labels around it stay quiet (tests/primitives.test.ts holds it). */
+.myx-rule .myx-badge-quiet { color: var(--fg); }
 
 @media (max-width: 720px) {
   .myx-rule { padding: var(--space-3) var(--space-4); column-gap: var(--space-5); }

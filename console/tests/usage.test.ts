@@ -23,7 +23,7 @@ import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
 import { ratesFor, sortedHeads } from '../src/pages/usage/model';
-import { PlanBay, planEdge, planRows, readText, windowCells } from '../src/pages/usage/plan';
+import { PlanBay, planRows, readText, windowCells, windowTone } from '../src/pages/usage/plan';
 import type { UsagePayload } from '../src/shared/api';
 
 /** The first element, or a named failure: the strict preset forbids a non-null assertion, and a
@@ -173,8 +173,8 @@ describe('usage page', () => {
 
 describe('plan limits', () => {
   test('a failed usage read leaves no skeleton, and a sample renders no plan rack', () => {
-    expect(render(h(PlanBay, { usage: null, now: 0, names: null }))).toContain('myx-blank');
-    expect(render(h(PlanBay, { usage: null, error: 'splice is not answering', now: 0, names: null }))).toBe('');
+    expect(render(h(PlanBay, { usage: null, now: 0 }))).toContain('myx-blank');
+    expect(render(h(PlanBay, { usage: null, error: 'splice is not answering', now: 0 }))).toBe('');
     // behind a sample the rack is absent, not a skeleton waiting on a read that never comes
     expect(render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW, sample: 'usage' }))).not.toContain('myx-blank');
   });
@@ -207,14 +207,19 @@ describe('plan limits', () => {
     const muse = planRows(usage, NOW).find((row) => row.entry.key === 'claude-muse');
     expect(muse?.live).toBeNull();
     expect(windowCells(muse?.windows[1], NOW)).toEqual({ used: 'unknown', resets: 'already reset' });
-    expect(planEdge(first(planRows(usage, NOW).filter((row) => row.entry.key === 'claude-muse')), 80)).toEqual({ edge: 'grey', label: 'stale' });
+    // the card prints the reset in words and draws an empty meter, never the 99% from before it
+    const card = render(h(PlanBay, { usage: { ...usage, heads: usage.heads.filter((head) => head.key === 'claude-muse') }, now: NOW }));
+    expect(card).toContain('already reset');
+    expect(card).not.toContain('99%');
+    expect(card).toContain('myx-plan-neutral');
   });
 
   test('a live window prints its figure and how long until it resets', () => {
     const splice = first(planRows(usage, NOW));
     expect(windowCells(splice.windows[0], NOW)).toEqual({ used: '65%', resets: 'in 1h 0m' });
     expect(windowCells(splice.windows[1], NOW)).toEqual({ used: '15%', resets: 'in 5d 0h' });
-    expect(planEdge(splice, 80)).toEqual({ edge: 'green', label: '65%' });
+    expect(windowTone(65, 80)).toBe('neutral');
+    expect(render(h(PlanBay, { usage, now: NOW }))).toContain('>65%<');
     expect(readText(splice.windows, NOW)).toBe('2m ago');
   });
 
@@ -488,16 +493,14 @@ describe('a rack of like rows prints its column names once', () => {
   // instrument is .impeccable/review/compose/compose.mjs and the capture is beside it.
   const boards: [string, string][] = [
     ['compaction', render(h(CompactFeed, { payload: fixtureCompact }))],
-    ['usage by head', render(h(UsageBoard, {
-      payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW,
-    }))],
   ];
 
-  test('both boards render bays at all, so a green here is not an empty denominator', () => {
+  test('the board renders bays at all, so a green here is not an empty denominator', () => {
     // Law 34's shape: if the boards rendered nothing, every assertion below would pass vacuously
     // and the suite would report that no rack repeats its labels. The denominator is named first.
+    // Usage left this suite with the redesign: its heads are a table, held by the test below.
     const all = boards.flatMap(([, markup]) => racks(markup));
-    expect(all.map((rack) => rack.label)).toEqual(['recorded outcomes', 'recent compactions', 'heads']);
+    expect(all.map((rack) => rack.label)).toEqual(['recorded outcomes', 'recent compactions']);
     expect(all.every((rack) => rack.rows.length > 0)).toBe(true);
   });
 
@@ -533,6 +536,21 @@ describe('a rack of like rows prints its column names once', () => {
     const strip = markup.slice(markup.indexOf('aria-label="total"'), markup.indexOf('aria-label="outcome'));
     expect(strip).toContain('<span class="myx-edge-label">total</span>');
     expect(strip).not.toContain('myx-sfield-label');
+  });
+
+  test('usage\'s heads table prints its column names once, in its head row, and in no cell', () => {
+    const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
+    const table = /<table[^>]*aria-label="heads"[^>]*>([\s\S]*?)<\/table>/.exec(markup);
+    expect(table).not.toBeNull();
+    const [head, body] = (table?.[1] ?? '').split('</thead>');
+    const names = [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1]);
+    expect(names).toEqual(['head', 'share', 'turns', 'in tokens', 'out tokens', 'tokens used', 'limit', 'runs out in', 'rate limited']);
+    const rows = (body ?? '').split('<tr').slice(1);
+    expect(rows.length).toBeGreaterThan(0); // the denominator: a table with no rows would pass vacuously
+    for (const row of rows) {
+      expect(row).not.toContain('myx-sfield-label');
+      expect([...row.matchAll(/<td/g)].length).toBe(names.length);
+    }
   });
 
   test('the wall can fail: a bay that prints names AND labels is reported by name', () => {

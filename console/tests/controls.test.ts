@@ -49,9 +49,15 @@ function rules(sheet: string): Map<string, string> {
   const bare = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
   const found = new Map<string, string>();
   for (const match of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selector = match[1].trim().replace(/\s+/g, ' ');
-    if (selector.startsWith('@')) continue;
-    found.set(selector, match[2].trim().replace(/\s+/g, ' '));
+    const body = match[2].trim().replace(/\s+/g, ' ');
+    // A grouped rule (`a, b { ... }`) declares its body for each selector in the group, and a later
+    // rule for the same selector adds to it, so `declared` reads what the cascade would apply.
+    for (const part of match[1].split(',')) {
+      const selector = part.trim().replace(/\s+/g, ' ');
+      if (selector.startsWith('@') || selector === '') continue;
+      const held = found.get(selector);
+      found.set(selector, held === undefined ? body : `${held}; ${body}`);
+    }
   }
   return found;
 }
@@ -107,9 +113,9 @@ describe('Key', () => {
     // The defect was the reverse: every armed declaration was also a hover declaration.
     const armedOnly = Object.entries(armed).filter(([property, value]) => hovered[property] !== value);
     expect(armedOnly.length).toBeGreaterThan(0);
-    // And the edge is not what hover uses: hover touches only the box line.
-    expect(declared(css, '.myx-key:hover')['--nothing']).toBeUndefined();
-    expect(Object.keys(declared(css, '.myx-key:hover'))).toEqual(['border-color']);
+    // And the armed line is not what hover uses: hover touches only the ground, armed the line too.
+    expect(Object.keys(declared(css, '.myx-key:hover'))).toEqual(['background']);
+    expect(declared(css, '.myx-key-armed')['border-color']).toBe('var(--warn)');
   });
 
   test('D4: a busy key is not disabled, keeps focus, and prints that it is working', () => {
@@ -216,9 +222,10 @@ describe('Input', () => {
     expect(out).toContain('myx-input-invalid');
   });
 
-  test('D7: its label wears the paper ink, not the room ink', () => {
-    // Measured 1.98:1 for --ink-mute over --strip against a 4.5:1 bar.
-    expect(declared(css, '.myx-input-label').color).toBe('var(--strip-ink-mute)');
+  test('D7: its label wears an ink the contrast wall measures on its ground', () => {
+    // Measured 1.98:1 for the old --ink-mute over --strip against a 4.5:1 bar. The label now sits on
+    // the page ground in --fg-muted, a pair tests/contrast.test.ts holds at 4.5:1 in both themes.
+    expect(declared(css, '.myx-input-label').color).toBe('var(--fg-muted)');
   });
 });
 
@@ -330,7 +337,10 @@ describe('Choice', () => {
   });
 
   test('the chosen option is marked in ink as well as in words', () => {
-    expect(declared(css, '.myx-choice-chosen')['border-color']).toBe('var(--strip-ink)');
+    // the other options print in the muted ink; the chosen one in full ink, and heavier
+    expect(declared(css, '.myx-choice-option').color).toBe('var(--fg-muted)');
+    expect(declared(css, '.myx-choice-chosen').color).toBe('var(--fg)');
+    expect(declared(css, '.myx-choice-chosen')['font-weight']).toBe('500');
   });
 });
 
@@ -342,7 +352,8 @@ describe('the focus ring', () => {
     test(`${selector} draws its ring inside the box`, () => {
       const ring = declared(css, `${selector}:focus-visible`);
       expect(ring.outline).toContain('var(--focus)');
-      expect(parseFloat(ring['outline-offset'] ?? '0')).toBeLessThan(0);
+      // inward by the ring's own width, or any negative length: either keeps the ring in the box
+      expect(ring['outline-offset'] ?? '0').toMatch(/^(-\d[\d.]*[a-z]*|calc\(var\(--focus-width\) \* -1\))$/);
     });
   }
 });

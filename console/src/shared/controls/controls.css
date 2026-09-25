@@ -54,7 +54,7 @@
   transition: border-color var(--dur-1) ease;
 }
 .myx-input-box:hover { border-color: var(--fg-subtle); }
-.myx-input-box:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 0; border-color: var(--focus); }
+.myx-input-box:focus-visible { border-color: var(--focus); }
 .myx-input-box::placeholder { color: var(--fg-subtle); }
 .myx-input-box[disabled] { color: var(--fg-subtle); background: var(--bg-raised); cursor: not-allowed; }
 /* An invalid field says why in words beside it; the box only repeats it. */
@@ -71,7 +71,8 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-4);
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: var(--space-4) var(--space-5);
   background: var(--danger-soft);
   color: var(--fg);
@@ -151,6 +152,18 @@
 .myx-choice-option:hover,
 .myx-choice-active { background: var(--bg-hover); color: var(--fg); }
 .myx-choice-chosen { color: var(--fg); font-weight: 500; }
+
+/* ---------- the focus ring, inside the box ----------
+   A control can stand flush against a scroller's edge (a table, the log rail, the knob rack), where
+   a ring drawn outside its box loses the side past the edge (S9: the capture key kept 0 of 24 rows
+   of its left side). These draw theirs inside, in the ink, so no ground can clip or swallow it. */
+.myx-key:focus-visible,
+.myx-input-box:focus-visible,
+.myx-choice-box:focus-visible,
+.myx-choice-option:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
 
 /* ---------- flag: a switch that prints its state ---------- */
 .myx-flag { gap: var(--space-2); }

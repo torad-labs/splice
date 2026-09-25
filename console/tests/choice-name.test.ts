@@ -61,7 +61,7 @@ describe('a Choice is named by its label', () => {
 });
 
 describe('the call sites that rendered nameless are named', () => {
-  test('the logs head: head, lines, tag and level', () => {
+  test('the logs rail: head and lines as named groups, tag and level as named choices', () => {
     const out = render(h(LogsBoard, {
       payload: { key: 'claudex', path: '/home/user/.splice/logs/daemon.log', lines: [] },
       filter: { head: null, level: null, substring: '' },
@@ -74,9 +74,11 @@ describe('the call sites that rendered nameless are named', () => {
       tail: 200,
       heads: [{ key: 'claudex', label: 'claudex' }],
     }));
-    const names = comboboxNames(out);
-    expect(names).toHaveLength(4);
-    expect(names.every((name) => name.length > 0), names.join(' | ')).toBe(true);
+    // the head and the tail length are button groups now (a mark per head, a segmented tail), so
+    // their name is the group's; the two that stayed choices are named comboboxes
+    expect(comboboxNames(out)).toEqual(['tag', 'level']);
+    expect(out).toMatch(/role="group" aria-label="head"/);
+    expect(out).toMatch(/role="group" aria-label="lines"/);
   });
 
   test('team compose: every slot picker', () => {

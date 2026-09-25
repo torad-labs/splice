@@ -102,25 +102,25 @@ describe('the phone', () => {
   const rule = phone(sheet('src/widgets/rule/rule.css'));
   const ui = phone(sheet('src/shared/ui/ui.css'));
 
-  test('the shell stacks the rail under the page', () => {
-    // one column for the page, and the rail is the row after it
-    expect(app).toMatch(/\.myx-console-body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-    expect(app).toMatch(/\.myx-console-body\s*>\s*\.myx-rail\s*\{\s*order:\s*2/);
+  test('the shell stacks into one column, the nav a row above the page', () => {
+    // one column; the sidebar becomes the first row and the page takes the rest of the height
+    expect(app).toMatch(/\.myx-console\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    expect(app).toMatch(/\.myx-console\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\)/);
   });
 
-  test('the rail lies down: its tabs are a row that scrolls sideways', () => {
-    expect(rail).toMatch(/\.myx-rail-tabs\s*\{[^}]*flex-direction:\s*row/);
-    expect(rail).toMatch(/\.myx-rail\s*\{[^}]*overflow-x:\s*auto/);
-    // the tabs lie in one line that is as wide as its plates, not the column's width
-    expect(rail).toMatch(/\.myx-rail-tabs\s*\{[^}]*width:\s*max-content/);
+  test('the nav lies down: its links are one row that scrolls sideways', () => {
+    expect(rail).toMatch(/\.myx-side\s*\{[^}]*flex-direction:\s*row/);
+    expect(rail).toMatch(/\.myx-side-nav\s*\{[^}]*overflow-x:\s*auto/);
+    expect(rail).toMatch(/\.myx-side-list\s*\{[^}]*display:\s*flex/);
+    // a link keeps its word on one line rather than wrapping inside a narrow row
+    expect(rail).toMatch(/\.myx-side-link\s*\{[^}]*white-space:\s*nowrap/);
   });
 
-  test('the rule stacks the clocks over health', () => {
-    const areas = rule.match(/grid-template-areas:([\s\S]*?);/);
-    expect(areas).not.toBeNull();
-    const rows = (areas?.[1] ?? '').match(/'[^']*'/g) ?? [];
-    expect(rows.map((row) => row.replace(/'/g, '').trim().split(/\s+/)))
-      .toEqual([['mark', 'clocks'], ['mark', 'health'], ['window', 'window'], ['tail', 'tail']]);
+  test('the status strip wraps its cells instead of running past the screen', () => {
+    const base = sheet('src/widgets/rule/rule.css');
+    expect(body(base, '.myx-rule')).toMatch(/flex-wrap:\s*wrap/);
+    // the clocks give up the right edge on a phone and wrap in line with the other cells
+    expect(rule).toMatch(/\.myx-rule-clocks\s*\{[^}]*margin-inline-start:\s*0/);
   });
 
   test('an opened detail column covers the screen', () => {
@@ -149,7 +149,7 @@ function body(sheetText: string, selector: string): string {
 
 describe('the phone at 390', () => {
   test('an empty wraps its sentence inside the rack instead of running under its edge', () => {
-    expect(body(sheet('src/shared/ui/ui.css'), '.myx-empt')).toMatch(/max-width:\s*100%/);
+    expect(body(sheet('src/shared/ui/kit.css'), '.myx-empt')).toMatch(/max-width:\s*100%/);
   });
 
   test("team compose's fields shrink to the form", () => {
@@ -214,6 +214,6 @@ describe('the phone at 390', () => {
 
   test('the walls can fail: a missing rule reads as empty, not as a pass', () => {
     expect(body('.myx-x { color: red; }', '.myx-empt')).toBe('');
-    expect(body(sheet('src/shared/ui/ui.css'), '.myx-empt')).toMatch(/background/);
+    expect(body(sheet('src/shared/ui/kit.css'), '.myx-empt')).toMatch(/border/);
   });
 });

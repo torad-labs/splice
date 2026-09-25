@@ -21,4 +21,34 @@ export const dispositions: readonly Disposition[] = [
   // V4-220 item 4: the Fix button for a row whose `fix_id` names a fix the daemon runs itself
   // (install_all). Declared with the daemon commit that serves it; the answer is doctor re-run.
   { kind: 'route', name: '/api/doctor/fix/{id}', disposition: 'editable' },
+  // CLI verbs this page answers (V4-220's verb wall): each names the action and the route it calls.
+  { kind: 'verb', name: 'splice doctor', disposition: 'read-only', action: 'the doctor report', via: '/api/doctor' },
+  {
+    kind: 'verb',
+    name: 'splice version',
+    disposition: 'read-only',
+    action: "the version strip's splice version",
+    via: '/api/doctor',
+  },
+  {
+    kind: 'verb',
+    name: 'splice shim-version',
+    disposition: 'read-only',
+    action: 'the shim row, which names the version this splice installs',
+    via: '/api/doctor',
+  },
+  {
+    kind: 'verb',
+    name: 'splice install',
+    disposition: 'editable',
+    action: "a failing install row's Fix button, which runs install --all",
+    via: '/api/doctor/fix/{id}',
+  },
+  {
+    kind: 'verb',
+    name: 'splice upgrade',
+    disposition: 'editable',
+    action: 'upgrade to a release or roll back, with the run followed to its end',
+    via: '/api/upgrade',
+  },
 ];

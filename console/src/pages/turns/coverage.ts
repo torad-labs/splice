@@ -16,4 +16,6 @@ export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/perf/summary', disposition: 'read-only' },
   { kind: 'route', name: '/api/perf/turns', disposition: 'read-only' },
   { kind: 'route', name: '/api/heads/{head}/capture', disposition: 'editable' },
+  // The CLI verb this page answers (V4-220's verb wall).
+  { kind: 'verb', name: 'splice perf', disposition: 'read-only', action: 'the perf summary', via: '/api/perf/summary' },
 ];

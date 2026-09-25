@@ -419,7 +419,8 @@ describe('the coverage manifest', () => {
   // The seven the baseline held for M2-04, and the key store's two (V4-220 item 3), which the daemon
   // serves with this page as their owner.
   test('takes over the seven routes the baseline held for this row, and the key store\'s two', () => {
-    expect(dispositions.map((entry) => entry.name).sort()).toEqual([
+    const routes = dispositions.filter((entry) => entry.kind === 'route');
+    expect(routes.map((entry) => entry.name).sort()).toEqual([
       '/api/accounts',
       '/api/auth',
       '/api/auth/{head}/login',
@@ -443,7 +444,7 @@ describe('the coverage manifest', () => {
   // what must never happen is a pending entry with no row to point at. Pinning the pending SET
   // would put this test back in the business of going red every time the daemon ships a route,
   // which is how a wall gets edited to match reality instead of the other way round.
-  test('every entry is a route, and every pending one names the row that will land it', () => {
+  test('every entry is a route or a CLI verb, and every pending one names the row that will land it', () => {
     // The denominator first. Without this line both assertions below are VACUOUS on an empty list —
     // `[].every(...)` is true and a for-loop over `[]` never runs its body — so emptying the
     // manifest entirely leaves this test a green tick at 0ms. Measured, not reasoned: it passes on
@@ -452,7 +453,8 @@ describe('the coverage manifest', () => {
     // elsewhere, in a wall I had just relaxed from pinning a set to asserting a property — the
     // relaxation was right and it removed the thing that was implicitly counting.
     expect(dispositions.length).toBeGreaterThan(0);
-    expect(dispositions.every((entry) => entry.kind === 'route')).toBe(true);
+    // V4-220's verb wall: the page also answers `splice login` and `splice key`, declared as verbs.
+    expect(dispositions.every((entry) => entry.kind === 'route' || entry.kind === 'verb')).toBe(true);
     for (const entry of dispositions.filter((e) => e.disposition === 'pending')) {
       expect(entry.where, `${entry.name} is pending and names no row`).toMatch(/^V4-\d+$/);
     }

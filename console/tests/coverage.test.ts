@@ -11,17 +11,19 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import { dispositions as baseline } from '../src/shared/coverage/baseline';
-import { checkCoverage, type DispositionSource } from '../src/shared/coverage/checks';
+import { checkCoverage, type Disposition, type DispositionSource } from '../src/shared/coverage/checks';
 import {
   FEATURES_SOURCE,
   KNOB_SOURCE,
   KOTLIN_MAIN,
   TOPOLOGY_SOURCES,
+  VERB_SOURCE,
   parseKnobNames,
   parseRouteNames,
   parseRouteSpans,
   parseSerialNames,
   parseServedRoutes,
+  parseVerbNames,
   servedBy,
 } from '../src/shared/coverage/denominator';
 import { denominator as missingDenominator, dispositions as missingDispositions } from './fixtures/walls/coverage-missing';
@@ -34,7 +36,9 @@ const topologyKeys = [...new Set(TOPOLOGY_SOURCES.flatMap((file) => parseSerialN
 const features = read(FEATURES_SOURCE);
 const routeSpans = parseRouteSpans(features);
 const routes = parseRouteNames(features);
-const denominator = [...knobs, ...topologyKeys, ...routes];
+// V4-220: every CLI verb, so a new verb with no console answer fails the wall by name.
+const verbs = parseVerbNames(read(VERB_SOURCE));
+const denominator = [...knobs, ...topologyKeys, ...routes, ...verbs];
 
 // What the daemon SERVES, from every tracked main Kotlin file (git's list, not a named file, so a
 // route that moves to another installer is still found).
@@ -65,7 +69,7 @@ describe('coverage wall', () => {
       `coverage denominator: ${knobs.length} knobs (${KNOB_SOURCE}), ` +
         `${topologyKeys.length} topology keys (${TOPOLOGY_SOURCES.length} files), ` +
         `${routes.length} routes from ${routeSpans.length} backticked spans ` +
-        `(${FEATURES_SOURCE} sections 2.1 and 6)`,
+        `(${FEATURES_SOURCE} sections 2.1 and 6), ${verbs.length} CLI verbs (${VERB_SOURCE})`,
     );
 
     console.log(`coverage served: ${served.length} /api routes registered in ${kotlinMain.length} main Kotlin files`);
@@ -74,6 +78,8 @@ describe('coverage wall', () => {
     expect(knobs.length).toBeGreaterThan(0);
     expect(topologyKeys.length).toBeGreaterThan(0);
     expect(routes.length).toBeGreaterThan(0);
+    expect(verbs).toContain('splice uninstall');
+    expect(verbs).toContain('splice add-model');
     expect(served).toContain('/api/teams/{id}/economics');
     expect(served).toContain('/api/heads/{head}/{action}');
   });
@@ -111,6 +117,53 @@ describe('coverage wall', () => {
     // A registration no disposition names is found from the daemon's side.
     expect(checkCoverage([], baselineOnly([]), ['/api/y/{id}']))
       .toEqual([{ name: '/api/y/{id}', problem: 'served without disposition' }]);
+  });
+
+  test('a verb parses from the parse table, and nothing else in the file is a verb', () => {
+    expect(parseVerbNames([
+      '    "doctor" to CommandFactory { a -> Command.Doctor(a.drop(1)) },',
+      '    "add-model" to CommandFactory { a -> Command.AddModel(a.drop(1)) },',
+      '    // `login <head> [--label <name>]` (v0.4.0, FEATURES.md §11): the value after the flag.',
+      'private const val LABEL_FLAG = "--label"',
+    ].join('\n'))).toEqual(['splice add-model', 'splice doctor']);
+  });
+
+  test('the wall fails by name on a verb with no answer, no action, or a route that does not cover it', () => {
+    const routes: Disposition[] = [
+      { kind: 'route', name: '/api/x', disposition: 'editable' },
+      { kind: 'route', name: '/api/r', disposition: 'read-only' },
+    ];
+    const verb = (name: string, extra: Partial<Disposition>): Disposition => ({
+      kind: 'verb',
+      name,
+      disposition: 'editable',
+      action: 'do x',
+      via: '/api/x',
+      ...extra,
+    });
+    const page = (dispositions: Disposition[]): DispositionSource[] => [
+      { source: 'pages/x/coverage.ts', dispositions: [...routes, ...dispositions] },
+    ];
+    const served = ['/api/x', '/api/r'];
+    // The one that is right: an editable verb through an editable, served route.
+    expect(checkCoverage(['splice x'], page([verb('splice x', {})]), served)).toEqual([]);
+    // A read-only verb may go through a read-only route.
+    expect(checkCoverage([], page([verb('splice r', { disposition: 'read-only', via: '/api/r' })]), served)).toEqual([]);
+    expect(checkCoverage(['splice new'], page([]), served)).toEqual([{ name: 'splice new', problem: 'no disposition' }]);
+    expect(checkCoverage([], page([verb('splice a', { action: ' ' })]), served))
+      .toEqual([{ name: 'splice a', problem: 'verb without action' }]);
+    expect(checkCoverage([], page([{ kind: 'verb', name: 'splice b', disposition: 'editable', action: 'do x' }]), served))
+      .toEqual([{ name: 'splice b', problem: 'verb without action' }]);
+    // An editable verb through a route the page only reads claims a write the page cannot make.
+    expect(checkCoverage([], page([verb('splice c', { via: '/api/r' })]), served))
+      .toEqual([{ name: 'splice c', problem: 'verb via uncovered route' }]);
+    // A route no disposition names, and a covered route the daemon does not serve.
+    expect(checkCoverage([], page([verb('splice d', { via: '/api/nowhere' })]), served))
+      .toEqual([{ name: 'splice d', problem: 'verb via uncovered route' }]);
+    expect(checkCoverage([], page([verb('splice e', {})]), ['/api/r']))
+      .toEqual([{ name: 'splice e', problem: 'verb via uncovered route' }]);
+    expect(checkCoverage([], page([{ kind: 'verb', name: 'splice f', disposition: 'excluded' }]), served))
+      .toEqual([{ name: 'splice f', problem: 'excluded without reason' }]);
   });
 
   test('the wall fails on its two planted violations', () => {

@@ -194,8 +194,11 @@ Storage key `localStorage['splice.views.<pageId>']`. Removing the last view rest
   (row M1-04) globs `src/**/strings.ts`. Honest empties and Doctor fix commands are not labels
   and live in the component.
 - `coverage.ts` beside a page: `export const dispositions: Disposition[] = [...]` where
-  `Disposition = { kind: 'knob' | 'topology' | 'route'; name: string; disposition: 'editable'
-  | 'read-only' | 'excluded' | 'pending'; where?: string; reason?: string }`. `excluded`
+  `Disposition = { kind: 'knob' | 'topology' | 'route' | 'verb'; name: string; disposition: 'editable'
+  | 'read-only' | 'excluded' | 'pending'; where?: string; reason?: string; action?: string; via?: string }`.
+  A `verb` the page covers (editable or read-only) names its `action` on the page and the route it
+  calls (`via`), which the daemon must serve and whose own disposition must cover it (editable for
+  an editable verb). `excluded`
   requires a reason; `pending` requires `where`: in the baseline (`shared/coverage/baseline.ts`)
   it names the M2 page row that will disposition the item; in a page's own `coverage.ts` it
   names the v0.4.0 row (V4-126 .. V4-133) that serves the route the page is waiting for.
@@ -211,7 +214,9 @@ Storage key `localStorage['splice.views.<pageId>']`. Removing the last view rest
   and 6, first column, backticked spans, normalized by one rule: strip the method prefix
   (`GET `, `POST `, `GET/PUT `) and any `?query`; expand `{a,b}` alternates and slash-joined
   methods into one item each; drop a span that does not start with `/`. A disposition names
-  the exact normalized path (`/api/perf/turns`), never a glob.
+  the exact normalized path (`/api/perf/turns`), never a glob. CLI verbs (V4-220) from
+  `app/src/main/kotlin/splice/app/cli/CommandParser.kt`, every `"verb" to CommandFactory` entry,
+  named `splice <verb>` (21 today).
 - Numbers: every figure goes through `<Figure basis=...>`; a window a provider does not report
   reads `not reported by provider`, never `0`.
 - Fixtures: a page may ship `fixtures/*.ts` for design captures. They load only when

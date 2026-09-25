@@ -32,4 +32,7 @@ export const dispositions: readonly Disposition[] = [
   // from the commit that serves them; the page's key form reads and writes them (console, train 18).
   { kind: 'route', name: '/api/keys', disposition: 'read-only' },
   { kind: 'route', name: '/api/keys/{name}', disposition: 'editable' },
+  // CLI verbs this page answers (V4-220's verb wall).
+  { kind: 'verb', name: 'splice login', disposition: 'editable', action: 'sign in', via: '/api/auth/{head}/login' },
+  { kind: 'verb', name: 'splice key', disposition: 'editable', action: 'set or remove a key', via: '/api/keys/{name}' },
 ];

@@ -8,4 +8,6 @@ import type { Disposition } from '@shared/coverage';
 
 export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/logs/{head}', disposition: 'read-only' },
+  // The CLI verb this page answers (V4-220's verb wall).
+  { kind: 'verb', name: 'splice logs', disposition: 'read-only', action: "a head's log tail", via: '/api/logs/{head}' },
 ];

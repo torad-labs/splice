@@ -9,6 +9,7 @@
 //             backticked spans, normalized by the CONTRACTS.md section 4 rule  52 distinct today
 //   served    every tracked src/main/kotlin file's `get("/api/...")` / `route.put("/api/...")`
 //             registrations (M4-06): what the daemon SERVES, whatever the plan says  58 today
+//   verbs     app/.../cli/CommandParser.kt  `"verb" to CommandFactory`, as `splice <verb>` (V4-220)  21 today
 
 /** Knob.kt: every enum entry, i.e. each `NAME(` at entry indentation. */
 export function parseKnobNames(source: string): string[] {
@@ -83,6 +84,18 @@ export function normalizeRoute(span: string): string[] {
 export function parseRouteNames(markdown: string): string[] {
   return [...new Set(parseRouteSpans(markdown).flatMap(normalizeRoute))].sort();
 }
+
+/**
+ * CommandParser.kt's parse table: every `"verb" to CommandFactory` entry, named `splice <verb>` so a
+ * verb never shares a name with a knob, a topology key or a route.
+ */
+export function parseVerbNames(kotlin: string): string[] {
+  const verbs = [...kotlin.matchAll(/^\s*"([a-z][a-z-]*)" to CommandFactory\b/gm)].map((match) => `splice ${match[1]}`);
+  return [...new Set(verbs)].sort();
+}
+
+/** The CLI's verb table — the denominator for `kind: 'verb'`. */
+export const VERB_SOURCE = 'app/src/main/kotlin/splice/app/cli/CommandParser.kt';
 
 /** The runtime knob enum — the denominator for `kind: 'knob'`. */
 export const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';

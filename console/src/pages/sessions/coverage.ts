@@ -24,4 +24,6 @@ export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/sessions/{id}/transcript', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/{id}/edges', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/edges', disposition: 'read-only' },
+  // The CLI verb this page answers (V4-220's verb wall).
+  { kind: 'verb', name: 'splice sessions', disposition: 'read-only', action: 'the session list', via: '/api/sessions' },
 ];

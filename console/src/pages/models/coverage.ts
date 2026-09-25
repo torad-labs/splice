@@ -10,4 +10,6 @@ import type { Disposition } from '@shared/coverage';
 export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/models', disposition: 'read-only' },
   { kind: 'route', name: '/api/add-model', disposition: 'editable' },
+  // The CLI verb this page answers (V4-220's verb wall).
+  { kind: 'verb', name: 'splice add-model', disposition: 'editable', action: 'add models', via: '/api/add-model' },
 ];

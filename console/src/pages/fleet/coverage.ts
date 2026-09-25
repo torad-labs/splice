@@ -32,4 +32,8 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/add/{id}/login', disposition: 'editable' },
   { kind: 'route', name: '/api/add/{id}/verify', disposition: 'editable' },
   { kind: 'route', name: '/api/add/{id}/save', disposition: 'editable' },
+  // CLI verbs this page answers (V4-220's verb wall).
+  { kind: 'verb', name: 'splice status', disposition: 'read-only', action: 'the fleet of heads', via: '/api/status' },
+  { kind: 'verb', name: 'splice restart', disposition: 'editable', action: 'restart the daemon', via: '/api/daemon/restart' },
+  { kind: 'verb', name: 'splice add', disposition: 'editable', action: 'add a backend', via: '/api/add' },
 ];

@@ -236,6 +236,13 @@ const PENDING: readonly PendingGroup[] = [
       '/api/projects/{id}/files',
     ],
   },
+  {
+    kind: 'verb',
+    // No route reads a provider's published roster (/api/models is the declared catalogue join),
+    // a head's captured request bodies or its traces; the console only toggles capture.
+    where: 'V4-ROW',
+    names: ['splice models', 'splice wire', 'splice trace'],
+  },
 ];
 
 /** Routes the SHELL reads, which no page owns and so no page's coverage.ts can declare. */
@@ -271,6 +278,28 @@ const EXCLUDED: readonly ExcludedGroup[] = [
     // The console's own artifact, not a daemon surface under it.
     reason: 'it is the console',
     names: ['/', '/dashboard'],
+  },
+  // CLI verbs the console never runs (V4-220's verb wall); every other verb is a page's.
+  {
+    kind: 'verb',
+    reason: "deletes wrapper commands from the operator's bin directory, splice itself with --all; destructive, CLI only",
+    names: ['splice uninstall'],
+  },
+  {
+    kind: 'verb',
+    reason: 'opens this console, so inside it there is nothing left to open',
+    names: ['splice dashboard'],
+  },
+  {
+    kind: 'verb',
+    reason: 'writes the starter splice.toml when none exists, and a daemon serving this console has already loaded one',
+    names: ['splice init'],
+  },
+  {
+    kind: 'verb',
+    // SetupCommand.kt: the wizard writes the topology and ticks extra heads through AddCommand.
+    reason: "the first-run wizard, run before any daemon serves a console; its later steps are the fleet page's add a backend and the accounts page's sign in",
+    names: ['splice setup'],
   },
 ];
 

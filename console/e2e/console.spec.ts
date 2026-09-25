@@ -218,9 +218,9 @@ test('the draining restart confirms inline and prints the daemon\'s refusal verb
   await expect(detail).toContainText(RESTART_UNSUPERVISED);
   expect(posts).toHaveLength(1);
 
-  // The doctor's upgrade section mounts the same control, and the daemon answers it the same way.
+  // The doctor's version section mounts the same control, and the daemon answers it the same way.
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#/doctor`);
-  const doctor = page.getByRole('complementary', { name: 'check detail' });
+  const doctor = page.locator('main');
   await doctor.getByRole('button', { name: 'Restart daemon', exact: true }).click();
   await doctor.getByRole('button', { name: 'Drain and restart', exact: true }).click();
   await expect(doctor).toContainText(RESTART_UNSUPERVISED);
@@ -234,30 +234,31 @@ test('doctor renders the stack\'s report, the CLI\'s own masked values included,
   // CLI masks: `export CONSOLE_E2E_NO_SUCH_KEY=<redacted>`. The console read that mask as a leak and
   // refused the whole report ('key-value at checks[28].detail') until M4-07.
   const masked = 'CONSOLE_E2E_NO_SUCH_KEY=<redacted>';
-  const strip = main.getByRole('button').filter({ hasText: masked });
-  await expect(strip, 'the masked check is not in the rack').toBeVisible({ timeout: 15_000 });
-  await expect(main.getByText('report refused')).toHaveCount(0);
-  // The rest of the report prints with it: the report's own facts beside the rack.
+  // The masked fix is in the row's Fix cell; the row opens from its check cell's button.
+  const row = main.getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: masked });
+  await expect(row, 'the masked check is not in the table').toBeVisible({ timeout: 15_000 });
+  await expect(main.getByText('Report refused')).toHaveCount(0);
+  // The rest of the report prints with it: the report's own fields under the table.
   await expect(main.getByText('schema_version', { exact: true })).toBeVisible();
   // Opening the check prints its detail, the daemon's sentence ahead of the fix.
-  await strip.click();
-  const detail = page.getByRole('complementary', { name: 'check detail' });
+  await row.getByRole('button').click();
+  const detail = page.getByRole('complementary', { name: 'Check detail' });
   await expect(detail).toContainText('CONSOLE_E2E_NO_SUCH_KEY is not set');
   expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });
 
 test('doctor\'s playground sends one prompt through a head to the upstream and shows both sides', async ({ page }) => {
   const faults = await open(page, 'doctor');
-  const detail = page.getByRole('complementary', { name: 'check detail' });
-  await detail.getByRole('button', { name: 'playground', exact: true }).click();
-  await pick(detail, 'head', STACK.oauthHead);
-  await detail.getByRole('textbox', { name: /^prompt/ }).fill('one prompt from the console e2e');
-  await detail.getByRole('button', { name: 'send', exact: true }).click();
+  // The playground is a section of the page, open at rest: one form, no reveal to press first.
+  const playground = page.locator('main');
+  await pick(playground, 'Head', STACK.oauthHead);
+  await playground.getByRole('textbox', { name: /^Prompt/ }).fill('one prompt from the console e2e');
+  await playground.getByRole('button', { name: 'Send', exact: true }).click();
   // The mock upstream's own answer text, inside the raw response the daemon relayed.
-  await expect(detail).toContainText('console e2e answer', { timeout: 30_000 });
+  await expect(playground).toContainText('console e2e answer', { timeout: 30_000 });
   // The raw request: the upstream URL the head's provider resolves to, and the prompt it carried.
-  await expect(detail).toContainText('/responses');
-  await expect(detail).toContainText('one prompt from the console e2e');
+  await expect(playground).toContainText('/responses');
+  await expect(playground).toContainText('one prompt from the console e2e');
   expect(faults.pageErrors, 'the playground threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'the playground send was refused').toEqual([]);
 });

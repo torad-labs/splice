@@ -1,158 +1,136 @@
-// The doctor page: every check as a strip, every remedy copyable, and the playground behind a
-// Reveal.
+// Doctor: every check the daemon ran, drawn by status. The figures lead with the checks split by
+// status and how many want the operator; the checks are one table, each section's own split bar over
+// its rows under `By section`, and the worst first under `Attention first`. An opened check holds its
+// finding and its fix with a copy key. The report's own fields, the upgrade and the playground sit
+// under the table.
 //
 // Two rules this page enforces rather than hopes for. The report is GATED on redaction: the payload
 // is walked for credential shapes before anything renders, and a payload that still carries one is
-// refused rather than shown, because a console that painted a leaked token into a strip would be
-// the leak. And the playground never stores a body: its request and response live in one reducer's
+// refused rather than shown, because a console that painted a leaked token into a row would be the
+// leak. And the playground never stores a body: its request and response live in one reducer's
 // state, are dropped the moment a new run starts, and touch no store and no storage.
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { checkFinding, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
-import type { DoctorPayload, UpgradePayload } from '@entities/doctor';
+import { checkFinding, checkSection, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import type { DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
-import { Blank, Choice, Copy, Fault, Input } from '@shared/controls';
+import { Blank, Choice, Copy, Fault, Input, Key } from '@shared/controls';
+import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
+import { Badge, DataTable, DetailPanel, Empty, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
+import type { Column, RowGroup, Tone } from '@shared/ui';
 import {
-  EMPTIES, attentionCount, canSend, collapseChecks, gateReport, groupChecks, logsHeadOf, playgroundNext, reportFacts,
-  statusEdge, subjectOf, wantsAttention, IDLE_PLAYGROUND,
+  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, canSend, claudeVersionText, collapseChecks, gateReport, groupChecks, latestText, logsHeadOf,
+  playgroundNext, reportFacts, rollbackText, rowTone, statusParts, subjectOf,
 } from './model';
 import type { CheckRow, PlaygroundEvent } from './model';
 import { fixtureDoctor } from './fixtures/doctor';
 import { fixtureName } from './model';
 import { dispositions } from './coverage';
-import { S } from './strings';
+import { H, S } from './strings';
 import './doctor.css';
 
 export { dispositions };
 
 const PAGE_ID = 'doctor';
 const POLL_MS = 60000;
-/** The check's id and its remedy. The widths are ch, so the two racks below stay a grid at every
- *  breakpoint; a rack that does not fit its column scrolls (`.myx-bay-rows`) rather than clipping.
- *  An id runs to `configuration/system-prompt:claude-deepseek` (43 characters) and a remedy is a
- *  sentence, so the remedy takes the larger share; the full sentence is in the fix column. */
-const CHECK = 32;
-const FIX = 48;
-const NARROW = 8;
-/** The latest version prints its basis beside it, and `n/r unavailable` is 15 characters: at the
- *  version fields' 10 it clipped to `n/r unavail...`. The three version fields keep their 30ch. */
-const LATEST = 14;
-/** The report's own facts: the field's own name, and its value. Sized to the longest of each the
- *  payload can carry -- `schema_version` at 14 and `2026-09-18T07:45:00Z` at 20. */
-const FACT_KEY = 16;
-const FACT_VALUE = 22;
 
 export const DEFAULT_VIEWS: readonly View[] = [
-  { id: 'attention-first', name: 'attention first', layout: 'bay', filter: {}, sort: { field: 'status', dir: 'desc' }, group: 'section', fields: [] },
-  { id: 'by-section', name: 'by section', layout: 'bay', filter: {}, sort: null, group: 'section', fields: [] },
+  { id: 'attention-first', name: S.attentionFirst, layout: 'bay', filter: {}, sort: { field: 'status', dir: 'desc' }, group: 'section', fields: [] },
+  { id: 'by-section', name: S.bySection, layout: 'bay', filter: {}, sort: null, group: 'section', fields: [] },
 ];
 
-export function CheckStrip({ row, selected, onOpen }: { row: CheckRow; selected: boolean; onOpen: () => void }) {
-  return (
-    <Strip
-      edge={statusEdge(row.status)}
-      edgeLabel={row.status}
-      cocked={wantsAttention(row.status)}
-      selected={selected}
-      onOpen={onOpen}
-      ariaLabel={row.label}
-    >
-      {/* NO PER-CELL LABEL: the rack prints its column names once (B9), and this is the rack B9
-          measured on ("doctor.png: three x fourteen"). The stack is what made every check two
-          lines of type in a 64px row where one line of 16px fits. */}
-      <StripField w={CHECK} value={row.label} mono={false} />
-      {/* No status field: the holder edge above prints the identical word on every strip (m1
-          design review B10). A check with nothing to fix prints the absence glyph in the fix
-          cell; the sentence `no fix offered` is what the opened check's note says, which is where
-          a Doctor fix's paragraph belongs. */}
-      <StripField w={FIX} value={row.fix ?? S.absent} mono={false} />
-    </Strip>
-  );
+/** What opening a row records: its first check's id, not the row key. The key carries the status,
+ *  so a check that went from warn to fail between polls closed its own detail as it got worse;
+ *  the board resolves an open row by key or by any member's id. */
+export function openIdOf(row: CheckRow): string {
+  return row.members[0]?.id ?? row.key;
 }
 
-/** The opened row: what it found, on which heads, and its fix with a copy key. A remedy that is a
- *  `splice logs --head` command also opens that log here, since this console has the page for it. */
-function OpenedCheck({ row }: { row: CheckRow }) {
+function StatusBadge({ row, quiet = false }: { row: CheckRow; quiet?: boolean }) {
+  return <Badge tone={TONE[row.status]} quiet={quiet}>{S.statusName[row.status]}</Badge>;
+}
+
+function checkColumns(): Column<CheckRow>[] {
+  return [
+    { key: 'check', label: S.check, width: '36%', primary: true, mono: true, cell: (row) => row.label },
+    { key: 'state', label: S.state, width: '7rem', cell: (row) => <StatusBadge row={row} quiet /> },
+    // A check with nothing to fix prints the absence glyph; `No fix offered` is the opened check's.
+    { key: 'fix', label: S.fix, mono: true, cell: (row) => row.fix ?? ABSENT },
+  ];
+}
+
+/** What an opened check found, and where. A family named by its ids' subjects
+ *  (`configuration/system-prompt:<head>`) says which heads and one finding; a family whose ids carry
+ *  no subject (`installation/wrapper`, one per launcher) differs only in its findings, so it lists
+ *  each one. */
+function checkFacts(row: CheckRow): [string, ReactNode][] {
   const first = row.members[0];
-  const logsHead = logsHeadOf(row.fix);
+  if (first === undefined) return [];
+  const section: [string, ReactNode] = [S.section, checkSection(first)];
+  if (row.members.length > 1 && row.members.every((member) => member.id.includes(':'))) {
+    return [section, [S.appliesTo, row.members.map(subjectOf).join(', ')], [S.finding, checkFinding(first)]];
+  }
+  if (row.members.length > 1) {
+    return [section, ...row.members.map((member, index): [string, ReactNode] => [`${S.finding} ${index + 1}`, checkFinding(member)])];
+  }
+  return [section, [S.finding, checkFinding(first)]];
+}
+
+/** The opened check's fix with its copy key. A remedy that is a `splice logs --head` command also
+ *  opens that log here, since this console has the page for it. */
+function FixLine({ fix }: { fix: string | null }) {
+  if (fix === null) return <Empty text={S.noFix} />;
+  const logsHead = logsHeadOf(fix);
   return (
-    <section className="myx-doc-section">
-      <div className="myx-doc-row">
-        <HolderEdge state={statusEdge(row.status)} label={row.status} />
-        <span className="myx-doc-note">{row.label}</span>
-      </div>
-      {/* A family named by its ids' subjects (`configuration/system-prompt:<head>`) says which heads
-          and one finding; a family whose ids carry no subject (`installation/wrapper`, one per
-          launcher) differs only in its findings, so it lists each one. */}
-      {row.members.length > 1 && row.members.every((member) => member.id.includes(':')) ? (
-        <>
-          <p className="myx-doc-note">{`on ${row.members.map(subjectOf).join(', ')}`}</p>
-          {first === undefined ? null : <p className="myx-doc-note">{checkFinding(first)}</p>}
-        </>
-      ) : row.members.length > 1 ? (
-        <ul className="myx-doc-members">
-          {row.members.map((member, index) => <li key={index} className="myx-doc-note">{checkFinding(member)}</li>)}
-        </ul>
-      ) : first === undefined ? null : <p className="myx-doc-note">{checkFinding(first)}</p>}
-      {row.fix === null ? (
-        <p className="myx-doc-note">{S.noFix}</p>
-      ) : (
-        <div className="myx-doc-row">
-          <code className="myx-doc-fix">{row.fix}</code>
-          <Copy value={row.fix} label={S.copy} />
-          {logsHead === null ? null : <a className="myx-doc-btn" href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLogs}</a>}
-        </div>
-      )}
-    </section>
+    <p className="myx-dc-fix">
+      <code className="myx-dc-command">{fix}</code>
+      <Copy value={fix} label={S.copyFix} />
+      {logsHead === null ? null : <a className="myx-btn" href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</a>}
+    </p>
   );
 }
 
-/** The report's own facts, one row each: the payload's field name beside its value. A HOMOGENEOUS
- *  rack, so its column names print once on the bay and no cell carries a label (B9). */
-function FactStrip({ field, value }: { field: string; value: string }) {
+function verdictTone(upgrade: UpgradePayload): Tone {
+  const verdict = upgradeVerdict(upgrade);
+  return verdict === 'behind' ? 'warn' : verdict === 'current' ? 'ok' : 'neutral';
+}
+
+/** The figures the page leads with. Every one reads the GATED report: a count about a report the
+ *  page refused would be a claim about something it did not read, so each prints the absence. */
+function Figures({ shown, checks, upgrade }: { shown: DoctorPayload | null; checks: readonly DoctorCheck[]; upgrade: UpgradePayload | null }) {
+  const attention = shown === null ? null : attentionCount(checks);
+  const failing = checks.some((check) => check.status === 'fail');
   return (
-    <Strip edge="grey" edgeLabel="" ariaLabel={field}>
-      <StripField w={FACT_KEY} value={field} mono={false} />
-      <StripField w={FACT_VALUE} value={value} mono={false} />
-    </Strip>
+    <StatRow>
+      <Stat
+        label={S.checks}
+        value={shown === null ? ABSENT : fmtInt(checks.length)}
+        {...(shown === null ? {} : { chart: <StackedBar parts={statusParts(checks)} label={S.checks} legend format={fmtInt} /> })}
+      />
+      <Stat
+        label={S.needAttention}
+        value={attention === null ? ABSENT : fmtInt(attention)}
+        {...(attention === null || attention === 0 ? {} : { tone: failing ? 'danger' as const : 'warn' as const })}
+      />
+      <Stat
+        label={S.installed}
+        value={shown?.splice.version ?? ABSENT}
+        {...(upgrade === null ? {} : { sub: <Badge tone={verdictTone(upgrade)}>{S.verdictName[upgradeVerdict(upgrade)]}</Badge> })}
+      />
+      <Stat label={S.claudeCode} value={shown === null ? ABSENT : claudeVersionText(shown.claude_code.version)} />
+    </StatRow>
   );
 }
 
-/** A rack's column names, once, at the same ch widths as the cells they name.
- *
- *  THE GROWTH IS THE HALF THAT IS EASY TO MISS, and the names were 71px and 44px off their own
- *  columns before it was added. `strip-field.tsx` sets `flexGrow` to the field's OWN ch so the
- *  cells share their rack's slack in proportion to their declared widths (M1-73), which means a
- *  cell is never its declared width -- so a name row fixed at `w ch` drifts away from the column
- *  under it, and drifts further the more slack the rack has. The name takes the same growth for
- *  the same reason. Measured at 1536, after: the checks rack's names sit 1px from their cells. */
-function ColumnNames({ columns }: { columns: readonly { w: number; label: string }[] }) {
-  return (
-    <>
-      {columns.map((column) => (
-        <span
-          key={column.label}
-          className="myx-doc-col"
-          style={{ width: `${column.w}ch`, flexGrow: column.w }}
-        >
-          {column.label}
-        </span>
-      ))}
-    </>
-  );
-}
-
-/** The playground. A Reveal panel, not a page: the rail has thirteen addresses and no room for a
- *  fourteenth, and a prompt sent once is not a destination.
- *
- *  THE SEND IS ONE POST /api/playground (M4-03): one prompt through the named head, and the daemon
- *  hands back the request it sent upstream and the response it got, neither recorded. Both land in
- *  the reducer's state for the run that asked, and a refusal lands as the daemon's own sentence. */
+/** The playground. One POST /api/playground (M4-03): one prompt through the named head, and the
+ *  daemon hands back the request it sent upstream and the response it got, neither recorded. Both
+ *  land in the reducer's state for the run that asked, and a refusal lands as the daemon's own
+ *  sentence. */
 function Playground({ heads }: { heads: readonly string[] }) {
   const [state, dispatch] = useState(IDLE_PLAYGROUND);
   const send = (event: PlaygroundEvent) => dispatch((current) => playgroundNext(current, event));
@@ -168,13 +146,11 @@ function Playground({ heads }: { heads: readonly string[] }) {
       (err: unknown) => send({ kind: 'failed', run, note: err instanceof Error ? err.message : String(err) }),
     );
   };
+  const sending = state.step === 'sending';
 
   return (
-    <Reveal label={S.playground}>
-      <div className="myx-doc-section">
-        {/* A picker and a plain field. These were FieldBoxes, which print a knob's provenance and
-            restart verdict, so the prompt box read `state file / applies live`; and the head was
-            typed by hand against a list of names printed under it. */}
+    <Section title={S.playground} info={{ text: H.playground, label: S.aboutPlayground }}>
+      <div className="myx-dc-play">
         <Choice
           label={S.head}
           value={state.head}
@@ -182,47 +158,33 @@ function Playground({ heads }: { heads: readonly string[] }) {
           onChange={(value) => send({ kind: 'head', value })}
           w={24}
         />
-        <Input
-          label={S.prompt}
-          value={state.prompt}
-          onChange={(value) => send({ kind: 'prompt', value })}
-          placeholder="one prompt, sent once and not recorded"
-          w={36}
-        />
-        <div className="myx-doc-row">
-          <button type="button" className="myx-doc-btn" disabled={!canSend(state)} onClick={start}>
-            {state.step === 'sending' ? S.sending : S.send}
-          </button>
-          <button type="button" className="myx-doc-btn" onClick={() => send({ kind: 'reset' })}>{S.clear}</button>
-        </div>
-        {/* The bodies are printed from THIS component's state and written nowhere: no store, no
-            storage, no history. A second send drops them at the only moment a run begins. */}
-        {state.response === null ? null : (
-          <>
-            <p className="myx-doc-note">{S.request}</p>
-            <pre className="myx-doc-raw">{JSON.stringify(state.request, null, 2)}</pre>
-            <p className="myx-doc-note">{S.response}</p>
-            <pre className="myx-doc-raw">{JSON.stringify(state.response, null, 2)}</pre>
-          </>
-        )}
-        {state.note === null || state.step !== 'failed' ? null : (
-          <p className="myx-doc-note" role="alert">{state.note}</p>
-        )}
+        <Input label={S.prompt} value={state.prompt} onChange={(value) => send({ kind: 'prompt', value })} placeholder={H.prompt} w={48} />
+        <span className="myx-dc-keys">
+          {/* Busy is not disabled: a working key keeps focus and says it is working. */}
+          <Key busy={sending} disabled={!sending && !canSend(state)} onClick={start}>{S.send}</Key>
+          <Key onClick={() => send({ kind: 'reset' })}>{S.clear}</Key>
+        </span>
       </div>
-    </Reveal>
+      {/* The bodies are printed from THIS component's state and written nowhere: no store, no
+          storage, no history. A second send drops them at the only moment a run begins. */}
+      {state.response === null ? null : (
+        <div className="myx-dc-pair">
+          <Section title={S.request}>
+            <pre className="myx-dc-raw">{JSON.stringify(state.request, null, 2)}</pre>
+          </Section>
+          <Section title={S.response}>
+            <pre className="myx-dc-raw">{JSON.stringify(state.response, null, 2)}</pre>
+          </Section>
+        </div>
+      )}
+      {state.note === null || state.step !== 'failed' ? null : <Fault message={state.note} />}
+    </Section>
   );
 }
 
 /** The board, drawn from a report it is handed rather than from the store, so a test can plant a
  *  payload in it (a static render only ever sees a store's initial state). Which check is open is
  *  the page's state, handed in beside the report, so a render can show an opened check too. */
-/** What opening a row records: its first check's id, not the row key. The key carries the status,
- *  so a check that went from warn to fail between polls closed its own detail as it got worse;
- *  the board resolves an open row by key or by any member's id. */
-export function openIdOf(row: CheckRow): string {
-  return row.members[0]?.id ?? row.key;
-}
-
 export function DoctorBoard({ report, pending = null, error = null, lastRead = null, upgrade = null, heads = [], openKey = null, onToggle, sample }: {
   report: DoctorPayload | null;
   pending?: string | null;
@@ -240,134 +202,99 @@ export function DoctorBoard({ report, pending = null, error = null, lastRead = n
 
   // THE GATE, ONCE, AND EVERY SURFACE BELOW READS ITS OUTPUT (M4-07). `shown` is the report only
   // when it carries no credential shape, and nothing on this board reads `report` for its content:
-  // the rack, the facts, the version strip, the attention count, the fix list and the opened
-  // check's detail all draw from `shown`. The rack used to be the only surface behind the gate while
-  // the fix list and the detail read the payload as served, so a secret the gate caught still
-  // printed in the aside. A leak is reported as a PATH set, never the value: a leak reporter that
-  // echoed the match would be the leak.
+  // the figures, the table, the report's fields and the opened check all draw from `shown`. A leak
+  // is reported as a PATH set, never the value: a leak reporter that echoed the match would be the
+  // leak.
   const { shown, leaks } = useMemo(() => gateReport(report), [report]);
 
   const checks = shown?.checks ?? [];
-  const rows = collapseChecks(groupChecks(checks, active).flatMap((group) => group.checks));
+  const sections = groupChecks(checks, active);
+  const rows = collapseChecks(sections.flatMap((group) => group.checks));
+  // `By section` draws each section as a run with its own split bar: the report's state grid, one
+  // bar per area. `Attention first` is one run, worst first, so it needs no titles.
+  const groups: RowGroup<CheckRow>[] | null = active.sort?.field === 'status' ? null : sections.map((group) => ({
+    key: group.key,
+    title: group.key,
+    count: group.checks.length,
+    note: <StackedBar parts={statusParts(group.checks)} label={group.key} format={fmtInt} />,
+    rows: collapseChecks(group.checks),
+  }));
   // The open key names a row by its grouping key, or by the id of a check inside it: a row's key is
   // `status|family|fix`, which nothing outside this page knows, while a check id is what a report,
   // a test or a link carries.
   const opened = openKey === null ? null
     : rows.find((row) => row.key === openKey) ?? rows.find((row) => row.members.some((member) => member.id === openKey)) ?? null;
+  const checkedAt = upgrade?.checked_at_epoch_millis ?? null;
 
   return (
-    <div
-      className="myx-doc"
-      {...(sample === undefined ? {} : { 'data-sample': sample })}
-    >
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
+    <div className="myx-dc" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
+      <PageHeader title={S.title} {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-      </header>
+      </PageHeader>
 
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
-
-      {pending !== null ? <Empty text={EMPTIES.noReport.text} source={EMPTIES.noReport.source} /> : null}
-      {report === null && pending === null ? <Blank strips={4} /> : null}
-
+      {pending === null ? null : <Empty text={EMPTIES.noReport.text} source={EMPTIES.noReport.source} />}
       {/* The gate. A payload that still carries a credential shape is refused, by path, and never
           rendered: every surface below would be the leak. */}
-      {leaks.length === 0 ? null : (
-        <Empty text="report refused, leaks found" source={leaks.map((leak) => `${leak.kind} at ${leak.where}`).join('; ')} />
-      )}
+      {leaks.length === 0 ? null : <Empty text={S.refused} source={leaks.map((leak) => `${leak.kind} at ${leak.where}`).join('; ')} />}
 
-      <div className="myx-doc-body">
-        {/* ---- M2-22: TWO COLUMNS, ONE TABLE, AND THE FACTS THE PAGE WAS ALREADY SERVED --------
-            WHAT WAS HERE: one column of seven section bays. Each was a plate, a column-name row,
-            rails and 32px of padding top and bottom -- measured 141px of chrome for a bay holding
-            ONE check -- and the seven of them stacked to a 1344px body in a 1024px frame, so six
-            of the ten checks were in frame and the rest were below the fold. That is the shape
-            splice-design named on accounts the same night: "60px of band above each group header
-            to show one data row, five times".
-            WHAT IS HERE: the checks are ONE table with its column names printed once, and the
-            report's own facts -- which the page was served and printed NOWHERE -- are a second
-            table beside it.
-            THE SECTION IS NOT LOST WITH THE BAYS. A check id IS "<section>/<name>", so the section
-            is printed in the first cell of every row, and `groupChecks` decides the ORDER -- worst
-            status first across every section under `attention first`, by section and alphabet
-            under `by section`. The plates were the sections' only other job.
-            THE DETAIL COLUMN IS UNTOUCHED: it carries real content at rest (M1-112) and this row
-            says so; nothing below the grid changed. */}
-        <div className="myx-doc-bays">
+      <div className={opened === null ? 'myx-dc-board' : 'myx-dc-board myx-dc-board-open'}>
+        <div className="myx-dc-main">
+          {report === null && pending === null ? <Blank strips={4} /> : <Figures shown={shown} checks={checks} upgrade={upgrade} />}
+
           {shown === null ? null : checks.length === 0 ? (
             <Empty text={EMPTIES.noChecks.text} source={EMPTIES.noChecks.source} />
           ) : (
-            <>
-              <Bay
-                className="myx-doc-checks"
+            <Section title={S.checks} count={checks.length}>
+              <DataTable
+                columns={checkColumns()}
+                {...(groups === null ? { rows } : { groups })}
+                rowKey={(row) => row.key}
                 label={S.checks}
-                count={checks.length}
-                fields={<ColumnNames columns={[{ w: CHECK, label: S.check }, { w: FIX, label: S.fix }]} />}
-              >
-                {rows.map((row) => (
-                  <CheckStrip
-                    key={row.key}
-                    row={row}
-                    selected={opened?.key === row.key}
-                    onOpen={() => onToggle(openIdOf(row))}
-                  />
-                ))}
-              </Bay>
-
-              <Bay
-                className="myx-doc-report"
-                label={S.report}
-                count={reportFacts(shown).length}
-                fields={<ColumnNames columns={[{ w: FACT_KEY, label: S.field }, { w: FACT_VALUE, label: S.value }]} />}
-              >
-                {reportFacts(shown).map((fact) => (
-                  <FactStrip key={fact.field} field={fact.field} value={fact.value} />
-                ))}
-              </Bay>
-            </>
+                onOpen={(row) => onToggle(openIdOf(row))}
+                openLabel={(row) => `${S.openCheck} ${row.label}`}
+                selectedKey={opened?.key ?? null}
+                rowTone={(row) => rowTone(row.status)}
+              />
+            </Section>
           )}
-        </div>
 
-        <aside className="myx-doc-detail" aria-label={S.detail}>
-          {/* The opened check leads the column, where a click on a row lands in view. The column
-              also carried every fix in the report a second time, a list as long as the rack's
-              fix column; the copy key it existed for is on the opened check now. */}
-          {opened === null ? null : <OpenedCheck row={opened} />}
-          {/* Rendered whether or not the report itself has landed: the upgrade strip reads its own
-              route (GET /api/upgrade), and the restart is an action on the daemon rather than on
-              the report, so hiding either behind the report hid it entirely. What IS read off the
-              report -- the installed version, claude code's, the attention count, the fixes and the
-              opened check -- reads `shown`, and prints the absence glyph while there is none: a
-              count or a "no fix offered" about a report the page refused would be a claim about
-              something it did not read. The `upgrade status not built` empty that stood here
-              beside the live strip is gone (M4-07): the route it named as a row is served. */}
-          <section className="myx-doc-section">
-            <h2 className="myx-doc-section-title">{S.version}</h2>
-            <div className="myx-doc-row">
-              <Strip
-                edge={upgrade === null ? 'grey' : upgradeVerdict(upgrade) === 'behind' ? 'amber' : 'green'}
-                edgeLabel={upgrade === null ? S.absent : upgradeVerdict(upgrade)}
-                ariaLabel={S.upgrade}
-              >
-                <StripField w={NARROW} label={S.installed} value={shown?.splice.version ?? S.absent} />
-                <StripField w={LATEST} label={S.latest} value={upgrade?.latest ?? S.absent} {...(upgrade === null ? {} : { basis: upgrade.latest_basis })} />
-                <StripField
-                  w={NARROW}
-                  label={S.rollback}
-                  value={upgrade === null || upgrade.rollback_basis !== 'measured' ? S.absent : (upgrade.rollback_target ?? S.none)}
-                  {...(upgrade === null ? {} : { basis: upgrade.rollback_basis })}
-                  mono={false}
-                />
-              </Strip>
-            </div>
-            <p className="myx-doc-note">{`claude code ${shown?.claude_code.version ?? S.absent}`}</p>
-            <p className="myx-doc-note">{`${shown === null ? S.absent : attentionCount(checks)} checks need attention`}</p>
-            {/* The draining restart (WC-08), the same control the fleet's head detail mounts. */}
-            <DaemonRestart />
-          </section>
+          <div className="myx-dc-pair">
+            {shown === null ? null : (
+              <Section title={S.report} info={{ text: H.report, label: S.aboutReport }}>
+                <KeyValue rows={reportFacts(shown).map((fact) => [fact.field, fact.value] as const)} />
+              </Section>
+            )}
+            {/* Rendered whether or not the report itself has landed: the upgrade reads its own route
+                (GET /api/upgrade), and the restart is an action on the daemon rather than on the
+                report, so hiding either behind the report hid it entirely. */}
+            <Section title={S.version}>
+              <KeyValue rows={[
+                [S.latest, latestText(upgrade)],
+                [S.rollback, rollbackText(upgrade)],
+                [S.lastChecked, checkedAt === null ? ABSENT : timeAgo(checkedAt)],
+              ]} />
+              {/* The draining restart (WC-08), the same control the fleet's head detail mounts. */}
+              <DaemonRestart />
+            </Section>
+          </div>
 
           <Playground heads={heads} />
-        </aside>
+        </div>
+
+        {/* Unmounted at rest: no track and no empty panel until a check is opened. */}
+        {opened === null ? null : (
+          <DetailPanel
+            title={opened.label}
+            label={S.detail}
+            status={<StatusBadge row={opened} />}
+            onClose={() => onToggle(openIdOf(opened))}
+            closeLabel={S.close}
+          >
+            <KeyValue rows={checkFacts(opened)} />
+            <FixLine fix={opened.fix} />
+          </DetailPanel>
+        )}
       </div>
     </div>
   );

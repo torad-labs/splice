@@ -139,6 +139,9 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
   projects: 'already collapses its track to 0 at rest and transitions it open. Its 43.7% dead '
     + 'region is the empty slot rails below four repo strips -- a different defect with a '
     + 'different remedy, and not this column.',
+  doctor: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`opened === null ? null :` gate, and the version, restart and playground it carried at rest '
+    + 'moved into the main column as sections of their own. It was POPULATED before, dead region 10.6%.',
   accounts: 'UNMOUNTED at rest since the redesign (2026-09-25): ONE kit DetailPanel behind a '
     + '`panel === null ? null :` gate, where `panel` is the one named choice between an account, an '
     + 'api-key head and a head -- three conditions read once, so the track and the content cannot '
@@ -147,9 +150,8 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
 
 /** Carries real content at rest, so removing the column would delete content, not reclaim space. */
 export const POPULATED: Record<string, string> = {
-  doctor: 'its column carries the version strip, the claude-code version, the attention count, '
-    + 'three empties naming pending V4 rows and the fix list at rest; only the opened-check '
-    + 'section is conditional, and it already is. Dead region 10.6%, below the comp\'s own 11.2%.',
+  // EMPTY since the redesign (2026-09-25): doctor was the last entry, and its resting content moved
+  // into the main column. The list stays so the next populated column has somewhere to be named.
 };
 
 /** Carries the defect, but the file belongs to another live row or to no row at all. */

@@ -32,13 +32,9 @@ import * as badStrings from './fixtures/walls/bad-strings';
 const consoleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // A directory prefix under `src`, one sentence why its findings are counted rather than failed.
-// Six pages named by the ruling, plus every widget/feature imported ONLY from those six (found by
-// grepping `@widgets/*` and `@features/*` imports: a directory whose sole importers are pending
-// pages is itself pending, since it ships in the same rebuild).
-const PENDING_REASON = "rebuilt in claude-builder's Phase 3 branch, which follows this voice and this gate";
-const PENDING: Record<string, string> = {
-  'src/pages/doctor': PENDING_REASON,
-};
+// Empty since claude-builder's Phase 3 branch rebuilt the six pages it held (compaction, mcp,
+// models, accounts, fleet, doctor) and the widgets and features only they imported, in this voice.
+const PENDING: Record<string, string> = {};
 
 function isPending(file: string): boolean {
   return Object.keys(PENDING).some((prefix) => file === prefix || file.startsWith(`${prefix}/`));

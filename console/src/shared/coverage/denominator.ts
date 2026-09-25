@@ -85,7 +85,6 @@ export function parseRouteNames(markdown: string): string[] {
   return [...new Set(parseRouteSpans(markdown).flatMap(normalizeRoute))].sort();
 }
 
-/** The runtime knob enum — the denominator for `kind: 'knob'`. */
 /** The CLI's verb table (V4-219): each `"<verb>" to CommandFactory` entry of the `verbs` map. */
 export const CLI_SOURCE = 'app/src/main/kotlin/splice/app/cli/CommandParser.kt';
 
@@ -94,6 +93,7 @@ export function parseCliVerbs(kotlin: string): string[] {
   return [...new Set([...table.matchAll(/^\s+"([a-z][a-z-]*)" to CommandFactory/gm)].map((match) => match[1]))].sort();
 }
 
+/** The runtime knob enum — the denominator for `kind: 'knob'`. */
 export const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';
 
 /** The six topology sources named by M1-04, and HeadConfig.kt since HeadConfig and HeadModel left

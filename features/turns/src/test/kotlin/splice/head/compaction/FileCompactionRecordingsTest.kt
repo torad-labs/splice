@@ -39,7 +39,7 @@ class FileCompactionRecordingsTest {
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(dir)))
 
         val next = CompactionReplay(store())
-        val restored = checkNotNull(next.lookup(key), "the next process finds the kept answer")
+        val restored = checkNotNull(next.lookup(key)) { "the next process finds the kept answer" }
         assertTrue(restored.isComplete && restored.isWhole, "a kept answer is complete and whole")
         val served = mutableListOf<String>()
         assertTrue(restored.follow { served += it })

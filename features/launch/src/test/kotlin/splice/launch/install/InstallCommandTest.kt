@@ -105,7 +105,7 @@ class InstallCommandTest {
             // A real file makes the whole install fail so install.sh cannot print false success.
             val bin = home.resolve(".local").resolve("bin")
             bin.resolve("grok").writeString("real file")
-            assertThrows<IllegalStateException> { installCommand().install("grok", env = noEnv) }
+            assertThrows<InstallRefused> { installCommand().install("grok", env = noEnv) }
             assertFalse(bin.resolve("grok").isSymbolicLink())
             assertEquals("real file", Files.readString(bin.resolve("grok")))
         }
@@ -133,7 +133,7 @@ class InstallCommandTest {
             seedTopology(home)
             Files.delete(shimPath(home))
 
-            assertThrows<IllegalStateException> { installCommand().install("--all", env = noEnv) }
+            assertThrows<InstallRefused> { installCommand().install("--all", env = noEnv) }
 
             assertFalse(Files.exists(home.resolve(".local/bin/claudex"), NOFOLLOW_LINKS))
         }

@@ -61,9 +61,11 @@ internal class InstallLinker(
             .plus(SELF_COMMAND to SELF_COMMAND)
             .groupBy({ it.first }, { it.second })
         val collisions = commandOwners.filterValues { it.size > 1 }
-        check(collisions.isEmpty()) {
-            "topology maps multiple heads to one wrapper command: " +
-                collisions.entries.joinToString("; ") { (command, keys) -> "$command <- ${keys.joinToString(", ")}" }
+        if (collisions.isNotEmpty()) {
+            val owners = collisions.entries.joinToString("; ") { (command, keys) ->
+                "$command <- ${keys.joinToString(", ")}"
+            }
+            throw InstallRefused("topology maps multiple heads to one wrapper command: $owners")
         }
         val requested = selected.map { (key, head) -> key to (head.claude.command ?: key) }
         val commands = requested.map { it.second } + SELF_COMMAND
@@ -88,11 +90,8 @@ internal class InstallLinker(
      *  already uses for a bad topology — the same shape as the command-collision check above, and
      *  for the same reason: install.sh must not print success over a topology it could not honour. */
     private fun wrapperLink(bin: Path, command: String): Path {
-        val link = layout.wrapperLinkOrNull(bin, command)
-        check(link != null) {
-            "wrapper command '$command' must be a bare name directly under $bin"
-        }
-        return link
+        return layout.wrapperLinkOrNull(bin, command)
+            ?: throw InstallRefused("wrapper command '$command' must be a bare name directly under $bin")
     }
 
     private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
@@ -110,7 +109,7 @@ internal class InstallLinker(
             output.line("splice: installed '$command' -> $launchShim (head=$headKey)")
         } catch (e: java.io.IOException) {
             // SAFE-RENDER-EXEMPT[2026-08-31]: symlink claim under bin — the caught java.io.IOException is FileSystemException over a path we own, never file content
-            throw IllegalStateException("failed to link $command — $link was not claimable: ${e.message}", e)
+            throw InstallRefused("failed to link $command — $link was not claimable: ${e.message}", e)
         }
     }
 
@@ -146,12 +145,18 @@ internal class InstallLinker(
                 "launch shim at $launchShim is unreadable (${SafeFailureText.render(failure)}) — " +
                     "fix access to it and its parents, not reinstall"
         }
-        throw IllegalStateException(message)
+        throw InstallRefused(message)
     }
 
     private fun requireReplaceableLink(link: Path) {
-        check(!Files.exists(link, NOFOLLOW_LINKS) || link.isSymbolicLink()) {
-            "$link exists and is not a symlink"
+        if (Files.exists(link, NOFOLLOW_LINKS) && !link.isSymbolicLink()) {
+            throw InstallRefused("$link exists and is not a symlink")
         }
     }
 }
+
+/** An install that cannot honour the topology or the filesystem, in a sentence splice composed from
+ *  paths, command names and head keys, so the CLI boundary prints it verbatim instead of a JVM
+ *  trace (the V4-212 real-rig run: setup without the launch shim). Still an IllegalStateException,
+ *  so every caller that caught the old `check` failures keeps catching it. */
+public class InstallRefused(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)

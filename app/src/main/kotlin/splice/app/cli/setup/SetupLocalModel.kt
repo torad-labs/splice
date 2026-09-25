@@ -1,11 +1,11 @@
 // NEW: `splice setup`'s optional local-model step. On a Linux x86_64 machine with an NVIDIA card it
 // offers to hand the card to rig — rig installs itself into ~/.local/share/rig, downloads
-// bonsai-2-27b (about 7 GB), builds the engine and serves it on 127.0.0.1 — and then adds a `bonsai`
+// bonsai-2-27b (about 8 GB), builds the engine and serves it on 127.0.0.1 — and then adds a `bonsai`
 // head that points at what rig DESCRIBES. splice itself still never downloads a model or manages a
 // runtime; rig does, and the wizard only asks it.
 //
 // THE OFFER IS NARROW ON PURPOSE. It is asked only with someone watching (the non-TTY path takes
-// every default and must never start a 7 GB download), only where rig ships (Linux x86_64), only
+// every default and must never start an 8 GB download), only where rig ships (Linux x86_64), only
 // with an NVIDIA card nvidia-smi can name, and only when no `bonsai` is configured yet. Default NO.
 //
 // IT NEVER FAILS THE SETUP. The heads and wrappers are already installed when it runs; anything that
@@ -28,7 +28,8 @@ import java.nio.file.Path
 
 /** What happens, in the words the question and the Summary both use. */
 private const val WHAT_HAPPENS =
-    "rig installs into ~/.local/share/rig, downloads $RIG_HEAD (about 7 GB) and serves it on this machine"
+    "rig installs into ~/.local/share/rig, downloads $RIG_HEAD (about 8 GB; about 18 GB of disk in all) " +
+        "and serves it on this machine"
 
 private const val RETRY = "retry by hand: rig up $RIG_HEAD, then splice setup again"
 
@@ -167,7 +168,7 @@ internal class SetupLocalModel(
         prompts.spinner.start(label)
         val run = Cancellables.runCatchingBestEffort(call)
             .getOrElse { RigRun(STEP_THREW, "", SafeFailureText.render(it)) }
-        prompts.spinner.stop(if (run.exit == 0) done else "$label: stopped")
+        if (run.exit == 0) prompts.spinner.stop(done) else prompts.spinner.fail("$label: stopped")
         return run
     }
 

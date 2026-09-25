@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.terminal.GREEN
+import splice.core.terminal.RED
 import java.util.concurrent.atomic.AtomicInteger
 
 class SpinnerTest {
@@ -41,5 +42,20 @@ class SpinnerTest {
         assertTrue(text.endsWith("done\n"), text)
         assertEquals(1, text.count { it == '\n' })
         assertEquals(1, scheduled.get())
+    }
+
+    @Test
+    fun `fail leaves a red cross, never the check, and a non-TTY fail is the same plain line as stop`() {
+        val buf = StringBuilder()
+        val spinner = Spinner(out = buf, tty = true, scheduler = { AutoCloseable { } })
+        spinner.start("rig up")
+        spinner.fail("rig up: stopped")
+        val text = buf.toString()
+        assertTrue(text.contains("$RED✗"), text)
+        assertFalse(text.contains("✓"), text)
+        assertTrue(text.endsWith("rig up: stopped\n"), text)
+        val plain = StringBuilder()
+        Spinner(out = plain, tty = false).apply { start("rig up") }.fail("rig up: stopped")
+        assertEquals("rig up: stopped\n", plain.toString())
     }
 }

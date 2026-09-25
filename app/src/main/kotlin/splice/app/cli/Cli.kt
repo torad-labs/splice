@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import splice.configuration.add.AddRefused
+import splice.launch.install.InstallRefused
 
 /** The CLI entry seam: argv in, process exit code out. A class rather than a top-level function
  *  (Kotlin style law, 2026-08-15); `fun main` in Main.kt stays top-level because the JVM entry
@@ -48,6 +49,13 @@ public class Cli {
         // the operator, never upstream or file bytes; the one refusal built around a caught
         // throwable renders that cause through SafeFailureText before constructing this message
         // (AddModels.kt refuseUnparseable). The exemption ends the day one embeds a raw cause.
+        System.err.println("splice: ${refused.message}")
+        1
+    } catch (refused: InstallRefused) {
+        // SAFE-RENDER-EXEMPT[2026-09-25]: an InstallRefused message is composed from paths, command
+        // names and head keys (InstallLinker); its one caught cause is a FileSystemException over a
+        // path splice owns, already exempted at that throw, and an unreadable shim's cause renders
+        // through SafeFailureText before the sentence is built.
         System.err.println("splice: ${refused.message}")
         1
     } catch (broken: java.io.IOException) {

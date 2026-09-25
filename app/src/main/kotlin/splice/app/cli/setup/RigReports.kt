@@ -11,14 +11,17 @@ import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
 
 /** rig's general failure. In `prepare` a required tool is missing and stderr names it (the compile
- *  toolchain too, with the glibc it found); in `up` a step failed or the head never came up. */
+ *  toolchain too, with the glibc it found); in `up` a step failed, the head never came up, or
+ *  (v0.1.3) the disk cannot hold what the bring-up writes, refused before the download. */
 private const val RIG_EXIT_FAILED = 1
 
-/** `up --restart` only: rig refused because the head is serving live traffic. splice never passes
- *  --restart, so this is mapped for honesty, not expected. */
+/** `up`: rig will not start the head over its port. Under `--restart` (splice never passes it) the
+ *  head is serving live traffic; from v0.1.4 also a port that neither answers nor refuses. rig's
+ *  sentence names which. */
 private const val RIG_EXIT_BUSY = 2
 
-/** `prepare`, and `up` passing it through: rig has not measured this card's compute capability. */
+/** The card: in `prepare` rig has not measured its compute capability; in `up` (v0.1.3) its VRAM is
+ *  below the head's smallest tier, refused before the download. rig's sentence names which. */
 private const val RIG_EXIT_CARD = 3
 
 /** `prepare`, and `up` passing it through: the driver predates the CUDA runtime the engine needs. */
@@ -82,7 +85,7 @@ internal class RigReports {
 }
 
 /** rig's non-zero exits in plain sentences, one list per verb because code 1 means a different thing
- *  in each. 3 and 4 are prepare's, and `up` passes them through unchanged. */
+ *  in each. 3 and 4 come from either verb. */
 internal class RigRefusals {
 
     fun prepare(run: RigRun): List<String> = card(run) ?: when (run.exit) {
@@ -94,14 +97,18 @@ internal class RigRefusals {
     }
 
     fun up(run: RigRun): List<String> = card(run) ?: when (run.exit) {
+        // The server writes to rig's log file, not the journal (the unit's journal holds only systemd's
+        // lines), and rig refuses a full disk before the head starts, so the log is offered, not presumed.
         RIG_EXIT_FAILED -> listOf("rig up $RIG_HEAD failed:") + run.tail(STDERR_SHOWN) +
-            "the unit's own log: journalctl --user -u rig-$RIG_HEAD.service -n 40"
-        RIG_EXIT_BUSY -> listOf("rig refused to restart a head that is serving")
+            "if the head started, its log: ~/.local/share/rig/local/logs/$RIG_HEAD.log"
+        RIG_EXIT_BUSY -> run.tail(STDERR_SHOWN).ifEmpty { listOf("rig refused to restart a head that is serving") }
         else -> listOf("rig up $RIG_HEAD exited ${run.exit}") + run.tail(STDERR_SHOWN)
     }
 
     private fun card(run: RigRun): List<String>? = when (run.exit) {
-        RIG_EXIT_CARD -> listOf("this card is not one rig supports yet")
+        // As-is, as prepare's exit 1: the sentence names the card and why (its compute capability,
+        // or its VRAM against the head's floor), and a paraphrase could only lose the numbers.
+        RIG_EXIT_CARD -> run.tail(STDERR_SHOWN).ifEmpty { listOf("this card is not one rig supports yet") }
         RIG_EXIT_DRIVER ->
             listOf("the NVIDIA driver is older than the CUDA runtime the engine needs — update the driver")
         else -> null

@@ -1,5 +1,5 @@
 // NEW: `splice setup`'s local-model step against a FAKE rig — never the real one, its installer or
-// nvidia-smi: the real one downloads a 7 GB model, and on the operator's box a model already serves on
+// nvidia-smi: the real one downloads an 8 GB model, and on the operator's box a model already serves on
 // rig's port. When to offer, what declining leaves, rig's exit codes in words, and — through the real
 // `splice add` machinery and the real topology loader — the exact row a successful run writes.
 package splice.app.cli.setup
@@ -143,7 +143,8 @@ class SetupLocalModelTest {
         )
         assertFalse(step(prompts = prompts).offer(home.resolve("splice.toml")))
         val question = asked.single()
-        for (part in listOf(CARD, "~/.local/share/rig", "bonsai-2-27b", "about 7 GB", "serves it on this machine")) {
+        val parts = listOf(CARD, "~/.local/share/rig", "bonsai-2-27b", "about 8 GB", "about 18 GB of disk")
+        for (part in parts + "serves it on this machine") {
             assertTrue(part in question, "'$part' missing from: $question")
         }
         assertEquals(false, default, "the question defaults to NO")
@@ -169,7 +170,8 @@ class SetupLocalModelTest {
     fun `chosen, the Summary carries one line naming the download`() {
         val summary = step().summary(true)
         assertEquals(1, summary.size, summary.toString())
-        assertTrue("about 7 GB" in summary.single() && "claude-bonsai" in summary.single(), summary.toString())
+        val named = listOf("about 8 GB", "about 18 GB of disk", "claude-bonsai")
+        assertTrue(named.all { it in summary.single() }, summary.toString())
     }
 
     @Test
@@ -201,7 +203,7 @@ class SetupLocalModelTest {
         )
         assertEquals(expected, events)
         val summary = chrome.substring(chrome.indexOf("Summary"))
-        assertTrue("Local model:" in summary && "about 7 GB" in summary, chrome.toString())
+        assertTrue("Local model:" in summary && "about 8 GB" in summary, chrome.toString())
     }
 
     /** Every question answered yes, `codex` ticked, each answer recorded in [events]. */
@@ -260,8 +262,8 @@ class SetupLocalModelTest {
     }
 
     @Test
-    fun `prepare exit 3 says the card is not supported and adds no head`() {
-        refusedAtPrepare(RigRun(3, "", "compute capability not measured\n"), "this card is not one rig supports yet")
+    fun `prepare exit 3 prints rig's own sentence and adds no head`() {
+        refusedAtPrepare(RigRun(3, "", "compute capability not measured\n"), "compute capability not measured")
     }
 
     @Test
@@ -298,14 +300,24 @@ class SetupLocalModelTest {
     // ── rig up ────────────────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `an up failure prints rig's last lines and the unit's journal, and adds no head`() {
+    fun `an up failure prints rig's last lines and the head's log, and adds no head`() {
         val stderr = "== start\nthe head did not come up on :8099\n"
         val rig = FakeRig(up = RigRun(1, "", stderr))
         runBlocking { step(rig = rig).install(true) }
         assertTrue("the head did not come up on :8099" in log(), log())
-        assertTrue("journalctl --user -u rig-bonsai-2-27b.service -n 40" in log(), log())
+        assertTrue("its log: ~/.local/share/rig/local/logs/bonsai-2-27b.log" in log(), log())
         assertFalse("describe" in rig.calls, rig.calls.toString())
         assertTrue(added.isEmpty())
+    }
+
+    @Test
+    fun `a failed rig step stops its spinner with a cross, and a passed one with the check`() {
+        val shown = StringBuilder()
+        val prompts = prompts(spinner = Spinner(shown, tty = true, scheduler = { AutoCloseable { } }))
+        runBlocking { step(rig = FakeRig(up = RigRun(1, "", "no room\n")), prompts = prompts).install(true) }
+        val lines = shown.split('\n').map { it.substringAfterLast("\u001B[2K") }
+        assertTrue(lines.any { "✓" in it && "rig prepare: the card is ready" in it }, shown.toString())
+        assertTrue(lines.any { "✗" in it && "rig up bonsai-2-27b: stopped" in it }, shown.toString())
     }
 
     @Test
@@ -458,14 +470,7 @@ class SetupLocalModelTest {
         val env = EnvReader { name -> if (name == "SPLICE_CONFIG") home.resolve("splice.toml").toString() else null }
         TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
         seedKey?.let { KeyStore(KeyStorePath.defaultPath(env)).write(KEY_ENV, it) }
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/v1") { exchange ->
-            val body = if (exchange.requestURI.path == "/v1/models") """{"data":[{"id":"/rig/model.gguf"}]}""" else "{}"
-            val bytes = body.toByteArray()
-            exchange.sendResponseHeaders(200, bytes.size.toLong())
-            exchange.responseBody.use { it.write(bytes) }
-        }
-        server.start()
+        val server = fakeLlamaServer()
         try {
             val base = "http://127.0.0.1:${server.address.port}/v1"
             val sink = TerminalOutput { out += it }
@@ -490,6 +495,17 @@ class SetupLocalModelTest {
             server.stop(0)
         }
     }
+}
+
+/** A llama-server stand-in on a port it bound itself: `/v1/models` lists one model, the rest is `{}`. */
+private fun fakeLlamaServer(): HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+    createContext("/v1") { exchange ->
+        val body = if (exchange.requestURI.path == "/v1/models") """{"data":[{"id":"/rig/model.gguf"}]}""" else "{}"
+        val bytes = body.toByteArray()
+        exchange.sendResponseHeaders(200, bytes.size.toLong())
+        exchange.responseBody.use { it.write(bytes) }
+    }
+    start()
 }
 
 /** rig as its contract says it answers, every call recorded; each answer overridable per test. */

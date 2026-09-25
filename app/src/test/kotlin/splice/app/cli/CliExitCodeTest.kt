@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.configuration.add.AddRefused
+import splice.launch.install.InstallRefused
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -121,6 +122,17 @@ class CliExitCodeTest {
         // Cli.guarded is the DR-99 boundary; AddRefused was outside its catch set, so a refusal
         // reached the operator as a raw JVM trace.
         assertEquals(1, Cli().guarded { throw AddRefused("head 'openrouter' cannot be edited") })
+    }
+
+    // `java -jar app-all.jar setup` with no launch shim (the V4-212 real-rig run): the refusal was a
+    // bare IllegalStateException, outside the catch set, and reached the operator as a JVM trace.
+    @Test
+    fun `an install refusal renders its sentence, one line, no stack trace`() {
+        val sentence = "launch shim not found at /tmp/splice-none/splice-launch (run install.sh)"
+        var code = -1
+        val err = stderrOf { code = Cli().guarded { throw InstallRefused(sentence) } }
+        assertEquals(1, code)
+        assertEquals("splice: $sentence\n", err.replace("\r\n", "\n"))
     }
 }
 

@@ -1,7 +1,7 @@
 // Copy the shell prints itself: the sidebar's group names and every page's name. The copy gate
 // reads this file: every value is a label (three words or fewer, sentence case).
 export const S = {
-  /** The session in flight: sessions, turns, teams, projects. */
+  /** What needs the operator, and the session in flight: needs you, sessions, turns, teams, projects. */
   inFlight: 'In flight',
   /** The head a turn goes to: fleet, models, compaction. */
   routing: 'Routing',
@@ -13,6 +13,7 @@ export const S = {
 
 /** Every page's name, as the sidebar and the palette print it. The address stays the slug. */
 export const PAGE = {
+  'needs-you': 'Needs you',
   sessions: 'Sessions',
   turns: 'Turns',
   teams: 'Teams',

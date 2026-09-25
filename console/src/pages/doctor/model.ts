@@ -8,7 +8,7 @@
 // thing a test can prove holds nothing anywhere else; a component that quietly wrote to the store
 // or to localStorage could not be.
 import type { DoctorCheck, DoctorPayload, DoctorStatus, Leak, UpgradePayload } from '@entities/doctor';
-import { checkFix, checkSection, leaksIn } from '@entities/doctor';
+import { checkSection, leaksIn, wantsAttention } from '@entities/doctor';
 import { ABSENT, fmtInt } from '@shared/lib';
 import type { BarPart, Mark, Tone } from '@shared/ui';
 import { H, S } from './strings';
@@ -44,11 +44,6 @@ export const MARK: Record<DoctorStatus, Mark> = { ok: 'ok', info: 'series-2', wa
 
 /** The order statuses are drawn and counted in, so the colours never swap places. */
 const STATUSES: readonly DoctorStatus[] = ['ok', 'info', 'warn', 'fail'];
-
-/** Whether a check wants the operator: warn and fail do, ok and info do not. */
-export function wantsAttention(status: DoctorStatus): boolean {
-  return status === 'fail' || status === 'warn';
-}
 
 /** A row's tint: only a check that wants the operator. */
 export function rowTone(status: DoctorStatus): Tone | null {
@@ -115,50 +110,10 @@ export function groupChecks(checks: readonly DoctorCheck[], view: { sort: { fiel
     .sort((left, right) => left.key.localeCompare(right.key));
 }
 
-/** One row of the checks rack: a check, or several that say the same thing about different heads. */
-export interface CheckRow {
-  /** `status|family|fix`: unique on the rack, but it moves when a check's status does, so the page
-   *  opens a row by its first member's id instead (DoctorBoard resolves either). */
-  key: string;
-  status: DoctorStatus;
-  /** The id for one check; for several, the id up to the colon with the member count. */
-  label: string;
-  fix: string | null;
-  members: DoctorCheck[];
-}
-
 /** The part of an id after its colon, which names the head or project a check is about. */
 export function subjectOf(check: DoctorCheck): string {
   const colon = check.id.indexOf(':');
   return colon === -1 ? check.id : check.id.slice(colon + 1);
-}
-
-/**
- * THE SAME FINDING ONCE, NOT ONCE PER HEAD (console review, 2026-09-24). The live report carried
- * eleven `configuration/system-prompt:<head>` warnings with one identical fix, and they filled the
- * first screen of the rack. Checks collapse when they share a status, the id up to its colon (the
- * whole id when it has none), and the fix word for word; a check whose fix names its head
- * (`splice logs --head claudex`) stays its own row, because its remedy differs. Order is the first
- * member's. The row's key is that grouping, so two rows never share one.
- */
-export function collapseChecks(checks: readonly DoctorCheck[]): CheckRow[] {
-  // The family is the id up to its colon, or the whole id when it has none. A colon-less id is a
-  // family too: the daemon sends one `installation/wrapper` per launcher (eleven live), and keying
-  // those by id alone overwrote ten of them, so the rack printed 1 row for 11 checks and the
-  // attention count disagreed with the rows under it (splice-lead's walkthrough, B1).
-  const rows = new Map<string, CheckRow & { family: string }>();
-  for (const check of checks) {
-    const colon = check.id.indexOf(':');
-    const fix = checkFix(check);
-    const family = colon === -1 ? check.id : check.id.slice(0, colon);
-    const key = `${check.status}|${family}|${fix ?? ''}`;
-    const row = rows.get(key);
-    if (row === undefined) rows.set(key, { key, family, status: check.status, label: check.id, fix, members: [check] });
-    else row.members.push(check);
-  }
-  return [...rows.values()].map(({ family, ...row }) => row.members.length === 1
-    ? row
-    : { ...row, label: `${family} (${row.members.length})` });
 }
 
 /** The head a `splice logs --head <head>` remedy names, so the page can open that log itself. */

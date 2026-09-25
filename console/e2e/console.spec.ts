@@ -79,9 +79,10 @@ test('the address splice dashboard opens unlocks the console and leaves no key b
   // The fragment is what DashboardCommand's redirect page sends the browser to; no init script.
   const key = env('CONSOLE_E2E_KEY');
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#k=${encodeURIComponent(key)}`);
-  // The landing page is sessions: a locked console could not have read these two from the daemon.
-  await expect(page.locator('main')).toContainText(STACK.sender.name);
-  await expect(page.locator('main')).toContainText(STACK.peer.name);
+  // The landing page is Needs you (V4-219), and its read time prints only once every input it rests
+  // on answered: a locked console, refused on every read, could not print it.
+  await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
+  await expect(page.locator('main').getByText(/^Read \d\d:\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
   expect(await page.getByText('management key required').count(), 'the handed-over key did not unlock').toBe(0);
   expect(page.url(), 'the key was left in the address').not.toContain(key);
   expect(await page.evaluate((storage) => localStorage.getItem(storage), KEY_STORAGE), 'the key was not kept').toBe(key);

@@ -11,7 +11,7 @@
 // the accounts page prints.
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { startAccountsPolling, useAccounts } from '@entities/account';
+import { poolOf, selectedExcluded, startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
@@ -45,7 +45,7 @@ import { KnobReadout } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import {
   EMPTIES, HEAD_FIELDS, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
-  inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone, windowTone,
+  inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone, windowTone,
 } from './model';
 import type { CauseHelp, LastTurn } from './model';
 import { H, S } from './strings';

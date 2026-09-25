@@ -16,11 +16,10 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
-import { isRedacted, leaksIn, leaksInText } from '../src/entities/doctor';
-import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
+import { collapseChecks, isRedacted, leaksIn, leaksInText } from '../src/entities/doctor';
+import type { CheckRow, DoctorCheck, DoctorPayload } from '../src/entities/doctor';
 import { DoctorBoard, openIdOf } from '../src/pages/doctor';
-import { EMPTIES, collapseChecks } from '../src/pages/doctor/model';
-import type { CheckRow } from '../src/pages/doctor/model';
+import { EMPTIES } from '../src/pages/doctor/model';
 import { S } from '../src/pages/doctor/strings';
 import { ABSENT } from '../src/shared/lib';
 

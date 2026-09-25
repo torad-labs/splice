@@ -28,16 +28,15 @@ import {
   attentionParts,
   canSend,
   claudeVersionText,
-  collapseChecks,
   groupChecks,
   latestText,
   logsHeadOf,
   playgroundNext,
   rollbackText,
   statusParts,
-  wantsAttention,
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
+import { collapseChecks, wantsAttention } from '../src/entities/doctor';
 import { S as DOCTOR_WORDS } from '../src/pages/doctor/strings';
 import { ABSENT } from '../src/shared/lib';
 import type { PlaygroundState } from '../src/pages/doctor/model';

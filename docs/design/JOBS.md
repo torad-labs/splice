@@ -90,6 +90,21 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Add a model (V4-220)
 - Compare the declared models with what each provider publishes (V4-219)
 
+## needs-you
+
+**Question.** What needs me right now, and what do I do about it?
+
+**Leaves knowing.** Every head, plan, account, turn, session, team seat and doctor check that needs them, worst first, each with its fix, and which inputs could not be read.
+
+**Actions.**
+
+- Start or restart a head
+- Restart the daemon
+- Copy a fix command
+- Open the page that holds an item
+- Open the item itself on its page (V4-219)
+- Apply a doctor check's fix (V4-220)
+
 ## projects
 
 **Question.** Which repositories have sessions run in, and what is running there now?

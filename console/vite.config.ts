@@ -25,7 +25,9 @@ export default defineConfig({
   },
   server: {
     // dev-mode only: the built artifact is served same-origin by the control server
-    proxy: { '/api': `http://127.0.0.1:${process.env.SPLICE_CONTROL_PORT ?? '3096'}` },
+    // /health too: the daemon serves it beside /api, and a dev server that answered it with the
+    // page's own HTML read every topology probe as unanswered.
+    proxy: Object.fromEntries(['/api', '/health'].map((path) => [path, `http://127.0.0.1:${process.env.SPLICE_CONTROL_PORT ?? '3096'}`])),
   },
   test: {
     environment: 'node',

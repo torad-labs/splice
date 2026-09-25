@@ -13,7 +13,7 @@ export {
 } from './api';
 export { captureView } from './model/capture';
 export type { CaptureView } from './model/capture';
-export { groupTurns, inflightFrom, marksOf, timelineOf, waterfall, UNATTRIBUTED } from './model/derive';
+export { groupTurns, inflightFrom, isStalled, marksOf, timelineOf, waterfall, UNATTRIBUTED } from './model/derive';
 export type { GroupBy, Stage, StageGroup, TurnBucket, TurnGroup, TurnTimeline, TurnWindow } from './model/derive';
 export { MARK_KEYS, PERF_WINDOWS } from './model/types';
 export type {

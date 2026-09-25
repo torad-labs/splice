@@ -12,8 +12,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { checkFinding, checkSection, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
-import type { DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
+import { checkFinding, checkSection, collapseChecks, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import type { CheckRow, DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
@@ -24,10 +24,10 @@ import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
 import {
-  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersionText, collapseChecks, gateReport, groupChecks, latestText, logsHeadOf,
+  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersionText, gateReport, groupChecks, latestText, logsHeadOf,
   playgroundNext, reportFacts, rollbackText, rowTone, statusParts, subjectOf,
 } from './model';
-import type { CheckRow, PlaygroundEvent } from './model';
+import type { PlaygroundEvent } from './model';
 import { fixtureDoctor } from './fixtures/doctor';
 import { fixtureName } from './model';
 import { dispositions } from './coverage';

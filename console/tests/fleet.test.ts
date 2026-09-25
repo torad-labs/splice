@@ -31,8 +31,9 @@ import type { TurnRow } from '../src/entities/perf';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
 import {
   EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthOf, healthParts, inflightTotals,
-  lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone,
+  lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone,
 } from '../src/pages/fleet/model';
+import { poolOf, selectedExcluded } from '../src/entities/account';
 import { dispositions } from '../src/pages/fleet/coverage';
 import { ADD_COMMAND, AddHead, CauseLine, FleetBoard } from '../src/pages/fleet';
 import type { FleetSources } from '../src/pages/fleet';

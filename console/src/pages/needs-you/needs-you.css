@@ -1,0 +1,20 @@
+/* The Needs you page: the list, then the inputs it could not read. Spacing, type size and colour
+   only through the token sheet. */
+.myx-ny { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
+.myx-ny .myx-ph { margin-block-end: 0; }
+.myx-ny .myx-sec + .myx-sec { margin-block-start: 0; }
+
+/* A fix is read whole: a remedy the doctor wrote as a sentence breaks onto more lines rather than
+   ending at the column's edge. */
+.myx-ny-fix { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.myx-ny-command {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.myx-ny-fault { font-size: var(--text-1); color: var(--danger); white-space: normal; }
+
+/* When the list was true as of: the oldest of its reads, in the strip's own clock face. */
+.myx-ny-read { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-subtle); font-variant-numeric: tabular-nums; }

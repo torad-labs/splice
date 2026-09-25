@@ -175,7 +175,7 @@ class AddBackendRouteTest {
 
             val login = post("/api/add/$id/login")
             assertEquals(HttpStatusCode.Conflict, login.status)
-            assertEquals("'fw' reads its key from FW_API_KEY: set it on the Keys page, then verify.", error(login))
+            assertEquals("'fw' reads its key from FW_API_KEY: set it on the Accounts page, then verify.", error(login))
 
             val unkeyed = post("/api/add/$id/verify")
             assertEquals(HttpStatusCode.Conflict, unkeyed.status, unkeyed.bodyAsText())

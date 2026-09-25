@@ -20,6 +20,8 @@ export const S = {
   rollback: 'Rollback',
   lastChecked: 'Last checked',
   claudeCode: 'Claude Code',
+  /** The Claude Code tile's figure when the probe read no version; the daemon's sentence is under it. */
+  unknownVersion: 'Unknown',
   /** The report's own facts, as served: the payload's field name beside its value. */
   report: 'Report',
   aboutReport: 'About the report',

@@ -27,7 +27,7 @@ import {
   attentionCount,
   attentionParts,
   canSend,
-  claudeVersionText,
+  claudeVersion,
   groupChecks,
   latestText,
   logsHeadOf,
@@ -234,8 +234,16 @@ describe('every failing check carries its fix', () => {
   });
 
   test('Claude Code\'s version drops the product name its tile already prints', () => {
-    expect(claudeVersionText('2.1.282 (Claude Code)')).toBe('2.1.282');
-    expect(claudeVersionText('2.1.282')).toBe('2.1.282');
+    expect(claudeVersion('2.1.282 (Claude Code)')).toEqual({ figure: '2.1.282', note: null });
+    expect(claudeVersion('2.1.282')).toEqual({ figure: '2.1.282', note: null });
+  });
+
+  test('a probe that read no version is unknown in the figure, with the daemon\'s sentence whole under it', () => {
+    // CI run 36184525303, no `claude` on the runner: the whole sentence was the figure, cut to an ellipsis.
+    const failed = 'present (version probe failed: failure (message withheld, may quote file bytes))';
+    expect(claudeVersion(failed)).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: failed });
+    expect(claudeVersion('probe timed out')).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: 'probe timed out' });
+    expect(claudeVersion('present')).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: 'present' });
   });
 
   test('attention first lists every check that wants the operator before any that does not', () => {

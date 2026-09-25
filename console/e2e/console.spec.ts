@@ -403,10 +403,19 @@ test('doctor renders the stack\'s report whole, the api-key row\'s fix included'
 });
 
 test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at Needs you\'s right edge', async ({ page }) => {
-  // The same masked fix as above. Its tip opened inside the panel's scroll box, which cut it at the
-  // panel's left edge, and in Needs you's last column, where the window cut it (2026-09-25 renders).
+  // The tip opened inside the panel's scroll box, which cut it at the panel's left edge, and in Needs
+  // you's last column, where the window cut it (2026-09-25 renders). The stack's own masked fix went
+  // with V4-220's `splice key set`, and the daemon still masks a value or a path it does not know in
+  // any other fix, so the report carries one here, in the daemon's own detail shape.
+  const masked = 'CONSOLE_E2E_MASKED=<redacted>';
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { checks: { id: string; status: string; detail: string }[] };
+    const fix = ` ${String.fromCharCode(0x2014)} fix: export ${masked}`;
+    body.checks.push({ id: 'configuration/e2e-masked', status: 'warn', detail: `a value doctor masks${fix}` });
+    await route.fulfill({ response, json: body });
+  });
   const faults = await open(page, 'doctor');
-  const masked = 'CONSOLE_E2E_NO_SUCH_KEY=<redacted>';
   const row = page.locator('main').getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: masked });
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.getByRole('button').click();
@@ -414,8 +423,9 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   await expectWholeTip(detail.getByRole('button', { name: 'Why no copy', exact: true }), 'doctor detail panel', detail.getByText(masked));
 
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#/needs-you`);
-  const why = page.locator('main').getByRole('button', { name: 'Why no copy', exact: true }).first();
-  await expect(why, 'the masked fix is not on Needs you').toBeVisible({ timeout: 15_000 });
+  const item = page.locator('main').getByRole('row').filter({ hasText: masked });
+  await expect(item, 'the masked fix is not on Needs you').toBeVisible({ timeout: 15_000 });
+  const why = item.getByRole('button', { name: 'Why no copy', exact: true });
   await expectWholeTip(why, 'needs you, last column');
   expect(faults.pageErrors, 'a page threw').toEqual([]);
 });
@@ -437,6 +447,24 @@ test('Doctor\'s figures read whole beside an open check', async ({ page }) => {
   await row.getByRole('button').click();
   await expect(page.getByRole('complementary', { name: 'Check detail' })).toBeVisible();
   await expect(page.locator('main .myx-stat-value')).not.toHaveCount(0);
+  expect(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('a Claude Code probe that read no version reads unknown, with the daemon\'s sentence whole under it', async ({ page }) => {
+  // CI run 36184525303: no `claude` on the runner, and the daemon's sentence was the tile's figure,
+  // cut to an ellipsis.
+  const failed = 'present (version probe failed: failure (message withheld, may quote file bytes))';
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { claude_code: { version: string | null } };
+    body.claude_code.version = failed;
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const tile = page.locator('main .myx-stat').filter({ hasText: 'Claude Code' });
+  await expect(tile.locator('.myx-stat-value')).toHaveText('Unknown', { timeout: 15_000 });
+  await expect(tile.locator('.myx-stat-sub')).toHaveText(failed);
   expect(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
   expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });

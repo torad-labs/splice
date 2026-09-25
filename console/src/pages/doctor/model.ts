@@ -58,9 +58,14 @@ export function statusParts(checks: readonly DoctorCheck[]): BarPart[] {
 }
 
 /** Claude Code's version as its tile prints it. The daemon reports `claude --version` verbatim,
- *  `2.1.282 (Claude Code)`, and the tile's label already names the product. */
-export function claudeVersionText(version: string): string {
-  return version.replace(/\s*\(Claude Code\)$/, '');
+ *  `2.1.282 (Claude Code)`, and the tile's label already names the product. When the probe read no
+ *  version the same field carries the daemon's sentence (`probe timed out`, `present (version probe
+ *  failed: …)`, DoctorInstallProbes.capturedVersion), which as the figure ran past the tile and was
+ *  cut (CI run 36184525303, no `claude` on the runner): the figure says the version is unknown and
+ *  the sentence reads whole under it. */
+export function claudeVersion(version: string): { figure: string; note: string | null } {
+  const bare = version.replace(/\s*\(Claude Code\)$/, '');
+  return /^\d+(\.\d+)+/.test(bare) ? { figure: bare, note: null } : { figure: S.unknownVersion, note: version };
 }
 
 /** The newest release as the page prints it: the version, `None` when the check looked and found

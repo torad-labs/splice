@@ -18,9 +18,6 @@
 :root {
   color-scheme: dark;
 
-  /* The root is the browser's own size (16px unless the operator set another), so browser zoom
-     and a font-size preference apply, and a wider window shows more, not bigger. */
-  --root-size: 100%;
   /* a hairline is a WIDTH here and a colour below (--line / --line-strong): a rule reads
      `border-top: var(--hair) solid var(--line)`. */
   --hair: 1px;

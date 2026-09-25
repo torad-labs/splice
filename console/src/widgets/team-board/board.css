@@ -345,12 +345,12 @@
    artifact - while the rest of the console stays in rem and stays adjustable. */
 .myx-board { container-type: size; }
 /* 16px, 14px and 12px at the comp frame, as a share of the board's own height. */
-.myx-board .myx-sfield-value { font-size: 1.6587cqh; }
+.myx-board .myx-sfield-value { font-size: var(--text-3); }
 /* THE PLATE'S LETTERING IS 12.8px (M3-04). M1-64 raised the bay label from --text-1 to --text-3 on
    "the contract's bay label is 16", and the bisect put -0.024 on activity-label and chat-label at
    that commit: the crop shows the lettering overfilling the plate the comp leaves air in. With the
    weight above, 80 percent of the 16px share is what the four plate regions scored best at. */
-.myx-board .myx-bay-label { font-size: 1.3270cqh; }
+.myx-board .myx-bay-label { font-size: var(--text-2); }
 /* THE STRIP'S VALUES ARE 12.8px, NOT 16, AND ITS CELLS INSET 4px (M3-04, the finish review's items 1
    and 2). Measured on team-board-a.png at its native 1536x1024: the comp's interior cells inset their
    text about 8px from the rule (lead-strip 8,8,9,8,8,3,9; lead-strip-2 7,5,6,9,7,6,5), and it prints
@@ -367,9 +367,9 @@
    LESS than before, not more. The size is the one d040ad96 raised to --text-3 on the comp's cap
    height, and its own note recorded the cost (10 of 99 cells clipping); the bisect put -0.084 on
    builder-strip at that commit. */
-.myx-board .myx-board-strip .myx-sfield-value { font-size: 1.3270cqh; }
+.myx-board .myx-board-strip .myx-sfield-value { font-size: var(--text-2); }
 .myx-board .myx-board-strip .myx-sfield { padding-inline: var(--space-2); }
-.myx-board .myx-sfield-label { font-size: 1.2439cqh; }
+.myx-board .myx-sfield-label { font-size: var(--text-1); }
 /* NO ELLIPSIS ON A NAME THAT FITS TO A FRACTION (M3-04). A column name prints once per rack, so the
    ones that did not fit got authored short forms (strings.ts); what was left over by less than a
    pixel -- the lead bay's `context left` by 0.5px, the builder's `base` by 0.2 -- was being turned
@@ -377,7 +377,7 @@
    the text's exact width, every board name now fits its box to within 1px, so clip hides no ink. */
 .myx-board .myx-sfield-label { text-overflow: clip; }
 .myx-board .myx-board-act .myx-sfield-value,
-.myx-board .myx-board-msg .myx-sfield-value { font-size: 1.4514cqh; }
+.myx-board .myx-board-msg .myx-sfield-value { font-size: var(--text-2); }
 /* `.myx-board-foot` (M3-03): that class is on no element in the tree -- the footer is
    `.myx-board-footer` (parts.tsx) -- so this rule matched nothing and the footer was the one thing
    on the poster whose type did not follow the frame. It stayed at --text-1's 12px while every
@@ -385,7 +385,7 @@
    comp's size) and shows the moment the board is any other width: at 1440 the responsive gate read
    footer-strip as CONTRADICTED, structure 47 percent, its ink box 553x48 against the comp's
    538x22. */
-.myx-board .myx-board-footer { font-size: 1.2439cqh; }
+.myx-board .myx-board-footer { font-size: var(--text-1); }
 
 .myx-board-bay-0 { left: 0.879%; top: 8.174%; width: 30.769%; height: 83.864%; }
 .myx-board-bay-1 { left: 32.967%; top: 8.174%; width: 30.220%; height: 83.864%; }
@@ -653,8 +653,8 @@
      553x48 against the comp's 538x22). Expressed as shares of the FRAME in viewport units, which is
      what the fixed box's percentages resolved against, so the plate's size is unchanged at every
      width; the board fills the frame below the rule, so its bottom is the frame's at rest. */
-  left: 1.432vw;
-  bottom: 3.418vh;
+  left: var(--space-5);
+  bottom: var(--space-6);
   width: 34.961vw;
   height: 2.051vh;
   display: flex;

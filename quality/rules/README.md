@@ -23,7 +23,9 @@ design constraint, 2026-07-13).
 |---|---|---|
 | webui-fetch-only-in-api(-tsx) | console/src | FSD: UI strictly via state |
 | webui-no-emdash-ui-text | console/src *.tsx | locked copy gate |
-| webui-css-tokens-only | console/src *.css | --space/--text token scales only |
+| webui-css-tokens-only | console/src *.css | spacing from --space-N; the only unit a spacing value may carry is % |
+| webui-css-font-size-scale | console/src *.css | font-size is exactly var(--text-N) or inherit (an allow-list) |
+| webui-css-no-color-literals | console/src *.css | no hex or colour function outside shared/tokens.css |
 
 Kotlin walls (`quality/rules/kotlin/`) mirror the above for the gateway port. The 2026-07-18
 additions are the **preventive walls** distilled from that day's incidents:

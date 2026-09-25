@@ -497,6 +497,18 @@ date = "2026-09-20"
 reason = "The token scales themselves — the one stylesheet allowed to hold raw px/rem values."
 
 [[exclusion]]
+rule = "webui-css-font-size-scale"
+files = ["console/src/shared/tokens.css"]
+date = "2026-09-25"
+reason = "The type scale itself: the one stylesheet that defines the --text-N rungs every other sheet must use."
+
+[[exclusion]]
+rule = "webui-css-no-color-literals"
+files = ["console/src/shared/tokens.css"]
+date = "2026-09-25"
+reason = "The palette itself: the one stylesheet that names colours; every other sheet reads them as tokens."
+
+[[exclusion]]
 rule = "webui-fetch-only-in-api"
 files = ["console/src/shared/api/**", "console/src/entities/*/api/**"]
 date = "2026-09-20"

@@ -37,7 +37,7 @@
 .myx-rail-tabs {
   display: flex;
   flex-direction: column;
-  gap: min(var(--space-6), 2.4vh);
+  gap: var(--space-3);
   padding: var(--space-4) var(--space-3);
 }
 

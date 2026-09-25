@@ -25,7 +25,6 @@
    a scale cannot be defined in terms of itself (wall: webui-css-tokens-only, which exempts the
    token sheet by name). The number, its provenance and the arithmetic that justifies linear-no-cap
    are all in that file; this rule only applies it. */
-html { font-size: var(--root-size); }
 
 * { box-sizing: border-box; }
 

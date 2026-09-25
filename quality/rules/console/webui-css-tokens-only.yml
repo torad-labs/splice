@@ -11,10 +11,16 @@
 # ((-[a-z]+)*) and the unit regex is case-insensitive and includes em. Four
 # live bypasses reproduced pre-fix (padding-inline-start: 8px, margin-block-end:
 # 1.5rem, font-size: 1.5em, gap: 10PX) — all four now match; real tree stays 0.
+# Narrowed 2026-09-25 (console redesign, splice-lead's amendment 2): the unit list was a DENY-list
+# (px|rem|em), so every unit it never named walked through: the team board set its spacing in vw,
+# vh and cqw and its type in cqh, and the 9px labels the operator saw came in that way. A spacing
+# value now carries no unit at all except %: a length is var(--space-N) (or 0, auto, a calc of
+# tokens), and a percentage is layout, not rhythm. font-size moved to its own allow-list rule,
+# webui-css-font-size-scale.
 id: webui-css-tokens-only
 language: css
 severity: error
-message: "Spacing/font-size must come from the token scales (var(--space-N) / var(--text-N)) — no ad-hoc px/rem values."
+message: "Spacing must come from the token scale (var(--space-N)); the only unit a spacing value may carry is %."
 note: |
   Dense data surfaces sit at var(--text-2)/var(--text-3), annotations var(--text-1),
   page titles var(--text-5)/var(--text-6); rhythm var(--space-2)/var(--space-3)
@@ -29,8 +35,9 @@ rule:
   all:
     - has:
         kind: property_name
-        regex: '^(font-size|gap|row-gap|column-gap|top|right|bottom|left|(inset|margin|padding)(-[a-z]+)*)$'
+        regex: '^(gap|row-gap|column-gap|top|right|bottom|left|(inset|margin|padding)(-[a-z]+)*)$'
     - has:
         stopBy: end
         kind: unit
-        regex: '(?i)^(px|rem|em)$'
+        not:
+          regex: '^%$'

@@ -710,7 +710,7 @@
   /* clipped to the bay and scrolled with the rack by Bay (M3-03): the names live outside the rows'
      scroller, so without this a rack wider than its bay printed them past the bay's edge */
   overflow: hidden;
-  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2));
+  padding-inline-start: calc(var(--space-4) + var(--space-2) + var(--space-8) + var(--space-2));
   padding-block-start: var(--space-3);
   font-family: var(--font-label);
   font-size: var(--text-1);

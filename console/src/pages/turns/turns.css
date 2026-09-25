@@ -131,7 +131,7 @@
   z-index: 1;
   display: flex;
   padding-block: var(--space-2);
-  padding-inline-start: calc(var(--space-4) + var(--space-2) + 8ch + var(--space-2));
+  padding-inline-start: calc(var(--space-4) + var(--space-2) + var(--space-8) + var(--space-2));
   background: var(--room-deep);
   font-family: var(--font-label);
   font-size: var(--text-1);

@@ -1,5 +1,5 @@
 // NEW: V4-220 item 4 — what the report tells the console about each fix: which rows the daemon can
-// fix itself (`fix_id`), and that the one fix meant for pasting survives the report's redaction.
+// fix itself (`fix_id`), and that the fixes meant for pasting or following survive the report's redaction.
 // Marlin's review of the doctor-1600x1000 capture: the Fix column read
 // `add to your shell rc: export PATH="<redacted:path>"`, a command that cannot be pasted.
 package splice.diagnostics.doctor
@@ -42,6 +42,17 @@ class DoctorFixIdTest {
         val outside = Paths.get("/opt/splice/bin")
         val detail = pathFixDetail(outside, env = mapOf("SPLICE_BIN_DIR" to outside.toString()))
         assertTrue(detail.endsWith("fix: add to your shell rc: export PATH=\"/opt/splice/bin\":\"\$PATH\""), detail)
+    }
+
+    /** RED before item 4: `install it: https:<redacted:path>`. Every prerequisite's fix, taken from the
+     *  table itself, so a link added there without the redaction allowing it fails by name. */
+    @Test
+    fun `every prerequisite fix reaches the report as written, links included`() {
+        val rows = binaries.map { DoctorCheck(it.name, CheckStatus.FAIL, it.missingDetail, it.fix) }
+        val details = checks(rows, env = emptyMap()).map { it.getValue("detail").jsonPrimitive.content }
+        binaries.zip(details).forEach { (spec, detail) ->
+            assertTrue(detail.endsWith("fix: ${spec.fix}"), "${spec.name}: $detail")
+        }
     }
 
     @Test

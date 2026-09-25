@@ -43,7 +43,7 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
             CheckStatus.WARN,
             "$key writes its FULL request/response trace (overrides.trace): every request it receives, " +
                 "every upstream attempt with the exact body it sent (credentials redacted) and the raw " +
-                "response, and every frame it streamed back — one file per UTC day under " +
+                "response, and every frame it streamed back, as one file per UTC day under " +
                 "${statePaths.traceDir} (owner-only), kept $days day(s); read with `splice trace $key`",
             "remove overrides.trace from [heads.$key] (and restart) when the investigation is over; " +
                 "`splice trace $key --purge` deletes what was written",

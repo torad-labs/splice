@@ -80,7 +80,7 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
             DoctorCheck(
                 "topology",
                 CheckStatus.WARN,
-                "splice.toml changed since the daemon booted — the running topology is stale",
+                "splice.toml changed since the daemon booted, so the running topology is stale",
                 "splice restart",
             )
         }
@@ -103,13 +103,13 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
             failure != null && failure !is NoSuchFileException -> DoctorCheck(
                 mgmtKeyCheckName,
                 CheckStatus.FAIL,
-                "unreadable at $keyFile (${SafeFailureText.render(failure)}) — admin endpoints will 401",
+                "unreadable at $keyFile (${SafeFailureText.render(failure)}), so admin endpoints will 401",
                 "fix the file's permissions; it may exist, so nothing needs re-minting",
             )
             daemonRunning -> DoctorCheck(
                 mgmtKeyCheckName,
                 CheckStatus.FAIL,
-                "missing at $keyFile — admin endpoints will 401",
+                "missing at $keyFile, so admin endpoints will 401",
                 "terminate the daemon process manually; the next launch re-mints the key",
             )
             else -> DoctorCheck(mgmtKeyCheckName, CheckStatus.INFO, "minted on first launch")

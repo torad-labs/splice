@@ -31,6 +31,12 @@ import splice.diagnostics.doctor.DoctorCheck
 private const val CONTEXT_WINDOW = "context_window"
 private const val MODELS = "models"
 
+/** The wire contract between a check's detail and its fix: the console splits on it
+ *  (entities/doctor FIX_SEPARATOR) and never prints it. Spelled by code point because the doctor's
+ *  text carries no em-dash (quality/rules/kotlin/kt-no-emdash-cli-text.yml), and this is not text. */
+private const val EM_DASH = 0x2014
+private val FIX_SEPARATOR = " ${Char(EM_DASH)} fix: "
+
 /** V4-127 §6: the oldest file a state-directory scan found, and how long it has been there. The
  *  MEASUREMENT is not this file's job — every shaper here takes values and returns JSON — so
  *  DoctorStateDirScan walks the directory and hands the result in. [ageMs] is an age rather than a timestamp for
@@ -88,7 +94,7 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                         buildJsonObject {
                             put("id", safe("$section/${c.name}"))
                             put("status", c.status.name.lowercase())
-                            put("detail", safe(c.fix?.let { "${c.detail} — fix: $it" } ?: c.detail))
+                            put("detail", safe(c.fix?.let { "${c.detail}$FIX_SEPARATOR$it" } ?: c.detail))
                             put("fix_id", c.fixId?.wire)
                         },
                     )

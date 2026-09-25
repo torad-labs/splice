@@ -268,6 +268,6 @@ public class StatePaths(
     } catch (_: NoSuchFileException) {
         RootProbe.Absent
     } catch (failure: IOException) {
-        RootProbe.Unusable("could not be read — ${SafeFailureText.render(failure)}")
+        RootProbe.Unusable("could not be read (${SafeFailureText.render(failure)})")
     }
 }

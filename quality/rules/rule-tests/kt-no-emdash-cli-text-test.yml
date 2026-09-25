@@ -1,0 +1,15 @@
+id: kt-no-emdash-cli-text
+valid:
+  - |
+    // comments may use an em-dash — rules gate the printed text only
+    val detail = "splice.toml changed since the daemon booted, so the running topology is stale"
+  # the report's fix separator: built from its code point, never spelled in a string
+  - 'private val FIX_SEPARATOR = " ${Char(0x2014)} fix: "'
+  - 'val detail = "every account is out ($at): $detail"'
+invalid:
+  - 'val detail = "splice.toml changed since the daemon booted — the running topology is stale"'
+  # after an interpolation: the em-dash sits in its own string_content node
+  - 'val detail = "every account is out ($at) — $detail"'
+  - 'val notice = """[log line exceeds $n bytes — skipped]"""'
+  # the escape spelling parses inside string_content: without its branch it walks past the wall
+  - 'val detail = "missing at $keyFile \u2014 admin endpoints will 401"'

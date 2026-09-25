@@ -45,7 +45,8 @@ class StatuslineBarsTest {
                 "rate_limits":{"five_hour":{"used_percentage":14,"resets_at":1788010000},"seven_day":{"used_percentage":42.4,"resets_at":1788500000}}}""",
         )
         assertTrue("Grok 4.6·high" in line, "effort rides beside the model: $line")
-        assertTrue("$61.44" in line, "session spend: $line")
+        // V4-240: a grok head with no card for the model says so; the blob's 61.44 is Anthropic's price.
+        assertTrue("no rate card" in line && "61.44" !in line, "session spend: $line")
         assertTrue("5h █░░░░░░░ 14%" in line, "5h bar: $line")
         assertTrue("7d ███░░░░░ 42%" in line, "7d bar: $line")
         assertFalse("→" in line, "no reset time under 60%: $line")
@@ -73,10 +74,10 @@ class StatuslineBarsTest {
         val bars = StatuslineBars()
 
         val clean = bars.costSegment(root, computed = 12.5, droppedRows = 0L)?.replace(ansi, "")
-        assertEquals("$12.50", clean, "nothing dropped, nothing said — byte-identical to before")
+        assertEquals("API est. $12.50", clean, "nothing dropped, nothing said beyond the figure's basis")
 
         val short = bars.costSegment(root, computed = 12.5, droppedRows = 3L)?.replace(ansi, "")
-        assertEquals("≥$12.50 ⚠3", short, "the true spend is AT LEAST this, and 3 rows were unreadable")
+        assertEquals("API est. ≥$12.50 ⚠3", short, "the true spend is AT LEAST this, and 3 rows were unreadable")
     }
 
     /** THE FALSE-ALARM GUARD, and it is not a technicality. When the head declares no rates the bar
@@ -87,7 +88,28 @@ class StatuslineBarsTest {
     fun `a dropped row never marks the client's own number`() {
         val root = Json.parseToJsonElement("""{"cost":{"total_cost_usd":61.44}}""").jsonObject
         val fallback = StatuslineBars().costSegment(root, computed = null, droppedRows = 9L)
-        assertEquals("$61.44", fallback?.replace(ansi, ""), "only OUR figure can be short, so only ours is qualified")
+        assertEquals(
+            "API est. $61.44",
+            fallback?.replace(ansi, ""),
+            "only OUR figure can be short, so only ours is qualified",
+        )
+    }
+
+    /** V4-240: what stands in when splice has no figure of its own. Claude Code prices its
+     *  `total_cost_usd` at Anthropic's card whatever head it talks to, so that figure may stand in
+     *  only on a head whose upstream IS Anthropic; a rated model with nothing spent shows nothing;
+     *  and anywhere else a model with no card says so in words. */
+    @Test
+    fun `the client's own figure stands in only on an Anthropic head, and no card is said in words`() {
+        val root = Json.parseToJsonElement("""{"cost":{"total_cost_usd":0.85}}""").jsonObject
+        val bars = StatuslineBars()
+        fun seg(rated: Boolean, clientPriced: Boolean) =
+            bars.costSegment(root, computed = null, fallback = CostFallback(rated, clientPriced))?.replace(ansi, "")
+
+        assertEquals("API est. $0.85", seg(rated = false, clientPriced = true), "an Anthropic head, no card")
+        assertEquals("no rate card", seg(rated = false, clientPriced = false), "the rehearsal's GPT-6-Sol line")
+        assertEquals(null, seg(rated = true, clientPriced = false), "a rated model with nothing spent yet")
+        assertEquals(null, seg(rated = true, clientPriced = true), "rated wins over the client's number too")
     }
 
     /** THE HOP ITSELF. The two arms above prove the renderer draws the marker when handed a count;
@@ -116,7 +138,10 @@ class StatuslineBarsTest {
 
     @Test
     fun `no rate_limits and no quota draws no bars, and a zero cost draws no spend`() {
-        val line = render("""{"model":{"id":"mock"},"cost":{"total_cost_usd":0}}""")
+        val usage = HeadUsageSource { UsageView(0L, 0, null, null) }
+        val line = StatuslineRenderer(label = "claude-splice", anthropicUpstream = true)
+            .render("""{"model":{"id":"mock"},"cost":{"total_cost_usd":0}}""", usage, warnPct = 0, warnTokens5h = 0)
+            .replace(ansi, "")
         assertFalse("5h" in line || "7d" in line || "$" in line, line)
         assertEquals("● mock", line.trim())
     }

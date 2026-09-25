@@ -29,7 +29,7 @@
 [[exclusion]]
 rules = [
   "kt-cancellation-handler-total", "kt-catch-swallows-cancellation", "kt-control-route-guarded",
-  "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
+  "kt-dollar-figure-single-source", "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
   "kt-flow-over-suspend", "kt-force-strict-false-is-literal", "kt-form-encoding-single-source",
   "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-head-sse-drains-on-exit",
   "kt-http-status-single-source",
@@ -339,6 +339,12 @@ rule = "kt-error-envelope-single-source"
 files = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
 date = "2026-09-20"
 reason = "The sole builder of the Anthropic error envelope — exempt BY PATH so no other file can claim it."
+
+[[exclusion]]
+rule = "kt-dollar-figure-single-source"
+files = ["features/usage/src/main/kotlin/splice/usage/ApiCostText.kt"]
+date = "2026-09-25"
+reason = "The sole spelling site of a dollar figure, which attaches its basis: exempt BY PATH, per the rule's own comment (V4-240)."
 
 [[exclusion]]
 rule = "kt-form-encoding-single-source"

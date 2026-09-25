@@ -78,6 +78,10 @@ rather than one at a time:
    after the run: a new merge is a new sha and needs its own gate.
 5. Build anything you install or ship from a clean detached worktree of that sha
    (`git worktree add --detach <dir> <sha>`), never from a working tree.
+6. Remove what landed. Each member PR's worktree and local branch go when its train lands, and
+   whoever lands the train sweeps the rest: a local branch merged into the version branch, or one
+   `git cherry` shows nothing left on, goes with its worktree once `git status` is clean and
+   nothing runs in it.
 
 Keep trains small: one red PR holds the whole train. A second train branched from the first can
 gate at the same time (it contains the first), and whichever passes lands. The version branch

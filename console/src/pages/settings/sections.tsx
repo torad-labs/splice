@@ -156,8 +156,9 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
 
 /**
  * The Claude head's mode. The two modes are two different products, and the section prints the
- * difference instead of hiding it behind a toggle: Separate touches nothing of the operator's own
- * setup, and Wrap rewrites two files in `~/.claude` and shadows the `claude` command.
+ * difference instead of hiding it behind a toggle: Separate leaves the `claude` command alone and, by
+ * default, shares the operator's `~/.claude` setup and sessions; Wrap also rewrites two files in
+ * `~/.claude` and shadows the `claude` command.
  */
 export function ClaudeModeSection({ state, result, onWrap, onUnwrap, busy }: {
   state: ClaudeHeadPayload | null;

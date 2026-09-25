@@ -71,7 +71,10 @@ export const H = {
   overridden: 'Saving here replaces the value these heads set for themselves.',
   topologyWrite: 'Writing backs the file up first and keeps comments and layout.',
   wrapped: 'Wrapping rewrote two ~/.claude files and shims claude; unwrap restores them.',
-  separate: 'Separate touches nothing outside this head; claude on PATH stays yours.',
+  // Not "touches nothing": by default a separate head shares ten items with ~/.claude and moves its
+  // sessions and transcripts there so other heads can resume them (TopologySchema.kt ClaudeSharingDefaults,
+  // ClaudeConfigMaterializer.linkShared). What it leaves alone is the claude command (Marlin, 2026-09-25).
+  separate: 'Leaves claude on PATH alone; shares ~/.claude setup and sessions by default.',
   noConfig: 'Waiting for the daemon to answer.',
   noKnobs: 'The other view tabs hold the rest.',
   noHeads: 'Add one below, or in splice.toml.',

@@ -230,7 +230,7 @@ describe('settings: the Claude head modes', () => {
     // The mutant this arm exists for: `wrap` instead of `wrapped` reads as `separate` on screen,
     // which told the operator their claude command was untouched while the shim was installed.
     expect(markup).toContain('>Wrapped<');
-    expect(markup).not.toContain('Separate touches nothing');
+    expect(markup).not.toContain('Leaves claude on PATH alone');
     expect(markup).toContain('~/.local/share/claude/versions/2.1.257');
     expect(markup).toContain('shims claude');
     expect(markup).toContain('>Unwrap<');
@@ -272,7 +272,10 @@ describe('settings: the Claude head modes', () => {
         busy: false,
       }),
     );
-    expect(separate).toContain('touches nothing outside');
+    // what separate leaves alone, and what it still shares by default (Marlin, 2026-09-25: it was
+    // said to touch nothing, while ten items and its sessions are shared with ~/.claude)
+    expect(separate).toContain('Leaves claude on PATH alone; shares ~/.claude setup and sessions by default.');
+    expect(separate).not.toContain('touches nothing');
     expect(separate).toContain('>Not found<');
     expect(separate).toContain('no mid-session switch');
     // A client-auth head holds no account, so `None` here is an answer, never a missing pool.

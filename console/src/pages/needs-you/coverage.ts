@@ -15,6 +15,6 @@ export const job: PageJob = {
     { name: 'Copy a fix command' },
     { name: 'Open the page that holds an item' },
     { name: 'Open the item itself on its page', row: 'V4-219' },
-    { name: 'Apply a doctor check\'s fix', row: 'V4-220' },
+    { name: 'Apply a doctor check\'s fix' },
   ],
 };

@@ -40,8 +40,8 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Copy a check's fix
 - Send a test prompt through a head
 - Open a head's log
-- Run a check's fix (V4-220)
-- Upgrade or roll back splice (V4-220)
+- Run a check's fix
+- Upgrade or roll back splice
 
 ## fleet
 
@@ -103,7 +103,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Copy a fix command
 - Open the page that holds an item
 - Open the item itself on its page (V4-219)
-- Apply a doctor check's fix (V4-220)
+- Apply a doctor check's fix
 
 ## projects
 

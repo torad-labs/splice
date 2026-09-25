@@ -60,6 +60,29 @@ squash subject does not always come from the title: #66 passed with `chore(...)`
 as `verify(...)`, its branch commit subject. Matching both is the only way to guarantee `main`'s
 history complies.
 
+## Landing on a version branch: trains
+
+Work for an upcoming release targets its version branch (`feat/v0.4.0`), not `main`. Each change
+keeps its own branch and PR and is reviewed on its own. Maintainers land them in **trains**
+rather than one at a time:
+
+1. Branch `train/v<version>-<N>` off the version branch's tip and merge two to six reviewed PRs into
+   it with `git merge --no-ff` (subject: `chore(merge): <branch> into the v<version> train`).
+2. Push it and open ONE PR against the version branch, titled
+   `chore(merge): the v<version> train, part <N> — <what it carries>`.
+3. CI's `gate` job on that exact head sha is the verdict; a local `npm run gate` is feedback. If it
+   is red, fix forward on the train branch with one commit and let it re-gate; never take the
+   train apart.
+4. When it is green, fast-forward the version branch to exactly that sha:
+   `git push origin <sha>:refs/heads/feat/v<version>`. The member PRs close as merged. Never merge
+   after the run: a new merge is a new sha and needs its own gate.
+5. Build anything you install or ship from a clean detached worktree of that sha
+   (`git worktree add --detach <dir> <sha>`), never from a working tree.
+
+Keep trains small: one red PR holds the whole train. A second train branched from the first can
+gate at the same time (it contains the first), and whichever passes lands. The version branch
+reaches `main` through one PR, and `main` reaches `prod` as described under [Releasing](#releasing).
+
 ## No CLA
 
 Contributions are made under the project's [MIT license](../LICENSE) — MIT in, MIT out. No

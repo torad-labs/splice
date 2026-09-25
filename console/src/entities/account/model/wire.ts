@@ -40,6 +40,7 @@ function accountFromWire(wire: AccountWire): AccountRow {
     auth_exclusion_reason: wire.auth_exclusion_reason,
     windows,
     heads: wire.heads,
+    observed_at_epoch_seconds: wire.observed_at_epoch_seconds,
   };
 }
 

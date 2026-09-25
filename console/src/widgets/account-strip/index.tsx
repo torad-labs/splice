@@ -9,6 +9,7 @@ import {
   NOT_REPORTED,
   accountState,
   exclusionText,
+  isStale,
   nearestWindow,
   resetText,
   slotWindows,
@@ -38,16 +39,24 @@ export function windowFieldLabel(window: AccountWindow): string {
 
 /** One slot's cell: the window's used figure under its own length, or the slot's name over an
  *  empty value when the provider reported no window there. */
-function WindowTrack({ window, fallback, empty }: { window: AccountWindow | null; fallback: string; empty: string }) {
+function WindowTrack({ window, fallback, empty, nowMs }: {
+  window: AccountWindow | null;
+  fallback: string;
+  empty: string;
+  nowMs: number;
+}) {
   if (window === null) return <StripField w={WINDOW_WIDTH} label={fallback} value={empty} mono={false} />;
+  // A window whose reset has passed prints `unknown` on the stale basis, never its old figure: the
+  // figure is from before the reset (isStale).
+  const stale = isStale(window, nowMs);
   return (
     <StripField
       w={WINDOW_WIDTH}
       label={windowFieldLabel(window)}
-      value={windowUsedText(window)}
+      value={stale ? NOT_REPORTED : windowUsedText(window)}
       /* NOT AN ABSENCE PHRASE (M1-69): `unavailable` here is a BASIS member - it tells the reader
          what kind of figure this is, and it is printed beside the figure it qualifies. */
-      basis={window.used_percent === null ? 'unavailable' : 'measured'}
+      basis={stale ? 'stale' : window.used_percent === null ? 'unavailable' : 'measured'}
     />
   );
 }
@@ -66,7 +75,7 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
   onOpen?: () => void;
 }) {
   const state = accountState(account, nowMs);
-  const nearest = nearestWindow(account);
+  const nearest = nearestWindow(account, nowMs);
   const slots = slotWindows(account);
   const wanted = new Set(columns);
 
@@ -96,8 +105,8 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
           column after it slid under the next name (walkthrough B3). A track prints its window's
           OWN length, so Grok's 30-day period still reads 30d. An account with no window at all
           says so once, in the first track. */}
-      <WindowTrack window={slots.short} fallback={S.shortWindow} empty={account.windows.length === 0 ? NOT_REPORTED : ''} />
-      <WindowTrack window={slots.long} fallback={S.longWindow} empty="" />
+      <WindowTrack window={slots.short} fallback={S.shortWindow} empty={account.windows.length === 0 ? NOT_REPORTED : ''} nowMs={nowMs} />
+      <WindowTrack window={slots.long} fallback={S.longWindow} empty="" nowMs={nowMs} />
 
       {/* THE TRACKS RENDER EMPTY (M1-107), sites seven to eleven. The block above this was a
           THREE-WAY -- excluded OR resets OR NEITHER, at two different widths (16ch and 12ch) --

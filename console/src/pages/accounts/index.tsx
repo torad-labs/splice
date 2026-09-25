@@ -11,7 +11,7 @@
 // wearing the same route.
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
-import { SELECTOR_ORDER_TEXT, nextRuleOf } from '@entities/account';
+import { SELECTOR_ORDER_TEXT, nextRuleOf, readAgeText } from '@entities/account';
 import { familyName } from '@entities/heads';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
@@ -238,7 +238,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, las
   const pending = payload !== null && 'pending' in payload;
   const accounts: readonly AccountRow[] = payload === null || pending ? [] : payload.accounts;
 
-  const groups = arrangeAccounts(accounts, active);
+  const groups = arrangeAccounts(accounts, active, nowMs);
   const columns = columnsOf(active);
 
   // An api-key head has no login to pool or sign in; the key bay below is its place.
@@ -248,6 +248,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, las
   const openedKey = keyHeads.find((row) => openKeyHeadKey(row.head) === openKey) ?? null;
 
   const opened = accounts.find((account) => openAccountKey(account) === openKey) ?? null;
+  const readAge = opened === null ? null : readAgeText(opened, nowMs);
   const openedHead = opened === null && openKey?.startsWith('head:') === true
     ? openKey.slice('head:'.length)
     : null;
@@ -353,6 +354,7 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, las
                   fallback that can never be taken. */}
               {opened !== null ? (
                 <>
+                  {readAge === null ? null : <p className="myx-accounts-hint">{readAge}</p>}
                   {/* Relabel and remove act on a POOL; a single-login head has none. */}
                   {opened.label !== null ? <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} /> : null}
                   {/* ONE AccountLogin, NOT TWO (M2-28, found while reading M2-24). This sat

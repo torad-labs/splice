@@ -38,6 +38,9 @@ const HOUR_5 = 18000;
 const DAY_7 = 604800;
 const DAY_30 = 2592000;
 
+/** Before every fixture reset below, so no window here has reset yet. */
+const NOW = 1_700_000_000_000;
+
 function account(over: Partial<AccountRow> = {}): AccountRow {
   return {
     kind: 'chatgpt-oauth',
@@ -67,32 +70,32 @@ function window7d(used: number | null): AccountWindow {
 describe('nearest window', () => {
   test('picks the highest reported used percent', () => {
     const a = account({ windows: [window5h(12), window7d(74)] });
-    expect(nearestWindow(a)?.used_percent).toBe(74);
+    expect(nearestWindow(a, NOW)?.used_percent).toBe(74);
   });
 
   test('a window the provider does not report is NOT a candidate, never a zero', () => {
     const a = account({ windows: [window5h(null), window7d(74)] });
-    expect(nearestWindow(a)?.used_percent).toBe(74);
+    expect(nearestWindow(a, NOW)?.used_percent).toBe(74);
     expect(windowUsedText(window5h(null))).toBe(NOT_REPORTED);
     expect(windowUsedText(window5h(null))).not.toBe('0%');
   });
 
   test('an account reporting nothing has no nearest window at all', () => {
     const a = account({ windows: [window5h(null)] });
-    expect(nearestWindow(a)).toBeNull();
-    expect(nearestOverall([a])).toBeNull();
+    expect(nearestWindow(a, NOW)).toBeNull();
+    expect(nearestOverall([a], NOW)).toBeNull();
   });
 
   test('a tie goes to the shorter window, which resets first', () => {
     const a = account({ windows: [window7d(50), window5h(50)] });
-    expect(nearestWindow(a)?.seconds).toBe(HOUR_5);
+    expect(nearestWindow(a, NOW)?.seconds).toBe(HOUR_5);
   });
 
   test('overall takes the nearest across accounts, ignoring the ones that report nothing', () => {
     const quiet = account({ label: 'quiet', windows: [window5h(null)] });
     const spent = account({ label: 'spent', windows: [window5h(91)] });
     const mild = account({ label: 'mild', windows: [window5h(20)] });
-    expect(nearestOverall([quiet, mild, spent])?.account.label).toBe('spent');
+    expect(nearestOverall([quiet, mild, spent], NOW)?.account.label).toBe('spent');
   });
 });
 
@@ -136,6 +139,7 @@ function wireRow(over: Partial<AccountWire> = {}): AccountWire {
     pinned: false,
     next_target: true,
     heads: ['e2e-codex'],
+    observed_at_epoch_seconds: null,
     ...over,
   };
 }
@@ -179,8 +183,17 @@ describe('the accounts wire becomes the page model', () => {
   });
 });
 
+describe('the reading time', () => {
+  test('rides from the wire to the row, and a daemon that sends none leaves it null', () => {
+    const [dated] = accountsFromWire({ accounts: [wireRow({ observed_at_epoch_seconds: 1_800_000_000 })] }).accounts;
+    expect(dated?.observed_at_epoch_seconds).toBe(1_800_000_000);
+    const [undated] = accountsFromWire({ accounts: [wireRow()] }).accounts;
+    expect(undated?.observed_at_epoch_seconds).toBeNull();
+  });
+});
+
 function windowUsedTextOf(row: AccountRow): string {
-  const nearest = nearestWindow(row);
+  const nearest = nearestWindow(row, NOW);
   return nearest === null ? NOT_REPORTED : windowUsedText(nearest);
 }
 

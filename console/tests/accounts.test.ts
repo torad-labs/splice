@@ -20,6 +20,7 @@ import {
   accountState,
   exclusionText,
   isExcluded,
+  readAgeText,
   resetText,
   windowUsedText,
 } from '../src/entities/account';
@@ -367,18 +368,18 @@ describe('the saved views', () => {
     const groups = arrangeAccounts([
       account({ kind: 'grok-oauth', label: 'g' }),
       account({ kind: 'chatgpt-oauth', label: 'c' }),
-    ], byProvider);
+    ], byProvider, NOW);
     expect(groups.map((group) => group.key)).toEqual(['chatgpt-oauth', 'grok-oauth']);
   });
 
   test('by head puts one login in every bay that rides it, rather than hiding it from one', () => {
-    const groups = arrangeAccounts([account({ label: 'shared', heads: ['a', 'b'] })], byHead);
+    const groups = arrangeAccounts([account({ label: 'shared', heads: ['a', 'b'] })], byHead, NOW);
     expect(groups.map((group) => group.key)).toEqual(['a', 'b']);
     expect(groups.every((group) => group.accounts[0]?.label === 'shared')).toBe(true);
   });
 
   test('an account no head rides still gets a bay', () => {
-    const groups = arrangeAccounts([account({ label: 'loose', heads: [] })], byHead);
+    const groups = arrangeAccounts([account({ label: 'loose', heads: [] })], byHead, NOW);
     expect(groups).toHaveLength(1);
     expect(groups[0]?.accounts[0]?.label).toBe('loose');
   });
@@ -388,7 +389,7 @@ describe('the saved views', () => {
       account({ label: 'unknown', windows: [window5h(null)] }),
       account({ label: 'mild', windows: [window5h(20)] }),
       account({ label: 'spent', windows: [window5h(95)] }),
-    ], nearest);
+    ], nearest, NOW);
     // Not first. FEATURES 4.5: unknown shown as unknown, never sorted first — a list that leads
     // with what nobody measured trains the eye away from the account that is about to fail.
     expect(groups[0]?.accounts.map((row) => row.label)).toEqual(['spent', 'mild', 'unknown']);
@@ -520,3 +521,34 @@ describe('the api-key heads have a bay of their own', () => {
     expect(render(h(ApiKeyDetail, { row: empty }))).toContain('splice key set OR_KEY');
   });
 });
+
+describe('a window read before its reset', () => {
+  // muse on 2026-09-24: its seven-day window read 99%, read 6.5 days earlier, and reset 91 hours ago
+  const reset = NOW / 1000 - 91 * 3600;
+  const stale = { seconds: 7 * 86_400, used_percent: 99, reset_epoch_seconds: reset };
+  const muse = account({ kind: 'muse-oauth', label: null, single_login: true, windows: [stale], observed_at_epoch_seconds: NOW / 1000 - 6.5 * 86_400 });
+
+  test('is no figure at all: no warn edge, and the track reads unknown on the stale basis', () => {
+    expect(accountState(muse, NOW).label).toBe(NOT_REPORTED);
+    expect(accountState(muse, NOW).edge).toBe('grey');
+    const out = render(h(AccountStrip, { account: muse, isNext: false, nextRule: '', columns: ['provider'], nowMs: NOW }));
+    expect(out).not.toContain('99%');
+    expect(out).toContain('>stale<');
+    // the same window before its reset is the figure it was
+    expect(accountState(muse, reset * 1000 - 1).label).toBe('warn 99%');
+  });
+
+  test('ranks with the unknown, last in nearest exhaustion', () => {
+    const nearest: View = { id: 'n', name: 'nearest exhaustion', layout: 'bay', filter: {}, sort: { field: 'exhaustion', dir: 'desc' }, group: null, fields: [] };
+    const mild = account({ label: 'mild', windows: [{ seconds: 5 * 3600, used_percent: 20, reset_epoch_seconds: NOW / 1000 + 3600 }] });
+    const order = arrangeAccounts([muse, mild], nearest, NOW)[0]?.accounts.map((row) => row.label);
+    expect(order).toEqual(['mild', null]);
+  });
+
+  test('the opened account says when it was read, and which window reset since', () => {
+    expect(readAgeText(muse, NOW)).toBe('windows read 6d ago; the 7d window has reset since, so its figure is unknown until the next reading');
+    expect(readAgeText({ ...muse, windows: [] }, NOW)).toBe('windows read 6d ago');
+    expect(readAgeText({ ...muse, observed_at_epoch_seconds: null }, NOW)).toBeNull();
+  });
+});
+

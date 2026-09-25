@@ -8,10 +8,12 @@
 #   --jar P --shim P      any prebuilt pair (sha256sums.txt beside the jar is verified if present)
 #   (default)             this checkout: :app:shadowJar via buildgate when present, app/src/main/dist/bin/splice-launch
 #
-# Usage: tools/e2e/docker/run.sh [--release vX.Y.Z | --jar PATH --shim PATH] [--upgrade-from vX.Y.Z] [--keep] [--no-build]
+# Usage: tools/e2e/docker/run.sh [--release vX.Y.Z | --jar PATH --shim PATH] [--upgrade-from vX.Y.Z | --scenario plan-limit] [--keep] [--no-build]
 #   --upgrade-from vX.Y.Z  instead of a fresh machine, run tools/e2e/docker/upgrade.sh: install that
 #                published release, use it, then install the build chosen above over it. Refused when
 #                the two shims carry the same version marker, since that upgrade cannot replace the daemon.
+#   --scenario plan-limit  instead of a fresh machine, run tools/e2e/docker/plan-limit.sh: an Anthropic
+#                plan-limit 429 through splice to the real Claude Code, which must wait it out and resume.
 #   --keep       keep the artifacts scratch dir and print its path
 #   --no-build   reuse the image if it exists (skips docker build); the in-image version check still
 #                fails if that image does not match Versions.kt's tested Claude Code pin.
@@ -22,16 +24,17 @@ TESTED_CLAUDE_CODE="$(sed -nE 's/^public const val TESTED_CLAUDE_CODE: String = 
   "$ROOT/core/src/main/kotlin/splice/core/Versions.kt" | head -1)"
 [ -n "$TESTED_CLAUDE_CODE" ] || { echo "run.sh: TESTED_CLAUDE_CODE is missing or malformed" >&2; exit 2; }
 IMAGE="splice-e2e-fresh:local"
-RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1; UPGRADE_FROM=""
+RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1; UPGRADE_FROM=""; SCENARIO_NAME=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) RELEASE="$2"; shift 2 ;;
     --jar) JAR="$2"; shift 2 ;;
     --shim) SHIM="$2"; shift 2 ;;
     --upgrade-from) UPGRADE_FROM="$2"; shift 2 ;;
+    --scenario) SCENARIO_NAME="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "run.sh: unknown arg $1" >&2; exit 2 ;;
   esac
 done
@@ -81,6 +84,13 @@ echo "run.sh: artifacts: $(sha256sum "$ART/splice.jar" | cut -c1-16)… splice.j
 # `const SPLICE_GATEWAY_VERSION = "x";`, the bash shim of 0.3.x `SPLICE_GATEWAY_VERSION="x"`.
 shim_version() { sed -nE 's/^(const )?SPLICE_GATEWAY_VERSION ?= ?"([^"]+)";?$/\2/p' "$1" | head -1; }
 SCENARIO="inside.sh"; MODE_ARGS=(); RECEIPT_NAME="docker"
+if [ -n "$SCENARIO_NAME" ]; then
+  [ -z "$UPGRADE_FROM" ] || { echo "run.sh: --scenario and --upgrade-from are two different runs" >&2; exit 2; }
+  case "$SCENARIO_NAME" in
+    plan-limit) SCENARIO="plan-limit.sh"; RECEIPT_NAME="plan-limit" ;;
+    *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit)" >&2; exit 2 ;;
+  esac
+fi
 if [ -n "$UPGRADE_FROM" ]; then
   FROM_ART="$(mktemp -d "${TMPDIR:-/tmp}/splice-e2e-from.XXXXXX")"
   echo "run.sh: downloading release $UPGRADE_FROM to upgrade from"

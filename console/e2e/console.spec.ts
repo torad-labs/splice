@@ -601,6 +601,38 @@ test('doctor\'s playground sends one prompt through a head to the upstream and s
   expect([...new Set(faults.failedReads)], 'the playground send was refused').toEqual([]);
 });
 
+test('Models offers the stack\'s OpenRouter head the catalogue models its roster does not reach, and adds the ones picked', async ({ page }) => {
+  // V4-220 against the real jar: GET /api/add-model reads the stack's splice.toml, where
+  // e2e-openrouter's roster reaches one model, so the OpenRouter catalogue's others are on offer.
+  // The add writes splice.toml and takes the restart, which would change the stack under every later
+  // test, so the POST answers here in AddViews.added's shape (tests/add-model.test.ts holds it).
+  const sent: (string | null)[] = [];
+  await page.route('**/api/add-model', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent.push(route.request().postData());
+    const asked = JSON.parse(route.request().postData() ?? '{}') as { head: string; models: string[] };
+    return route.fulfill({ json: { path: '/e2e/splice.toml', head: asked.head, added: asked.models, restart: { status: 'draining' } } });
+  });
+  const faults = await open(page, 'models');
+  await page.locator('main').getByRole('button', { name: 'Add models', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Add models' });
+  const offered = panel.getByRole('list', { name: 'Offered models' });
+  await expect(offered.getByRole('listitem').first()).toBeVisible({ timeout: 15_000 });
+  await expect(panel.getByText(STACK.keyHead, { exact: true })).toBeVisible();
+  await expect(offered, 'the roster\'s own model is not on offer').not.toContainText('e2e/key-model');
+
+  const first = offered.getByRole('switch').first();
+  const id = (await first.getAttribute('aria-label'))?.replace(/^Add /, '') ?? '';
+  await first.click();
+  await expect(first).toHaveAttribute('aria-checked', 'true');
+  await panel.getByRole('button', { name: 'Add 1 model', exact: true }).click();
+  await panel.getByRole('button', { name: 'Add and restart', exact: true }).click();
+  await expect.poll(() => sent, 'the add names the head and the picked id').toEqual([JSON.stringify({ head: STACK.keyHead, models: [id] })]);
+  await expect(panel.getByRole('status')).toHaveText('The daemon is restarting; the models appear once it is back.');
+  await expect(panel).toContainText(id);
+  expect(faults.pageErrors, 'the models page threw').toEqual([]);
+});
+
 test('models opens a model with the head windows its topology declares', async ({ page }) => {
   const faults = await open(page, 'models');
   await page.getByRole('button', { name: `open model ${STACK.model}` }).first().click();

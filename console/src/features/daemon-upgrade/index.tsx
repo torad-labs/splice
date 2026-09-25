@@ -92,7 +92,7 @@ export function DaemonUpgrade({ upgrade }: { upgrade: UpgradePayload | null }) {
   return (
     <div className="myx-dupgrade">
       <div className="myx-dupgrade-keys">
-        <Input label={S.version} value={version} onChange={setVersion} placeholder={S.latest} w={12} disabled={running} />
+        <Input label={S.release} value={version} onChange={setVersion} placeholder={S.latest} w={12} disabled={running} />
         <Confirm label={S.upgrade} confirmLabel={S.upgradeTo(ask.to ?? S.latest)} busy={held} onConfirm={() => start(ask)} />
         {target === null ? null : (
           <Confirm label={S.rollback} confirmLabel={S.backTo(target)} busy={held} onConfirm={() => start({ rollback: true })} />

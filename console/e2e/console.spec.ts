@@ -546,7 +546,7 @@ test('Doctor upgrades through the daemon\'s run, reads it through the restart, a
   });
   const faults = await open(page, 'doctor');
   const version = page.locator('main section').filter({ has: page.getByRole('heading', { name: 'Version', exact: true }) });
-  await version.getByLabel('Version', { exact: true }).fill('v0.4.1');
+  await version.getByLabel('Release', { exact: true }).fill('v0.4.1');
   await version.getByRole('button', { name: 'Upgrade', exact: true }).click();
   await version.getByRole('button', { name: 'Upgrade to v0.4.1', exact: true }).click();
   await expect.poll(() => sent, 'the start asks for the release in the box').toEqual(['{"to":"v0.4.1"}']);

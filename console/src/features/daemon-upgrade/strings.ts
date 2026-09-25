@@ -3,8 +3,9 @@
 import type { UpgradeRunState } from '@entities/doctor';
 
 export const S = {
-  /** The release box: blank is the latest release, as `splice upgrade` with no `--to` is. */
-  version: 'Version',
+  /** The release box: blank is the latest release, as `splice upgrade` with no `--to` is. Not
+   *  "Version": the section it sits in is titled that, and the daemon asks for a release number. */
+  release: 'Release',
   latest: 'Latest',
   upgrade: 'Upgrade',
   /** The armed key names the release the second press asks for. */

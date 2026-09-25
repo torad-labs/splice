@@ -61,6 +61,9 @@ public class EconomicsPayloads(
                                 put("tools_deferred", b.toolsDeferred)
                                 put("deferral_turns", b.deferralTurns)
                                 put("rate_limited", b.rateLimited)
+                                // V4-221: null is "not priced then" (an hour from before the field).
+                                put("cost_usd", b.costUsd)
+                                put("unpriced_turns", b.unpricedTurns)
                             }
                         }
                     }

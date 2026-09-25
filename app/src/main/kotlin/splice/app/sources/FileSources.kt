@@ -82,6 +82,8 @@ public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEcono
             toolsDeferred = it.toolsDeferred,
             deferralTurns = it.deferralTurns,
             rateLimited = it.rateLimited,
+            costUsd = it.costUsd,
+            unpricedTurns = it.unpricedTurns,
         )
     }
 }

@@ -21,6 +21,12 @@
 //
 // SHAPE MIRRORS UsageStore deliberately — same bounded file lane, same coalesced debounce, same
 // atomic replace, same best-effort doctrine. A turn must never pay for, nor fail on, telemetry.
+//
+// V4-221: DOLLARS ARE PRICED PER TURN, AT RECORD TIME, at the card of the model that turn ran. A bucket
+// holds a head's hour, and an hour mixes models (a haiku subagent, a compaction model on a head pinned
+// to fable), so the console pricing the hour's token sums at the pinned card mispriced every turn on
+// another model. Each turn is priced by core's TurnPrice (the budget's arithmetic), summed into
+// [EconomicsBucket.costUsd], and a turn with no card counts in [EconomicsBucket.unpricedTurns].
 package splice.head.usage
 
 import kotlinx.serialization.json.Json
@@ -30,7 +36,9 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
+import splice.core.model.TurnPrice
 import splice.core.perf.ECONOMICS_RETENTION_MS
+import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
@@ -71,12 +79,22 @@ public data class EconomicsBucket(
     val toolsDeferred: Long = 0,
     val deferralTurns: Long = 0,
     val rateLimited: Long = 0,
+    /** V4-221: the hour's dollars, each turn priced at its own model's card. NULL for an hour read
+     *  from a file written before the field existed — "not priced then", never $0 — and it stays null
+     *  if this daemon adds turns to that same hour, because a sum missing the earlier turns would
+     *  read as the hour's whole cost. */
+    val costUsd: Double? = 0.0,
+    /** V4-221: turns whose model had no rate card; their dollars are not in [costUsd]. */
+    val unpricedTurns: Long = 0,
 )
 
 /** The per-turn facts the rollup consumes. Nullable where a head genuinely may not report the
  *  field: the chat dialect has no tool deferral at all, and `null` must stay distinguishable from
  *  a real zero — "this head cannot defer" and "this head deferred nothing" are different findings. */
 public data class TurnEconomics(
+    /** V4-221: the upstream model this turn ran, priced at its own card. NO default, for the reason
+     *  [cacheWriteTokens] has none: a call site that forgot it would price every turn at nothing. */
+    val model: String?,
     val inTokens: Long,
     val cachedTokens: Long,
     /** V4-86: this turn's cache-write bucket, from PerfKeys.CACHE_WRITE_TOKENS. NO default on
@@ -93,6 +111,8 @@ public data class TurnEconomics(
 
 public class EconomicsStore(
     private val file: Path,
+    /** V4-221: the head's pricer. Required: a store without one would record every turn unpriced. */
+    private val price: TurnPrice,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
@@ -101,6 +121,7 @@ public class EconomicsStore(
     /** Fold one finished turn into its hour. Memory-only plus an enqueue — never blocks the turn. */
     public fun record(turn: TurnEconomics) {
         val hour = clock() / HOUR_MS * HOUR_MS
+        val usd = price.usd(turn.model, counters(turn))
         synchronized(lock) {
             loadUnderLock()
             val b = buckets[hour] ?: EconomicsBucket(hour)
@@ -119,12 +140,23 @@ public class EconomicsStore(
                 // being diluted to a misleading 0.0 by turns that never had the choice.
                 deferralTurns = b.deferralTurns + if (turn.toolsEager != null) 1 else 0,
                 rateLimited = b.rateLimited + if (turn.rateLimited) 1 else 0,
+                costUsd = b.costUsd?.plus(usd ?: 0.0),
+                unpricedTurns = b.unpricedTurns + if (usd == null) 1 else 0,
             )
             trimUnderLock()
             version += 1
         }
         CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
     }
+
+    /** The turn's tokens as the perf-row counters [TurnPrice] prices (in_tokens inclusive of both
+     *  cache buckets, as the perf row writes it). */
+    private fun counters(turn: TurnEconomics): Map<String, Long> = mapOf(
+        PerfKeys.IN_TOKENS to turn.inTokens,
+        PerfKeys.CACHED_TOKENS to turn.cachedTokens,
+        PerfKeys.CACHE_WRITE_TOKENS to turn.cacheWriteTokens,
+        PerfKeys.OUT_TOKENS to turn.outTokens,
+    )
 
     /** Buckets inside the retention window, oldest first. */
     public fun read(): List<EconomicsBucket> = synchronized(lock) {
@@ -217,6 +249,8 @@ public class EconomicsStore(
                             put("tools_deferred", b.toolsDeferred)
                             put("deferral_turns", b.deferralTurns)
                             put("rate_limited", b.rateLimited)
+                            put("cost_usd", b.costUsd) // null writes JSON null: "not priced then"
+                            put("unpriced_turns", b.unpricedTurns)
                         },
                     )
                 }
@@ -258,6 +292,11 @@ public class EconomicsStore(
             toolsDeferred = longOr(o, "tools_deferred"),
             deferralTurns = longOr(o, "deferral_turns"),
             rateLimited = longOr(o, "rate_limited"),
+            // V4-221: an hour written before the field has no `cost_usd` key and reads NULL — not
+            // priced then — which is the true historical value; JSON null (an hour that stayed
+            // unpriceable) reads null too.
+            costUsd = (o["cost_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
+            unpricedTurns = longOr(o, "unpriced_turns"),
         )
     }
 }

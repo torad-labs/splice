@@ -57,7 +57,7 @@ public class InstallShim(
         } else {
             "splice: WARNING — installed launch shim at $shim is STALE " +
                 "(marker=${installed ?: "<missing>"}, expected=$SHIM_VERSION). " +
-                "Run: splice install (or ./install.sh) to refresh it."
+                "Run ./install.sh from a checkout, or re-run the release installer, to refresh it."
         }
     }
 }

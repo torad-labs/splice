@@ -11,6 +11,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.CredentialVerdict
+import splice.core.auth.CredentialVerdictRead
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import java.net.HttpURLConnection
@@ -132,10 +133,13 @@ public object DaemonProbe {
 
     private fun headAuthSeen(head: JsonObject): HeadAuthSeen {
         val verdict = head["verdict"] as? JsonObject
+        val read = CredentialVerdictRead().of(
+            JsonScalars.str(verdict, "state"),
+            JsonScalars.long(verdict, "at_epoch_ms"),
+        )
         return HeadAuthSeen(
             present = head["present"]?.jsonPrimitive?.booleanOrNull == true,
-            verdict = CredentialVerdict.of(JsonScalars.str(verdict, "state"), JsonScalars.long(verdict, "at_epoch_ms"))
-                ?: CredentialVerdict.Held,
+            verdict = read ?: CredentialVerdict.Held,
         )
     }
 

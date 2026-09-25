@@ -26,23 +26,27 @@ public sealed class CredentialVerdict {
 
     /** Upstream accepted the last forwarded turn it answered. */
     public data class Accepted(override val atEpochMs: Long) : CredentialVerdict() {
-        override val wire: String = "accepted"
+        override val wire: String = ACCEPTED
     }
 
     /** Upstream answered the last forwarded turn 401: the login was rejected. */
     public data class Rejected(override val atEpochMs: Long) : CredentialVerdict() {
-        override val wire: String = "rejected"
-    }
-
-    public companion object {
-        /** The verdict [wire] and [atEpochMs] name, read back off `/api/auth`; null for a word this
-         *  build does not know, or a dated verdict without its date. */
-        public fun of(wire: String?, atEpochMs: Long?): CredentialVerdict? = when (wire) {
-            Held.wire -> Held
-            Unverified.wire -> Unverified
-            "accepted" -> atEpochMs?.let(::Accepted)
-            "rejected" -> atEpochMs?.let(::Rejected)
-            else -> null
-        }
+        override val wire: String = REJECTED
     }
 }
+
+/** Reads a verdict back off `/api/auth` (a collaborator, not a companion: kt-no-companion-objects). */
+public class CredentialVerdictRead {
+    /** The verdict [wire] and [atEpochMs] name; null for a word this build does not know, or a dated
+     *  verdict without its date. */
+    public fun of(wire: String?, atEpochMs: Long?): CredentialVerdict? = when (wire) {
+        CredentialVerdict.Held.wire -> CredentialVerdict.Held
+        CredentialVerdict.Unverified.wire -> CredentialVerdict.Unverified
+        ACCEPTED -> atEpochMs?.let(CredentialVerdict::Accepted)
+        REJECTED -> atEpochMs?.let(CredentialVerdict::Rejected)
+        else -> null
+    }
+}
+
+private const val ACCEPTED = "accepted"
+private const val REJECTED = "rejected"

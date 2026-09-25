@@ -2,7 +2,8 @@
 // (~/.config/splice/keys.toml). Interactive `set` reads MASKED from the console (never echoed,
 // never in shell history); agents and hooks use --stdin or --value (both are transcript-visible —
 // the masked path exists precisely for humans). After a set, the next request already picks the
-// key up (ApiKeyAuthProvider re-reads the store per call); `splice restart` refreshes status.
+// key up (ApiKeyAuthProvider re-reads the store per call); `splice restart` refreshes status. V4-222: a
+// store that refuses a write (unreadable, locked) ends in the verb's own one-line message.
 package splice.app.cli.auth
 
 import splice.core.config.KeyStore
@@ -60,14 +61,22 @@ internal class KeyCommand(
             return false
         }
         val value = readValue(flags) ?: return false
-        return Cancellables.runCatchingCancellable { store.write(envVar, value) }
+        return Cancellables.runCatchingCleanup { store.write(envVar, value) }
             .onSuccess {
                 println("$envVar stored to ${store.path} (0600).")
                 println("Live daemons pick it up on the next request; `splice restart` refreshes status.")
             }
-            .onFailure { System.err.println("splice key set: ${SafeFailureText.render(it)}") }
+            .onFailure { System.err.println("splice key set: ${refusal(it)}") }
             .isSuccess
     }
+
+    // V4-222: KeyStore REFUSES with check() — an IllegalStateException (keys.toml unreadable, locked by a
+    // peer) that runCatchingCancellable lets escape, so `set` ended in a stack trace and `unset` had no
+    // catch at all. runCatchingCleanup's set is exactly the store's (I/O, (de)serialization,
+    // IllegalArgument, IllegalState; cancellation still propagates). The store builds those texts from
+    // the name and SafeFailureText alone, so they print as written; anything else is SafeFailureText's.
+    private fun refusal(failure: Throwable): String =
+        (failure as? IllegalStateException)?.message ?: SafeFailureText.render(failure)
 
     private fun readValue(flags: List<String>): String? = when {
         "--stdin" in flags -> readKeyStdin()
@@ -114,8 +123,11 @@ internal class KeyCommand(
             System.err.println("splice key unset: missing <ENV_NAME>")
             return false
         }
-        val removed = store.unset(envVar)
-        println(if (removed) "$envVar removed from ${store.path}" else "$envVar was not stored")
-        return true
+        return Cancellables.runCatchingCleanup { store.unset(envVar) }
+            .onSuccess { removed ->
+                println(if (removed) "$envVar removed from ${store.path}" else "$envVar was not stored")
+            }
+            .onFailure { System.err.println("splice key unset: ${refusal(it)}") }
+            .isSuccess
     }
 }

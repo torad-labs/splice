@@ -15,6 +15,9 @@ export const dispositions: readonly Disposition[] = [
   // anything called the route; the playground's send has been one POST since M4-03
   // (entities/playground), so the claim now has a caller.
   { kind: 'route', name: '/api/playground', disposition: 'editable' },
+  // V4-220 item 4: the Fix button for a row whose `fix_id` names a fix the daemon runs itself
+  // (install_all). Declared with the daemon commit that serves it; the answer is doctor re-run.
+  { kind: 'route', name: '/api/doctor/fix/{id}', disposition: 'editable' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
   { kind: 'verb', name: 'doctor', disposition: 'read-only' },
   { kind: 'verb', name: 'version', disposition: 'read-only' },

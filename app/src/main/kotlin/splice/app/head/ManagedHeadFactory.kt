@@ -19,6 +19,7 @@ import splice.core.auth.ClientAuthProvider
 import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
+import splice.core.model.TurnPrice
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
@@ -138,7 +139,8 @@ internal class ManagedHeadFactory(
             archiveDir = statePaths.perfArchiveDir.takeIf { ctx.cfg.perfArchiveRetentionDays > 0 },
             archiveRetentionDays = ctx.cfg.perfArchiveRetentionDays,
         ),
-        economics = EconomicsStore(statePaths.economicsFile(ctx.key)),
+        // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
+        economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
         quota = primaryQuota,
         accountPool = accountPools.build(wired, accountQuotas),
         accountQuotas = accountQuotas,

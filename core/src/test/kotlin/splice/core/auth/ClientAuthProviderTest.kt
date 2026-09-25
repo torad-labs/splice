@@ -69,12 +69,12 @@ class ClientAuthProviderTest {
 
     @Test
     fun `the verdict reads back off its wire words`() {
-        assertEquals(CredentialVerdict.Rejected(ANSWERED_AT), CredentialVerdict.of("rejected", ANSWERED_AT))
-        assertEquals(CredentialVerdict.Accepted(ANSWERED_AT), CredentialVerdict.of("accepted", ANSWERED_AT))
-        assertEquals(CredentialVerdict.Unverified, CredentialVerdict.of("unverified", null))
-        assertEquals(CredentialVerdict.Held, CredentialVerdict.of("held", null))
-        assertEquals(null, CredentialVerdict.of("rejected", null), "a dated verdict without its date")
-        assertEquals(null, CredentialVerdict.of(null, null))
+        assertEquals(CredentialVerdict.Rejected(ANSWERED_AT), CredentialVerdictRead().of("rejected", ANSWERED_AT))
+        assertEquals(CredentialVerdict.Accepted(ANSWERED_AT), CredentialVerdictRead().of("accepted", ANSWERED_AT))
+        assertEquals(CredentialVerdict.Unverified, CredentialVerdictRead().of("unverified", null))
+        assertEquals(CredentialVerdict.Held, CredentialVerdictRead().of("held", null))
+        assertEquals(null, CredentialVerdictRead().of("rejected", null), "a dated verdict without its date")
+        assertEquals(null, CredentialVerdictRead().of(null, null))
     }
 
     @Test

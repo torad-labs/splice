@@ -95,6 +95,14 @@ tasks.withType<Test>().configureEach {
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.
     systemProperty("splice.noSystemBrowser", "1")
     systemProperty("user.home", testHome.absolutePath)
+    // A TEST THAT RETURNS A VALUE NEVER RUNS, AND NOW THAT FAILS THE MODULE'S OWN RUN. Kotlin makes the
+    // shape easy (`fun x() = runBlocking { ... }` returns the block's last expression), and JUnit skips a
+    // non-void @Test with a WARNING discovery issue, "must not return a value. It will not be executed."
+    // At JUnit's default critical severity, ERROR, the run stays green: on 2026-09-25 KeysRouteTest ran
+    // 3 of its 5 tests and its module passed. verifyTestDiscovery would have named the two at the gate,
+    // but a module run is where an author reads a test, so WARNING is critical here: the engine refuses
+    // to run and names the method.
+    systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
     // A CI failure must carry its assertion MESSAGE, not only "AssertionFailedError at X.kt:274".
     // Gradle's default prints the location alone, so the two CI-only failures of the perf
     // telemetry integration arm (runs 33608202738 and 33928312116) left no way to read what was

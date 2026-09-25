@@ -416,8 +416,10 @@ describe('the capture fixture', () => {
 });
 
 describe('the coverage manifest', () => {
-  test('takes over exactly the seven routes the baseline held for this row', () => {
-    // Routes only: the page also answers CLI verbs (V4-219), which the coverage wall counts.
+  // The seven the baseline held for M2-04, and the key store's two (V4-220 item 3), which the daemon
+  // serves with this page as their owner. Routes only: the page also answers CLI verbs (V4-219),
+  // which the coverage wall counts.
+  test('takes over the seven routes the baseline held for this row, and the key store\'s two', () => {
     expect(dispositions.filter((entry) => entry.kind === 'route').map((entry) => entry.name).sort()).toEqual([
       '/api/accounts',
       '/api/auth',
@@ -426,6 +428,8 @@ describe('the coverage manifest', () => {
       '/api/auth/{head}/refresh',
       '/api/auth/{head}/switch',
       '/api/auth/{kind}/accounts/{label}',
+      '/api/keys',
+      '/api/keys/{name}',
     ]);
   });
 

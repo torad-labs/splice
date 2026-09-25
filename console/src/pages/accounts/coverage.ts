@@ -27,6 +27,11 @@ export const dispositions: readonly Disposition[] = [
   // route is served (ControlServer.kt:333, AccountsRoute) and this page and the fleet's head detail
   // read it (M4-02), so it now earns the read-only it was waiting for. Nothing writes through it.
   { kind: 'route', name: '/api/accounts', disposition: 'read-only' },
+  // V4-220 item 3: the key store, `splice key list|set|unset` over the console. Written by the daemon
+  // side first (#275) and declared here with it, so the served routes carry their owner
+  // from the commit that serves them; the page's key form reads and writes them (console, train 18).
+  { kind: 'route', name: '/api/keys', disposition: 'read-only' },
+  { kind: 'route', name: '/api/keys/{name}', disposition: 'editable' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
   { kind: 'verb', name: 'login', disposition: 'editable' },
   { kind: 'verb', name: 'key', disposition: 'pending', where: 'V4-220' },

@@ -29,7 +29,7 @@ splice puts Claude Code in front of the backend you choose.
   app/ assembles all of it.
 ```
 
-Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Claude Code. Use `claude-grok`, `claude-kimi` or `claude-muse` for those subscriptions, or connect an API backend such as OpenRouter. You keep Claude Code's tools, permission checks and terminal workflow; splice connects it to the backend you choose.
+Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Claude Code. Use `claude-grok`, `claude-kimi` or `claude-muse` for those subscriptions, or connect an API backend such as OpenRouter. You keep Claude Code itself: its tools, permission checks and terminal, your hooks, skills and settings, and a session's history when you resume it on another head (`claude-grok -r`). Each head can have its own system prompt, and each provider its own tool handling; splice connects it all to the backend you choose.
 
 The gateway runs locally on your machine. Model requests still go to the chosen provider—this is not local model inference. Subscription connections are **unofficial**; API-key connections use ordinary pay-per-token access.
 
@@ -441,7 +441,7 @@ Not a contract: log wording, the console's layout, the format of files under the
 and the Kotlin module API (splice publishes no library).
 
 **Claude Code.** Each release is tested against one Claude Code version in a fresh-machine e2e
-(0.4.0: 2.1.281). A newer client usually works, but Anthropic can change what it sends at any
+(0.4.0: 2.1.282). A newer client usually works, but Anthropic can change what it sends at any
 time, so when a session runs a newer one, `splice doctor`, `splice status` and the status line say
 so.
 

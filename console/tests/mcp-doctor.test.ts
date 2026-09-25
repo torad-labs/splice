@@ -16,7 +16,7 @@ import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdic
 import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
 import { budgetFor } from '../src/entities/budget';
-import { BudgetsPanel, parseUsd } from '../src/features/budgets';
+import { BudgetRefusals, BudgetsPanel, cellNote, parseUsd } from '../src/features/budgets';
 import { canTest } from '../src/entities/alert';
 import type { AlertSettings } from '../src/entities/alert';
 import { DoctorBoard } from '../src/pages/doctor';
@@ -382,6 +382,25 @@ describe('budgets and alerts', () => {
     expect(out).toContain('placeholder="No limit"');
     expect(out).toContain('value=""');
     expect(out).not.toContain('0.00');
+  });
+
+  test('a refusal prints whole on its own line under the table; the save cell holds only Saved', () => {
+    // The review capture of 2026-09-25 cut the daemon's refusal to "daily_usd 90…" in the cell.
+    const reason = 'daily_usd 900 for claudex is past the 500 cap in splice.toml';
+    expect(cellNote('Saved')).toBe('Saved');
+    expect(cellNote(reason)).toBeNull();
+    expect(cellNote(undefined)).toBeNull();
+    const out = renderToStaticMarkup(h(BudgetRefusals, { heads: ['claudex', 'claude-grok'], notes: { claudex: reason, 'claude-grok': 'Saved' } }));
+    expect(out.match(/class="myx-bud-refusal" role="status"/g)?.length).toBe(1);
+    expect(out).toContain(`<span>${reason}</span>`);
+    expect(out).toContain('claudex');
+    expect(out).not.toContain('Saved');
+    // a box as wide as its placeholder and its padding: w is the box's width in ch, padding included
+    const panel = renderToStaticMarkup(h(BudgetsPanel, { heads: ['a'] }));
+    expect(panel).toContain('width:12ch');
+    // no column shares: in a narrow panel every split cut one column or another
+    expect(panel).toContain('<colgroup>');
+    expect(panel).not.toMatch(/<col[^>]*width/);
   });
 
   test('only an empty box clears a budget; a typo is refused and saves nothing', () => {

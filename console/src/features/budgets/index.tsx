@@ -37,6 +37,28 @@ export function formatUsd(value: number | null): string {
   return value === null ? '' : value.toFixed(2);
 }
 
+/** What a row's save cell prints: "Saved", which fits it, and nothing else. A refusal is the
+ *  daemon's sentence and prints under the table instead (BudgetRefusals): in the cell it was cut to
+ *  "daily_usd 90…" and pushed the row's key out of view (review capture, 2026-09-25). */
+export function cellNote(note: string | undefined): string | null {
+  return note === S.saved ? S.saved : null;
+}
+
+/** Each refused save on its own line under the table, naming its head, in the daemon's words. */
+export function BudgetRefusals({ heads, notes }: { heads: readonly string[]; notes: Readonly<Record<string, string>> }) {
+  const refused = heads.filter((head) => (notes[head] ?? '') !== '' && notes[head] !== S.saved);
+  return (
+    <>
+      {refused.map((head) => (
+        <p key={head} className="myx-bud-refusal" role="status">
+          <HeadMark head={head} />
+          <span>{notes[head]}</span>
+        </p>
+      ))}
+    </>
+  );
+}
+
 const ACTIONS: readonly { value: BudgetAction; label: string }[] = [
   { value: 'warn', label: S.warn },
   { value: 'block', label: S.block },
@@ -74,12 +96,13 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
 
   const typedOf = (budget: Budget): string => draft[budget.head] ?? formatUsd(budget.daily_usd);
 
+  // No column widths: four columns of fixed-size controls, sized by the table to what they hold. Shares
+  // of a narrow panel cut one column or another at every split (the review captures of 2026-09-25).
   const columns: Column<Budget>[] = [
-    { key: 'head', label: S.head, width: '27%', primary: true, cell: (budget) => <HeadMark head={budget.head} /> },
+    { key: 'head', label: S.head, primary: true, cell: (budget) => <HeadMark head={budget.head} /> },
     {
       key: 'limit',
       label: S.daily,
-      width: '26%',
       cell: (budget) => (
         <span className="myx-bud-usd">
           <span className="myx-bud-dollar" aria-hidden="true">$</span>
@@ -87,7 +110,7 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
             label={`${S.daily} ${budget.head}`}
             hideLabel
             numeric
-            w={9}
+            w={12}
             placeholder={S.noLimit}
             value={typedOf(budget)}
             invalid={notes[budget.head] === H.notAmount}
@@ -99,7 +122,6 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
     {
       key: 'action',
       label: S.action,
-      width: '30%',
       // Two values and a toggle between them, never a free field: the daemon's words are a warning
       // and a refusal, and a text box would invite a third spelling.
       cell: (budget) => (
@@ -109,15 +131,10 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
     {
       key: 'save',
       label: '',
-      width: '17%',
       align: 'end',
       cell: (budget) => (
         <span className="myx-bud-save">
-          {notes[budget.head] ? (
-            <span className={notes[budget.head] === S.saved ? 'myx-bud-note' : 'myx-bud-note myx-bud-refused'} role="status">
-              {notes[budget.head]}
-            </span>
-          ) : null}
+          {cellNote(notes[budget.head]) === null ? null : <span className="myx-bud-note" role="status">{cellNote(notes[budget.head])}</span>}
           <Key
             busy={busy === budget.head}
             ariaLabel={`${S.save} ${budget.head}`}
@@ -138,9 +155,20 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
     },
   ];
 
+  // The row a refusal belongs to is tinted; the refusal itself prints under the table.
+  const refused = (budget: Budget): boolean => (notes[budget.head] ?? '') !== '' && cellNote(notes[budget.head]) === null;
+
   return (
     <Section title={S.title} info={{ text: H.about, label: S.about }} className="myx-bud">
-      <DataTable columns={columns} rows={rows} rowKey={(budget) => budget.head} label={S.title} rowHue={(budget) => hueClass(hueOf(budget.head))} />
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(budget) => budget.head}
+        label={S.title}
+        rowHue={(budget) => hueClass(hueOf(budget.head))}
+        rowTone={(budget) => (refused(budget) ? 'warn' : null)}
+      />
+      <BudgetRefusals heads={heads} notes={notes} />
     </Section>
   );
 }

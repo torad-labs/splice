@@ -870,6 +870,7 @@ function deliveredAt(lines: readonly string[], phase: string): string | null {
  * at test time instead of blocking a builder mid-row.
  */
 const MACHINERY_SEAT = "scout-campaign-mod";
+const MACHINERY_WALL_INERT = true; // VENDORING DELTA 17: splice has no machinery seat (see isMachineryRow)
 const MACHINERY_ROOTS: readonly string[] = [
   ".claude/",
   ".dev/campaigns/",
@@ -936,6 +937,11 @@ export function fenceKind(path: string): "machinery" | "product" | "exempt" | nu
  * empty fence is argued about.
  */
 function isMachineryRow(item: { readonly files: readonly string[] }): boolean {
+  // VENDORING DELTA 17 (splice, orchestrator ruling 2026-09-18, made structural 2026-09-25): MOD.45 is
+  // inert on splice. The inertness was a count ("0 of 156 rows"), and V4-199's `.github/workflows/`
+  // fence armed the wall, handing a release row to scout-campaign-mod, a seat splice does not have.
+  // The tables above stay verbatim for the re-vendor; this return is the whole delta.
+  if (MACHINERY_WALL_INERT) return false;
   // Exempt entries are evidence in NEITHER direction, so they are dropped rather than counted against
   // the row: a fence of `.claude/hooks/x.ts` plus `docs/*.md` is still apparatus. What remains must be
   // non-empty and entirely machinery — an unlisted concrete path leaves the row dispatchable, and
@@ -2901,6 +2907,20 @@ async function selftest(): Promise<number> {
     check("a raise is recorded and dated", asOrchestrator("plan", String(half + 50)).includes("changed") && (await run("snapshot")).includes(`PLAN CHANGED from ${half} to ${half + 50}`));
     const underRaised = await run("add", "--id", "OVER1", "--phase", "over", "--title", "fits now", "--verify", "true", "--files", "src/a.ts");
     check("and add proceeds under the raised ceiling", underRaised.includes("added OVER1"), underRaised);
+  }
+
+  // DELTA 17: MOD.45 is inert here. A row fenced only inside an apparatus root (`.github/`, V4-199's
+  // fence) is born, takes a builder's receipt and goes done; grailseeker's machinery seat is no splice seat.
+  {
+    mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
+    await Bun.write(join(repo, ".github", "workflows", "e2e.yml"), "# e2e\n");
+    const added = await run("add", "--id", "MW1", "--phase", "over", "--title", "a workflow row", "--verify", "true", "--files", ".github/workflows/");
+    const receipt = await run("receipt", "MW1", "--seat", "claude-builder", "--cmd", "gh run view 1", "--exit", "0", "--tests", "1", "--touched", ".github/workflows/e2e.yml");
+    const done = await run("set-status", "MW1", "done", "--seat", "claude-builder");
+    const got = await run("get", "MW1");
+    check("an apparatus-only row is added, receipted and done by a builder seat (delta 17: MOD.45 inert)",
+      added.includes("added MW1") && !receipt.includes("MACHINERY") && !done.includes("MACHINERY") && got.includes("[done]"),
+      `${added}${receipt}${done}${got.split("\n")[0]}`);
   }
 
   rmSync(repo, { recursive: true, force: true });

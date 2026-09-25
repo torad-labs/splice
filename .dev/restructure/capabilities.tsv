@@ -602,7 +602,7 @@ console/src/pages/mcp/index.tsx	5199ae3072215a1b33bb4a893815c9958136e7dcabccb3c7
 console/src/pages/mcp/mcp.css	1114d0dbd14d2d54dfbd3819448e2a971f04525f6d77dbaa0628e50d17f1c4a4	retain	console/src/pages/mcp/mcp.css	Independent frontend application
 console/src/pages/mcp/model.ts	b7cee5ef6c0f20a3ae406d35f971511a4e29aa0de30929a3348dbe89937b4016	retain	console/src/pages/mcp/model.ts	Independent frontend application
 console/src/pages/mcp/strings.ts	e09625cdbbedf688dc36a31ca1f48c698cbd9bdfee1fc182237b8f55f86cc5d6	retain	console/src/pages/mcp/strings.ts	Independent frontend application
-console/src/pages/models/components.tsx	526018d1e825784f543302edf907b48de31630433f3b74d8c655f6906e9214e8	retain	console/src/pages/models/components.tsx	Independent frontend application
+console/src/pages/models/components.tsx	526018d1e825784f543302edf907b48de31630433f3b74d8c655f6906e9214e8	retire		retired by the console redesign (2026-09-25): the models page rebuilt on the kit's table, so the strip rack, its column-name row and the rate strips went with it
 console/src/pages/models/coverage.ts	2c8d6abadfff60a2f74e66f4477eb7697cd57fd8ed4eb61b0ac4dabe18e36f55	retain	console/src/pages/models/coverage.ts	Independent frontend application
 console/src/pages/models/fixtures/models.ts	5810b987831c60b17837f248587fd2ec58e1c288acb499594817a7e9d65177d9	retain	console/src/pages/models/fixtures/models.ts	Independent frontend application
 console/src/pages/models/index.tsx	b20ef84e13177830a9cd57b55b20c76095b52e4e4fd23c08893b6dea268e7375	retain	console/src/pages/models/index.tsx	Independent frontend application

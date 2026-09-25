@@ -1,26 +1,28 @@
-// Models: the catalog per head, as strips, with the tiers a head will and will not fill.
+// Models: what each head runs for each Claude Code tier, its window, and its price.
 //
-// The page exists for one question — what is this head actually going to run, and what does it cost
-// per million tokens — and it answers it from GET /api/models (V4-127). The catalog is never
-// assembled from the topology: /api/models is the daemon's resolved answer. The topology supplies
-// only what that route does not report, the head's own windows in the opened model's detail
-// (GET /api/topology, V4-128), joined on the head key and the provider key the catalog names.
-//
-// The context-window SOURCE is printed on every strip because a window is the one number on this
-// page that Claude Code itself acts on, and "400k" means something different when it came from the
-// head's own declaration than when it fell out of a provider default.
+// A live list (docs/design/DESIGN.md section 7) answered from GET /api/models (V4-127): one row per
+// model, grouped by head or by provider, with the context window and both prices drawn as bars
+// against the largest of their column across every head, so two heads compare at a glance. Each
+// head's four tiers print as chips, green where a model fills the tier and grey where none does,
+// which is FEATURES.md 4.8's "which tiers Claude Code will and will not get on this head" without a
+// sentence. The catalog is never assembled from the topology; the topology supplies only the opened
+// head's own windows (GET /api/topology, V4-128), joined on the head and provider keys.
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
-import { startModelsPolling, useModels } from '@entities/model';
+import { HeadMark, hueClass, useHues } from '@entities/control-status';
+import { slotTiers, startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import type { HeadCatalog, ModelsPayload, PendingRoute } from '@entities/model';
 import { useViews, ViewTabs } from '@features/views';
-import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Blank, Fault, Key } from '@shared/controls';
-import { HeadCatalogBay, ModelDetail } from './components';
-import { DEFAULT_VIEWS, EMPTIES, byProvider, findModel, headWindows } from './model';
-import type { OpenedModel } from './model';
-import { S } from './strings';
+import { Blank, Fault } from '@shared/controls';
+import { ABSENT, fmtInt, fmtTokens, ratio } from '@shared/lib';
+import { Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Section, Stat, StatRow } from '@shared/ui';
+import type { Column, RowGroup } from '@shared/ui';
+import {
+  byProvider, columnMax, DEFAULT_VIEWS, entriesOf, findModel, hasRates, headWindows, rateText, tierText, tiersFilled, windowFromText,
+} from './model';
+import type { ColumnMax, HeadWindows, ModelEntry, OpenedModel } from './model';
+import { H, S, U } from './strings';
 import './models.css';
 
 const PAGE_ID = 'models';
@@ -38,6 +40,96 @@ export function fixtureModels(name: string | null): string | null {
   return import.meta.env.DEV && name === FIXTURE ? name : null;
 }
 
+/** A head's four tiers as chips: green where a model fills the tier, grey where none does. */
+function TierChips({ head }: { head: HeadCatalog }) {
+  return (
+    <span className="myx-md-tiers" aria-label={`${S.tiers} ${head.head}`}>
+      {slotTiers(head).map((tier) => (
+        <Badge key={tier.slot} tone={tier.model === null ? 'neutral' : 'ok'} quiet>{tierText(tier.slot)}</Badge>
+      ))}
+    </span>
+  );
+}
+
+/** The figures the page leads with: how many heads and models, how many tiers a model fills, and
+ *  the widest window, which is the scale every window bar is drawn against. */
+function Figures({ heads, max }: { heads: readonly HeadCatalog[]; max: ColumnMax }) {
+  const { filled, total } = tiersFilled(heads);
+  const models = heads.reduce((sum, head) => sum + head.models.length, 0);
+  return (
+    <StatRow>
+      <Stat label={S.heads} value={fmtInt(heads.length)} />
+      <Stat label={S.models} value={fmtInt(models)} />
+      <Stat
+        label={S.tiersFilled}
+        value={fmtInt(filled)}
+        unit={`${U.of} ${fmtInt(total)}`}
+        chart={<Meter value={ratio(filled, total)} tone="ok" label={S.tiersFilled} />}
+      />
+      <Stat label={S.widestWindow} value={max.window === 0 ? ABSENT : fmtTokens(max.window)} />
+    </StatRow>
+  );
+}
+
+function columnsOf(max: ColumnMax, withHead: boolean): Column<ModelEntry>[] {
+  const rate = (value: number | undefined, top: number, label: string) => (
+    value === undefined ? ABSENT : <Meter value={ratio(value, top)} tone="neutral" label={label} figure={rateText(value)} />
+  );
+  return [
+    {
+      key: 'model',
+      label: S.model,
+      width: '24%',
+      mono: true,
+      primary: true,
+      cell: ({ model }) => (
+        <span className="myx-md-name">
+          {model.id}
+          {model.pinned ? <Badge tone="accent" quiet>{S.pinned}</Badge> : null}
+          {model.resolved ? null : <Badge tone="warn" quiet>{S.unresolved}</Badge>}
+        </span>
+      ),
+    },
+    ...(withHead ? [{ key: 'head', label: S.head, width: '14%', cell: ({ head }: ModelEntry) => <HeadMark head={head.head} /> }] : []),
+    { key: 'tier', label: S.tier, width: '8%', cell: ({ model }) => (model.slot === null ? ABSENT : tierText(model.slot)) },
+    {
+      key: 'window',
+      label: S.contextWindow,
+      width: '20%',
+      cell: ({ model }) => (model.context_window === null ? ABSENT : (
+        <Meter value={ratio(model.context_window, max.window)} tone="neutral" label={`${S.contextWindow} ${model.id}`} figure={fmtTokens(model.context_window)} />
+      )),
+    },
+    { key: 'from', label: S.windowFrom, width: '12%', cell: ({ model }) => windowFromText(model.context_window_source) },
+    { key: 'input', label: S.input, cell: ({ model }) => rate(hasRates(model) ? model.rates.input : undefined, max.input, `${S.input} ${model.id}`) },
+    { key: 'output', label: S.output, cell: ({ model }) => rate(hasRates(model) ? model.rates.output : undefined, max.output, `${S.output} ${model.id}`) },
+  ];
+}
+
+/** Every fact the opened model carries, and the head windows its topology declares. */
+function modelFacts(entry: ModelEntry, windows: HeadWindows | null): [string, string][] {
+  const { model } = entry;
+  const tokens = (value: number | null | undefined) => (value === null || value === undefined ? ABSENT : fmtTokens(value));
+  const usd = (value: number | undefined) => (value === undefined ? ABSENT : rateText(value));
+  const rates = hasRates(model) ? model.rates : null;
+  return [
+    [S.head, entry.head.head],
+    [S.tier, model.slot === null ? ABSENT : tierText(model.slot)],
+    [S.description, model.description === '' ? ABSENT : model.description],
+    [S.contextWindow, tokens(model.context_window)],
+    [S.windowFrom, windowFromText(model.context_window_source)],
+    [S.input, usd(rates?.input)],
+    [S.cacheRead, usd(rates?.cache_read)],
+    [S.cacheWrite, usd(rates?.cache_write)],
+    [S.output, usd(rates?.output)],
+    [S.headWindow, tokens(windows?.headWindow)],
+    [S.defaultWindow, tokens(windows?.defaultWindow)],
+    [S.extraWindows, windows === null ? ABSENT : fmtInt(windows.extraWindows)],
+    [S.windowRules, windows === null ? ABSENT : fmtInt(windows.windowRules)],
+    ...(model.resolved ? [] : [[S.reason, model.reason ?? ABSENT] as [string, string]]),
+  ];
+}
+
 export function ModelsBoard({ catalog, topology = null, sample }: {
   catalog: ModelsPayload | PendingRoute | null;
   /** The parsed topology from GET /api/topology, for the opened model's head windows; null while
@@ -46,72 +138,77 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
 }) {
-  const views = useViews(PAGE_ID, DEFAULT_VIEWS);
+  const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
+  const hueOf = useHues();
   const [open, setOpen] = useState<OpenedModel | null>(null);
 
-  const pending = catalog === null || 'pending' in catalog;
   const heads = catalog === null || 'pending' in catalog ? [] : catalog.heads;
-  const opened = catalog === null ? null : findModel(catalog, open);
-  const bay = (head: HeadCatalog) => (
-    <HeadCatalogBay
-      key={head.head}
-      head={head}
-      selected={open?.head === head.head ? open.id : null}
-      onSelect={(id) => setOpen({ head: head.head, id })}
-    />
-  );
+  const found = catalog === null ? null : findModel(catalog, open);
+  const opened = found === null ? null : { key: `${found.head.head}:${found.model.id}`, head: found.head, model: found.model };
+  const max = columnMax(heads.flatMap(entriesOf));
+  const byHead = active.id !== 'by-provider';
+  const groups: RowGroup<ModelEntry>[] = byHead
+    ? heads.map((head) => ({
+      key: head.head,
+      title: <HeadMark head={head.head} />,
+      hue: hueClass(hueOf(head.head)),
+      count: head.models.length,
+      note: head.models.length === 0 ? <Badge tone="neutral" quiet>{S.noModels}</Badge> : <TierChips head={head} />,
+      rows: entriesOf(head),
+    }))
+    : byProvider(heads).map((group) => ({
+      key: group.provider,
+      title: group.provider,
+      count: group.heads.reduce((sum, head) => sum + head.models.length, 0),
+      rows: group.heads.flatMap(entriesOf),
+    }));
 
-  return (
-    <div
-      className="myx-models"
-      {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
-    >
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
-        <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
-      </header>
-
-      {catalog === null ? <Blank strips={5} /> : null}
-      {pending && catalog !== null ? (
-        <Empty text={EMPTIES.catalogPending.text} source={EMPTIES.catalogPending.source} />
-      ) : null}
-
-      {pending ? null : (
-        <div className={opened === null ? 'myx-models-body' : 'myx-models-body myx-models-body-open'}>
-          <div className="myx-models-bays">
-            {views.active.id === 'by-provider' ? (
-              byProvider(heads).map((group) => (
-                <Bay key={group.provider} label={group.provider} count={group.heads.length}>
-                  {group.heads.map(bay)}
-                </Bay>
-              ))
-            ) : (
-              heads.map(bay)
+  const body = catalog === null ? <Blank strips={5} />
+    : 'pending' in catalog ? <Empty text={S.catalogPending} source={H.pending} />
+    : heads.length === 0 ? <Empty text={S.noHeads} source={H.noHeads} />
+    : (
+      <>
+        <Figures heads={heads} max={max} />
+        <Section title={S.models} info={{ text: H.rates, label: S.aboutRates }}>
+          <div className={opened === null ? 'myx-md-board' : 'myx-md-board myx-md-board-open'}>
+            <DataTable
+              columns={columnsOf(max, !byHead)}
+              groups={groups}
+              rowKey={(entry) => entry.key}
+              label={S.models}
+              onOpen={(entry) => setOpen(opened?.key === entry.key ? null : { head: entry.head.head, id: entry.model.id })}
+              openLabel={(entry) => `${S.openModel} ${entry.model.id}`}
+              selectedKey={opened?.key ?? null}
+              rowTone={(entry) => (entry.model.resolved ? null : 'warn')}
+              rowHue={(entry) => hueClass(hueOf(entry.head.head))}
+            />
+            {/* Unmounted at rest: no track and no empty panel until a model is opened. */}
+            {opened === null ? null : (
+              <DetailPanel
+                title={opened.model.id}
+                label={S.detail}
+                status={opened.model.pinned ? <Badge tone="accent">{S.pinned}</Badge> : undefined}
+                onClose={() => setOpen(null)}
+                closeLabel={S.close}
+              >
+                <KeyValue rows={modelFacts(opened, headWindows(topology, opened.head))} />
+              </DetailPanel>
             )}
           </div>
+        </Section>
+      </>
+    );
 
-          {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M1-116 rules the collapse idiom;
-              M1-112 measured the defect). The resting column was a 432x784 dead region, 21.5% of
-              the frame, against the comp's own 11.2% -- a fifth of the page reserved for a response
-              to a click nobody has made. The aside STAYS MOUNTED and empty, which is what gives the
-              track something to transition FROM: M1-112 unmounted it, and an unmounted column has
-              to mount and then fade its content up, which pops if the mount lands a frame late.
-              This shape is turns', sessions' and projects', mirrored rather than re-invented.
-              THE EMPTY STAYS GONE, deliberately: an honest empty says what a panel is missing and
-              which source supplies it, and at rest there is no panel to be missing anything, so a
-              card reading "none open" captions a panel that does not exist. `EMPTIES.noneOpen` went
-              with it: M1-112 could not delete it from model.ts, outside that fence, and M2-28 did. */}
-          <aside className="myx-models-detail myx-swell" aria-label={S.catalog} aria-hidden={opened === null}>
-            {opened === null ? null : (
-              <>
-                <Key className="myx-swell-close" onClick={() => setOpen(null)}>{S.close}</Key>
-                <ModelDetail model={opened.model} windows={headWindows(topology, opened.head)} />
-              </>
-            )}
-          </aside>
-        </div>
-      )}
+  return (
+    <div className="myx-md" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
+      <PageHeader
+        title={S.title}
+        info={{ text: H.tiers, label: S.aboutTiers }}
+        {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}
+      >
+        <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
+      </PageHeader>
+      {body}
     </div>
   );
 }
@@ -130,17 +227,13 @@ export default function ModelsPage() {
 
   useEffect(() => {
     if (name === null) {
-      // A name that is asked for and then dropped must take the marker with it: an early return
-      // that leaves the previous state in place is the stale marker this row exists to prevent
-      // (measured in a browser: five pages kept one across a hash change).
+      // A name that is asked for and then dropped must take the marker with it.
       setSample(null);
       return undefined;
     }
-    // The specifier is BUILT AT RUNTIME, not written as a literal, and the module is reached by a
-    // DYNAMIC import: a static `import { fixtureCatalog } from './fixtures/models'` is a real
-    // dependency edge whatever the DEV branch says, so the fixture's bytes are inlined into
-    // dist/index.html and ship to the operator (measured 2026-09-18 - the wall named this fixture's
-    // literals, and this is the import CONTRACTS.md section 4 warns about).
+    // The specifier is BUILT AT RUNTIME and the module reached by a DYNAMIC import: a static import
+    // is a real dependency edge whatever the DEV branch says, so the fixture's bytes would ship
+    // (measured 2026-09-18, CONTRACTS.md section 4).
     void import(/* @vite-ignore */ `./fixtures/${name}.ts`)
       .then((module: { fixtureCatalog?: ModelsPayload }) => {
         setSample(module.fixtureCatalog === undefined ? null : { name, payload: module.fixtureCatalog });

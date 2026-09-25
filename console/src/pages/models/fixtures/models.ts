@@ -3,16 +3,8 @@
 //
 // It carries PROVIDERS (the optional field the by-provider view needs) so the capture shows that
 // view working; a live payload that omits the field groups every head under the honest
-// `provider not reported` bay instead.
+// `Not reported` group instead.
 import type { ModelsPayload } from '@entities/model';
-
-export const FIXTURE_NAME = 'models';
-
-export function fixtureName(search: string, dev: boolean): string | null {
-  if (!dev) return null;
-  const asked = new URLSearchParams(search).get('fixture');
-  return asked === FIXTURE_NAME ? asked : null;
-}
 
 export const fixtureCatalog: ModelsPayload = {
   heads: [

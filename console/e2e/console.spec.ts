@@ -253,7 +253,7 @@ test('doctor\'s playground sends one prompt through a head to the upstream and s
 test('models opens a model with the head windows its topology declares', async ({ page }) => {
   const faults = await open(page, 'models');
   await page.getByRole('button', { name: `open model ${STACK.model}` }).first().click();
-  const detail = page.getByRole('complementary', { name: 'catalog' });
+  const detail = page.getByRole('complementary', { name: 'Model detail' });
   await expect(detail).toContainText(STACK.model);
   // 300k is the head's forced window: set in the topology only, never in /api/models.
   await expect(detail).toContainText(`${STACK.headWindow / 1000}k`);

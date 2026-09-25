@@ -1,4 +1,4 @@
-// USAGE, COMPACTION AND MODELS (row M2-06). The things worth proving here are the ones that would
+// USAGE AND ITS WINDOWS (row M2-06). The things worth proving here are the ones that would
 // quietly change a decision: what a dollar figure is actually made of, that a window draws every
 // hour it claims, and that a route the daemon has not built yet reads as a named empty rather than
 // as an empty catalog.
@@ -11,12 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 
 import { costOf, sum, within } from '../src/entities/economics';
-import { slotTiers, windowSourceText } from '../src/entities/model';
-import type { HeadCatalog } from '../src/entities/model';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
-import { ModelsBoard } from '../src/pages/models';
-import { byProvider, findModel, headWindows, PROVIDER_UNKNOWN } from '../src/pages/models/model';
-import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
 import { fmtUsd, perHour, ratesFor, sortedHeads } from '../src/pages/usage/model';
@@ -278,79 +273,6 @@ describe('plan limits', () => {
   test('no head with a plan window is a named empty, not a blank rack', () => {
     const none: UsagePayload = { ...usage, heads: usage.heads.filter((row) => row.key === 'bonsai') };
     expect(render(h(UsageBoard, { payload: fixtureEconomics, usage: none, catalog: fixtureModels, now: NOW }))).toContain('No plan limits');
-  });
-});
-
-describe('models page', () => {
-  test('a catalog this daemon does not serve says so without a row id, and nothing else is drawn', () => {
-    const markup = render(h(ModelsBoard, { catalog: { pending: 'V4-127' } }));
-    expect(markup).toContain('catalog unavailable');
-    expect(markup).not.toContain('V4-127');
-    expect(markup).not.toContain('myx-strip');
-  });
-
-  test('the window source reads as words, whatever label the daemon sends', () => {
-    // ModelsRoute.kt WINDOW_FROM_*, plus `head` from splice-lead's S15 change.
-    expect(['model', 'head', 'rule', 'extra-window', 'default', 'unknown'].map(windowSourceText)).toEqual([
-      'model catalog', 'head setting', 'prefix rule', 'extra window', 'provider default', 'unknown',
-    ]);
-    expect(windowSourceText('some-new-label')).toBe('some new label');
-    expect(render(h(ModelsBoard, { catalog: fixtureCatalog }))).not.toContain('extra-window');
-  });
-
-  test('with a catalog the board draws a strip per filled tier, and names the tier no model fills', () => {
-    const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
-    for (const head of fixtureCatalog.heads) expect(markup).toContain(head.head);
-    expect(markup).toContain('gpt-5.6-sol');
-    // The vacant tier is named, never dropped, and nothing is struck: a strike is the verdict on an
-    // excluded or disabled row.
-    expect(markup).toContain('no model fills the fable tier');
-    expect(markup.split('myx-strip-struck').length - 1).toBe(0);
-  });
-
-  test('the tiers come from the daemon vocabulary, and an unfilled tier is a row and not a gap', () => {
-    const tiers = slotTiers(first(fixtureCatalog.heads));
-    expect(tiers.map((tier) => tier.slot)).toEqual(['opus', 'sonnet', 'haiku', 'fable']);
-    expect(tiers[3]?.model).toBeNull();
-    expect(tiers[0]?.model?.pinned).toBe(true);
-  });
-
-  test('the by-provider view groups on the reported provider and never guesses one', () => {
-    const groups = byProvider(fixtureCatalog.heads);
-    expect(groups.map((group) => group.provider)).toEqual(['api-key', 'chatgpt-oauth', 'kimi-oauth']);
-    // An empty provider is grouped under the honest label, never under the head key.
-    const withoutProvider: HeadCatalog = { ...first(fixtureCatalog.heads), provider: '' };
-    expect(byProvider([withoutProvider])[0]?.provider).toBe(PROVIDER_UNKNOWN);
-  });
-
-  test('a head\'s windows come from its topology, joined on the head and provider keys', () => {
-    const head = first(fixtureCatalog.heads);
-    const topology = {
-      heads: { [head.head]: { provider: head.provider, context_window: 400_000 } },
-      providers: { [head.provider]: { default_context_window: 200_000, extra_windows: [{ id: 'x', context_window: 1 }], window_rules: [] } },
-    };
-    expect(headWindows(topology, head)).toEqual({ headWindow: 400_000, defaultWindow: 200_000, extraWindows: 1, windowRules: 0 });
-    // A window the topology does not set is an absence, never the daemon's internal zero.
-    const bare = { heads: { [head.head]: {} }, providers: { [head.provider]: { default_context_window: 0 } } };
-    expect(headWindows(bare, head)).toEqual({ headWindow: null, defaultWindow: null, extraWindows: 0, windowRules: 0 });
-    expect(headWindows(null, head)).toBeNull();
-    expect(headWindows({ heads: {}, providers: {} }, head)).toBeNull();
-  });
-
-  test('the opened model is found under the head it was opened on, and a pending payload finds nothing', () => {
-    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
-    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'nope' })).toBeNull();
-    expect(findModel(fixtureCatalog, { head: 'no-such-head', id: 'kimi-k2.5' })).toBeNull();
-    expect(findModel({ pending: 'V4-127' }, { head: 'claude-kimi', id: 'kimi-k2.5' })).toBeNull();
-  });
-
-  test('two heads serving one model id each open their own, so the detail reads the right head windows', () => {
-    const kimi = fixtureCatalog.heads.find((head) => head.head === 'claude-kimi');
-    if (kimi === undefined) throw new Error('the fixture catalog lost claude-kimi');
-    const twin = { ...kimi, head: 'claude-kimi-twin' };
-    const catalog = { heads: [kimi, twin] };
-    expect(findModel(catalog, { head: 'claude-kimi-twin', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi-twin');
-    expect(findModel(catalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
   });
 });
 

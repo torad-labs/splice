@@ -119,8 +119,9 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
     + 'the gutter moving with the track. It read "M1-102 unmounted it" until M1-122: the mechanism '
     + 'changed and the disposition did not, so the file documented a repair the code no longer '
     + 'used. Dead region 13.5%.',
-  models: 'COLLAPSES at rest since M1-116, the same mechanism as fleet -- it read "M1-112 unmounted '
-    + 'it" until M1-122 for the same reason. Dead region 21.5%, the second worst in the set.',
+  models: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`opened === null ? null :` gate and .myx-md-board declares one track until -open adds the '
+    + 'second. It collapsed its track to 0 since M1-116 before; dead region 21.5% then.',
   // M1-117 moved this unit here from HELD, and M1-122 moved the registration INTO this literal
   // rather than assigning it after the object was built. A collect-time mutation is fragile by
   // inspection -- it guards only if the assignment happens to precede the Object.keys() that

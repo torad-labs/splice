@@ -38,7 +38,6 @@ const consoleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const PENDING_REASON = "rebuilt in claude-builder's Phase 3 branch, which follows this voice and this gate";
 const PENDING: Record<string, string> = {
   'src/pages/fleet': PENDING_REASON,
-  'src/pages/models': PENDING_REASON,
   'src/pages/accounts': PENDING_REASON,
   'src/pages/doctor': PENDING_REASON,
   'src/widgets/account-strip': PENDING_REASON, // imported only from pages/accounts and pages/fleet

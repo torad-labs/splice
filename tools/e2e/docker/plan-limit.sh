@@ -25,7 +25,9 @@ PLAN_HEAD_PORT=3107
 PROBE_HEAD_PORT=3108
 # Long enough that the turn meets the limit more than once (splice's retries, its hold, the client's
 # own wait); short enough for CI. The probe's upstream never resets inside the run.
-PLAN_RESET_S=90
+# The turn's upstream resets this long after the turn's first request: 90 s keeps CI short, and
+# `run.sh --plan-reset-s 18000` asks the real question, whether the client outlasts a five-hour window.
+PLAN_RESET_S="${PLAN_RESET_S:-90}"
 PROBE_RESET_S=3600
 TURN_MOCK_PORT=""
 PROBE_MOCK_PORT=""
@@ -141,7 +143,7 @@ plan_turn() {
   local out rc
   out="$(ANTHROPIC_API_KEY=mock-key DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-    timeout 480 claude-planlimit -p "Say hello." --output-format text </dev/null 2>&1)"
+    timeout $((PLAN_RESET_S + 390)) claude-planlimit -p "Say hello." --output-format text </dev/null 2>&1)"
   rc=$?
   date +%s%3N > "$OUT/turn-end-ms"
   printf '%s\n' "$out" | tail -c 1500

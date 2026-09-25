@@ -64,7 +64,13 @@ internal class KeyCommand(
         return Cancellables.runCatchingCleanup { store.write(envVar, value) }
             .onSuccess {
                 println("$envVar stored to ${store.path} (0600).")
-                println("Live daemons pick it up on the next request; `splice restart` refreshes status.")
+                // V4-227: nothing caches a key's presence (every describe() reads the store), so the one thing
+                // a restart still changes is the model list a head discovered at start without its key.
+                println("Live daemons use it from the next request, with no restart.")
+                println(
+                    "Only a head that could not list its models at start, for want of this key, " +
+                        "lists them after `splice restart`.",
+                )
             }
             .onFailure { System.err.println("splice key set: ${refusal(it)}") }
             .isSuccess

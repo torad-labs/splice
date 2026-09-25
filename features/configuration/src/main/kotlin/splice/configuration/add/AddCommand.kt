@@ -100,7 +100,10 @@ internal class AddCommand(
                 output.line("  $daemonLabel not running — '${c.key}' comes up on first launch")
             }
             c.args.yes || confirm("Restart the daemon so '${c.key}' comes up now?", default = true) -> ports.restart()
-            else -> true.also { output.line("  $daemonLabel restart later with: ${CYAN}splice restart$RESET") }
+            // Needed (V4-227 sweep): the daemon reads splice.toml at start, so a new head waits for one.
+            else -> true.also {
+                output.line("  $daemonLabel '${c.key}' comes up at the next start: ${CYAN}splice restart$RESET")
+            }
         }
         output.line("")
         if (activated) {

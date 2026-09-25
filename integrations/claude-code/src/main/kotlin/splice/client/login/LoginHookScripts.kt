@@ -351,10 +351,11 @@ internal object LoginHookScripts {
         // A bare command word by necessity, and safe by construction: TokenCaptureSpec.init requires
         // envVar to match KeyStore's own ENV_NAME regex, so it cannot carry a shell metacharacter.
         appendLine("  if printf '%s' \"${d}token\" | splice key set ${spec.envVar} --stdin >/dev/null 2>&1; then")
-        appendLine("    nohup splice restart >/dev/null 2>&1 &")
-        val stored = "${spec.providerLabel} key received — stored to ~/.config/splice/keys.toml (0600) " +
-            "and the daemon is restarting. It was NOT forwarded to the model. Note: this session log " +
-            "still contains the pasted line; the fully masked path is <head> login."
+        // No restart (V4-227): the head reads keys.toml on every request, so the next turn already uses
+        // the key, and the `splice restart` this ran dropped every head's turns in flight for nothing.
+        val stored = "${spec.providerLabel} key received — stored to ~/.config/splice/keys.toml (0600); " +
+            "the next request uses it, no restart. It was NOT forwarded to the model. Note: this session " +
+            "log still contains the pasted line; the fully masked path is <head> login."
         appendLine("    printf '%s' ${shellSingleQuote(blockDecision(stored))}")
         appendLine("  else")
         val failed = "${spec.providerLabel} key detected but storing it failed — " +

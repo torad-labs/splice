@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { restartDaemon } from '../src/entities/daemon';
 import { DaemonRestart } from '../src/features/daemon-restart';
+import { S } from '../src/features/daemon-restart/strings';
 import { MgmtError } from '../src/shared/api';
 
 /** DaemonRoutes.kt:64-65 and :58-60, verbatim: the two refusals are different facts. */
@@ -60,10 +61,10 @@ describe('POST /api/daemon/restart through the real client', () => {
 describe('the restart control', () => {
   test('rests as one key naming the daemon, and nothing is armed or sent until it is pressed', () => {
     const out = renderToStaticMarkup(React.createElement(DaemonRestart));
-    expect(out).toContain('restart daemon');
+    expect(out).toContain(`>${S.restart}<`);
     // The confirmation is inline and arrives with the first press, never pre-rendered and never a
     // dialog (CONTRACTS.md: restart actions confirm inline on the strip).
-    expect(out).not.toContain('drain and restart');
+    expect(out).not.toContain(S.confirm);
     expect(out).not.toContain('role="dialog"');
   });
 });

@@ -1,48 +1,49 @@
-// The accounts page. One rack of every account of every provider, and the end of the manual hunt
-// through browser logins for an account with room (operator, 2026-09-17).
+// Accounts: every account of every provider, drawn by how much of each window it has used, and the
+// end of the manual hunt through browser logins for an account with room (operator, 2026-09-17).
 //
-// Two things this page refuses to do, both because the world's rules say so. It never prints a
-// zero for a window a provider did not report — it prints the honest empty and says who is silent.
-// And it never claims to have switched an account: a switch is a pin on the NEXT turn, so the
-// button says switch and the note beside it says what that means.
+// A live list (docs/design/DESIGN.md section 7): the accounts by state as one split bar, the window
+// nearest its limit, and one row per account with its five-hour and weekly windows as meters and
+// their reset countdowns beside them. Two things this page refuses to do, both because the world's
+// rules say so. It never draws a zero for a window a provider did not report: the cell prints the
+// absence and the state says unknown. And it never claims to have switched an account: a switch is a
+// pin on the NEXT turn, and the action says so when it lands.
 //
-// Every row on this page is a Strip, the per-head fallback cards included: while GET /api/accounts
-// is still a row, the fallback is the same rack populated from the auth card, not a different page
-// wearing the same route.
+// The Claude heads and the api-key heads have tables of their own below the pools: neither has a
+// pool, and GET /api/accounts names neither.
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { SELECTOR_ORDER_TEXT, nextRuleOf, readAgeText } from '@entities/account';
-import { familyName } from '@entities/heads';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { AccountActions, AccountLogin, HeadActions, HeadAuthStrip } from '@features/account-login';
+import { HeadMark } from '@entities/control-status';
+import { familyName } from '@entities/heads';
+import { startUsagePolling, useUsage } from '@entities/usage';
+import { AccountActions, AccountLogin, HeadActions } from '@features/account-login';
+import { limitText, limitTone, nearestLimit } from '@features/nearest-limit';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
-import { ABSENT } from '@shared/lib';
-import { Blank, Copy, Fault, Key } from '@shared/controls';
-import { AccountStrip } from '@widgets/account-strip';
-import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from './model';
+import type { AuthPayload, UsagePayload } from '@shared/api';
+import { Blank, Copy, Fault } from '@shared/controls';
+import { ABSENT, fmtInt } from '@shared/lib';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
+import type { Column, RowGroup } from '@shared/ui';
+import {
+  AccountFacts, AccountStateBadge, accountColumns, accountKey, accountName, accountTone, countdown, stateOf, stateParts,
+} from '@widgets/account-table';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
 import { dispositions } from './coverage';
-import { S } from './strings';
+import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp, nextReset, orderText } from './model';
+import type { HeadRow } from './model';
+import { H, S, U } from './strings';
 import './accounts.css';
 
 export { dispositions };
+export type { HeadRow };
 
 const PAGE_ID = 'accounts';
 const POLL_MS = 15000;
 const CLOCK_MS = 30000;
-
-/** The three views this page ships with. `by provider` is first because it is the default. */
-/** What opening an account offers, said once, because nothing on a strip says it can be opened. */
-const OPEN_HINT = 'open an account to sign in another one to its pool, switch to it, relabel it or remove it';
-
-/** A group's bay label: a provider group prints the provider's name, not the auth kind's id. */
-function groupLabel(group: string | null, key: string): string {
-  return group === 'provider' ? familyName(key) : key;
-}
 
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-provider', name: S.byProvider, layout: 'bay', filter: {}, sort: null, group: 'provider', fields: [] },
@@ -50,17 +51,20 @@ export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-head', name: S.byHead, layout: 'bay', filter: {}, sort: null, group: 'head', fields: [] },
 ];
 
-/** The key the detail column is showing. One thing open at a time, addressed by what it is. */
+/** The key the detail panel is showing. One thing open at a time, addressed by what it is. */
 export function openAccountKey(account: AccountRow): string {
-  // A single-login head has no label; its credential file (or its heads) is what it is.
-  return `account:${account.kind}:${account.label ?? account.credential_path ?? account.heads.join(',')}`;
+  return `account:${accountKey(account)}`;
 }
 
 export function openHeadKey(head: string): string {
   return `head:${head}`;
 }
 
-/** A slow clock, so the reset lines age instead of freezing at first render. */
+export function openKeyHeadKey(head: string): string {
+  return `key:${head}`;
+}
+
+/** A slow clock, so the countdowns age instead of freezing at first render. */
 function useNow(intervalMs: number, fixed: number | null): number {
   const [now, setNow] = useState(() => fixed ?? Date.now());
   useEffect(() => {
@@ -71,157 +75,104 @@ function useNow(intervalMs: number, fixed: number | null): number {
   return now;
 }
 
-/** One head as the page reads it off GET /api/auth, for the fallback rack. */
-interface HeadRow {
-  head: string;
-  kind: string;
-  present: boolean;
-  masked: string | null;
-  note: string | null;
-  /** api-key heads: the variable the key is read from, and the key masked. */
-  envVar?: string | undefined;
-  keyMasked?: string | undefined;
-  keyFile?: string | undefined;
-}
-
-export function openKeyHeadKey(head: string): string {
-  return `key:${head}`;
-}
-
-/**
- * The api-key heads (openrouter, deepseek, a local runtime), which no other rack lists: they are
- * not OAuth, so GET /api/accounts never names them, and until this bay the console showed nowhere
- * which variable a head reads its key from or whether it is set (console review, 2026-09-24).
- */
-function ApiKeyBay({ rows, openKey, onOpen }: {
-  rows: readonly HeadRow[];
-  openKey: string | null;
-  onOpen: (key: string) => void;
+/** The figures the page leads with: every account by state, the nearest limit (the one definition
+ *  the strip and the fleet print), the soonest reset of any window, and how many accounts the pools
+ *  are refusing. */
+function Figures({ accounts, usage, auth, nowMs }: {
+  accounts: readonly AccountRow[];
+  usage: UsagePayload | null;
+  auth: AuthPayload | null;
+  nowMs: number;
 }) {
-  if (rows.length === 0) return null;
+  const nearest = nearestLimit({ accounts, usage, auth }, nowMs);
+  const reset = nextReset(accounts, nowMs);
+  const excluded = accounts.filter((account) => stateOf(account, nowMs) === 'excluded').length;
+  const nearestTile = nearest === null ? <Stat label={S.nearestLimit} value={ABSENT} /> : (
+    <Stat
+      label={S.nearestLimit}
+      value={`${Math.round(nearest.pct)}${U.used}`}
+      {...(limitTone(nearest) === 'ok' ? {} : { tone: limitTone(nearest) })}
+      chart={<Meter value={nearest.pct / 100} tone={limitTone(nearest)} label={S.nearestLimit} />}
+      sub={limitText(nearest)}
+    />
+  );
   return (
-    <Bay label={S.keyBay} count={rows.length} compact>
-      {rows.map((row) => (
-        <Strip
-          key={row.head}
-          edge={row.present ? 'green' : 'amber'}
-          edgeLabel={row.present ? S.keySet : S.keyMissing}
-          cocked={!row.present}
-          selected={openKey === openKeyHeadKey(row.head)}
-          onOpen={() => onOpen(openKeyHeadKey(row.head))}
-          ariaLabel={`${S.keyBay} ${row.head}`}
-        >
-          <StripField w={20} label={S.head} value={row.head} mono={false} />
-          <StripField w={24} label={S.variable} value={row.envVar ?? ABSENT} />
-          <StripField w={14} label={S.key} value={row.present ? (row.keyMasked ?? ABSENT) : S.keyMissing} />
-        </Strip>
-      ))}
-    </Bay>
+    <StatRow>
+      <Stat
+        label={S.accounts}
+        value={fmtInt(accounts.length)}
+        chart={<StackedBar parts={stateParts(accounts, nowMs)} label={S.accounts} legend format={fmtInt} />}
+      />
+      {nearestTile}
+      <Stat label={S.nextReset} value={(reset === null ? null : countdown(reset, nowMs)) ?? ABSENT} />
+      <Stat label={S.excluded} value={fmtInt(excluded)} {...(excluded > 0 ? { tone: 'warn' as const } : {})} />
+    </StatRow>
   );
 }
 
-/**
- * Where an api-key head's key comes from, and how to set it. THE DAEMON READS THREE PLACES IN ORDER
- * (ApiKeyAuthProvider.readKey): the variable in its own environment, then the head's key_file, then
- * the key store `splice key set` writes. A stored key is the one a set replaces, so a head whose key
- * is present is told which source wins over the store, and a head reading a key_file is sent to the
- * file: a `splice key set` there writes a key the daemon never reads.
- */
-export function apiKeyHint(row: HeadRow): string {
-  const variable = row.envVar;
-  if (variable === undefined) return 'this head signs every request with one api key';
-  if (row.keyFile !== undefined) {
-    return row.present
-      ? `this head reads its key from ${row.keyFile} unless ${variable} is set where splice runs; replace the key in that file`
-      : `no key in ${variable} or ${row.keyFile}; store one with this, and the next request uses it, no restart needed`;
-  }
-  return row.present
-    ? `this head signs every request with its ${variable} key; this replaces a stored key, and the next request uses it, but a ${variable} exported where splice runs wins over it until it is removed`
-    : `no key in ${variable}; set one with this, and the next request uses it, no restart needed`;
+function headColumns(): Column<HeadRow>[] {
+  return [
+    { key: 'head', label: S.head, width: '24%', primary: true, cell: (row) => <HeadMark head={row.head} /> },
+    { key: 'account', label: S.account, width: '24%', mono: true, cell: (row) => row.masked ?? ABSENT },
+    {
+      key: 'state',
+      label: S.state,
+      width: '16%',
+      cell: (row) => <Badge tone={row.present ? 'ok' : 'warn'} quiet>{row.present ? S.signedIn : S.noCredential}</Badge>,
+    },
+    { key: 'note', label: S.note, cell: (row) => row.note ?? ABSENT },
+  ];
 }
 
-/** An opened api-key head: where its key comes from, and the command that sets it when a set would
- *  reach the daemon. */
+function keyColumns(): Column<HeadRow>[] {
+  return [
+    { key: 'head', label: S.head, width: '24%', primary: true, cell: (row) => <HeadMark head={row.head} /> },
+    { key: 'variable', label: S.variable, width: '28%', mono: true, cell: (row) => row.envVar ?? ABSENT },
+    { key: 'key', label: S.key, width: '20%', mono: true, cell: (row) => (row.present ? row.keyMasked ?? ABSENT : ABSENT) },
+    {
+      key: 'state',
+      label: S.state,
+      cell: (row) => <Badge tone={row.present ? 'ok' : 'warn'} quiet>{row.present ? S.keySet : S.keyMissing}</Badge>,
+    },
+  ];
+}
+
+/** An opened api-key head: where its key comes from, and the command that stores one when a store
+ *  would reach the daemon. */
 export function ApiKeyDetail({ row }: { row: HeadRow }) {
-  const reachable = row.keyFile === undefined || !row.present;
-  const command = row.envVar === undefined || !reachable ? null : `splice key set ${row.envVar}`;
+  const command = keyCommand(row);
+  const rows: [string, ReactNode][] = [
+    [S.state, <Badge key="state" tone={row.present ? 'ok' : 'warn'}>{row.present ? S.keySet : S.keyMissing}</Badge>],
+    [S.variable, row.envVar ?? ABSENT],
+    [S.keyFile, row.keyFile ?? ABSENT],
+    [S.key, row.present ? row.keyMasked ?? ABSENT : ABSENT],
+  ];
   return (
-    <section className="myx-accounts-key">
-      <div className="myx-accounts-key-row">
-        <HolderEdge state={row.present ? 'green' : 'amber'} label={row.present ? S.keySet : S.keyMissing} />
-        <span className="myx-accounts-key-name">{row.head}</span>
-      </div>
-      <p className="myx-accounts-hint">{apiKeyHint(row)}</p>
-      {command === null ? null : (
-        <p className="myx-accounts-key-row">
-          <code className="myx-accounts-key-command">{command}</code>
-          <Copy value={command} />
-        </p>
-      )}
-    </section>
-  );
-}
-
-function HeadBay({ label, rows, openKey, onOpen }: {
-  label: string;
-  rows: readonly HeadRow[];
-  openKey: string | null;
-  onOpen: (key: string) => void;
-}) {
-  return (
-    <Bay label={label} count={rows.length} compact>
-      {rows.map((row) => (
-        <HeadAuthStrip
-          key={row.head}
-          head={row.head}
-          kind={row.kind}
-          present={row.present}
-          masked={row.masked}
-          note={row.note}
-          selected={openKey === openHeadKey(row.head)}
-          onOpen={() => onOpen(openHeadKey(row.head))}
-        />
-      ))}
-    </Bay>
-  );
-}
-
-/**
- * The Claude head's bay. It is not a pool and never will be: `auth = { kind = "client" }` builds no
- * poller, no availability, no exclusion and no per-turn selection, and one login per head is shared
- * by every session on it. The statement is an honest empty rather than a label, because CONTRACTS
- * section 4 keeps sentences out of the string table and this is a sentence.
- */
-function ClaudeBay({ rows, openKey, onOpen }: {
-  rows: readonly HeadRow[];
-  openKey: string | null;
-  onOpen: (key: string) => void;
-}) {
-  return (
-    <Bay label={S.claudeBay} count={rows.length} compact>
-      {rows.map((row) => (
-        <HeadAuthStrip
-          key={row.head}
-          head={row.head}
-          kind={row.kind}
-          present={row.present}
-          masked={row.masked}
-          note={row.note}
-          selected={openKey === openHeadKey(row.head)}
-          onOpen={() => onOpen(openHeadKey(row.head))}
-        />
-      ))}
-      <Empty text="one login per claude head" source="a claude head uses the claude code login it was started with, so it has no pool" />
-    </Bay>
+    <>
+      <KeyValue rows={rows} />
+      <p className="myx-ac-help">
+        <InfoTip text={keyHelp(row)} label={S.aboutKey} />
+        {command === null ? null : (
+          <>
+            <code className="myx-ac-command">{command}</code>
+            <Copy value={command} />
+          </>
+        )}
+      </p>
+    </>
   );
 }
 
 /** The board, drawn from a payload it is handed rather than from the store, so a test can hand it
  *  pools (a static render only ever sees a store's initial state). */
-export function AccountsBoard({ payload, headRows = [], nowMs, error = null, lastRead = null, sample }: {
+export function AccountsBoard({ payload, headRows = [], usage = null, auth = null, nowMs, error = null, lastRead = null, sample }: {
   payload: AccountsState | null;
-  /** Every head as GET /api/auth reports it: the fallback rack and the claude bay. */
+  /** Every head as GET /api/auth reports it: the fallback table, the Claude logins and the keys. */
   headRows?: readonly HeadRow[];
+  /** What the heads report for themselves, and their auth cards: the nearest limit reads both for a
+   *  head no account row names. */
+  usage?: UsagePayload | null;
+  auth?: AuthPayload | null;
   nowMs: number;
   error?: string | null;
   /** When the pools on screen were read, which the fault prints as stale while `error` stands. */
@@ -229,149 +180,131 @@ export function AccountsBoard({ payload, headRows = [], nowMs, error = null, las
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
   sample?: string | undefined;
 }) {
-  const views = useViews(PAGE_ID, DEFAULT_VIEWS);
-  const active = views.active;
-
+  const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
 
   const pending = payload !== null && 'pending' in payload;
   const accounts: readonly AccountRow[] = payload === null || pending ? [] : payload.accounts;
 
-  const groups = arrangeAccounts(accounts, active, nowMs);
-  const columns = columnsOf(active);
-
-  // An api-key head has no login to pool or sign in; the key bay below is its place.
+  // An api-key head has no login to pool or sign in; the key table is its place.
   const pooledHeads = headRows.filter((row) => row.kind !== 'client' && row.kind !== 'api-key');
   const claudeHeads = headRows.filter((row) => row.kind === 'client');
   const keyHeads = headRows.filter((row) => row.kind === 'api-key');
-  const openedKey = keyHeads.find((row) => openKeyHeadKey(row.head) === openKey) ?? null;
 
   const opened = accounts.find((account) => openAccountKey(account) === openKey) ?? null;
-  const readAge = opened === null ? null : readAgeText(opened, nowMs);
-  const openedHead = opened === null && openKey?.startsWith('head:') === true
-    ? openKey.slice('head:'.length)
-    : null;
+  const openedHead = headRows.find((row) => openHeadKey(row.head) === openKey) ?? null;
+  const openedKey = keyHeads.find((row) => openKeyHeadKey(row.head) === openKey) ?? null;
   const anyHead = opened?.heads[0] ?? pooledHeads[0]?.head ?? claudeHeads[0]?.head ?? null;
-  // ONE EXPRESSION, NAMED, because this page's rest state is two conditions rather than one
-  // (M2-24, applying M1-123's decision). Five pages spell it `opened === null` twice -- once on
-  // aria-hidden and once on the content gate -- and the point of that decision is that the
-  // exposure and the content CANNOT DESYNC because they are the same expression. With a compound
-  // condition, writing it twice is how they drift, so it is named once and read twice.
-  const closed = opened === null && openedHead === null && openedKey === null;
+
+  const groups: RowGroup<AccountRow>[] = arrangeAccounts(accounts, active, nowMs).map((group) => ({
+    key: group.key === '' ? S.accounts : group.key,
+    title: active.group === 'head' && group.key !== S.noHeads ? <HeadMark head={group.key} />
+      : active.group === 'provider' ? familyName(group.key)
+      : group.key === '' ? S.accounts : group.key,
+    count: group.accounts.length,
+    rows: group.accounts,
+  }));
+
+  // What the one detail panel holds: an account, an api-key head, or a head's own actions.
+  const panel: { title: string; status?: ReactNode; body: ReactNode } | null = opened !== null ? {
+    title: accountName(opened),
+    status: <AccountStateBadge account={opened} nowMs={nowMs} />,
+    body: (
+      <>
+        <AccountFacts account={opened} nowMs={nowMs} />
+        {/* Relabel and remove act on a POOL; a single-login head has none. */}
+        {opened.label === null ? null : <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} />}
+        {anyHead === null ? null : <AccountLogin head={anyHead} />}
+      </>
+    ),
+  } : openedKey !== null ? { title: openedKey.head, body: <ApiKeyDetail row={openedKey} /> }
+    : openedHead !== null ? { title: openedHead.head, body: <HeadActions head={openedHead.head} /> }
+    : null;
+
+  const headTable = (rows: readonly HeadRow[], label: string) => (
+    <DataTable
+      columns={headColumns()}
+      rows={rows}
+      rowKey={(row) => row.head}
+      label={label}
+      onOpen={(row) => toggle(openHeadKey(row.head))}
+      openLabel={(row) => `${S.openHead} ${row.head}`}
+      selectedKey={openedHead === null ? null : openedHead.head}
+      rowTone={(row) => (row.present ? null : 'warn')}
+    />
+  );
 
   return (
-    <div
-      className="myx-accounts"
-      {...(sample === undefined ? {} : { 'data-sample': sample })}
-    >
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
+    <div className="myx-ac" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
+      <PageHeader title={S.title} {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-      </header>
+      </PageHeader>
 
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
-      {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
-
-      {payload === null ? <Blank strips={4} /> : null}
-
-      <div className={closed ? 'myx-accounts-body' : 'myx-accounts-body myx-accounts-body-open'}>
-        <div className="myx-accounts-bays">
-          {pending ? (
+      <div className={panel === null ? 'myx-ac-board' : 'myx-ac-board myx-ac-board-open'}>
+        <div className="myx-ac-main">
+          {payload === null ? <Blank strips={4} /> : pending ? (
+            // Until the pooled route exists, the page shows what the daemon reports today per head
+            // rather than an empty screen: the per-head auth card answers "which account is this
+            // head on".
+            <Section title={S.heads} count={pooledHeads.length}>
+              <Empty text={S.poolsUnavailable} source={H.poolsUnavailable} />
+              {pooledHeads.length === 0 ? null : headTable(pooledHeads, S.heads)}
+            </Section>
+          ) : accounts.length === 0 ? <Empty text={S.noAccounts} source={H.noAccounts} /> : (
             <>
-              {/* Until the pooled route exists, the page shows what the daemon reports today per
-                  head rather than an empty screen: the per-head auth card is a real answer to
-                  "which account is this head on". */}
-              <HeadBay label={S.bay} rows={pooledHeads} openKey={openKey} onOpen={toggle} />
-              <Empty text={EMPTIES.pooledPending.text} source={EMPTIES.pooledPending.source} />
-            </>
-          ) : groups.length === 0 ? (
-            <Empty text={EMPTIES.noAccounts.text} source={EMPTIES.noAccounts.source} />
-          ) : (
-            <>
-              {/* The order the selector walks, once for the page: it is one rule for every pool, and
-                  printed on each rack's plate it said the same sentence four times over the label. */}
-              <p className="myx-accounts-order">
-                <span className="myx-accounts-order-label">{S.order}</span>
-                {SELECTOR_ORDER_TEXT}
-              </p>
-              <p className="myx-accounts-hint">{OPEN_HINT}</p>
-              {groups.map((group) => (
-                <Bay
-                  key={group.key === '' ? S.bay : group.key}
-                  label={group.key === '' ? S.bay : groupLabel(active.group, group.key)}
-                  count={group.accounts.length}
-                  compact
-                >
-                  {group.accounts.map((account) => {
-                    const key = openAccountKey(account);
-                    // The daemon's own next target, per pool (M4-08): the strip it flagged, and the
-                    // rule inside that strip's own pool that explains it.
-                    const rule = nextRuleOf(account, accounts);
-                    return (
-                      <AccountStrip
-                        key={key}
-                        account={account}
-                        isNext={rule !== null}
-                        nextRule={rule ?? ''}
-                        columns={columns}
-                        nowMs={nowMs}
-                        selected={openKey === key}
-                        onOpen={() => toggle(key)}
-                      />
-                    );
-                  })}
-                </Bay>
-              ))}
+              <Figures accounts={accounts} usage={usage} auth={auth} nowMs={nowMs} />
+              <Section title={S.accounts} count={accounts.length} info={{ text: orderText(), label: S.aboutNext }}>
+                <DataTable
+                  columns={accountColumns({ fields: columnsOf(active), grouped: active.group, nowMs, accounts })}
+                  groups={groups}
+                  rowKey={openAccountKey}
+                  label={S.accounts}
+                  onOpen={(account) => toggle(openAccountKey(account))}
+                  openLabel={(account) => `${S.openAccount} ${account.kind} ${accountName(account)}`}
+                  selectedKey={openKey}
+                  rowTone={(account) => accountTone(account, nowMs)}
+                />
+              </Section>
             </>
           )}
 
-          <ClaudeBay rows={claudeHeads} openKey={openKey} onOpen={toggle} />
-          <ApiKeyBay rows={keyHeads} openKey={openKey} onOpen={toggle} />
+          {claudeHeads.length === 0 ? null : (
+            <Section title={S.claudeLogins} count={claudeHeads.length} info={{ text: H.claude, label: S.aboutClaude }}>
+              {headTable(claudeHeads, S.claudeLogins)}
+            </Section>
+          )}
+
+          {keyHeads.length === 0 ? null : (
+            <Section title={S.apiKeys} count={keyHeads.length}>
+              <DataTable
+                columns={keyColumns()}
+                rows={keyHeads}
+                rowKey={(row) => row.head}
+                label={S.apiKeys}
+                onOpen={(row) => toggle(openKeyHeadKey(row.head))}
+                openLabel={(row) => `${S.openHead} ${row.head}`}
+                selectedKey={openedKey === null ? null : openedKey.head}
+                rowTone={(row) => (row.present ? null : 'warn')}
+              />
+            </Section>
+          )}
         </div>
 
-        {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M2-24, the last page in the console
-            still resting one; the idiom is M1-116's and the landmark is M1-123's, both copied from
-            what fleet, sessions and projects SHIPPED rather than from a description of them).
-            Measured at rest before this: a 384x92 column in a 408x784 dead region, 20.3% of the
-            frame and the third worst in the console -- 63px of that content was the `no account
-            opened` placeholder, which goes with the column because an empty naming a panel that
-            does not exist yet is a caption, not a report.
-            THE 21px THAT WAS NOT A PLACEHOLDER IS AccountLogin, the `add account` reveal, and it
-            is NOT lost: HeadActions renders its own AccountLogin (account-login/index.tsx:305), so
-            opening any head still reaches it. What changes is that it is one click away instead of
-            always on screen, which is a real consequence and is reported on the row rather than
-            decided here. */}
-        <aside className="myx-accounts-detail myx-swell" aria-label={S.detail} aria-hidden={closed}>
-          {closed ? null : (
-            <>
-              <Key className="myx-swell-close" onClick={() => setOpenKey(null)}>{S.close}</Key>
-              {/* The same three-way branch as before, minus the Empty arm that went with the
-                  resting column. The final `null` is unreachable by construction -- `closed` is
-                  false here, so one of the two is non-null -- and it is written out rather than
-                  collapsed to `openedHead ?? ''`, which would paper over that invariant with a
-                  fallback that can never be taken. */}
-              {opened !== null ? (
-                <>
-                  {readAge === null ? null : <p className="myx-accounts-hint">{readAge}</p>}
-                  {/* Relabel and remove act on a POOL; a single-login head has none. */}
-                  {opened.label !== null ? <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} /> : null}
-                  {/* ONE AccountLogin, NOT TWO (M2-28, found while reading M2-24). This sat
-                      outside the branch, and HeadActions renders its OWN AccountLogin
-                      (account-login/index.tsx:305), so opening a HEAD drew the `add account`
-                      reveal twice in one column. It belongs to the account branch, which has no
-                      login of its own; the head branch already carries one. */}
-                  {anyHead === null ? null : <AccountLogin head={anyHead} />}
-                </>
-              ) : openedHead !== null ? (
-                <HeadActions head={openedHead} />
-              ) : openedKey !== null ? (
-                <ApiKeyDetail row={openedKey} />
-              ) : null}
-            </>
-          )}
-        </aside>
+        {/* Unmounted at rest: no track and no empty panel until an account or a head is opened. */}
+        {panel === null ? null : (
+          <DetailPanel
+            title={panel.title}
+            label={S.detail}
+            {...(panel.status === undefined ? {} : { status: panel.status })}
+            onClose={() => setOpenKey(null)}
+            closeLabel={S.close}
+          >
+            {panel.body}
+          </DetailPanel>
+        )}
       </div>
     </div>
   );
@@ -381,12 +314,14 @@ export function AccountsPage() {
   const { search } = useLocation();
   const accountsResource = useAccounts((state) => state);
   const authResource = useAuth((state) => state);
+  const usage = useUsage((state) => state.data);
 
   const fixture = fixtureName(search, import.meta.env.DEV);
   const nowMs = useNow(CLOCK_MS, fixtureNow(fixture));
 
   useEffect(() => startAccountsPolling(POLL_MS), []);
   useEffect(() => startAuthPolling(POLL_MS), []);
+  useEffect(() => startUsagePolling(POLL_MS), []);
 
   const rows = fixtureAccounts(fixture);
 
@@ -406,6 +341,8 @@ export function AccountsPage() {
     <AccountsBoard
       payload={rows === null ? accountsResource.data : { accounts: [...rows] }}
       headRows={headRows}
+      usage={rows === null ? usage : null}
+      auth={rows === null ? authResource.data : null}
       nowMs={nowMs}
       error={accountsResource.error}
       lastRead={rows === null ? accountsResource.lastUpdated : null}

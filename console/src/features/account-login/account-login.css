@@ -17,12 +17,6 @@
   flex-wrap: wrap;
 }
 
-.myx-acct-name {
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  color: var(--ink);
-}
-
 
 .myx-acct-note {
   margin: 0;

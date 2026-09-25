@@ -1,49 +1,93 @@
-// Every label this page prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall).
-//
-// Sentences that are not labels live in the component or in model.ts: the honest empties and the
-// field-status words are statements, not chrome, and section 4 exempts them.
-import { ABSENT } from '@shared/lib';
-
+// Every word this page prints. S: labels, three words or fewer, sentence case. H: help, one
+// sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure.
 export const S = {
-  title: 'fleet',
-  bay: 'heads',
-  byHead: 'by head',
-  byProvider: 'by provider',
-  attentionFirst: 'attention first',
-  detail: 'head detail',
-  lifecycle: 'lifecycle',
+  title: 'Fleet',
+  byHead: 'By head',
+  byProvider: 'By provider',
+  attentionFirst: 'Attention first',
+  heads: 'Heads',
+  head: 'Head',
+  provider: 'Provider',
+  state: 'State',
+  model: 'Model',
+  dialect: 'Dialect',
+  account: 'Account',
+  inflight: 'In flight',
+  window: 'Window',
+  firstByte: 'First byte',
+  lastTurn: 'Last turn',
+  port: 'Port',
+  version: 'Version',
+  refreshError: 'Refresh error',
+  nearestLimit: 'Nearest limit',
+  aboutFirstByte: 'About first byte',
+  addHead: 'Add head',
+  aboutAdd: 'About adding heads',
+  detail: 'Head detail',
+  openHead: 'Open head',
+  close: 'Close',
+  lifecycle: 'Lifecycle',
+  start: 'Start',
+  stop: 'Stop',
+  restart: 'Restart',
+  stopNow: 'Stop now',
+  restartNow: 'Restart now',
+  sent: 'Sent',
   /** The opened head's own values, the ones it sets over the global settings. */
-  knobs: 'own settings',
-  pool: 'account pool',
-  /** The pool's rack of account strips, under the section title above. */
-  accounts: 'accounts',
-  /** Printed before the account the daemon's selector takes next, and the rule that explains it. */
-  nextTarget: 'next target',
-  start: 'start',
-  stop: 'stop',
-  restart: 'restart',
-  daemon: 'daemon',
-  noOverrides: 'uses global values',
-  note: 'note',
-  version: 'version',
-  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
-   *  It replaces the bare `not built` this page used to print in a strip; the pending routes are
-   *  named where they belong, in its honest empties (EMPTIES.fields, EMPTIES.pool). */
-  absent: ABSENT,
-  /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
-  close: 'close',
+  knobs: 'Own settings',
+  pool: 'Account pool',
+  next: 'Next',
+  openLog: 'Open log',
+  signIn: 'Sign in',
+  none: 'None',
+  noHeads: 'No heads yet',
+  fieldsUnavailable: 'Model list unavailable',
+  poolsUnavailable: 'Pools unavailable',
+  noAccounts: 'No accounts',
+  oneLogin: 'One login',
+  noPool: 'No pool',
+  noneAvailable: 'None available',
+  /** A head's state as its badge prints it: the entity's cause, in the page's voice. */
+  stateName: {
+    ok: 'OK',
+    down: 'Down',
+    unhealthy: 'Failing',
+    'version mismatch': 'Mismatch',
+    'signed out': 'Signed out',
+    'key missing': 'No key',
+    'login expired': 'Expired',
+    'account excluded': 'Excluded',
+    'queue full': 'Queue full',
+    'restart needed': 'Restart needed',
+  },
+  /** The four buckets the fleet's split bar counts heads into. */
+  healthName: {
+    ok: 'OK',
+    attention: 'Attention',
+    failing: 'Failing',
+    down: 'Down',
+  },
 } as const;
 
-// THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
-// These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
-// these meanings is how the console reached eleven phrasings for "nothing here".
-//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
-//              default. It was `n/r`, which no reader could expand.
-//   none       the question was asked and its answer is nothing (no tier hands this model out).
-//   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
-//   unavailable  it exists and we cannot reach it.
-//   ineligible   it does not apply here.
-//   not built    it does not exist yet; a pending route names its row.
-// A site whose fact cannot be told from the code KEEPS the word it has and gets a note beside it.
-// Renaming an absence you have not understood is how `unknown` silently becomes `none`.
+export const H = {
+  firstByte: "Time to first byte over the fleet's recent turns.",
+  add: 'Add another provider from a terminal with this command.',
+  noHeads: 'Run splice setup, then splice add for each further provider.',
+  fields: 'This splice version does not serve the topology or model list.',
+  pools: 'This splice version does not serve accounts.',
+  oneLogin: 'A Claude head uses the Claude Code login it started with.',
+  noAccounts: 'Sign one in on the accounts page.',
+  apiKey: 'An API key head sends every request with its one key.',
+  local: 'This head needs no login.',
+  noneAvailable: 'Every account is signed out, excluded or at its limit.',
+  down: 'This head is not running; start it below.',
+  unhealthy: 'It runs but fails its health check; the log says why.',
+  mismatch: 'It runs a different splice version than the daemon; restart it.',
+  signedOut: 'No login is saved for this head.',
+  keyMissing: 'No API key; set one and the next request uses it.',
+  keyMissingBare: 'No API key; set one with splice key set.',
+  loginExpired: 'The login could not be refreshed; sign in again.',
+  accountExcluded: 'The next account is excluded; the pool below says why.',
+  queueFull: 'Every slot is busy and the queue is at its limit.',
+  restartNeeded: 'The config changed since this head started; restart it.',
+} as const;

@@ -10,14 +10,13 @@
 import { useEffect, useReducer, useState } from 'react';
 import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount, unpinAccount } from '@entities/auth';
 import type { LoginStartPayload } from '@entities/auth';
-import { Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
+import { Empty, FieldBox, Reveal } from '@shared/ui';
 import { poll } from '@shared/lib';
 import { Copy } from '@shared/controls';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
 import type { LoginEvent } from './model';
-import { NOT_REPORTED, fetchAccounts } from '@entities/account';
-import { familyName } from '@entities/heads';
-import { S } from './strings';
+import { fetchAccounts } from '@entities/account';
+import { H, S } from './strings';
 import './account-login.css';
 
 const POLL_MS = 2000;
@@ -153,7 +152,7 @@ export function refusalOf(outcome: unknown): string | null {
   if (!('ok' in body) || body.ok !== false) return null;
   const reason = ('error' in body && typeof body.error === 'string' ? body.error : null)
     ?? ('note' in body && typeof body.note === 'string' ? body.note : null);
-  return reason ?? 'the daemon refused it';
+  return reason ?? H.refused;
 }
 
 /**
@@ -179,7 +178,7 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
     work.then(
       (outcome) => {
         if (outcome !== null && typeof outcome === 'object' && 'pending' in outcome) {
-          setNote({ text: 'this splice version cannot do that', failed: true });
+          setNote({ text: H.unsupported, failed: true });
           return;
         }
         const refused = refusalOf(outcome);
@@ -196,30 +195,17 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
 
   return (
     <div className="myx-acct-actions">
-      <div className="myx-acct-row">
-        <HolderEdge state="grey" label={kind} />
-        <span className="myx-acct-name">{label}</span>
-      </div>
-
       {heads.map((head) => (
         <div className="myx-acct-row" key={head}>
-          <button
-            type="button"
-            className="myx-acct-btn"
-            onClick={() => run(switchAccount(head, label), `${head} uses ${label} from its next turn; a turn already running keeps its account`)}
-          >
+          <button type="button" className="myx-acct-btn" onClick={() => run(switchAccount(head, label), H.switched)}>
             {`${S.switch} ${head}`}
           </button>
           {pinned ? (
-            <button
-              type="button"
-              className="myx-acct-btn"
-              onClick={() => run(unpinAccount(head), `${head} goes back to the usual order from its next turn`)}
-            >
+            <button type="button" className="myx-acct-btn" onClick={() => run(unpinAccount(head), H.unpinned)}>
               {`${S.unpin} ${head}`}
             </button>
           ) : null}
-          <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head), `${head}: login refreshed`)}>
+          <button type="button" className="myx-acct-btn" onClick={() => run(refreshAuth(head), H.refreshed)}>
             {`${S.refresh} ${head}`}
           </button>
         </div>
@@ -237,7 +223,7 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
           type="button"
           className="myx-acct-btn"
           disabled={nextLabel.trim() === '' || nextLabel === label}
-          onClick={() => run(relabelAccount(kind, label, nextLabel.trim()), `renamed to ${nextLabel.trim()}`)}
+          onClick={() => run(relabelAccount(kind, label, nextLabel.trim()), H.renamed)}
         >
           {S.relabel}
         </button>
@@ -251,7 +237,7 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
               className="myx-acct-btn myx-acct-btn-armed"
               onClick={() => {
                 setArmed(false);
-                run(removeAccount(kind, label), `${label} removed`);
+                run(removeAccount(kind, label), H.removed);
               }}
             >
               {`${S.remove} ${label}`}
@@ -272,54 +258,10 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
   );
 }
 
-/**
- * One head's auth card, for the state before GET /api/accounts exists. It is a real STRIP, not a
- * card: the page it belongs to is a rack, and a fallback that rendered as a list of paragraphs
- * would be a different page wearing the same route. Its actions live in the detail column, the
- * same place every other strip's do.
- */
-export function HeadAuthStrip({ head, kind, present, masked, note, selected, onOpen }: {
-  head: string;
-  kind: string;
-  present: boolean;
-  masked: string | null;
-  note: string | null;
-  selected?: boolean;
-  onOpen?: () => void;
-}) {
-  return (
-    <Strip
-      className="myx-strip-fixed"
-      edge={present ? 'green' : 'grey'}
-      edgeLabel={present ? 'signed in' : 'no credential'}
-      selected={selected ?? false}
-      {...(onOpen === undefined ? {} : { onOpen })}
-      ariaLabel={`${head} ${kind}`}
-    >
-      {/* Widths are the CONTENT width plus the field's own inline padding (~2.5ch at --text-3):
-          'chatgpt-oauth' is 13 characters and truncated in a 13ch box. */}
-      <StripField w={16} fixed label={S.head} value={head} mono={false} />
-      <StripField w={16} fixed label={S.provider} value={familyName(kind)} mono={false} />
-      <StripField w={20} fixed label={S.account} value={masked ?? NOT_REPORTED} mono={false} />
-      {/* THE TRACK RENDERS EMPTY (M1-107), the fourth of four sites that made the FIELD vanish
-          where twenty-two render it and fall back the value. An optional note is an empty cell in
-          a track, not a row with one fewer column -- the grid's whole affordance is that field N
-          is at the same x on every strip. The LAST track alone takes the slack: every edge before it
-          stays at its declared x, which is all M1-107 fixed, and the strip no longer ends in a
-          slab of bare paper once its rack fills the bay. */}
-      <StripField w={24} label={S.note} value={note ?? ''} mono={false} />
-    </Strip>
-  );
-}
-
 /** The actions that belong to a head rather than to one of its accounts. */
 export function HeadActions({ head }: { head: string }) {
   return (
     <div className="myx-acct-actions">
-      <div className="myx-acct-row">
-        <HolderEdge state="green" label="head" />
-        <span className="myx-acct-name">{head}</span>
-      </div>
       <div className="myx-acct-row">
         <button type="button" className="myx-acct-btn" onClick={() => void refreshAuth(head)}>
           {S.refresh}

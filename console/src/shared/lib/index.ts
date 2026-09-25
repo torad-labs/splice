@@ -84,6 +84,12 @@ export function fmtShare(share: number): string {
   return `${value < 10 ? value.toFixed(1) : value.toFixed(0)}%`;
 }
 
+/** A value against the largest of its column, 0..1 for a meter, and 0 when the column is empty
+ *  rather than the NaN a bare division gives. */
+export function ratio(value: number, max: number): number {
+  return max <= 0 ? 0 : value / max;
+}
+
 /** Month names as the console prints a date (`sep 21`), one table for every page that dates a row. */
 export const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as const;
 

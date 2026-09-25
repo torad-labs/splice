@@ -1,54 +1,68 @@
-// Every label this page prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall).
-import { ABSENT } from '@shared/lib';
-
+// Every word this page prints. S: labels, three words or fewer, sentence case. H: help, one
+// sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure.
 export const S = {
-  title: 'models',
-  byHead: 'by head',
-  byProvider: 'by provider',
-  catalog: 'catalog',
-  tiers: 'tiers',
-  model: 'model',
-  /** The Claude Code model tier (opus, sonnet, haiku, fable) a model answers for on this head. */
-  slot: 'tier',
-  contextWindow: 'context window',
-  windowSource: 'window from',
-  rates: 'rates',
-  rateInput: 'input',
-  rateRead: 'cache read',
-  rateWrite: 'cache write',
-  rateOutput: 'output',
-  pinned: 'pinned',
-  noSlot: 'none',
-  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
-   *  which replaces `no rates` in every rate cell and `not declared` in a missing tier's model. */
-  absent: ABSENT,
-  pinnedYes: 'pinned',
-  /** The edge of the opened model's rate strip. `none` and not `no rates` (8 characters) because
-   *  the rate cells themselves print the absence glyph. */
-  noRates: 'none',
-  /** The edge of the opened model's window strip: the head is the panel's own subject, so the edge
-   *  names the state instead of repeating its key. */
-  window: 'window',
-  extraWindows: 'extra windows',
-  windowRules: 'window rules',
-  defaultWindow: 'default window',
-  headWindow: 'head window',
-  sample: 'sample data',
-  openModel: 'open model',
-  /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
-  close: 'close',
+  title: 'Models',
+  sample: 'Sample data',
+  byHead: 'By head',
+  byProvider: 'By provider',
+  heads: 'Heads',
+  head: 'Head',
+  models: 'Models',
+  model: 'Model',
+  tiersFilled: 'Tiers filled',
+  widestWindow: 'Widest window',
+  tiers: 'Tiers',
+  tier: 'Tier',
+  contextWindow: 'Context window',
+  windowFrom: 'Window from',
+  input: 'Input',
+  output: 'Output',
+  cacheRead: 'Cache read',
+  cacheWrite: 'Cache write',
+  pinned: 'Pinned',
+  unresolved: 'Unresolved',
+  reason: 'Reason',
+  description: 'Description',
+  headWindow: 'Head window',
+  defaultWindow: 'Default window',
+  extraWindows: 'Extra windows',
+  windowRules: 'Window rules',
+  aboutRates: 'About prices',
+  aboutTiers: 'About tiers',
+  detail: 'Model detail',
+  openModel: 'Open model',
+  close: 'Close',
+  noModels: 'No models',
+  noHeads: 'No heads',
+  catalogPending: 'Catalog unavailable',
+  providerUnknown: 'Not reported',
+  /** The Claude Code tiers, as the client names them. */
+  tierName: {
+    opus: 'Opus',
+    sonnet: 'Sonnet',
+    haiku: 'Haiku',
+    fable: 'Fable',
+  },
+  /** Where a context window came from. The daemon sends a label it never expects the console to
+   *  parse (ModelsRoute.kt WINDOW_FROM_*); a label missing here prints in the entity's words. */
+  windowSource: {
+    model: 'Model catalog',
+    head: 'Head setting',
+    rule: 'Prefix rule',
+    'extra-window': 'Extra window',
+    default: 'Provider default',
+    unknown: 'Unknown',
+  },
 } as const;
 
-// THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).
-// These are DIFFERENT FACTS and collapsing them destroys information; adding a word without one of
-// these meanings is how the console reached eleven phrasings for "nothing here".
-//   –          (en dash, ABSENT in @shared/lib) nobody reported a value for this cell. The
-//              default. It was `n/r`, which no reader could expand.
-//   none       the question was asked and its answer is nothing (no tier hands this model out).
-//   unknown    we asked and were NOT TOLD - a different fact from none, and never a zero.
-//   unavailable  it exists and we cannot reach it.
-//   ineligible   it does not apply here.
-//   not built    it does not exist yet; a pending route names its row.
-// A site whose fact cannot be told from the code KEEPS the word it has and gets a note beside it.
-// Renaming an absence you have not understood is how `unknown` silently becomes `none`.
+export const H = {
+  rates: 'Prices are USD per million tokens.',
+  tiers: 'A grey tier has no model; set its slot in splice.toml.',
+  pending: 'This splice version does not serve the model catalog.',
+  noHeads: 'Heads declared in splice.toml appear here with their models.',
+} as const;
+
+export const U = {
+  usd: '$',
+  of: 'of',
+} as const;

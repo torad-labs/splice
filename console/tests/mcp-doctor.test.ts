@@ -15,30 +15,35 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdict } from '../src/entities/doctor';
 import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
-import { MCP_HOST_KNOBS, serverRows, upText } from '../src/entities/mcp';
-import type { McpPayload } from '../src/entities/mcp';
 import { budgetFor } from '../src/entities/budget';
 import { BudgetsPanel, parseUsd } from '../src/features/budgets';
 import { canTest } from '../src/entities/alert';
 import type { AlertSettings } from '../src/entities/alert';
-import { CheckStrip } from '../src/pages/doctor';
+import { DoctorBoard } from '../src/pages/doctor';
 import {
   EMPTIES as DOCTOR_EMPTIES,
+  MARK as DOCTOR_MARK,
+  TONE as DOCTOR_TONE,
   attentionCount,
   canSend,
+  claudeVersionText,
   collapseChecks,
   groupChecks,
+  latestText,
   logsHeadOf,
   playgroundNext,
-  statusEdge,
+  rollbackText,
+  statusParts,
   wantsAttention,
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
+import { S as DOCTOR_WORDS } from '../src/pages/doctor/strings';
+import { ABSENT } from '../src/shared/lib';
 import type { PlaygroundState } from '../src/pages/doctor/model';
-import { EMPTIES as MCP_EMPTIES, RESPAWN_NOTE, arrangeServers, hostLimits, stateEdge, stateLabel } from '../src/pages/mcp/model';
 import { dispositions as mcpDispositions } from '../src/pages/mcp/coverage';
 import { dispositions as doctorDispositions } from '../src/pages/doctor/coverage';
 import { Empty } from '../src/shared/ui';
+import { statOf } from './lib/markup';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -46,11 +51,23 @@ const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
 /** The daemon's own separator: a space, U+2014, then " fix: " (DoctorReportShape.kt:59). */
 const SEP = ` ${String.fromCharCode(0x2014)} fix: `;
 
-/** One check as the rack's row. */
-function rowOf(one: DoctorCheck) {
-  const [row] = collapseChecks([one]);
-  if (row === undefined) throw new Error(`no row for ${one.id}`);
-  return row;
+/** One check as the checks table's row, rendered by the board from a report holding only it. */
+function rowOf(one: DoctorCheck): string {
+  const payload: DoctorPayload = {
+    schema_version: 1,
+    generated_at: '2026-09-18T00:00:00Z',
+    splice: { version: '0.4.0' },
+    claude_code: { version: '2.1.257' },
+    os: { name: 'Linux', version: '6.17', arch: 'x86_64' },
+    jvm: { version: '21', vendor: 'x' },
+    topology: {},
+    checks: [one],
+    accounts: {},
+    perf: {},
+  };
+  const out = render(h(DoctorBoard, { report: payload, onToggle: () => undefined }));
+  const table = /<table[^>]*aria-label="Checks"[^>]*>([\s\S]*?)<\/table>/.exec(out)?.[1] ?? '';
+  return table.split('<tr').filter((row) => row.includes('<td')).join('');
 }
 
 function check(id: string, status: DoctorCheck['status'], detail: string): DoctorCheck {
@@ -120,20 +137,21 @@ describe('every failing check carries its fix', () => {
     expect(checkSection(check('port', 'ok', 'x'))).toBe('port');
   });
 
-  test('the strip prints the check id, its status and its fix', () => {
-    const out = render(h(CheckStrip, { row: rowOf(failing), selected: false, onOpen: () => undefined }));
+  test('the row prints the check id, its status as a badge and its fix, tinted by the status', () => {
+    const out = rowOf(failing);
     expect(out).toContain('daemon/port');
-    expect(out).toContain('>fail<');
+    expect(out).toContain(`>${DOCTOR_WORDS.statusName.fail}<`);
     expect(out).toContain('splice doctor --json');
-    expect(out).toContain('myx-edge-red');
+    expect(out).toContain('myx-dt-tone-danger');
   });
 
   test('a check with no remedy prints the absence glyph rather than a blank cell', () => {
-    // The sentence `no fix offered` moved to the opened check's own note, where a Doctor fix's
-    // paragraph belongs; the rack cell carries the absence glyph (m1 design review B8).
-    const out = render(h(CheckStrip, { row: rowOf(plain), selected: false, onOpen: () => undefined }));
-    expect(out).toContain('>–<');
-    expect(out).not.toContain('no fix offered');
+    // `No fix offered` is the opened check's own line, where a Doctor fix's paragraph belongs; the
+    // table cell carries the absence glyph (m1 design review B8).
+    const out = rowOf(plain);
+    expect(out).toContain(`>${ABSENT}<`);
+    expect(out).not.toContain(DOCTOR_WORDS.noFix);
+    expect(out).not.toContain('myx-dt-tone');
   });
 
   test('the same finding on several heads is one row that counts them', () => {
@@ -191,11 +209,33 @@ describe('every failing check carries its fix', () => {
     expect(wantsAttention('info')).toBe(false);
   });
 
-  test('the status edges never paint a statement green', () => {
-    expect(statusEdge('ok')).toBe('green');
-    expect(statusEdge('info')).toBe('grey');
-    expect(statusEdge('warn')).toBe('amber');
-    expect(statusEdge('fail')).toBe('red');
+  test('the status tones never paint a statement green', () => {
+    expect(DOCTOR_TONE).toEqual({ ok: 'ok', info: 'neutral', warn: 'warn', fail: 'danger' });
+    expect(DOCTOR_MARK.info).not.toBe('ok');
+  });
+
+  test('the checks by status are one split bar in a fixed order, a zero kept in its place', () => {
+    const parts = statusParts([check('a/x', 'fail', 'x'), check('a/y', 'ok', 'y'), check('b/z', 'ok', 'z')]);
+    expect(parts.map((part) => [part.key, part.value])).toEqual([['ok', 2], ['info', 0], ['warn', 0], ['fail', 1]]);
+  });
+
+  test('the upgrade says none only when it looked, and the absence when it did not', () => {
+    const upgrade = {
+      installed: '0.4.0', latest: null, latest_basis: 'measured' as const,
+      rollback_target: null, rollback_basis: 'unavailable' as const, rollback_unavailable_reason: 'no releases dir',
+      checked_at_epoch_millis: null,
+    };
+    expect(latestText(upgrade)).toBe(DOCTOR_WORDS.none);
+    expect(latestText({ ...upgrade, latest: '0.4.1' })).toBe('0.4.1');
+    expect(latestText({ ...upgrade, latest_basis: 'unavailable' })).toBe(ABSENT);
+    expect(rollbackText(upgrade)).toBe(ABSENT);
+    expect(rollbackText({ ...upgrade, rollback_basis: 'measured', rollback_target: '0.3.9' })).toBe('0.3.9');
+    expect(latestText(null)).toBe(ABSENT);
+  });
+
+  test('Claude Code\'s version drops the product name its tile already prints', () => {
+    expect(claudeVersionText('2.1.282 (Claude Code)')).toBe('2.1.282');
+    expect(claudeVersionText('2.1.282')).toBe('2.1.282');
   });
 
   test('attention first lists every check that wants the operator before any that does not', () => {
@@ -330,65 +370,6 @@ describe('pending routes render an empty naming their row', () => {
     expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('restart');
     expect(Object.keys(DOCTOR_EMPTIES)).not.toContain('playground');
   });
-
-  test('where a restart control would stand, the page says what the host does on its own', () => {
-    // There is no restart route (/mcp/{name} is the JSON-RPC transport) and no CLI command restarts
-    // one server, so the old `restart not built / no route; CLI only` sent the reader nowhere.
-    // HostedServer.spawn respawns on the next call and backs off 5-60 s in a crash loop.
-    expect(RESPAWN_NOTE).toContain('starts again on its next call');
-    expect(RESPAWN_NOTE).not.toContain('CLI');
-  });
-
-  test('the hosting-off and no-servers empties say how to fill them, never a route', () => {
-    expect(render(h(Empty, MCP_EMPTIES.hostingOff))).toContain('mcp_hosting = true under [daemon]');
-    for (const empty of Object.values(MCP_EMPTIES)) expect(empty.source).not.toContain('/api/');
-  });
-});
-
-describe('the mcp host', () => {
-  const payload: McpPayload = {
-    hosting: true,
-    servers: {
-      zebra: { eligible: true, hosted: true, pid: 42, sessions: 2, session_ids: ['a', 'b'], streams: 3, started_at: 1000, last_activity: 2000, restarts: 1 },
-      alpha: { eligible: true, hosted: false, sessions: 0, session_ids: [], streams: 0, restarts: 0 },
-      moot: { eligible: false, reason: 'excluded by mcp_hosting_exclude' },
-    },
-  };
-
-  test('the three states are told apart, and idle is not a failure', () => {
-    const states = serverRows(payload).map((row) => [row.name, row.state]);
-    expect(states).toEqual([['alpha', 'idle'], ['moot', 'ineligible'], ['zebra', 'hosted']]);
-    // `unused` and not `not started`: the edge prints this word inside the contract's 6ch budget
-    // (CONTRACTS.md section 2, m1 design review B10).
-    expect(stateLabel('idle')).toBe('unused');
-  });
-
-  test('an ineligible server is grey, not red: a decision is not a fault', () => {
-    // and its word says clients reach it themselves, not that something was refused
-    expect(stateLabel('ineligible')).toBe('direct');
-    expect(stateEdge('ineligible')).toBe('grey');
-    expect(stateEdge('hosted')).toBe('green');
-  });
-
-  test('rows are ordered by name, so the rack does not reshuffle between polls', () => {
-    expect(serverRows(payload).map((row) => row.name)).toEqual(['alpha', 'moot', 'zebra']);
-  });
-
-  test('hosted first puts the loaded servers above the waiting ones', () => {
-    const rows = arrangeServers(payload, { group: null, sort: { field: 'state', dir: 'desc' } })[0]?.rows;
-    expect(rows?.map((row) => row.name)).toEqual(['zebra', 'alpha', 'moot']);
-  });
-
-  test('uptime is null for a server that never started, never a zero', () => {
-    expect(upText(undefined, 5000)).toBeNull();
-    expect(upText(1000, 4000)).toBe('up 3.0s');
-  });
-
-  test('the four host knobs are read from config, and a knob the daemon lacks has no value', () => {
-    const limits = hostLimits([]);
-    expect(limits.map((limit) => limit.key)).toEqual([...MCP_HOST_KNOBS]);
-    expect(limits.every((limit) => limit.knob === null)).toBe(true);
-  });
 });
 
 describe('budgets and alerts', () => {
@@ -455,6 +436,15 @@ describe('the upgrade verdict', () => {
   test('a matching version is current and a different one is behind', () => {
     expect(upgradeVerdict(payload({ latest_basis: 'measured', latest: '0.4.0' }))).toBe('current');
     expect(upgradeVerdict(payload({ latest_basis: 'measured', latest: '0.5.0' }))).toBe('behind');
+  });
+
+  test('the installed figure names what is unknown: the latest release, not the version beside it', () => {
+    const report: DoctorPayload = {
+      schema_version: 1, generated_at: '2026-09-18T00:00:00Z', splice: { version: '0.4.0' }, claude_code: { version: '2.1.257' },
+      os: { name: 'Linux', version: '6.17', arch: 'x86_64' }, jvm: { version: '21', vendor: 'x' }, topology: {}, checks: [], accounts: {}, perf: {},
+    };
+    const out = render(h(DoctorBoard, { report, upgrade: payload(), onToggle: () => undefined }));
+    expect(statOf(out, DOCTOR_WORDS.installed)?.sub).toBe('Latest unknown');
   });
 });
 

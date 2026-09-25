@@ -1,24 +1,34 @@
-// Every label this feature prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
-// section 4, enforced by the label wall).
+// Every word this feature prints. S: labels, three words or fewer, sentence case. H: help and the
+// line an action reads back, one sentence of twelve words or fewer.
 export const S = {
-  add: 'add account',
-  label: 'label',
-  start: 'start login',
-  cancel: 'cancel',
-  copy: 'copy',
-  code: 'code',
-  link: 'link',
-  switch: 'switch',
+  add: 'Add account',
+  label: 'Label',
+  start: 'Start login',
+  cancel: 'Cancel',
+  copy: 'Copy',
+  code: 'Code',
+  link: 'Link',
+  switch: 'Switch',
   /** Drops a manual switch's pin, so the selector's own order picks again. */
-  unpin: 'unpin',
-  relabel: 'relabel',
-  remove: 'remove',
-  refresh: 'refresh',
-  actions: 'actions',
-  account: 'account',
-  head: 'head',
-  provider: 'provider',
-  note: 'note',
-  notReported: 'not reported',
-  noAccount: 'no account',
+  unpin: 'Unpin',
+  relabel: 'Relabel',
+  remove: 'Remove',
+  refresh: 'Refresh',
+  signInUnavailable: 'Sign-in unavailable',
+} as const;
+
+export const H = {
+  signInUnavailable: 'This splice version cannot sign in here; run splice login <head>.',
+  device: 'Finish signing in in the browser with this code.',
+  waiting: 'Waiting for the credential.',
+  afterRestart: 'Signed in; live after the daemon restarts.',
+  added: 'Account added.',
+  failed: 'Login failed; try again, or run splice login <head>.',
+  switched: 'Takes effect on the next turn; a running turn keeps its account.',
+  unpinned: 'The usual order picks again from the next turn.',
+  refreshed: 'Login refreshed.',
+  renamed: 'Account renamed.',
+  removed: 'Account removed.',
+  unsupported: 'This splice version cannot do that.',
+  refused: 'The daemon refused it.',
 } as const;

@@ -1,0 +1,17 @@
+/* An account row's cells: the name with its primary and pinned badges, the heads riding it, and a
+   window as its meter with the reset beside it. Spacing, type size and colour only through the token
+   sheet. */
+
+.myx-at-name,
+.myx-at-heads { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+/* A window: its meter and used share, then its own length where it is not the slot's and the time
+   until it resets, quiet, so the share is what reads first. */
+.myx-at-win { display: grid; gap: var(--space-1); min-width: 0; }
+.myx-at-win-note {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.myx-at-win-note:empty { display: none; }

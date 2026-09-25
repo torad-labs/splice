@@ -115,20 +115,23 @@ export function restState(tsx: string, css: string, cls: string): Rest {
 
 /** Must not hold width at rest. The wall proper. */
 export const NO_RESTING_COLUMN: Record<string, string> = {
-  fleet: 'COLLAPSES at rest since M1-116 -- its track is 0 and the -open class widens it, with '
-    + 'the gutter moving with the track. It read "M1-102 unmounted it" until M1-122: the mechanism '
-    + 'changed and the disposition did not, so the file documented a repair the code no longer '
-    + 'used. Dead region 13.5%.',
-  models: 'COLLAPSES at rest since M1-116, the same mechanism as fleet -- it read "M1-112 unmounted '
-    + 'it" until M1-122 for the same reason. Dead region 21.5%, the second worst in the set.',
+  fleet: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`opened === null ? null :` gate and .myx-fl-board declares one track until -open adds the '
+    + 'second. It collapsed its track to 0 since M1-116 before; dead region 13.5% then.',
+  models: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`opened === null ? null :` gate and .myx-md-board declares one track until -open adds the '
+    + 'second. It collapsed its track to 0 since M1-116 before; dead region 21.5% then.',
   // M1-117 moved this unit here from HELD, and M1-122 moved the registration INTO this literal
   // rather than assigning it after the object was built. A collect-time mutation is fragile by
   // inspection -- it guards only if the assignment happens to precede the Object.keys() that
   // reads it -- and a guarded list that can silently lose a member is the failure this file
   // exists to prevent. Entry order in a literal cannot be reordered by accident.
-  'compact-feed': 'src/widgets/compact-feed/compact-feed.css: .myx-cfeed second track is 0 at '
-    + 'rest and the -open class widens it, with column-gap moving with the track so the collapse '
-    + 'leaves no gutter of its own (M1-117, mirroring sessions and M1-119).',
+  mcp: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`open === null ? null :` gate, and the host limits it carried at rest moved into the main '
+    + 'column as their own section. It was POPULATED before, dead region 7.8%.',
+  compaction: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind '
+    + 'an `open === null ? null :` gate and .myx-cp-board declares one track until -open adds the '
+    + 'second. It was the compact-feed widget\'s .myx-cfeed collapsed track before (M1-117).',
   turns: 'already collapses its track to 0 at rest and transitions it open. Dead region 17.7%.',
   sessions: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind '
     + 'an `open === null ? null :` gate, so no track and no empty landmark exist until a row is '
@@ -139,21 +142,19 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
   projects: 'UNMOUNTED at rest since Projects moved onto the kit (2026-09-25): the repo\'s '
     + 'DetailPanel sits behind an `open === null ? null :` gate, the sessions pattern, so the '
     + 'repos table takes the whole width until a repo is opened. It collapsed its track before.',
-  accounts: 'COLLAPSES at rest since M2-24, the same mechanism as the other six -- second track 0, '
-    + 'the -open class carrying both the wide track and its gutter, the transition covering both, '
-    + 'and a reduced-motion arm. Held under M1-107 until that row landed; it was the last resting '
-    + 'column in the console. Dead region 20.3%, third worst. Its rest state is TWO conditions '
-    + 'rather than one, so the gate is a named `closed` read by both aria-hidden and the content '
-    + 'rather than a compound expression written out twice and left to drift.',
+  doctor: 'UNMOUNTED at rest since the redesign (2026-09-25): the kit\'s DetailPanel sits behind an '
+    + '`opened === null ? null :` gate, and the version, restart and playground it carried at rest '
+    + 'moved into the main column as sections of their own. It was POPULATED before, dead region 10.6%.',
+  accounts: 'UNMOUNTED at rest since the redesign (2026-09-25): ONE kit DetailPanel behind a '
+    + '`panel === null ? null :` gate, where `panel` is the one named choice between an account, an '
+    + 'api-key head and a head -- three conditions read once, so the track and the content cannot '
+    + 'disagree. It collapsed its track to 0 since M2-24 before; dead region 20.3% then.',
 };
 
 /** Carries real content at rest, so removing the column would delete content, not reclaim space. */
 export const POPULATED: Record<string, string> = {
-  doctor: 'its column carries the version strip, the claude-code version, the attention count, '
-    + 'three empties naming pending V4 rows and the fix list at rest; only the opened-check '
-    + 'section is conditional, and it already is. Dead region 10.6%, below the comp\'s own 11.2%.',
-  mcp: 'its column carries HostLimits at rest -- four knob cards of real content -- after the '
-    + 'opened-server branch. Dead region 7.8%, the lowest of the nine.',
+  // EMPTY since the redesign (2026-09-25): doctor was the last entry, and its resting content moved
+  // into the main column. The list stays so the next populated column has somewhere to be named.
 };
 
 /** Carries the defect, but the file belongs to another live row or to no row at all. */

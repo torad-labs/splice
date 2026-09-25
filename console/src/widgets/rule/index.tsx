@@ -7,10 +7,11 @@
 // only state it keeps is the clock, and the only reads it starts are the ones
 // nothing else starts for it.
 //
-// The window derivation is NOT computed here. It arrives from @entities/usage
-// (M2-01), which is the slice that owns /api/usage: this widget used to carry
-// its own copy, and two implementations of "nearest window" is one more than can
-// stay in agreement. The cells are exported so a test can render them from
+// The window derivation is NOT computed here. It arrives from @features/nearest-limit,
+// the one definition the fleet and accounts pages print too: this widget used to
+// carry its own copy, and then read only /api/usage while the accounts page read
+// every pooled account, and two definitions of "nearest limit" printed two numbers
+// (review of #264). The cells are exported so a test can render them from
 // payloads rather than from the stores (a static render sees a store's initial
 // state and never its current one).
 import { useEffect, useState } from 'react';
@@ -23,8 +24,11 @@ import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle';
 import { HeadMark, hueClass, startControlStatusPolling, useControlStatus, useHues } from '@entities/control-status';
 import { startHeadsPolling, useHeads } from '@entities/heads';
+import { startAccountsPolling, useAccounts } from '@entities/account';
+import type { AccountRow } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { headsReportingNone, nearestWindow, planLevel, startUsagePolling, useUsage } from '@entities/usage';
+import { headsReportingNone, planLevel, startUsagePolling, useUsage } from '@entities/usage';
+import { nearestLimit } from '@features/nearest-limit';
 import { useRestartPending } from '@entities/config';
 import { useSession } from '@entities/session';
 import { connect, useEvents } from '@entities/events';
@@ -84,11 +88,15 @@ export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: bo
   return anyHeadDown ? 'amber' : 'green';
 }
 
-/** The plan window nearest exhaustion: the head, the window, how full it is as a meter and a
- *  figure, and when it resets. What the strip does not print (how many heads report no limit)
- *  shows on hover and focus. */
-export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: AuthPayload | null }) {
-  const nearest = nearestWindow(usage, auth);
+/** The nearest limit (the one definition the fleet and accounts pages print): the head, the account,
+ *  the window, how full it is as a meter and a figure, and when it resets. What the strip does not
+ *  print (how many heads report no limit) shows on hover and focus. */
+export function WindowCell({ accounts, usage, auth }: {
+  accounts: readonly AccountRow[];
+  usage: UsagePayload | null;
+  auth: AuthPayload | null;
+}) {
+  const nearest = nearestLimit({ accounts, usage, auth }, Date.now());
   const none = headsReportingNone(usage);
   const tip = none === null || none === 0 ? S.limit : `${S.limit}, ${none} ${U.withoutLimit}`;
   const glyph = <Tip text={tip} side="bottom"><GaugeIcon className="myx-rule-glyph" aria-label={S.limit} /></Tip>;
@@ -104,7 +112,7 @@ export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: 
   return (
     <p className="myx-rule-cell myx-rule-window">
       {glyph}
-      <HeadMark head={nearest.head} />
+      {nearest.head !== null ? <HeadMark head={nearest.head} /> : null}
       {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
       <span className="myx-rule-period">{nearest.window}</span>
       <span className="myx-rule-meter">
@@ -211,6 +219,7 @@ export function Rule() {
   const heads = useHeads((state) => state.data);
   const usage = useUsage((state) => state.data);
   const auth = useAuth((state) => state.data);
+  const pools = useAccounts((state) => state.data);
   const pendingRestart = useRestartPending((state) => state.pending);
   const locked = useSession((state) => state.locked);
   const connection = useEvents((state) => state);
@@ -225,6 +234,7 @@ export function Rule() {
     const stops = [
       startControlStatusPolling(10_000),
       startUsagePolling(15_000),
+      startAccountsPolling(15_000),
       startAuthPolling(30_000),
       startHeadsPolling(5_000),
     ];
@@ -257,7 +267,7 @@ export function Rule() {
 
       <HealthCell health={health} />
 
-      <WindowCell usage={usage} auth={auth} />
+      <WindowCell accounts={pools !== null && 'accounts' in pools ? pools.accounts : []} usage={usage} auth={auth} />
 
       <PendingRestartCell pending={pendingRestart} />
 

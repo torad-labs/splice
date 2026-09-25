@@ -1,7 +1,7 @@
 // M4-05: the compaction page reads GET /api/compaction/instructions (V4-136) for every head. The
 // route answers per head, one entry per configured rule that applies to it ({scopes: [{scope,
 // source, chars}]}, CompactionInstructionsRoute), and no text. Under test: per-head answers merge
-// into one strip per rule carrying its heads, a model rule keeps only the heads that listed it, one
+// into one row per rule carrying its heads, a model rule keeps only the heads that listed it, one
 // head's refusal is named without blanking the rest, and a length's two special values print as
 // what they mean.
 import * as React from 'react';
@@ -11,8 +11,7 @@ import { fetchInstructions } from '../src/entities/compact-stats';
 import type { InstructionsWire } from '../src/entities/compact-stats';
 import { mergeInstructions } from '../src/entities/compact-stats/model/instructions';
 import { instructionsStore } from '../src/entities/compact-stats/model/store';
-import { InstructionsBay } from '../src/pages/compaction';
-import { charsText } from '../src/widgets/compaction-rule';
+import { RuleLength } from '../src/widgets/compaction-rule';
 
 const h = React.createElement;
 
@@ -101,30 +100,14 @@ describe('reading every head', () => {
   });
 });
 
-describe('the rules bay', () => {
-  test('a length prints as a count, an empty rule as the client default, an unreadable file as unavailable', () => {
-    expect(charsText(41)).toBe('41');
-    expect(charsText(0)).toBe('Client default');
-    expect(charsText(null)).toBe('Unavailable');
-  });
-
-  test('prints one strip per rule, labelled by its source, with its length and heads', () => {
-    const rules = mergeInstructions([{ head: 'e2e-codex', wire: CODEX }, { head: 'e2e-codex-solo', wire: SOLO }]);
-    const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules, unread: [] } }));
-    expect(out).toContain('aria-label="Instruction model:e2e-model"');
-    expect(out).toContain('>31<');
-    expect(out).toContain('e2e-codex e2e-codex-solo');
-  });
-
-  test('no rule says the client\'s instructions stand, and names where rules are declared', () => {
-    const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules: [], unread: [] } }));
-    expect(out).toContain('no compaction rules');
-    expect(out).toContain('own summary instructions apply');
-    expect(out).toContain('[compaction] in splice.toml');
-  });
-
-  test('a head that could not be asked is named with its reason', () => {
-    const out = renderToStaticMarkup(h(InstructionsBay, { instructions: { rules: [], unread: [{ head: 'e2e-openrouter', reason: 'HTTP 503' }] } }));
-    expect(out).toContain('e2e-openrouter: HTTP 503');
+describe("a rule's length", () => {
+  test('a length is a bar with its count, an empty rule the client default, an unreadable file unavailable', () => {
+    const cell = (chars: number | null) => renderToStaticMarkup(h(RuleLength, { rule: { scope: 'global', source: 'global', chars }, longest: 82 }));
+    expect(cell(41)).toContain('role="meter"');
+    expect(cell(41)).toContain('aria-valuenow="50"');
+    expect(cell(41)).toContain('>41<');
+    expect(cell(0)).toContain('>Client default<');
+    expect(cell(0), 'zero is a decision, never drawn as a length').not.toContain('role="meter"');
+    expect(cell(null)).toContain('>Unavailable<');
   });
 });

@@ -125,12 +125,14 @@ async function pick(scope: Locator, label: string, option: string, nth = 0): Pro
   await scope.getByRole('option', { name: option, exact: true }).click();
 }
 
-/** An account strip's `next` cell: the rule the daemon's next target was chosen by, empty on every
- *  strip the daemon did not flag (widgets/account-strip). */
-function nextCell(strip: Locator): Locator {
-  return strip
-    .locator('.myx-sfield', { has: strip.page().locator('.myx-sfield-label', { hasText: /^next$/ }) })
-    .locator('.myx-sfield-text');
+/** An account row's `Next` cell: the rule the daemon's next target was chosen by, empty on every
+ *  row the daemon did not flag (widgets/account-table). */
+async function nextCell(main: Locator, account: string): Promise<Locator> {
+  const table = main.getByRole('table', { name: 'Accounts', exact: true });
+  const names = await table.getByRole('columnheader').allTextContents();
+  // `has` resolves inside each row, so the inner locator starts from the page, not from `main`
+  const row = table.getByRole('row').filter({ has: main.page().getByRole('button', { name: `Open account ${account}`, exact: true }) });
+  return row.getByRole('cell').nth(names.indexOf('Next'));
 }
 
 test('accounts shows the OAuth account with the windows its provider reported', async ({ page }) => {
@@ -143,11 +145,12 @@ test('accounts shows the OAuth account with the windows its provider reported', 
 
   // The daemon's own next target in the pooled head's pool: next_target on the primary, marked with
   // the rule that chose it, and on no other strip of the pool or of the page (M4-08).
-  await expect(nextCell(main.getByRole('button', { name: 'chatgpt-oauth primary', exact: true }))).toHaveText('primary');
-  await expect(nextCell(main.getByRole('button', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true }))).toHaveText('');
-  await expect(nextCell(main.getByRole('button', { name: 'chatgpt-oauth single login', exact: true }))).toHaveText('');
-  // The order the daemon walks, the pin first.
-  await expect(main).toContainText('pinned, then primary, then last used, then most weekly room');
+  await expect(await nextCell(main, 'chatgpt-oauth primary')).toHaveText('Primary');
+  await expect(await nextCell(main, `chatgpt-oauth ${STACK.poolLabel}`)).toHaveText('');
+  await expect(await nextCell(main, 'chatgpt-oauth Single login')).toHaveText('');
+  // The order the daemon walks, the pin first, behind the accounts section's info mark.
+  await expect(main.getByRole('button', { name: 'About next', exact: true }))
+    .toHaveAccessibleDescription('Pinned, then primary, then last used, then most weekly room.');
 });
 
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {
@@ -163,29 +166,37 @@ test('fleet shows each head\'s pinned model from the catalog', async ({ page }) 
 const RESTART_UNSUPERVISED =
   'nothing will restart this daemon: it was not started by systemd, so a drain would leave it down';
 
-/** A head strip's accessible name: its label and its auth kind (widgets/head-strip). */
-function headStrip(page: Page, head: string, authKind: string) {
-  return page.getByRole('button', { name: `${head} ${authKind}`, exact: true });
+/** A head's open button in the heads table: the row's primary cell (pages/fleet). */
+function headRow(page: Page, head: string) {
+  return page.getByRole('button', { name: `Open head ${head}`, exact: true });
+}
+
+/** One account's row in an opened head's pool table, found by the account's name cell. A pool
+ *  account opens nothing, so its row carries no button; it is found by its cell text. */
+function poolRow(detail: Locator, account: string): Locator {
+  return detail.getByRole('table', { name: 'Account pool', exact: true }).getByRole('row')
+    .filter({ has: detail.page().getByRole('cell', { name: account }) });
 }
 
 test('fleet opens a head with its account pool and the next target marked', async ({ page }) => {
   const faults = await open(page, 'fleet');
-  await headStrip(page, STACK.oauthHead, 'chatgpt-oauth').click();
-  const detail = page.getByRole('complementary', { name: 'head detail' });
-  // Both accounts of the pool, as account strips; the primary carries the windows the turn reported.
-  // A pool account in the detail opens nothing, so it is a named group, not a button (S9).
-  await expect(detail.getByRole('group', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true })).toBeVisible({ timeout: 15_000 });
-  const primary = detail.getByRole('group', { name: 'chatgpt-oauth primary', exact: true });
+  await headRow(page, STACK.oauthHead).click();
+  const detail = page.getByRole('complementary', { name: 'Head detail' });
+  // Both accounts of the pool, as account rows; the primary carries the windows the turn reported.
+  const pool = detail.getByRole('table', { name: 'Account pool', exact: true });
+  await expect(pool).toContainText(STACK.poolLabel, { timeout: 15_000 });
+  const primary = poolRow(detail, 'primary');
   await expect(primary).toContainText(`${STACK.fiveHourUsedPercent}%`);
-  await expect(primary).toContainText(STACK.plan);
-  // The daemon's own next target (next_target on the primary), printed where the column shows it.
-  await expect(detail).toContainText('next target primary');
+  // The daemon's own next target (next_target on the primary), one fact above the rows: the account
+  // and the rule that chose it. Only that fact's value holds the rule's word.
+  await expect(detail.getByRole('definition').filter({ has: page.getByText('Primary', { exact: true }) })).toHaveText(/^primary\s*Primary$/);
   // The solo head's single login rides another head, so it is not in this pool.
-  await expect(detail.getByRole('group', { name: 'chatgpt-oauth single login', exact: true })).toHaveCount(0);
+  await expect(pool).not.toContainText('Single login');
 
-  // An api-key head has no account pool and says so, rather than printing an empty rack.
-  await headStrip(page, STACK.keyHead, 'api-key').click();
-  await expect(detail).toContainText('no account pool');
+  // An api-key head has no account pool and says so, rather than printing an empty table.
+  await headRow(page, STACK.keyHead).click();
+  await expect(detail).toContainText('No pool');
+  await expect(detail.getByRole('table', { name: 'Account pool', exact: true })).toHaveCount(0);
   expect(faults.pageErrors, 'opening a head threw').toEqual([]);
 });
 
@@ -195,23 +206,23 @@ test('the draining restart confirms inline and prints the daemon\'s refusal verb
     if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/daemon/restart') posts.push(request.url());
   });
   await open(page, 'fleet');
-  await headStrip(page, STACK.oauthHead, 'chatgpt-oauth').click();
-  const detail = page.getByRole('complementary', { name: 'head detail' });
+  await headRow(page, STACK.oauthHead).click();
+  const detail = page.getByRole('complementary', { name: 'Head detail' });
 
-  await detail.getByRole('button', { name: 'restart daemon', exact: true }).click();
-  // Armed, in place: the confirm key is on the strip and nothing has been sent.
-  const confirm = detail.getByRole('button', { name: 'drain and restart', exact: true });
+  await detail.getByRole('button', { name: 'Restart daemon', exact: true }).click();
+  // Armed, in place: the confirm key is in the detail and nothing has been sent.
+  const confirm = detail.getByRole('button', { name: 'Drain and restart', exact: true });
   await expect(confirm).toBeVisible();
   expect(posts, 'arming the key sent the restart').toEqual([]);
   await confirm.click();
   await expect(detail).toContainText(RESTART_UNSUPERVISED);
   expect(posts).toHaveLength(1);
 
-  // The doctor's upgrade section mounts the same control, and the daemon answers it the same way.
+  // The doctor's version section mounts the same control, and the daemon answers it the same way.
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#/doctor`);
-  const doctor = page.getByRole('complementary', { name: 'check detail' });
-  await doctor.getByRole('button', { name: 'restart daemon', exact: true }).click();
-  await doctor.getByRole('button', { name: 'drain and restart', exact: true }).click();
+  const doctor = page.locator('main');
+  await doctor.getByRole('button', { name: 'Restart daemon', exact: true }).click();
+  await doctor.getByRole('button', { name: 'Drain and restart', exact: true }).click();
   await expect(doctor).toContainText(RESTART_UNSUPERVISED);
   expect(posts).toHaveLength(2);
 });
@@ -223,30 +234,31 @@ test('doctor renders the stack\'s report, the CLI\'s own masked values included,
   // CLI masks: `export CONSOLE_E2E_NO_SUCH_KEY=<redacted>`. The console read that mask as a leak and
   // refused the whole report ('key-value at checks[28].detail') until M4-07.
   const masked = 'CONSOLE_E2E_NO_SUCH_KEY=<redacted>';
-  const strip = main.getByRole('button').filter({ hasText: masked });
-  await expect(strip, 'the masked check is not in the rack').toBeVisible({ timeout: 15_000 });
-  await expect(main.getByText('report refused')).toHaveCount(0);
-  // The rest of the report prints with it: the report's own facts beside the rack.
+  // The masked fix is in the row's Fix cell; the row opens from its check cell's button.
+  const row = main.getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: masked });
+  await expect(row, 'the masked check is not in the table').toBeVisible({ timeout: 15_000 });
+  await expect(main.getByText('Report refused')).toHaveCount(0);
+  // The rest of the report prints with it: the report's own fields under the table.
   await expect(main.getByText('schema_version', { exact: true })).toBeVisible();
   // Opening the check prints its detail, the daemon's sentence ahead of the fix.
-  await strip.click();
-  const detail = page.getByRole('complementary', { name: 'check detail' });
+  await row.getByRole('button').click();
+  const detail = page.getByRole('complementary', { name: 'Check detail' });
   await expect(detail).toContainText('CONSOLE_E2E_NO_SUCH_KEY is not set');
   expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });
 
 test('doctor\'s playground sends one prompt through a head to the upstream and shows both sides', async ({ page }) => {
   const faults = await open(page, 'doctor');
-  const detail = page.getByRole('complementary', { name: 'check detail' });
-  await detail.getByRole('button', { name: 'playground', exact: true }).click();
-  await pick(detail, 'head', STACK.oauthHead);
-  await detail.getByRole('textbox', { name: /^prompt/ }).fill('one prompt from the console e2e');
-  await detail.getByRole('button', { name: 'send', exact: true }).click();
+  // The playground is a section of the page, open at rest: one form, no reveal to press first.
+  const playground = page.locator('main');
+  await pick(playground, 'Head', STACK.oauthHead);
+  await playground.getByRole('textbox', { name: /^Prompt/ }).fill('one prompt from the console e2e');
+  await playground.getByRole('button', { name: 'Send', exact: true }).click();
   // The mock upstream's own answer text, inside the raw response the daemon relayed.
-  await expect(detail).toContainText('console e2e answer', { timeout: 30_000 });
+  await expect(playground).toContainText('console e2e answer', { timeout: 30_000 });
   // The raw request: the upstream URL the head's provider resolves to, and the prompt it carried.
-  await expect(detail).toContainText('/responses');
-  await expect(detail).toContainText('one prompt from the console e2e');
+  await expect(playground).toContainText('/responses');
+  await expect(playground).toContainText('one prompt from the console e2e');
   expect(faults.pageErrors, 'the playground threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'the playground send was refused').toEqual([]);
 });
@@ -254,7 +266,7 @@ test('doctor\'s playground sends one prompt through a head to the upstream and s
 test('models opens a model with the head windows its topology declares', async ({ page }) => {
   const faults = await open(page, 'models');
   await page.getByRole('button', { name: `open model ${STACK.model}` }).first().click();
-  const detail = page.getByRole('complementary', { name: 'catalog' });
+  const detail = page.getByRole('complementary', { name: 'Model detail' });
   await expect(detail).toContainText(STACK.model);
   // 300k is the head's forced window: set in the topology only, never in /api/models.
   await expect(detail).toContainText(`${STACK.headWindow / 1000}k`);
@@ -385,7 +397,9 @@ test('sessions prints each session\'s peer from the fleet-wide edges read, unope
 
 test('compaction lists the instruction rules the daemon has in effect, with their lengths', async ({ page }) => {
   const faults = await open(page, 'compaction');
-  const rule = (source: string) => page.getByRole('group', { name: `instruction ${source}` });
+  // One row of the rules table per rule, found by its source cell.
+  const rule = (source: string) => page.getByRole('table', { name: 'Rules' }).getByRole('row')
+    .filter({ has: page.getByRole('cell', { name: source, exact: true }) });
   await expect(rule('global')).toContainText(String(STACK.compactGlobal.length), { timeout: 15_000 });
   await expect(rule(`model:${STACK.model}`)).toContainText(String(STACK.compactModel.length));
   await expect(rule(`project:${env('CONSOLE_E2E_REPO')}`)).toContainText(String(STACK.compactProject.length));

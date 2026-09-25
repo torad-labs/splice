@@ -11,10 +11,3 @@ export const S = {
   /** A rule whose file cannot be read. */
   unavailable: 'Unavailable',
 } as const;
-
-// The two words the rule strip still prints on the compaction page until the routing pages' rebuild
-// (claude-builder's #264) retires the strip; deleted with it.
-export const LEGACY = {
-  rule: 'Rule',
-  instruction: 'Instruction',
-} as const;

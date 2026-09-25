@@ -1,4 +1,4 @@
-// USAGE, COMPACTION AND MODELS (row M2-06). The things worth proving here are the ones that would
+// USAGE AND ITS WINDOWS (row M2-06). The things worth proving here are the ones that would
 // quietly change a decision: what a dollar figure is actually made of, that a window draws every
 // hour it claims, and that a route the daemon has not built yet reads as a named empty rather than
 // as an empty catalog.
@@ -11,15 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 
 import { costOf, sum, within } from '../src/entities/economics';
-import { slotTiers, windowSourceText } from '../src/entities/model';
-import type { HeadCatalog } from '../src/entities/model';
-import { CompactFeed, countedLine, edgeFor, outcomeCounts, outcomeText, recentLine, shareText, stateOf } from '../src/widgets/compact-feed';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
-import { CompactionBoard } from '../src/pages/compaction';
-import { fixtureCompact } from '../src/pages/compaction/fixtures/compaction';
-import { ModelsBoard } from '../src/pages/models';
-import { byProvider, findModel, headWindows, PROVIDER_UNKNOWN } from '../src/pages/models/model';
-import { fixtureCatalog } from '../src/pages/models/fixtures/models';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
 import { fmtUsd, perHour, ratesFor, sortedHeads } from '../src/pages/usage/model';
@@ -284,183 +276,6 @@ describe('plan limits', () => {
   });
 });
 
-describe('compaction page', () => {
-  test('an outcome earns its edge from the daemon name, and an unknown one is not a success', () => {
-    expect(edgeFor('model_summary')).toBe('green');
-    expect(edgeFor('empty_model')).toBe('red');
-    expect(edgeFor('stream_error')).toBe('red');
-    expect(edgeFor('truncated')).toBe('amber');
-    expect(edgeFor('something_new')).toBe('amber');
-  });
-
-  test('the feed draws a strip per outcome and a strip per event, each outcome in words', () => {
-    const markup = render(h(CompactFeed, { payload: fixtureCompact }));
-    for (const outcome of Object.keys(fixtureCompact.stats.by_outcome)) {
-      expect(markup).toContain(`>${outcomeText(outcome)}<`);
-      expect(markup, `the daemon's spelling ${outcome} is not what a reader sees`).not.toContain(`>${outcome}<`);
-    }
-    expect(markup).toContain(String(fixtureCompact.stats.total));
-    expect(markup).toContain('myx-strip');
-    expect(markup, 'an empty rack gives guidance, not a route').not.toContain('/api/');
-  });
-
-  test('the event rack names a head by its label, and a head with no label by its key', () => {
-    const labels = new Map([['claudex', 'claude-codex']]);
-    const markup = render(h(CompactFeed, { payload: fixtureCompact, labels }));
-    expect(markup).toContain('>claude-codex<');
-    expect(markup, 'a labelled head prints its label, never its key').not.toContain('>claudex<');
-    expect(markup, 'a head the map does not name keeps its key').toContain('>claude-splice<');
-  });
-
-  test('with seven-day counts the rack leads with the week, and the older rows print as one dated line', () => {
-    const sep21 = new Date(2026, 8, 21, 12).getTime();
-    const stats = {
-      ...fixtureCompact.stats,
-      total: 3787,
-      by_outcome: { model_text: 2467, empty_model: 666, stream_error: 567, upstream_error: 82 },
-      by_outcome_7d: { model_text: 40, stream_error: 2 },
-      heads: {
-        claudex: { total: 3000, by_outcome: {}, first_ts: sep21 + 86_400_000 },
-        bonsai: { total: 787, by_outcome: {}, first_ts: sep21 },
-        fresh: { total: 0, by_outcome: {} },
-      },
-    };
-    expect(outcomeCounts(stats)).toEqual({ counts: { model_text: 40, stream_error: 2 }, total: 42, week: true });
-    expect(countedLine(stats)).toBe('since sep 21: 3,787 counted, 1,315 failed');
-    const markup = render(h(CompactFeed, { payload: { stats } }));
-    expect(markup).toContain('>last 7 days<');
-    expect(markup).toContain('>42<');
-    expect(markup, 'shares are of the week, not of every counted row').toContain('>95%<');
-    expect(markup).toContain('since sep 21: 3,787 counted, 1,315 failed');
-  });
-
-  test('without seven-day counts the rack shows the counted rows, undated and never called all', () => {
-    expect(outcomeCounts(fixtureCompact.stats)).toEqual({
-      counts: fixtureCompact.stats.by_outcome, total: fixtureCompact.stats.total, week: false,
-    });
-    expect(countedLine(fixtureCompact.stats)).toBeNull();
-    const markup = render(h(CompactFeed, { payload: fixtureCompact }));
-    expect(markup).toContain('>recorded outcomes<');
-    expect(markup).not.toContain('all recorded');
-    expect(markup).not.toContain('last 7 days');
-    // a week sent with no head carrying a first row has nothing to date the older count by
-    expect(countedLine({ ...fixtureCompact.stats, by_outcome_7d: {}, heads: { fresh: { total: 0, by_outcome: {} } } })).toBeNull();
-  });
-
-  test('an outcome the daemon is known to write reads in words, and a new one in its own spelling', () => {
-    // The live feed on 2026-09-24 carried exactly these six names across 3,786 compactions.
-    expect(['model_text', 'model_thinking', 'tooled_no_text', 'empty_model', 'stream_error', 'upstream_error'].map(outcomeText))
-      .toEqual(['summary written', 'summary from reasoning', 'tool call instead', 'empty reply', 'stream failed', 'provider error']);
-    // The set is open: a name this console has not met still prints, never as a blank cell.
-    expect(outcomeText('something_new')).toBe('something new');
-  });
-
-  test('the page leads with the recent rows and their date, not the undated totals', () => {
-    // Live 2026-09-24: 33% of all recorded compactions failed, all of them months old; the last
-    // 50 had none. The totals carry no date, the tail does.
-    const at = (month: number, day: number) => new Date(2026, month - 1, day, 12).getTime();
-    const tail = [
-      { head: 'a', ts: at(9, 21), outcome: 'model_text' },
-      { head: 'a', ts: at(9, 24), outcome: 'stream_error' },
-      { head: 'a', ts: at(9, 23), outcome: 'model_text' },
-    ];
-    expect(recentLine(tail)).toBe('last 3 compactions, since sep 21: 1 failed');
-    expect(recentLine(tail.filter((row) => row.outcome === 'model_text'))).toBe('last 2 compactions, since sep 21: none failed');
-    expect(recentLine([])).toBeNull();
-  });
-
-  test('an outcome\'s share of all compactions keeps a rare failure visible', () => {
-    // Live 2026-09-24: 666 empty replies, 567 broken streams and 3 reasoning summaries of 3,786.
-    expect(shareText(666, 3786)).toBe('18%');
-    expect(shareText(567, 3786)).toBe('15%');
-    expect(shareText(3, 3786)).toBe('<0.1%');
-    expect(shareText(20, 3786)).toBe('0.5%');
-    expect(shareText(1, 0)).toBe('–');
-  });
-
-  test('the page states the law that compaction runs on the session own model, behind a reveal', () => {
-    // Behind a Reveal since m1 design review B16: the brief allows a paragraph on a page only as
-    // an honest empty or a Doctor fix, so the sentence is one click away and is not in the DOM
-    // until it is asked for (the primitive's own contract).
-    const markup = render(h(CompactionBoard, { payload: fixtureCompact }));
-    expect(markup).toContain('which model compacts');
-    expect(markup).not.toContain('own model and effort');
-  });
-});
-
-describe('models page', () => {
-  test('a catalog this daemon does not serve says so without a row id, and nothing else is drawn', () => {
-    const markup = render(h(ModelsBoard, { catalog: { pending: 'V4-127' } }));
-    expect(markup).toContain('catalog unavailable');
-    expect(markup).not.toContain('V4-127');
-    expect(markup).not.toContain('myx-strip');
-  });
-
-  test('the window source reads as words, whatever label the daemon sends', () => {
-    // ModelsRoute.kt WINDOW_FROM_*, plus `head` from splice-lead's S15 change.
-    expect(['model', 'head', 'rule', 'extra-window', 'default', 'unknown'].map(windowSourceText)).toEqual([
-      'model catalog', 'head setting', 'prefix rule', 'extra window', 'provider default', 'unknown',
-    ]);
-    expect(windowSourceText('some-new-label')).toBe('some new label');
-    expect(render(h(ModelsBoard, { catalog: fixtureCatalog }))).not.toContain('extra-window');
-  });
-
-  test('with a catalog the board draws a strip per filled tier, and names the tier no model fills', () => {
-    const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
-    for (const head of fixtureCatalog.heads) expect(markup).toContain(head.head);
-    expect(markup).toContain('gpt-5.6-sol');
-    // The vacant tier is named, never dropped, and nothing is struck: a strike is the verdict on an
-    // excluded or disabled row.
-    expect(markup).toContain('no model fills the fable tier');
-    expect(markup.split('myx-strip-struck').length - 1).toBe(0);
-  });
-
-  test('the tiers come from the daemon vocabulary, and an unfilled tier is a row and not a gap', () => {
-    const tiers = slotTiers(first(fixtureCatalog.heads));
-    expect(tiers.map((tier) => tier.slot)).toEqual(['opus', 'sonnet', 'haiku', 'fable']);
-    expect(tiers[3]?.model).toBeNull();
-    expect(tiers[0]?.model?.pinned).toBe(true);
-  });
-
-  test('the by-provider view groups on the reported provider and never guesses one', () => {
-    const groups = byProvider(fixtureCatalog.heads);
-    expect(groups.map((group) => group.provider)).toEqual(['api-key', 'chatgpt-oauth', 'kimi-oauth']);
-    // An empty provider is grouped under the honest label, never under the head key.
-    const withoutProvider: HeadCatalog = { ...first(fixtureCatalog.heads), provider: '' };
-    expect(byProvider([withoutProvider])[0]?.provider).toBe(PROVIDER_UNKNOWN);
-  });
-
-  test('a head\'s windows come from its topology, joined on the head and provider keys', () => {
-    const head = first(fixtureCatalog.heads);
-    const topology = {
-      heads: { [head.head]: { provider: head.provider, context_window: 400_000 } },
-      providers: { [head.provider]: { default_context_window: 200_000, extra_windows: [{ id: 'x', context_window: 1 }], window_rules: [] } },
-    };
-    expect(headWindows(topology, head)).toEqual({ headWindow: 400_000, defaultWindow: 200_000, extraWindows: 1, windowRules: 0 });
-    // A window the topology does not set is an absence, never the daemon's internal zero.
-    const bare = { heads: { [head.head]: {} }, providers: { [head.provider]: { default_context_window: 0 } } };
-    expect(headWindows(bare, head)).toEqual({ headWindow: null, defaultWindow: null, extraWindows: 0, windowRules: 0 });
-    expect(headWindows(null, head)).toBeNull();
-    expect(headWindows({ heads: {}, providers: {} }, head)).toBeNull();
-  });
-
-  test('the opened model is found under the head it was opened on, and a pending payload finds nothing', () => {
-    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
-    expect(findModel(fixtureCatalog, { head: 'claude-kimi', id: 'nope' })).toBeNull();
-    expect(findModel(fixtureCatalog, { head: 'no-such-head', id: 'kimi-k2.5' })).toBeNull();
-    expect(findModel({ pending: 'V4-127' }, { head: 'claude-kimi', id: 'kimi-k2.5' })).toBeNull();
-  });
-
-  test('two heads serving one model id each open their own, so the detail reads the right head windows', () => {
-    const kimi = fixtureCatalog.heads.find((head) => head.head === 'claude-kimi');
-    if (kimi === undefined) throw new Error('the fixture catalog lost claude-kimi');
-    const twin = { ...kimi, head: 'claude-kimi-twin' };
-    const catalog = { heads: [kimi, twin] };
-    expect(findModel(catalog, { head: 'claude-kimi-twin', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi-twin');
-    expect(findModel(catalog, { head: 'claude-kimi', id: 'kimi-k2.5' })?.head.head).toBe('claude-kimi');
-  });
-});
-
 describe('economics windows', () => {
   test('a window is exactly its hours, so the 1h view is one bucket', () => {
     // `windowHours` is what the bars and the totals BOTH walk, so a number under a chart can never
@@ -532,53 +347,6 @@ describe('a rack of like rows prints its column names once', () => {
   // default. It was measured in the browser instead, at 1536 dark with the tab clicked: two bays,
   // six names each printed once, zero per-cell labels, strips 42px where they stood 63.8px. The
   // instrument is .impeccable/review/compose/compose.mjs and the capture is beside it.
-  const boards: [string, string][] = [
-    ['compaction', render(h(CompactFeed, { payload: fixtureCompact }))],
-  ];
-
-  test('the board renders bays at all, so a green here is not an empty denominator', () => {
-    // Law 34's shape: if the boards rendered nothing, every assertion below would pass vacuously
-    // and the suite would report that no rack repeats its labels. The denominator is named first.
-    // Usage left this suite with the redesign: its heads are a table, held by the test below.
-    const all = boards.flatMap(([, markup]) => racks(markup));
-    expect(all.map((rack) => rack.label)).toEqual(['recorded outcomes', 'recent compactions']);
-    expect(all.every((rack) => rack.rows.length > 0)).toBe(true);
-  });
-
-  test('every bay prints a names row', () => {
-    for (const [page, markup] of boards) {
-      for (const rack of racks(markup)) {
-        expect(`${page}/${rack.label}: ${rack.names.length} names`).toBe(`${page}/${rack.label}: ${first(rack.rows).length} names`);
-      }
-    }
-  });
-
-  test('and therefore prints no label on any cell', () => {
-    for (const [page, markup] of boards) {
-      for (const rack of racks(markup)) {
-        expect(`${page}/${rack.label}: ${rack.labels} per-cell labels`).toBe(`${page}/${rack.label}: 0 per-cell labels`);
-      }
-    }
-  });
-
-  test('a name is declared at the ch of the column it names, in every row', () => {
-    for (const [page, markup] of boards) {
-      for (const rack of racks(markup)) {
-        const declared = rack.names.map((name) => name.w);
-        for (const row of rack.rows) {
-          expect(`${page}/${rack.label} ${row.join()}`).toBe(`${page}/${rack.label} ${declared.join()}`);
-        }
-      }
-    }
-  });
-
-  test('the outcomes total states itself once: on its edge, not in a label beside it', () => {
-    const markup = render(h(CompactFeed, { payload: fixtureCompact }));
-    const strip = markup.slice(markup.indexOf('aria-label="total"'), markup.indexOf('aria-label="outcome'));
-    expect(strip).toContain('<span class="myx-edge-label">total</span>');
-    expect(strip).not.toContain('myx-sfield-label');
-  });
-
   test('usage\'s heads table prints its column names once, in its head row, and in no cell', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
     const table = /<table[^>]*aria-label="Heads"[^>]*>([\s\S]*?)<\/table>/.exec(markup);
@@ -605,57 +373,5 @@ describe('a rack of like rows prints its column names once', () => {
     const rack = first(racks(planted));
     expect(rack.label).toBe('planted');
     expect(rack.labels).toBe(1);
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-// M2-32 follow-up, ruled 2026-09-18: THE HOLDER EDGE CARRIES THE STATE, NOT THE OUTCOME'S PREFIX.
-//
-// The edge label has a fixed 6ch budget that CLIPS (ui.css:349, B1, deliberate), and the feed was
-// passing it the daemon's outcome name — so `model_summary` and `model_fallback` both printed
-// `mode…` on adjacent rows: one label, two outcomes, and the full name already two cells to the
-// right (m1 design review B10). The edge cannot carry a per-outcome word: `by_outcome` is
-// `Record<string, number>`, so the outcome set is open, and the cell beside it already names the
-// outcome (in words since 2026-09-24). The STATE set is closed because `stateOf` computes it,
-// which is what makes three words enough and what this wall pins.
-describe('the compaction edge states what happened, in a word that fits its column', () => {
-  const WORDS = ['ok', 'warn', 'fail'];
-
-  test('every state word fits the edge budget, and they are distinct', () => {
-    // 6ch of the label face. A word longer than its column would reintroduce the very truncation
-    // this change removes, so the budget is asserted rather than assumed — if a later state needs
-    // a longer word, THIS is the line that says the budget is the thing to change.
-    expect(WORDS.map((word) => word.length).filter((n) => n > 6)).toEqual([]);
-    expect(new Set(WORDS).size).toBe(WORDS.length);
-  });
-
-  test('an outcome earns one state, and the colour is read from the same word', () => {
-    expect(stateOf('model_summary')).toBe('ok');
-    expect(stateOf('model_fallback')).toBe('ok');
-    expect(stateOf('empty_model')).toBe('fail');
-    expect(stateOf('stream_error')).toBe('fail');
-    expect(stateOf('upstream_error')).toBe('fail');
-    expect(stateOf('truncated')).toBe('warn');
-    // An outcome name the console has never seen is `warn`, never `ok`: the daemon's set is open.
-    expect(stateOf('something_new')).toBe('warn');
-    // The colour cannot disagree with the word, because it is derived from it.
-    for (const outcome of ['model_summary', 'truncated', 'stream_error', 'something_new']) {
-      expect(edgeFor(outcome)).toBe({ ok: 'green', warn: 'amber', fail: 'red' }[stateOf(outcome)]);
-    }
-  });
-
-  test('no edge label on the page is an outcome name, and no two rows say the same thing twice', () => {
-    const markup = render(h(CompactFeed, { payload: fixtureCompact }));
-    const labels = [...markup.matchAll(/<span class="myx-edge-label">([^<]*)</g)].map((m) => m[1]);
-    // `total` is the totals row's own edge and is not a state; every other label is one of three.
-    expect(labels.length).toBeGreaterThan(1);
-    expect([...new Set(labels)].filter((label) => label !== 'total').sort()).toEqual(['fail', 'ok', 'warn']);
-    // THE DEFECT, PINNED: an edge label that is a PREFIX of the outcome named on the same row is
-    // the state the page was in — `mode…` over `model_summary`. Nothing may print that way again.
-    for (const outcome of Object.keys(fixtureCompact.stats.by_outcome)) {
-      for (const label of labels) {
-        expect(`${outcome} / ${label}`).not.toBe(`${outcome} / ${outcome.slice(0, label.length)}`);
-      }
-    }
   });
 });

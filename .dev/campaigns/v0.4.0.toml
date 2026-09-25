@@ -6501,3 +6501,11 @@ title = "The console does everything the CLI does (operator 2026-09-25: 'why is 
 files = ["app/src/main/kotlin/splice/app/control/", "features/configuration/src/main/kotlin/splice/configuration/add/", "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/", "console/src/shared/coverage/", "console/src/features/", "console/src/entities/"]
 status = "todo"
 verify = "bun tools/gate run"
+
+[[items]]
+id = "V4-221"
+phase = "release"
+title = "Cost is priced per turn at its own model's card, not per head-hour at the pinned model's. features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt:79-91: TurnEconomics carries no model, and EconomicsStore.record (:102) folds turns into head-hour sums, so the console can only price a whole hour at the head's pinned card: a haiku-tier subagent turn or a compaction turn on a fable-pinned head is priced at the pinned model's rate. The Teams board and Usage show these dollars (the film's team take shows them, with the estimated tag). FIX (console's proposed contract, claude-builder's build): TurnEconomics.model: String? with no default; EconomicsBucket gains costUsd and unpricedTurns priced at record time with PerfTally.add's per-row card lookup; the wire carries cost_usd and unpriced_turns, cost_usd null for buckets recorded before the fields. Red first: a haiku turn on a fable-pinned head is priced at haiku's card."
+files = ["features/turns/src/main/kotlin/splice/head/usage/", "features/turns/src/test/kotlin/splice/head/usage/", "console/src/entities/economics/"]
+status = "todo"
+verify = "bun tools/gate run"

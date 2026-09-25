@@ -14,7 +14,7 @@ import { describe, expect, test } from 'vitest';
 import { headsReportingNone } from '../src/entities/usage';
 import { nearestLimit } from '../src/features/nearest-limit';
 import type { AuthPayload, UsagePayload } from '../src/shared/api';
-import { ConnectionCell, HealthCell, LINK_SILENT_MS, PendingRestartCell, WindowCell, healthOf, strandsOf } from '../src/widgets/rule';
+import { ConnectionCell, HealthCell, LINK_SILENT_MS, PendingRestartCell, WindowCell, healthOf, limitsOf, strandsOf } from '../src/widgets/rule';
 import type { HeadStatus } from '../src/shared/api';
 
 const h = React.createElement;
@@ -66,7 +66,7 @@ describe('the rule window cell', () => {
   const quiet = usagePayload([usageHead('claudex', 30, 'none'), usageHead('claude-grok', 0, 'none')]);
 
   test('prints the nearest window the entity derives, for a fleet where one head is ahead', () => {
-    const out = render(h(WindowCell, { accounts: [], usage: crowded, auth }));
+    const out = render(h(WindowCell, { accounts: [], usage: crowded, auth, limits: 'read' }));
     expect(out).toContain('Closest plan limit'); // the glyph's name, and its tip
     expect(out).toContain('role="meter"'); // the share has its shape as well as its figure
     for (const part of expectedWindowParts(crowded)) expect(out).toContain(part);
@@ -77,19 +77,46 @@ describe('the rule window cell', () => {
   test('the login method is not an account: a head with no account id prints none', () => {
     // claude-grok wins at 74 and its auth card has `login: 'oauth'` and no masked id.
     expect(nearestLimit({ accounts: [], usage: crowded, auth }, Date.now())?.account).toBeNull();
-    expect(render(h(WindowCell, { accounts: [], usage: crowded, auth }))).not.toContain('oauth');
+    expect(render(h(WindowCell, { accounts: [], usage: crowded, auth, limits: 'read' }))).not.toContain('oauth');
   });
 
   test('a fleet where nobody reports a window prints the absence, never a zero', () => {
-    const out = render(h(WindowCell, { accounts: [], usage: quiet, auth }));
+    const out = render(h(WindowCell, { accounts: [], usage: quiet, auth, limits: 'read' }));
     for (const part of expectedWindowParts(quiet)) expect(out).toContain(part);
     expect(out).toContain('No plan limits');
     expect(out).not.toContain('>0<');
   });
 
   test('the none count agrees with the entity and rides in the tip, and an unanswered route adds none', () => {
-    expect(render(h(WindowCell, { accounts: [], usage: quiet, auth }))).toContain(`Closest plan limit, ${headsReportingNone(quiet)} without limits`);
-    expect(render(h(WindowCell, { accounts: [], usage: null, auth }))).not.toContain('without limits');
+    expect(render(h(WindowCell, { accounts: [], usage: quiet, auth, limits: 'read' }))).toContain(`Closest plan limit, ${headsReportingNone(quiet)} without limits`);
+    expect(render(h(WindowCell, { accounts: [], usage: null, auth, limits: 'reading' }))).not.toContain('without limits');
+  });
+
+  // Marlin, 2026-09-25: the cell printed "No plan limits" before the usage read had answered. No
+  // limit found is a finding only once every read it rests on answered.
+  test('before the reads answer, it says it is reading; after one failed, that the limits are unread', () => {
+    const reading = render(h(WindowCell, { accounts: [], usage: null, auth, limits: 'reading' }));
+    expect(reading).toContain('Reading limits');
+    expect(reading).not.toContain('No plan limits');
+    const unread = render(h(WindowCell, { accounts: [], usage: null, auth, limits: 'unread' }));
+    expect(unread).toContain('Limits unread');
+    expect(unread).not.toContain('No plan limits');
+  });
+
+  test('the limits are read only once usage and accounts both answered; a failure with one out is unread', () => {
+    expect(limitsOf(true, true, false)).toBe('read');
+    expect(limitsOf(true, true, true)).toBe('read'); // a later poll failed; the answer held stands
+    expect(limitsOf(true, false, false)).toBe('reading');
+    expect(limitsOf(false, true, false)).toBe('reading');
+    expect(limitsOf(false, false, false)).toBe('reading');
+    expect(limitsOf(false, true, true)).toBe('unread');
+    expect(limitsOf(true, false, true)).toBe('unread');
+  });
+
+  test('a limit that was found prints, whatever read is still out', () => {
+    const out = render(h(WindowCell, { accounts: [], usage: crowded, auth, limits: 'reading' }));
+    expect(out).toContain('74');
+    expect(out).not.toContain('Reading limits');
   });
 });
 

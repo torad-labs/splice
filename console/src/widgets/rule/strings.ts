@@ -14,7 +14,12 @@ export const S = {
   daemon: 'Daemon',
   /** The plan limit closest to running out, across every head that reports one. */
   limit: 'Closest plan limit',
+  /** Printed only after the usage and accounts reads both answered and neither reported a window. */
   noLimit: 'No plan limits',
+  /** Before those reads answer: nothing is known yet, which is not the same as nothing found. */
+  readingLimits: 'Reading limits',
+  /** A read that failed: whether a limit exists is unknown. */
+  limitsUnread: 'Limits unread',
   /** Saved knobs the running daemon has not read yet (a restart-only knob was patched). */
   restartPending: 'Restart pending',
   /** The live connection. */

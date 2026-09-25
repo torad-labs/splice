@@ -88,13 +88,26 @@ export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: bo
   return anyHeadDown ? 'amber' : 'green';
 }
 
+/** Whether the reads the limit cell rests on have answered: both answered is `read`; one still out
+ *  and none failed is `reading`; one failed with nothing to show is `unread`. */
+export type LimitsRead = 'reading' | 'unread' | 'read';
+
+export function limitsOf(usageAnswered: boolean, poolsAnswered: boolean, anyFailed: boolean): LimitsRead {
+  if (usageAnswered && poolsAnswered) return 'read';
+  return anyFailed ? 'unread' : 'reading';
+}
+
 /** The nearest limit (the one definition the fleet and accounts pages print): the head, the account,
  *  the window, how full it is as a meter and a figure, and when it resets. What the strip does not
  *  print (how many heads report no limit) shows on hover and focus. */
-export function WindowCell({ accounts, usage, auth }: {
+export function WindowCell({ accounts, usage, auth, limits }: {
   accounts: readonly AccountRow[];
   usage: UsagePayload | null;
   auth: AuthPayload | null;
+  /** Whether the reads a "no limit" answer rests on have answered. "No plan limits" is a finding,
+   *  printed only after both did; while they have not, or when one failed, the cell says so (Marlin,
+   *  2026-09-25: it printed "No plan limits" before the usage read landed). */
+  limits: LimitsRead;
 }) {
   const nearest = nearestLimit({ accounts, usage, auth }, Date.now());
   const none = headsReportingNone(usage);
@@ -104,7 +117,7 @@ export function WindowCell({ accounts, usage, auth }: {
     return (
       <p className="myx-rule-cell myx-rule-window">
         {glyph}
-        <span className="myx-rule-absent">{S.noLimit}</span>
+        <span className="myx-rule-absent">{limits === 'read' ? S.noLimit : limits === 'reading' ? S.readingLimits : S.limitsUnread}</span>
       </p>
     );
   }
@@ -220,6 +233,8 @@ export function Rule() {
   const usage = useUsage((state) => state.data);
   const auth = useAuth((state) => state.data);
   const pools = useAccounts((state) => state.data);
+  const poolsError = useAccounts((state) => state.error);
+  const usageError = useUsage((state) => state.error);
   const pendingRestart = useRestartPending((state) => state.pending);
   const locked = useSession((state) => state.locked);
   const connection = useEvents((state) => state);
@@ -267,7 +282,12 @@ export function Rule() {
 
       <HealthCell health={health} />
 
-      <WindowCell accounts={pools !== null && 'accounts' in pools ? pools.accounts : []} usage={usage} auth={auth} />
+      <WindowCell
+        accounts={pools !== null && 'accounts' in pools ? pools.accounts : []}
+        usage={usage}
+        auth={auth}
+        limits={limitsOf(usage !== null, pools !== null, usageError !== null || poolsError !== null)}
+      />
 
       <PendingRestartCell pending={pendingRestart} />
 

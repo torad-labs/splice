@@ -77,7 +77,7 @@ function usageOf(claude: number): UsagePayload {
 
 /** The strip's figure and the two pages' Nearest limit stats, from one set of sources. */
 function printed(sources: LimitSources): { strip: string; fleet: ReturnType<typeof statOf>; accounts: ReturnType<typeof statOf> } {
-  const strip = render(h(WindowCell, { accounts: sources.accounts, usage: sources.usage, auth: sources.auth }));
+  const strip = render(h(WindowCell, { accounts: sources.accounts, usage: sources.usage, auth: sources.auth, limits: 'read' }));
   const fleetSources: FleetSources = {
     auth: sources.auth, usage: sources.usage, accounts: { accounts: [...sources.accounts] }, topology: null, catalogs: null,
     fieldsPending: false, topologyStale: false, landed: [], lastTs: new Map(), overrides: [],

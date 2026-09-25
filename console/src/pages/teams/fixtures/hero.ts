@@ -250,6 +250,7 @@ export const sampleBoard = {
   messages: MESSAGES,
   activity: ACTIVITY,
   coldCacheHint: false,
+  spliceHeads: new Set(['claudex', 'claude-grok', 'bonsai-2-27b']),
 } satisfies TeamPayload;
 
 /** What the views read beyond the board: the day's turns, the lifetime tallies, the last hour. */

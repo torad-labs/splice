@@ -16,7 +16,7 @@ import { PENDING_TEAMS } from '../src/entities/team';
 import type { TeamMemberRow, TeamPayload } from '../src/entities/team';
 import { MgmtError, pendingOf } from '../src/shared/api';
 import {
-  CostPerRole, SeatDetail, TeamMembers, TeamStats, TeamTimeline, costTable, dayAxis, lanesOf, rolesOf, seatGroups, seatsOf,
+  CostPerRole, SeatDetail, TeamLanes, TeamMembers, TeamStats, TeamTimeline, costTable, dayAxis, lanesOf, rolesOf, seatGroups, seatsOf,
   slotName, stateOf,
 } from '../src/widgets/team-board';
 import { TeamChat, chatOrder } from '../src/widgets/team-chat';
@@ -327,14 +327,14 @@ describe('the cost per role', () => {
   if ('error' in economics) throw new Error('the sample carries the economics payload');
 
   test("it prints the daemon's tallies, and what it could not place", () => {
-    const table = costTable(economics);
+    const table = costTable(economics, sampleBoard.team.slots);
     expect(table.rows.map((row) => [row.role, row.input, row.output, row.cost, row.turns])).toEqual([
       ['lead', 132116, 56656, 0.412, 6],
       ['builder', 194283, 78231, 0.324, 13],
     ]);
     expect(table.total.input + table.total.output).toBe(461286);
     expect(table.total.cost).toBeCloseTo(0.736, 6);
-    const html = render(createElement(CostPerRole, { data: sampleData }));
+    const html = render(createElement(CostPerRole, { board: sampleBoard, data: sampleData }));
     expect(html).toContain('2 untagged');
     const oldest = new Date(economics.oldest_turn_epoch_millis ?? 0);
     const two = (value: number) => String(value).padStart(2, '0');
@@ -346,7 +346,7 @@ describe('the cost per role', () => {
       ...economics,
       roles: [{ ...economics.roles[0], tokens: { input: 10, cache_read: 1000, cache_write: 100, output: 5 } }, { ...economics.roles[1], cost_usd: null }],
     };
-    const table = costTable(cached);
+    const table = costTable(cached, sampleBoard.team.slots);
     expect(table.rows[0].input).toBe(1110);
     expect(table.total.cost).toBeNull();
     const stats = render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, economics: cached } }));
@@ -354,9 +354,54 @@ describe('the cost per role', () => {
   });
 
   test('an economics read that failed prints the reason, not an empty table', () => {
-    const html = render(createElement(CostPerRole, { data: { ...sampleData, economics: { error: 'no such team: t' } } }));
+    const html = render(createElement(CostPerRole, { board: sampleBoard, data: { ...sampleData, economics: { error: 'no such team: t' } } }));
     expect(html).toContain('Costs unreadable');
     expect(html).toContain('no such team: t');
+  });
+});
+
+describe('a head splice does not run (Marlin, 2026-09-25)', () => {
+  // The registry lists claudex alone, so the builders' claude-grok and bonsai-2-27b are heads splice
+  // does not run, and the daemon read claudex alone, so the builders' tallies are zeros it never
+  // measured. Teams printed such a head by its key and its role as 0 turns and $0.000.
+  const plain: TeamPayload = { ...sampleBoard, spliceHeads: new Set(['claudex']) };
+  const economics = sampleData.economics;
+  if ('error' in economics) throw new Error('the sample carries the economics payload');
+  const unread = { ...sampleData, economics: { ...economics, heads_read: ['claudex'] } };
+
+  test('its seats share one lane, with the name and the tip Sessions gives a session with no head', () => {
+    const html = render(createElement(TeamLanes, { board: plain }));
+    expect(html.match(/class="myx-lane myx-hue-/g)?.length).toBe(2); // claudex, and one for both builders' heads
+    expect(html.match(/No splice head/g)?.length).toBeGreaterThan(0);
+    expect(html).toContain('Splice did not start these, or cannot tell which head did.');
+    expect(html).not.toContain('claude-grok');
+    expect(seatGroups(plain, 'head').map((group) => group.seats.length)).toEqual([1, 3]);
+  });
+
+  test('its head cell on the members table and the seat detail is the same mark', () => {
+    const members = render(createElement(TeamMembers, { board: plain, by: 'role' }));
+    expect(members).toContain('No splice head');
+    expect(members).not.toContain('>claude-grok<');
+    const builder = seatsOf(plain).find((seat) => seat.slot.head === 'claude-grok');
+    if (builder === undefined) throw new Error('the sample seats a builder on claude-grok');
+    expect(render(createElement(SeatDetail, { board: plain, seat: builder }))).toContain('No splice head');
+  });
+
+  test('a registry not read yet names every head as it is', () => {
+    const unknown: TeamPayload = { ...sampleBoard, spliceHeads: null };
+    expect(render(createElement(TeamLanes, { board: unknown }))).not.toContain('No splice head');
+    expect(seatGroups(unknown, 'head').map((group) => group.key)).toEqual(['claudex', 'claude-grok', 'bonsai-2-27b']);
+  });
+
+  test("its role's turns, tokens and cost are unknown, with why, and the totals say they leave it out", () => {
+    expect(costTable(unread.economics, plain.team.slots).unseen).toEqual(['builder']);
+    const roles = render(createElement(CostPerRole, { board: plain, data: unread }));
+    const row = /<tr[^>]*>(?:(?!<\/tr>)[\s\S])*>builder<(?:(?!<\/tr>)[\s\S])*<\/tr>/.exec(roles)?.[0] ?? '';
+    expect(row).toContain('Splice never sees turns on a head it does not run.');
+    expect(row).not.toMatch(/\$\d|>13</);
+    expect(roles).toContain('$0.412'); // the lead's row, read, keeps its figures
+    const stats = render(createElement(TeamStats, { board: plain, data: unread }));
+    expect(stats).toContain('without builder');
   });
 });
 
@@ -481,7 +526,7 @@ describe('a Teams dollar is an estimate, and says so', () => {
     expect(stats).toMatch(/myx-stat-label">Cost<span class="myx-basis">Estimated</);
     const members = render(createElement(TeamMembers, { board: sampleBoard, by: 'head' }));
     expect(members).toMatch(/>Cost<span class="myx-basis">Estimated<\/span><\/th>/);
-    const roles = render(createElement(CostPerRole, { data: sampleData }));
+    const roles = render(createElement(CostPerRole, { board: sampleBoard, data: sampleData }));
     expect(dollars(roles)).toBeGreaterThan(0); // the denominator: a table with no dollars would pass vacuously
     expect(roles).toMatch(/>Cost<span class="myx-basis">Estimated<\/span><\/th>/);
     const seat = seatsOf(sampleBoard).find((candidate) => candidate.member !== null && candidate.member.costEst !== null);

@@ -238,6 +238,9 @@ export interface TeamPayload {
   activity: TeamActivity[] | null;
   /** True when the sender's next turn is a cold cache after an instructions edit. */
   coldCacheHint?: boolean;
+  /** The heads the registry lists, or null while unread: a slot on any other head is one splice
+   *  does not run, and its head prints as "No splice head". */
+  spliceHeads: ReadonlySet<string> | null;
 }
 
 /** The member state of a bound session the registry does not list (pages/teams/board.ts). */

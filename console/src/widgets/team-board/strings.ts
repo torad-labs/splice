@@ -69,6 +69,8 @@ export const S = {
   readingCosts: 'Reading costs',
   costsUnreadable: 'Costs unreadable',
   noTurns: 'No turns yet',
+  /** The tip on a role splice never saw. */
+  unseenWhy: 'Why unknown',
   /** What any cell with no value prints (ABSENT in @shared/lib). */
   absent: ABSENT,
 } as const;
@@ -80,6 +82,7 @@ export const H = {
   economics: 'Lifetime totals, joined to slots on the session tag.',
   untagged: "Turns on the team's heads that carried no session tag.",
   noTurns: "Turns show here once the team's sessions run them.",
+  unseen: 'Splice never sees turns on a head it does not run.',
 } as const;
 
 export const U = {
@@ -90,4 +93,6 @@ export const U = {
   turns: 'turns',
   running: 'running',
   kb: 'KB',
+  /** Before the roles a lifetime figure leaves out. */
+  without: 'without',
 } as const;

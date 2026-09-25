@@ -4,8 +4,8 @@
 # (Doctor, Needs you), so an em-dash here printed in the UI past the console's own wall; and the
 # CLI prints the same sentences. Split the clause, or use a colon, a semicolon or a comma.
 #
-# Both spellings are matched: the character itself, and the `—` escape, which parses INSIDE
-# string_content on tree-sitter-kotlin (measured on ast-grep 0.45: `"x — y"` is one
+# Both spellings are matched: the character itself, and the `\u2014` escape, which parses INSIDE
+# string_content on tree-sitter-kotlin (measured on ast-grep 0.45: `"x \u2014 y"` is one
 # string_content node), so an escape would otherwise be a silent way around the wall. Comments are
 # free. The report's fix separator is the one em-dash on the wire and it is not text: the console
 # splits on it and never prints it, so it is built from its code point (DoctorReportShape

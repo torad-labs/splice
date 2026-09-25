@@ -758,7 +758,7 @@ console/tests/fixtures/walls/bad-strings.ts	66a51bf20f07b4cf3d1ee7a8348148f504cf
 console/tests/fixtures/walls/coverage-missing.ts	3886d57a547934ed7d168cd600a5b26804b7758ca1ca7bbc1200cbc5d48b1dbf	retain	console/tests/fixtures/walls/coverage-missing.ts	Independent frontend application
 console/tests/fleet.test.ts	198d7ad84e3762e2c634d289cc8d88ccb23fab0709e36aa87b5d2a0e53d2eaa2	retain	console/tests/fleet.test.ts	Independent frontend application
 console/tests/hairline.test.ts	06a071a427ff67fc085023dd0b2eec9275f1f339a3abd58389eb878f2658fe15	retain	console/tests/hairline.test.ts	Independent frontend application
-console/tests/labels.test.ts	c9b2999b277161ae77bbae88cb1b45c8b86df8e53fac31401bcfb743b61ceadb	retain	console/tests/labels.test.ts	Independent frontend application
+console/tests/labels.test.ts	c9b2999b277161ae77bbae88cb1b45c8b86df8e53fac31401bcfb743b61ceadb	relocate	console/tests/copy.test.ts	folded into the copy wall, which reverses its lowercase rule to sentence case (voice ruling, 2026-09-25)
 console/tests/live.test.ts	5df762960979a7883ed9fac795550e9eb0871385c459ce9ca94d23dfbaaaa75a	retain	console/tests/live.test.ts	Independent frontend application
 console/tests/logs.test.ts	c1c428219995d31e91e6fc83a8208cd35274fe89391f7cdfdde608d0c996377f	retain	console/tests/logs.test.ts	Independent frontend application
 console/tests/mcp-doctor.test.ts	894afe512dd2d69ce4f0da73be7bd3ee3a5840527506e24e96aad512a70bc808	retain	console/tests/mcp-doctor.test.ts	Independent frontend application
@@ -2296,3 +2296,5 @@ console/src/shared/ui/charts.css	10321e8845e73d951c4d1d36756f25f886f6f785e55a51b
 console/tests/charts.test.ts	9e0acd251a27380b68da74d557ed9d3245c0e935c37a5e09f5005c1240b72acd	created		the kit charts say their numbers, gap on a missing point, paint measured tokens and hold still under reduced motion
 console/src/pages/compaction/model.ts	faee4509a5d49d08680731d45153fe2f2571a752a56fe303e92ab628e1421f6e	created		the compaction page's arithmetic as shapes: outcome state, split bar parts, sparkline series (console redesign, 2026-09-25)
 console/tests/compaction.test.ts	56e6d17a9efc4351b1c5cab6526df17b813d4aea55fb9ce90c4a359bde5efeac	created		the compaction page on the kit: outcomes by state, the week first, rare failures visible, tables naming columns once
+console/src/shared/coverage/copy-scan.ts	e8bbbe602aab65a87409cca3b9156b5cd33e0bcb90838a17c1acb32f9b867355	created		the copy wall bare-copy scanner: JSX text and sentence literals outside a copy module (voice ruling, 2026-09-25)
+console/tests/fixtures/walls/bad-copy.tsx	2391d41ac12241d35dd881cf556b98ac2584a6026e12ebb5d080be39b060b12d	created		planted bare copy the copy wall must find, and the forms it must not

@@ -111,9 +111,11 @@
   --warn-soft: rgba(224, 164, 74, .14);
   --danger-soft: rgba(240, 113, 113, .14);
 
-  /* ---------- HEADS: one colour per head, in the daemon's registry order ----------
-     OKLCH L .74 C .135 at hues 255 50 190 345 120 300 225 92: blue, orange, teal, pink, lime,
-     violet, sky, gold, the most distinct first. Each clears 7.4:1 on --bg and --bg-raised. */
+  /* ---------- HEADS: one hue per provider family (entities/control-status/model/hue.ts) ----------
+     OKLCH L .74 C .135 at hues 255 50 190 345 120 300 225 92: blue xai, orange anthropic, teal
+     openai, pink moonshot, lime local, violet meta, sky deepseek, gold openrouter. Each clears 7.4:1
+     on --bg and --bg-raised. A second head of one family takes -up (L .84), a third -down (L .64),
+     chroma cut only to stay in sRGB; the darkest still clears 5.1:1. */
   --head-1: #6eadfe;
   --head-2: #ee8f58;
   --head-3: #00c5be;
@@ -122,6 +124,22 @@
   --head-6: #b896f3;
   --head-7: #1fbcea;
   --head-8: #c9a732;
+  --head-up-1: #a8cefe;
+  --head-up-2: #ffb891;
+  --head-up-3: #37e6de;
+  --head-up-4: #ffaddb;
+  --head-up-5: #bfd76e;
+  --head-up-6: #d4bdff;
+  --head-up-7: #78d9fe;
+  --head-up-8: #eac758;
+  --head-down-1: #4f8edc;
+  --head-down-2: #cc7038;
+  --head-down-3: #0ba19b;
+  --head-down-4: #c4689f;
+  --head-down-5: #829729;
+  --head-down-6: #9977d1;
+  --head-down-7: #029bc3;
+  --head-down-8: #a88909;
   --head-none: #62666f;   /* a session no head claims; 3.2:1 on --bg-raised */
 
   /* ---------- SERIES: kinds that are not heads, in grey steps ---------- */
@@ -163,7 +181,8 @@
   --warn-soft: rgba(133, 83, 4, .12);
   --danger-soft: rgba(176, 47, 47, .12);
 
-  /* OKLCH L .54 C .15, same hues: each clears 4.0:1 on --bg and --bg-raised. */
+  /* OKLCH L .54 C .15, same hues: each clears 4.0:1 on --bg and --bg-raised. The siblings step to
+     L .62 (-up, the palest still 3.2:1) and L .44 (-down). */
   --head-1: #266ec3;
   --head-2: #b04d00;
   --head-3: #008882;
@@ -172,6 +191,22 @@
   --head-6: #7d56b8;
   --head-7: #007eaf;
   --head-8: #8e6900;
+  --head-up-1: #4087de;
+  --head-up-2: #cb6620;
+  --head-up-3: #079a94;
+  --head-up-4: #c35c9b;
+  --head-up-5: #7c9205;
+  --head-up-6: #956ed2;
+  --head-up-7: #0994ba;
+  --head-up-8: #a18304;
+  --head-down-1: #01519f;
+  --head-down-2: #833b01;
+  --head-down-3: #00605c;
+  --head-down-4: #872465;
+  --head-down-5: #4c5a01;
+  --head-down-6: #613897;
+  --head-down-7: #045b74;
+  --head-down-8: #645000;
   --head-none: #84878f;   /* 3.4:1 on --bg-raised */
 
   --series-1: #15161a;

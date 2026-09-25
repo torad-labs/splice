@@ -18,6 +18,9 @@ public data class DeclaredHead(
      *  decided 2026-09-18 for V4-127 — so it is part of the payload, not a convenience. */
     val provider: String,
     val models: List<HeadModel>?,
+    /** The vendor family that provider belongs to (ProviderFamilyRule), or null where splice cannot
+     *  name one. The console colours a head by it, so siblings of one family share a hue. */
+    val family: String? = null,
 )
 
 /**

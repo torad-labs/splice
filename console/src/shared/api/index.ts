@@ -165,6 +165,9 @@ export interface RegistryEntry {
   key: string;
   label: string;
   authKind: string;
+  /** The provider's vendor family (`openai`, `local`, ...), null where the daemon names none; an
+   *  older daemon omits it. The console colours a head by it. */
+  family?: string | null;
 }
 
 export interface ControlStatusPayload {

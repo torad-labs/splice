@@ -22,7 +22,7 @@ import { KeyIcon } from '@phosphor-icons/react/dist/csr/Key';
 import { TimerIcon } from '@phosphor-icons/react/dist/csr/Timer';
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle';
 import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle';
-import { HeadMark, hueClass, startControlStatusPolling, useControlStatus, useHues } from '@entities/control-status';
+import { HeadMark, hueClass, startControlStatusPolling, useControlStatus, useHues, type Hue } from '@entities/control-status';
 import { startHeadsPolling, useHeads } from '@entities/heads';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow } from '@entities/account';
@@ -183,7 +183,7 @@ export function HealthCell({ health }: { health: HealthState }) {
 
 /** Every running head as a strand of its colour, as long as its turns in flight, pulsing when one
  *  lands (the gate's `released` count moves). Registry order, so the strands keep their places. */
-export function strandsOf(heads: readonly HeadStatus[] | null, hueOfHead: (head: string) => number): Strand[] {
+export function strandsOf(heads: readonly HeadStatus[] | null, hueOfHead: (head: string) => Hue | number): Strand[] {
   if (heads === null) return [];
   return heads.filter((head) => head.running).map((head) => ({
     key: head.key,

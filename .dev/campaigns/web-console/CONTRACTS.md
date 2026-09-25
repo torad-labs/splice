@@ -40,7 +40,7 @@ Colours (name, role):
 | `--fg`, `--fg-muted`, `--fg-subtle` | text: every one clears 4.5:1 on every ground |
 | `--accent`, `--accent-hover`, `--accent-fg`, `--accent-soft` | the ink itself as the accent: the primary button and the focus ring carry no hue |
 | `--ok`, `--warn`, `--danger`, `--ok-soft`, `--warn-soft`, `--danger-soft` | status, always beside its word or number |
-| `--head-1` .. `--head-8`, `--head-none` | one hue per head in registry order (DESIGN.md section 5); a mark, 3:1 on the grounds |
+| `--head-1` .. `--head-8`, `--head-up-1` .. `--head-up-8`, `--head-down-1` .. `--head-down-8`, `--head-none` | one hue per provider family, a second head of the family one step lighter and a third one darker (DESIGN.md section 5); a mark, 3:1 on the grounds |
 | `--series-1` .. `--series-3` | chart greys for kinds that are not heads; marks, 3:1 on the grounds |
 | `--track`, `--chart-grid` | the unfilled part of a meter or bar, and a chart's grid: not data, no floor |
 | `--focus` | the focus ring's colour |

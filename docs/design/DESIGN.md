@@ -177,15 +177,21 @@ What a Linear or Vercel clone would pick on each axis, what splice picks, and wh
 
 ## 5. The bold place: head colour
 
-- **Palette.** `--head-1` to `--head-8`: blue, orange, teal, pink, lime, violet, sky, gold. They
-  were picked in OKLCH at even lightness, with the most distinct hues first, so a daemon with
-  three heads gets the three most distinct colours. Dark values sit at L 0.74, and light values at
-  L 0.54 so they stay above 4:1 on white. Every value clears 3:1 against its ground (non-text
+- **Palette.** `--head-1` to `--head-8`: blue, orange, teal, pink, lime, violet, sky, gold, picked
+  in OKLCH at even lightness. Dark values sit at L 0.74, and light values at L 0.54 so they stay
+  above 4:1 on white. Each has a lighter and a darker tone (`--head-up-N`, `--head-down-N`: L 0.84
+  and 0.64 in dark, 0.62 and 0.44 in light). Every value clears 3:1 against its ground (non-text
   contrast, WCAG 1.4.11); most clear 7:1 in dark.
-- **Assignment.** A head's colour is its index in the daemon's registry (`GET /api/status`,
-  `registry`), mod 8. The registry keeps topology order, so adding a head never changes an
-  existing head's colour. A session with no splice head, or a head the registry does not list,
-  gets the neutral grey.
+- **Assignment.** A head's colour is its provider's family, which the daemon names on each
+  registry entry (`GET /api/status`, `registry[].family`). The family comes from the provider,
+  never the wire it speaks, so a DeepSeek head on the Anthropic dialect is DeepSeek. Each family
+  has one hue (operator ruling, 2026-09-25): xai blue, anthropic orange, openai teal, moonshot
+  pink, local lime, meta violet, deepseek sky, openrouter gold. Heads of one family share the hue
+  and step in lightness in registry order: the first at the base tone, the next lighter, then
+  darker, and the name is always beside the mark. Adding a head of another family never moves a
+  head's colour. A head with no family falls back to registry order over the hues no listed
+  family claims. A session with no splice head, or a head the registry does not list, gets the
+  neutral grey.
 - **Shape.** A head mark is a rounded 8×16 bar before the head's name (`HeadMark`, in
   `@entities/control-status`). In a chart the head's series takes the hue. A board grouped by head
   gives the group title a mark. Status never uses this shape: status is a round dot followed by

@@ -215,7 +215,7 @@ function pairingsFor(tokens: Tokens, room: string): Pairing[] {
 describe('the token sheet carries what the contract names', () => {
   test('section 1 of CONTRACTS.md yielded a denominator', () => {
     expect(bothRooms.length).toBeGreaterThan(20);
-    expect(headTokens).toHaveLength(9); // --head-1 .. --head-8 and --head-none
+    expect(headTokens).toHaveLength(25); // --head-1 .. --head-8, their -up and -down tones, --head-none
   });
 
   for (const [room, tokens] of rooms) {

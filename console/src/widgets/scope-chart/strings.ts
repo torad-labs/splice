@@ -6,7 +6,7 @@ export const S = {
   hour24: '24 hours',
   day7: '7 days',
   tokens: 'Tokens per hour',
-  cost: 'Cost per hour',
+  cost: 'Hourly API cost',
   /** Request size as the client sent it and as splice forwarded it to the provider. */
   bytes: 'Request size',
   /** Tool definitions sent with every request, against those loaded only when asked for. */

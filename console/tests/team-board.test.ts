@@ -329,7 +329,7 @@ describe('the cost per role', () => {
 
   test('an economics read that failed prints the reason, not an empty table', () => {
     const html = render(createElement(CostPerRole, { data: { ...sampleData, economics: { error: 'no such team: t' } } }));
-    expect(html).toContain('Costs unreadable');
+    expect(html).toContain('Estimates unreadable');
     expect(html).toContain('no such team: t');
   });
 });
@@ -452,12 +452,12 @@ describe('a Teams dollar is an estimate, and says so', () => {
 
   test('the cost figure, the members\' cost column, the cost per role and an opened seat', () => {
     const stats = render(createElement(TeamStats, { board: sampleBoard, data: sampleData }));
-    expect(stats).toMatch(/myx-stat-label">Cost<span class="myx-basis">Estimated</);
+    expect(stats).toMatch(/myx-stat-label">Est\. API cost<span class="myx-basis">Estimated</);
     const members = render(createElement(TeamMembers, { board: sampleBoard, by: 'head' }));
-    expect(members).toMatch(/>Cost<span class="myx-basis">Estimated<\/span><\/th>/);
+    expect(members).toMatch(/>Est\. API cost<span class="myx-basis">Estimated<\/span><\/th>/);
     const roles = render(createElement(CostPerRole, { data: sampleData }));
     expect(dollars(roles)).toBeGreaterThan(0); // the denominator: a table with no dollars would pass vacuously
-    expect(roles).toMatch(/>Cost<span class="myx-basis">Estimated<\/span><\/th>/);
+    expect(roles).toMatch(/>Est\. API cost<span class="myx-basis">Estimated<\/span><\/th>/);
     const seat = seatsOf(sampleBoard).find((candidate) => candidate.member !== null && candidate.member.costEst !== null);
     expect(seat).toBeDefined();
     if (seat === undefined) return;

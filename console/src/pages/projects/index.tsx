@@ -58,7 +58,7 @@ export function columnsOf(fields: readonly string[], rows: readonly ProjectRow[]
         <Meter tone="neutral" value={row.turns_today / busiest} label={`${S.turns} ${row.turns_today}`} figure={String(row.turns_today)} />
       ),
     },
-    cost: { key: 'cost', label: S.cost, align: 'end', mono: true, cell: (row) => costText(row.cost_today_usd) },
+    cost: { key: 'cost', label: S.cost, basis: 'estimated', align: 'end', mono: true, cell: (row) => costText(row.cost_today_usd) },
     last: {
       key: 'last',
       label: S.last,
@@ -104,6 +104,7 @@ function Summary({ rows }: { rows: readonly ProjectRow[] }) {
       <Stat label={S.turns} value={turns} sub={dayText(rows[0]?.day_start ?? 0)} />
       <Stat
         label={S.cost}
+        basis="estimated"
         value={priced.length === 0 ? S.absent : costText(cost)}
         {...(unpriced === 0 ? {} : {
           sub: (

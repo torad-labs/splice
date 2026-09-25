@@ -16,7 +16,7 @@ export const S = {
   models: 'Models',
   tokens: 'Tokens',
   turns: 'Turns',
-  cost: 'Cost',
+  cost: 'Estimated API cost',
   unpricedWhy: 'Unpriced turns',
   /** The heads table's sparkline column: each head's turns, hour by hour. */
   trend: 'Turns per hour',

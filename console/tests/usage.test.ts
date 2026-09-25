@@ -121,7 +121,7 @@ describe('usage page', () => {
     expect(markup).toContain('<span class="myx-scope-basis">Estimated</span>');
     // Cost is drawn hour by hour, because the opened head's turns were priced.
     expect(markup).not.toContain('No priced turns');
-    expect(markup).toContain('aria-label="Cost per hour"');
+    expect(markup).toContain('aria-label="Hourly API cost"');
     // The legend names the dollars as the inset does: an estimate, never money spent.
     expect(markup).toMatch(/myx-swatch-spent"[^>]*><\/span><span>Estimated cost<\/span>/);
     expect(markup).not.toContain('>Spent<');
@@ -186,7 +186,7 @@ describe('the totals row', () => {
   test('each figure carries its shape: the in and out split, a day of trend, the cache ring', () => {
     expect(markup).toMatch(/role="img" aria-label="Tokens: Input [^"]+, Output [^"]+"/);
     expect(markup).toMatch(/aria-label="Turns, last 24h: [^"]+ last, [^"]+ peak"/);
-    expect(markup).toMatch(/aria-label="Cost, last 24h: \$[^"]+"/);
+    expect(markup).toMatch(/aria-label="Estimated API cost, last 24h: \$[^"]+"/);
     expect(markup).toMatch(/aria-label="Cache read \d+%"/);
     // each head's own trend, in its hue
     for (const head of fixtureEconomics.heads) expect(markup).toContain(`aria-label="${head.label} Turns per hour, last 24h:`);

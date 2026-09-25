@@ -142,39 +142,28 @@ defer = ["LSP"]
 #   search_rounds = 3          permitted tool_search rounds before the FINAL round answers with the
 #                              ENTIRE deferred set regardless of query — capability at the cap is
 #                              exactly today's full surface, so the loop cannot wedge
+# The same rows `splice add codex` writes (ModelCatalogsSingleSourceLawTest holds the two together).
+# Windows are the backend's own listing (chatgpt.com/backend-api/codex/models, read 2026-09-25):
+# 272000 on every row, and gpt-6-astra's max_context_window 872000, the opt-in that endpoint
+# sanctions. GPT-6 has no Terra, so gpt-5.6-terra is the sonnet tier. Every other model the backend
+# serves reaches the picker by discovery, windowed as the endpoint publishes it.
+[[providers.codex.models]]
+id = "gpt-6-sol"
+label = "Codex 6 Sol"
+context_window = 272000
 [[providers.codex.models]]
 id = "gpt-6-astra"
 label = "Codex 6 Astra"
 description = "GPT-6 Astra (2026-09-03). Effort up to max; included in the ChatGPT plan."
-context_window = 400000
-[[providers.codex.models]]
-id = "gpt-5.6-sol"
-label = "Codex 5.6 Sol"
-context_window = 400000
+context_window = 872000
 [[providers.codex.models]]
 id = "gpt-5.6-terra"
 label = "Codex 5.6 Terra"
-context_window = 400000
-[[providers.codex.models]]
-id = "gpt-5.6-luna"
-label = "Codex 5.6 Luna"
-context_window = 400000
-[[providers.codex.models]]
-id = "gpt-5.5"
-label = "Codex 5.5"
 context_window = 272000
 [[providers.codex.models]]
-id = "gpt-5.4"
-label = "Codex 5.4"
+id = "gpt-6-luna"
+label = "Codex 6 Luna"
 context_window = 272000
-[[providers.codex.models]]
-id = "gpt-5.4-mini"
-label = "Codex 5.4 Mini"
-context_window = 272000
-[[providers.codex.models]]
-id = "gpt-5.3-codex-spark"
-label = "Codex Spark"
-context_window = 128000
 
 # ── EXPERIMENTAL OPT-IN: xAI/Grok OAuth (SuperGrok/X Premium+) ──────────────────
 [providers.xai]
@@ -202,21 +191,19 @@ quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = tr
 # stays out by itself; xAI lists its image and video models with nothing to tell them apart, so they
 # are named out here — `include` narrows the same way, and `exclude = ["*"]` turns discovery off.
 discovery = { exclude = ["grok-imagine-*"] }
+# Windows from docs.x.ai/developers/models (each model's max prompt length, read 2026-09-25). The
+# build row is the concrete grok-build-0.1: the endpoint resolves grok-build-latest to grok-4.5 now.
+[[providers.xai.models]]
+id = "grok-4.7"
+label = "Grok 4.7"
+context_window = 500000
 [[providers.xai.models]]
 id = "grok-4.6"
 label = "Grok 4.6"
-context_window = 500000       # docs.x.ai: grok-4.6 = 500k; grok-4.5 = 500k; grok-4.3 = 1M; grok-build = 256k
-[[providers.xai.models]]
-id = "grok-4.5"
-label = "Grok 4.5"
 context_window = 500000
 [[providers.xai.models]]
-id = "grok-4.3"
-label = "Grok 4.3"
-context_window = 1000000
-[[providers.xai.models]]
-id = "grok-build-latest"
-label = "Grok Build"
+id = "grok-build-0.1"
+label = "Grok Build 0.1"
 context_window = 256000
 
 # ── local runtime: Ollama / LM Studio / vLLM on this machine (Chat Completions) ─
@@ -512,14 +499,14 @@ share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE
 provider = "codex"
 port = 3099
 discovery_prefix = "claude-codex--"
-pinned_model = "gpt-5.6-sol"
+pinned_model = "gpt-6-sol"
 # slot = the Claude Code tier alias this row answers (opus/sonnet/haiku/fable). A tier NO row
 # declares is not emitted at launch, so Claude Code requests using its built-in Anthropic ids —
 # background titling/summarization, `--model haiku` — get a clean pre-upstream 400 on this head
 # (no quota burned; the main turn is unaffected). Declare a row per tier you want served; never
 # point two tiers at one id to silence this — one honest 400 beats a duplicated picker row.
-models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }, { id = "gpt-6-astra", slot = "fable" }]
-context_window = 400000
+models = [{ id = "gpt-6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-6-luna", slot = "haiku" }, { id = "gpt-6-astra", slot = "fable" }]
+context_window = 272000
 [heads.claudex.claude]
 command = "claudex"
 [heads.claudex.overrides]
@@ -530,15 +517,15 @@ maxInflight = "100"            # the concurrency this account has tolerated in d
 # nothing on the wire, and a blank spinner cannot be told from a hung session. Set it to "false" to
 # get silence back; the keepalive pings that hold the turn open are separate and always sent.
 
-# grok-build is the genuine fast tier (256k coder model) — declared as haiku below so background
+# grok-build-0.1 is the genuine fast tier (256k coder model) — declared as haiku below so background
 # titling and `--model haiku` stay served on this head. No fable analog exists: fable stays
 # undeclared and 400s cleanly (see the slot note on [heads.claudex]).
 [heads.claude-grok]
 provider = "xai"
 port = 3100
 discovery_prefix = "claude-grok--"
-pinned_model = "grok-4.6"
-models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
+pinned_model = "grok-4.7"
+models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]
 [heads.claude-grok.claude]
 command = "claude-grok"
 isolate = ["commands"]         # this head gets its own commands/, everything else shared
@@ -687,18 +674,21 @@ auth = { kind = "client" }
 # A DEFAULT: whatever the client sends wins. Present so a caller that omits the header still
 # produces a valid Anthropic request.
 extra_headers = { anthropic-version = "2023-06-01" }
+# platform.claude.com/docs/en/models/overview (read 2026-09-25): Fable 5.1, Opus 5.5 and Sonnet 5
+# have a 1M context window, Haiku 4.5 200K, and a forwarded subscription login gets the 1M window on
+# every plan (code.claude.com/docs/en/model-config).
 [[providers.anthropic.models]]
-id = "claude-fable-5"
-label = "Claude Fable 5"
-context_window = 200000
+id = "claude-fable-5-1"
+label = "Claude Fable 5.1"
+context_window = 1000000
 [[providers.anthropic.models]]
-id = "claude-opus-5"
-label = "Claude Opus 5"
-context_window = 200000
+id = "claude-opus-5-5"
+label = "Claude Opus 5.5"
+context_window = 1000000
 [[providers.anthropic.models]]
 id = "claude-sonnet-5"
 label = "Claude Sonnet 5"
-context_window = 200000
+context_window = 1000000
 [[providers.anthropic.models]]
 id = "claude-haiku-4-5"
 label = "Claude Haiku 4.5"
@@ -708,9 +698,9 @@ context_window = 200000
 provider = "anthropic"
 port = 3104                    # 3103 is fireworks above
 discovery_prefix = "claude-splice--"
-pinned_model = "claude-fable-5"
-models = [{ id = "claude-fable-5", slot = "fable" }, { id = "claude-opus-5", slot = "opus" }, { id = "claude-sonnet-5", slot = "sonnet" }, { id = "claude-haiku-4-5", slot = "haiku" }]
-context_window = 200000
+pinned_model = "claude-fable-5-1"
+models = [{ id = "claude-fable-5-1", slot = "fable" }, { id = "claude-opus-5-5", slot = "opus" }, { id = "claude-sonnet-5", slot = "sonnet" }, { id = "claude-haiku-4-5", slot = "haiku" }]
+context_window = 1000000
 [heads.claude-splice.claude]
 # The SEPARATE lane: a command of its own, beside the `claude` you already run. Nothing in
 # ~/.claude is touched, and this is what `splice setup` preselects.

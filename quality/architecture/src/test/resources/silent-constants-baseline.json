@@ -2,7 +2,7 @@
   "_note": "AUTHORED BY HAND against SilentConstantsLawTest, MEASURED never estimated. Every entry is a numeric `const val` in main sources with no adjacent reason comment (see that file's WHAT COUNTS AS A REASON). The gate fails on GROWTH and on a STALE entry held above the measurement, so lowering an entry is how a fix is recorded. This file is a debt inventory with a one-way valve; it is meant to shrink to nothing.",
   "recorded": "2026-09-17",
   "denominator": 566,
-  "total": 390,
+  "total": 389,
   "files": {
     "integrations/claude-code/src/main/kotlin/splice/client/login/HookScriptFiles.kt": 1,
     "integrations/claude-code/src/main/kotlin/splice/client/login/LoginHookScripts.kt": 2,
@@ -24,7 +24,7 @@
     "features/configuration/src/main/kotlin/splice/configuration/add/AddHttp.kt": 1,
     "features/configuration/src/main/kotlin/splice/configuration/add/AddModels.kt": 3,
     "features/configuration/src/main/kotlin/splice/configuration/add/AddPrepare.kt": 1,
-    "features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt": 9,
+    "features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt": 8,
     "features/configuration/src/main/kotlin/splice/configuration/add/AddProfiles.kt": 1,
     "integrations/daemon-client/src/main/kotlin/splice/daemonclient/ControlPlaneClient.kt": 1,
     "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonHealth.kt": 1,

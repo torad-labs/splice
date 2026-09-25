@@ -183,11 +183,12 @@ private class CodeModeLegacyMarkers {
 }
 
 /**
- * The upstream models offered the runner. The catalog's Sol is `gpt-5.6-sol`: the previous
- * `gpt-6-(astra|sol)` regex matched a model that does not exist and silently left every Sol turn,
- * and with it every sonnet/haiku-tiered subagent, without code mode (measured 2026-09-20: the
- * runner was advertised on 938 of a session's 7,070 calls). The TOML `code_mode_models` list
- * replaces this default; an optional `[Nk|Nm]` context suffix on the model id is ignored.
+ * The upstream models offered the runner. `gpt-5.6-sol` is listed beside the GPT-6 pair: the
+ * previous `gpt-6-(astra|sol)` regex matched no model the backend then served and silently left
+ * every 5.6 Sol turn, and with it every sonnet/haiku-tiered subagent, without code mode (measured
+ * 2026-09-20: the runner was advertised on 938 of a session's 7,070 calls). gpt-6-sol has served
+ * since, and `splice add codex` pins it (V4-224). The TOML `code_mode_models` list replaces this
+ * default; an optional `[Nk|Nm]` context suffix on the model id is ignored.
  */
 public object CodexCodeModeModels {
     public val DEFAULT: Set<String> = setOf("gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol")

@@ -123,7 +123,7 @@ describe('usage page', () => {
     expect(markup).not.toContain('No priced turns');
     expect(markup).toContain('aria-label="Hourly API cost"');
     // The legend names the dollars as the inset does: an estimate, never money spent.
-    expect(markup).toMatch(/myx-swatch-spent"[^>]*><\/span><span>Estimated cost<\/span>/);
+    expect(markup).toMatch(/myx-swatch-spent"[^>]*><\/span><span>API cost<\/span>/);
     expect(markup).not.toContain('>Spent<');
   });
 
@@ -148,7 +148,7 @@ describe('usage page', () => {
       window: first(WINDOWS),
       now: FIXTURE_NOW,
     }));
-    expect(markup).toMatch(/<span>Estimated cost<\/span><span class="myx-schart-value">\$0\.0120<\/span>/);
+    expect(markup).toMatch(/<span>API cost<\/span><span class="myx-schart-value">\$0\.0120<\/span>/);
     expect(markup).toMatch(/<span>Unpriced turns<\/span><span class="myx-schart-value">2<\/span>/);
   });
 });

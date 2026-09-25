@@ -8,7 +8,7 @@ export const S = {
   slotsBound: 'Slots bound',
   turns: 'Turns',
   tokens: 'Tokens',
-  cost: 'Est. API cost',
+  cost: 'API cost',
   inFlight: 'In flight',
   messages: 'Messages',
   lastHour: 'Last hour',
@@ -66,7 +66,7 @@ export const S = {
   turnsPerSlot: 'Turns per slot',
   economicsWhy: 'About lifetime totals',
   untaggedWhy: 'About untagged turns',
-  readingCosts: 'Reading costs',
+  readingCosts: 'Reading API costs',
   costsUnreadable: 'Estimates unreadable',
   noTurns: 'No turns yet',
   /** What any cell with no value prints (ABSENT in @shared/lib). */

@@ -22,8 +22,9 @@ export const S = {
   eager: 'Sent up front',
   deferred: 'On demand',
   /** The cost legend's one key: the window's dollars, an estimate at each turn's rate card, so the
-   *  key does not claim them as spent (Marlin, 2026-09-25). */
-  spent: 'Estimated cost',
+   *  key does not claim them as spent (Marlin, 2026-09-25). The inset's estimated basis says
+   *  "Estimated" once for the chart, so the key names only what it is (Marlin's rule, same day). */
+  spent: 'API cost',
   /** Turns the daemon could not price: no rate card, or recorded before it priced turns. */
   unpriced: 'Unpriced turns',
   noPriced: 'No priced turns',

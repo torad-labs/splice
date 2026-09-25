@@ -11,7 +11,6 @@ import type { TeamActivityPayload, TeamChatPayload, TeamEconomicsPayload, TeamPa
 import { draftOf, keyFor, saveDraft, unbindSession, unbindsOf, writeOf } from '../src/features/team-compose';
 import { UNLISTED, activityOf, boardOf, lastHourOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
 import { panelStates } from '../src/pages/teams';
-import { headBays } from '../src/widgets/team-board';
 
 const NOW = Date.UTC(2026, 8, 23, 14, 0, 0);
 const DAY = Date.UTC(2026, 8, 23);
@@ -191,7 +190,6 @@ describe('the messages and the activity', () => {
     const board = boardOf(TEAM, SESSIONS, { ...PANELS, chat: { error: 'HTTP 500' } }, NOW);
     const states = panelStates(board, { ...PANELS, chat: { error: 'HTTP 500' } });
     expect(states.chat).toEqual({ error: 'HTTP 500' });
-    expect(states.unread).toEqual({ chat: 'HTTP 500' });
     expect(states.feed).toMatchObject({ clientMatching: true });
   });
 });
@@ -206,7 +204,8 @@ describe('the turn log', () => {
     compact: false,
     ...(session === undefined ? {} : { session }),
     total,
-    ...(tokens ? { in_tokens: 10, cached_tokens: 100, cache_write_tokens: 1, out_tokens: 7 } : {}),
+    // A row's in_tokens already holds its cache reads and writes (PerfKeys.kt IN_TOKENS).
+    ...(tokens ? { in_tokens: 111, cached_tokens: 100, cache_write_tokens: 1, out_tokens: 7 } : {}),
   });
   const ROWS = [
     row('aaaaaaaa', NOW - 120_000, 90_000),
@@ -217,10 +216,15 @@ describe('the turn log', () => {
   ];
 
   test("the day's turns of the team's sessions, joined on the 8-character tag, oldest first", () => {
-    expect(turnsOf(members, ROWS, DAY).map((t) => [t.member, t.time, t.duration, t.input, t.output])).toEqual([
-      ['bbbbbbbb-2222', '13:25', '5m 00s', null, null],
-      ['lead-seat', '13:56', '1m 30s', 111, 7],
+    expect(turnsOf(members, ROWS, DAY).map((t) => [t.member, t.start, t.ms, t.input, t.output])).toEqual([
+      ['bbbbbbbb-2222', NOW - 35 * 60_000, 5 * 60_000, null, null],
+      ['lead-seat', NOW - 210_000, 90_000, 111, 7],
     ]);
+  });
+
+  test('a turn is its input as the row counts it, cache reads and writes already inside', () => {
+    // Summing them again doubled a cached turn's input (the row carried 111, the board printed 212).
+    expect(turnsOf(members, ROWS, DAY)[1].input).toBe(111);
   });
 
   test('the last hour counts a turn from its start to its end', () => {
@@ -233,15 +237,6 @@ describe('the turn log', () => {
     expect(at('13:26')).toBe(1);
     expect(at('13:57')).toBe(1);
     expect(at('13:59')).toBe(0);
-  });
-});
-
-describe('the head bays', () => {
-  test('every head is racked: past the two measured bays the rest share the second', () => {
-    const members = membersOf(TEAM, SESSIONS, ECONOMICS, NOW);
-    expect(headBays(members)).toEqual([['claude'], ['claudex']]);
-    const third = { ...members[1], slot: 's-3', head: 'claude-deepseek' };
-    expect(headBays([...members, third])).toEqual([['claude'], ['claudex', 'claude-deepseek']]);
   });
 });
 

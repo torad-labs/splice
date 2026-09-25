@@ -1,10 +1,24 @@
-// Labels of the team chat panel. Lowercase, three words or fewer, no em-dash (the label wall
-// globs this file). The honest empties are sentences and live in the component.
+// Every word the team chat prints (docs/design/DESIGN.md section 10). S holds labels: three words or
+// fewer, sentence case. H holds help: one sentence of twelve words or fewer. U holds the unit words
+// printed beside a figure. tests/copy.test.ts holds all three.
 export const S = {
-  chat: 'team chat',
-  time: 'time',
-  from: 'from',
+  chat: 'Chat',
+  chatWhy: 'About the chat',
+  reveal: 'Show message',
+  /** The empties, one factual line each. */
+  reading: 'Reading the chat',
+  unavailable: 'Chat unavailable',
+  unreadable: 'Chat unreadable',
+  noMessages: 'No messages today',
+} as const;
+
+export const H = {
+  chat: "Today's hand-offs between members; each text is read on demand.",
+  unavailable: 'This splice version does not serve team chat.',
+  noMessages: 'A message one member sends another shows here.',
+} as const;
+
+export const U = {
+  /** Between a message's sender and its recipient, for a screen reader. */
   to: 'to',
-  message: 'message',
-  reveal: 'show message',
 } as const;

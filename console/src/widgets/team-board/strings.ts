@@ -1,77 +1,93 @@
-// Labels of the board. These are the strip field names the comp prints, in the
-// comp's own words: the values beside them are data, these are the vocabulary.
-// Three words or fewer, lowercase, no em-dash (the label wall globs this file).
+// Every word a team's views print (docs/design/DESIGN.md section 10). S holds labels: three words or
+// fewer, sentence case. H holds help: one sentence of twelve words or fewer. U holds the unit words
+// printed beside a figure. tests/copy.test.ts holds all three.
+import { ABSENT } from '@shared/lib';
+
 export const S = {
-  /** team header strip */
-  team: 'team',
-  goal: 'goal',
-  repo: 'repo',
-  slots: 'slots',
-  leadDriving: 'lead driving',
-  /** session strip, line one */
-  name: 'name',
-  role: 'role',
-  model: 'model',
-  account: 'account',
-  window: 'window',
-  lastTurn: 'last turn',
-  state: 'state',
-  /** session strip, line two */
-  head: 'head',
-  sessionId: 'session id',
-  created: 'created',
-  uptime: 'uptime',
+  /** The stat row. */
+  slotsBound: 'Slots bound',
+  turns: 'Turns',
+  tokens: 'Tokens',
+  cost: 'Cost',
+  inFlight: 'In flight',
+  messages: 'Messages',
+  lastHour: 'Last hour',
+  unpriced: 'Unpriced',
+  /** The members table. */
+  members: 'Members',
+  membersWhy: 'About members',
+  tokensKey: 'Token key',
+  tokensIn: 'Tokens in',
+  tokensOut: 'Tokens out',
+  name: 'Name',
+  role: 'Role',
+  head: 'Head',
+  model: 'Model',
+  state: 'State',
+  window: 'Window',
+  lastTurn: 'Last turn',
+  checks: 'Checks',
+  lead: 'Lead',
+  openSeat: 'Open seat',
+  open: 'Open',
+  unlisted: 'Not listed',
+  pass: 'Pass',
+  fail: 'Fail',
+  /** The member detail. */
+  detail: 'Member detail',
+  close: 'Close',
+  account: 'Account',
+  sessionId: 'Session id',
+  started: 'Started',
+  uptime: 'Uptime',
+  workspace: 'Workspace',
+  contextLeft: 'Context left',
+  scratchpad: 'Scratchpad',
+  branch: 'Branch',
+  base: 'Base',
+  diff: 'Diff',
+  lastMessage: 'Last message',
+  instructions: 'Instructions',
+  showInstructions: 'Show instructions',
+  noInstructions: 'No instructions',
+  noSession: 'No session bound',
+  none: 'None',
+  /** The day's timeline. */
+  today: 'Today',
+  todayWhy: 'About the timeline',
+  timelineKey: 'Timeline key',
+  handoffs: 'Hand-offs',
+  landed: 'Landed',
+  running: 'Running',
+  noTurnsToday: 'No turns today',
+  readingTurns: 'Reading turns',
+  /** The economics. */
+  costPerRole: 'Cost per role',
+  turnsPerSlot: 'Turns per slot',
+  economicsWhy: 'About lifetime totals',
+  untaggedWhy: 'About untagged turns',
+  readingCosts: 'Reading costs',
+  costsUnreadable: 'Costs unreadable',
+  noTurns: 'No turns yet',
+  /** What any cell with no value prints (ABSENT in @shared/lib). */
+  absent: ABSENT,
+} as const;
+
+export const H = {
+  members: 'Every slot the team declares, with the session bound to it.',
+  openSeat: 'Bind a session to this slot in the team editor.',
+  today: "Each bar is one turn; times are UTC, the daemon's day.",
+  economics: 'Lifetime totals, joined to slots on the session tag.',
+  untagged: "Turns on the team's heads that carried no session tag.",
+  noTurns: "Turns show here once the team's sessions run them.",
+} as const;
+
+export const U = {
+  of: 'of',
+  today: 'today',
+  untagged: 'untagged',
+  since: 'since',
   turns: 'turns',
-  tokensIn: 'tokens in',
-  tokensOut: 'tokens out',
-  costEst: 'cost est',
-  /** session strip, line three */
-  contextLeft: 'context left',
-  scratchpad: 'scratchpad',
-  workspace: 'workspace',
-  branch: 'branch',
-  base: 'base',
-  diff: 'diff',
-  checks: 'checks',
-  /** AUTHORED SHORT FORMS for the narrow head bay (M3-04). A column name prints once per rack, so
-   *  a clipped one has no second copy to recover from: `acco…` carries less than `acct`. These
-   *  are the builder bay's four names that overflow its measured columns by 1.3 to 5.3px. */
-  accountShort: 'acct',
-  windowShort: 'wndw',
-  tokensOutShort: 'tok out',
-  contextLeftShort: 'ctx left',
-  /** the message strips */
-  time: 'time',
-  from: 'from',
-  arrow: '→',
-  to: 'to',
-  packet: 'packet',
-  message: 'message',
-  /** the activity strips */
-  member: 'member',
-  activity: 'activity',
-  detail: 'detail',
-  /** printed on the bay labels and the footer. The two bay labels are the comp's
-   *  sentences and their first words are the labels; the rest of each sentence
-   *  is not a label and lives in the component (CONTRACTS.md section 4). */
-  headLabel: 'head:',
-  chatLabel: 'team chat',
-  activityLabel: 'activity',
-  /** The board prints UTC (the chat is served one UTC day at a time) while every other page prints
-   *  local time, so the footer says so once (walkthrough S17). */
-  utcNote: 'times in utc',
-  teamCreated: 'created:',
-  teamUpdated: 'updated:',
-  /** the by-role board and the timeline (comps team-board-b and team-board-c) */
-  session: 'session',
-  boundSlot: 'bound to slot',
-  lastMessage: 'last message received',
-  turn: 'turn',
-  duration: 'duration',
-  total: 'total',
-  teamSlots: 'team slots',
-  costPerRole: 'cost per role',
-  turnsPerMember: 'turns per member',
-  /** the board's accessible name */
-  board: 'team board',
+  running: 'running',
+  kb: 'KB',
 } as const;

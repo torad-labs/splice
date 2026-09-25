@@ -172,11 +172,9 @@ describe('the phone at 390', () => {
   // the strip's paper, measured at 390 on accounts (985px past), sessions (889), usage (697), models
   // (610), doctor (486), compaction (476) and mcp (447). `min-width: 100%` fills the bay the same at
   // 1440 and scrolls the rack on a phone.
-  const PINNED_OK: Record<string, string> = {
-    // A hand-off row spans the gutter between two bays, and its cells take `min-width: 0` so they
-    // shrink inside it: the exact width is the design, not a rack.
-    '.myx-board-role .myx-role-cross .myx-strip': 'a cross row spans the gutter; its cells shrink by design',
-  };
+  // Selectors allowed to pin a strip to exactly its box, each with the reason. The last one (the
+  // team board's hand-off row) went with the board when Teams moved onto the kit.
+  const PINNED_OK: Record<string, string> = {};
   const pinnedStrips = (css: string): string[] => [...css.replace(/\/\*[\s\S]*?\*\//g, '')
     .matchAll(/([^{}]*\.myx-strip)\s*\{([^}]*)\}/g)]
     .filter((m) => /(^|[;\s])width:\s*100%/.test(m[2]))
@@ -191,14 +189,17 @@ describe('the phone at 390', () => {
     expect(pinnedStrips('.myx-x .myx-strip { width: 100%; }')).toEqual(['.myx-x .myx-strip']);
     expect(pinnedStrips('.myx-x .myx-strip { min-width: 100%; }')).toEqual([]);
     expect(pinnedStrips('/* .myx-x .myx-strip { width: 100%; } */')).toEqual([]);
-    const all = allSheets().flatMap((rel) => pinnedStrips(sheet(rel)));
-    expect(all, 'the one written exclusion is still in the tree, so the scan is reading real sheets').toContain(
-      Object.keys(PINNED_OK)[0],
-    );
+    // The scan reads real sheets: a pinned strip planted in one it globs is found there.
+    const real = allSheets()[0];
+    expect(real, 'the glob found no sheet').toBeDefined();
+    expect(pinnedStrips(`${sheet(real)}\n.myx-planted .myx-strip { width: 100%; }`)).toContain('.myx-planted .myx-strip');
   });
 
-  test('the board footer scrolls with its board rather than sitting over the page', () => {
-    expect(body(sheet('src/widgets/team-board/board.css'), '.myx-board-footer')).not.toMatch(/position:\s*fixed/);
+  test('nothing on the teams page sits fixed over the page', () => {
+    // The old board's footer was position: fixed and floated over the composer and the list.
+    for (const rel of ['src/pages/teams/teams.css', 'src/widgets/team-board/team-board.css', 'src/widgets/team-chat/team-chat.css', 'src/widgets/activity-feed/activity-feed.css', 'src/features/team-compose/team-compose.css']) {
+      expect(sheet(rel), rel).not.toMatch(/position:\s*fixed/);
+    }
   });
 
   test('the rail brings an out-of-view tab to the middle and leaves a visible one alone', () => {

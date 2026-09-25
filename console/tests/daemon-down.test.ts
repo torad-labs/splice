@@ -29,7 +29,7 @@ const { SessionsBoard } = await import('../src/pages/sessions');
 const { ProjectsBoard } = await import('../src/pages/projects');
 const { LogsBoard } = await import('../src/pages/logs');
 const { teamsBodyFor } = await import('../src/pages/teams');
-const { heroBoard } = await import('../src/pages/teams/fixtures/hero');
+const { sampleBoard } = await import('../src/pages/teams/fixtures/hero');
 const { healthOf } = await import('../src/widgets/rule');
 
 const h = React.createElement;
@@ -147,7 +147,7 @@ describe('a page keeps its rows, shows the fault and marks the rows stale', () =
         error: DOWN,
         lastRead,
       })),
-      teams: render(teamsBodyFor({ view: 'by-head', teams: { teams: [] }, board: heroBoard, error: DOWN, lastRead })),
+      teams: render(teamsBodyFor({ view: { layout: 'table', group: 'head' }, teams: { teams: [] }, board: sampleBoard, error: DOWN, lastRead })),
     };
     for (const [page, out] of Object.entries(boards)) {
       expect(out, page).toContain(DOWN);

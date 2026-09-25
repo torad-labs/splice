@@ -1,12 +1,7 @@
-// TEAM BOARD, the hero (row M1-05). Three claims, each one a thing that could
-// silently stop being true:
-//
-//   1. the board renders the comp's words — all of them, listed from the spec's
-//      text regions, because the operator approved that comp with those words;
-//   2. against a daemon older than the teams route, the page prints the honest
-//      empty naming the work item rather than an empty board;
-//   3. the fixture cannot reach a production bundle: its bytes are behind the
-//      dev guard, and the built file is grepped for them in the row's note.
+// THE TEAMS PAGE ON THE KIT (the console redesign, 2026-09-25). Each claim is a thing that could
+// silently stop being true and that no typecheck would catch: a seat dropped from its run, a figure
+// printed where no route reports one, a turn drawn off its clock, a cost summed twice, two empties
+// that are not the same answer, and the sample team reaching a production bundle.
 //
 // A .ts file holds no JSX (CONTRACTS.md section 4), so the elements are built
 // with createElement and read back through renderToStaticMarkup.
@@ -21,14 +16,14 @@ import { PENDING_TEAMS } from '../src/entities/team';
 import type { TeamMemberRow, TeamPayload } from '../src/entities/team';
 import { MgmtError, pendingOf } from '../src/shared/api';
 import {
-  TeamBoard, TeamBoardByRole, TeamTimeline, costTable, focusMember, groupByRole, roleRows, timeRule,
-  timelineRows, turnsPerSlot,
+  CostPerRole, SeatDetail, TeamMembers, TeamStats, TeamTimeline, costTable, dayAxis, lanesOf, rolesOf, seatGroups, seatsOf,
+  slotName, stateOf,
 } from '../src/widgets/team-board';
 import { TeamChat, chatOrder } from '../src/widgets/team-chat';
-import { ActivityFeed, feedEmpty, feedOrder } from '../src/widgets/activity-feed';
+import { ActivityFeed, FEED_ROWS, feedEmpty, feedOrder } from '../src/widgets/activity-feed';
 import { TeamCompose, bindSession, blankDraft, draftOf, optionsFor, setArchived, unbindSession, validateDraft } from '../src/features/team-compose';
-import { heroBoard, viewsBoard, viewsData } from '../src/pages/teams/fixtures/hero';
-import { teamsBodyFor } from '../src/pages/teams';
+import { sampleBoard, sampleData } from '../src/pages/teams/fixtures/hero';
+import { TeamList, modeOf, teamsBodyFor } from '../src/pages/teams';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
@@ -42,142 +37,195 @@ function unescapeHtml(html: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&amp;/g, '&');
 }
+const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => unescapeHtml(renderToStaticMarkup(element));
 
-const boardHtml = unescapeHtml(renderToStaticMarkup(createElement(TeamBoard, { board: heroBoard })));
+const BY_HEAD = { layout: 'table', group: 'head' };
+const BY_ROLE = { layout: 'table', group: 'role' };
+const TIMELINE = { layout: 'timeline', group: null };
 
-// Every word the comp prints, gathered from the spec's text and control
-// regions: the header strip, the two session strips' three lines each, the bay
-// labels, the chat strips, the activity strips and the footer.
-const COMP_WORDS: string[] = [
-  // team header strip
-  'team', 'goal', 'repo', 'slots', 'lead driving',
-  'storefront-api', 'promoter bookkeeping lives on fly raw',
-  '~/Documents/dev/infra/storefront-api', '3 slots, 3 bound', 'gs-backend-claude',
-  // session strip, line one
-  'name', 'role', 'model', 'account', 'window', 'last turn', 'state',
-  'lead', 'fable', 'acct-a', '5h 74%', '14:01', 'driving',
-  // session strip, line two
-  'head', 'session id', 'created', 'uptime', 'turns', 'tokens in', 'tokens out', 'cost est',
-  'claude', 's-1a7c9e2d', '09:12:33', '4h 49m', '27', '182,341', '71,552', '$0.412',
-  // session strip, line three
-  'context left', 'scratchpad', 'workspace', 'branch', 'base', 'diff', 'checks',
-  '35%', '12.8 k', '~/.../storefront-api', 'feature/gs-41', 'main', '+412 -37', 'pass',
-  // the builder's three lines
-  'gs-backend-builder', 'builder', 'deepseek-flash', '–', '13:58', 'building GS-41 done',
-  'claude-deepseek', 's-5f3b8a11', '09:18:02', '4h 44m', '18', '93,274', '38,611', '$0.183',
-  '8.1 k', '+289 -37',
-  // bay labels
-  'head: claude', 'head: claude-deepseek',
-  'team chat (newest at bottom)', 'activity, sampled every 30 s',
-  // the chat strips
-  'time', 'from', '→', 'to', 'packet', 'message',
-  '13:41', 'packet GS-41: promoter bookkeeping lives on fly raw. build, run parity, report',
-  'GS-41 done, see ledger', 'gs-backend-builder2', 'GS-42',
-  'packet GS-42: dearm the machine-update schedule',
-  // the activity strips
-  'member', 'activity', 'detail',
-  '14:01:30', 'editing PromoterLedger.kt', 'src/ledger/PromoterLedger.kt:142',
-  'running checks/gate.sh', 'checks/gate.sh --all',
-  'searching for fly_raw', 'rg -n "fly_raw"',
-  '14:02:00', 'reading MANIFEST.toml', 'MANIFEST.toml',
-  'messaging a peer session', 'to gs-backend-builder2',
-  // the footer. The comp also printed `team id: team_…`; it is an internal key no page or command
-  // takes, and the walkthrough flagged it (S4), so the board prints when the team was made instead.
-  'created:', '2025-05-22 09:12:33', 'updated:', '2025-05-22 14:02:05',
-];
+const pageHtml = render(teamsBodyFor({
+  view: BY_HEAD,
+  teams: { teams: [sampleBoard.team] },
+  board: sampleBoard,
+  data: sampleData,
+  chat: { messages: sampleBoard.messages },
+  feed: { activity: sampleBoard.activity, clientMatching: true },
+}));
 
-describe('the board renders the comp', () => {
-  test('the fixture is the comp, word for word', () => {
-    const missing = COMP_WORDS.filter((word) => !boardHtml.includes(word));
-    expect(missing, 'words the comp prints and the board does not').toEqual([]);
+/** The cells of the members table's row whose open button names `name`. */
+const rowOf = (html: string, name: string): string => {
+  const at = html.indexOf(`aria-label="Member detail ${name}"`);
+  const start = html.lastIndexOf('<tr', at);
+  return html.slice(start, html.indexOf('</tr>', at));
+};
+
+describe('the opened team', () => {
+  test('its name, its goal and repo, and its figures head it', () => {
+    expect(pageHtml).toContain('storefront-api');
+    expect(pageHtml).toContain('promoter bookkeeping lives on fly raw');
+    expect(pageHtml).toContain('~/Documents/dev/infra/storefront-api');
+    const stats = render(createElement(TeamStats, { board: sampleBoard, data: sampleData }));
+    // Three of four slots are bound, as pips and as the figure.
+    expect(stats).toContain('Slots bound: 3 of 4');
+    expect(stats).toMatch(/myx-stat-value">3<span class="myx-stat-unit">of 4</);
+    // The lifetime figures are the role tallies summed: 19 turns, 461k tokens, $0.736.
+    expect(stats).toContain('>19<');
+    expect(stats).toContain('461k');
+    expect(stats).toContain('$0.736');
+    expect(stats).toContain('2 untagged');
+    expect(stats).toContain('>3<span class="myx-stat-unit">today');
   });
 
-  test('every comp word is a real string in the output, not markup', () => {
-    // The board's own element, wherever it sits: M3-03 wrapped it in the phone's scroll frame
-    // (`myx-board-frame`, `display: contents` on a desktop), so the render now opens on that div.
-    // What this arm is for is that the words above were found in RENDERED markup rather than in an
-    // escaped string, and the board's section is what says so.
-    expect(boardHtml.startsWith('<')).toBe(true);
-    expect(boardHtml).toContain('<section class="myx-board"');
-    expect(boardHtml.length).toBeGreaterThan(2000);
+  test('every seat is a row, an open one included, grouped under the head it runs on', () => {
+    for (const member of sampleBoard.members) expect(pageHtml, member.name).toContain(member.name);
+    expect(pageHtml).toContain('Open seat');
+    const groups = seatGroups(sampleBoard, 'head');
+    expect(groups.map((group) => [group.key, group.seats.length])).toEqual([['claudex', 1], ['claude-grok', 2], ['bonsai-2-27b', 1]]);
   });
 
-  test('the board racks one bay per head the members run on', () => {
-    expect(boardHtml).toContain('head: claude');
-    expect(boardHtml).toContain('head: claude-deepseek');
+  test("a member's tokens are one bar on the table's scale, with the sum after it", () => {
+    const lead = rowOf(pageHtml, 'api-lead');
+    expect(lead).toContain('Tokens: Tokens in 132k, Tokens out 57k');
+    expect(lead).toContain('189k');
+    expect(lead).toContain('$0.412');
+    expect(lead).toContain('Pass');
   });
 
-  test('a figure no provider reports prints – rather than a zero', () => {
-    const builder = heroBoard.members[1];
-    expect(builder.window).toBeNull();
-    expect(builder.contextLeftPct).toBeNull();
-    expect(boardHtml).toContain('–');
-    // Read the cells, not the markup: the board's rows carry their own pitch in
-    // a style attribute, and a row at the top of its rack is legitimately 0%.
-    const values = [...boardHtml.matchAll(/myx-sfield-text">([^<]*)</g)].map((match) => match[1]);
-    expect(values).not.toContain('0%');
+  test('a figure no route reports prints its absence, and a field no member has leaves no column', () => {
+    // The lead reports a window and the builder does not: the column stands and the builder's cell is –.
+    expect(pageHtml).toContain('>Window<');
+    expect(rowOf(pageHtml, 'api-builder')).toMatch(/myx-dt-mono">–</);
+    // No member reporting one: no Window column at all, rather than a column of dashes.
+    const none: TeamPayload = { ...sampleBoard, members: sampleBoard.members.map((member) => ({ ...member, window: null })) };
+    expect(render(createElement(TeamMembers, { board: none, by: 'head' }))).not.toContain('>Window<');
+  });
+
+  test('by role, the roles run in the order the team declares them, the lead first', () => {
+    expect(seatGroups(sampleBoard, 'role').map((group) => [group.key, group.seats.map((seat) => seat.member?.name ?? null)])).toEqual([
+      ['lead', ['api-lead']],
+      ['builder', ['api-builder', 'api-builder-2']],
+      ['reviewer', [null]],
+    ]);
+    const html = render(teamsBodyFor({ view: BY_ROLE, teams: null, board: sampleBoard, data: sampleData }));
+    // By role, the head is a column, so the open reviewer seat still says what it would run on.
+    expect(html).toContain('>Head<');
+    expect(rowOf(html, 'reviewer')).toContain('claude-grok');
+  });
+
+  test("an open seat's detail says nothing is bound and shows the slot", () => {
+    const open = seatsOf(sampleBoard).find((seat) => seat.member === null);
+    if (open === undefined) throw new Error('the sample carries an open seat');
+    const html = render(createElement(SeatDetail, { board: sampleBoard, seat: open }));
+    expect(html).toContain('No session bound');
+    expect(html).toContain('claude-grok');
+    expect(html).toContain('No instructions');
+    expect(stateOf(open)).toEqual({ tone: 'neutral', word: 'Open' });
+  });
+
+  test("a bound seat's detail keeps its instructions behind a reveal and prints only what is reported", () => {
+    const lead = seatsOf(sampleBoard)[0];
+    const html = render(createElement(SeatDetail, { board: sampleBoard, seat: lead }));
+    expect(html).toContain('Show instructions');
+    expect(html).not.toContain('Own the packet queue');
+    expect(html).toContain('s-1a7c9e2d');
+    expect(html).toContain('feature/gs-41');
+    // The newest hand-off the lead received.
+    expect(html).toContain('13:58');
+    const bare: TeamMemberRow = { ...sampleBoard.members[0], branch: null, base: null, diff: null, window: null, contextLeftPct: null, scratchpadKb: null };
+    const plain = render(createElement(SeatDetail, { board: { ...sampleBoard, members: [bare] }, seat: { ...lead, member: bare } }));
+    for (const label of ['Branch', 'Base', 'Diff', 'Window', 'Context left', 'Scratchpad']) expect(plain, label).not.toContain(`>${label}<`);
   });
 });
 
-describe('what the page says when no board answered', () => {
+describe('the lead is the slot flagged lead, whatever its role is called', () => {
+  const [lead, builder] = sampleBoard.team.slots;
+  const team = { ...sampleBoard.team, slots: [{ ...builder, role: 'lead', lead: false }, { ...lead, role: 'architect' }] };
+  const board: TeamPayload = { ...sampleBoard, team, members: [] };
+
+  test('the declared roles put the flagged slot first', () => {
+    expect(rolesOf(team.slots)).toEqual(['architect', 'lead']);
+  });
+
+  test('the lead badge sits on the flagged slot, not on the role named lead', () => {
+    const html = render(createElement(TeamMembers, { board, by: 'role' }));
+    expect(rowOf(html, 'architect')).toContain('aria-label="Lead"');
+    expect(rowOf(html, 'lead')).not.toContain('aria-label="Lead"');
+  });
+});
+
+describe('the views', () => {
+  test('a view draws by its layout and group, so a renamed or copied view keeps drawing', () => {
+    expect(modeOf(BY_HEAD)).toBe('head');
+    expect(modeOf(BY_ROLE)).toBe('role');
+    expect(modeOf(TIMELINE)).toBe('timeline');
+    expect(modeOf({ layout: 'board', group: 'role' })).toBe('role');
+  });
+
+  test('the team list names every team, its bound slots and its state', () => {
+    const second = { ...sampleBoard.team, id: 'team-2', name: 'checkout', archived: true };
+    const html = render(createElement(TeamList, { teams: [sampleBoard.team, second], opened: 'team-2', onOpen: () => undefined }));
+    expect(html).toContain('storefront-api');
+    expect(html).toContain('checkout');
+    expect(html).toContain('3 of 4');
+    expect(html).toContain('Archived');
+    expect(html).toContain('Active');
+  });
+});
+
+describe('what the page says when no team answered', () => {
   test('a daemon older than the teams route says so in words, never a row id', () => {
-    const pending = { pending: 'V4-131' };
-    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
-    expect(html).toContain('teams unavailable');
+    const html = render(teamsBodyFor({ view: BY_HEAD, teams: { pending: 'V4-131' }, board: null }));
+    expect(html).toContain('Teams unavailable');
     expect(html).toContain('does not serve teams');
     expect(html).not.toContain('V4-131');
   });
 
   test('before anything has answered, the page claims neither absence nor failure', () => {
-    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: null, board: null })));
-    expect(html).toContain('reading teams');
-    expect(html).not.toContain('teams unavailable');
+    const html = render(teamsBodyFor({ view: BY_HEAD, teams: null, board: null }));
+    expect(html).toContain('Reading teams');
+    expect(html).not.toContain('unavailable');
     expect(html).not.toContain('unreadable');
   });
 
   test("a list read that failed says so, in the daemon's words", () => {
-    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: null, board: null, error: 'HTTP 500' })));
-    expect(html).toContain('teams unreadable');
+    const html = render(teamsBodyFor({ view: BY_HEAD, teams: null, board: null, error: 'HTTP 500' }));
+    expect(html).toContain('Teams unreadable');
     expect(html).toContain('HTTP 500');
   });
 
   test('a 404 is what makes it the honest empty, through the shared mapping', () => {
     const pending = pendingOf(new MgmtError(404, 'unknown route'), PENDING_TEAMS);
     expect(pending).toEqual({ pending: 'V4-131' });
-    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: pending, board: null })));
-    expect(html).toContain('teams unavailable');
+    expect(render(teamsBodyFor({ view: BY_HEAD, teams: pending, board: null }))).toContain('Teams unavailable');
   });
 
-  test('a daemon that answers with no teams is not dressed as a missing route', () => {
-    const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-head', teams: { teams: [] }, board: null })));
-    expect(html).toContain('no teams yet');
-    expect(html).toContain('compose one below');
-    expect(html).not.toContain('teams unavailable');
+  test('a daemon that answers with no teams is not dressed as a missing route, and offers the first', () => {
+    const html = render(teamsBodyFor({ view: BY_HEAD, teams: { teams: [] }, board: null, onNew: () => undefined }));
+    expect(html).toContain('No teams yet');
+    expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*New team/);
+    expect(html).not.toContain('Teams unavailable');
   });
 
-  test('the other two views draw the opened team, and a panel still being read says so', () => {
-    for (const view of ['by-role', 'timeline']) {
-      const html = unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view, teams: null, board: heroBoard })));
-      expect(html, view).toContain('storefront-api');
-      expect(html, view).not.toContain('V4-131 pending');
+  test('every view draws the opened team, and a panel still being read says so', () => {
+    for (const view of [BY_HEAD, BY_ROLE, TIMELINE]) {
+      const html = render(teamsBodyFor({ view, teams: null, board: sampleBoard }));
+      expect(html, view.group ?? view.layout).toContain('storefront-api');
+      expect(html).toContain('Reading costs');
+      expect(html).toContain('Reading the chat');
+      expect(html).toContain('Reading activity');
     }
-    expect(unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'timeline', teams: null, board: heroBoard }))))
-      .toContain('reading the economics');
-    expect(unescapeHtml(renderToStaticMarkup(teamsBodyFor({ view: 'by-role', teams: null, board: heroBoard }))))
-      .toContain('reading the chat');
+    expect(render(teamsBodyFor({ view: TIMELINE, teams: null, board: sampleBoard }))).toContain('Reading turns');
   });
 });
 
-describe('the fixture stays out of a production bundle', () => {
+describe('the sample team stays out of a production bundle', () => {
   const source = read('console/src/pages/teams/index.tsx');
 
   test('the fixture is never reached by a static import, and its specifier is not a literal', () => {
     // A static import makes the fixture reachable whether or not the guard's branch runs, so the
-    // bundler keeps its bytes. Measured: the comp's words were in dist/index.html until this import
-    // became a dynamic one. And the specifier must be COMPOSED AT RUNTIME (M1-20): a statically
+    // bundler keeps its bytes. And the specifier must be COMPOSED AT RUNTIME (M1-20): a statically
     // analyzable `import('./fixtures/hero')` stays a dependency edge through the single-file build
-    // even when the branch around it is dead, which shipped this fixture's bytes again - the wall
-    // named 15 of them.
+    // even when the branch around it is dead.
     expect(source).not.toMatch(/^import .*from '\.\/fixtures\//m);
     expect(source).toContain('import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`)');
   });
@@ -185,109 +233,65 @@ describe('the fixture stays out of a production bundle', () => {
   test('every use of the fixture sits behind the dev guard', () => {
     const guard = source.indexOf('import.meta.env.DEV');
     expect(guard, 'the dev guard is gone from the page').toBeGreaterThan(-1);
-    const uses = [...source.matchAll(/heroBoard/g)].map((match) => match.index ?? -1);
+    const uses = [...source.matchAll(/sampleBoard/g)].map((match) => match.index ?? -1);
     expect(uses.length, 'the fixture must be referenced at its load').toBeGreaterThan(0);
     for (const at of uses) expect(at).toBeGreaterThan(guard);
   });
 
   test('the guard is a static condition the bundler can eliminate', () => {
-    // The guard moved into `wantsFixture` (M1-20) so that the load and the capture marker are one
-    // decision, and it is still a STATIC conjunction: `import.meta.env.DEV` is replaced by false in
-    // a production build, so the branch — and the fixture with it — is dropped. A guard read from a
-    // variable would keep the branch reachable and the bytes with it, which is the measured leak
-    // this whole group exists for.
     expect(source).toContain("return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;");
-    // The branch is braced because it CLEARS the fixture state before returning: an early return
-    // that left the previous value in place kept a stale capture marker across a hash change
-    // (measured in a browser, M1-20).
+    // The branch CLEARS the fixture state before returning: an early return that left the previous
+    // value in place kept a stale capture marker across a hash change (measured in a browser, M1-20).
     expect(source).toContain('if (!wantsFixture(search)) {');
     expect(source).toContain('setSample(null);');
   });
 });
 
-// ---- THE OTHER TWO VIEWS, THE PANELS AND THE COMPOSER (row M2-08) -----------------------------
-//
-// Six claims, one per rule the row names. Each one is a thing that could silently stop being true
-// and that no typecheck would catch: a grouping, a column count, a validation, a flag, an order,
-// and the difference between two empties that are not the same answer.
-const roleHtml = unescapeHtml(renderToStaticMarkup(
-  createElement(TeamBoardByRole, { board: viewsBoard, data: viewsData }),
-));
-const timelineHtml = unescapeHtml(renderToStaticMarkup(
-  createElement(TeamTimeline, { board: viewsBoard, data: viewsData }),
-));
+describe("the day's timeline", () => {
+  const html = render(createElement(TeamTimeline, { board: sampleBoard, data: sampleData }));
 
-describe('the board by role', () => {
-  test('a bay exists for every role the team DECLARES, bound or not', () => {
-    const bays = groupByRole(viewsBoard);
-    expect(bays.map((bay) => bay.role)).toEqual(['lead', 'builder', 'reviewer']);
-    expect(bays[0].members.map((m) => m.name)).toEqual(['gs-backend-claude']);
-    expect(bays[1].members.map((m) => m.name)).toEqual(['gs-backend-builder', 'gs-backend-builder2']);
-    expect(bays[2].members).toEqual([]);
+  test('one lane per member, each holding only its own turns, oldest first', () => {
+    const lanes = lanesOf(sampleBoard, sampleData.turns);
+    expect(lanes.map((lane) => [lane.member.name, lane.turns.length])).toEqual([
+      ['api-lead', 6],
+      ['api-builder', 6],
+      ['api-builder-2', 1],
+    ]);
+    for (const lane of lanes) {
+      expect(lane.turns.every((turn) => turn.member === lane.member.name)).toBe(true);
+      expect(lane.turns.map((turn) => turn.start)).toEqual([...lane.turns.map((turn) => turn.start)].sort((a, b) => a - b));
+    }
+    expect(html).toContain('api-lead: 6 turns, 1 running');
   });
 
-  test('the empty reviewer bay names the head an operator would launch', () => {
-    const reviewer = groupByRole(viewsBoard)[2];
-    expect(reviewer.open?.head).toBe('claudex');
-    expect(roleHtml).toContain('no session bound, launch one: claudex');
+  test('the clock reaches from before the first turn to now, on at most eight ticks', () => {
+    const axis = dayAxis(sampleData.turns.map((turn) => turn.start), sampleData.now);
+    expect(axis.to).toBe(sampleData.now);
+    expect(axis.from).toBeLessThanOrEqual(Math.min(...sampleData.turns.map((turn) => turn.start)));
+    expect(axis.ticks.length).toBeLessThanOrEqual(8);
+    expect(axis.ticks[0].label).toBe('09:00');
+    // An idle team still gets the last hour, not a zero-width clock.
+    const idle = dayAxis([], sampleData.now);
+    expect(idle.to - idle.from).toBeGreaterThanOrEqual(3_600_000);
   });
 
-  test('a hand-off crosses from the sender bay to the recipient bay', () => {
-    const crossing = roleRows(viewsBoard, groupByRole(viewsBoard))
-      .filter((event): event is Extract<typeof event, { kind: 'message' }> => event.kind === 'message');
-    expect(crossing).toHaveLength(3);
-    // lead -> builder, builder -> lead, lead -> builder2: all three span bay 0 to bay 1.
-    for (const event of crossing) expect([event.from, event.to]).toEqual([0, 1]);
-    // Two sessions created in different bays share a row; every hand-off takes one of its own.
-    const rows = roleRows(viewsBoard, groupByRole(viewsBoard)).map((event) => event.row);
-    expect(rows[0]).toBe(rows[1]);
-    expect(new Set(rows.slice(2)).size).toBe(rows.length - 2);
+  test('a running turn is drawn in the running mark, and a landed one in the grey', () => {
+    expect((html.match(/myx-tt-turn myx-mark-ok/g) ?? []).length).toBe(3);
+    expect((html.match(/myx-tt-turn myx-mark-series-1/g) ?? []).length).toBe(10);
   });
 
-  test('the rule reads from the quarter hour before the first hand-off to now', () => {
-    expect(timeRule(viewsBoard.messages, '14:02').map((mark) => mark.label))
-      .toEqual(['13:30', '13:45', '14:00', 'now']);
-  });
-
-  test('a window no provider reports is named, never zeroed', () => {
-    expect(roleHtml).toContain('not reported by provider');
+  test('a hand-off is a tick on its own lane, named by the seats it crossed', () => {
+    expect((html.match(/myx-tt-msg/g) ?? []).length).toBe(3);
+    expect(html).toContain('14:01 lead → builder 2');
+    expect(slotName(sampleBoard, 'a-stranger')).toBe('a-stranger');
   });
 });
 
-describe('the timeline', () => {
-  test('one column per member, and the member says which head it runs', () => {
-    for (const member of viewsBoard.members) {
-      expect(timelineHtml, member.name).toContain(member.name);
-    }
-    expect(timelineHtml).toContain('claude-deepseek (deepseek-flash) · builder');
-    // Every bucket row carries one cell per member, whatever happened in it.
-    const rows = timelineRows(viewsBoard, viewsData);
-    for (const row of rows) {
-      if (row.kind === 'bucket') expect(row.cells).toHaveLength(viewsBoard.members.length);
-    }
-  });
+describe('the cost per role', () => {
+  const economics = sampleData.economics;
+  if ('error' in economics) throw new Error('the sample carries the economics payload');
 
-  test('a hand-off spans the columns between its sender and its recipient', () => {
-    const rows = timelineRows(viewsBoard, viewsData)
-      .filter((row): row is Extract<typeof row, { kind: 'message' }> => row.kind === 'message');
-    expect(rows.map((row) => [row.from, row.to])).toEqual([[0, 1], [0, 1], [0, 2]]);
-    expect(timelineHtml).toContain('lead → builder 2');
-  });
-
-  test('the turns still running are racked on the now row, not on a clock time', () => {
-    const rows = timelineRows(viewsBoard, viewsData);
-    const last = rows[rows.length - 1];
-    expect(last.kind).toBe('bucket');
-    if (last.kind === 'bucket') {
-      expect(last.label).toBe('now');
-      expect(last.cells.flat().every((cell) => cell.kind === 'turn' && cell.turn.live)).toBe(true);
-    }
-  });
-
-  const economics = viewsData.economics;
-  if ('error' in economics) throw new Error('the views fixture carries the economics payload');
-
-  test("cost per role prints the daemon's tallies, their total, and what it could not place", () => {
+  test("it prints the daemon's tallies, and what it could not place", () => {
     const table = costTable(economics);
     expect(table.rows.map((row) => [row.role, row.input, row.output, row.cost, row.turns])).toEqual([
       ['lead', 132116, 56656, 0.412, 6],
@@ -295,10 +299,9 @@ describe('the timeline', () => {
     ]);
     expect(table.total.input + table.total.output).toBe(461286);
     expect(table.total.cost).toBeCloseTo(0.736, 6);
-    expect(table.unattributed).toBe(0);
-    expect(timelineHtml).toContain('joined by the daemon on the first 8 characters of the session id');
-    expect(timelineHtml).toContain('0 turns with no session tag');
-    expect(timelineHtml).toContain('oldest turn held 09:14');
+    const html = render(createElement(CostPerRole, { data: sampleData }));
+    expect(html).toContain('2 untagged');
+    expect(html).toContain('since 2025-05-22 09:14');
   });
 
   test('cache reads and writes count as tokens in, and one unpriced role unprices the total', () => {
@@ -309,154 +312,79 @@ describe('the timeline', () => {
     const table = costTable(cached);
     expect(table.rows[0].input).toBe(1110);
     expect(table.total.cost).toBeNull();
-    expect(unescapeHtml(renderToStaticMarkup(createElement(TeamTimeline, { board: viewsBoard, data: { ...viewsData, economics: cached } }))))
-      .toContain('–');
-  });
-
-  test('turns per slot reads the same tallies, and an open seat is a row with its own count', () => {
-    expect(turnsPerSlot(viewsBoard, economics)).toEqual([
-      { slot: 'slot-lead', name: 'gs-backend-claude', turns: 6 },
-      { slot: 'slot-builder-1', name: 'gs-backend-builder', turns: 8 },
-      { slot: 'slot-builder-2', name: 'gs-backend-builder2', turns: 5 },
-      { slot: 'slot-reviewer', name: 'reviewer (open)', turns: 0 },
-    ]);
+    const stats = render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, economics: cached } }));
+    expect(stats).toContain('Unpriced');
   });
 
   test('an economics read that failed prints the reason, not an empty table', () => {
-    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamTimeline, { board: viewsBoard, data: { ...viewsData, economics: { error: 'no such team: t' } } })));
-    expect(html).toContain('economics unreadable');
+    const html = render(createElement(CostPerRole, { data: { ...sampleData, economics: { error: 'no such team: t' } } }));
+    expect(html).toContain('Costs unreadable');
     expect(html).toContain('no such team: t');
   });
 });
 
-describe('the chat panel', () => {
+describe('the chat', () => {
   test('the messages read down in time order, whatever order the route answered in', () => {
-    const shuffled = [viewsBoard.messages[2], viewsBoard.messages[0], viewsBoard.messages[1]];
+    const shuffled = [sampleBoard.messages[2], sampleBoard.messages[0], sampleBoard.messages[1]];
     expect(chatOrder(shuffled).map((message) => message.time)).toEqual(['13:41', '13:58', '14:01']);
   });
 
   test('the text is behind a reveal, because the daemon reads it on demand', () => {
-    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamChat, { state: { messages: viewsBoard.messages } })));
-    expect(html).toContain('show message');
+    const html = render(createElement(TeamChat, { state: { messages: sampleBoard.messages } }));
+    expect(html).toContain('Show message');
     expect(html).not.toContain('GS-41 done, see ledger');
+    expect(html).toContain('aria-label="api-lead to api-builder"');
   });
 
   test('a route this daemon does not serve is not an empty chat, and says so without a row id', () => {
-    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamChat, { state: { pending: PENDING_TEAMS } })));
-    expect(html).toContain('chat unavailable');
+    const html = render(createElement(TeamChat, { state: { pending: PENDING_TEAMS } }));
+    expect(html).toContain('Chat unavailable');
     expect(html).not.toContain('V4-131');
     expect(html).not.toContain('/api/');
   });
 });
 
-// THE ACTIVITY RACK NAMES ITS COLUMNS ON THE FIRST STRIP ONLY (M3-04). The comp prints `time member
-// activity detail` once, on the lead strip, and the rows under it carry values alone; the board had a
-// separate label rack above the strips AND labels on every strip. Counted on the hero render.
-describe('the board activity rack', () => {
-  const acts = boardHtml.slice(boardHtml.indexOf('myx-board-acts'));
-  const strips = acts.split(/\bmyx-board-act\b(?!s)/).slice(1);
-  const labels = (html: string) => [...html.matchAll(/class="myx-sfield-label">([^<]*)</g)].map((m) => m[1]);
-
-  test('the first strip names the four columns', () => {
-    expect(labels(strips[0])).toEqual(['time', 'member', 'activity', 'detail']);
-  });
-
-  test('every strip after it prints values only', () => {
-    expect(strips.length).toBeGreaterThan(1);
-    expect(strips.slice(1).flatMap(labels)).toEqual([]);
-  });
-});
-
-// THE NARROW BAY PRINTS AUTHORED SHORT NAMES (M3-04). A column name prints once per rack, so one the
-// builder bay's columns cannot hold was a machine ellipsis with no second copy: `acco…`, `wind…`,
-// `tokens …`, `context…`. The bay now prints the forms strings.ts authors, and the lead bay, whose
-// columns hold them, keeps the comp's words. The sheet's side: no board name spends a glyph on `…`.
-describe('the head bays print names their columns hold', () => {
-  const bay = (n: number) => {
-    const at = boardHtml.indexOf(`myx-board-bay-${n}`);
-    const next = boardHtml.indexOf('myx-board-bay-', at + 16);
-    return boardHtml.slice(at, next < 0 ? undefined : next);
-  };
-  const labels = (html: string) => [...html.matchAll(/class="myx-sfield-label">([^<]*)</g)].map((m) => m[1]);
-
-  test('the builder bay prints acct, wndw, tok out and ctx left', () => {
-    const names = labels(bay(1));
-    for (const short of ['acct', 'wndw', 'tok out', 'ctx left']) expect(names).toContain(short);
-    for (const long of ['account', 'window', 'tokens out', 'context left']) expect(names).not.toContain(long);
-  });
-
-  test("the lead bay keeps the comp's words", () => {
-    const names = labels(bay(0));
-    for (const long of ['account', 'window', 'tokens out', 'context left']) expect(names).toContain(long);
-  });
-
-  test('a board name that fits to a fraction of a pixel is clipped, not elided', () => {
-    expect(read('console/src/widgets/team-board/board.css'))
-      .toMatch(/^\.myx-board \.myx-sfield-label \{ text-overflow: clip; \}$/m);
-  });
-});
-
-// A LABEL ON THE PHONE BELONGS TO THE VALUE UNDER IT (M3-04). The desktop cell has no floor and its
-// value carries 8px above it, so once the phone wrapped the cells every label sat twice as close to
-// the value ABOVE it as to its own. Read from the phone block: the cell's floor must be deeper than
-// the gap between a label and its value, or the pair reads the wrong way round.
-describe('the phone stack binds each label to its value', () => {
-  const css = read('console/src/widgets/team-board/board.css');
-  const phone = (sheet: string) => sheet.slice(sheet.indexOf('@media (max-width: 720px)'));
-  const px = (token: string | undefined) => ({ 'var(--space-1)': 2, 'var(--space-2)': 4, 'var(--space-3)': 8 })[token ?? ''] ?? 0;
-  const floorAndLead = (sheet: string) => {
-    const block = phone(sheet);
-    const floor = /\.myx-board-frame \.myx-sfield \{ padding-block-end: ([^;]+);/.exec(block)?.[1];
-    const lead = /\.myx-board-frame \.myx-board-act \.myx-sfield-value \{ padding-block-start: ([^;]+);/.exec(block)?.[1];
-    return { floor: px(floor), lead: lead === undefined ? 8 : px(lead) };
-  };
-
-  test("the cell's floor is deeper than the value's lead", () => {
-    const { floor, lead } = floorAndLead(css);
-    expect(floor).toBeGreaterThan(lead);
-  });
-
-  test('the wall can fail: without the phone rule the floor is 0 against an 8px lead', () => {
-    const unfixed = css.replace(/^ {2}\.myx-board-frame \.myx-sfield \{ padding-block-end[^\n]*\n {2}\.myx-board-frame \.myx-sfield-value,\n[^\n]*\n/m, '');
-    expect(unfixed).not.toBe(css);
-    const { floor, lead } = floorAndLead(unfixed);
-    expect(floor).toBeLessThanOrEqual(lead);
-  });
-});
-
 describe('the activity feed', () => {
   test('nothing sampled and a client that stopped matching are different answers', () => {
-    expect(feedEmpty({ activity: [], clientMatching: true })?.text).toBe('nothing sampled yet');
-    expect(feedEmpty({ activity: [], clientMatching: false })?.text).toBe('client no longer matching');
-    expect(feedEmpty({ pending: PENDING_TEAMS })?.text).toBe('activity unavailable');
-    expect(feedEmpty(null)?.text).toBe('reading activity');
-    expect(feedEmpty({ activity: viewsBoard.activity, clientMatching: true })).toBeNull();
+    expect(feedEmpty({ activity: [], clientMatching: true })?.text).toBe('Nothing sampled today');
+    expect(feedEmpty({ activity: [], clientMatching: false })?.text).toBe('Client not matching');
+    expect(feedEmpty({ pending: PENDING_TEAMS })?.text).toBe('Activity unavailable');
+    expect(feedEmpty(null)?.text).toBe('Reading activity');
+    expect(feedEmpty({ activity: sampleBoard.activity, clientMatching: true })).toBeNull();
   });
 
-  test('the feed is labelled a sample and reads newest first', () => {
-    const html = unescapeHtml(renderToStaticMarkup(
-      createElement(ActivityFeed, { state: { activity: viewsBoard.activity, clientMatching: true } }),
-    ));
-    expect(html).toContain('30 s sample');
-    const order = feedOrder(viewsBoard.activity).map((entry) => entry.time);
-    expect(order[0]).toBe('14:00');
-    expect(order[order.length - 1]).toBe('13:30');
+  test('the feed says it is a sample and reads newest first', () => {
+    const html = render(createElement(ActivityFeed, { state: { activity: sampleBoard.activity, clientMatching: true } }));
+    expect(html).toContain('sampled about every 30 seconds');
+    const order = feedOrder(sampleBoard.activity).map((entry) => entry.time);
+    expect(order[0]).toBe('14:01:30');
+    expect(order[order.length - 1]).toBe('13:30:00');
+  });
+
+  test('a day of samples prints the newest and counts the rest', () => {
+    const many = Array.from({ length: FEED_ROWS + 25 }, (_, index) => ({
+      ...sampleBoard.activity[0],
+      time: `13:${String(Math.floor(index / 2)).padStart(2, '0')}:${index % 2 === 0 ? '00' : '30'}`,
+    }));
+    const html = render(createElement(ActivityFeed, { state: { activity: many, clientMatching: true } }));
+    expect((html.match(/class="myx-feed-row"/g) ?? []).length).toBe(FEED_ROWS);
+    expect(html).toContain('25 older');
   });
 });
 
 describe('the composer', () => {
   test('it says what stops the draft being saved', () => {
-    expect(validateDraft(blankDraft('slot-a'))).toEqual(['the team needs a name', 'the team needs a repo', 'slot 1 needs a role', 'slot 1 needs a head']);
-    const draft = draftOf(viewsBoard.team);
+    expect(validateDraft(blankDraft('slot-a'))).toEqual(['No name', 'No repo', 'Slot 1 · No role', 'Slot 1 · No head']);
+    const draft = draftOf(sampleBoard.team);
     expect(validateDraft(draft)).toEqual([]);
     expect(validateDraft({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, lead: true })) }))
-      .toContain('one slot must lead, 4 do');
-    expect(validateDraft(bindSession(draft, 1, 'gs-backend-claude')))
-      .toContain('gs-backend-claude is bound to two slots');
+      .toContain('Exactly one slot must lead.');
+    expect(validateDraft(bindSession(draft, 1, 'api-lead')))
+      .toContain('api-lead · On two slots');
   });
 
   test('archiving sets a flag and deletes nothing', () => {
-    const draft = draftOf(viewsBoard.team);
+    const draft = draftOf(sampleBoard.team);
     const archived = setArchived(draft, true);
     expect(archived.archived).toBe(true);
     expect(archived.slots).toEqual(draft.slots);
@@ -466,7 +394,7 @@ describe('the composer', () => {
   });
 
   test('unbinding frees the seat and keeps the slot', () => {
-    const draft = draftOf(viewsBoard.team);
+    const draft = draftOf(sampleBoard.team);
     const free = unbindSession(draft, 0);
     expect(free.slots).toHaveLength(draft.slots.length);
     expect(free.slots[0].session).toBeNull();
@@ -474,134 +402,32 @@ describe('the composer', () => {
   });
 
   test('a new team is created, an existing one saved, and neither while the draft breaks a rule', () => {
-    const blank = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, {})));
-    expect(blank).toContain('create team');
+    const blank = render(createElement(TeamCompose, {}));
+    expect(blank).toContain('New team');
     // The blank draft breaks four rules, so its key is disabled: a save the daemon would refuse is
     // not offered.
-    expect(blank).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*create team/);
-    const existing = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, { team: viewsBoard.team })));
-    expect(existing).toContain('edit storefront-api');
-    expect(existing).toContain('save team');
-    expect(existing).not.toContain('create team');
+    expect(blank).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*Create team/);
+    const existing = render(createElement(TeamCompose, { team: sampleBoard.team }));
+    expect(existing).toContain('Edit storefront-api');
+    expect(existing).toContain('Save team');
+    expect(existing).not.toContain('Create team');
   });
 
   test('a slot picks its head and its session from what the daemon lists, and nobody types an id', () => {
     const heads = [{ value: 'claudex', label: 'claudex' }, { value: 'bonsai', label: 'claude-bonsai' }];
-    const sessions = [{ value: 'sid-1', label: 'gs-backend-builder' }];
-    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, { heads, sessions })));
-    expect(html).toContain('choose a head');
-    expect(html).toContain('open seat');
-    expect(html).not.toContain('>unbind<');
+    const sessions = [{ value: 'sid-1', label: 'api-builder' }];
+    const html = render(createElement(TeamCompose, { heads, sessions }));
+    expect(html).toContain('Choose a head');
+    expect(html).toContain('Open seat');
     // With nothing listed (not loaded yet, or a fixture) the fields fall back to typing.
-    expect(unescapeHtml(renderToStaticMarkup(createElement(TeamCompose, {})))).not.toContain('choose a head');
+    expect(render(createElement(TeamCompose, {}))).not.toContain('Choose a head');
   });
 
   test('a slot keeps a value the list no longer has, so opening an old team rewrites nothing', () => {
     const listed = [{ value: 'claudex', label: 'claudex' }];
-    const blank = { value: '', label: 'choose a head' };
+    const blank = { value: '', label: 'Choose a head' };
     expect(optionsFor(listed, 'claudex', blank)).toEqual([blank, ...listed]);
     expect(optionsFor(listed, 'retired-head', blank)).toEqual([blank, ...listed, { value: 'retired-head', label: 'retired-head' }]);
     expect(optionsFor(listed, '', blank)).toEqual([blank, ...listed]);
-  });
-});
-
-describe('a team with no bound session', () => {
-  test('the board says so where the head bays would be, instead of drawing nothing', () => {
-    // Walkthrough S17: a created team with 0 of 1 slots bound drew an empty left half.
-    const unbound = { ...heroBoard, members: [], messages: [], activity: [] };
-    const html = unescapeHtml(renderToStaticMarkup(createElement(TeamBoard, { board: unbound })));
-    expect(html).toContain('no session is bound yet');
-    expect(html).not.toContain('/api/');
-  });
-});
-
-// A BAY RACKS EVERY MEMBER ON ITS HEAD (splice-lead, 2026-09-25). A member's three lines sat at the
-// comp's fixed tops, so a second member on the same head painted exactly over the first: on a live
-// daemon, team "checkout" drew its implementer and its reviewer in one box, and only the reviewer
-// showed under a bay header that named both heads.
-describe('two members on one head', () => {
-  const second: TeamMemberRow = {
-    ...heroBoard.members[0], slot: 'slot-builder-2', name: 'gs-backend-builder2', role: 'builder', lead: false, sessionId: 's-9d04c3e7',
-  };
-  const board: TeamPayload = { ...heroBoard, members: [heroBoard.members[0], second, heroBoard.members[1]] };
-  const html = renderToStaticMarkup(createElement(TeamBoard, { board }));
-  const bay0 = html.slice(html.indexOf('myx-board-bay-0'), html.indexOf('myx-board-bay-1'));
-  const css = read('console/src/widgets/team-board/board.css');
-  /** A strip's box, percent of the bay: its inline style, or else the rule its line class carries. */
-  const boxOf = (tag: string) => {
-    const line = /myx-board-strip-(\d)/.exec(tag)?.[1];
-    const rule = new RegExp(`^\\.myx-board-strip-${line} \\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? '';
-    const value = (prop: string) => {
-      const pattern = new RegExp(`${prop}:\\s*([\\d.]+)%`);
-      return Number((pattern.exec(tag) ?? pattern.exec(rule))?.[1]);
-    };
-    return { top: value('top'), height: value('height') };
-  };
-  /** Each session strip's box in the bay, in document order. */
-  const boxes = [...bay0.matchAll(/<div class="myx-strip myx-board-strip[^"]*"[^>]*>/g)].map(([tag]) => boxOf(tag));
-
-  test('the second member racks under the first instead of over it', () => {
-    expect(boxes).toHaveLength(6);
-    for (const box of boxes) expect(Number.isFinite(box.top) && Number.isFinite(box.height)).toBe(true);
-    // Every line clears the one before it, across the member boundary too.
-    for (let i = 1; i < boxes.length; i++) expect(boxes[i].top).toBeGreaterThanOrEqual(boxes[i - 1].top + boxes[i - 1].height);
-  });
-
-  test('the second member racks under the hand-off, which lies across the floor under the first', () => {
-    // The hand-off's own box, in percent of the bay; its tilt and ghost reach a little further, which
-    // the constant's comment measures.
-    const rule = (selector: string) => new RegExp(`^${selector} \\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? '';
-    const pct = (body: string, prop: string) => Number(new RegExp(`(?:^|[ ;])${prop}:\\s*([\\d.]+)%`).exec(body)?.[1]);
-    const handoff = rule('\\.myx-board-handoff');
-    const bay = rule('\\.myx-board-bay-0');
-    const floor = ((pct(handoff, 'top') + pct(handoff, 'height') - pct(bay, 'top')) / pct(bay, 'height')) * 100;
-    expect(floor).toBeGreaterThan(60);
-    expect(boxes[3].top).toBeGreaterThan(floor);
-    // ...and the second member still fits the bay whole.
-    expect(boxes[5].top + boxes[5].height).toBeLessThanOrEqual(100);
-  });
-
-  test("the first member keeps the comp's three lines", () => {
-    expect(boxes.slice(0, 3)).toEqual([
-      { top: 8.599, height: 7.788 },
-      { top: 20.886, height: 7.479 },
-      { top: 32.911, height: 7.541 },
-    ]);
-  });
-
-  test('a bay with more members than it holds scrolls rather than running under the footer', () => {
-    for (const n of [0, 1]) expect(css).toMatch(new RegExp(`^\\.myx-board-bay-${n} \\{[^}]*overflow-y: auto;`, 'm'));
-  });
-});
-
-// THE LEAD IS A FLAG, NOT A NAME (splice-lead, 2026-09-25). A slot carries `lead` (TeamStore
-// TeamSlot.lead) and compose lets its role be any text, so a lead slot named "architect" printed
-// grey and the right column fell to whichever member happened to be first.
-describe('the lead is the slot flagged lead, whatever its role is called', () => {
-  const architect: TeamMemberRow = { ...heroBoard.members[0], role: 'architect' };
-  // A role literally named `lead` on a slot that is not the lead, so a check on the name cannot pass.
-  const namedLead: TeamMemberRow = { ...heroBoard.members[1], role: 'lead', lead: false };
-  const board: TeamPayload = { ...heroBoard, members: [namedLead, architect], messages: [] };
-  const edgeOf = (html: string, label: string) => {
-    const at = html.indexOf(`aria-label="${label}"`);
-    return /myx-edge-(\w+)/.exec(html.slice(at))?.[1];
-  };
-
-  test("the board prints the lead's identity line green and no other", () => {
-    const html = renderToStaticMarkup(createElement(TeamBoard, { board }));
-    expect(edgeOf(html, 'gs-backend-claude first line')).toBe('green');
-    expect(edgeOf(html, 'gs-backend-builder first line')).toBe('grey');
-  });
-
-  test('with no hand-off the right column describes the lead', () => {
-    expect(focusMember(board)?.name).toBe('gs-backend-claude');
-  });
-
-  test('the by-role view marks the lead the same way', () => {
-    const html = renderToStaticMarkup(createElement(TeamBoardByRole, { board }));
-    expect(edgeOf(html, 'gs-backend-claude session')).toBe('green');
-    expect(edgeOf(html, 'gs-backend-builder session')).toBe('grey');
-    // The member card is the focus, which with no hand-off is the lead.
-    expect(edgeOf(html, 'gs-backend-claude')).toBe('green');
   });
 });

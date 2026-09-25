@@ -267,62 +267,67 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   test.setTimeout(120_000);
   const faults = await open(page, 'teams');
   const main = page.locator('main');
-  // Another run of this test may already have left a team in the stack's daemon, in which case the
-  // composer opens on it and the create form is one key away.
-  await expect(main).toContainText(/no teams yet|new team/, { timeout: 15_000 });
-  const fresh = page.getByRole('button', { name: 'new team' });
-  if ((await fresh.count()) > 0) await fresh.click();
+  // Another run of this test may already have left a team in the stack's daemon: then the key is the
+  // page head's; with none, it is the empty's. The page never prints both.
+  await expect(main).toContainText(/No teams yet|New team/, { timeout: 15_000 });
+  await page.getByRole('button', { name: 'New team', exact: true }).click();
 
   // Two seats, bound to the two sessions the stack registered: the sender that drove the hand-off
   // turn, and the peer it handed off to.
   const name = `e2e crew ${Date.now()}`;
-  const form = page.getByRole('form', { name: 'compose team' });
+  const form = page.getByRole('form', { name: 'New team' });
   const field = (label: string, slot = 0) => form.getByRole('textbox', { name: label, exact: true }).nth(slot);
-  await field('name').fill(name);
-  await field('repo').fill(env('CONSOLE_E2E_REPO'));
-  await field('role').fill('lead');
-  await pick(form, 'head', STACK.oauthHead);
-  await pick(form, 'session', STACK.sender.name);
-  await form.getByRole('button', { name: 'add slot' }).click();
-  await field('role', 1).fill('builder');
-  await pick(form, 'head', STACK.oauthHead, 1);
-  await pick(form, 'session', STACK.peer.name, 1);
-  await form.getByRole('button', { name: 'create team' }).click();
+  await field('Name').fill(name);
+  await field('Repo').fill(env('CONSOLE_E2E_REPO'));
+  await field('Role').fill('lead');
+  await pick(form, 'Head', STACK.oauthHead);
+  await pick(form, 'Session', STACK.sender.name);
+  await form.getByRole('button', { name: 'Add slot' }).click();
+  await field('Role', 1).fill('builder');
+  await pick(form, 'Head', STACK.oauthHead, 1);
+  await pick(form, 'Session', STACK.peer.name, 1);
+  await form.getByRole('button', { name: 'Create team' }).click();
 
-  // The page opens the team it made: the composer now edits it rather than creating another, and
-  // still prints the daemon's answer to the create; then its board and its row.
-  const edit = page.getByRole('form', { name: `edit ${name}` });
+  // The page opens the team it made: the editor now edits it rather than creating another, and
+  // still prints the daemon's answer to the create; then the team itself.
+  const edit = page.getByRole('form', { name: `Edit ${name}` });
   await expect(edit).toBeVisible({ timeout: 15_000 });
-  await expect(edit.getByRole('status')).toContainText(`saved ${name} as team-`);
+  await expect(edit.getByRole('status')).toContainText(`Saved ${name} as team-`);
   // A team's economics run over its own lifetime, so the stack's hand-off turn (driven before this
   // team existed) is not its cost: the sender drives one tagged turn now, inside it.
   await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
-  await expect(page.locator('.myx-board-header')).toContainText(name);
-  await expect(main).toContainText('2 slots, 2 bound');
-  // Both sessions are racked under their head by the names the registry gives them.
-  await expect(page.locator('.myx-board-bay-0')).toContainText(STACK.sender.name, { timeout: 15_000 });
-  await expect(page.locator('.myx-board-bay-0')).toContainText(STACK.peer.name);
+  await expect(page.locator('.myx-tm-team')).toContainText(name);
+  await expect(page.getByRole('img', { name: 'Slots bound: 2 of 2' })).toBeVisible();
+  // Both sessions are seated under their head by the names the registry gives them.
+  const members = page.getByRole('table', { name: 'Members' });
+  await expect(members).toContainText(STACK.sender.name, { timeout: 15_000 });
+  await expect(members).toContainText(STACK.peer.name);
   // The day's chat carries the hand-off, sender to recipient, both resolved to their seats.
-  await expect(page.getByRole('group', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible();
+  await expect(page.getByRole('listitem', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible();
   // Activity was READ for this team: the stack runs no client to answer a label query, so it is
   // empty, never unreadable.
-  await expect(main).toContainText('nothing sampled today');
+  await expect(main).toContainText('Nothing sampled today');
 
-  // The daemon joined the sender's tagged turn to its slot: the timeline's economics price it under
-  // the lead role, and the peer's seat has none. The panels are re-read every 10 s.
-  await page.getByRole('tab', { name: 'timeline' }).click();
-  await expect(main).toContainText('lifetime, joined by the daemon', { timeout: 15_000 });
-  const bar = (who: string) => page.locator('.myx-board-bar').filter({ hasText: who }).locator('.myx-board-bar-figure');
-  await expect(bar(STACK.sender.name)).toHaveText('1', { timeout: 15_000 });
-  await expect(bar(STACK.peer.name)).toHaveText('0');
-  await expect(page.locator('.myx-board-table')).toContainText('lead');
+  // The daemon joined the sender's tagged turn to its slot: its seat counts it and the cost per role
+  // prices it under the lead role, and the peer's seat has none. The panels are re-read every 10 s.
+  const turnsOf = async (who: string) => {
+    const at = (await members.locator('thead th').allTextContents()).indexOf('Turns');
+    return members.getByRole('row').filter({ hasText: who }).locator('td').nth(at);
+  };
+  await expect(await turnsOf(STACK.sender.name)).toHaveText('1', { timeout: 15_000 });
+  await expect(await turnsOf(STACK.peer.name)).toHaveText('0');
+  await expect(page.getByRole('table', { name: 'Cost per role' })).toContainText('lead');
+  // The day's timeline lays the sender's turns on its lane, joined on the same session tag.
+  await page.getByRole('tab', { name: 'Timeline' }).click();
+  await expect(page.getByRole('img', { name: new RegExp(`^${STACK.sender.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: [1-9]\\d* turns`) }))
+    .toBeVisible({ timeout: 15_000 });
 
   // Opening the seat is its own write: the replace keeps a binding its body leaves null.
-  await edit.getByRole('textbox', { name: 'role instructions', exact: true }).first().fill('drive the e2e packet');
-  await pick(edit, 'session', 'open seat');
-  await edit.getByRole('button', { name: 'save team' }).click();
-  await expect(edit.getByRole('status')).toContainText(`saved ${name} as team-`);
-  await expect(main).toContainText('2 slots, 1 bound', { timeout: 15_000 });
+  await edit.getByRole('textbox', { name: 'Instructions', exact: true }).first().fill('drive the e2e packet');
+  await pick(edit, 'Session', 'Open seat');
+  await edit.getByRole('button', { name: 'Save team' }).click();
+  await expect(edit.getByRole('status')).toContainText(`Saved ${name} as team-`);
+  await expect(page.getByRole('img', { name: 'Slots bound: 1 of 2' })).toBeVisible({ timeout: 15_000 });
 
   expect(faults.pageErrors, 'the journey threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'a write or read the daemon refused').toEqual([]);

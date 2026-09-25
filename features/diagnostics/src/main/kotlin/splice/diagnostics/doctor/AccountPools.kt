@@ -16,6 +16,8 @@ import splice.accounts.pool.HeadAccountView
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
+import splice.core.wire.HttpStatus
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.upstream.credentials.AccountLabelPolicy
@@ -26,33 +28,71 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 private const val READ_TIMEOUT_S = 5L
+private const val FIX_LOGS = "splice logs"
 
-/** Pools keyed by head (empty when no head holds one); NULL when the projection could not be read —
- *  no mgmt key, nothing answering, or a body that is not the /api/auth shape. */
-private const val HTTP_OK = 200
+// The mgmt-key check (DoctorHeadChecks.mgmtKeyCheck) already diagnoses a missing or unreadable key
+// with its own remedy; this read names the cause and points there rather than restating the fix.
+private const val NO_KEY = "this shell's state dir holds no management key, so the daemon's accounts " +
+    "were not asked; splice doctor's mgmt-key check names the fix"
+private const val KEY_REFUSED = "the daemon refused this shell's management key (HTTP 401): it holds " +
+    "another, so the two resolve different state dirs or the key changed after the daemon started"
+private const val OTHER_SHAPE = "the daemon's /api/auth answered, but not with the account projection " +
+    "this build reads, so the daemon runs another version"
+
+/** What reading the daemon's account projection found. DR-174's lesson, applied to its fourth
+ *  caller: the read returned null for no key, a refused key, nothing answering and a body of another
+ *  shape alike, and each caller invented one sentence for all four ("mgmt key?"). */
+public sealed class AccountPoolsRead {
+    /** Pools keyed by head, empty when no head holds one. */
+    public data class Read(public val pools: Map<String, HeadAccountPoolView>) : AccountPoolsRead()
+
+    /** The projection is unknown. [reason] says why in one sentence; [fix] is the one remedy that
+     *  fits, or null when none does or another check carries it, which [reason] then says. */
+    public data class Unread(public val reason: String, public val fix: String?) : AccountPoolsRead()
+}
 
 public fun interface AccountPoolRead {
-    public operator fun invoke(port: Int, env: EnvReader): Map<String, HeadAccountPoolView>?
+    public operator fun invoke(port: Int, env: EnvReader): AccountPoolsRead
 }
 
 public class JdkAccountPoolRead : AccountPoolRead {
     private val projection = AccountPoolProjection()
     private val client = HttpClient.newHttpClient()
 
-    override fun invoke(port: Int, env: EnvReader): Map<String, HeadAccountPoolView>? {
-        val key = (MgmtKeyFile().read(env) as? MgmtKeyRead.Present)?.key ?: return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): the file header declares the null: no mgmt key, nothing answering, or a body that is not the /api/auth shape all read as 'no pools to show'.
-        return Cancellables.runCatchingCancellable {
-            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/auth"))
-                .timeout(Duration.ofSeconds(READ_TIMEOUT_S))
-                .header("Authorization", "Bearer $key")
-                .GET()
-                .build()
-            val reply = client.send(request, HttpResponse.BodyHandlers.ofString())
-            // A 401 (a stale mgmt key) is a read that FAILED, not a daemon with no pools.
-            reply.takeIf { it.statusCode() == HTTP_OK }?.let { projection.parse(it.body()) }
-        }.getOrNull()
+    override fun invoke(port: Int, env: EnvReader): AccountPoolsRead = when (val key = MgmtKeyFile().read(env)) {
+        is MgmtKeyRead.Present -> ask(port, key.key)
+        MgmtKeyRead.Absent -> AccountPoolsRead.Unread(NO_KEY, null)
+        is MgmtKeyRead.Unreadable -> AccountPoolsRead.Unread(
+            "this shell's management key could not be read (${key.reason}), so the daemon's accounts " +
+                "were not asked; splice doctor's mgmt-key check names the fix",
+            null,
+        )
     }
+
+    private fun ask(port: Int, key: String): AccountPoolsRead {
+        val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/auth"))
+            .timeout(Duration.ofSeconds(READ_TIMEOUT_S))
+            .header("Authorization", "Bearer $key")
+            .GET()
+            .build()
+        val reply = Cancellables.runCatchingCancellable { client.send(request, HttpResponse.BodyHandlers.ofString()) }
+            .getOrElse { failure ->
+                return AccountPoolsRead.Unread(
+                    "the daemon's /api/auth did not answer (${SafeFailureText.render(failure)})",
+                    FIX_LOGS,
+                )
+            }
+        return when (reply.statusCode()) {
+            HttpStatus.OK -> parsed(reply.body())
+            // Not a daemon with no pools: a read that FAILED, and the one no restart of ours can mend.
+            HttpStatus.UNAUTHORIZED -> AccountPoolsRead.Unread(KEY_REFUSED, null)
+            else -> AccountPoolsRead.Unread("the daemon's /api/auth answered HTTP ${reply.statusCode()}", FIX_LOGS)
+        }
+    }
+
+    private fun parsed(body: String): AccountPoolsRead =
+        Cancellables.runCatchingCancellable { AccountPoolsRead.Read(projection.parse(body)) }
+            .getOrElse { AccountPoolsRead.Unread(OTHER_SHAPE, FIX_RESTART) }
 }
 
 /** The account_pool object under each head of /api/auth, and nothing else from that payload. */

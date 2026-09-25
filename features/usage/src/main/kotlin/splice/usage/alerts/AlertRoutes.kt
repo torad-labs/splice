@@ -86,7 +86,7 @@ public class AlertRoutes(
     public suspend fun test(): JsonReply {
         val store = source() ?: return refuse(HttpStatusCode.ServiceUnavailable, ALERTS_UNWIRED)
         val url = store.settings().webhookUrl
-            ?: return refuse(HttpStatusCode.Conflict, "no webhook_url saved; PUT /api/alerts first")
+            ?: return refuse(HttpStatusCode.Conflict, "Save a webhook URL before sending a test.")
         val sent = Cancellables.runCatchingCancellable {
             client.post(url) {
                 contentType(ContentType.Application.Json)

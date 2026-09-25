@@ -34,12 +34,13 @@ class AlertStoreTest {
         val blank = assertThrows(AlertRefusal::class.java) {
             store.replace(AlertSettings(webhookUrl = "  "))
         }
-        assertEquals("webhook_url must be null to clear it, not blank", blank.message)
+        assertEquals("The webhook URL can't be blank; clear the field to remove it.", blank.message)
 
         val badScheme = assertThrows(AlertRefusal::class.java) {
             store.replace(AlertSettings(webhookUrl = "ftp://hooks.example/x"))
         }
-        assertEquals("webhook_url must be an http(s) URL, was 'ftp://hooks.example/x'", badScheme.message)
+        // Never echoed: a webhook URL often carries its secret in the path, and this text reaches the console.
+        assertEquals("The webhook URL must start with https:// or http://.", badScheme.message)
 
         store.replace(AlertSettings(desktop = true, webhookUrl = "https://hooks.example/x"))
         val cleared = store.replace(AlertSettings(desktop = true, webhookUrl = null))

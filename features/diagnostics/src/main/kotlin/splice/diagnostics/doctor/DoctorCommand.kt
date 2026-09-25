@@ -8,7 +8,6 @@
 // owns composition, isolation and the verdict.
 package splice.diagnostics.doctor
 
-import splice.accounts.pool.HeadAccountPoolView
 import splice.core.config.RunningJar
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
@@ -217,6 +216,7 @@ public class DoctorCommand(
         val port = settings.controlPort(topology, envReader)
         val snapshot = DaemonSnapshot(port, DaemonProbe.healthView(port))
         val pools = if (snapshot.running) accountPools(port, envReader) else null
+        val read = (pools as? AccountPoolsRead.Read)?.pools.orEmpty()
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
@@ -224,23 +224,24 @@ public class DoctorCommand(
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to guarded { auth.authChecks(topo, envReader, snapshot) },
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.
-            "accounts" to guarded { accountChecks(snapshot, pools) },
+            "accounts" to guarded { accountChecks(pools) },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
             // this one reads the runtime instruments (health counters + perf outcome tail).
             "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader) },
         )
-        return DoctorRun(topology, sections, pools.orEmpty())
+        return DoctorRun(topology, sections, read)
     }
 
-    private fun accountChecks(snapshot: DaemonSnapshot, pools: Map<String, HeadAccountPoolView>?): List<DoctorCheck> =
-        when {
-            !snapshot.running -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "skipped (daemon not running)"))
-            pools == null -> listOf(
-                DoctorCheck(ACCOUNTS_CHECK, CheckStatus.WARN, "the daemon's /api/auth could not be read (mgmt key?)"),
-            )
-            pools.isEmpty() -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))
-            else -> pools.map { (head, view) -> accountText.check(head, view) }
+    // Null only when the daemon is not running; an unread projection says why, and its remedy when one fits.
+    private fun accountChecks(pools: AccountPoolsRead?): List<DoctorCheck> = when (pools) {
+        null -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "skipped (daemon not running)"))
+        is AccountPoolsRead.Unread -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.WARN, pools.reason, pools.fix))
+        is AccountPoolsRead.Read -> if (pools.pools.isEmpty()) {
+            listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))
+        } else {
+            pools.pools.map { (head, view) -> accountText.check(head, view) }
         }
+    }
 
     // One crashing check must not kill the report (nor masquerade as healthy).
     private fun guarded(block: DoctorProbe): List<DoctorCheck> =

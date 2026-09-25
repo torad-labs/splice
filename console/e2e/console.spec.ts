@@ -414,10 +414,25 @@ test('projects opens the stack repository with the detail its own route reports'
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });
 
+test('sessions draws the stack\'s hand-off as an arc from the sender\'s card to the peer\'s, on their head\'s lane', async ({ page }) => {
+  const faults = await open(page, 'sessions');
+  // The lanes are the page's default view: each session a card on its head's strand, named by its
+  // lane (the head) and then its own name.
+  const lanes = page.getByRole('group', { name: 'Sessions', exact: true });
+  await expect(lanes.getByRole('button', { name: new RegExp(` ${STACK.sender.name}, `) })).toBeVisible({ timeout: 15_000 });
+  await expect(lanes.getByRole('button', { name: new RegExp(` ${STACK.peer.name}, `) })).toBeVisible();
+  // The arc is measured from the two cards once they are laid out, so it is drawn after the first paint.
+  await expect(page.locator(`path.myx-lanes-arc[data-arc="${STACK.sender.id}>${STACK.peer.id}"]`)).toHaveCount(1, { timeout: 15_000 });
+  expect(faults.pageErrors, 'the lanes threw').toEqual([]);
+  expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
+});
+
 test('sessions prints each session\'s peer from the fleet-wide edges read, unopened', async ({ page }) => {
   const faults = await open(page, 'sessions');
-  // Neither row is opened: the peer column comes from GET /api/sessions/edges for every row. Each
-  // row is found by its opener, and the peer is printed in the row beside it.
+  // The board is a view behind the lanes. Neither row is opened: the peer column comes from GET
+  // /api/sessions/edges for every row. Each row is found by its opener, and the peer is printed in
+  // the row beside it.
+  await page.getByRole('tab', { name: 'By head' }).click();
   const row = (name: string) => page.getByRole('row').filter({ has: page.getByRole('button', { name: `sessions ${name}` }) });
   const sender = row(STACK.sender.name);
   const peer = row(STACK.peer.name);

@@ -18,7 +18,10 @@ import { describe, expect, test } from 'vitest';
 import type { View } from '../src/features/views';
 import type { SessionRow } from '../src/entities/session';
 import type { TranscriptMessage } from '../src/entities/transcript';
-import { NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
+import { DEFAULT_VIEWS, NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
+
+/** The board view these tests are about: the lanes are the page's default now, the table a view. */
+const BY_HEAD = DEFAULT_VIEWS.filter((view) => view.id === 'by-head')[0];
 import { ProjectsBoard } from '../src/pages/projects';
 import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, windowOf } from '../src/pages/sessions/select';
 import { fieldsOf, headText, startedText, toneOf } from '../src/pages/sessions/strip';
@@ -182,6 +185,7 @@ describe('sessions board', () => {
   test('prints the availability word on every row, and marks the stale one', () => {
     const out = render(
       h(SessionsBoard, {
+        view: BY_HEAD,
         payload: payload([
           session({ session_id: 'live-one', availability: 'live' }),
           session({ session_id: 'stale-one', availability: 'stale' }),
@@ -201,7 +205,7 @@ describe('sessions board', () => {
   });
 
   test('the peer is unknown, and prints the absence glyph, until the board edges are read', () => {
-    const out = render(h(SessionsBoard, { payload: payload([session({ session_id: 'a' })]) }));
+    const out = render(h(SessionsBoard, { view: BY_HEAD, payload: payload([session({ session_id: 'a' })]) }));
     expect(out).toContain('>–<');
     expect(out).not.toContain('unavailable');
   });

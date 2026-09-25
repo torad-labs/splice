@@ -13,7 +13,10 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBoardEdges, latestPeer, peerLabel } from '../src/entities/session';
 import type { SessionEdge, SessionRow } from '../src/entities/session';
 import { boardEdgesStore } from '../src/entities/session/model/store';
-import { SessionsBoard } from '../src/pages/sessions';
+import { DEFAULT_VIEWS, SessionsBoard } from '../src/pages/sessions';
+
+/** The board view these tests are about: the lanes are the page's default now, the table a view. */
+const BY_HEAD = DEFAULT_VIEWS.filter((view) => view.id === 'by-head')[0];
 
 const h = React.createElement;
 const T0 = 1_790_000_000_000;
@@ -85,6 +88,7 @@ describe('the board-wide edges', () => {
   test('print every row\'s peer on the board with no session opened', () => {
     const out = renderToStaticMarkup(
       h(SessionsBoard, {
+        view: BY_HEAD,
         payload: { note: 'headless runs never register', sessions: [SENDER, PEER] },
         boardEdges: { sessions: { [PEER.session_id ?? '']: [IN], [SENDER.session_id ?? '']: [OUT] } },
       }),
@@ -99,6 +103,7 @@ describe('the board-wide edges', () => {
   test('a failed edges read is printed, and the peers stay unknown rather than invented', () => {
     const out = renderToStaticMarkup(
       h(SessionsBoard, {
+        view: BY_HEAD,
         payload: { note: 'headless runs never register', sessions: [SENDER] },
         boardEdges: null,
         edgesError: 'the activity stores are not wired into this control plane',

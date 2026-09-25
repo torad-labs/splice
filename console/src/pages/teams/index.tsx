@@ -16,7 +16,7 @@ import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/sessi
 import { fetchHeads, useHeads } from '@entities/heads';
 import { fetchPerfTurns, usePerfTurns } from '@entities/perf';
 import { ViewTabs, useViews, type View } from '@features/views';
-import { CostPerRole, TeamMembers, TeamStats, TeamTimeline } from '@widgets/team-board';
+import { CostPerRole, TeamLanes, TeamMembers, TeamStats, TeamTimeline } from '@widgets/team-board';
 import type { TeamViewData } from '@widgets/team-board';
 import { TeamChat } from '@widgets/team-chat';
 import type { TeamChatState } from '@widgets/team-chat';
@@ -57,8 +57,10 @@ export function wantsFixture(search: string): boolean {
   return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;
 }
 
-/** The three views of one team: its seats by head, by role, and its day as lanes. */
+/** The views of one team: its seats as lanes (the default, added after the other three, so a browser
+ *  that saved its views before is offered it once), by head, by role, and its day on a clock. */
 const VIEWS: View[] = [
+  { id: 'lanes', name: S.lanes, layout: 'lanes', filter: {}, sort: null, group: 'head', fields: [], introduced: '2026-09-25' },
   { id: 'by-head', name: S.byHead, layout: 'table', filter: {}, sort: null, group: 'head', fields: [] },
   { id: 'by-role', name: S.byRole, layout: 'table', filter: {}, sort: null, group: 'role', fields: [] },
   { id: 'timeline', name: S.timeline, layout: 'timeline', filter: {}, sort: null, group: null, fields: [] },
@@ -66,7 +68,8 @@ const VIEWS: View[] = [
 
 /** What a view draws, read from its layout and group rather than its id, so a view the operator
  *  renamed or copied draws what it was copied from. */
-export function modeOf(view: Pick<View, 'layout' | 'group'>): 'head' | 'role' | 'timeline' {
+export function modeOf(view: Pick<View, 'layout' | 'group'>): 'lanes' | 'head' | 'role' | 'timeline' {
+  if (view.layout === 'lanes') return 'lanes';
   if (view.layout === 'timeline') return 'timeline';
   return view.group === 'role' ? 'role' : 'head';
 }
@@ -133,7 +136,7 @@ const boundOf = (team: TeamRow): number => team.slots.filter((slot) => slot.sess
  *  activity, and the cost per role. */
 export function TeamView({ board, mode, data, chat, feed, onEdit }: {
   board: TeamPayload;
-  mode: 'head' | 'role' | 'timeline';
+  mode: 'lanes' | 'head' | 'role' | 'timeline';
   data: TeamViewData | null;
   chat: TeamChatState;
   feed: ActivityFeedState;
@@ -164,7 +167,9 @@ export function TeamView({ board, mode, data, chat, feed, onEdit }: {
           <TeamStats board={board} data={data} />
         </div>
       </Section>
-      {mode === 'timeline' ? <TeamTimeline board={board} data={data} /> : <TeamMembers board={board} by={mode} />}
+      {mode === 'lanes' ? <TeamLanes board={board} /> : null}
+      {mode === 'timeline' ? <TeamTimeline board={board} data={data} /> : null}
+      {mode === 'head' || mode === 'role' ? <TeamMembers board={board} by={mode} /> : null}
       <div className="myx-tm-pair">
         <TeamChat state={chat} />
         <ActivityFeed state={feed} />

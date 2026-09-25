@@ -14,7 +14,10 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import type { SessionRow } from '../src/entities/session';
-import { SessionsBoard } from '../src/pages/sessions';
+import { DEFAULT_VIEWS, SessionsBoard } from '../src/pages/sessions';
+
+/** The board view these tests are about: the lanes are the page's default now, the table a view. */
+const BY_HEAD = DEFAULT_VIEWS.filter((view) => view.id === 'by-head')[0];
 import { ProjectsBoard } from '../src/pages/projects';
 
 const h = React.createElement;
@@ -62,6 +65,7 @@ function project(over: Record<string, unknown> = {}) {
 describe('sessions declares its table', () => {
   const markup = () => renderToStaticMarkup(
     h(SessionsBoard, {
+      view: BY_HEAD,
       payload: {
         note: 'headless `claude -p` runs never register',
         sessions: [session({ session_id: 'a' }), session({ session_id: 'b', name: 'splice-design' })],

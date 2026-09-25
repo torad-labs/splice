@@ -14,10 +14,10 @@ import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { UNLISTED } from '@entities/team';
 import type { TeamPayload, TeamSlot } from '@entities/team';
 import {
-  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, Pips, Reveal, Section, Sparkline, StackedBar,
-  Stat, StatRow, weightedColumns,
+  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Lanes, Legend, Meter, Pips, Reveal, Section, Sparkline,
+  StackedBar, Stat, StatRow, weightedColumns,
 } from '@shared/ui';
-import type { Column, RowGroup, Tone } from '@shared/ui';
+import type { Column, Lane, LaneMessage, RowGroup, Tone } from '@shared/ui';
 import { cx, fmtInt, fmtMs, fmtTokens } from '@shared/lib';
 import { costTable, dayAxis, lanesOf, lastReceived, roleName, seatGroups, seatsOf, slotName, utcClock } from './model';
 import type { RoleCost, Seat, TeamViewData } from './model';
@@ -224,6 +224,63 @@ export function TeamMembers({ board, by }: { board: TeamPayload; by: 'head' | 'r
         />
         {/* UNMOUNTED at rest, the sessions pattern: the table takes the whole width until a seat
             is opened, and no empty landmark stands in a reader's list (tests/detail-rest.test.ts). */}
+        {opened === null ? null : (
+          <DetailPanel
+            title={seatName(board, opened)}
+            label={S.detail}
+            status={<Badge tone={stateOf(opened).tone} quiet>{stateOf(opened).word}</Badge>}
+            onClose={() => setOpenSlot(null)}
+            closeLabel={S.close}
+          >
+            <SeatDetail board={board} seat={opened} />
+          </DetailPanel>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+/** The team as lanes (operator ruling 4, item 5): one strand per head its slots run on, each seat a
+ *  card on its strand in slot order, and the day's messages between members as arcs from sender to
+ *  receiver. Opening a card opens the seat beside the lanes, as a row does on the table. */
+export function TeamLanes({ board }: { board: TeamPayload }) {
+  const [openSlot, setOpenSlot] = useState<string | null>(null);
+  const hueOf = useHues();
+  const seats = seatsOf(board);
+  const opened = seats.find((seat) => seat.slot.id === openSlot) ?? null;
+
+  const lanes: Lane[] = seatGroups(board, 'head').map((group) => ({
+    key: group.key,
+    name: group.key,
+    title: <HeadMark head={group.key} />,
+    hue: hueClass(hueOf(group.key)),
+    cards: group.seats.map((seat) => {
+      const title = seatName(board, seat);
+      const role = roleName(board.team.slots, seat.slot);
+      // A member named for its role would print the word twice; the second line says only news.
+      return { key: seat.slot.id, title, meta: role === title ? null : role, tone: stateOf(seat).tone, word: stateOf(seat).word, start: null };
+    }),
+  }));
+  // A message names its parties as the board prints them (pages/teams/board.ts messagesOf): a
+  // seated member by name, so a card is found by its member's name; a party no seat holds is not.
+  const slotOf = new Map(seats.flatMap((seat) => (seat.member === null ? [] : [[seat.member.name, seat.slot.id] as const])));
+  const messages: LaneMessage[] = board.messages.flatMap((message) => {
+    const from = slotOf.get(message.from);
+    const to = slotOf.get(message.to);
+    return from === undefined || to === undefined ? [] : [{ from, to, at: message.at }];
+  });
+
+  return (
+    <Section title={S.members} count={board.team.slots.length} info={{ text: H.members, label: S.membersWhy }}>
+      <div className={cx('myx-tb-board', opened !== null && 'myx-tb-board-open')}>
+        <Lanes
+          lanes={lanes}
+          messages={messages}
+          label={S.members}
+          open={(key) => setOpenSlot(key === openSlot ? null : key)}
+          selected={openSlot}
+          cardLabel={(card) => `${card.title}, ${card.word}`}
+        />
         {opened === null ? null : (
           <DetailPanel
             title={seatName(board, opened)}

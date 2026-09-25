@@ -173,9 +173,17 @@
 .myx-layer-under { background: none; box-shadow: inset 0 0 0 var(--hair) var(--fg-subtle); }
 .myx-layer-on { background: var(--fg); }
 
-/* ---------- braid: one strand per head, in the status strip ---------- */
+/* ---------- braid: the lanes in miniature, in the status strip ---------- */
 .myx-braid { display: inline-flex; align-items: center; gap: var(--space-3); }
-.myx-braid-strands { display: inline-flex; align-items: center; gap: var(--space-1); }
+/* One row per head, sharing the strip's height however many heads there are. */
+.myx-braid-strands {
+  display: inline-grid;
+  grid-template-rows: repeat(var(--strands), minmax(0, 1fr));
+  row-gap: calc(.125 * var(--u));
+  width: calc(7 * var(--u));
+  height: calc(2 * var(--u));
+}
+.myx-braid-strands > .myx-tip { display: block; min-height: 0; }
 .myx-braid-total {
   font-family: var(--font-mono);
   font-size: var(--text-2);
@@ -183,22 +191,29 @@
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
-.myx-strand {
-  display: flex;
-  align-items: center;
-  /* an idle head keeps a short strand; each turn in flight lengthens it, up to eight */
-  width: calc(var(--space-5) + var(--space-3) * var(--strand, 0));
-  height: calc(.625 * var(--u));
-  transition: width var(--dur-3) var(--ease-out);
-}
+.myx-strand { position: relative; display: block; width: 100%; height: 100%; }
 .myx-strand-line {
-  display: block;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: calc(.125 * var(--u));
+  translate: 0 -50%;
   border-radius: var(--radius-full);
   background: var(--hue, var(--head-none));
 }
-.myx-strand-idle .myx-strand-line { height: 25%; opacity: .7; }
+.myx-strand-idle .myx-strand-line { opacity: .55; }
+/* a turn in flight: a dot on the strand, the first at its start, one an eighth further each */
+.myx-strand-dot {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--at) * 12.5%);
+  height: min(100%, calc(.5 * var(--u)));
+  aspect-ratio: 1;
+  translate: 0 -50%;
+  border-radius: var(--radius-full);
+  background: var(--hue, var(--head-none));
+  box-shadow: 0 0 0 calc(.0625 * var(--u)) var(--bg);
+}
 .myx-strand-pulse { animation: myx-strand-land var(--dur-3) var(--ease-out) 2; }
 @keyframes myx-strand-land {
   50% { transform: scaleY(1.75); box-shadow: 0 0 0 calc(.1875 * var(--u)) color-mix(in srgb, var(--hue, var(--head-none)) 28%, transparent); }

@@ -6,6 +6,7 @@ export const S = {
   about: 'About teams',
   sample: 'Sample data',
   /** The views. */
+  lanes: 'Lanes',
   byHead: 'By head',
   byRole: 'By role',
   timeline: 'Timeline',

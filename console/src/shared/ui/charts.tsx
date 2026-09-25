@@ -297,34 +297,41 @@ export interface Strand {
   landed: number;
 }
 
-/** One head's strand. The pulse plays when `landed` moves past what this strand first saw, never on
- *  the first paint, so opening the console does not flash every head at once. */
+/** The most turns a strand draws as dots; past it the total beside the braid still counts them all. */
+const STRAND_DOTS = 8;
+
+/** One head's strand: a lane in miniature, a line in the head's hue with a dot per turn in flight.
+ *  The pulse plays when `landed` moves past what this strand first saw, never on the first paint,
+ *  so opening the console does not flash every head at once. */
 function StrandView({ strand, unit }: { strand: Strand; unit: string }) {
   const first = useRef(strand.landed);
   return (
     <Tip text={`${strand.name} ${strand.count} ${unit}`} side="bottom">
       <span
         className={cx('myx-strand', strand.hue, strand.count === 0 && 'myx-strand-idle')}
-        style={{ '--strand': Math.min(strand.count, 8) } as CSSProperties}
         role="img"
         aria-label={`${strand.name}: ${strand.count} ${unit}`}
       >
         {/* keyed on the landed count: a new key remounts the line, and its pulse plays again */}
         <span key={strand.landed} className={cx('myx-strand-line', strand.landed !== first.current && 'myx-strand-pulse')} />
+        {Array.from({ length: Math.min(strand.count, STRAND_DOTS) }, (_, at) => (
+          <span key={at} className="myx-strand-dot" style={{ '--at': at } as CSSProperties} />
+        ))}
       </span>
     </Tip>
   );
 }
 
-/** One strand per head, in its hue, as long as its turns in flight: the heads splice joins, read at
- *  a glance. An idle head is a thin strand, so a head that is up and quiet still shows. A strand
- *  pulses once when one of its turns lands. The total prints beside the braid, so the strip reads
- *  in greyscale. */
+/** The lanes in miniature (operator ruling 4, item 5): one strand per head, stacked in registry
+ *  order as the sessions page stacks its lanes, each carrying a dot per turn in flight on that
+ *  head. An idle head keeps its strand, so a head that is up and quiet still shows. A strand pulses
+ *  once when one of its turns lands. The total prints beside the braid, so the strip reads in
+ *  greyscale. */
 export function Braid({ strands, label, unit }: { strands: readonly Strand[]; label: string; unit: string }) {
   const total = strands.reduce((held, strand) => held + strand.count, 0);
   return (
     <span className="myx-braid" role="group" aria-label={`${label}: ${total} ${unit}`}>
-      <span className="myx-braid-strands">
+      <span className="myx-braid-strands" style={{ '--strands': Math.max(strands.length, 1) } as CSSProperties}>
         {strands.map((strand) => <StrandView key={strand.key} strand={strand} unit={unit} />)}
       </span>
       <span className="myx-braid-total" aria-hidden="true">{total}</span>

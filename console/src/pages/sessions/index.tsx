@@ -1,6 +1,9 @@
-// The sessions page: the departure board (docs/design/DESIGN.md section 7). One row per session with
-// fixed columns and the status printed last, grouped under four saved views (by head, by project,
-// by team, and a timeline). Opening a row puts its detail beside the board; the board stays.
+// The sessions page. Its default view is the LANES (operator ruling 4, item 5): one strand per head
+// in its hue, each session a card on its head's strand, each hand-off an arc from sender to receiver
+// (shared/ui/lanes.tsx). Behind it stands the departure board (docs/design/DESIGN.md section 7): one
+// row per session with fixed columns and the status printed last, grouped under four saved views (by
+// head, by project, by team, and a timeline). Opening a card or a row puts its detail beside the
+// board; the board stays.
 //
 // WHAT THE ROW SAYS, shown before it is said (DESIGN.md section 3). A session's life is one bar on
 // the board's shared time axis (started, last heard from, now), so the rows read as a timeline and a
@@ -26,7 +29,7 @@ import type { View } from '@features/views';
 import { ArrowLeftIcon } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { ArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight';
 import { ArrowUpRightIcon } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
-import { HeadMark, hueClass, useHues } from '@entities/control-status';
+import { HeadMark, hueClass, useControlStatus, useHues } from '@entities/control-status';
 import {
   fetchSessionEdges,
   peerLabel,
@@ -42,20 +45,22 @@ import {
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
-import { Badge, DataTable, DetailPanel, Empty, InfoTip, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
-import type { Column, RowGroup } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, Lanes, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
+import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
 import { H, S, U } from './strings';
-import { groupByOf, groupHref, selectionOf } from './select';
-import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, startedText, toneOf } from './strip';
+import { groupByOf, groupHref, isLanes, lanesOf, selectionOf } from './select';
+import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, projectText, startedText, toneOf } from './strip';
 import type { Handoff, Peer } from './strip';
 import './sessions.css';
 
 const PAGE_ID = 'sessions';
 
-/** The four views this page ships. `by head` is the default and stands first. */
-const DEFAULT_VIEWS: View[] = [
+/** The views this page ships. The lanes are the default and stand first; they arrived after the
+ *  board's four, so a browser that saved its views before is offered them once. */
+export const DEFAULT_VIEWS: View[] = [
+  { id: 'lanes', name: S.lanes, layout: 'lanes', filter: {}, sort: null, group: 'head', fields: [], introduced: '2026-09-25' },
   // A grouped view does not repeat its group as a column: the bay's own label already names it.
   { id: 'by-head', name: 'By head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'project', 'life', 'peer'] },
   { id: 'by-project', name: 'By project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'head', 'life', 'peer'] },
@@ -178,8 +183,10 @@ const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '20%', project: '18%'
 const WIDTH_WITH_HEAD: Record<string, string> = { name: '16%', head: '14%', project: '16%', life: '24%', peer: '20%' };
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
+export function SessionsBoard({ payload, view, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
   payload: SessionsPayload | null;
+  /** The view to draw; the page's active saved view when omitted. A test names the one it is about. */
+  view?: View;
   /** The OPENED session's edges, for its hand-offs bay. */
   edges?: SessionEdgesPayload | null;
   /** Every session's edges (GET /api/sessions/edges), for the peer column of every row. */
@@ -195,7 +202,8 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
    *  marker and the sample chrome are the same value, so they cannot disagree. */
   sample?: string | undefined;
 }) {
-  const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
+  const { active: saved } = useViews(PAGE_ID, DEFAULT_VIEWS);
+  const active = view ?? saved;
   const [openId, setOpenId] = useState<string | null>(null);
 
   // A registration with no session id still has to be openable, and its key
@@ -225,6 +233,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
   const by = groupByOf(active);
   const openLabel = by === 'repo' ? S.openProject : by === 'team' ? S.openTeam : S.openHead;
   const hueOf = useHues();
+  const registry = useControlStatus((state) => state.data?.registry ?? null);
   const idleBuckets = selection.kind === 'timeline'
     ? selection.timeline.buckets.filter((bucket) => bucket.sessions.length === 0).length
     : 0;
@@ -330,6 +339,31 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
         : [{ key: 'undated', title: S.undated, count: selection.timeline.undated.length, rows: selection.timeline.undated }]),
     ];
 
+  // THE LANES: every head the daemon runs, each a strand with its sessions on it, and the fleet's
+  // hand-offs as arcs between the cards of the two sessions a message joined.
+  const lanes: Lane[] = lanesOf(rows, registry?.map((entry) => entry.key) ?? []).map((group) => {
+    const headless = group.key === UNKNOWN_HEAD;
+    return {
+      key: group.key,
+      name: headless ? S.noHead : registry?.find((entry) => entry.key === group.key)?.label ?? group.key,
+      title: groupTitle(group.key),
+      hue: hueClass(headless ? 0 : hueOf(group.key)),
+      cards: group.rows.map((row) => ({
+        key: keyOf(row),
+        title: sessionLabel(row),
+        meta: projectText(row),
+        tone: toneOf(row),
+        word: AVAILABILITY[row.availability],
+        start: row.started_at,
+      })),
+    };
+  });
+  const messages: LaneMessage[] = boardEdges === null
+    ? []
+    : fleetHandoffs(rows, boardEdges).flatMap((handoff) => (
+      handoff.from === null || handoff.to === null ? [] : [{ from: keyOf(handoff.from), to: keyOf(handoff.to), at: handoff.at }]
+    ));
+
   const count = (state: SessionRow['availability']) => rows.filter((row) => row.availability === state).length;
   const stale = count('stale');
 
@@ -379,6 +413,15 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
           {edgesError === null ? null : <Fault message={edgesError} />}
           {rows.length === 0 ? (
             <Empty text={S.noSessions} source={H.noSessions} />
+          ) : isLanes(active) ? (
+            <Lanes
+              lanes={lanes}
+              messages={messages}
+              label={S.title}
+              open={(key) => setOpenId(key === openId ? null : key)}
+              selected={openId}
+              cardLabel={(card) => `${card.title}, ${card.word}`}
+            />
           ) : (
             <DataTable
               className="myx-sx-table"

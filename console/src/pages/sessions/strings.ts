@@ -5,6 +5,8 @@ import { ABSENT } from '@shared/lib';
 
 export const S = {
   title: 'Sessions',
+  /** The default view: one strand per head, sessions as cards, hand-offs as arcs. */
+  lanes: 'Lanes',
   locked: 'Console locked',
   /** The info mark beside the title: the daemon's own note on what the list holds. */
   about: 'About this list',

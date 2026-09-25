@@ -135,5 +135,7 @@ export { Badge, DataTable, DetailPanel, KeyValue, Meter, PageHeader, Section, Se
 export type { Column, RowGroup, Tone } from './kit';
 export { Braid, InfoTip, LayerChip, Legend, LifetimeBar, Pips, Ring, Sparkline, StackedBar, Tip, Waterfall } from './charts';
 export type { BarPart, Mark, Strand, WaterfallStage } from './charts';
+export { Lanes } from './lanes';
+export type { Lane, LaneCard, LaneMessage } from './lanes';
 export type { Provenance } from './field-box';
 export type { Edge, Basis } from './types';

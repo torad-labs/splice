@@ -175,9 +175,15 @@ internal class AddProfileCatalog {
             // exactly one slot per id (modelsFor rejects duplicates).
             //
             // sonnet = anthropic/claude-sonnet-5: daily driver, pinned.
-            // opus = anthropic/claude-opus-5: strongest Claude on the listing.
+            // opus = anthropic/claude-opus-5.5: strongest Claude on the listing.
             // haiku = z-ai/glm-5.3-flash: cheapest/fastest among the top-weekly coding-capable rows.
-            // fable = openai/gpt-5.6-sol: strongest GPT-class row on the same listing.
+            // fable = openai/gpt-6-sol: strongest GPT-class row on the same listing.
+            //
+            // V4-228: each family's latest as OpenRouter lists it, windowed by its own context_length
+            // (GET openrouter.ai/api/v1/models, read 2026-09-25 through `splice models --all`). Opus 5.5
+            // (1,000,000) takes opus from Opus 5, GPT-6 Sol and Luna (1,050,000) take GPT-5.6's rows, and
+            // DeepSeek V4.1 Flash (1,048,576) replaces V4 Flash 0731. Sonnet 5, Haiku 4.5, Gemini 3.8
+            // Flash, GLM 5.3 and 5.3 Flash, and Llama 4 Maverick are still their families' latest there.
             name = "openrouter",
             summary = "OpenRouter API-key route (many vendors, one key)",
             dialect = OPENAI_CHAT,
@@ -187,12 +193,12 @@ internal class AddProfileCatalog {
             command = "claude-openrouter",
             models = listOf(
                 AddModel("anthropic/claude-sonnet-5", "Claude Sonnet 5", WINDOW_1M, listOf("sonnet")),
-                AddModel("anthropic/claude-opus-5", "Claude Opus 5", WINDOW_1M, listOf("opus")),
+                AddModel("anthropic/claude-opus-5.5", "Claude Opus 5.5", WINDOW_1M, listOf("opus")),
                 AddModel("z-ai/glm-5.3-flash", "GLM 5.3 Flash", WINDOW_1310K, listOf("haiku")),
-                AddModel("openai/gpt-5.6-sol", "GPT-5.6 Sol", WINDOW_1050K, listOf("fable")),
-                AddModel("openai/gpt-5.6-luna", "GPT-5.6 Luna", WINDOW_1050K),
+                AddModel("openai/gpt-6-sol", "GPT-6 Sol", WINDOW_1050K, listOf("fable")),
+                AddModel("openai/gpt-6-luna", "GPT-6 Luna", WINDOW_1050K),
                 AddModel("google/gemini-3.8-flash", "Gemini 3.8 Flash", WINDOW_1048K),
-                AddModel("deepseek/deepseek-v4-flash-0731", "DeepSeek V4 Flash 0731", WINDOW_1310K),
+                AddModel("deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash", WINDOW_1048K),
                 AddModel("z-ai/glm-5.3", "GLM 5.3", WINDOW_1310K),
                 AddModel("meta-llama/llama-4-maverick", "Llama 4 Maverick", WINDOW_1048K),
                 AddModel("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", WINDOW_200K),

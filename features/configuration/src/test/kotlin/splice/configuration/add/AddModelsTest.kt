@@ -176,7 +176,7 @@ class AddModelsTest {
         assertTrue(addFirstRemaining(path), "add-model wrote nothing")
         val provider = requireNotNull(TopologyLoader.loadOrMaterialize(path).providers["openrouter"])
         val row = requireNotNull(provider.models.firstOrNull { it.id == LUNA }) { "emitted row never parsed back" }
-        assertEquals("GPT-5.6 Luna", row.label)
+        assertEquals("GPT-6 Luna", row.label)
         assertEquals(1_050_000L, row.contextWindow)
     }
 
@@ -209,7 +209,7 @@ class AddModelsTest {
             .split("\n")
             .mapNotNull { Regex("id = \"([^\"]*)\"").find(it)?.groupValues?.get(1) }
 
-    /** The first id the starter's head roster does not already carry — `openai/gpt-5.6-luna`. */
+    /** The first id the starter's head roster does not already carry — `openai/gpt-6-luna`. */
     private fun addFirstRemaining(path: Path): Boolean = verb(
         selectTty = false,
         multiTty = true,
@@ -263,7 +263,7 @@ private const val ESC: Byte = 27
 private const val SPACE: Byte = 32
 private const val ENTER: Byte = 13
 private const val SONNET = "anthropic/claude-sonnet-5"
-private const val LUNA = "openai/gpt-5.6-luna"
+private const val LUNA = "openai/gpt-6-luna"
 private const val ROSTER_OPEN = "models = ["
 private const val HEADER = "[heads.openrouter]"
 private const val PROVIDER_ROW = "[[providers.openrouter.models]]"

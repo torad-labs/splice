@@ -392,7 +392,7 @@ describe('budgets and alerts', () => {
     expect(cellNote(undefined)).toBeNull();
     const out = renderToStaticMarkup(h(BudgetRefusals, { heads: ['claudex', 'claude-grok'], notes: { claudex: reason, 'claude-grok': 'Saved' } }));
     expect(out.match(/class="myx-bud-refusal" role="status"/g)?.length).toBe(1);
-    expect(out).toContain(`<span>${reason}</span>`);
+    expect(out).toContain(`<span>${reason.replace(/'/g, '&#x27;')}</span>`); // static markup escapes the apostrophe
     expect(out).toContain('claudex');
     expect(out).not.toContain('Saved');
     // a box as wide as its placeholder and its padding: w is the box's width in ch, padding included

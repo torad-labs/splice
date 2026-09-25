@@ -594,6 +594,10 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **A sign-in no longer prints SLF4J warnings.** The jar carried slf4j-api (Ktor brings it in) and
+  no provider, so the first log call printed three `SLF4J(W): No SLF4J providers were found` lines
+  on the user's terminal, during every `splice add` sign-in. The no-op provider now ships beside it,
+  and a test fails if the fat jar loses it again.
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

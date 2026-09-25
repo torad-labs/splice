@@ -63,10 +63,22 @@ a.myx-key { text-decoration: none; }
 /* An invalid field says why in words beside it; the box only repeats it. */
 .myx-input-invalid .myx-input-box { border-color: var(--danger); }
 
-/* ---------- blank: the space a loading list holds, and nothing printed in it ---------- */
+/* ---------- blank: the rows a loading list will hold, as quiet bars ----------
+   No border, no mark, no rule, so nothing on a bar reads as a row that lost its words. A bar is a
+   table row's height, so the page keeps its shape when the rows land, and it breathes while the
+   read is out; under reduced motion it holds still. */
 .myx-blank { display: flex; flex-direction: column; gap: var(--space-2); }
-.myx-strip.myx-blank-strip { width: auto; }
-.myx-blank-strip .myx-sfield { flex: 1 1 auto; width: auto; }
+.myx-blank-row {
+  display: block;
+  height: var(--row-board);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  animation: myx-blank-breathe 1.6s ease-in-out infinite alternate;
+}
+@keyframes myx-blank-breathe { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .myx-blank-row { animation: none; }
+}
 
 /* ---------- fault: one line, a danger mark and the daemon's words ---------- */
 .myx-fault {

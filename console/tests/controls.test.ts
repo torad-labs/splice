@@ -230,38 +230,31 @@ describe('Input', () => {
 });
 
 describe('Blank', () => {
-  test('prints n unprinted strips and says what is loading', () => {
+  test('prints one bar per row it holds and says what is loading', () => {
     const out = render(h(Blank, { strips: 3, label: 'reading heads' }));
-    expect(out.match(/myx-blank-strip/g)).toHaveLength(3);
+    expect(out.match(/myx-blank-row/g)).toHaveLength(3);
     expect(out).toContain('aria-busy="true"');
     expect(out).toContain('aria-label="reading heads"');
-    expect(out).not.toContain('myx-skeleton');
   });
 
-  test('D7: its height is the strip module itself, not a sum of font sizes', () => {
-    const out = render(h(Blank, { strips: 1 }));
-    // The same structure a real strip has, so the two cannot disagree.
-    expect(out).toContain('myx-strip');
-    expect(out).toContain('myx-strip-fields');
-    expect(out).toContain('myx-sfield');
-    expect(out).toContain('myx-sfield-label');
-    expect(out).toContain('myx-sfield-value');
-    // And nothing printed on it: strip the two non-breaking spaces and not one glyph is left.
-    expect(out.replace(/&nbsp;|\u00a0/g, '')).toBe(
-      '<div class="myx-blank" aria-busy="true" role="status">'
-      + '<span class="myx-strip myx-blank-strip" aria-hidden="true">'
-      + '<span class="myx-strip-fields"><span class="myx-sfield">'
-      + '<span class="myx-sfield-label"></span>'
-      + '<span class="myx-sfield-value"><span class="myx-sfield-text"></span></span>'
-      + '</span></span></span></div>',
+  test('a bar is a shape, never a row that lost its words', () => {
+    // The 2026-09-25 baseline caught doctor mid-read as four bordered cards with a dot and a rule and
+    // nothing in them: the strip shell, unprinted. A bar carries no structure a row has, so nothing on
+    // it can be read as an empty finding.
+    expect(render(h(Blank, { strips: 1 }))).toBe(
+      '<div class="myx-blank" aria-busy="true" role="status"><span class="myx-blank-row" aria-hidden="true"></span></div>',
     );
-    // The old derivation summed font sizes and came up 27% short of the strip it stood in for.
-    expect(declared(css, '.myx-blank-strip').height).toBeUndefined();
+    const bar = declared(css, '.myx-blank-row');
+    expect(bar.border).toBeUndefined();
+    expect(bar.height).toBe('var(--row-board)'); // a row's height, so the page does not jump when rows land
+    // `declared` folds the reduced-motion rule into the bar's, so each of the two is read as written
+    expect(css).toMatch(/\n\.myx-blank-row \{[^}]*animation: myx-blank-breathe /);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.myx-blank-row \{ animation: none; \}/);
   });
 
   test('zero strips is an empty rack, not a negative one', () => {
-    expect(render(h(Blank, { strips: 0 }))).not.toContain('myx-blank-strip');
-    expect(render(h(Blank, { strips: -2 }))).not.toContain('myx-blank-strip');
+    expect(render(h(Blank, { strips: 0 }))).not.toContain('myx-blank-row');
+    expect(render(h(Blank, { strips: -2 }))).not.toContain('myx-blank-row');
   });
 });
 

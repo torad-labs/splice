@@ -75,6 +75,7 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
       slot: slot.id,
       name: row?.name ?? session,
       role: slot.role,
+      lead: slot.lead,
       head: slot.head,
       model: slot.model,
       account: slot.account,

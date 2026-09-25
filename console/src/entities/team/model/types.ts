@@ -174,6 +174,8 @@ export interface TeamMemberRow {
   /** The session's printed name (the client's own label), or its id when it has none. */
   name: string;
   role: string;
+  /** The slot's lead flag (TeamSlot.lead). The lead is this flag, never a role named `lead`. */
+  lead: boolean;
   head: string;
   model: string | null;
   account: string | null;

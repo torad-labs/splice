@@ -510,6 +510,58 @@ test('Doctor\'s figures read whole beside an open check', async ({ page }) => {
   expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });
 
+test('Doctor\'s upgrade reads the stack\'s run route and shows no run before one starts', async ({ page }) => {
+  // V4-220 item 4 against the real jar: GET /api/upgrade/run answers the newest run the console
+  // started, and the stack has never started one. Nothing here presses a key.
+  const faults = await open(page, 'doctor');
+  const version = page.locator('main section').filter({ has: page.getByRole('heading', { name: 'Version', exact: true }) });
+  await expect(version.getByRole('button', { name: 'Upgrade', exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(version.getByRole('region', { name: 'Upgrade run' })).toHaveCount(0);
+  await expect(version.getByRole('alert')).toHaveCount(0);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('Doctor upgrades through the daemon\'s run, reads it through the restart, and prints how it ended', async ({ page }) => {
+  // The run is `splice upgrade` for real, out of process, in the daemon's own environment: it fetches
+  // a release and restarts the daemon (SystemdUpgradeLauncher.kt). So no start reaches the stack: the
+  // start and the reads answer here in UpgradeRunRoutes' shapes (tests/daemon-upgrade.test.ts holds
+  // the types to it), and one read answers nothing, as the restart the run causes does.
+  const run = {
+    id: '0001790000000000-e2e0', args: ['upgrade', '--to', 'v0.4.1'], state: 'running', started_at_epoch_millis: Date.now(),
+    exit_code: null as number | null, output: ['splice upgrade: 0.4.0 -> 0.4.1'],
+  };
+  const sent: (string | null)[] = [];
+  let reads = 0;
+  await page.route('**/api/upgrade', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent.push(route.request().postData());
+    return route.fulfill({ status: 202, json: { run } });
+  });
+  await page.route('**/api/upgrade/run', async (route) => {
+    if (sent.length === 0) return route.fulfill({ json: { run: null } });
+    reads += 1;
+    if (reads === 1) return route.fulfill({ json: { run: { ...run, output: [...run.output, 'fetching splice-0.4.1.jar'] } } });
+    if (reads === 2) return route.abort('connectionrefused');
+    return route.fulfill({ json: { run: { ...run, state: 'succeeded', exit_code: 0, output: [...run.output, 'fetching splice-0.4.1.jar', 'restarted'] } } });
+  });
+  const faults = await open(page, 'doctor');
+  const version = page.locator('main section').filter({ has: page.getByRole('heading', { name: 'Version', exact: true }) });
+  await version.getByLabel('Version', { exact: true }).fill('v0.4.1');
+  await version.getByRole('button', { name: 'Upgrade', exact: true }).click();
+  await version.getByRole('button', { name: 'Upgrade to v0.4.1', exact: true }).click();
+  await expect.poll(() => sent, 'the start asks for the release in the box').toEqual(['{"to":"v0.4.1"}']);
+
+  const shown = version.getByRole('region', { name: 'Upgrade run' });
+  await expect(shown.getByText('splice upgrade --to v0.4.1', { exact: true })).toBeVisible();
+  await expect(shown.getByRole('log', { name: 'Run output' })).toContainText('fetching splice-0.4.1.jar', { timeout: 10_000 });
+  await expect(shown.getByRole('status'), 'a read nothing answered is the restart').toContainText('restarting', { timeout: 10_000 });
+  await expect(shown.getByText('Succeeded', { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(shown.getByText('Exit 0', { exact: true })).toBeVisible();
+  await expect(shown.getByRole('status')).toHaveCount(0);
+  await expect(shown.getByRole('log', { name: 'Run output' })).toContainText('restarted');
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
 test('a Claude Code probe that read no version reads unknown, with the daemon\'s sentence whole under it', async ({ page }) => {
   // CI run 36184525303: no `claude` on the runner, and the daemon's sentence was the tile's figure,
   // cut to an ellipsis.

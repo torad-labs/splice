@@ -4,9 +4,12 @@
 import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
-  // The report and the upgrade status, both read and never written (V4-127 serves them).
+  // The report, read and never written (V4-127 serves it).
   { kind: 'route', name: '/api/doctor', disposition: 'read-only' },
-  { kind: 'route', name: '/api/upgrade', disposition: 'read-only' },
+  // The upgrade: GET is the status the version strip reads (V4-127); POST starts `splice upgrade` or
+  // its rollback out of process (V4-220 item 4), and /api/upgrade/run is that run's progress.
+  { kind: 'route', name: '/api/upgrade', disposition: 'editable' },
+  { kind: 'route', name: '/api/upgrade/run', disposition: 'read-only' },
   // /api/heads/{head}/capture moved to pages/turns/coverage.ts (M4-04): the turns page's request
   // drawer carries the switch that reads and writes it, and a name has exactly one page owner.
   // Budgets and alerts moved to pages/usage/coverage.ts (M4-06): the usage page is the one that

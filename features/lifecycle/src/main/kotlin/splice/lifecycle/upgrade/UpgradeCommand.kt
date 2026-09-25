@@ -108,7 +108,7 @@ internal class UpgradeCommand(
         }
         activation.activate(version, installed)
         layout.prunable().forEach(layout::discard)
-        return finish(version)
+        return finish(version, a.now)
     }
 
     private fun rollback(a: UpgradeArgs): Boolean {
@@ -121,7 +121,7 @@ internal class UpgradeCommand(
             return false
         }
         activation.activate(previous, installed)
-        return finish(previous)
+        return finish(previous, a.now)
     }
 
     /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
@@ -139,8 +139,8 @@ internal class UpgradeCommand(
         }
     }
 
-    private fun finish(version: String): Boolean {
-        val restart = daemon.restart(layout.liveJar, version)
+    private fun finish(version: String, now: Boolean): Boolean {
+        val restart = daemon.restart(layout.liveJar, version, now)
         val restarted = restart is DaemonRestarted.Serving
         val glyph = if (restarted) "$GREEN✓$RESET" else "$RED✗$RESET"
         val outcome = when (restart) {

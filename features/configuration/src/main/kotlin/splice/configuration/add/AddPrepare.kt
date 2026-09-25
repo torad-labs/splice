@@ -34,6 +34,17 @@ internal data class AddCandidate(
     val resolved: AddProfile,
 )
 
+/** What preparing an add decided, before any side effect: a candidate, or why there is none. */
+internal sealed class AddPrepared {
+    data class Ready(val candidate: AddCandidate) : AddPrepared()
+
+    /** [conflict] is a refusal the operator's CURRENT file causes (a taken key or command, a file that
+     *  will not parse with the new tables), as against one the request itself carries. */
+    data class Refused(val reason: String, val conflict: Boolean) : AddPrepared()
+
+    data object UnknownProfile : AddPrepared()
+}
+
 internal class AddPrepare(
     private val output: TerminalOutput,
     private val checks: AddChecks,
@@ -42,62 +53,76 @@ internal class AddPrepare(
     private val profiles = AddProfiles()
     private val modelRows = AddModelRows(output, prompt)
 
-    fun candidate(args: AddArgs, env: EnvReader): AddCandidate? {
-        val profile = args.profile?.let(profiles::find) ?: return usage()
+    /** The CLI's reading: the refusal or the usage printed, and null. */
+    fun candidate(args: AddArgs, env: EnvReader): AddCandidate? = when (val prepared = prepare(args, env)) {
+        is AddPrepared.Ready -> prepared.candidate
+        is AddPrepared.Refused -> null.also { output.line("splice add: ${prepared.reason}") }
+        AddPrepared.UnknownProfile -> usage()
+    }
+
+    /** V4-220: the same decisions as a value, for a caller that answers them rather than prints them. */
+    fun prepare(args: AddArgs, env: EnvReader): AddPrepared {
+        val profile = args.profile?.let(profiles::find) ?: return AddPrepared.UnknownProfile
         val key = args.name ?: profile.headKey
-        val resolved = resolved(args, profile, key) ?: return null
-        return assembled(args, resolved, key, env)
+        return when (val resolved = resolved(args, profile, key)) {
+            is Resolved.Rows -> assembled(args, resolved.profile, key, env)
+            is Resolved.Refused -> AddPrepared.Refused(resolved.reason, conflict = false)
+        }
     }
 
     /** A profile a local runtime DESCRIBED (RuntimeHeadAdd), already resolved: no flags to apply and
      *  nothing to prompt for, then the same refusals, render and parse as a catalogue profile. */
-    fun described(profile: AddProfile, env: EnvReader): AddCandidate? =
-        assembled(AddArgs(profile = profile.name, yes = true), profile, profile.headKey, env)
+    fun described(profile: AddProfile, env: EnvReader): AddCandidate? {
+        val prepared = assembled(AddArgs(profile = profile.name, yes = true), profile, profile.headKey, env)
+        if (prepared is AddPrepared.Refused) output.line("splice add: ${prepared.reason}")
+        return (prepared as? AddPrepared.Ready)?.candidate
+    }
 
-    private fun assembled(args: AddArgs, resolved: AddProfile, key: String, env: EnvReader): AddCandidate? {
+    private fun assembled(args: AddArgs, resolved: AddProfile, key: String, env: EnvReader): AddPrepared {
         val path = TopologyLoader.configPath(env)
         val current = TopologyLoader.loadOrMaterialize(path)
         val existing = Files.readString(path).trimEnd('\n') + "\n"
-        val problem = keyProblem(resolved, current, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
-        val appended = if (problem == null) profiles.toml(resolved, key, nextPort(current)) else ""
-        val parsed = if (problem == null) checks.parses(existing + appended) else Result.failure(AddRefused(problem))
-        return parsed.fold(
+        val conflict = keyConflict(resolved, current, key)
+        val problem = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
+        if (problem != null) return AddPrepared.Refused(problem, conflict = conflict != null)
+        val appended = profiles.toml(resolved, key, nextPort(current))
+        return checks.parses(existing + appended).fold(
             onSuccess = { topology ->
-                AddCandidate(
-                    path = path,
-                    existing = existing,
-                    appended = appended,
-                    topology = topology,
-                    key = key,
-                    command = resolved.command,
-                    provider = topology.providers.getValue(key),
-                    models = resolved.models.map { it.id },
-                    args = args,
-                    resolved = resolved,
+                AddPrepared.Ready(
+                    AddCandidate(
+                        path = path,
+                        existing = existing,
+                        appended = appended,
+                        topology = topology,
+                        key = key,
+                        command = resolved.command,
+                        provider = topology.providers.getValue(key),
+                        models = resolved.models.map { it.id },
+                        args = args,
+                        resolved = resolved,
+                    ),
                 )
             },
-            onFailure = { e ->
-                output.line("splice add: ${refusal(e)}")
-                null
-            },
+            onFailure = { e -> AddPrepared.Refused(refusal(e), conflict = true) },
         )
     }
 
-    /** The profile with the operator's flags and model rows applied, or null after the refusal was
-     *  printed (a prompted window never became valid). */
-    private fun resolved(args: AddArgs, profile: AddProfile, key: String): AddProfile? = try {
-        profile.copy(
-            baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
-            command = args.command ?: profile.command.ifEmpty { "claude-$key" },
-            models = modelRows.resolve(args, profile),
+    /** The profile with the operator's flags and model rows applied, or the refusal (a prompted window
+     *  never became valid). */
+    private fun resolved(args: AddArgs, profile: AddProfile, key: String): Resolved = try {
+        Resolved.Rows(
+            profile.copy(
+                baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
+                command = args.command ?: profile.command.ifEmpty { "claude-$key" },
+                models = modelRows.resolve(args, profile),
+            ),
         )
     } catch (refused: AddRefused) {
         // SAFE-RENDER-EXEMPT[2026-09-15]: AddRefused is constructed only by splice with a fixed
         // operator sentence, never from upstream or file content. The single construction site is
         // AddModels.kt line 58 (a context window must be a positive integer in tokens). The
         // exemption stops being true the day an AddRefused is built from a caught throwable.
-        output.line("splice add: ${refused.message}")
-        null
+        Resolved.Refused(refused.message.orEmpty())
     }
 
     private fun usage(): AddCandidate? {
@@ -115,8 +140,14 @@ internal class AddPrepare(
         else -> "the candidate topology does not parse: ${SafeFailureText.render(e)}"
     }
 
-    private fun keyProblem(profile: AddProfile, current: Topology, key: String): String? = when {
-        !KEY_RE.matches(key) -> "--name is required for '${profile.name}' (lowercase letters, digits, dashes)"
+    private fun keyProblem(profile: AddProfile, key: String): String? = when {
+        KEY_RE.matches(key) -> null
+        else -> "--name is required for '${profile.name}' (lowercase letters, digits, dashes)"
+    }
+
+    /** What the operator's current file already holds; checked first, as before the split. */
+    private fun keyConflict(profile: AddProfile, current: Topology, key: String): String? = when {
+        !KEY_RE.matches(key) -> null
         key in current.providers || key in current.heads -> "'$key' is already configured — pick another --name"
         // A head with no explicit command launches as its own key (Topology.resolveHeadKeys), so that is
         // the name a new command must not take either.
@@ -148,6 +179,13 @@ internal class AddPrepare(
         val floor = maxOf(taken.maxOrNull() ?: 0, FIRST_HEAD_PORT - 1) + 1
         return generateSequence(floor) { it + 1 }.first { it !in taken }
     }
+}
+
+/** [AddPrepare.resolved]'s answer: the rows applied, or the refusal their resolution raised. */
+private sealed class Resolved {
+    data class Rows(val profile: AddProfile) : Resolved()
+
+    data class Refused(val reason: String) : Resolved()
 }
 
 /** A refusal decided before the candidate was parsed; its message is the whole explanation. Public

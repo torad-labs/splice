@@ -78,7 +78,12 @@ import splice.usage.budgets.BudgetStore
 import splice.usage.budgets.HeadPerfHistory
 
 internal object ConsoleWiring {
-    internal fun wire(srv: ControlServer, topology: BootedTopology, discovered: HeadDiscoveredModels) {
+    internal fun wire(
+        srv: ControlServer,
+        topology: BootedTopology,
+        discovered: HeadDiscoveredModels,
+        log: LogSink,
+    ) {
         // V4-127: the console's three read ports, assigned after construction because a constructor
         // parameter would widen ControlServer past the width ratchet — so the compiler cannot check
         // any of these lines, and deleting one does not break the build. Each route then answers its
@@ -115,6 +120,9 @@ internal object ConsoleWiring {
         // KeyStorePath.defaultPath() over this process's environment), so a console PUT lands in the
         // file those heads read on their next request. Its unreadable-store line goes to the daemon log.
         srv.ports.keys = KeyStore(KeyStorePath.defaultPath())
+
+        // V4-220 item 3: `splice add` over /api/add. Unassigned, every add route answers a named 503.
+        srv.ports.add = AddWiring.console(log)
     }
 
     /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out

@@ -25,4 +25,11 @@ export const dispositions: readonly Disposition[] = [
   // The draining restart, written through from the head detail (features/daemon-restart).
   { kind: 'route', name: '/api/daemon/restart', disposition: 'editable' },
   { kind: 'route', name: '/api/usage', disposition: 'read-only' },
+  // Adding a backend, `splice add` over HTTP (V4-220 item 3): a new head joins this page's fleet.
+  { kind: 'route', name: '/api/add/profiles', disposition: 'read-only' },
+  { kind: 'route', name: '/api/add', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}/login', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}/verify', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}/save', disposition: 'editable' },
 ];

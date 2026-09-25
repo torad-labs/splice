@@ -19,6 +19,7 @@ import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.app.cli.auth.LoginCommand
+import splice.configuration.add.AddSignIn
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
@@ -57,13 +58,15 @@ internal class LoginSessions(
             size > MAX_TRACKED_LOGINS
     }
 
-    /** Starts [provider]'s login flow off-request and returns immediately with its STARTING view. */
+    /** Starts [provider]'s login flow off-request and returns immediately with its STARTING view.
+     *  [restart] null is a head the daemon does not run yet (V4-220, a console add): the credential
+     *  lands and the state stays signed in, since no restart of this login's would bring it up. */
     internal fun start(
         headKey: String,
         provider: ProviderConfig,
         topology: Topology,
         label: String?,
-        restart: HeadRestart,
+        restart: HeadRestart?,
     ): LoginStatus {
         val id = UUID.randomUUID().toString()
         val cell = AtomicReference(LoginStatus(id, headKey, LoginState.STARTING))
@@ -79,7 +82,7 @@ internal class LoginSessions(
     private suspend fun runAndLand(
         attempt: LoginAttempt,
         observer: LoginObserver,
-        restart: HeadRestart,
+        restart: HeadRestart?,
         cell: AtomicReference<LoginStatus>,
     ) {
         val result = Cancellables.runCatchingBestEffort {
@@ -93,6 +96,7 @@ internal class LoginSessions(
             return
         }
         update(cell) { it.copy(state = LoginState.SIGNED_IN) }
+        if (restart == null) return
         val restarted = Cancellables.runCatchingBestEffort { restart.restart() }.isSuccess
         if (restarted) update(cell) { it.copy(state = LoginState.LIVE_AFTER_RESTART) }
     }
@@ -187,4 +191,14 @@ internal class ConsoleAccountsImpl(
         val kind = AuthKindRegistry.from(provider.auth.kind) as? AuthKind.OAuth ?: return null
         return OAuthTarget(kind, LoginCommand().oauthAuthPath(provider))
     }
+}
+
+/** V4-220 item 3: the add's sign-in over this file's flows, for a head that is not in splice.toml yet.
+ *  Its own [LoginSessions]: an add polls through GET /api/add/{id}, never /api/auth/{head}/login/{id},
+ *  whose head resolution a candidate head would fail. */
+internal class AddSignInSessions(private val sessions: LoginSessions = LoginSessions()) : AddSignIn {
+    override fun start(key: String, provider: ProviderConfig, topology: Topology): LoginStatus =
+        sessions.start(key, provider, topology, label = null, restart = null)
+
+    override fun poll(id: String): LoginStatus? = sessions.poll(id)
 }

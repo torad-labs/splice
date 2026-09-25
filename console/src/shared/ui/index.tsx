@@ -132,5 +132,7 @@ export { Empty } from './empty';
 export { Figure } from './figure';
 export { Badge, DataTable, DetailPanel, KeyValue, Meter, PageHeader, Section, Segmented, Stat, StatRow, Tally } from './kit';
 export type { Column, RowGroup, Tone } from './kit';
+export { Braid, InfoTip, LayerChip, LifetimeBar, Ring, Sparkline, StackedBar, Tip, Waterfall } from './charts';
+export type { BarPart, Mark, Strand, WaterfallStage } from './charts';
 export type { Provenance } from './field-box';
 export type { Edge, Basis } from './types';

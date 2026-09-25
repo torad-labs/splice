@@ -1,0 +1,200 @@
+/* The kit's charts (docs/design/DESIGN.md section 9). Every mark paints `var(--mark)`, bound by one
+   `myx-mark-*` class; the unfilled part of a bar is `--track`, which carries no data and so no
+   contrast floor. Sizes are rem and %, spacing is the token scale. */
+
+.myx-mark-series-1 { --mark: var(--series-1); }
+.myx-mark-series-2 { --mark: var(--series-2); }
+.myx-mark-series-3 { --mark: var(--series-3); }
+.myx-mark-ok { --mark: var(--ok); }
+.myx-mark-warn { --mark: var(--warn); }
+.myx-mark-danger { --mark: var(--danger); }
+/* a head's hue, from the nearest `myx-hue-N`; the neutral grey when no head bound one */
+.myx-mark-hue { --mark: var(--hue, var(--head-none)); }
+
+/* ---------- tip: help on hover and focus ---------- */
+.myx-tip { position: relative; display: inline-flex; align-items: center; }
+.myx-tip:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); border-radius: var(--radius-1); }
+.myx-tip-body {
+  position: absolute;
+  left: 50%;
+  z-index: 20;
+  width: max-content;
+  max-width: 18rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  background: var(--fg);
+  color: var(--bg);
+  font-family: var(--font-sans);
+  font-size: var(--text-1);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  text-align: start;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 0);
+  transition: opacity var(--dur-1) ease;
+}
+.myx-tip-top .myx-tip-body { bottom: calc(100% + var(--space-3)); }
+.myx-tip-bottom .myx-tip-body { top: calc(100% + var(--space-3)); }
+.myx-tip:hover > .myx-tip-body,
+.myx-tip:focus-visible > .myx-tip-body,
+.myx-tip:focus-within > .myx-tip-body { opacity: 1; }
+
+.myx-info-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--fg-subtle);
+  font-size: var(--text-3);
+  cursor: help;
+}
+.myx-info-btn:hover { color: var(--fg); background: var(--bg-hover); }
+
+/* ---------- sparkline ---------- */
+.myx-spark {
+  display: block;
+  width: 100%;
+  min-width: 4rem;
+  height: 1.25rem;
+  overflow: visible;
+}
+.myx-spark-line { fill: none; stroke: var(--mark); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.myx-spark-empty { border-bottom: var(--hair) dashed var(--line-strong); height: .625rem; }
+
+/* ---------- stacked bar ---------- */
+.myx-stack-wrap { display: grid; gap: var(--space-3); min-width: 0; }
+.myx-stack {
+  display: flex;
+  gap: var(--space-1);
+  width: 100%;
+  height: .5rem;
+  border-radius: var(--radius-full);
+  background: var(--track);
+  overflow: hidden;
+}
+.myx-stack-part { display: block; height: 100%; background: var(--mark); }
+.myx-stack-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); }
+.myx-stack-key { display: inline-flex; align-items: baseline; gap: var(--space-3); font-size: var(--text-2); color: var(--fg-muted); }
+.myx-stack-swatch { align-self: center; width: .5rem; height: .5rem; border-radius: var(--radius-0); background: var(--mark); }
+.myx-stack-figure { font-family: var(--font-mono); font-size: var(--text-4); font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.myx-stack-key-none .myx-stack-figure { color: var(--fg-subtle); }
+.myx-stack-key-none .myx-stack-swatch { background: var(--track); }
+
+/* ---------- ring ---------- */
+.myx-ring { position: relative; display: inline-grid; place-items: center; width: 3.5rem; height: 3.5rem; flex: none; }
+.myx-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.myx-ring-track { fill: none; stroke: var(--track); stroke-width: 3.5; }
+.myx-ring-arc { fill: none; stroke: var(--mark); stroke-width: 3.5; stroke-linecap: butt; transition: stroke-dasharray var(--dur-3) var(--ease-out); }
+.myx-ring-value { position: relative; font-family: var(--font-mono); font-size: var(--text-2); font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+
+/* ---------- lifetime bar: one life on the board's shared time axis ---------- */
+.myx-life {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 6rem;
+  height: .75rem;
+}
+.myx-life::before {
+  /* the axis itself: the board's window, faint */
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: var(--hair) solid var(--line);
+}
+.myx-life-run {
+  position: absolute;
+  top: 25%;
+  height: 50%;
+  min-width: .25rem;
+  border-radius: var(--radius-full);
+  background: var(--mark);
+}
+/* silent since last seen: the same life, drawn as a dotted trail up to now */
+.myx-life-quiet {
+  position: absolute;
+  top: 50%;
+  border-top: .125rem dotted var(--fg-subtle);
+  transform: translateY(-50%);
+}
+.myx-life-seen {
+  position: absolute;
+  top: 50%;
+  width: .5rem;
+  height: .5rem;
+  border-radius: var(--radius-full);
+  background: var(--mark);
+  box-shadow: 0 0 0 .125rem var(--bg);
+  transform: translate(-50%, -50%);
+}
+
+/* ---------- waterfall: where a turn's time went ---------- */
+.myx-wf {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: .625rem;
+  border-radius: var(--radius-1);
+  background: var(--track);
+}
+.myx-wf-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: .125rem;
+  background: var(--mark);
+}
+
+/* ---------- layer chip: where a value comes from ---------- */
+.myx-layers { display: inline-flex; align-items: center; gap: var(--space-1); }
+.myx-layer {
+  width: .5rem;
+  height: .75rem;
+  border-radius: var(--radius-0);
+  background: var(--track);
+}
+/* overridden: the layer was set, and a later one won */
+.myx-layer-under { background: none; box-shadow: inset 0 0 0 var(--hair) var(--fg-subtle); }
+.myx-layer-on { background: var(--fg); }
+
+/* ---------- braid: one strand per head, in the status strip ---------- */
+.myx-braid { display: inline-flex; align-items: center; gap: var(--space-3); }
+.myx-braid-strands { display: inline-flex; align-items: center; gap: var(--space-1); }
+.myx-braid-total {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 600;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.myx-strand {
+  display: flex;
+  align-items: center;
+  /* an idle head keeps a short strand; each turn in flight lengthens it, up to eight */
+  width: calc(var(--space-5) + var(--space-3) * var(--strand, 0));
+  height: .5rem;
+  transition: width var(--dur-3) var(--ease-out);
+}
+.myx-strand-line {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--hue, var(--head-none));
+}
+.myx-strand-idle .myx-strand-line { height: 25%; opacity: .7; }
+.myx-strand-pulse { animation: myx-strand-land var(--dur-3) var(--ease-out) 2; }
+@keyframes myx-strand-land {
+  50% { transform: scaleY(1.75); box-shadow: 0 0 0 .1875rem color-mix(in srgb, var(--hue, var(--head-none)) 28%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-strand-pulse { animation: none; }
+  .myx-tip-body { transition: none; }
+}

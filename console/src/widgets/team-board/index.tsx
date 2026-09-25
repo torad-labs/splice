@@ -59,6 +59,28 @@ const BAY_COLS = [
     },
   },
 ];
+/* A member's three lines, percent of the bay: the comp's own plate extents, measured as board.css
+   records beside `.myx-board-strip`. */
+const LINE_ROWS = [
+  { top: 8.599, height: 7.788 },
+  { top: 20.886, height: 7.479 },
+  { top: 32.911, height: 7.541 },
+];
+/* The comp racks one member per bay, and the hand-off lies across the floor under it. So a second
+   member on the same head starts under the hand-off, not under the first member, where the tilted
+   strip and its ghost would cover its identity line. Measured in the DOM on the demo stack, the
+   two reach 63.98% of the bay at 1280x1024, 65.66% at 1536x864 and 66.17% at 2560x1080 (the tilt's
+   drop grows with the board's width), so the second member starts at 67%. Each member after it
+   takes one member pitch, three lines on the pitch the lines keep (32.911 - 20.886 between them).
+   Two members fit the bay; a third scrolls it (board.css). */
+const UNDER_HANDOFF = 67;
+const MEMBER_PITCH = LINE_ROWS[2].top + (LINE_ROWS[2].top - LINE_ROWS[1].top) - LINE_ROWS[0].top;
+const rowTop = (row: number) => (row === 0 ? LINE_ROWS[0].top : UNDER_HANDOFF + (row - 1) * MEMBER_PITCH);
+/** Where line `line` of the `row`th member on a head sits in its bay. */
+const lineBox = (row: number, line: number) => ({
+  top: `${Number((rowTop(row) + LINE_ROWS[line].top - LINE_ROWS[0].top).toFixed(3))}%`,
+  height: `${LINE_ROWS[line].height}%`,
+});
 /** The activity rack's columns, from the same scan of its bay. The chat's live in parts.tsx,
    where the message strip that uses them does. */
 const ACT_COLS = [5.00, 11.43, 16.79, 20.24];
@@ -105,22 +127,25 @@ const kb = (value: number | null): string => (value === null ? ABSENT : `${value
 
 /** The session strips of one member: three printed lines, as the comp racks them.
  *  The edge follows the comp: the slot flagged lead prints green, every other
- *  slot grey. */
-function MemberStrips({ member, line, cols }: {
+ *  slot grey. `row` is the member's place among the members on its head. */
+function MemberStrips({ member, row, line, cols }: {
   member: TeamMemberRow;
+  row: number;
   line: number;
   cols: { l1: number[]; l2: number[]; l3: number[]; names: Record<keyof typeof S, string> };
 }) {
   /* The comp marks a slot once, on its identity line: the holder bar of the
      lead's first line prints green and every other bar on the board prints
-     grey, including the lead's own second and third lines. */
-  const edge = line === 0 && member.role === 'lead' ? 'green' : 'grey';
+     grey, including the lead's own second and third lines. The lead is the
+     slot's flag, never its role's name: compose lets a role be any text. */
+  const edge = line === 0 && member.lead ? 'green' : 'grey';
   const N = cols.names;
   const cls = `myx-board-strip myx-board-strip-${line}`;
+  const style = lineBox(row, line);
 
   if (line === 0) {
     return (
-      <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} first line`}>
+      <Strip className={cls} style={style} edge={edge} edgeLabel="" ariaLabel={`${member.name} first line`}>
         <StripField w={cols.l1[0]} label={N.name} value={member.name} mono={false} />
         <StripField w={cols.l1[1]} label={N.role} value={member.role} mono={false} />
         <StripField w={cols.l1[2]} label={N.model} value={member.model ?? ABSENT} mono={false} />
@@ -133,7 +158,7 @@ function MemberStrips({ member, line, cols }: {
   }
   if (line === 1) {
     return (
-      <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} second line`}>
+      <Strip className={cls} style={style} edge={edge} edgeLabel="" ariaLabel={`${member.name} second line`}>
         <StripField w={cols.l2[0]} label={N.head} value={member.head} mono={false} />
         <StripField w={cols.l2[1]} label={N.sessionId} value={member.sessionId} />
         <StripField w={cols.l2[2]} label={N.created} value={text(member.created)} />
@@ -146,7 +171,7 @@ function MemberStrips({ member, line, cols }: {
     );
   }
   return (
-    <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} third line`}>
+    <Strip className={cls} style={style} edge={edge} edgeLabel="" ariaLabel={`${member.name} third line`}>
       <StripField w={cols.l3[0]} label={N.contextLeft} value={pct(member.contextLeftPct)} />
       <StripField w={cols.l3[1]} label={N.scratchpad} value={kb(member.scratchpadKb)} />
       <StripField w={cols.l3[2]} label={N.workspace} value={text(member.workspace)} mono={false} />
@@ -201,8 +226,8 @@ export function TeamBoard({ board, unread = {} }: { board: TeamPayload; unread?:
           >
             {board.members
               .filter((member) => heads.includes(member.head))
-              .flatMap((member) => [0, 1, 2].map((line) => (
-                <MemberStrips key={`${member.name}-${line}`} member={member} line={line} cols={BAY_COLS[index]} />
+              .flatMap((member, row) => [0, 1, 2].map((line) => (
+                <MemberStrips key={`${member.slot}-${line}`} member={member} row={row} line={line} cols={BAY_COLS[index]} />
               )))}
             {/* the rack's empty slots: the bay holds room for sessions not here yet */}
             {Array.from({ length: 9 }, (_, i) => (

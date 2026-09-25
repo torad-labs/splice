@@ -18,9 +18,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import { PENDING_TEAMS } from '../src/entities/team';
+import type { TeamMemberRow, TeamPayload } from '../src/entities/team';
 import { MgmtError, pendingOf } from '../src/shared/api';
 import {
-  TeamBoard, TeamBoardByRole, TeamTimeline, costTable, groupByRole, roleRows, timeRule,
+  TeamBoard, TeamBoardByRole, TeamTimeline, costTable, focusMember, groupByRole, roleRows, timeRule,
   timelineRows, turnsPerSlot,
 } from '../src/widgets/team-board';
 import { TeamChat, chatOrder } from '../src/widgets/team-chat';
@@ -511,5 +512,96 @@ describe('a team with no bound session', () => {
     const html = unescapeHtml(renderToStaticMarkup(createElement(TeamBoard, { board: unbound })));
     expect(html).toContain('no session is bound yet');
     expect(html).not.toContain('/api/');
+  });
+});
+
+// A BAY RACKS EVERY MEMBER ON ITS HEAD (splice-lead, 2026-09-25). A member's three lines sat at the
+// comp's fixed tops, so a second member on the same head painted exactly over the first: on a live
+// daemon, team "checkout" drew its implementer and its reviewer in one box, and only the reviewer
+// showed under a bay header that named both heads.
+describe('two members on one head', () => {
+  const second: TeamMemberRow = {
+    ...heroBoard.members[0], slot: 'slot-builder-2', name: 'gs-backend-builder2', role: 'builder', lead: false, sessionId: 's-9d04c3e7',
+  };
+  const board: TeamPayload = { ...heroBoard, members: [heroBoard.members[0], second, heroBoard.members[1]] };
+  const html = renderToStaticMarkup(createElement(TeamBoard, { board }));
+  const bay0 = html.slice(html.indexOf('myx-board-bay-0'), html.indexOf('myx-board-bay-1'));
+  const css = read('console/src/widgets/team-board/board.css');
+  /** A strip's box, percent of the bay: its inline style, or else the rule its line class carries. */
+  const boxOf = (tag: string) => {
+    const line = /myx-board-strip-(\d)/.exec(tag)?.[1];
+    const rule = new RegExp(`^\\.myx-board-strip-${line} \\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? '';
+    const value = (prop: string) => {
+      const pattern = new RegExp(`${prop}:\\s*([\\d.]+)%`);
+      return Number((pattern.exec(tag) ?? pattern.exec(rule))?.[1]);
+    };
+    return { top: value('top'), height: value('height') };
+  };
+  /** Each session strip's box in the bay, in document order. */
+  const boxes = [...bay0.matchAll(/<div class="myx-strip myx-board-strip[^"]*"[^>]*>/g)].map(([tag]) => boxOf(tag));
+
+  test('the second member racks under the first instead of over it', () => {
+    expect(boxes).toHaveLength(6);
+    for (const box of boxes) expect(Number.isFinite(box.top) && Number.isFinite(box.height)).toBe(true);
+    // Every line clears the one before it, across the member boundary too.
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i].top).toBeGreaterThanOrEqual(boxes[i - 1].top + boxes[i - 1].height);
+  });
+
+  test('the second member racks under the hand-off, which lies across the floor under the first', () => {
+    // The hand-off's own box, in percent of the bay; its tilt and ghost reach a little further, which
+    // the constant's comment measures.
+    const rule = (selector: string) => new RegExp(`^${selector} \\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? '';
+    const pct = (body: string, prop: string) => Number(new RegExp(`(?:^|[ ;])${prop}:\\s*([\\d.]+)%`).exec(body)?.[1]);
+    const handoff = rule('\\.myx-board-handoff');
+    const bay = rule('\\.myx-board-bay-0');
+    const floor = ((pct(handoff, 'top') + pct(handoff, 'height') - pct(bay, 'top')) / pct(bay, 'height')) * 100;
+    expect(floor).toBeGreaterThan(60);
+    expect(boxes[3].top).toBeGreaterThan(floor);
+    // ...and the second member still fits the bay whole.
+    expect(boxes[5].top + boxes[5].height).toBeLessThanOrEqual(100);
+  });
+
+  test("the first member keeps the comp's three lines", () => {
+    expect(boxes.slice(0, 3)).toEqual([
+      { top: 8.599, height: 7.788 },
+      { top: 20.886, height: 7.479 },
+      { top: 32.911, height: 7.541 },
+    ]);
+  });
+
+  test('a bay with more members than it holds scrolls rather than running under the footer', () => {
+    for (const n of [0, 1]) expect(css).toMatch(new RegExp(`^\\.myx-board-bay-${n} \\{[^}]*overflow-y: auto;`, 'm'));
+  });
+});
+
+// THE LEAD IS A FLAG, NOT A NAME (splice-lead, 2026-09-25). A slot carries `lead` (TeamStore
+// TeamSlot.lead) and compose lets its role be any text, so a lead slot named "architect" printed
+// grey and the right column fell to whichever member happened to be first.
+describe('the lead is the slot flagged lead, whatever its role is called', () => {
+  const architect: TeamMemberRow = { ...heroBoard.members[0], role: 'architect' };
+  // A role literally named `lead` on a slot that is not the lead, so a check on the name cannot pass.
+  const namedLead: TeamMemberRow = { ...heroBoard.members[1], role: 'lead', lead: false };
+  const board: TeamPayload = { ...heroBoard, members: [namedLead, architect], messages: [] };
+  const edgeOf = (html: string, label: string) => {
+    const at = html.indexOf(`aria-label="${label}"`);
+    return /myx-edge-(\w+)/.exec(html.slice(at))?.[1];
+  };
+
+  test("the board prints the lead's identity line green and no other", () => {
+    const html = renderToStaticMarkup(createElement(TeamBoard, { board }));
+    expect(edgeOf(html, 'gs-backend-claude first line')).toBe('green');
+    expect(edgeOf(html, 'gs-backend-builder first line')).toBe('grey');
+  });
+
+  test('with no hand-off the right column describes the lead', () => {
+    expect(focusMember(board)?.name).toBe('gs-backend-claude');
+  });
+
+  test('the by-role view marks the lead the same way', () => {
+    const html = renderToStaticMarkup(createElement(TeamBoardByRole, { board }));
+    expect(edgeOf(html, 'gs-backend-claude session')).toBe('green');
+    expect(edgeOf(html, 'gs-backend-builder session')).toBe('grey');
+    // The member card is the focus, which with no hand-off is the lead.
+    expect(edgeOf(html, 'gs-backend-claude')).toBe('green');
   });
 });

@@ -387,8 +387,11 @@
    538x22. */
 .myx-board .myx-board-footer { font-size: 1.2439cqh; }
 
-.myx-board-bay-0 { left: 0.879%; top: 8.174%; width: 30.769%; height: 83.864%; }
-.myx-board-bay-1 { left: 32.967%; top: 8.174%; width: 30.220%; height: 83.864%; }
+/* A head bay holds two members, one over the hand-off and one under it (index.tsx lineBox). A third
+   member on its heads scrolls the bay, as a board column does, rather than running on under the
+   footer. */
+.myx-board-bay-0 { left: 0.879%; top: 8.174%; width: 30.769%; height: 83.864%; overflow-x: hidden; overflow-y: auto; }
+.myx-board-bay-1 { left: 32.967%; top: 8.174%; width: 30.220%; height: 83.864%; overflow-x: hidden; overflow-y: auto; }
 
 /* The bay's label plate is its own measured region, centered on the rack:
    bay-claude-label (frame x17 y14.5 w12 h2.5) inside bay-claude (x9.8 y13.5
@@ -440,9 +443,8 @@
    rack, on a 67px region), converted against the bay's 808.9px. */
 .myx-board-strip { left: 2.5%; width: 91.071%; }
 .myx-board-bay-1 .myx-board-strip { left: 2.545%; width: 92.727%; }
-.myx-board-strip-0 { top: 8.599%; height: 7.788%; }
-.myx-board-strip-1 { top: 20.886%; height: 7.479%; }
-.myx-board-strip-2 { top: 32.911%; height: 7.541%; }
+/* The three lines' tops and heights are set inline (index.tsx LINE_ROWS), because each member on a
+   head racks one member pitch under the one before it and the pitch is per row, not per class. */
 
 /* the empty slots of the rack, below the strips (each one's top is set inline,
    from the same rack rhythm) */
@@ -761,7 +763,7 @@
   }
   .myx-board-frame .myx-board-slot,
   .myx-board-frame .myx-board-ghost { display: none; }
-  .myx-board-frame .myx-board-bay { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); }
+  .myx-board-frame .myx-board-bay { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); overflow: visible; }
   /* the plate keeps its pins, so it needs the room for them the desktop's fixed box gave it */
   .myx-board-frame .myx-bay-head { align-self: center; width: max-content; max-width: 100%; padding-inline: var(--space-5); }
   .myx-board-frame .myx-bay-rows,

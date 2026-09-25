@@ -1,6 +1,6 @@
 ---
 name: splice console
-description: The operator console of a Claude Code gateway daemon. A departure board for the sessions in flight, grey everywhere else, and one colour per head carried to every place that head appears.
+description: The operator console of a Claude Code gateway daemon. One lane per head with the sessions in flight on it and their hand-offs drawn between them, grey everywhere else, and one colour per head carried to every place that head appears.
 colors:
   bg: "#0b0c0e"
   bg-raised: "#131418"
@@ -42,38 +42,44 @@ rounded:
   panel: "8px"
   pill: "999px"
 spacing:
+  # at a 1600px window; each is a multiple of --u and grows to 19/16 of it at 3840 (section 8)
   1: "2px"
-  2: "4px"
-  3: "8px"
-  4: "12px"
-  5: "16px"
-  6: "24px"
-  7: "32px"
-  8: "48px"
+  2: "6px"
+  3: "10px"
+  4: "14px"
+  5: "20px"
+  6: "28px"
+  7: "40px"
+  8: "56px"
 components:
   button:
     backgroundColor: "{colors.bg}"
     textColor: "{colors.fg}"
     rounded: "{rounded.control}"
-    padding: "4px 12px"
+    padding: "2px 10px"
   button-primary:
     backgroundColor: "{colors.fg}"
     textColor: "{colors.bg}"
     rounded: "{rounded.control}"
-    padding: "4px 12px"
+    padding: "2px 10px"
   nav-item-current:
     backgroundColor: "{colors.bg-active}"
     textColor: "{colors.fg}"
     rounded: "{rounded.control}"
-    padding: "4px 8px"
+    padding: "6px 10px"
   head-mark:
     backgroundColor: "{colors.head-1}"
     rounded: "{rounded.mark}"
-    size: "8px x 16px"
+    size: "10px x 20px"
   board-row:
     backgroundColor: "{colors.bg}"
     textColor: "{colors.fg-muted}"
-    height: "44px"
+    height: "56px"
+  lane-card:
+    backgroundColor: "{colors.bg-raised}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.panel}"
+    size: "up to 272px x 76px"
 ---
 
 # The splice console
@@ -92,7 +98,7 @@ board: one line per session, fixed columns, the state printed in words, and the 
 matters most shown in colour. Here that thing is the head. Every head gets its own colour, and
 that colour follows the head everywhere: its sessions on the board, its turns, its bars in the
 usage charts, its lines in the log, its scope in settings. The rest of the console is grey. When
-the operator sees orange anywhere, it means the same head.
+the operator sees orange anywhere, it means an Anthropic head, and its tone and name say which.
 
 ## 2. What we studied
 
@@ -144,14 +150,16 @@ and the bold part always does a job.
 
 ## 3. Principles
 
-1. **Colour means a head.** The one bold place is the head colour (OP-1). Eight hues, assigned in
-   the daemon's own head order, used for that head and nothing else. The chrome has no hue of its
+1. **Colour means a head.** The one bold place is the head colour (OP-1). Eight hues, one per
+   provider family, stepped in lightness between heads of one family, used for heads and nothing
+   else. The chrome has no hue of its
    own. A status colour (ok, warn, danger) only appears beside its word.
 2. **The name always travels with the colour.** A colour mark is never alone: the head's name sits
    beside it, so the screen still reads in greyscale and for colour-blind readers.
-3. **One line per thing.** A session, a turn, a log line and a knob each take one row with fixed
-   columns (Flighty). Details open beside the list, never in a modal, and the list stays in view
-   (Vercel, OpenRouter).
+3. **One line per thing.** A turn, a log line and a knob each take one row with fixed columns
+   (Flighty); a session is one card on its head's lane, or one row when the board is the view.
+   Details open beside the list, never in a modal, and the list stays in view (Vercel,
+   OpenRouter).
 4. **Big numbers only where the number is the point.** Plan left, turns in flight and cache hit
    rate get a large figure. Everything else is table-sized.
 5. **Always know the state of the daemon.** A slim status strip sits on top of every page: link
@@ -172,8 +180,8 @@ What a Linear or Vercel clone would pick on each axis, what splice picks, and wh
 | Colour | Linear: grey plus one brand accent (indigo) on the chrome. Vercel: the chrome is its grey scale (gray 100 to 1000 for grounds, borders and text, vercel.com/geist/colors), the primary button is the ink, and blue is kept for links and focus | The same ink-on-grey chrome as Vercel, with the focus ring in the ink too. Eight head colours are the only hues, plus status colours next to their words | On the chrome splice agrees with Vercel, and departs from it only by the head hues. The question the operator brings is "which head?", and colour that answers it is worth more than colour that brands the frame |
 | Layout | A sidebar, a page header, a grid of cards | A sidebar, an always-on status strip, one board per page, detail opening beside the list; stat tiles only on number pages | A card grid hides row order, and row order is the data here |
 | Nav | A flat list of features, or workspace first | Four groups named for splice's own objects (in flight, routing, plans, daemon). Home is sessions. ⌘K reaches all of it | See section 6: the grouping follows the session, its head, its plan and the daemon under them |
-| Motion | Springs and fades on everything | Nothing a keyboard triggers animates. Hover and open take 120 to 180ms. A status change on the board cross-fades its word, and that is the only motion with meaning | A console opened between terminal sessions must feel instant |
-| Density | Airy, 48px rows | 44px board rows, 36px table rows, 13px table text | The operator reads many sessions and heads at once |
+| Motion | Springs and fades on everything | Nothing a keyboard triggers animates. Hover and open take 120 to 180ms. When a message crosses between two sessions, a dot travels the arc between their cards on the lanes, once: the only motion with meaning | A console opened between terminal sessions must feel instant |
+| Density | Airy, 48px rows | Board rows 56 to 66px, table text 16 to 19px, from a 1600px window to a 3840px one (section 8) | The operator reads many sessions and heads at once, on a panel 3840 wide at desktop scale 1 |
 
 ## 5. The bold place: head colour
 
@@ -192,14 +200,17 @@ What a Linear or Vercel clone would pick on each axis, what splice picks, and wh
   head's colour. A head with no family falls back to registry order over the hues no listed
   family claims. A session with no splice head, or a head the registry does not list, gets the
   neutral grey.
-- **Shape.** A head mark is a rounded 8×16 bar before the head's name (`HeadMark`, in
-  `@entities/control-status`). In a chart the head's series takes the hue. A board grouped by head
-  gives the group title a mark. Status never uses this shape: status is a round dot followed by
-  its word.
-- **Where it appears.** Sessions (head column and group titles), turns (head column and waterfall
-  bars), fleet (each head's title), usage (each head's row and chart series), logs (the head
-  filter, the band on the stream's bar, and a head column when a tail carries several heads),
-  settings (the scope picker), accounts (the heads an account serves).
+- **Shape.** A head mark is a rounded bar before the head's name, 10×20 at a 1600px window and
+  12×24 at 3840 (`HeadMark`, in `@entities/control-status`). In a chart the head's series takes the
+  hue. A board grouped by head gives the group title a mark. A lane is the head's strand in its hue,
+  with the mark and name at its start. Status never uses these shapes: status is a round dot
+  followed by its word.
+- **Where it appears.** Sessions and teams (each head's lane, its cards' edges and the arcs its
+  sessions send; the head column and group titles in the table views), the status strip's braid
+  (one strand per head), turns (head column and waterfall bars), fleet (each head's title), usage
+  (each head's row and chart series), logs (the head filter, the band on the stream's bar, and a
+  head column when a tail carries several heads), settings (the scope picker), accounts (the heads
+  an account serves).
 
 ## 6. Navigation and information architecture
 
@@ -216,13 +227,18 @@ rather than from what other proxies put on their home pages:
 - **Addresses stay.** `#/fleet` and the rest are unchanged, and no page is renamed. What changes
   is the order: `ADDRESSES` in `app/rows.ts` follows the nav, so the console opens on sessions,
   the first object.
-- **The shell.** A 232px sidebar holds the wordmark, a "jump to" button showing ⌘K, the four
-  groups, and the theme switch at the bottom. Each item is an icon and its label. The current
-  page gets the active ground, full ink and weight 500, plus `aria-current="page"`. The
-  sidebar's arrow-key movement is kept.
-- **The status strip.** A 44px strip runs along the top of the page column. It holds the link
-  (a live dot and its word), daemon health, the nearest plan limit with its reset countdown, heads
-  without limits, a pending restart, and the local and UTC clocks. It never moves the layout.
+- **The shell.** A sidebar (280px at a 1600px window, 332 at 3840) holds the wordmark, a "jump
+  to" button showing ⌘K, the four groups, and the theme switch at the bottom. Each item is an icon
+  and its label. The current page gets the active ground, full ink and weight 500, plus
+  `aria-current="page"`. The sidebar's arrow-key movement is kept.
+- **The status strip.** A strip (at least 56px, 66 at 3840) runs along the top of the page column.
+  It opens with the braid, the lanes in miniature: one strand per head in its hue, a dot on it per
+  turn in flight, and the total beside it. Then the link (a live dot and its word), daemon health,
+  the nearest plan limit with its reset countdown, heads without limits, a pending restart, and
+  the local and UTC clocks. It never moves the layout.
+- **The page uses the screen.** The page column takes the window's width; there is no fixed
+  island. Past 3000px a page composes to its width (the sessions board beside its hand-offs, for
+  one) rather than stretching one row across it.
 - **Phone width.** Below 720px the sidebar becomes a horizontal row of items above the page, with
   no group labels, and the status strip wraps.
 
@@ -230,18 +246,34 @@ rather than from what other proxies put on their home pages:
 
 Every page is one of four types. Build new pages from these.
 
-### A live list: the departure board (Sessions)
+### A live list: the lanes and the departure board (Sessions, Teams)
 
-- One row per session, 44px tall, with fixed columns: session, head (with its mark), project,
-  started, seen, last hand-off, status. Times use the mono face.
-- The status column comes last, as on an airport board: a dot and a word (`live`, `stale`,
-  `gone`). A stale row gets a warn tint on its leading edge, because it is the one that needs the
-  operator.
-- Above the board sits a summary line of large figures: live, stale and gone counts.
-- Views (by head, by project, by team, timeline) are tabs under the title. A grouped view gives
-  each group a title row, with the head mark when grouped by head.
-- The whole row opens the session. The detail panel opens on the right and the board narrows; it
-  never covers the board.
+splice is strands joined by messages, so the default view draws exactly that (operator ruling 4,
+item 5, 2026-09-25). `Lanes` in `shared/ui/lanes.tsx` draws it for both pages.
+
+- **Lanes.** One full-width strand per head in its hue, in registry order, with the head's mark,
+  name and card count at its start; the sessions with no splice head take the last lane. Each
+  session (each seat, on Teams) is a card on its head's strand: its name, its project (its role)
+  and its state word. Every card has its own column across the whole board, in start order, so a
+  strand read left to right is the order its sessions started and no two cards stand one above
+  the other.
+- **Hand-offs are arcs.** Each direction between two cards is one arc, at its newest message, in
+  the sender's hue with an arrowhead at the receiver. A pair that runs both ways leaves its cards
+  off centre, so the two curves stay apart. An arc crossing a card shows through its ground but
+  never under a word: each word stands on a patch of the card's ground.
+- **The one motion.** When a message crosses, a dot travels its arc once (900ms, then gone). Nothing
+  flies on first paint, and nothing flies under `prefers-reduced-motion`.
+- **The board is a view.** By head, by project, by team and timeline stay as tabs beside Lanes. A
+  board row (56px at a 1600px window) has fixed columns: session, head (with its mark), project,
+  started, seen, last hand-off, status, with times in the mono face. The status column comes last,
+  as on an airport board: a dot and a word (`live`, `stale`, `gone`). A grouped view gives each
+  group a title row, with the head mark when grouped by head.
+- The one that needs the operator is tinted: a stale row's leading edge, a stale card's ground.
+- Above the lanes sits a summary line of large figures: live, stale and gone counts.
+- A view a release introduces (`View.introduced`) is offered once to a browser that already saved
+  its views: it arrives first and active, and once deleted it is not offered again.
+- A card or a row opens the session. The detail panel opens on the right and the list narrows; it
+  never covers the list.
 
 ### A numbers page (Usage)
 
@@ -282,10 +314,20 @@ through `var(--space-N)` (`webui-css-tokens-only`), font size through `var(--tex
 
 ### Scale
 
-| Token | Values |
+Every size is bounded-fluid between two frames, a 1600px-wide window and a 3840px one, linear
+between and held outside (operator ruling 4, 2026-09-25), so the console reads like every other
+app on the screen it is on. Type takes its own clamp per step; every other size (space, rows, the
+sidebar, the marks, the lanes) is a multiple of `--u`, so type and graphics grow together. The
+clamps are in rem, so browser zoom still scales everything. `console/tests/scale.test.ts` holds
+the floors at both frames and fails on any raw rem size outside the token sheet.
+
+| Token | At 1600 → at 3840 |
 |---|---|
-| `--space-0..8` | 0, 2, 4, 8, 12, 16, 24, 32, 48 px (in rem) |
-| `--text-1..7` | 12, 13, 14, 16, 20, 24, 32 px. 12 for captions and column labels, 13 for table cells and controls, 14 for body and nav, 16 for section titles, 20 and 24 for page titles, 32 for a number that is the point |
+| `--u` | 16 → 19 px |
+| `--space-0..8` | 0, 2, 6, 10, 14, 20, 28, 40, 56 px at 1600 (multiples of `--u`) |
+| `--text-1..7` | 14→16 captions, column labels and meta (the floor); 16→19 table cells and controls; 17→21 body and nav; 20→24 section titles; 24→30 sub-page titles; 32→40 page titles; 44→64 a number that is the point |
+| `--row-board`, `--row-head` | 56 and 48 px at 1600 |
+| `--meter-h` | 9 → 10.7 px |
 | `--leading-tight`, `--leading` | 1.25, 1.5 |
 | `--radius-1..3`, `--radius-full` | 4px (marks, badges), 6px (controls), 8px (panels, cards), pill |
 | `--dur-1..3` | 120, 180, 240ms; 0ms under `prefers-reduced-motion` |
@@ -313,16 +355,19 @@ computes them from the token sheet.
 ### Type
 
 IBM Plex Sans (variable, weights 100 to 700) and IBM Plex Mono (400, 500, 600), latin subset,
-SIL OFL 1.1, embedded in the single-file build (`shared/fonts/`). No network fonts. Body 14px,
-tables 13px. Page titles 24px at weight 600. Figures use Plex Mono with tabular numbers.
+SIL OFL 1.1, embedded in the single-file build (`shared/fonts/`). No network fonts. Body 17 to
+21px, tables 16 to 19px, page titles 32 to 40px at weight 600. Figures use Plex Mono with tabular
+numbers.
 
 ## 9. Components
 
 The building blocks are in `console/src/shared/ui/kit.tsx`, and pages compose them:
 `PageHeader`, `Section`, `DataTable` (the board is a DataTable whose rows open), `Badge` (a dot and
-a word), `Stat` and `StatRow`, `Meter`, `DetailPanel`, `KeyValue`. `HeadMark` lives with the
-registry it reads (`@entities/control-status`). Controls (`Choice`, buttons, inputs) keep their
-behaviour and take the new look.
+a word), `Stat` and `StatRow`, `Meter`, `DetailPanel`, `KeyValue`. `Lanes` (`shared/ui/lanes.tsx`,
+its arithmetic in `lanes-geometry.ts`) draws strands, cards and arcs for any page that hands it
+lanes and messages, and `Braid` (`shared/ui/charts.tsx`) is the lanes in miniature on the strip.
+`HeadMark` lives with the registry it reads (`@entities/control-status`). Controls (`Choice`,
+buttons, inputs) keep their behaviour and take the new look.
 
 ## 10. Voice
 
@@ -340,7 +385,9 @@ behaviour and take the new look.
 - AA contrast for all text in both themes. Marks and meters clear 3:1.
 - A visible focus ring on everything focusable: 2px in the ink colour, offset 2px.
 - Colour is never the only signal: head marks carry the name, and status dots carry the word.
-- `prefers-reduced-motion` zeroes every duration.
+- `prefers-reduced-motion` zeroes every duration, and no dot travels an arc.
+- Each lane is a named group, and each card's accessible name leads with its head: "claudex
+  implementer, Live".
 - Keyboard: the palette on ⌘K or /, arrow keys in the sidebar, Tab to every row opener, Escape
   closes a panel.
 

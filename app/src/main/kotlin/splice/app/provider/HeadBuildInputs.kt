@@ -101,7 +101,7 @@ internal class HeadBuildInputs(
                 stallReanchor = stallReanchorFor(resolvedProvider, headCfg),
             ),
             cfg = headCfg,
-            loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).command,
+            loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
         )
     }
 

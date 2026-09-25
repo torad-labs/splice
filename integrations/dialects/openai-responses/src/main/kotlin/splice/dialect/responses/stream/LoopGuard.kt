@@ -87,7 +87,7 @@ internal object LoopGuard {
         } else {
             "[splice loop-guard] This exact call ($name with these arguments) has now failed " +
                 "$failures times with the same error. Retrying it unchanged cannot succeed. Read the " +
-                "error and CHANGE APPROACH — for a stale-file error, re-read the file fresh, then " +
+                "error and CHANGE APPROACH: for a stale-file error, re-read the file fresh, then " +
                 "edit based on the new read."
         }
 

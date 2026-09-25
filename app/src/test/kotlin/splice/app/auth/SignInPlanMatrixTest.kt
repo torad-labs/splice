@@ -248,8 +248,8 @@ class SignInPlanMatrixTest {
      *  LoginInterception.wire() plant splice's OWN /login into that head's config dir, competing
      *  with the door that actually works — and its flow ends at `<command> login`, which for this
      *  kind prints "no browser login for that kind" and fails forever. Blank is the fix, and the
-     *  same blank drops TurnDriver's "— run: <command>" clause from a 401 so the upstream's own
-     *  message stands instead of an instruction that cannot succeed. */
+     *  same blank in [SignInPlan.credentialFix] drops TurnDriver's "— run: <command>" clause from a
+     *  401 so the upstream's own message stands instead of an instruction that cannot succeed. */
     @Test
     fun `a client-auth head gets NO splice login command — the client's own door stays the only one`() {
         val plan = planner.signInPlan(providerCfg("client"), head("anthropic", "claude-splice"), "anthropic")
@@ -259,5 +259,6 @@ class SignInPlanMatrixTest {
         )
         assertFalse(plan.viaBrowser, "splice runs no browser flow for this kind")
         assertEquals(null, plan.tokenCapture, "there is no token for splice to capture")
+        assertEquals("", plan.credentialFix, "a 401 names nothing splice can run, so the upstream's message stands")
     }
 }

@@ -55,6 +55,10 @@ internal class StatuslineRenderer(
      *  once, so a captured count would freeze at the head's start (zero) and the operator would
      *  never learn that the figure beside it had gone short. Null renders exactly as today. */
     private val perfSkips: HeadPerfSkipSource? = null,
+    /** V4-240: the head's upstream is Anthropic (it forwards the client's own login), so Claude
+     *  Code's own figure is priced at this upstream's card and may stand in for splice's. False on
+     *  every other head, where a model splice cannot price says "no rate card" instead. */
+    private val anthropicUpstream: Boolean = false,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
@@ -128,7 +132,12 @@ internal class StatuslineRenderer(
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
-            bars.costSegment(root, sessionCost?.usdFor(sessionId, modelId), perfSkips?.skippedRowCount() ?: 0L),
+            bars.costSegment(
+                root,
+                sessionCost?.usdFor(sessionId, modelId),
+                perfSkips?.skippedRowCount() ?: 0L,
+                CostFallback(rated = sessionCost?.rated(modelId) ?: false, clientPriced = anthropicUpstream),
+            ),
         ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
             listOfNotNull(

@@ -116,8 +116,10 @@ class CodeModeRuntimeTest {
         }
     }
 
+    // A hang guard over a worker JVM's own boot, so it sits where a loaded runner's boot fits (see
+    // SCRIPT_DEADLINE_MS); at 3 s it read a slow start as a hang.
     @Test
-    @Timeout(3)
+    @Timeout(60)
     fun `worker protocol fault is fatal rather than a completed guest error`() {
         val process = ProcessBuilder(
             "${System.getProperty("java.home")}/bin/java",
@@ -129,7 +131,11 @@ class CodeModeRuntimeTest {
             DataOutputStream(process.outputStream.buffered()).use { input ->
                 CodeModeWire.write(input, buildJsonObject { put("type", "start") })
             }
-            val reply = DataInputStream(process.inputStream.buffered()).use(CodeModeWire::read)
+            val reply = DataInputStream(process.inputStream.buffered()).use { output ->
+                // V4-226: a worker's first frame is its ready; the fault answers the start that follows.
+                CodeModeFrames.parseReady(CodeModeWire.read(output))
+                CodeModeWire.read(output)
+            }
             assertEquals(setOf("type", "category", "faultClass"), reply.keys)
             val fault = assertThrows(CodeModeInfrastructureException::class.java) {
                 CodeModeFrames.parseReply(reply, emptySet(), 1)
@@ -206,7 +212,11 @@ class CodeModeRuntimeTest {
 
     @Test
     fun `active worker cap rejects a second live cell`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            maxWorkers = 1,
+            advanceTimeoutMs = SCRIPT_DEADLINE_MS,
+            workerClasspath = testClasspath,
+        ).use { runtime ->
             val reclamation = CodeModeWorkerReclamation(this)
             val first = runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
             assertThrows(IOException::class.java) {
@@ -221,31 +231,42 @@ class CodeModeRuntimeTest {
         }
     }
 
+    // A hang guard only: the worker's start, warm-up included, is outside the deadline under test.
     @Test
-    @Timeout(10)
+    @Timeout(30)
     fun `runaway source times out and releases its worker slot`() = runBlocking {
+        // Twenty times a cold worker's first yield (98-133 ms measured 2026-09-25), which this deadline
+        // also covers, with the same 1 s of slack the bound always had.
+        val deadlineMs = 2_000L
         JvmCodeModeRuntime(
             maxWorkers = 1,
-            advanceTimeoutMs = 1_000,
+            advanceTimeoutMs = deadlineMs,
             workerClasspath = testClasspath,
         ).use { runtime ->
             val reclamation = CodeModeWorkerReclamation(this)
+            // V4-226: the deadline times the script, never its worker JVM's start, so the clock starts
+            // once the script is running: it yields a tool call, then runs away on the answer. Timed
+            // from before start() it also counted the boot, and a loaded runner's boot alone broke the
+            // bound (gate run 36180689372).
+            val cell = runtime.start("await tools.call(\"Read\", {}); while (true) {}", setOf("Read"))
+            calls(cell.advance())
             val startedAt = System.nanoTime()
             val timeout = assertThrows(IOException::class.java) {
-                runBlocking { runtime.start("while (true) {}", emptySet()) }
+                runBlocking { cell.advance(listOf(CodeModeResult("1", "{}"))) }
             }
             assertEquals("Code-mode worker timed out", timeout.message)
             assertTrue(timeout is CodeModeTimeoutException)
-            assertEquals(1_000L, (timeout as CodeModeTimeoutException).timeoutMillis)
-            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) < 2_000)
+            assertEquals(deadlineMs, (timeout as CodeModeTimeoutException).timeoutMillis)
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) < deadlineMs + 1_000)
             assertTrue(timeout.cause !is CancellationException)
 
             reclamation.assertReclaimed(runtime)
         }
     }
 
+    // Two worker boots under one hang guard: the cancelled start and the replacement.
     @Test
-    @Timeout(10)
+    @Timeout(60)
     fun `cancelling startup reaps the worker and has its permit back when the cancel returns`() = runBlocking {
         // V4-214: the permit came back on the process's async onExit callback, so a start() made the
         // moment the cancel returned could still find capacity 0 (the coverage job's race). Every such
@@ -253,7 +274,7 @@ class CodeModeRuntimeTest {
         val spawn = HeldExitSpawn()
         JvmCodeModeRuntime(
             maxWorkers = 1,
-            advanceTimeoutMs = 5_000,
+            advanceTimeoutMs = SCRIPT_DEADLINE_MS,
             workerClasspath = testClasspath,
             spawn = spawn,
         ).use { runtime ->
@@ -441,7 +462,8 @@ class CodeModeRuntimeTest {
         }
     }
 
-    private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(workerClasspath = testClasspath)
+    private fun runtime(): JvmCodeModeRuntime =
+        JvmCodeModeRuntime(advanceTimeoutMs = SCRIPT_DEADLINE_MS, workerClasspath = testClasspath)
 
     /** Whether [child], whose exit onExit() already reported, is gone from the process table. The
      *  handle came from children(), so its onExit can be a NON-reaping wait (waitid WEXITED|WNOWAIT,

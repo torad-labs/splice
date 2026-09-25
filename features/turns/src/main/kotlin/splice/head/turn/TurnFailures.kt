@@ -58,5 +58,5 @@ internal class TurnFailures(
     /** G19-consistent per-head hint — every AUTHENTICATION surface uses the SAME provider-threaded
      *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads). */
     fun loginHint(): String =
-        if (provider.loginCommand.isNotEmpty()) " — run: ${provider.loginCommand}" else ""
+        if (provider.loginCommand.isNotEmpty()) "; run: ${provider.loginCommand}" else ""
 }

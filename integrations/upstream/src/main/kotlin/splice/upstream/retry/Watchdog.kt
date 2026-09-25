@@ -335,7 +335,7 @@ public class TurnWatchdog(
         }
         log(
             "silent ${idleMs / MS_PER_S}s past the ${limitMs / MS_PER_S}s $tier tier on a live path " +
-                "($proof) — holding the round, the whole-turn cap " +
+                "($proof); holding the round, since the whole-turn cap " +
                 "(${budget.totalCap.inWholeSeconds}s) is its wall\n",
         )
     }

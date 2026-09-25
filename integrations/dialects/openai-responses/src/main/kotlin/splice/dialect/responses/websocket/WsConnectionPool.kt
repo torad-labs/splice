@@ -33,7 +33,7 @@ internal class WsConnectionPool(
         if (!conn.busy.compareAndSet(false, true)) {
             // A concurrent round of the SAME conversation is already on the socket — never
             // interleave two response.create frames on one connection; the second rides SSE.
-            log("[ws] ${logKeys.logKey(key)} busy — concurrent round rides SSE\n")
+            log("[ws] ${logKeys.logKey(key)} busy; the concurrent round rides SSE\n")
             return null
         }
         // Lost the race with a tear between the registry read and the busy win.

@@ -55,6 +55,26 @@ class OpenRouterProfileTest {
         assertTrue(Files.readString(path).contains("command = \"claude-openrouter\""))
     }
 
+    /** V4-228, RED before: opus took anthropic/claude-opus-5 and fable openai/gpt-5.6-sol, a generation
+     *  behind what OpenRouter lists. The windows are OpenRouter's own context_length, read 2026-09-25
+     *  through `splice models --all`; the starter's slots name the same rows as `splice add openrouter`. */
+    @Test
+    fun `splice add openrouter and the starter reach each family's latest at OpenRouter's window - V4-228`(
+        @TempDir dir: Path,
+    ) {
+        val latest = mapOf(
+            "opus" to ("anthropic/claude-opus-5.5" to 1_000_000L),
+            "fable" to ("openai/gpt-6-sol" to 1_050_000L),
+        )
+        val shipped = profile.models.flatMap { m -> m.slots.map { it to (m.id to m.contextWindow) } }.toMap()
+        assertEquals(latest, shipped.filterKeys { it in latest })
+        val starter = TopologyLoader.loadOrMaterialize(dir.resolve("splice.toml"))
+        val slots = starter.heads.getValue("openrouter").models.orEmpty().associate { it.slot to it.id }
+        assertEquals(latest.mapValues { it.value.first }, slots.filterKeys { it in latest })
+        val windows = starter.providers.getValue("openrouter").models.associate { it.id to it.contextWindow }
+        latest.values.forEach { (id, window) -> assertEquals(window, windows[id], id) }
+    }
+
     @Test
     fun `the profile ships ten rows and the openrouter wrapper command`() {
         assertEquals(PROFILE_MODELS, profile.models.size)

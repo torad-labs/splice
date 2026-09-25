@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.codemode.CodeModeWorkerReclamation
 import splice.codemode.JvmCodeModeRuntime
+import splice.codemode.SCRIPT_DEADLINE_MS
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
@@ -40,7 +41,8 @@ import java.util.concurrent.TimeUnit
 
 private const val BRIDGE_BASE_REQUEST = """{"input":[{"role":"developer","content":"s"}]}"""
 
-@Timeout(15)
+// A hang guard, above SCRIPT_DEADLINE_MS so the runtime's own deadline is what ends a stuck script.
+@Timeout(60)
 class CodeModeBridgeRuntimeTest {
     @TempDir
     lateinit var tempDir: Path
@@ -66,10 +68,12 @@ class CodeModeBridgeRuntimeTest {
         }
     }
 
+    // The deadline under test is the second advance's; the first one carries the worker's start, so the
+    // budget is one a loaded runner's start fits inside.
     @Test
-    @Timeout(20)
+    @Timeout(45)
     fun `advance deadline is an ordinary bridge failure and does not replay source`() = runBlocking {
-        runtime().use { runtime ->
+        runtime(timeoutMs = 10_000).use { runtime ->
             val reclamation = CodeModeWorkerReclamation(this)
             val bridge = bridge(runtime)
             val sink = Sink()
@@ -352,7 +356,7 @@ class CodeModeBridgeRuntimeTest {
         return output.jsonObject.getValue("output").jsonPrimitive.content
     }
 
-    private fun runtime(timeoutMs: Long = 5_000) = JvmCodeModeRuntime(
+    private fun runtime(timeoutMs: Long = SCRIPT_DEADLINE_MS) = JvmCodeModeRuntime(
         maxWorkers = 1,
         advanceTimeoutMs = timeoutMs,
         workerClasspath = testClasspath,

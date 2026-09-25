@@ -1,7 +1,7 @@
 // NEW (review 2026-07-23): HTTP-level integration coverage the PR review flagged as missing —
 //   E: a waiter promoted from the InflightGate queue DURING a stop/restart drain is bounced with
-//      the 529 "head is stopping — retry" shape (never starts a doomed upstream turn);
-//   G: count_tokens fast-fails 529 "gateway busy — retry" when the materialization gate is saturated
+//      the 529 "head is stopping; retry" shape (never starts a doomed upstream turn);
+//   G: count_tokens fast-fails 529 "gateway busy; retry" when the materialization gate is saturated
 //      (proves the HTTP route is wired to tryWithLease, not just the primitive);
 //   I: upstream x-ratelimit-* headers survive to durable UsageStore state through TurnDriver.
 // Each test builds an ISOLATED head so it can stop/restart/hold without disturbing a shared one.
@@ -259,7 +259,7 @@ class HeadServerReviewTest {
             assertEquals(529, resp.status.value)
             val body = resp.bodyAsText()
             assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
-            assertTrue(body.contains("head is stopping"), "expected 'head is stopping — retry' in: $body")
+            assertTrue(body.contains("head is stopping"), "expected 'head is stopping; retry' in: $body")
 
             req1.await()
             restart.await()
@@ -290,7 +290,7 @@ class HeadServerReviewTest {
             assertEquals(529, resp.status.value)
             val body = resp.bodyAsText()
             assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
-            assertTrue(body.contains("gateway busy"), "expected 'gateway busy — retry' in: $body")
+            assertTrue(body.contains("gateway busy"), "expected 'gateway busy; retry' in: $body")
 
             release.complete(Unit)
             holding.await()

@@ -50,7 +50,7 @@ internal class PassthroughEffortLadder {
                 if (warned.compareAndSet(false, true)) {
                     log(
                         "[$providerTag] configured effort '$trimmed' is not a vendor rung " +
-                            "(${rungs.joinToString("|")}) — using '$cheapest' instead of silently " +
+                            "(${rungs.joinToString("|")}); using '$cheapest' instead of silently " +
                             "escalating to '$EFFORT_MAX'\n",
                     )
                 }

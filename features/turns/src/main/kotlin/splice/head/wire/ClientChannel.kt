@@ -158,7 +158,7 @@ internal class ClientChannel(
     fun flushQuietly() {
         Cancellables.discard(
             Cancellables.runCatchingCleanup { coalesced.flush() },
-            "turn-finally flush on a possibly-dead socket — the primary outcome must stand",
+            "turn-finally flush on a possibly-dead socket: the primary outcome must stand",
         )
     }
 
@@ -198,7 +198,7 @@ internal class ClientChannel(
                 if (!ticker.awaitTick(CLIENT_PING_INTERVAL_MS)) return@launch
                 if (detached.get()) {
                     // A frame write detached the channel before this tick: the one log line for it.
-                    log("[$headKey] client gone (${who(session)}a frame write failed) — $DETACHED_NOTE\n")
+                    log("[$headKey] client gone (${who(session)}a frame write failed); $DETACHED_NOTE\n")
                     return@launch
                 }
                 val frames = socketFrames.get()
@@ -238,9 +238,9 @@ internal class ClientChannel(
         // "keepalive write failed: null" said nothing about who closed what (2026-09-02).
         val why = e::class.simpleName + (e.message?.let { ": $it" } ?: "")
         if (detachIfRecording()) {
-            log("[$headKey] client gone (${who(session)}keepalive write failed: $why) — $DETACHED_NOTE\n")
+            log("[$headKey] client gone (${who(session)}keepalive write failed: $why); $DETACHED_NOTE\n")
         } else {
-            log("[$headKey] client gone (${who(session)}keepalive write failed: $why) — cancelling turn\n")
+            log("[$headKey] client gone (${who(session)}keepalive write failed: $why); cancelling turn\n")
             turnJob.cancel()
         }
     }

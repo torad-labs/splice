@@ -88,11 +88,11 @@ public sealed class RefreshOutcome {
     ): Credentials? = when (this) {
         is Refreshed -> credentials
         NoCredentialsFile -> {
-            log("[$tag] refresh skipped: no credential file — not logged in")
+            log("[$tag] refresh skipped: no credential file, so not logged in")
             null
         }
         NoRefreshToken -> {
-            log("[$tag] refresh skipped: no refresh token on file — re-login required")
+            log("[$tag] refresh skipped: no refresh token on file; re-login required")
             null
         }
         is Rejected -> {
@@ -109,7 +109,7 @@ public sealed class RefreshOutcome {
         }
         is PersistFailed -> {
             log(
-                "[$tag] refresh rotated upstream but local persist failed: ${detail()} — " +
+                "[$tag] refresh rotated upstream but local persist failed: ${detail()}; " +
                     "old token may be dead, re-login if errors persist",
             )
             null

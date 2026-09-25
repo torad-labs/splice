@@ -355,7 +355,7 @@ public data class ProviderConfig(
         // the provenance, or the operator greps the TOML for a value that is not in it (DR-44a).
         require(selected.any { it.id == head.pinnedModel }) {
             "pinned model '${head.pinnedModel}' is not in the head model list " +
-                "[${selected.joinToString(", ") { it.id }}] — set by pinned_model in splice.toml " +
+                "[${selected.joinToString(", ") { it.id }}]; it was set by pinned_model in splice.toml " +
                 "unless the pinnedModel/grokModel knob (env, config.json, or PATCH) overrode it"
         }
         return selected

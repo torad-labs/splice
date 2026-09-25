@@ -62,7 +62,7 @@ internal class WsRoundStream(
         } else {
             if (poolable) {
                 log(
-                    "[ws] ${logKeys.logKey(key)} frames arrived after the round terminal — " +
+                    "[ws] ${logKeys.logKey(key)} frames arrived after the round terminal; " +
                         "killing rather than pooling\n",
                 )
             }

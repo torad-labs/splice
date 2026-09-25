@@ -32,7 +32,7 @@ internal class DaemonStop(private val output: TerminalOutput, errors: TerminalOu
         // slow (observed twice on 2026-08-11). statusOf does not gate on 2xx the way request() does.
         when (val status = ControlPlaneClient.statusOf("http://127.0.0.1:$port/api/daemon/shutdown", "POST", key)) {
             HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN -> output.line(
-                "splice: shutdown request REJECTED — the mgmt key on disk does not match the " +
+                "splice: shutdown request REJECTED: the mgmt key on disk does not match the " +
                     "running daemon's. Escalating to OS signals (scoped to the daemon on :$port).",
             )
             null -> Unit // transport drop on graceful teardown is expected; the poll decides
@@ -40,7 +40,7 @@ internal class DaemonStop(private val output: TerminalOutput, errors: TerminalOu
             // Everything else — 404 from a daemon predating the endpoint, 500, 503 — used to fall
             // into the same `else` as 202 and be read as a cooperative stop, so the CLI sat out the
             // whole graceful rung waiting on a request the daemon never honoured.
-            else -> output.line("splice: shutdown returned HTTP $status — not an accepted stop; escalating.")
+            else -> output.line("splice: shutdown returned HTTP $status, which is not an accepted stop; escalating.")
         }
 
         // Escalation ladder. Each rung advances only while a port is still bound (release is the
@@ -78,12 +78,12 @@ internal class DaemonStop(private val output: TerminalOutput, errors: TerminalOu
         val handle = owner.daemonOnPort(port)
         if (handle == null) {
             output.line(
-                "splice: could not identify the process holding :$port — cannot send $signal " +
+                "splice: could not identify the process holding :$port; cannot send $signal " +
                     "(is `ss` on PATH? was the daemon started from a non-standard jar?)",
             )
             return
         }
-        output.line("splice: daemon pid ${handle.pid()} on :$port $why — $signal")
+        output.line("splice: daemon pid ${handle.pid()} on :$port $why; sending $signal")
         if (!send(handle)) {
             output.line("splice: $signal to pid ${handle.pid()} was REFUSED (not permitted / already gone)")
         }

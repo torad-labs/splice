@@ -52,7 +52,7 @@ internal class WsConnectionFactory(
         }.getOrElse { e ->
             log(
                 "[ws] ${logKeys.logKey(key)} connect failed (${e::class.simpleName}: " +
-                    "${e.message?.take(ERR_SNIPPET)}) — SSE\n",
+                    "${e.message?.take(ERR_SNIPPET)}); the round rides SSE\n",
             )
             return null
         }
@@ -60,7 +60,7 @@ internal class WsConnectionFactory(
         holder.set(conn)
         if (anomalyObserved.get()) {
             conn.kill()
-            log("[ws] ${logKeys.logKey(key)} handshake protocol anomaly — SSE\n")
+            log("[ws] ${logKeys.logKey(key)} handshake protocol anomaly; the round rides SSE\n")
             return null
         }
         return conn

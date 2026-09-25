@@ -358,6 +358,14 @@ describe('the topology validator', () => {
     expect(validateTopology(EXAMPLE)).toEqual([]);
   });
 
+  test('accepts a rate card\'s long-context tier, the keys TomlRates reads (V4-240)', () => {
+    const tier = {
+      input: 5, cache_read: 0.5, output: 25, cache_write: 6.25, long_context_over_input_tokens: 200_000,
+      long_context_input: 10, long_context_cache_read: 1, long_context_output: 37.5, long_context_cache_write: 12.5,
+    };
+    expect(validateTopology({ heads: { claude: { rates: { 'claude-opus-5-5': tier } } } })).toEqual([]);
+  });
+
   test('rejects an unknown key and names its path', () => {
     expect(validateTopology({ daemon: { control_port: 3096, wibble: true } }))
       .toEqual([{ path: 'daemon.wibble', message: 'unknown key' }]);

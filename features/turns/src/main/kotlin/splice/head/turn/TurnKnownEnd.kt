@@ -55,7 +55,7 @@ internal class TurnKnownEnd(
             val classified = presenter.present(failure.type, failure.message)
             val boundedMessage = "[${classified.code}] ${classified.body.take(ERR_SNIPPET)}"
             val message = if (failure.type == ErrorType.AUTHENTICATION && provider.loginCommand.isNotEmpty()) {
-                "$boundedMessage — run: ${provider.loginCommand}"
+                "$boundedMessage; run: ${provider.loginCommand}"
             } else {
                 boundedMessage
             }

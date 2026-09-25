@@ -60,7 +60,7 @@ public class TraceCommand(
     private fun purge(head: String, traceDir: Path): Boolean {
         val gone = rows.days(traceDir, head).purge()
         if (gone.isEmpty()) {
-            output.line("splice trace: nothing to purge — no trace files for $head under $traceDir")
+            output.line("splice trace: nothing to purge; no trace files for $head under $traceDir")
         } else {
             output.line("splice trace: purged ${gone.size} day file(s) of $head:")
             gone.forEach { output.line("  $it") }
@@ -75,7 +75,7 @@ public class TraceCommand(
                 fail("cannot read ${configured.path}: ${SafeFailureText.render(configured.failure)}")
             is TraceHeads.Configured -> {
                 val names = configured.names.joinToString(", ")
-                head in configured.names || fail("no head named '$head' in ${configured.path} — heads: $names")
+                head in configured.names || fail("no head named '$head' in ${configured.path}; heads: $names")
             }
         }
 

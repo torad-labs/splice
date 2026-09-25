@@ -190,7 +190,7 @@ class HeadServerFailureBranchTest {
             val sse = turn(headPort, "basic")
             assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
             assertTrue(sse.contains("authentication_error"), sse)
-            assertTrue(sse.contains("codex: no upstream credentials — run: claudex login"), sse)
+            assertTrue(sse.contains("codex: no upstream credentials; run: claudex login"), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // The credential is resolved BEFORE the request is built, so nothing reached upstream.
             assertEquals(upstreamBefore, mock.upstreamBodies.size)
@@ -224,7 +224,7 @@ class HeadServerFailureBranchTest {
             // The config-parse case has its own cell below, on a REAL URLParserException.
             assertTrue(sse.contains("\"type\":\"overloaded_error\""), sse)
             assertFalse(sse.contains("\"type\":\"api_error\""), "the client-terminal type must not ride: $sse")
-            assertTrue(sse.contains("splice: internal gateway error — retry"), sse)
+            assertTrue(sse.contains("splice: internal gateway error; retry"), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             val scoped = logs.drop(before)
             assertTrue(
@@ -249,7 +249,7 @@ class HeadServerFailureBranchTest {
     // TurnEnding.kt and THIS cell goes red BY NAME while the generic-arm cell above stays green —
     // so the two cells pin the two halves of the narrowing, not one shared behaviour.
     //
-    // The words do not move either way: the message still says "— retry", which is addressed to the
+    // The words do not move either way: the message still says "; retry", which is addressed to the
     // OPERATOR (fix the config), not to the client.
     @Test
     fun `an unparseable base_url is permanent and keeps its api_error - V4-81`() = runBlocking {
@@ -266,7 +266,7 @@ class HeadServerFailureBranchTest {
                 sse.contains("\"type\":\"overloaded_error\""),
                 "a config failure a retry cannot change must not be sold as transient: $sse",
             )
-            assertTrue(sse.contains("splice: internal gateway error — retry"), sse)
+            assertTrue(sse.contains("splice: internal gateway error; retry"), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // Same accounting as every other surface: the real class is still what the journal
             // names, and the perf row still lands — permanence changed the WIRE TYPE only.

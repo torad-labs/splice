@@ -31,7 +31,7 @@ internal open class DaemonSpawn(
         while (health.controlPortBound(port) && polls-- > 0) Thread.sleep(POLL_INTERVAL_MS)
         if (health.controlPortBound(port)) {
             output.line(
-                "splice: control port $port is still bound (a daemon is still shutting down) — retry in a moment",
+                "splice: control port $port is still bound (a daemon is still shutting down); retry in a moment",
             )
             return null
         }
@@ -66,14 +66,14 @@ internal open class DaemonSpawn(
         Cancellables.runCatchingCancellable {
             Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES)
         }.onSuccess { tail ->
-            output.line("splice: daemon did not come up — last boot output ($bootLog):")
+            output.line("splice: daemon did not come up; last boot output ($bootLog):")
             tail.forEach(output::line)
         }.onFailure { failure ->
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(bootLog, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
                 output.line(
-                    "splice: daemon did not come up — boot log $bootLog is unreadable " +
+                    "splice: daemon did not come up; boot log $bootLog is unreadable " +
                         "(${SafeFailureText.render(failure)})",
                 )
             }

@@ -115,7 +115,7 @@ public class ShadowClassifier(
         // logged separately from the per-request noise above so it is actually loud, not buried.
         if (row.compact && !row.hasMarker) {
             log(
-                "[compact-drift] fallback-only match (has_marker=false, compact=true) — " +
+                "[compact-drift] fallback-only match (has_marker=false, compact=true): " +
                     "Claude Code's summarizer wording may have drifted from compactMarkers\n",
             )
         }

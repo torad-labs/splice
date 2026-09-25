@@ -17,10 +17,14 @@ import splice.core.model.TokenCost
 import splice.core.perf.PerfKeys
 import splice.usage.perf.HeadSessionPerfSource
 
-/** What the statusline's cost segment asks for: this session's spend, or null to render the
- *  client's own number exactly as before. */
+/** What the statusline's cost segment asks for: this session's spend, or null when splice has no
+ *  figure for it (StatuslineBars.costSegment decides what shows instead). */
 internal fun interface SessionCostSource {
     fun usdFor(sessionId: String?, modelId: String?): Double?
+
+    /** V4-240: whether [modelId] has a rate card on this head at all, so a head that cannot price it
+     *  says so in words rather than showing a figure Claude Code priced with Anthropic's card. */
+    fun rated(modelId: String?): Boolean = false
 }
 
 /** USD for ONE client session, from the tokens its turns already recorded against the rate card
@@ -40,16 +44,18 @@ internal class SessionCost(
 
     override fun usdFor(sessionId: String?, modelId: String?): Double? {
         val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
-        val id = modelId?.takeIf { it.isNotBlank() } ?: return null
-        return priced(session, id)
+        val rates = modelId?.let(::ratesFor) ?: return null
+        return turnsOf(session).takeIf { it.isNotEmpty() }?.sumOf { turn -> arithmetic.of(turn, rates) }
     }
 
-    private fun priced(session: String, id: String): Double? {
-        // Both lookups key on the CANONICAL id, so a suffixed picker row ("k3[1m]") resolves the
-        // same card its bare upstream id does — the same stripping the catalog does everywhere.
+    override fun rated(modelId: String?): Boolean = modelId?.let(::ratesFor) != null
+
+    // Both lookups key on the CANONICAL id, so a suffixed picker row ("k3[1m]") resolves the same
+    // card its bare upstream id does — the same stripping the catalog does everywhere.
+    private fun ratesFor(modelId: String): ModelRates? {
+        val id = modelId.takeIf { it.isNotBlank() } ?: return null
         val key = catalog?.stripSuffixes(id) ?: id
-        val rates = arithmetic.ratesFor(headRates, key, providerEntry(key)) ?: return null
-        return bucketsFor(session).takeIf { !it.isEmpty }?.let { arithmetic.of(it, rates) }
+        return arithmetic.ratesFor(headRates, key, providerEntry(key))
     }
 
     private fun providerEntry(key: String): ModelRates? {
@@ -57,54 +63,53 @@ internal class SessionCost(
         return c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates
     }
 
-    /** Sums the four billing buckets over this session's rows. Each perf row is ONE turn's own
+    /** This session's rows as billing buckets, one per turn. Each perf row is ONE turn's own
      *  contribution — in_tokens is that turn's final round, out_tokens its output across rounds — so
-     *  the session total is their sum, which is the same arithmetic the operator's 67-turn figure
-     *  was taken with. */
-    private fun bucketsFor(sessionId: String): TokenBuckets {
-        var input = 0L
-        var cacheRead = 0L
-        var cacheWrite = 0L
-        var output = 0L
-        for (row in tokens.tailNumericFor(sessionId)) {
-            // V4-37 redo: IN_TOKENS is INCLUSIVE of the cached portion, so the cache-miss bucket is
-            // the difference, never the raw field. Both dialects that write it agree, and by
-            // construction rather than by vendor luck: ChatUsage sets inputTokens from
-            // prompt_tokens, which the vendor defines as inclusive, and PassthroughUsage.kt:23 spells
-            // it out — inputTokens = inputTokens + cacheRead + cacheCreation. TurnUsageStamp.kt:48
-            // and :50 then write both counters straight from that same object with NO subtraction,
-            // so billing the raw field as a miss AND cached_tokens as a read charges the cached
-            // portion twice, once at the miss rate. On the deepseek session that measured 46.47
-            // dollars against a true 1.42.
-            //
-            // DO NOT BE MISLED BY ChatUsage's own comment that HeadServer disjoints them. That is
-            // true of the CLIENT usage envelope (TurnCacheLine.kt:21 writes
-            // input_tokens_details.cached_tokens), which is a DIFFERENT surface from this perf row.
-            // PassthroughStreamTranslator.kt:14 states the expectation directly — cachedTokens =
-            // cache_read, "making the downstream subtraction reproduce the disjoint numbers" — so
-            // this subtraction is the consumer doing what the producer documented.
-            //
-            // V4-85: the cache-WRITE tokens are the OTHER disjoint part of that same inclusive
-            // in_tokens, and they come out of the miss bucket for exactly the reason the read does.
-            // Before this they had no counter at all, so they stayed folded inside in_tokens and
-            // billed at the input rate — which is a real overcharge on an Anthropic-shaped wire
-            // (a write is 1.25x the input rate there, so the sign is not even consistent) and left
-            // a head's declared cache_write rate as arithmetic over a permanently-zero operand.
-            // ABSENT, not zero, on every row written before the counter existed: `?: 0L` then keeps
-            // that row priced exactly as it was, which is the NEVER-BELOW-STATUS-QUO law — a
-            // historical row cannot be retro-split into buckets it never recorded.
-            //
-            // coerceAtLeast(0) because a malformed or older row could carry a cached count above its
-            // input count, and a negative miss bucket would SUBTRACT from the bill rather than
-            // floor it.
-            val rawIn = row[PerfKeys.IN_TOKENS] ?: 0L
-            val cached = row[PerfKeys.CACHED_TOKENS] ?: 0L
-            val written = row[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L
-            input += (rawIn - cached - written).coerceAtLeast(0L)
-            cacheRead += cached
-            cacheWrite += written
-            output += row[PerfKeys.OUT_TOKENS] ?: 0L
-        }
-        return TokenBuckets(input = input, cacheRead = cacheRead, cacheWrite = cacheWrite, output = output)
+     *  the session total is the sum of their prices, which is the same arithmetic the operator's
+     *  67-turn figure was taken with. V4-240: priced turn by turn, never summed first, because a
+     *  long-context tier bills one REQUEST by its own size (TokenCost). An empty turn adds nothing. */
+    private fun turnsOf(sessionId: String): List<TokenBuckets> =
+        tokens.tailNumericFor(sessionId).map(::bucketsOf).filterNot { it.isEmpty }
+
+    private fun bucketsOf(row: Map<String, Long>): TokenBuckets {
+        // V4-37 redo: IN_TOKENS is INCLUSIVE of the cached portion, so the cache-miss bucket is
+        // the difference, never the raw field. Both dialects that write it agree, and by
+        // construction rather than by vendor luck: ChatUsage sets inputTokens from
+        // prompt_tokens, which the vendor defines as inclusive, and PassthroughUsage.kt:23 spells
+        // it out — inputTokens = inputTokens + cacheRead + cacheCreation. TurnUsageStamp.kt:48
+        // and :50 then write both counters straight from that same object with NO subtraction,
+        // so billing the raw field as a miss AND cached_tokens as a read charges the cached
+        // portion twice, once at the miss rate. On the deepseek session that measured 46.47
+        // dollars against a true 1.42.
+        //
+        // DO NOT BE MISLED BY ChatUsage's own comment that HeadServer disjoints them. That is
+        // true of the CLIENT usage envelope (TurnCacheLine.kt:21 writes
+        // input_tokens_details.cached_tokens), which is a DIFFERENT surface from this perf row.
+        // PassthroughStreamTranslator.kt:14 states the expectation directly — cachedTokens =
+        // cache_read, "making the downstream subtraction reproduce the disjoint numbers" — so
+        // this subtraction is the consumer doing what the producer documented.
+        //
+        // V4-85: the cache-WRITE tokens are the OTHER disjoint part of that same inclusive
+        // in_tokens, and they come out of the miss bucket for exactly the reason the read does.
+        // Before this they had no counter at all, so they stayed folded inside in_tokens and
+        // billed at the input rate — which is a real overcharge on an Anthropic-shaped wire
+        // (a write is 1.25x the input rate there, so the sign is not even consistent) and left
+        // a head's declared cache_write rate as arithmetic over a permanently-zero operand.
+        // ABSENT, not zero, on every row written before the counter existed: `?: 0L` then keeps
+        // that row priced exactly as it was, which is the NEVER-BELOW-STATUS-QUO law — a
+        // historical row cannot be retro-split into buckets it never recorded.
+        //
+        // coerceAtLeast(0) because a malformed or older row could carry a cached count above its
+        // input count, and a negative miss bucket would SUBTRACT from the bill rather than
+        // floor it.
+        val rawIn = row[PerfKeys.IN_TOKENS] ?: 0L
+        val cached = row[PerfKeys.CACHED_TOKENS] ?: 0L
+        val written = row[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L
+        return TokenBuckets(
+            input = (rawIn - cached - written).coerceAtLeast(0L),
+            cacheRead = cached,
+            cacheWrite = written,
+            output = row[PerfKeys.OUT_TOKENS] ?: 0L,
+        )
     }
 }

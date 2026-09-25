@@ -93,8 +93,8 @@ internal class SetupClaudeLane(
     /** The summary line, so the operator reads what Wrap takes over BEFORE confirming the install
      *  rather than after it has happened. */
     fun summaryLine(lane: ClaudeLane): String = when (lane) {
-        ClaudeLane.SEPARATE -> "Claude lane: separate — $SEPARATE_HINT"
-        ClaudeLane.WRAP -> "Claude lane: wrap — $WRAP_HINT"
+        ClaudeLane.SEPARATE -> "Claude lane: separate ($SEPARATE_HINT)"
+        ClaudeLane.WRAP -> "Claude lane: wrap ($WRAP_HINT)"
     }
 
     /** Run against what LANDED and after the daemon restarted, because wrap reads the live
@@ -115,7 +115,7 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
 
     override fun invoke(): String = when (val read = AdminSupport.readMgmtKey(env)) {
         is MgmtKeyRead.Present -> post(read.key)
-        MgmtKeyRead.Absent -> "not wrapping: no management key yet — $WRAP_LATER"
+        MgmtKeyRead.Absent -> "not wrapping: no management key yet; $WRAP_LATER"
         is MgmtKeyRead.Unreadable -> "not wrapping: the management key is unreadable (${read.reason})"
     }
 
@@ -140,11 +140,11 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
             ?.takeIf { it.status in ControlPlaneClient.OK_RANGE }
             ?.let { fieldOf(it.body, "mode") }
         return when (mode) {
-            "wrapped" -> "wrapped: claude now runs through splice — undo it from splice dashboard, Settings"
-            "separate" -> "not wrapping: the wrap did not take effect — $WRAP_LATER"
+            "wrapped" -> "wrapped: claude now runs through splice; undo it from splice dashboard, Settings"
+            "separate" -> "not wrapping: the wrap did not take effect; $WRAP_LATER"
             else ->
                 "could not confirm the wrap: the daemon stopped answering mid-request, so it may " +
-                    "have completed — check splice dashboard, Settings before running it again"
+                    "have completed; check splice dashboard, Settings before running it again"
         }
     }
 
@@ -153,7 +153,7 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
      *  has checked. */
     internal fun replyLine(reply: ControlReply): String = when (reply.status) {
         in ControlPlaneClient.OK_RANGE ->
-            "wrapped: claude now runs through splice — undo it from splice dashboard, Settings"
+            "wrapped: claude now runs through splice; undo it from splice dashboard, Settings"
         // The body is `{"error": "<reason>"}`; the reason is the whole content of a refusal, so it
         // is quoted rather than summarised.
         else -> "not wrapping: ${reasonOf(reply)}"

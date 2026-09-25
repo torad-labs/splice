@@ -83,7 +83,7 @@ internal class DaemonBoundary {
         var written = Cancellables
             .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
             .onFailure {
-                System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}) — starting at 0\n")
+                System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}); starting at 0\n")
             }
             .getOrDefault(0L)
         val sink = LogSink { msg ->
@@ -113,7 +113,7 @@ internal class DaemonBoundary {
                     written = Cancellables.runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
                         .getOrElse { 0L }
                     System.err.print(
-                        "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}) — " +
+                        "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}); " +
                             "size reconciled to $written\n",
                     )
                 }
@@ -131,7 +131,7 @@ internal class DaemonBoundary {
         Cancellables.runCatchingCancellable { SecureFile.ownerOnlyDirectory(logsDir) }.fold(
             onSuccess = { why -> why?.let { ownerOnlyRefusal(logsDir, it) } },
             onFailure = { failure ->
-                "[daemon-log] $logsDir could not be created (${SafeFailureText.render(failure)}) — " +
+                "[daemon-log] $logsDir could not be created (${SafeFailureText.render(failure)}): " +
                     "no daemon.log is kept; log lines reach stderr only"
             },
         )
@@ -144,7 +144,7 @@ internal class DaemonBoundary {
         statePaths.ownedDirs.mapNotNull { dir -> SecureFile.ownerOnlyDirectory(dir)?.let { ownerOnlyRefusal(dir, it) } }
 
     private fun ownerOnlyRefusal(dir: Path, why: String): String =
-        "[state] $dir could not be held owner-only ($why) — other local users can read what splice keeps there"
+        "[state] $dir could not be held owner-only ($why), so other local users can read what splice keeps there"
 
     /** JW-01: the last-resort boot net. Writes SYNCHRONOUSLY — the async file lane is a daemon
      *  thread that dies with the JVM, and this fires when the JVM is dying. No catch clause on the

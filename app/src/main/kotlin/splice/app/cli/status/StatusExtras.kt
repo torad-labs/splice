@@ -21,7 +21,7 @@ internal class StatusExtras(private val accountPools: AccountPoolRead) {
     fun printAccounts(port: Int, envReader: EnvReader) {
         when (val read = accountPools(port, envReader)) {
             is AccountPoolsRead.Unread -> println(
-                "  accounts  ${YELLOW}not readable$RESET — ${read.reason}" + read.fix?.let { " (fix: $it)" }.orEmpty(),
+                "  accounts  ${YELLOW}not readable$RESET: ${read.reason}" + read.fix?.let { " (fix: $it)" }.orEmpty(),
             )
             is AccountPoolsRead.Read -> {
                 if (read.pools.isNotEmpty()) println()
@@ -35,9 +35,9 @@ internal class StatusExtras(private val accountPools: AccountPoolRead) {
     /** DR-86: the status table is a reporter — a jar it cannot stat must say so, not render as
      *  installed (the doctor jarCheck twin). Internal for the permanent arm (codex redo). */
     fun jarLine(): String {
-        val jar = AdminSupport.selfJar() ?: return "not installed — run: splice install"
+        val jar = AdminSupport.selfJar() ?: return "not installed; run: splice install"
         val failure = AdminSupport.jarAccessFailure(jar)
             ?: return jar.toString()
-        return "$jar is unreadable (${SafeFailureText.render(failure)}) — fix access to it"
+        return "$jar is unreadable (${SafeFailureText.render(failure)}); fix access to it"
     }
 }

@@ -96,7 +96,7 @@ public class SessionOwnership(
         // A damaged index is a lost convenience, not a broken launch: say so once and start over at
         // the next record, which overwrites it.
         val root = parsed.getOrElse { cause ->
-            log("[sessions] $file is unreadable (${SafeFailureText.render(cause)}) — treated as empty\n")
+            log("[sessions] $file is unreadable (${SafeFailureText.render(cause)}); treated as empty\n")
             null
         }
         val sessions = root?.get(OWNED_FIELD_SESSIONS) as? JsonArray
@@ -137,7 +137,7 @@ public class SessionOwnership(
         }
         written.exceptionOrNull()?.let { cause ->
             val why = SafeFailureText.render(cause)
-            log("[sessions] $file could not be written ($why) — this session is not recorded\n")
+            log("[sessions] $file could not be written ($why), so this session is not recorded\n")
         }
     }
 

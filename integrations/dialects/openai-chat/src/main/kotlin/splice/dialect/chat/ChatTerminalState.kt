@@ -79,7 +79,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // CX-01: a terminated turn whose tool arguments are corrupt must not reach the client
             // as a Success — provider-reported (the backend produced the bytes), so it retries.
             toolCalls.toolArgsInvalid != null -> TurnOutcome.Failure(
-                "chat backend: ${toolCalls.toolArgsInvalid} in tool call — retry",
+                "chat backend: ${toolCalls.toolArgsInvalid} in tool call; retry",
                 providerReported = true,
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
@@ -104,7 +104,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // isNotBlank, not isNotEmpty: a buffer of only whitespace fragments must still read as
             // "no refusal" now that fragments are accepted verbatim (round-2 review).
             refusalBuf.isNotBlank() -> TurnOutcome.Failure(
-                "chat backend: model refused — $refusalBuf",
+                "chat backend: model refused. $refusalBuf",
                 providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
                 // V4-81, the responses dialect's sibling (found by sweeping rather than by being
                 // told): a refusal reproduces exactly, so advertising it as transient buys the same

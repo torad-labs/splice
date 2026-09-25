@@ -33,8 +33,8 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/keys', disposition: 'read-only' },
   { kind: 'route', name: '/api/keys/{name}', disposition: 'editable' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
-  { kind: 'verb', name: 'login', disposition: 'editable' },
-  { kind: 'verb', name: 'key', disposition: 'editable' },
+  { kind: 'verb', name: 'login', disposition: 'editable', action: 'Sign in an account', via: '/api/auth/{head}/login' },
+  { kind: 'verb', name: 'key', disposition: 'editable', action: 'Store or remove an API key', via: '/api/keys/{name}' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */

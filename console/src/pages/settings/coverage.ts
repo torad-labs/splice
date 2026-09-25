@@ -98,6 +98,9 @@ const EDITABLE_TOPOLOGY = [
   'map_thinking_adaptive', 'strip_sampling_params', 'reanchor_prefill', 'tool_name_cap',
   'defer_prefixes', 'min_deferred', 'search_limit', 'search_rounds',
   'config_dir', 'cache_read', 'cache_write',
+  // V4-240: a rate card's long-context tier, keys of the same rates table the forms write.
+  'long_context_over_input_tokens', 'long_context_input', 'long_context_cache_read',
+  'long_context_output', 'long_context_cache_write',
 ] as const;
 
 /**
@@ -148,7 +151,8 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'verb', name: 'dashboard', disposition: 'excluded', reason: 'opens this console' },
   { kind: 'verb', name: 'shim-version', disposition: 'excluded', reason: 'the client shim\'s build stamp for the installer\'s own check; doctor shows the versions an operator reads' },
   // splice-lead, 2026-09-25: install is Doctor's (its Fix runs install --all); uninstall stays CLI-only.
-  { kind: 'verb', name: 'uninstall', disposition: 'excluded', reason: 'removes the daemon this console runs inside, so no console action could finish it or report that it did' },
+  // Its reason, read from UninstallCommand.kt: it deletes wrapper symlinks, not the daemon.
+  { kind: 'verb', name: 'uninstall', disposition: 'excluded', reason: 'deletes wrapper commands from the operator\'s bin directory, splice itself with --all; destructive, CLI only' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */

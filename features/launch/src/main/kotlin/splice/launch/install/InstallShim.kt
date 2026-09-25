@@ -44,10 +44,10 @@ public class InstallShim(
                 val dangling = failure is java.nio.file.NoSuchFileException &&
                     Files.exists(shim, java.nio.file.LinkOption.NOFOLLOW_LINKS)
                 return if (dangling) {
-                    "splice: WARNING — launch shim at $shim is a dangling symlink; " +
+                    "splice: WARNING: launch shim at $shim is a dangling symlink; " +
                         "its target is gone. Re-run install.sh."
                 } else {
-                    "splice: WARNING — launch shim at $shim is UNREADABLE " +
+                    "splice: WARNING: launch shim at $shim is UNREADABLE " +
                         "(${SafeFailureText.render(failure)}); its version cannot be verified. Fix access to $shim."
                 }
             }
@@ -55,7 +55,7 @@ public class InstallShim(
         return if (installed == SHIM_VERSION) {
             null
         } else {
-            "splice: WARNING — installed launch shim at $shim is STALE " +
+            "splice: WARNING: installed launch shim at $shim is STALE " +
                 "(marker=${installed ?: "<missing>"}, expected=$SHIM_VERSION). " +
                 "Run ./install.sh from a checkout, or re-run the release installer, to refresh it."
         }

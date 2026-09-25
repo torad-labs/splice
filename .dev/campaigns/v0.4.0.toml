@@ -6535,3 +6535,11 @@ title = "A declared test that never runs fails the build by name. Found by claud
 files = ["build-logic/src/main/kotlin/splice.test-discovery.gradle.kts", "quality/rules/kotlin/", "quality/rules/rule-tests/"]
 status = "todo"
 verify = "red first: the per-method check names a non-void @Test that never ran and the old aggregate passes it; rule test red on the invalid case, green on runBlocking<Unit>; bun tools/gate run --only walls; CI gate"
+
+[[items]]
+id = "V4-224"
+phase = "release"
+title = "splice add reaches the latest frontier model of each family with no config edit: claude Opus 5.5, codex GPT-6 Sol, grok Grok 4.7, muse Muse Spark 1.3 (CPO 2026-09-25, from Marcos's rule 'we should use the latest model for everything we record': the counting take runs on the config 0.4.0's own splice add writes). TODAY: AddProfileCatalog.kt:49-51 gives codex gpt-5.6-sol, gpt-5.5, gpt-5.4-mini (no gpt-6-sol; code mode's DEFAULT has it, CodexCodeModeTurnBuilder.kt:193); :63-64 give grok 4.6 and 4.5 and Knob.kt:311 defaults GROK_MODEL to grok-4.6 (Marcos pinned grok-4.7 for himself 2026-09-22); :190-193 give claude opus as claude-opus-5 with no claude-opus-5-5; muse is right. THE CLASS: the shipped example (app/src/main/resources/splice.example.toml: gpt-6-astra :146, grok rows :206-214, claudex slots :521) and the catalog already disagree. FIX: the four rows, Grok 4.7 as claude-grok's pinned model and GROK_MODEL's default, every context window from the vendor's own docs with the doc named beside it, and one source for the example's model rows and splice add's catalog, or a test that fails by name when they disagree. If the morning check (splice models --all) finds a newer model, the row follows it."
+files = ["features/configuration/src/main/kotlin/splice/configuration/add/", "features/configuration/src/test/kotlin/splice/configuration/add/", "core/src/main/kotlin/splice/core/config/Knob.kt", "app/src/main/resources/splice.example.toml"]
+status = "todo"
+verify = "red first: the drift test fails today on the example against the catalog, naming the rows; green after; the gate; the docker e2e's splice add printing the four new rows"

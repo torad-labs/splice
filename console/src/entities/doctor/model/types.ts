@@ -20,6 +20,12 @@ export interface DoctorCheck {
    * no remedy to offer.
    */
   detail: string;
+  /**
+   * The fix the daemon can run itself for this check (V4-220 item 4, DoctorReportShape.kt:84):
+   * POST /api/doctor/fix/{fix_id} runs it and answers with doctor re-run. Null, or absent from a
+   * daemon older than the field, when the remedy is the operator's to make.
+   */
+  fix_id?: string | null;
 }
 
 export interface DoctorPayload {
@@ -101,6 +107,8 @@ export interface CheckRow {
   /** The id for one check; for several, the id up to the colon with the member count. */
   label: string;
   fix: string | null;
+  /** The fix the daemon runs itself (the first member's `fix_id`), null when the remedy is text. */
+  fixId: string | null;
   members: DoctorCheck[];
 }
 
@@ -124,7 +132,7 @@ export function collapseChecks(checks: readonly DoctorCheck[]): CheckRow[] {
     const family = colon === -1 ? check.id : check.id.slice(0, colon);
     const key = `${check.status}|${family}|${fix ?? ''}`;
     const row = rows.get(key);
-    if (row === undefined) rows.set(key, { key, family, status: check.status, label: check.id, fix, members: [check] });
+    if (row === undefined) rows.set(key, { key, family, status: check.status, label: check.id, fix, fixId: check.fix_id ?? null, members: [check] });
     else row.members.push(check);
   }
   return [...rows.values()].map(({ family, ...row }) => row.members.length === 1

@@ -17,6 +17,7 @@ import type { CheckRow, DoctorCheck, DoctorPayload, UpgradePayload } from '@enti
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
+import { DoctorFix } from '@features/doctor-fix';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Blank, Choice, Copy, Fault, Input, Key, KeyLink } from '@shared/controls';
@@ -85,15 +86,19 @@ function checkFacts(row: CheckRow): [string, ReactNode][] {
  *  opens that log here, since this console has the page for it. A fix the report's redaction
  *  reached runs nothing as pasted, so it is printed with why and no copy key. The why opens below
  *  its mark: a long command wraps the mark under it, and a tip above would cover the masked part. */
-export function FixLine({ fix }: { fix: string | null }) {
+export function FixLine({ fix, fixId = null }: { fix: string | null; fixId?: string | null }) {
   if (fix === null) return <Empty text={S.noFix} />;
   const logsHead = logsHeadOf(fix);
   return (
-    <p className="myx-dc-fix">
-      <code className="myx-dc-command">{fix}</code>
-      {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} side="bottom" /> : <Copy value={fix} label={S.copyFix} />}
-      {logsHead === null ? null : <KeyLink href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</KeyLink>}
-    </p>
+    <>
+      <p className="myx-dc-fix">
+        <code className="myx-dc-command">{fix}</code>
+        {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} side="bottom" /> : <Copy value={fix} label={S.copyFix} />}
+        {logsHead === null ? null : <KeyLink href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</KeyLink>}
+      </p>
+      {/* A fix the daemon runs itself (V4-220 item 4) runs from here too; the command stays to copy. */}
+      {fixId === null ? null : <DoctorFix id={fixId} />}
+    </>
   );
 }
 
@@ -301,7 +306,7 @@ export function DoctorBoard({ report, pending = null, error = null, lastRead = n
             closeLabel={S.close}
           >
             <KeyValue rows={checkFacts(opened)} />
-            <FixLine fix={opened.fix} />
+            <FixLine fix={opened.fix} fixId={opened.fixId} />
           </DetailPanel>
         )}
       </div>

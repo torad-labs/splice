@@ -437,6 +437,31 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   expect(faults.pageErrors, 'a page threw').toEqual([]);
 });
 
+test('a check the daemon fixes itself runs its fix from the detail, and the answer is doctor re-run', async ({ page }) => {
+  // V4-220 item 4: the stack's wrappers are not linked, so their rows carry fix_id install_all. The
+  // stack's daemon runs with its own HOME and user.home, so install --all works inside that home, and
+  // the home has no launch shim, so the fix refuses (InstallRefused) and the row stays: this is the
+  // refusal's path end to end. tests/doctor-fix.test.ts holds the applied one.
+  const faults = await open(page, 'doctor');
+  const rack = page.locator('main').getByRole('table', { name: 'Checks', exact: true });
+  const wrappers = rack.getByRole('row').filter({ hasText: 'splice install --all' });
+  await expect(wrappers.first()).toBeVisible({ timeout: 15_000 });
+  await wrappers.first().getByRole('button').click();
+  const detail = page.getByRole('complementary', { name: 'Check detail' });
+  await detail.getByRole('button', { name: 'Run fix', exact: true }).click();
+  const answered = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/doctor/fix/install_all');
+  await detail.getByRole('button', { name: 'Relink wrappers', exact: true }).click();
+  const answer = await answered;
+  const body = await answer.json() as { error: string; report: { checks: { detail: string }[] } };
+  expect(answer.status()).toBe(409);
+  expect(body.error).toContain('launch shim not found');
+  expect(body.report.checks.length, 'the refusal carries doctor re-run').toBeGreaterThan(0);
+  await expect(detail.getByRole('alert')).toContainText(body.error);
+  await expect(wrappers.first()).toBeVisible();
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
 test('Doctor\'s figures read whole beside an open check', async ({ page }) => {
   // The open panel narrows the four tiles: at 1600 the Claude Code tile cut its version to "2.1.2…"
   // (Marlin, 2026-09-25).

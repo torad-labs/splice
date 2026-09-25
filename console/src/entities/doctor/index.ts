@@ -1,6 +1,7 @@
 import { doctorStore, upgradeStore } from './model/store';
 
-export { fetchDoctor, fetchUpgrade, startDoctorPolling, PENDING_DOCTOR } from './api';
+export { fetchDoctor, fetchUpgrade, runDoctorFix, startDoctorPolling, PENDING_DOCTOR } from './api';
+export type { DoctorFixAnswer } from './api';
 export { isRedacted, leaksIn, leaksInText } from './model/redact';
 export type { Leak, LeakKind } from './model/redact';
 export { checkFinding, checkFix, checkSection, collapseChecks, fixMasked, wantsAttention } from './model/types';

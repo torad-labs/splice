@@ -6601,3 +6601,19 @@ title = "muse-spark-1.3[1m]'s window has a measured source before the film take 
 files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "app/src/main/resources/splice.example.toml"]
 status = "todo"
 verify = "the measured ceiling with its receipt (the request's token count, the backend's answer, the time); the muse row declares min(measured, 1M) with the measurement named beside it; CI gate on the train sha."
+
+[[items]]
+id = "V4-230"
+phase = "release"
+title = "The doctor the daemon runs for /api/doctor reads its own daemon in process, never over a 400 ms HTTP self-probe (console finding A, 2026-09-25): during a page load's burst of requests, DoctorCommand.collect's /health probe (DaemonProbe.kt:170, PROBE_TIMEOUT_MS = 400) and the pools read that follows it miss their window, so 3 of 6 fresh page loads reported accounts as skipped (daemon not running), and one render put a false WARN (the daemon's /api/auth could not be read) on Needs you on a clean install. #287 rewords the WARN but does not stop the race. In the daemon, doctor takes the daemon's own health view and pool projection through DoctorWiring; the HTTP probe stays for the CLI. Console seat."
+files = ["features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/", "app/src/main/kotlin/splice/app/DoctorWiring.kt", "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonProbe.kt"]
+status = "todo"
+verify = "red first: a test that holds the daemon's /health past the probe window reads the daemon as not running through /api/doctor today, and running after; the CLI path keeps its probe; CI gate on the train sha."
+
+[[items]]
+id = "V4-231"
+phase = "release"
+title = "install.sh installs the wrappers where it then checks for them, under any HOME (console finding B, 2026-09-25): install.sh:343-344 runs java -jar splice.jar install --all without its BIN_DIR and SHARE_DIR (install.sh:14-15, from SPLICE_BIN_DIR / SPLICE_SHARE_DIR or HOME), so with a HOME that is not the passwd home the jar links the wrappers into the passwd home's ~/.local/bin and install.sh fails its own check at :353 and rolls back. Seen once on the console's demo install (14:16:40): four real wrappers were re-linked to the targets they already had, nothing to undo. Console seat."
+files = ["install.sh"]
+status = "todo"
+verify = "red first: install.sh under a scratch HOME that is not the passwd home fails today and installs into that HOME after, with nothing written under the passwd home; CI gate on the train sha."

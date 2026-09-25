@@ -71,6 +71,13 @@ async function open(page: Page, name: string): Promise<Faults> {
   return faults;
 }
 
+// A route handler still reading a poll's response when its test ends fails that test with "Response
+// has been disposed" once the context closes (CI run 36188793251, the masked-fix test). Every
+// rewrite a test installs stops with the test.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 test('the page set comes from the source', () => {
   expect(PAGES, `no page directories under ${PAGES_DIR}`).toContain('fleet');
 });

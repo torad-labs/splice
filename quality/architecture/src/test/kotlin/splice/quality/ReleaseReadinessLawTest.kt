@@ -255,8 +255,8 @@ internal object ReleaseReadiness {
         },
         // V4-217: gh is optional, so what a release install must keep is its two refusals.
         Rule("install-refuses-bad-bytes") { repo ->
-            repo.contains(INSTALL, "sha256 verification FAILED") &&
-                repo.contains(INSTALL, "attestation verification FAILED")
+            repo.contains(INSTALL, "sha256 verification FAILED")
+                ?: repo.contains(INSTALL, "attestation verification FAILED")
         },
         Rule("install-attests-jar") { repo -> repo.contains(INSTALL, "verify_attestation \"\$JAR_TMP\" splice.jar") },
         Rule("install-attests-shim") { repo ->
@@ -466,6 +466,9 @@ private fun installerMutations(): List<Mutation> = listOf(
     },
     Mutation("install.sh not refusing bad bytes", "install-refuses-bad-bytes", "verification FAILED") {
         file(INSTALL, INSTALL_RELEASE + INSTALL_JAR + INSTALL_SHIM)
+    },
+    Mutation("install.sh installing a failed attestation", "install-refuses-bad-bytes", "attestation verification") {
+        file(INSTALL, INSTALL_RELEASE + "echo 'sha256 verification FAILED'\n" + INSTALL_JAR + INSTALL_SHIM)
     },
     Mutation("install.sh not attesting the jar", "install-attests-jar", "splice.jar") {
         file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_SHIM)

@@ -22,6 +22,8 @@ export const S = {
     spent: 'Spent',
     excluded: 'Excluded',
     unknown: 'Unknown',
+    /** The login's credential file is gone: the pool cannot take it, whatever its last window read. */
+    signedOut: 'Signed out',
   },
   /** Why the daemon takes an account next, in the order its selector walks (AccountPool.kt:163). */
   ruleName: {

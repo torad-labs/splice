@@ -30,10 +30,10 @@ export function accountKey(account: AccountRow): string {
   return `${account.kind}:${account.label ?? account.credential_path ?? account.heads.join(',')}`;
 }
 
-/** A row's tint: danger when spent, warn when near its limit; the state cell says which. */
+/** A row's tint: danger when spent or signed out, warn when near its limit; the state cell says which. */
 export function accountTone(account: AccountRow, nowMs: number): Tone | null {
   const state = stateOf(account, nowMs);
-  return state === 'spent' ? 'danger' : state === 'warn' ? 'warn' : null;
+  return state === 'spent' || state === 'signedOut' ? 'danger' : state === 'warn' ? 'warn' : null;
 }
 
 export function AccountStateBadge({ account, nowMs, quiet = false }: { account: AccountRow; nowMs: number; quiet?: boolean }) {

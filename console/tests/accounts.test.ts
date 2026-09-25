@@ -29,7 +29,7 @@ import type { AccountRow, AccountWindow } from '../src/entities/account';
 import { LOGIN_PENDING_EMPTY, IDLE, canStart, next, stepMessage } from '../src/features/account-login/model';
 import { H as LOGIN } from '../src/features/account-login/strings';
 import {
-  ACCOUNT_FIELDS, ACCOUNT_WORDS as W, AccountFacts, accountColumns, accountKey, countdown, stateOf, TONE, usedTone,
+  ACCOUNT_FIELDS, ACCOUNT_WORDS as W, AccountFacts, AccountStateBadge, accountColumns, accountKey, accountTone, countdown, stateOf, TONE, usedTone,
   windowFigure, windowName,
 } from '../src/widgets/account-table';
 import { refusalOf } from '../src/features/account-login';
@@ -531,6 +531,16 @@ describe('an account\'s state', () => {
     expect(stateOf(account({ windows: [window5h(null)] }), NOW)).toBe('unknown');
     expect(stateOf(account({ windows: [] }), NOW)).toBe('unknown');
     expect([usedTone(100), usedTone(COCK_AT_PERCENT), usedTone(10)]).toEqual(['danger', 'warn', 'ok']);
+  });
+
+  test('a login with no credential is signed out whatever its window, its exclusion or its figure read', () => {
+    const gone = { credential_present: false };
+    expect(stateOf(account({ ...gone, windows: [window5h(10)] }), NOW)).toBe('signedOut');
+    expect(stateOf(account({ ...gone, windows: [window5h(100)] }), NOW)).toBe('signedOut');
+    expect(stateOf(account({ ...gone, available: false, windows: [window5h(10)] }), NOW)).toBe('signedOut');
+    expect(stateOf(account({ ...gone, windows: [] }), NOW)).toBe('signedOut');
+    expect(accountTone(account({ ...gone, windows: [window5h(10)] }), NOW)).toBe('danger');
+    expect(render(h(AccountStateBadge, { account: account({ ...gone, windows: [window5h(10)] }), nowMs: NOW }))).toContain('>Signed out<');
   });
 
   test('an excluded account is excluded even with a nearly spent window, and unknown is never green', () => {

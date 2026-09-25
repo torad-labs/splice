@@ -4,6 +4,7 @@
 // and they are pure data, so they are what moves; AddProfiles keeps the lookup and the TOML render.
 package splice.configuration.add
 
+import splice.core.model.LongContextRates
 import splice.core.model.ModelRates
 
 private const val WINDOW_200K = 200_000L
@@ -59,8 +60,32 @@ internal class AddProfileCatalog {
             // models) name gpt-6-sol the model to choose, so it is pinned. The API's 1,050,000 for the same id
             // (developers.openai.com/api/docs/models/gpt-6-sol) is the platform's window, not this backend's.
             // GPT-6 has no Terra, so gpt-5.6-terra is the row a slotted head gives its sonnet tier.
+            //
+            // V4-240 RATES: gpt-6-sol's API card, developers.openai.com/api/docs/models/gpt-6-sol (read
+            // 2026-09-25): input $2.00, cached input $0.20, cache writes $2.50, output $10.00 per 1M tokens,
+            // and "Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x
+            // output for the full request". This backend's 272000 window keeps a turn at or under that
+            // line today; the card carries the tier so a wider window prices right. A ChatGPT
+            // subscription bills none of this per token: the figure is what the turns would cost at the API.
             models = listOf(
-                AddModel("gpt-6-sol", "GPT-6 Sol", WINDOW_272K),
+                AddModel(
+                    "gpt-6-sol",
+                    "GPT-6 Sol",
+                    WINDOW_272K,
+                    rates = ModelRates(
+                        input = 2.0,
+                        cacheRead = 0.2,
+                        output = 10.0,
+                        cacheWrite = 2.5,
+                        longContext = LongContextRates(
+                            overInputTokens = 272_000,
+                            input = 4.0,
+                            cacheRead = 0.4,
+                            output = 15.0,
+                            cacheWrite = 5.0,
+                        ),
+                    ),
+                ),
                 AddModel("gpt-6-astra", "GPT-6 Astra", WINDOW_872K),
                 AddModel("gpt-5.6-terra", "GPT-5.6 Terra", WINDOW_272K),
                 AddModel("gpt-6-luna", "GPT-6 Luna", WINDOW_272K),
@@ -77,8 +102,29 @@ internal class AddProfileCatalog {
             // V4-224: windows from docs.x.ai/developers/models (maxPromptLength, read 2026-09-25). The build
             // row is the concrete grok-build-0.1: the endpoint's own listing resolves grok-build-latest to
             // grok-4.5 now, so an alias row would have its window move underneath it.
+            //
+            // V4-240 RATES: grok-4.7's API card, docs.x.ai/developers/models/grok-4.7 (read 2026-09-25):
+            // under 200k prompt tokens input $2.00, cached input $0.50, output $6.00 per 1M tokens; at 200k
+            // or more $4.00, $1.00 and $12.00, and "Requests whose prompt reaches 200k tokens are billed at
+            // the higher rate for all tokens in the request", so the tier starts over 199,999. xAI lists
+            // no cache-write price, so those tokens bill at input.
             models = listOf(
-                AddModel("grok-4.7", "Grok 4.7", WINDOW_500K),
+                AddModel(
+                    "grok-4.7",
+                    "Grok 4.7",
+                    WINDOW_500K,
+                    rates = ModelRates(
+                        input = 2.0,
+                        cacheRead = 0.5,
+                        output = 6.0,
+                        longContext = LongContextRates(
+                            overInputTokens = 199_999,
+                            input = 4.0,
+                            cacheRead = 1.0,
+                            output = 12.0,
+                        ),
+                    ),
+                ),
                 AddModel("grok-4.6", "Grok 4.6", WINDOW_500K),
                 AddModel("grok-build-0.1", "Grok Build 0.1", WINDOW_256K),
             ),
@@ -111,8 +157,17 @@ internal class AddProfileCatalog {
             // 1,000,000 declared here, so the row stays at the window Claude Code's `[1m]` implies. The
             // cold prompt met three upstream 504s ("the response stream did not start before the server
             // timeout") before the fourth attempt rode the cached prefix. 1.2's row is not measured.
+            //
+            // V4-240 RATES: muse-spark-1.3's Standard tier, dev.meta.ai/docs/pricing-rate-limits (read
+            // 2026-09-25): input $1.25, cached input $0.15, output $4.25 per 1M tokens, and "There is no
+            // long-context premium". Meta lists no cache-write price, so those tokens bill at input.
             models = listOf(
-                AddModel("muse-spark-1.3[1m]", "Muse Spark 1.3", WINDOW_1M),
+                AddModel(
+                    "muse-spark-1.3[1m]",
+                    "Muse Spark 1.3",
+                    WINDOW_1M,
+                    rates = ModelRates(input = 1.25, cacheRead = 0.15, output = 4.25),
+                ),
                 AddModel("muse-spark-1.2[1m]", "Muse Spark 1.2", WINDOW_1M),
             ),
         ),
@@ -215,9 +270,22 @@ internal class AddProfileCatalog {
             // Sonnet 5 have a 1M context window, Haiku 4.5 200K. A forwarded subscription login reaches 1M too:
             // "On the Anthropic API, Fable 5.1, Fable 5, Sonnet 5, and Opus 4.7 and later run with the 1M
             // window on every plan, including Pro" (code.claude.com/docs/en/model-config).
+            //
+            // V4-240 RATES: Opus 5.5's API card, platform.claude.com/docs/en/about-claude/pricing (read
+            // 2026-09-25): input $4, cache hits $0.20, output $20 per 1M tokens, 5-minute cache writes $5
+            // and 1-hour writes $8, and Claude 4.6 and later carry "the full 1M token context window at
+            // standard pricing", so no tier. Writes are declared at the 1-hour rate: Claude Code asks for
+            // the 1-hour cache on a subscriber's login (2.1.283's bundle: ttl "1h", reason "subscriber"),
+            // and this profile forwards that login.
             models = listOf(
                 AddModel("claude-fable-5-1", "Claude Fable 5.1", WINDOW_1M, listOf("fable")),
-                AddModel("claude-opus-5-5", "Claude Opus 5.5", WINDOW_1M, listOf("opus")),
+                AddModel(
+                    "claude-opus-5-5",
+                    "Claude Opus 5.5",
+                    WINDOW_1M,
+                    listOf("opus"),
+                    rates = ModelRates(input = 4.0, cacheRead = 0.2, output = 20.0, cacheWrite = 8.0),
+                ),
                 AddModel("claude-sonnet-5", "Claude Sonnet 5", WINDOW_1M, listOf("sonnet")),
                 AddModel("claude-haiku-4-5", "Claude Haiku 4.5", WINDOW_200K, listOf("haiku")),
             ),

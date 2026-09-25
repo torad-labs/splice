@@ -34,7 +34,14 @@ internal data class AddModel(
      *  provider with more than one model. Inline is the only form that survives. */
     internal fun ratesLine(): List<String> = rates?.let { r ->
         val write = r.cacheWrite?.let { w -> ", cache_write = $w" }.orEmpty()
-        listOf("rates = { input = ${r.input}, cache_read = ${r.cacheRead}, output = ${r.output}$write }")
+        // V4-240: the long-context tier rides FLAT on the same inline card, `long_context_` keys, for
+        // the reason above and because ktoml cannot read a table nested in it (ModelRatesToml).
+        val tier = r.longContext?.let { t ->
+            val tierWrite = t.cacheWrite?.let { w -> ", long_context_cache_write = $w" }.orEmpty()
+            ", long_context_over_input_tokens = ${t.overInputTokens}, long_context_input = ${t.input}, " +
+                "long_context_cache_read = ${t.cacheRead}, long_context_output = ${t.output}$tierWrite"
+        }.orEmpty()
+        listOf("rates = { input = ${r.input}, cache_read = ${r.cacheRead}, output = ${r.output}$write$tier }")
     } ?: emptyList()
 }
 

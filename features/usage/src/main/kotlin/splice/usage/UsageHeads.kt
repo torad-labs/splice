@@ -32,6 +32,9 @@ public data class UsageHead(
     val clientWindows: ClientWindows? = null,
     /** Head-local OAuth account selections and quotas, projected without credential material. */
     val accountPool: HeadAccountPoolSource? = null,
+    /** V4-240: the head forwards the client's own Anthropic login (auth kind `client`), so its
+     *  upstream is Anthropic and the figure Claude Code prices at Anthropic's card is this head's. */
+    val anthropicUpstream: Boolean = false,
 )
 
 /** Every configured head, in topology order, read at CALL time. */

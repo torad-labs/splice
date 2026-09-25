@@ -150,7 +150,7 @@ export function timeRule(messages: readonly TeamMessage[], now: string): { label
 export function focusMember(board: TeamPayload): TeamMemberRow | null {
   const newest = [...board.messages].sort((a, b) => secondsOf(b.time) - secondsOf(a.time))[0];
   const target = newest === undefined ? undefined : board.members.find((m) => m.name === newest.to);
-  return target ?? board.members.find((m) => m.role === 'lead') ?? board.members[0] ?? null;
+  return target ?? board.members.find((m) => m.lead) ?? board.members[0] ?? null;
 }
 
 /** The newest hand-off a member RECEIVED, as its HH:MM, or null when none reached it. */

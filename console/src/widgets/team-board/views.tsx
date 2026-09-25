@@ -59,7 +59,7 @@ function WrapStrip({ edge, ariaLabel, className, children }: {
 /** The session strip of the by-role board: the six fields comp-b prints on one line, wrapped. */
 function SessionStrip({ member }: { member: TeamMemberRow }) {
   return (
-    <WrapStrip edge={member.role === 'lead' ? 'green' : 'grey'} ariaLabel={`${member.name} session`}>
+    <WrapStrip edge={member.lead ? 'green' : 'grey'} ariaLabel={`${member.name} session`}>
       <StripField w={0} fixed label={S.session} value={member.name} mono={false} />
       <StripField w={0} fixed label={S.head} value={member.head} mono={false} />
       <StripField w={0} fixed label={S.model} value={member.model ?? ABSENT} mono={false} />
@@ -85,7 +85,7 @@ function MemberCard({ board, member }: { board: TeamPayload; member: TeamMemberR
   ];
   return (
     <div className="myx-board-card" aria-label={member.name}>
-      <HolderEdge state={member.role === 'lead' ? 'green' : 'grey'} label="" />
+      <HolderEdge state={member.lead ? 'green' : 'grey'} label="" />
       <dl className="myx-board-card-rows">
         {rows.map(([label, value]) => (
           <div className="myx-board-card-row" key={label}>

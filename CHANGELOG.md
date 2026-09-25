@@ -21,6 +21,9 @@
   the default `claude` command); per-head system prompts, including a `strip` mode; custom
   compaction instructions; shared MCP hosting.
 - **Code mode is out of beta** and on by default for ChatGPT.
+- **Teams.** Sessions on different heads, say Claude and GPT-6 Astra, work one goal: each gets
+  its role and the lead's address in its prompt, and the console's board shows their hand-offs,
+  activity and cost per role.
 
 ### Upgrading from 0.3.x
 0.3.x has no `splice upgrade`. Re-run the installer pinned to this release:
@@ -105,8 +108,8 @@ origin.
 - **`splice setup` can hand an NVIDIA card to rig.** On Linux x86_64 with a card nvidia-smi can
   name, an interactive setup asks (default no) whether to run a local model through
   [rig](https://github.com/torad-labs/rig): rig installs into `~/.local/share/rig`, downloads
-  bonsai-2-27b (about 8 GB; about 18 GB of disk in all), builds the engine for the card and serves
-  it on 127.0.0.1. Setup then adds a `bonsai` head (`claude-bonsai`) through `splice add`'s own
+  bonsai-2-27b and an engine for the card (about 9 GB; about 18 GB of disk in all) and serves it
+  on 127.0.0.1. Setup then adds a `bonsai` head (`claude-bonsai`) through `splice add`'s own
   checks, atomic save and restart, from what `rig describe` reports: its base URL, its advertised
   window, and its server facts as quirks (`reasoning_effort` off where the server rejects it,
   `slot_affinity` where it pins slots).
@@ -185,6 +188,19 @@ origin.
   `claude-splice`'s config dir at session launch only — no mid-session switch, one login per head at
   a time; splice never reads the bytes or calls Anthropic with them. `splice doctor` reports the
   mode.
+- **Teams: sessions on different heads work one goal from one board (V4-131).** The console's
+  Teams page composes a team: a name, a repo, a goal and role slots, each with a role, a head, an
+  optional lead flag, its own instructions and a bound session or an open seat. From its next
+  turn, every bound session's system prompt carries its team, its role, the team goal, the slot's
+  instructions and where to reach the lead. The text is appended after the head's own prompt, even
+  on a `replace` head, and an edit applies on the next turn with no restart; that turn cannot hit
+  the prompt cache, and its perf row says so. The board shows each member by head (model, window,
+  last turn, turns, tokens, estimated cost), the team chat (the `SendMessage` hand-offs between
+  members that passed through splice, each message's text read from the sender's own transcript),
+  the members' activity sampled every 30 seconds, and lifetime turns, tokens and dollars per role
+  and slot (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
+  are archived, never deleted. A plain `claude` session can hold a slot, but its own messages
+  don't pass through splice, so the chat shows only what it receives.
 - **The console can sign accounts in, switch, remove and relabel them, from one joined view
   (V4-132).** `POST /api/auth/{head}/login` starts a device or browser login off the request that
   asked for it and answers immediately with a login id; `GET /api/auth/{head}/login/{id}` polls it
@@ -610,6 +626,16 @@ origin.
   copies, so a live session keeps appending) and linked, so the `-r` picker on every head lists
   every session again. A head that isolates `projects` keeps a private tree and reaches a foreign
   session by name, as before.
+- **A session resumed from another head no longer fails every turn on its old thinking.**
+  Resuming on `claude-splice` a session written on `claude-kimi` moved its rows onto Fable and kept
+  their thinking blocks, which carry splice's stand-in signature (Kimi signs nothing). Claude Code
+  sent them back, Anthropic answered every turn with `Invalid signature in thinking block`, and each
+  retry sent the same history. Claude Code strips thinking and retries on that error only when it
+  arrives as an HTTP 400, and a head's stream has already answered 200 by then. The rows that move
+  to another head's model now leave their `thinking` and `redacted_thinking` blocks behind, in the
+  session and in its subagent transcripts. A row that held only thinking keeps its place with the
+  same `[Thinking removed]` text Claude Code writes when it strips a message bare itself. Rows on a
+  model the head serves are untouched.
 - **A resumed session follows the resuming head's model (V4-169).** A transcript carries the model
   id of the head that wrote it, and Claude Code refuses to restore a model the head does not serve
   ("Session model X could not be restored"). Splice now moves the transcript's assistant rows that

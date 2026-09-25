@@ -17,8 +17,9 @@
 // board.
 //
 // A perf line is drawn, not printed (perf-line.tsx): the turn's waterfall, its cache hit and its
-// tokens, on one scale shared by every perf line in the tail, with the daemon's own line one click
-// away. The rows are measured, so an opened line simply grows its row.
+// tokens, on one scale shared by every perf line in the tail. The turn's `turn` and `cache:` lines
+// print only numbers that row draws, so they fold into it (rowsOf), and the daemon's lines sit one
+// click away. The rows are measured, so an opened line simply grows its row.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { dateOf, headOf, levelOf, timeOf } from '@entities/logs';
@@ -133,11 +134,68 @@ export function perfOfLine(line: string): PerfLine | null {
   return perfOf(message, partsOf(message));
 }
 
+/** One row of the tail: a line, and the lines of its turn folded under it. */
+export interface TailRow {
+  line: string;
+  /** The turn's own `turn` and `cache:` lines, oldest first; empty on every row but a perf row. */
+  folded: readonly string[];
+}
+
+/** How far back a perf line looks for its turn's lines. On the live log (7,594 perf lines,
+ *  2026-09-25) the farthest sat 5 lines back, behind lines of turns running beside it. */
+const FOLD_REACH = 12;
+
+/** Which of its turn's lines `line` is for `perf`, or null. A success `turn` line and a `cache:`
+ *  line print only numbers the perf row draws, so they fold under it. They match on those numbers,
+ *  never on position or second: turns running at once interleave, and 30 in 7,594 crossed a second.
+ *  A failed or abandoned turn's line carries words the row does not, so it stays a line. */
+function foldOf(line: string, head: string | null, perf: PerfLine): 'turn' | 'cache' | null {
+  if (!line.includes('] turn compact=') && !line.includes('] cache: ')) return null;
+  if (headOf(line) !== head) return null;
+  const message = messageOf(line);
+  const fields = new Map<string, string>();
+  for (const part of partsOf(message)) if (part.key !== undefined && !fields.has(part.key)) fields.set(part.key, part.text);
+  const same = (key: string, value: number | null) => value !== null && fields.get(key) === String(value);
+  if (fields.get('model') !== (perf.model ?? undefined)) return null;
+  if (message.startsWith('cache: ')) {
+    return same('input', perf.inTokens) && same('cached', perf.cachedTokens) && same('output', perf.outTokens) ? 'cache' : null;
+  }
+  const ok = message.startsWith('turn compact=') && / ok out=\d+ /.test(message);
+  return ok && fields.get('compact') === String(perf.compact) && same('out', perf.outTokens) ? 'turn' : null;
+}
+
+/** The tail as rows: each perf line takes its turn's `turn` and `cache:` lines under it, so a turn
+ *  prints its numbers once, drawn, with the daemon's lines one click away. Every other line is a
+ *  row of its own, and no line is dropped: a folded line is in its perf row's `folded`. */
+export function rowsOf(lines: readonly string[]): TailRow[] {
+  const taken = new Set<number>();
+  const under = new Map<number, number[]>();
+  lines.forEach((line, at) => {
+    const perf = perfOfLine(line);
+    if (perf === null) return;
+    const head = headOf(line);
+    const found = new Set<'turn' | 'cache'>();
+    const own: number[] = [];
+    for (let back = at - 1; back >= Math.max(0, at - FOLD_REACH) && found.size < 2; back -= 1) {
+      if (taken.has(back)) continue;
+      const fold = foldOf(lines[back], head, perf);
+      if (fold === null || found.has(fold)) continue;
+      found.add(fold);
+      taken.add(back);
+      own.unshift(back);
+    }
+    if (own.length > 0) under.set(at, own);
+  });
+  return lines.flatMap((line, at) => (taken.has(at) ? [] : [{ line, folded: (under.get(at) ?? []).map((back) => lines[back]) }]));
+}
+
 /** One log line. Exported because a virtualized list renders nothing without a viewport, so this
  *  is the part a test can hold. A perf line draws its turn against `scale` (its own when the caller
- *  has none) and shows the daemon's line under it while `open`. */
-export function LogLine({ line, tagged = true, scale, open = false, onToggle }: {
+ *  has none) and shows the daemon's lines under it while `open`: the `folded` lines of its turn,
+ *  then its own. */
+export function LogLine({ line, folded = [], tagged = true, scale, open = false, onToggle }: {
   line: string;
+  folded?: readonly string[];
   tagged?: boolean;
   scale?: PerfScale;
   open?: boolean;
@@ -159,7 +217,15 @@ export function LogLine({ line, tagged = true, scale, open = false, onToggle }: 
           <Message parts={parts} />
         </span>
       ) : (
-        <PerfCells perf={perf} scale={scale ?? scaleOf([perf])} open={open} onToggle={onToggle} raw={<Message parts={parts} />} />
+        <PerfCells
+          perf={perf}
+          scale={scale ?? scaleOf([perf])}
+          open={open}
+          onToggle={onToggle}
+          raw={[...folded, line].map((raw, at) => (
+            <span key={at} className="myx-lt-raw-line"><Message parts={partsOf(messageOf(raw))} /></span>
+          ))}
+        />
       )}
     </div>
   );
@@ -193,6 +259,7 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
     () => scaleOf(filtered.flatMap((line) => perfOfLine(line) ?? [])),
     [filtered],
   );
+  const rows = useMemo(() => rowsOf(filtered), [filtered]);
   const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = (line: string) => setOpened((previous) => {
     const next = new Set(previous);
@@ -201,19 +268,19 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
   });
 
   const virtualizer = useVirtualizer({
-    count: filtered.length,
+    count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_H,
-    getItemKey: (index) => `${index}:${filtered[index].slice(0, 40)}`,
+    getItemKey: (index) => `${index}:${rows[index].line.slice(0, 40)}`,
     overscan: 8,
   });
 
   // Follow mode: keep the last line in view when new ones land. Off, the reader keeps their place
   // and the header prints how many lines arrived while they were not looking.
   useEffect(() => {
-    if (!follow || filtered.length === 0) return;
-    virtualizer.scrollToIndex(filtered.length - 1, { align: 'end' });
-  }, [follow, filtered.length, virtualizer, reset]);
+    if (!follow || rows.length === 0) return;
+    virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
+  }, [follow, rows.length, virtualizer, reset]);
 
   if (error !== null) return <Fault message={error} />;
 
@@ -251,11 +318,12 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
                 style={{ top: item.start }}
               >
                 <LogLine
-                  line={filtered[item.index]}
+                  line={rows[item.index].line}
+                  folded={rows[item.index].folded}
                   tagged={tagged}
                   scale={scale}
-                  open={opened.has(filtered[item.index])}
-                  onToggle={() => toggle(filtered[item.index])}
+                  open={opened.has(rows[item.index].line)}
+                  onToggle={() => toggle(rows[item.index].line)}
                 />
               </div>
             ))}

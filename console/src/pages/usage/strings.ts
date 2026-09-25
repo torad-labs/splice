@@ -44,9 +44,9 @@ export const S = {
   read: 'Read',
   cacheRead: 'Cache read',
   share: 'Share',
-  /** A window whose reset time passed after splice read it: the figure is from before the reset. */
-  alreadyReset: 'Already reset',
-  unknown: 'Unknown',
+  /** A window whose reset time passed after splice read it: its figure is from before the reset,
+   *  and no turn or poll has read the new one. */
+  notReread: 'Reset, not re-read',
   detail: 'Head detail',
   openHead: 'Open head',
   slot: 'Slot',

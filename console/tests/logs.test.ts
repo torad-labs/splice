@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headOf, levelOf, timeOf } from '../src/entities/logs';
-import { cacheHitOf, LogColumns, LogLine, messageOf, partsOf, perfOfLine, scaleOf, toneOfLevel, totalOf, whenOf } from '../src/widgets/log-tail';
+import { cacheHitOf, LogColumns, LogLine, messageOf, partsOf, perfOfLine, rowsOf, scaleOf, toneOfLevel, totalOf, whenOf } from '../src/widgets/log-tail';
 
 const LINE = '[2026-09-18 01:14:02] [claude-deepseek] turn compact=false model=deepseek-flash ok';
 
@@ -262,6 +262,16 @@ describe('a perf line is drawn as its turn', () => {
     expect(keys).toEqual(partsOf(messageOf(PERF)).flatMap((part) => (part.key === undefined ? [] : [part.key])));
   });
 
+  test('a counter the line did not carry is the absence mark over an empty bar, never a zero', () => {
+    const bare = PERF.slice(0, PERF.indexOf(' |'));
+    const html = renderToStaticMarkup(React.createElement(LogLine, { line: bare }));
+    expect(perfOfLine(bare)?.inTokens).toBeNull();
+    expect(html, 'the waterfall is the only reading left').not.toContain('role="meter"');
+    expect(html).not.toContain('aria-valuenow');
+    expect([...html.matchAll(/class="myx-meter myx-meter-neutral" aria-hidden="true"/g)]).toHaveLength(3);
+    expect([...html.matchAll(/class="myx-meter-figure">–/g)]).toHaveLength(3);
+  });
+
   test('an ok turn wears no outcome, a failed one wears it as a badge', () => {
     expect(renderToStaticMarkup(React.createElement(LogLine, { line: PERF }))).not.toContain('myx-badge');
     const failed = PERF.replace('outcome=ok', 'outcome=upstream_error').replace(/ stream_end=\d+ finish=\d+ total=\d+/, '');
@@ -270,5 +280,69 @@ describe('a perf line is drawn as its turn', () => {
     expect(html).toContain('>upstream_error<');
     // a failed turn stops where its last mark was stamped, never drawn as a finished one
     expect(perfOfLine(failed)?.marks.total).toBeUndefined();
+  });
+});
+
+// A TURN PRINTS ITS NUMBERS ONCE (splice-lead on the 2026-09-25 second pass: "every turn still prints
+// its raw turn and cache lines above the rendered row, so each number appears three times"). The
+// daemon writes three lines per finished turn; the `turn` and `cache:` lines carry only numbers the
+// perf row draws, so they fold under it, one click away. The group below is the demo daemon's own
+// log from 04:53:34 on 2026-09-25: two turns finishing at once, their lines interleaved, so a fold
+// by position ("the two lines before a perf line") hands the second turn's line to the first.
+describe('a turn prints its numbers once', () => {
+  const at = (time: string, message: string) => `[2026-09-25 ${time}] [claudex] ${message}`;
+  const TURN_A = at('04:53:34', 'turn compact=false model=gpt-5.6-sol latency=10949ms ok out=2413 tool=false incomplete=false');
+  const CACHE_A = at('04:53:34', 'cache: input=126236 cached=107211 hit=84% output=2413 model=gpt-5.6-sol');
+  const TURN_B = at('04:53:34', 'turn compact=false model=gpt-5.6-sol latency=9449ms ok out=1521 tool=false incomplete=false');
+  const PERF_A = at('04:53:34', 'perf outcome=ok compact=false model=gpt-5.6-sol session=d4c6f9b3 recv=0 parse=1 build=1 gate=0 '
+    + 'headers=1389 first_byte=1389 first_frame=1389 first_delta=1389 stream_end=10949 finish=10949 total=10949 '
+    + '| inflight=2 in_tokens=126236 out_tokens=2413 cached_tokens=107211 cache_write_tokens=0');
+  const CACHE_B = at('04:53:34', 'cache: input=34432 cached=31861 hit=92% output=1521 model=gpt-5.6-sol');
+  const PERF_B = at('04:53:34', 'perf outcome=ok compact=false model=gpt-5.6-sol session=d4c6f9b3 recv=1 parse=1 build=1 gate=0 '
+    + 'headers=792 first_byte=9449 first_frame=792 first_delta=9449 stream_end=9449 finish=9450 total=9450 '
+    + '| inflight=2 in_tokens=34432 out_tokens=1521 cached_tokens=31861 cache_write_tokens=0');
+  const INTERLEAVED = [TURN_A, CACHE_A, TURN_B, PERF_A, CACHE_B, PERF_B];
+
+  test('each perf row takes its own turn\'s lines, matched on their numbers, not their place', () => {
+    expect(rowsOf(INTERLEAVED)).toEqual([
+      { line: PERF_A, folded: [TURN_A, CACHE_A] },
+      { line: PERF_B, folded: [TURN_B, CACHE_B] },
+    ]);
+  });
+
+  test('a turn that crosses a second still folds: the second is not a key', () => {
+    // 30 of 7,594 turns on the live log wrote their perf line in the next second
+    const late = [TURN_B.replace('04:53:34', '04:53:33'), CACHE_B.replace('04:53:34', '04:53:33'), PERF_B];
+    expect(rowsOf(late)).toEqual([{ line: PERF_B, folded: late.slice(0, 2) }]);
+  });
+
+  test('no line is lost: every line is a row or folded under one, once', () => {
+    const lines = [at('04:53:30', 'account work -> spare: 5h window full'), ...INTERLEAVED];
+    const rows = rowsOf(lines);
+    expect(rows.flatMap((row) => [...row.folded, row.line]).sort()).toEqual([...lines].sort());
+  });
+
+  test('a line the row does not draw stays a line: another tag, an error, a failure, another turn\'s numbers', () => {
+    const lines = [
+      at('04:53:34', 'turn ERROR conn-reset compact=false latency=2827ms upstream closed'),
+      at('04:53:34', 'turn compact=false model=gpt-5.6-sol latency=9449ms FAILURE type=api_error msg=out=1521 overloaded'),
+      TURN_B.replace('[claudex]', '[bonsai]'),
+      CACHE_B.replace('output=1521', 'output=1522'),
+      PERF_B,
+    ];
+    expect(rowsOf(lines).map((row) => row.folded.length)).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  test('a turn whose perf line has not landed yet shows its lines until it does', () => {
+    expect(rowsOf([TURN_A, CACHE_A]).map((row) => row.line)).toEqual([TURN_A, CACHE_A]);
+  });
+
+  test('closed, the row prints none of the folded numbers; open, it shows the turn\'s three lines in order', () => {
+    const closed = renderToStaticMarkup(React.createElement(LogLine, { line: PERF_A, folded: [TURN_A, CACHE_A] }));
+    expect(closed).not.toContain('latency');
+    expect(closed).not.toContain('hit=');
+    const open = renderToStaticMarkup(React.createElement(LogLine, { line: PERF_A, folded: [TURN_A, CACHE_A], open: true }));
+    const raw = [...open.matchAll(/class="myx-lt-raw-line">(.*?)<\/span><\/span>(?=<span class="myx-lt-raw-line">|<\/span>)/g)];
+    expect(raw.map((m) => m[1].replace(/<[^>]+>/g, ''))).toEqual([TURN_A, CACHE_A, PERF_A].map(messageOf));
   });
 });

@@ -100,12 +100,13 @@ export function cacheHitOf(perf: PerfLine): number | null {
   return perf.cachedTokens / perf.inTokens;
 }
 
-const share = (value: number, whole: number): number => (whole <= 0 ? 0 : value / whole);
+const share = (value: number | null, whole: number): number | null => (value === null ? null : whole <= 0 ? 0 : value / whole);
 const tokens = (value: number | null): string => (value === null ? ABSENT : fmtTokens(value));
 
 /** A bar with its figure and the figure's unit after it. The bar's name carries the figure, so a
- *  screen reader hears the number and not only the bar's share of the tail. */
-function Figure({ value, label, figure, unit, cell }: { value: number; label: string; figure: string; unit: string; cell: string }) {
+ *  screen reader hears the number and not only the bar's share of the tail. A counter the line did
+ *  not carry is null: the bar draws empty and announces nothing, beside the absence mark. */
+function Figure({ value, label, figure, unit, cell }: { value: number | null; label: string; figure: string; unit: string; cell: string }) {
   return (
     <span className={cell}>
       <Meter
@@ -154,9 +155,9 @@ export function PerfCells({ perf, scale, open, onToggle, raw }: {
         </span>
         <span className="myx-lt-wf"><Waterfall stages={stages} scale={scale.ms} label={`${S.timing} ${fmtMs(total)}`} /></span>
         <span className="myx-lt-figure">{fmtMs(total)}</span>
-        <Figure value={hit ?? 0} label={S.cacheHit} figure={hit === null ? ABSENT : fmtShare(hit)} unit={U.cached} cell="myx-lt-hit" />
-        <Figure value={share(perf.inTokens ?? 0, scale.inTokens)} label={S.tokensIn} figure={tokens(perf.inTokens)} unit={U.in} cell="myx-lt-in" />
-        <Figure value={share(perf.outTokens ?? 0, scale.outTokens)} label={S.tokensOut} figure={tokens(perf.outTokens)} unit={U.out} cell="myx-lt-out" />
+        <Figure value={hit} label={S.cacheHit} figure={hit === null ? ABSENT : fmtShare(hit)} unit={U.cached} cell="myx-lt-hit" />
+        <Figure value={share(perf.inTokens, scale.inTokens)} label={S.tokensIn} figure={tokens(perf.inTokens)} unit={U.in} cell="myx-lt-in" />
+        <Figure value={share(perf.outTokens, scale.outTokens)} label={S.tokensOut} figure={tokens(perf.outTokens)} unit={U.out} cell="myx-lt-out" />
       </span>
       {open ? <span className="myx-lt-raw">{raw}</span> : null}
     </span>

@@ -137,6 +137,7 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.myx-lt-raw-line { display: block; }
 
 
 @media (max-width: 900px) {

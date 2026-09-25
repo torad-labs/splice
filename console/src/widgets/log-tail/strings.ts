@@ -13,9 +13,9 @@ export const S = {
   /** The empties, one factual line each. */
   reading: 'Reading the log',
   noLines: 'No lines',
-  /** A perf line's parts: the disclosure that shows the daemon's own line, and each drawn cell's
-   *  name for a screen reader. */
-  rawLine: 'Raw line',
+  /** A perf line's parts: the disclosure that shows the daemon's own lines for the turn, and each
+   *  drawn cell's name for a screen reader. */
+  rawLine: 'Raw lines',
   timing: 'Turn timing',
   cacheHit: 'Cache hit',
   tokensIn: 'Tokens in',

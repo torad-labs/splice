@@ -298,25 +298,22 @@ export function StatRow({ children }: { children: ReactNode }) {
   return <div className="myx-stats">{children}</div>;
 }
 
-/** How full something is, 0 to 1. The figure is printed beside it by the caller. */
+/** How full something is, 0 to 1. The figure is printed beside it by the caller. Null is a value
+ *  nobody measured: the empty track draws and announces nothing, since a meter at 0 claims a zero. */
 export function Meter({ value, tone = 'accent', label, figure }: {
-  value: number;
+  value: number | null;
   tone?: Tone;
   label: string;
   /** The figure the bar stands for, printed after it in tabular numerals, end-aligned so a column
    *  of meters lines its figures up. */
   figure?: ReactNode;
 }) {
-  const share = Math.max(0, Math.min(1, value));
+  const share = value === null ? 0 : Math.max(0, Math.min(1, value));
+  const reading = value === null
+    ? { 'aria-hidden': true }
+    : { role: 'meter', 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(share * 100) };
   const bar = (
-    <span
-      className={cx('myx-meter', `myx-meter-${tone}`)}
-      role="meter"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(share * 100)}
-    >
+    <span className={cx('myx-meter', `myx-meter-${tone}`)} {...reading}>
       <span className="myx-meter-fill" style={{ width: `${share * 100}%` }} />
     </span>
   );

@@ -11,10 +11,11 @@
 // for a pooled head showed one unnamed login's 21% under a strip naming another's 64% (demo stack,
 // 2026-09-25). A head no account row reports windows for keeps its own /api/usage card.
 //
-// A window whose reset time has passed is printed as reset, never as its old figure: splice reads a
+// A window whose reset time has passed is drawn unmeasured: the absence mark, an empty meter and a
+// badge saying it reset and was not re-read, never its old figure and never a zero. splice reads a
 // window from a turn's response headers or the usage poll, so a head that has not run since its
 // window reset still holds the figure from before it (claude-muse read 99% of a 7d window that had
-// reset 3.7 days earlier, live /api/usage 2026-09-24).
+// reset 3.7 days earlier, live /api/usage 2026-09-24), and the new figure is unknown until it runs.
 import { TimerIcon } from '@phosphor-icons/react/dist/csr/Timer';
 import { HeadMark } from '@entities/control-status';
 import { isStale, slotWindows, windowLengthText } from '@entities/account';
@@ -107,7 +108,7 @@ export function windowTone(pct: number, warnPct: number): Tone {
 /** One window's two cells: how much is used and when it resets. */
 export function windowCells(window: PlanWindow | undefined, nowMs: number): { used: string; resets: string } {
   if (window === undefined) return { used: ABSENT, resets: ABSENT };
-  if (window.stale) return { used: S.unknown, resets: S.alreadyReset };
+  if (window.stale) return { used: ABSENT, resets: S.notReread };
   return { used: `${window.pct}%`, resets: resetsInText(window.resetsAt, nowMs) ?? ABSENT };
 }
 
@@ -121,18 +122,20 @@ export function readText(windows: readonly PlanWindow[], nowMs: number): string 
 }
 
 /** One window as the card prints it: its name, its share large, the meter, and when it resets. A
- *  slot the login does not track still draws, as the absence mark, so every card has two. */
+ *  slot the login does not track, and a window that reset since it was read, draw unmeasured: the
+ *  absence mark over an empty meter, so every card has two and neither claims a zero. */
 function WindowFigure({ slot, window, warnPct, now }: { slot: PlanWindow['window']; window: CardWindow | undefined; warnPct: number; now: number }) {
   const label = `${window?.length ?? slot} ${U.window}`;
   const cells = windowCells(window, now);
-  const tone = window === undefined || window.stale ? 'neutral' : windowTone(window.pct, warnPct);
+  const measured = window !== undefined && !window.stale;
+  const tone = measured ? windowTone(window.pct, warnPct) : 'neutral';
   return (
     <div className={`myx-plan-window myx-plan-${tone}`}>
       <p className="myx-plan-label">{label}</p>
       <p className="myx-plan-pct">{cells.used}</p>
-      <Meter value={window === undefined || window.stale ? 0 : window.pct / 100} tone={tone} label={`${label} ${cells.used}`} />
+      <Meter value={measured ? window.pct / 100 : null} tone={tone} label={`${label} ${cells.used}`} />
       <p className="myx-plan-resets">
-        {window === undefined ? ABSENT : window.stale ? S.alreadyReset : (
+        {window === undefined ? ABSENT : window.stale ? <Badge tone="neutral" quiet>{cells.resets}</Badge> : (
           <><TimerIcon className="myx-plan-glyph" aria-label={U.resets} />{cells.resets}</>
         )}
       </p>

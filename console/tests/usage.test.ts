@@ -237,14 +237,26 @@ describe('plan limits', () => {
     expect(planRows(usage, [], NOW).map((row) => row.key)).toEqual(['claude-splice', 'claudex', 'claude-muse']);
   });
 
-  test('a window whose reset passed prints as reset, never as the figure from before it', () => {
+  // splice-lead on the 2026-09-25 second pass: claudex work's 5h window printed a hero "Unknown", a
+  // word in the figure slot. A window that reset since it was read is unmeasured: the absence mark,
+  // an empty meter and a badge, never its old figure, and never a zero, since nobody measured one.
+  test('a window whose reset passed draws unmeasured, never the figure from before it and never a zero', () => {
     const muse = planRows(usage, [], NOW).find((row) => row.key === 'claude-muse');
     expect(muse?.live).toBeNull();
-    expect(windowCells(muse?.windows[1], NOW)).toEqual({ used: 'Unknown', resets: 'Already reset' });
-    // the card prints the reset in words and draws an empty meter, never the 99% from before it
+    expect(windowCells(muse?.windows[1], NOW)).toEqual({ used: '–', resets: 'Reset, not re-read' });
+    // both of muse's windows reset since they were read: its 7d held 99% and its 5h held 0%
     const card = render(h(PlanBay, { usage: { ...usage, heads: usage.heads.filter((head) => head.key === 'claude-muse') }, now: NOW }));
-    expect(card).toContain('Already reset');
+    const figures = [...card.matchAll(/class="myx-plan-pct">([^<]*)</g)].map((m) => m[1]);
+    expect(figures).toEqual(['–', '–']);
+    const badges = [...card.matchAll(/class="myx-badge-word">([^<]*)</g)].map((m) => m[1]);
+    expect(badges).toEqual(['Reset, not re-read', 'Reset, not re-read']);
     expect(card).not.toContain('99%');
+    expect(card).not.toContain('>0%<');
+    expect(card).not.toContain('Unknown');
+    // the meters draw empty and announce no value: a meter at 0 would tell a screen reader "0"
+    expect(card).not.toContain('role="meter"');
+    expect(card).not.toContain('aria-valuenow');
+    expect([...card.matchAll(/class="myx-meter myx-meter-neutral" aria-hidden="true"/g)]).toHaveLength(2);
     expect(card).toContain('myx-plan-neutral');
   });
 
@@ -289,7 +301,7 @@ describe('plan limits', () => {
   test('the board draws the plan rack above the heads rack, with the plan name', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, usage, catalog: fixtureModels, now: NOW }));
     expect(markup).toContain('Plan limits');
-    expect(markup).toContain('Already reset');
+    expect(markup).toContain('Reset, not re-read');
     expect(markup).toContain('>pro<');
     expect(markup.indexOf('Plan limits')).toBeLessThan(markup.indexOf('Tokens used'));
   });

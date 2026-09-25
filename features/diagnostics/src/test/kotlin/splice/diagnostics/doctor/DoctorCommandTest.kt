@@ -313,7 +313,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a missing api key is the failure and the fix names the export`() {
+    fun `a missing api key is the failure and the fix names splice key set`() {
         val tmp = Files.createTempDirectory("doctor-nokey")
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
@@ -329,7 +329,7 @@ class DoctorCommandTest {
         val (ok, out) = runDoctor(env(tmp, bin, share))
         assertFalse(ok)
         assertTrue(out.contains("OPENROUTER_API_KEY is not set"), out)
-        assertTrue(out.contains("export OPENROUTER_API_KEY"), out)
+        assertTrue(out.contains("splice key set OPENROUTER_API_KEY"), out)
     }
 
     @Test

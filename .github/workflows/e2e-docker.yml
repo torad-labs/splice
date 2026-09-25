@@ -36,7 +36,8 @@ jobs:
   docker-e2e:
     runs-on: ubuntu-latest
     # Measured locally: the jar ~5 min cold, the image ~2 min, the fresh run ~1.5 min, the upgrade
-    # rehearsal ~1 min. Twice that, rounded up.
+    # rehearsal ~1 min, the plan limit ~4 min (its probe and its client each wait out a window).
+    # Twice that, rounded up.
     timeout-minutes: 30
     env:
       # `gh release download` for the upgrade's from-release; read-only is enough for a public release.
@@ -78,6 +79,12 @@ jobs:
           echo "upgrade rehearsal: $from -> $candidate"
           tools/e2e/docker/run.sh --no-build --upgrade-from "$from" \
             --jar app/build/libs/app-all.jar --shim app/src/main/dist/bin/splice-launch
+      # CHANGELOG 0.4.0 (V4-71, V4-72, V4-73): an Anthropic plan-limit 429 reaches the real Claude Code
+      # as the in-band error it retries, no no-wait signal leaks through, and the client sleeps until
+      # the upstream's reset and resumes (tools/e2e/docker/plan-limit.sh).
+      - name: plan limit
+        if: ${{ !cancelled() }}
+        run: tools/e2e/docker/run.sh --no-build --scenario plan-limit --jar app/build/libs/app-all.jar --shim app/src/main/dist/bin/splice-launch
       - name: keep the receipts
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

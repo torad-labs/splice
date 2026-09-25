@@ -294,9 +294,11 @@ class InstallLinkerClaimTest {
         previous.writeString("working")
         Files.createSymbolicLink(bin.resolve("splice"), previous)
         val failing = WrapperClaim { _, _ -> throw java.io.IOException("disk full") }
-        org.junit.jupiter.api.assertThrows<IllegalStateException> {
+        val refused = org.junit.jupiter.api.assertThrows<IllegalStateException> {
             InstallLinker(stdout, claim = failing).installSelf(noEnv)
         }
+        // V4-220: the console's add shows an install refusal verbatim (saved.wrapper.error): no em-dash.
+        assertFalse('—' in refused.message.orEmpty(), refused.message)
         assertTrue(bin.resolve("splice").isSymbolicLink(), "the command name must not be left empty")
         assertEquals(previous, bin.resolve("splice").readSymbolicLink(), "the working wrapper is restored")
     }
@@ -329,6 +331,7 @@ class InstallShimPresenceTest {
             Files.setPosixFilePermissions(share, restored)
         }
         assertTrue(failure.message!!.contains("fix access"), failure.message)
+        assertFalse('—' in failure.message!!, failure.message)
     }
 
     @Test
@@ -351,6 +354,7 @@ class InstallShimPresenceTest {
         }
         assertTrue(failure.message!!.contains("dangling"), failure.message)
         assertTrue(failure.message!!.contains("install.sh"), failure.message)
+        assertFalse('—' in failure.message!!, failure.message)
     }
 }
 

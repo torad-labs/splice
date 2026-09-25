@@ -76,7 +76,40 @@ A test-determinism law: a test server binds port 0 instead of a port leased and 
 Production binds the port its topology configures, and had 0 lease sites when the rule was written.
 """
 
+[[exclusion]]
+rule = "kt-no-emdash-cli-text"
+sourceSets = ["test", "testFixtures"]
+date = "2026-09-25"
+reason = """
+A copy gate on the sentences splice prints. A test's assertion messages are read by whoever reads a
+red test, never by the operator in the CLI or the console, so they are not the text this wall grades.
+"""
+
 # ─── module scope ────────────────────────────────────────────────────────────────────────────────
+
+[[exclusion]]
+rule = "kt-no-emdash-cli-text"
+modules = [
+  "app", "core", "features-accounts", "features-configuration", "features-events", "features-heads",
+  "features-launch", "features-lifecycle", "features-models", "features-sessions", "features-turns",
+  "features-usage", "integrations-claude-code", "integrations-codemode", "integrations-daemon-client",
+  "integrations-dialects-anthropic", "integrations-dialects-openai-chat",
+  "integrations-dialects-openai-responses", "integrations-http", "integrations-mcp", "integrations-oauth",
+  "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi",
+  "integrations-providers-muse", "integrations-providers-openai", "integrations-terminal",
+  "integrations-topology", "integrations-upstream", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-25"
+reason = """
+V4-219 scoped this wall to the text doctor, logs and wire author, in features/diagnostics, because that
+is what the console's Doctor and Needs you pages print verbatim. The strings doctor QUOTES from these
+roots were rewritten in the same pass (SafeFailureText, the state-root probe, TopologyMessages,
+TomlStructurePreflight, the auth refresh note), but nothing here holds them. What remains is mostly
+daemon log lines and CLI text for other verbs (about 400 string fragments on 2026-09-25, counted with
+the rule's own matcher). Widening means rewriting those in the modules other seats are editing now; it
+is its own row, not a side effect of this one.
+"""
 
 [[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]

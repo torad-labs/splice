@@ -110,7 +110,7 @@ public class LogsCommand(private val output: TerminalOutput, private val errors:
                 if (genuinelyAbsent) {
                     warned.set(false)
                 } else if (warned.compareAndSet(false, true)) {
-                    output.line("splice: $logFile unreadable (${SafeFailureText.render(failure)}) — still polling")
+                    output.line("splice: $logFile unreadable (${SafeFailureText.render(failure)}), still polling")
                 }
                 0L
             }

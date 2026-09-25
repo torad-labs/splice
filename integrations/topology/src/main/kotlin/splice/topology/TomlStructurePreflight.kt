@@ -53,13 +53,13 @@ internal object TomlStructurePreflight {
             // is exactly the old preamble exclusion plus the missing first-table registration.
             if (header.startsWith("[") && !header.startsWith("[[")) {
                 require(seenHeaders.add(header)) {
-                    "table $header is defined twice — TOML forbids redefining a table and ktoml " +
+                    "table $header is defined twice: TOML forbids redefining a table and ktoml " +
                         "silently merges both bodies (a stale roster would ride the union); keep " +
                         "one section per table"
                 }
             }
             require(MODELS_LINE_ASSIGNMENT.findAll(section).count() <= 1) {
-                "duplicate models key in ${header.ifEmpty { "the preamble" }} — TOML forbids it " +
+                "duplicate models key in ${header.ifEmpty { "the preamble" }}: TOML forbids it " +
                     "and ktoml silently merges; keep exactly one models = [...] line per head"
             }
             sectionStart = end

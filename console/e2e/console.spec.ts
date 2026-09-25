@@ -381,16 +381,17 @@ test('the draining restart confirms inline and prints the daemon\'s refusal verb
   expect(posts).toHaveLength(2);
 });
 
-test('doctor renders the stack\'s report, the CLI\'s own masked values included, rather than refusing it', async ({ page }) => {
+test('doctor renders the stack\'s report whole, the api-key row\'s fix included', async ({ page }) => {
   const faults = await open(page, 'doctor');
   const main = page.locator('main');
-  // The api-key head's env var is absent, so its credential check fails with a fix whose value the
-  // CLI masks: `export CONSOLE_E2E_NO_SUCH_KEY=<redacted>`. The console read that mask as a leak and
-  // refused the whole report ('key-value at checks[28].detail') until M4-07.
-  const masked = 'CONSOLE_E2E_NO_SUCH_KEY=<redacted>';
-  // The masked fix is in the row's Fix cell; the row opens from its check cell's button.
-  const row = main.getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: masked });
-  await expect(row, 'the masked check is not in the table').toBeVisible({ timeout: 15_000 });
+  // The api-key head's env var is absent, so its credential check fails with the fix
+  // `splice key set CONSOLE_E2E_NO_SUCH_KEY` (V4-220: it replaced a masked `export VAR=<redacted>`).
+  // The console's acceptance of the CLI's own masks is held in tests/doctor-gate.test.ts, which feeds
+  // the doctor gate every mask shape the CLI writes; this test proves the report renders whole.
+  const fix = 'splice key set CONSOLE_E2E_NO_SUCH_KEY';
+  // The fix is in the row's Fix cell; the row opens from its check cell's button.
+  const row = main.getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: fix });
+  await expect(row, 'the api-key check is not in the table').toBeVisible({ timeout: 15_000 });
   await expect(main.getByText('Report refused')).toHaveCount(0);
   // The rest of the report prints with it: the report's own fields under the table.
   await expect(main.getByText('schema_version', { exact: true })).toBeVisible();

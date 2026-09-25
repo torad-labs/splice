@@ -106,6 +106,11 @@ internal class AddProfileCatalog {
             baseUrl = "https://api.meta.ai",
             headKey = "muse",
             command = "claude-muse",
+            // V4-229: Meta publishes no window, so 1.3's is measured. api.meta.ai served a prompt of
+            // 1,010,789 tokens by its own count (2026-09-25 14:36 CDT, through claude-muse), past the
+            // 1,000,000 declared here, so the row stays at the window Claude Code's `[1m]` implies. The
+            // cold prompt met three upstream 504s ("the response stream did not start before the server
+            // timeout") before the fourth attempt rode the cached prefix. 1.2's row is not measured.
             models = listOf(
                 AddModel("muse-spark-1.3[1m]", "Muse Spark 1.3", WINDOW_1M),
                 AddModel("muse-spark-1.2[1m]", "Muse Spark 1.2", WINDOW_1M),

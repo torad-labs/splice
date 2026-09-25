@@ -20,13 +20,24 @@ import { S as KEY_WORDS } from '../src/features/api-key/strings';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VIEWS = readFileSync(path.join(repoRoot, 'features/configuration/src/main/kotlin/splice/configuration/add/AddViews.kt'), 'utf8');
 
+/** The file's string constants: a key the const-single-source law moved into one (`MODELS`) is put
+ *  by name, and its wire word is the constant's value. */
+const CONSTANTS = new Map([...VIEWS.matchAll(/const val ([A-Z_]+) = "([a-z_]+)"/g)].flatMap(([, name, value]) => (name === undefined || value === undefined ? [] : [[name, value] as const])));
+
 /** Every key one AddViews member puts, nested blocks included: `put`, `putJsonArray` and
- *  `putJsonObject` in the body of `fun <signature>`, which ends at the member's closing brace. */
+ *  `putJsonObject` in the body of `fun <signature>`, which ends at the member's closing brace, by
+ *  literal or by constant. A constant the file does not declare fails here rather than drop a key. */
 function keysOf(signature: string): string[] {
   const head = VIEWS.indexOf(`fun ${signature}`);
   if (head < 0) throw new Error(`no fun ${signature} in AddViews.kt`);
   const body = VIEWS.slice(head, VIEWS.indexOf('\n    }', head));
-  return [...new Set([...body.matchAll(/put(?:JsonArray|JsonObject)?\("([a-z_]+)"/g)].flatMap(([, key]) => (key === undefined ? [] : [key])))].sort();
+  const keys = [...body.matchAll(/put(?:JsonArray|JsonObject)?\((?:"([a-z_]+)"|([A-Z_]+)\b)/g)].map(([, literal, constant]) => {
+    if (literal !== undefined) return literal;
+    const value = CONSTANTS.get(constant ?? '');
+    if (value === undefined) throw new Error(`AddViews.kt puts ${constant ?? '?'}, which it declares no string for`);
+    return value;
+  });
+  return [...new Set(keys)].sort();
 }
 
 const sorted = (...lists: readonly string[][]): string[] => [...new Set(lists.flat())].sort();

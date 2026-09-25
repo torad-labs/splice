@@ -12,8 +12,12 @@
 // drifted by 4.6% compacts 4.6% early or late with nothing logging it.
 //
 // THE LAW. Every model row a DERIVED roster declares must exist in the example's roster for the
-// SAME provider, with a byte-identical context window. The example may declare more — it is the
-// full reference and the emitters are curated starters — so a superset there is not drift.
+// SAME provider, with a byte-identical context window. DEFAULT_TOML is a curated starter, so the
+// example may declare more than it does. The `splice add` catalog MIRRORS the example (V4-224): an
+// example provider a catalog roster joins declares no row that roster lacks. The superset allowance
+// is how the catalog fell behind — the example carried gpt-6-astra and grok-build while
+// `splice add codex` still pinned gpt-5.6-sol at a 400K window the backend does not serve, and this
+// law stayed green.
 //
 // THE JOIN KEY IS base_url, NEVER the table name. The provider keys disagree on purpose: the
 // catalog calls xAI `grok` and Anthropic `claude` (the WRAPPER an operator types) while the example
@@ -45,8 +49,9 @@
 //
 // NOT CAUGHT, and why. A label that disagrees — display strings shown in different places, and
 // pinning them would red the wall for a copy edit; ids and windows are the wire. A model the
-// example declares and an emitter omits — deliberate, the emitters are curated starters. Slots,
-// rates and quirks — other walls own those. A window that is wrong in the EXAMPLE — that is a
+// example declares and DEFAULT_TOML omits — deliberate, the starter is curated. An example provider
+// no catalog roster joins (fireworks, the local runtimes) — `splice add` has no profile for it.
+// Slots, rates and quirks — other walls own those. A window that is wrong in the EXAMPLE — that is a
 // live-probe job; this law makes the three agree.
 package splice.quality
 
@@ -509,12 +514,15 @@ internal object ModelCatalogsSingleSource {
     /** The example indexed by its join key, and any ambiguity in it. */
     data class Index(val byBaseUrl: Map<String, ModelRosters.Roster>, val problems: List<String>)
 
-    /** The example's rosters, the derived sources' rosters, and the untrusted-parse residue. */
+    /** The example's rosters, the two derived sources' rosters, and the untrusted-parse residue. */
     data class Loaded(
         val example: List<ModelRosters.Roster>,
-        val derived: List<List<ModelRosters.Roster>>,
+        val catalog: List<ModelRosters.Roster>,
+        val starter: List<ModelRosters.Roster>,
         val problems: List<String>,
-    )
+    ) {
+        val derived: List<List<ModelRosters.Roster>> get() = listOf(catalog, starter)
+    }
 
     /** An example provider seen from a derived roster: its name and its declared windows. */
     private data class Target(val provider: String, val windows: Map<String, Long?>)
@@ -589,7 +597,7 @@ internal object ModelCatalogsSingleSource {
         val example = exampleRosters(surfaces.example, problems)
         val catalog = catalogRosters(surfaces.catalog, problems)
         val starter = starterRosters(surfaces.starter, problems)
-        return Loaded(example, listOf(catalog, starter), problems)
+        return Loaded(example, catalog, starter, problems)
     }
 
     // ── the audit ─────────────────────────────────────────────────────────────────────────────
@@ -658,6 +666,29 @@ internal object ModelCatalogsSingleSource {
         return rosters.sumOf { auditRoster(it, index, exampleRel, problems) }
     }
 
+    /** V4-224: the example rows a MIRROR roster lacks, from the provider its base_url joins. */
+    private fun missingFromMirror(roster: ModelRosters.Roster, joined: ModelRosters.Roster): List<ModelRosters.Model> {
+        val declared = roster.models.map { it.id }.toSet()
+        return joined.models.filter { it.id !in declared }
+    }
+
+    /** The catalog's other half: a row the example gains reaches `splice add` or is RED by name. */
+    private fun auditMirror(
+        rosters: List<ModelRosters.Roster>,
+        index: Map<String, ModelRosters.Roster>,
+        exampleRel: String,
+        problems: MutableList<String>,
+    ) {
+        for (roster in rosters) {
+            val joined = index[roster.baseUrl.orEmpty()] ?: continue
+            for (model in missingFromMirror(roster, joined)) {
+                problems += "${roster.where}: ${model.id} (context_window ${model.window}) is declared in " +
+                    "$exampleRel [providers.${joined.provider}] but not here — `splice add` writes this " +
+                    "roster, so it mirrors the example: add the row here or drop it there"
+            }
+        }
+    }
+
     fun audit(surfaces: Surfaces): List<String> {
         val loaded = loadSources(surfaces)
         val problems = loaded.problems.toMutableList()
@@ -670,6 +701,7 @@ internal object ModelCatalogsSingleSource {
         val index = indexByBaseUrl(loaded.example, surfaces.example.rel)
         problems += index.problems
         val comparisons = loaded.derived.sumOf { auditDerived(it, index.byBaseUrl, surfaces.example.rel, problems) }
+        auditMirror(loaded.catalog, index.byBaseUrl, surfaces.example.rel, problems)
         if (comparisons == 0 && problems.isEmpty()) {
             problems += "compared 0 model rows across the derived rosters — refusing to pass vacuously"
         }
@@ -678,13 +710,14 @@ internal object ModelCatalogsSingleSource {
 
     // ── the census (the checker's `report`, line for line) ────────────────────────────────────
 
-    private fun state(roster: ModelRosters.Roster, index: Map<String, ModelRosters.Roster>): String {
+    private fun state(roster: ModelRosters.Roster, index: Map<String, ModelRosters.Roster>, mirror: Boolean): String {
         val joined = index[roster.baseUrl.orEmpty()]
         val unjoinable = roster.baseUrl == null && roster.models.isEmpty()
         if (unjoinable) return "no-roster (no base_url, no models)"
         if (joined == null) return "NO DISPOSITION (base_url matches no example provider)"
         val target = targetOf(joined)
-        val bad = roster.models.filter { compare(roster, it, target, "") != null }.map { it.id }
+        val missing = if (mirror) missingFromMirror(roster, joined).map { "${it.id} (not mirrored)" } else emptyList()
+        val bad = roster.models.filter { compare(roster, it, target, "") != null }.map { it.id } + missing
         return if (bad.isEmpty()) "agrees with [${joined.provider}]" else "DRIFT: ${bad.joinToString(", ")}"
     }
 
@@ -701,9 +734,9 @@ internal object ModelCatalogsSingleSource {
             lines += "  source   [${roster.provider.padEnd(PROVIDER_COLUMN)}] " +
                 "${roster.models.size.toString().padStart(ROWS_COLUMN)} rows  ${roster.baseUrl}"
         }
-        for (rosters in loaded.derived) {
+        for ((rosters, mirror) in listOf(loaded.catalog to true, loaded.starter to false)) {
             rosters.firstOrNull()?.let { lines += "  ${it.label}" }
-            rosters.forEach { lines += row(it, state(it, index)) }
+            rosters.forEach { lines += row(it, state(it, index, mirror)) }
         }
         return lines
     }
@@ -762,7 +795,8 @@ class ModelCatalogsSingleSourceLawTest {
             assertEquals(
                 emptyList<String>(),
                 audit(),
-                "the compliant tree must be GREEN (alias join by base_url, example superset, null-baseUrl row)",
+                "the compliant tree must be GREEN (alias join by base_url, a catalog that mirrors the example, " +
+                    "an example superset of the starter, null-baseUrl row)",
             )
             val loaded = loaded()
             assertEquals(emptyList<String>(), loaded.problems, "the compliant parse must be trusted")
@@ -790,7 +824,7 @@ class ModelCatalogsSingleSourceLawTest {
                     "  source   [xai         ]  2 rows  https://api.x.ai/v1",
                     "  source   [kimi        ]  1 rows  https://api.kimi.com/coding",
                     "  features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt",
-                    "    [grok        ]  1 rows  agrees with [xai]",
+                    "    [grok        ]  2 rows  agrees with [xai]",
                     "    [kimi        ]  1 rows  agrees with [kimi]",
                     "    [api-key     ]  0 rows  no-roster (no base_url, no models)",
                     "  integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt:DEFAULT_TOML",
@@ -853,6 +887,25 @@ class ModelCatalogsSingleSourceLawTest {
         }
     }
 
+    /** V4-224: the catalog is a mirror. The starter lacking the example's grok-4.3 stays green in the
+     *  compliant tree; the catalog lacking it is RED by name, and the census says which row. */
+    @Test
+    fun `the law can actually fail - a row the example declares and splice add omits - V4-224`(@TempDir root: File) {
+        with(Tree(root)) {
+            val unmirrored = CATALOG_OK.replace("$GROK_43_ROW\n", "")
+            assertTrue(unmirrored != CATALOG_OK, "the grok-4.3 catalog row mutation did not apply")
+            write(catalog = unmirrored)
+            val named = "[grok]: grok-4.3 (context_window 1000000) is declared in"
+            assertHit(audit(), named, "[providers.xai] but not here") {
+                "an example row the splice add catalog lacks must be RED BY NAME"
+            }
+            assertEquals(1, audit().size, "only the catalog mirrors; DEFAULT_TOML lacks grok-4.3 too and stays green")
+            val census = ModelCatalogsSingleSource.census(surfaces)
+            val drift = "    [grok        ]  1 rows  DRIFT: grok-4.3 (not mirrored)"
+            assertTrue(drift in census) { census.joinToString("\n") }
+        }
+    }
+
     @Test
     fun `the law can actually fail - the parser-drift guards - V4-98`(@TempDir root: File) {
         with(Tree(root)) {
@@ -900,6 +953,15 @@ class ModelCatalogsSingleSourceLawTest {
         tree.write(example, drifted, starter)
         assertHit(tree.audit(), "declares context_window 199999") { "a real catalog window drift must be RED" }
 
+        val gained = example.replaceFirst(CODEX_MODELS, CODEX_MODELS + FAKE_CODEX_ROW + CODEX_MODELS)
+        assertTrue(gained != example, "MUTATION NOT APPLIED: the example has no [[providers.codex.models]] row")
+        tree.write(gained, catalog, starter)
+        val unmirrored = tree.audit()
+        assertHit(unmirrored, "gpt-fake-9 (context_window 272000) is declared in") {
+            "a row the shipped example gains must red splice add's catalog by name"
+        }
+        assertEquals(1, unmirrored.size, "only the catalog mirrors the example: $unmirrored")
+
         val slipped = starter.replace(LLAMA_ROW + "1048576", LLAMA_ROW + "131072")
         assertTrue(slipped != starter, "MUTATION NOT APPLIED: the llama-4-maverick starter row is gone")
         tree.write(example, catalog, slipped)
@@ -935,6 +997,8 @@ class ModelCatalogsSingleSourceLawTest {
     private companion object {
         const val RAW = "\"\"\""
         const val OPENROUTER_MODELS = "[[providers.openrouter.models]]"
+        const val CODEX_MODELS = "[[providers.codex.models]]\n"
+        const val FAKE_CODEX_ROW = "id = \"gpt-fake-9\"\nlabel = \"Fake 9\"\ncontext_window = 272000\n"
         const val LLAMA_ROW = "id = \"meta-llama/llama-4-maverick\"\nlabel = \"Llama 4 Maverick\"\ncontext_window = "
         const val DELETED_ROW = "z-ai/glm-5.3 (context_window 1310720) is absent from"
 
@@ -974,6 +1038,8 @@ provider = "xai"
 context_window = 500000
 """
 
+        const val GROK_43_ROW = "                AddModel(\"grok-4.3\", \"Grok 4.3\", WINDOW_1M),"
+
         const val CATALOG_OK = """package splice.app.cli
 
 private const val WINDOW_500K = 500_000L
@@ -987,6 +1053,7 @@ internal class AddProfileCatalog {
             baseUrl = "https://api.x.ai/v1",
             models = listOf(
                 AddModel("grok-4.6", "Grok 4.6", WINDOW_500K),
+$GROK_43_ROW
             ),
         ),
         AddProfile(

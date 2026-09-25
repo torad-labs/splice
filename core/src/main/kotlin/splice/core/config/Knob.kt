@@ -47,7 +47,7 @@ public enum class Knob(
         "pinnedModel",
         KnobKind.STRING,
         listOf("CLAUDEX_PINNED_MODEL", "CLAUDEX_MODEL"),
-        "gpt-5.6-sol",
+        "gpt-6-sol",
         restartRequired = true,
     ),
 
@@ -308,7 +308,7 @@ public enum class Knob(
         "grokModel",
         KnobKind.STRING,
         listOf("CLAUDE_GROK_MODEL", "CLAUDE_GROK_PINNED_MODEL"),
-        "grok-4.6",
+        "grok-4.7",
         restartRequired = true,
     ),
     XAI_API_BASE(

@@ -140,12 +140,10 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
   projects: 'already collapses its track to 0 at rest and transitions it open. Its 43.7% dead '
     + 'region is the empty slot rails below four repo strips -- a different defect with a '
     + 'different remedy, and not this column.',
-  accounts: 'COLLAPSES at rest since M2-24, the same mechanism as the other six -- second track 0, '
-    + 'the -open class carrying both the wide track and its gutter, the transition covering both, '
-    + 'and a reduced-motion arm. Held under M1-107 until that row landed; it was the last resting '
-    + 'column in the console. Dead region 20.3%, third worst. Its rest state is TWO conditions '
-    + 'rather than one, so the gate is a named `closed` read by both aria-hidden and the content '
-    + 'rather than a compound expression written out twice and left to drift.',
+  accounts: 'UNMOUNTED at rest since the redesign (2026-09-25): ONE kit DetailPanel behind a '
+    + '`panel === null ? null :` gate, where `panel` is the one named choice between an account, an '
+    + 'api-key head and a head -- three conditions read once, so the track and the content cannot '
+    + 'disagree. It collapsed its track to 0 since M2-24 before; dead region 20.3% then.',
 };
 
 /** Carries real content at rest, so removing the column would delete content, not reclaim space. */

@@ -127,10 +127,12 @@ async function pick(scope: Locator, label: string, option: string, nth = 0): Pro
 
 /** An account strip's `next` cell: the rule the daemon's next target was chosen by, empty on every
  *  strip the daemon did not flag (widgets/account-strip). */
-function nextCell(strip: Locator): Locator {
-  return strip
-    .locator('.myx-sfield', { has: strip.page().locator('.myx-sfield-label', { hasText: /^next$/ }) })
-    .locator('.myx-sfield-text');
+async function nextCell(main: Locator, account: string): Promise<Locator> {
+  const table = main.getByRole('table', { name: 'Accounts', exact: true });
+  const names = await table.getByRole('columnheader').allTextContents();
+  // `has` resolves inside each row, so the inner locator starts from the page, not from `main`
+  const row = table.getByRole('row').filter({ has: main.page().getByRole('button', { name: `Open account ${account}`, exact: true }) });
+  return row.getByRole('cell').nth(names.indexOf('Next'));
 }
 
 test('accounts shows the OAuth account with the windows its provider reported', async ({ page }) => {
@@ -143,11 +145,12 @@ test('accounts shows the OAuth account with the windows its provider reported', 
 
   // The daemon's own next target in the pooled head's pool: next_target on the primary, marked with
   // the rule that chose it, and on no other strip of the pool or of the page (M4-08).
-  await expect(nextCell(main.getByRole('button', { name: 'chatgpt-oauth primary', exact: true }))).toHaveText('primary');
-  await expect(nextCell(main.getByRole('button', { name: `chatgpt-oauth ${STACK.poolLabel}`, exact: true }))).toHaveText('');
-  await expect(nextCell(main.getByRole('button', { name: 'chatgpt-oauth single login', exact: true }))).toHaveText('');
-  // The order the daemon walks, the pin first.
-  await expect(main).toContainText('pinned, then primary, then last used, then most weekly room');
+  await expect(await nextCell(main, 'chatgpt-oauth primary')).toHaveText('Primary');
+  await expect(await nextCell(main, `chatgpt-oauth ${STACK.poolLabel}`)).toHaveText('');
+  await expect(await nextCell(main, 'chatgpt-oauth Single login')).toHaveText('');
+  // The order the daemon walks, the pin first, behind the accounts section's info mark.
+  await expect(main.getByRole('button', { name: 'About next', exact: true }))
+    .toHaveAccessibleDescription('Pinned, then primary, then last used, then most weekly room.');
 });
 
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {

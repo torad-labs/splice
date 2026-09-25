@@ -363,10 +363,22 @@ export interface CompactPayload {
   };
 }
 
+/** What the daemon knows of a credential (V4-220 6b, CredentialVerdictJson.kt): `held` when splice
+ *  holds it itself and `present` is the whole fact; for a client head's forwarded Claude login,
+ *  `unverified` until upstream answers a forwarded turn, then `accepted` or `rejected` at the time of
+ *  that answer. A 403, 429, 5xx or 400 leaves the last verdict standing. */
+export type CredentialVerdict =
+  | { state: 'held' }
+  | { state: 'unverified' }
+  | { state: 'accepted' | 'rejected'; at_epoch_ms: number };
+
 export interface ProviderAuth {
   kind: string;
   login: string;
+  /** False only when the credential is known missing: for a client head, once upstream rejected it. */
   present: boolean;
+  /** Absent on a daemon older than V4-220 6b, whose client heads said `present` unconditionally. */
+  verdict?: CredentialVerdict;
   account_id_masked?: string;
   last_refresh?: string;
   auth_path?: string;

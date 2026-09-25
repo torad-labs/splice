@@ -26,7 +26,9 @@ export const S = {
   keySet: 'Set',
   keyMissing: 'Missing',
   signedIn: 'Signed in',
-  noCredential: 'No credential',
+  signedOut: 'Signed out',
+  /** A client head's forwarded login before upstream answered one of its turns. */
+  unverified: 'Unverified',
   note: 'Note',
   aboutKey: 'About this key',
   detail: 'Account detail',
@@ -45,8 +47,15 @@ export const H = {
   keyFile: 'Replace the key in its file; a set variable still wins.',
   keyStore: 'No key yet; store one and the next request uses it.',
   keyReplace: 'This replaces the stored key; an exported variable still wins.',
+  unverified: 'Checked when upstream answers this head\'s next turn.',
 } as const;
 
 export const U = {
   used: '%',
+  /** Before the time of the upstream answer a client head's verdict rests on. */
+  accepted: 'Accepted',
 } as const;
+
+/** The fix for a client head whose forwarded login upstream rejected: Claude Code's own /login, the
+ *  sentence doctor gives (DoctorAuthVerdict, V4-220 6b). splice holds nothing to sign in again. */
+export const clientSignIn = (head: string): string => `Run ${head}, then /login inside it.`;

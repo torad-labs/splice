@@ -34,10 +34,12 @@ export function stateOf(account: AccountRow, nowMs: number): AccountStateKey {
 
 /** A state's badge tone and chart mark, from one mapping each. Unknown is never green: green would
  *  claim a health nobody measured. */
-export const TONE: Record<AccountStateKey, Tone> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'neutral', unknown: 'neutral', signedOut: 'danger' };
-export const MARK: Record<AccountStateKey, Mark> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'series-3', unknown: 'series-2', signedOut: 'danger' };
+export const TONE: Record<AccountStateKey, Tone> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'neutral', unknown: 'neutral', signedOut: 'warn' };
+export const MARK: Record<AccountStateKey, Mark> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'series-3', unknown: 'series-2', signedOut: 'warn' };
 
-/** The bar's order: the two red states stand apart so they never read as one part. */
+/** The bar's order: the two amber states stand apart so they never read as one part. Signed out is
+ *  amber, as a signed-out head is on the fleet (heads derive: only unhealthy is red) and a signed-out
+ *  head is on this page: a warning the operator can act on. */
 const STATES: readonly AccountStateKey[] = ['ok', 'warn', 'spent', 'excluded', 'unknown', 'signedOut'];
 
 /** The accounts by state as bar parts, in a fixed order so the colours never swap places. */

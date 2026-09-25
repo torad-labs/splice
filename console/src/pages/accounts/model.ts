@@ -3,10 +3,13 @@
 // widgets/account-table's, shared with the fleet's pool. Kept out of the component so all of it is
 // testable without a renderer, and so the sort rule below is pinned rather than eyeballed.
 import { SELECTOR_ORDER_TEXT, nearestWindow } from '@entities/account';
+import { isClientLogin, signInOf } from '@entities/auth';
 import type { AccountRow } from '@entities/account';
 import type { View } from '@features/views';
+import type { CredentialVerdict } from '@shared/api';
 import { ACCOUNT_FIELDS } from '@widgets/account-table';
-import { H, S } from './strings';
+import { ABSENT, timeAgo } from '@shared/lib';
+import { H, S, U, clientSignIn } from './strings';
 
 /** The order the selector walks, once for the page, from the entity's own rule list so the words
  *  cannot drift from the daemon's order. */
@@ -107,12 +110,25 @@ export interface HeadRow {
   head: string;
   kind: string;
   present: boolean;
+  /** The daemon's verdict on the login, when it gave one (signInOf reads it). */
+  verdict?: CredentialVerdict | undefined;
   masked: string | null;
   note: string | null;
   /** api-key heads: the variable the key is read from, the key masked, and the key file. */
   envVar?: string | undefined;
   keyMasked?: string | undefined;
   keyFile?: string | undefined;
+}
+
+/** A head row's note: the daemon's latched refresh failure when it has one; for a client head, what
+ *  upstream last said of its login and when, and the one fix when it said no. */
+export function headNote(row: HeadRow, nowMs: number): string {
+  if (row.note !== null) return row.note;
+  if (!isClientLogin(row.kind)) return ABSENT;
+  const login = signInOf(row);
+  if (login.state === 'unverified') return H.unverified;
+  if (login.state === 'signedOut') return clientSignIn(row.head);
+  return login.at === null ? ABSENT : `${U.accepted} ${timeAgo(login.at, nowMs)}`;
 }
 
 /**

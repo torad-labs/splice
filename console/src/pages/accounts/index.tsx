@@ -15,7 +15,8 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
-import { startAuthPolling, useAuth } from '@entities/auth';
+import { signInOf, startAuthPolling, useAuth } from '@entities/auth';
+import type { SignInState } from '@entities/auth';
 import { HeadMark } from '@entities/control-status';
 import { familyName } from '@entities/heads';
 import { startUsagePolling, useUsage } from '@entities/usage';
@@ -33,7 +34,7 @@ import {
 } from '@widgets/account-table';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
 import { dispositions } from './coverage';
-import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp, nextReset, orderText } from './model';
+import { arrangeAccounts, columnsOf, fixtureName, headNote, keyCommand, keyHelp, nextReset, orderText } from './model';
 import type { HeadRow } from './model';
 import { H, S, U } from './strings';
 import './accounts.css';
@@ -114,7 +115,15 @@ function Figures({ accounts, usage, auth, nowMs }: {
   );
 }
 
-function headColumns(): Column<HeadRow>[] {
+/** A login's badge: signed in is ok, signed out a warning the operator can act on (as the fleet's
+ *  edge reads it), and unverified neutral, never green: nobody has measured it yet. */
+const SIGN_IN: Record<SignInState, { tone: 'ok' | 'warn' | 'neutral'; word: string }> = {
+  signedIn: { tone: 'ok', word: S.signedIn },
+  signedOut: { tone: 'warn', word: S.signedOut },
+  unverified: { tone: 'neutral', word: S.unverified },
+};
+
+function headColumns(nowMs: number): Column<HeadRow>[] {
   return [
     { key: 'head', label: S.head, width: '24%', primary: true, cell: (row) => <HeadMark head={row.head} /> },
     { key: 'account', label: S.account, width: '24%', mono: true, cell: (row) => row.masked ?? ABSENT },
@@ -122,9 +131,12 @@ function headColumns(): Column<HeadRow>[] {
       key: 'state',
       label: S.state,
       width: '16%',
-      cell: (row) => <Badge tone={row.present ? 'ok' : 'warn'} quiet>{row.present ? S.signedIn : S.noCredential}</Badge>,
+      cell: (row) => {
+        const badge = SIGN_IN[signInOf(row).state];
+        return <Badge tone={badge.tone} quiet>{badge.word}</Badge>;
+      },
     },
-    { key: 'note', label: S.note, cell: (row) => row.note ?? ABSENT },
+    { key: 'note', label: S.note, cell: (row) => headNote(row, nowMs) },
   ];
 }
 
@@ -228,14 +240,14 @@ export function AccountsBoard({ payload, headRows = [], usage = null, auth = nul
 
   const headTable = (rows: readonly HeadRow[], label: string) => (
     <DataTable
-      columns={headColumns()}
+      columns={headColumns(nowMs)}
       rows={rows}
       rowKey={(row) => row.head}
       label={label}
       onOpen={(row) => toggle(openHeadKey(row.head))}
       openLabel={(row) => `${S.openHead} ${row.head}`}
       selectedKey={openedHead === null ? null : openedHead.head}
-      rowTone={(row) => (row.present ? null : 'warn')}
+      rowTone={(row) => (signInOf(row).state === 'signedOut' ? 'warn' : null)}
     />
   );
 
@@ -334,6 +346,7 @@ export function AccountsPage() {
     head,
     kind: auth.kind,
     present: auth.present,
+    verdict: auth.verdict,
     masked: auth.account_id_masked ?? null,
     note: auth.refresh_latched ?? null,
     envVar: auth.env_var,

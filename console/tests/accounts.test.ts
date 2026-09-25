@@ -33,10 +33,12 @@ import {
   windowFigure, windowName,
 } from '../src/widgets/account-table';
 import { refusalOf } from '../src/features/account-login';
-import { arrangeAccounts, columnsOf, fixtureName, keyCommand, keyHelp, nextReset } from '../src/pages/accounts/model';
+import { arrangeAccounts, columnsOf, fixtureName, headNote, keyCommand, keyHelp, nextReset } from '../src/pages/accounts/model';
+import { signInOf } from '../src/entities/auth';
 import { dispositions } from '../src/pages/accounts/coverage';
 import { AccountsBoard, ApiKeyDetail } from '../src/pages/accounts';
-import { H, S } from '../src/pages/accounts/strings';
+import type { HeadRow } from '../src/pages/accounts';
+import { H, S, clientSignIn } from '../src/pages/accounts/strings';
 import { ABSENT } from '../src/shared/lib';
 import { DataTable, Empty } from '../src/shared/ui';
 import type { View } from '../src/features/views';
@@ -477,6 +479,53 @@ describe('an account action that answered but did not happen says why', () => {
   });
 });
 
+describe('a head\'s login is what the daemon knows of it', () => {
+  // Marlin's HOLD, condition 2: ClientAuthProvider said present for every client head, so the Claude
+  // head always read "Signed in". V4-220 6b gives each login a verdict; the page prints it, and a
+  // client head from a daemon without one reads unverified, never signed in.
+  const AT = NOW - 3 * 60_000;
+  const client = (verdict?: HeadRow['verdict'], present = true): HeadRow => ({
+    head: 'claude-splice', kind: 'client', present, masked: null, note: null, ...(verdict === undefined ? {} : { verdict }),
+  });
+
+  test('the verdict decides when there is one; a held credential is its presence', () => {
+    expect(signInOf(client({ state: 'unverified' }))).toEqual({ state: 'unverified', at: null });
+    expect(signInOf(client({ state: 'accepted', at_epoch_ms: AT }))).toEqual({ state: 'signedIn', at: AT });
+    expect(signInOf(client({ state: 'rejected', at_epoch_ms: AT }, false))).toEqual({ state: 'signedOut', at: AT });
+    expect(signInOf(client())).toEqual({ state: 'unverified', at: null }); // an older daemon's unconditional present
+    expect(signInOf({ kind: 'chatgpt-oauth', present: true, verdict: { state: 'held' } }).state).toBe('signedIn');
+    expect(signInOf({ kind: 'chatgpt-oauth', present: false }).state).toBe('signedOut');
+  });
+
+  test('a client head says when upstream last answered, and the one fix when it said no', () => {
+    expect(headNote(client({ state: 'unverified' }), NOW)).toBe(H.unverified);
+    expect(headNote(client({ state: 'accepted', at_epoch_ms: AT }), NOW)).toBe('Accepted 3m ago');
+    expect(headNote(client({ state: 'rejected', at_epoch_ms: AT }, false), NOW)).toBe('Run claude-splice, then /login inside it.');
+    expect(headNote({ ...client({ state: 'rejected', at_epoch_ms: AT }, false), note: 'refresh latched' }, NOW)).toBe('refresh latched');
+    expect(headNote({ head: 'claudex', kind: 'chatgpt-oauth', present: true, masked: null, note: null }, NOW)).toBe(ABSENT);
+  });
+
+  test('the Claude logins table prints each verdict, and only a rejected login is a warning', () => {
+    const out = render(h(AccountsBoard, {
+      payload: { accounts: [] },
+      nowMs: NOW,
+      headRows: [
+        { ...client(), head: 'claude-old' },
+        { ...client({ state: 'rejected', at_epoch_ms: AT }, false), head: 'claude-out' },
+        { ...client({ state: 'accepted', at_epoch_ms: AT }), head: 'claude-in' },
+      ],
+    }));
+    const table = tableOf(out, S.claudeLogins);
+    const row = (head: string) => table.rows.find((cells) => cells.includes(head)) ?? '';
+    expect(row('claude-old')).toContain(`>${S.unverified}<`);
+    expect(row('claude-old')).not.toContain(`>${S.signedIn}<`);
+    expect(row('claude-out')).toMatch(new RegExp(`myx-badge-warn[\\s\\S]*>${S.signedOut}<`));
+    expect(row('claude-out')).toContain(clientSignIn('claude-out'));
+    expect(row('claude-in')).toContain(`>${S.signedIn}<`);
+    expect((out.match(/myx-dt-tone-warn/g) ?? []).length).toBe(1);
+  });
+});
+
 describe('the api-key heads have a table of their own', () => {
   test('each prints its variable and masked key, a missing key is a warn badge, and nothing prints the key itself', () => {
     const out = render(h(AccountsBoard, {
@@ -539,7 +588,7 @@ describe('an account\'s state', () => {
     expect(stateOf(account({ ...gone, windows: [window5h(100)] }), NOW)).toBe('signedOut');
     expect(stateOf(account({ ...gone, available: false, windows: [window5h(10)] }), NOW)).toBe('signedOut');
     expect(stateOf(account({ ...gone, windows: [] }), NOW)).toBe('signedOut');
-    expect(accountTone(account({ ...gone, windows: [window5h(10)] }), NOW)).toBe('danger');
+    expect(accountTone(account({ ...gone, windows: [window5h(10)] }), NOW)).toBe('warn'); // as a signed-out head reads
     expect(render(h(AccountStateBadge, { account: account({ ...gone, windows: [window5h(10)] }), nowMs: NOW }))).toContain('>Signed out<');
   });
 

@@ -22,13 +22,6 @@ dependencies {
     constraints {
         implementation("com.fasterxml.jackson.core:jackson-core:${libs.versions.jackson.get()}")
         implementation("com.fasterxml.jackson.core:jackson-databind:${libs.versions.jackson.get()}")
-        // TRANSITIVE CVE FLOOR — freemarker (2026-09-24, GHSA-27j2-h3m2-8237, critical). kover, applied
-        // at the root, reaches freemarker 2.3.32 through its coverage reporter; this build's plugins
-        // resolve into the same root script classpath, so the floor here reaches it (buildEnvironment
-        // shows 2.3.32 -> 2.3.35). Drop it once kover's own chain carries 2.3.35 or later.
-        implementation("org.freemarker:freemarker:${libs.versions.freemarker.get()}") {
-            because("GHSA-27j2-h3m2-8237; kover 0.9.9's coverage-report pins freemarker 2.3.32")
-        }
     }
 
     // build-logic's own tests: the hygiene and discovery checks are pure Kotlin with red proofs.

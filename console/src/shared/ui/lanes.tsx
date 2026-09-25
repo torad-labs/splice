@@ -12,7 +12,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { cx } from '../lib';
 import { Badge } from './kit';
 import type { Tone } from './kit';
-import { arcPath, columnsOf, crossings, newestArcs, sideOf, trackTemplate } from './lanes-geometry';
+import { arcPath, columnsOf, newestArcs, readOf, sideOf, trackTemplate } from './lanes-geometry';
 import type { Box, LaneArc, LaneMessage } from './lanes-geometry';
 import { S } from './strings';
 import './lanes.css';
@@ -80,8 +80,9 @@ function Flight({ d, hue, onDone }: { d: string; hue: string; onDone: () => void
 
 export function Lanes({ lanes, messages, label, open, selected = null, cardLabel }: {
   lanes: readonly Lane[];
-  /** Every hand-off between cards, by card key; each direction of a pair is drawn once, newest. */
-  messages: readonly LaneMessage[];
+  /** Every hand-off between cards, by card key; each direction of a pair is drawn once, newest.
+   *  Null while the hand-offs have not been read: no arcs, and no read taken. */
+  messages: readonly LaneMessage[] | null;
   label: string;
   /** Opens a card; without it the cards are not controls. */
   open?: (key: string) => void;
@@ -94,12 +95,12 @@ export function Lanes({ lanes, messages, label, open, selected = null, cardLabel
   const marker = useId();
   const [drawn, setDrawn] = useState<{ width: number; height: number; arcs: Drawn[] }>({ width: 0, height: 0, arcs: [] });
   const [flights, setFlights] = useState<{ id: number; key: string }[]>([]);
-  const seen = useRef<Map<string, number> | null>(null);
+  const seen = useRef<ReadonlyMap<string, number> | null>(null);
   const nextFlight = useRef(0);
 
   const columns = useMemo(() => columnsOf(lanes.map((lane) => lane.cards)), [lanes]);
   const hueOfCard = useMemo(() => new Map(lanes.flatMap((lane) => lane.cards.map((card) => [card.key, lane.hue] as const))), [lanes]);
-  const arcs = useMemo(() => newestArcs(messages, new Set(hueOfCard.keys())), [messages, hueOfCard]);
+  const arcs = useMemo(() => newestArcs(messages ?? [], new Set(hueOfCard.keys())), [messages, hueOfCard]);
   // What moves the drawing: the arcs, and where each card sits (its lane and its column).
   const shape = `${lanes.map((lane) => `${lane.key}:${lane.cards.map((card) => `${card.key}@${columns.at.get(card.key) ?? 0}`).join(',')}`).join('|')}#${arcs.map((arc) => `${arc.key}@${arc.at}`).join('|')}`;
 
@@ -130,17 +131,14 @@ export function Lanes({ lanes, messages, label, open, selected = null, cardLabel
     // `shape` names everything the measure reads: the arcs and where each card sits.
   }, [shape]);
 
-  // A dot for each arc a message crossed since the last read. The first read only takes note.
+  // A dot for each arc a message crossed since the last read (lanes-geometry readOf).
   useEffect(() => {
-    if (seen.current === null) {
-      seen.current = new Map(arcs.map((arc) => [arc.key, arc.at]));
-      return;
-    }
-    const crossed = crossings(seen.current, arcs);
-    for (const arc of arcs) seen.current.set(arc.key, Math.max(seen.current.get(arc.key) ?? 0, arc.at));
+    const read = readOf(seen.current, messages, arcs);
+    seen.current = read.seen;
+    const { crossed } = read;
     if (crossed.length === 0 || reducedMotion()) return;
     setFlights((flying) => [...flying, ...crossed.map((key) => ({ id: (nextFlight.current += 1), key }))]);
-  }, [arcs]);
+  }, [messages, arcs]);
 
   return (
     <div className="myx-lanes" role="group" aria-label={label}>
@@ -205,6 +203,10 @@ export function Lanes({ lanes, messages, label, open, selected = null, cardLabel
         {drawn.arcs.map(({ arc, d, hue }) => (
           <path key={arc.key} className={cx('myx-lanes-arc', hue)} d={d} markerEnd={`url(#${marker})`} data-arc={arc.key} />
         ))}
+      </svg>
+      {/* The dots fly OVER the cards: under them, a dot sank into a card between its two ends and
+          came out of it, reading as that card's hand-off (Hitstop, 2026-09-25). */}
+      <svg className="myx-lanes-flights" width={drawn.width} height={drawn.height} aria-hidden="true">
         {flights.map((flight) => {
           const path = drawn.arcs.find((entry) => entry.arc.key === flight.key);
           if (path === undefined) return null;

@@ -359,8 +359,9 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
       })),
     };
   });
-  const messages: LaneMessage[] = boardEdges === null
-    ? []
+  // Hand-offs not read yet are null, not none: the lanes take no read of them until they are.
+  const messages: LaneMessage[] | null = boardEdges === null
+    ? null
     : fleetHandoffs(rows, boardEdges).flatMap((handoff) => (
       handoff.from === null || handoff.to === null ? [] : [{ from: keyOf(handoff.from), to: keyOf(handoff.to), at: handoff.at }]
     ));

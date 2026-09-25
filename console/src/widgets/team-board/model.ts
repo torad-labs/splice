@@ -7,7 +7,7 @@
 // in flight over the last hour worked out from that log. The economics are the daemon's numbers
 // printed as they arrive: it joins every perf row to a slot on the 8-character session tag itself
 // (TeamsEconomics.kt), so nothing here joins them a second time.
-import type { TeamEconomicsPayload, TeamMemberRow, TeamPayload, TeamSlot, TeamTally } from '@entities/team';
+import type { TeamEconomicsPayload, TeamMemberRow, TeamMessage, TeamPayload, TeamSlot, TeamTally } from '@entities/team';
 
 /** One turn of one member. `live` is a turn still running: its length is the time so far. */
 export interface TeamTurn {
@@ -101,8 +101,8 @@ function secondsOf(stamp: string): number {
 }
 
 /** The newest hand-off a member RECEIVED, as its HH:MM, or null when none reached it. */
-export function lastReceived(board: TeamPayload, member: string): string | null {
-  const got = board.messages.filter((m) => m.to === member).sort((a, b) => secondsOf(b.time) - secondsOf(a.time));
+export function lastReceived(messages: readonly TeamMessage[], member: string): string | null {
+  const got = messages.filter((m) => m.to === member).sort((a, b) => secondsOf(b.time) - secondsOf(a.time));
   return got[0]?.time ?? null;
 }
 

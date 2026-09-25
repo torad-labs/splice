@@ -11,7 +11,7 @@ import { SessionsBoard } from '../src/pages/sessions';
 import { lanesOf } from '../src/pages/sessions/select';
 import { Lanes } from '../src/shared/ui/lanes';
 import type { Lane, LaneCard } from '../src/shared/ui/lanes';
-import { arcPath, columnsOf, crossings, newestArcs, sideOf, trackTemplate } from '../src/shared/ui/lanes-geometry';
+import { arcPath, columnsOf, crossings, newestArcs, readOf, sideOf, trackTemplate } from '../src/shared/ui/lanes-geometry';
 
 const h = React.createElement;
 const T0 = 1_700_000_000_000;
@@ -66,6 +66,33 @@ describe('when a dot crosses', () => {
     expect(crossings(new Map([['a>b', 4], ['b>a', 3]]), arcs)).toEqual(['a>b']);
     expect(crossings(new Map([['a>b', 5]]), arcs)).toEqual(['b>a']);
     expect(crossings(new Map([['a>b', 5], ['b>a', 3]]), arcs)).toEqual([]);
+  });
+});
+
+describe('what a read of the hand-offs takes note of (Hitstop, 2026-09-25)', () => {
+  const cards = new Set(['a', 'b', 'c']);
+  const old = [{ from: 'a', to: 'b', at: 5 }, { from: 'c', to: 'a', at: 7 }];
+
+  test('hand-offs not read yet are no read: nothing seen, nothing crossed', () => {
+    expect(readOf(null, null, [])).toEqual({ seen: null, crossed: [] });
+  });
+
+  test('the first read only takes note, so opening the board flies nothing', () => {
+    const first = readOf(null, old, newestArcs(old, cards));
+    expect(first.crossed).toEqual([]);
+    expect(Object.fromEntries(first.seen ?? [])).toEqual({ 'a>b': 5, 'c>a': 7 });
+  });
+
+  test('a read after it flies what is new, and only that', () => {
+    const first = readOf(null, old, newestArcs(old, cards));
+    const next = [...old, { from: 'a', to: 'b', at: 9 }];
+    expect(readOf(first.seen, next, newestArcs(next, cards)).crossed).toEqual(['a>b']);
+  });
+
+  test('a card that appears after its hand-off does not fly that hand-off again', () => {
+    // c is not a card at the first read (the registry listed it late), so c>a is not drawn then.
+    const first = readOf(null, old, newestArcs(old, new Set(['a', 'b'])));
+    expect(readOf(first.seen, old, newestArcs(old, cards)).crossed).toEqual([]);
   });
 });
 
@@ -143,6 +170,13 @@ describe('the paint order', () => {
     expect(z('.myx-lane-card')).toBeGreaterThan(z('.myx-lanes-arcs'));
     expect(rule('.myx-lane-card')).toMatch(/position:\s*relative/);
     expect(rule('.myx-lane-card')).toMatch(/background:\s*var\(--lane-ground\)/);
+  });
+
+  test('a dot in flight stands over every card, so it never sinks into one between its ends', () => {
+    // Hitstop, 2026-09-25: under the cards, a dot vanished into the card between sender and
+    // receiver and came out of it, reading as that card's hand-off.
+    expect(z('.myx-lanes-flights')).toBeGreaterThan(z('.myx-lane-card'));
+    expect(rule('.myx-lanes-flights')).toMatch(/pointer-events:\s*none/);
   });
 });
 

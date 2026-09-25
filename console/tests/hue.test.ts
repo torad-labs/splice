@@ -52,17 +52,20 @@ describe('a head takes its family hue', () => {
   });
 });
 
-describe('a head with no family falls back to registry order', () => {
-  test('over the slots no listed family claims, so it never wears a family colour', () => {
+describe('a head whose family the console does not map wears the neutral', () => {
+  // Every slot is some provider's colour, so a slot handed to an unmapped head named the wrong
+  // provider: under a daemon that names no families, claudex wore xai's blue and claude-grok
+  // Anthropic's orange (Hitstop and Marlin, 2026-09-25).
+  test('no family, or one the console does not know, is the no-head neutral, never a family slot', () => {
     const hues = huesOf([entry('claudex', 'openai'), entry('proxy', null), entry('bonsai', 'local'), entry('custom', 'fireworks')]);
-    expect(hues.get('proxy')).toBe('1');
-    expect(hues.get('custom')).toBe('2');
-    expect(['3', '5']).not.toContain(hues.get('proxy'));
+    expect(hues.get('claudex')).toBe('3');
+    expect(hues.get('proxy')).toBe('0');
+    expect(hues.get('custom')).toBe('0');
   });
 
-  test('a daemon that names no families colours every head in registry order, as before', () => {
-    const keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
+  test('a daemon that names no families colours every head neutral, and none as a provider', () => {
+    const keys = ['claudex', 'claude-grok', 'claude-kimi'];
     const hues = huesOf(keys.map((key) => entry(key, undefined)));
-    expect(keys.map((key) => hues.get(key))).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '1-up']);
+    expect(keys.map((key) => hues.get(key))).toEqual(['0', '0', '0']);
   });
 });

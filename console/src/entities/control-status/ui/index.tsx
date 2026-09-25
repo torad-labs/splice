@@ -13,7 +13,6 @@ import { huesOf, type Hue } from '../model/hue';
 import { controlStatusStore } from '../model/store';
 import './head-mark.css';
 
-export { HEAD_HUES } from '../model/hue';
 export type { Hue } from '../model/hue';
 
 /** A head's colour from the registry; `0` for a head it does not list. */

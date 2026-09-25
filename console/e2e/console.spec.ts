@@ -10,6 +10,7 @@
 // printed as `undefined` (doctor's rollback). Soft assertions, so one run names every fault class on
 // every page instead of stopping at the first.
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -265,7 +266,7 @@ test('an api-key head\'s key is stored and removed from its detail, and each ans
   // beside SPLICE_CONFIG in the stack's own home. The doctor rows later in this file read the key as
   // unset, so the store is emptied however this test ends.
   const name = 'CONSOLE_E2E_NO_SUCH_KEY';
-  const secret = `sk-e2e-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const secret = `sk-e2e-${randomUUID()}`;
   const faults = await open(page, 'accounts');
   try {
     await headRow(page, STACK.keyHead).click();

@@ -130,6 +130,8 @@ internal class UpstreamRequest(
         val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes, recorder)
         return statement.execute { resp ->
             ctx.markHeaders()
+            // V4-220 item 6b: every answer reaches the provider, so a forwarded credential's verdict is known.
+            ctx.auth.upstreamAnswered(resp.status.value, resp.status.isSuccess())
             recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
             if (resp.status.isSuccess()) {
                 onStreamStart()

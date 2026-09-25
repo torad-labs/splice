@@ -145,7 +145,7 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
         value={data === null || data.inFlight === null ? S.absent : data.inFlight}
         {...(hour.length === 0 ? {} : { trend: <Sparkline values={hour.map((point) => point.turns)} label={S.lastHour} /> })}
       />
-      <Stat label={S.messages} value={board.messages.length} unit={U.today} />
+      <Stat label={S.messages} {...(board.messages === null ? { value: S.absent } : { value: board.messages.length, unit: U.today })} />
     </StatRow>
   );
 }
@@ -268,7 +268,7 @@ export function TeamLanes({ board }: { board: TeamPayload }) {
   // A message names its parties as the board prints them (pages/teams/board.ts messagesOf): a
   // seated member by name, so a card is found by its member's name; a party no seat holds is not.
   const slotOf = new Map(seats.flatMap((seat) => (seat.member === null ? [] : [[seat.member.name, seat.slot.id] as const])));
-  const messages: LaneMessage[] = board.messages.flatMap((message) => {
+  const messages: LaneMessage[] | null = board.messages === null ? null : board.messages.flatMap((message) => {
     const from = slotOf.get(message.from);
     const to = slotOf.get(message.to);
     return from === undefined || to === undefined ? [] : [{ from, to, at: message.at }];
@@ -329,7 +329,7 @@ export function SeatDetail({ board, seat }: { board: TeamPayload; seat: Seat }) 
       [S.tokensOut, member.tokensOut === null ? S.absent : fmtInt(member.tokensOut)] as const,
       [S.cost, <>{money(member.costEst)}<BasisTag basis="estimated" /></>] as const,
       [S.lastTurn, member.lastTurn ?? S.absent] as const,
-      [S.lastMessage, lastReceived(board, member.name) ?? S.none] as const,
+      [S.lastMessage, board.messages === null ? S.absent : (lastReceived(board.messages, member.name) ?? S.none)] as const,
       [S.checks, <ChecksBadge checks={member.checks} />] as const,
     ]),
   ];
@@ -365,7 +365,8 @@ export function TeamTimeline({ board, data }: { board: TeamPayload; data: TeamVi
   if (data === null) return section(<Empty text={S.readingTurns} />);
   if (board.members.length === 0) return section(<Empty text={S.noSession} source={H.openSeat} />);
 
-  const axis = dayAxis([...data.turns.map((turn) => turn.start), ...board.messages.map((message) => message.at)], data.now);
+  const sent = board.messages ?? [];
+  const axis = dayAxis([...data.turns.map((turn) => turn.start), ...sent.map((message) => message.at)], data.now);
   const span = Math.max(axis.to - axis.from, 1);
   const x = (at: number): string => `${Math.max(0, Math.min(100, ((at - axis.from) / span) * 100))}%`;
   const grid = axis.ticks.map((tick) => <span key={tick.at} className="myx-tt-grid" style={{ left: x(tick.at) }} aria-hidden="true" />);
@@ -380,9 +381,11 @@ export function TeamTimeline({ board, data }: { board: TeamPayload; data: TeamVi
       </div>
       <div className="myx-tt-row">
         <span className="myx-tt-name myx-tt-quiet">{S.handoffs}</span>
-        <span className="myx-tt-track" role="img" aria-label={`${S.handoffs}: ${board.messages.length}`}>
+        <span className="myx-tt-track" role="img" aria-label={`${S.handoffs}: ${board.messages === null ? S.absent : board.messages.length}`}>
           {grid}
-          {board.messages.map((message) => (
+          {/* Not read yet is the absence glyph, never an empty track that reads as no hand-offs. */}
+          {board.messages === null ? <span className="myx-tt-unread" aria-hidden="true">{S.absent}</span> : null}
+          {sent.map((message) => (
             <span
               key={`${message.at}-${message.from}-${message.to}`}
               className="myx-tt-msg myx-mark-series-2"

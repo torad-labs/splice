@@ -12,8 +12,7 @@ note: |
   Return `writeFailure(err, PENDING_ROW)` from the catch (shared/api); the caller prints
   `writeNote(result, ...)`, which reads only `applied` as success and prints the reason on `failed`.
 files:
-  - console/src/entities/*/api/**/*.ts
-  - console/src/shared/api/**/*.ts
+  - console/src/**/*.ts
 rule:
   any:
     - pattern: return null

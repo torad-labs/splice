@@ -271,6 +271,7 @@ export function McpPage() {
     <>
       <PageHeader
         title={S.title}
+        info={{ text: H.about, label: S.about }}
         {...(sample === null ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}
       >
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />

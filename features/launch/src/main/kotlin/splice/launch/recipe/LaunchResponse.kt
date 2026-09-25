@@ -10,9 +10,11 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialVerdict
 import splice.launch.LaunchHead
 import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
+import java.time.Instant
 
 internal class LaunchResponse {
     // The exec-recipe response body: {env, unset, argv, warning?} — the shim reads it to run the head.
@@ -34,14 +36,20 @@ internal class LaunchResponse {
         }
     }
 
-    // Names the exact fix: the env var for an api-key head, the login command for an OAuth head.
+    // Names the exact fix: the env var for an api-key head, the login command for an OAuth head, and
+    // Claude Code's own /login for a client head upstream rejected (V4-220 item 6b: splice holds nothing
+    // there, so the only fix is the caller's login).
     // The key is read from the DAEMON's environment, so "export then retry" silently fails until
     // the daemon restarts — the message says so.
     private fun missingAuthWarning(target: LaunchHead, auth: AuthDescription, spec: LaunchSpec): String {
         val label = target.head.label
         val envVar = auth.fields["env_var"]
         val keyFile = auth.fields["key_file"]
+        val verdict = auth.verdict
         return when {
+            verdict is CredentialVerdict.Rejected ->
+                "'$label': upstream rejected the Claude login on the last forwarded turn " +
+                    "(${Instant.ofEpochMilli(verdict.atEpochMs)}) — run /login in this session"
             // A file-configured head's primary fix is the file it reads, not an env var it never used.
             keyFile != null ->
                 "'$label' has no upstream API key: add it to $keyFile " +

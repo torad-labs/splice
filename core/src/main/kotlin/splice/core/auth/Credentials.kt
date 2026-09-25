@@ -36,11 +36,13 @@ public sealed class Credentials {
     public data object ClientForwarded : Credentials()
 }
 
-/** Masked, wire-safe view of an auth state (never a secret). */
+/** Masked, wire-safe view of an auth state (never a secret). [verdict] is what upstream last said
+ *  about a credential splice forwards and does not hold (V4-220 item 6b); a held one is [CredentialVerdict.Held]. */
 public data class AuthDescription(
     val present: Boolean,
     val kind: String,
     val fields: Map<String, String> = emptyMap(),
+    val verdict: CredentialVerdict = CredentialVerdict.Held,
 )
 
 /** Provider auth SPI: resolve credentials (cached) + masked introspection. */
@@ -60,6 +62,13 @@ public interface RefreshableAuthProvider : AuthProvider {
      * providers only narrow it.
      */
     public fun allowRefreshAfterFailure(status: Int, body: String): Boolean = true
+
+    /**
+     * V4-220 item 6b: upstream answered one attempt with [status], [success] by the transport's own
+     * rule. Called for every attempt, before any retry decision. A provider that holds its credential
+     * learns nothing from it; one that forwards the caller's (ClientAuthProvider) learns the verdict.
+     */
+    public fun upstreamAnswered(status: Int, success: Boolean): Unit = Unit
 
     /**
      * V4-73: does this vendor report a QUOTA EXHAUSTION behind a status the HTTP layer does not

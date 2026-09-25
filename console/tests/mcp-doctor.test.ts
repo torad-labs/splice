@@ -386,7 +386,7 @@ describe('budgets and alerts', () => {
 
   test('a refusal prints whole on its own line under the table; the save cell holds only Saved', () => {
     // The review capture of 2026-09-25 cut the daemon's refusal to "daily_usd 90…" in the cell.
-    const reason = 'daily_usd 900 for claudex is past the 500 cap in splice.toml';
+    const reason = "The daily cap can't be negative."; // the daemon's own words (BudgetStore, #275)
     expect(cellNote('Saved')).toBe('Saved');
     expect(cellNote(reason)).toBeNull();
     expect(cellNote(undefined)).toBeNull();

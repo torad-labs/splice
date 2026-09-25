@@ -109,7 +109,7 @@ public class ControlServer(
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
     private val fleet = FleetMount(payloads, resolver, audit, dashboardHtml, guard, ports)
-    private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard)
+    private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard, heads, log)
     private val configuration = ConfigurationMount(config, topologyStale, ports, guard)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
     private val accounts = AccountsMount(heads, resolver, ports, guard)

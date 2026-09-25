@@ -253,7 +253,7 @@ export function AccountsBoard({ payload, headRows = [], usage = null, auth = nul
 
   return (
     <div className="myx-ac" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
-      <PageHeader title={S.title} {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}>
+      <PageHeader title={S.title} info={{ text: H.about, label: S.about }} {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
 

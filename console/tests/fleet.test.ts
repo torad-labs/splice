@@ -7,6 +7,8 @@
 //
 // A `.ts` test cannot hold JSX (TS1161), so elements are built with React.createElement and
 // asserted against renderToStaticMarkup's string.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
@@ -787,5 +789,16 @@ describe('how a head joins the fleet', () => {
   test('the empty fleet does not send the operator to a topology editor that cannot add a head', () => {
     expect(EMPTIES.noHeads.source).not.toContain('topology');
     expect(EMPTIES.noHeads.source).toContain('splice add');
+  });
+});
+
+describe('the first-byte cell', () => {
+  // Hitstop, 2026-09-25: the sparkline's own minimum width outgrew its track in the 9.5u column, so
+  // claude-grok's line ran over the 9 of 986ms.
+  const sheet = readFileSync(fileURLToPath(new URL('../src/pages/fleet/fleet.css', import.meta.url)), 'utf8');
+  test('the line shrinks to its track, and the figure keeps the width of its widest value', () => {
+    expect(sheet).toMatch(/\.myx-fl-lat \.myx-spark \{ min-width: 0; \}/);
+    expect(sheet).toMatch(/\.myx-fl-lat \.myx-fl-figure \{ min-width: 5ch; text-align: end; \}/);
+    expect(sheet).toMatch(/\.myx-fl-figure \{[^}]*font-variant-numeric: tabular-nums;/);
   });
 });

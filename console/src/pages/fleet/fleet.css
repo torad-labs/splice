@@ -26,6 +26,11 @@
   gap: var(--space-3);
   min-width: 0;
 }
+/* The line shrinks to its track and the figure keeps the width of the widest one it prints
+   ("999ms", "59.9s"), so a line never draws into its value (Hitstop, 2026-09-25: claude-grok's ran
+   over the 9 of 986ms). */
+.myx-fl-lat .myx-spark { min-width: 0; }
+.myx-fl-lat .myx-fl-figure { min-width: 5ch; text-align: end; }
 
 .myx-fl-add,
 .myx-fl-cause,

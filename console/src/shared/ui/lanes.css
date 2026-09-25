@@ -106,7 +106,7 @@
   color: var(--fg);
   font: inherit;
   text-align: start;
-  /* opaque and over the arcs (.myx-lanes-arcs) */
+  /* opaque, over the arcs (.myx-lanes-arcs) and under the dots in flight (.myx-lanes-flights) */
   position: relative;
   z-index: 2;
 }
@@ -133,6 +133,14 @@ button.myx-lane-card:focus-visible { outline: var(--focus-width) solid var(--foc
   position: absolute;
   inset: 0;
   z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+/* A dot in flight crosses a card between its two ends in view, so its path shows the real sender. */
+.myx-lanes-flights {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
   overflow: visible;
   pointer-events: none;
 }

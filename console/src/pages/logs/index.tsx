@@ -89,6 +89,7 @@ export function LogsBoard({
     >
       <PageHeader
         title={S.title}
+        info={{ text: H.about, label: S.about }}
         actions={(
           <>
             {reset ? <Badge tone="warn">{S.rotated}</Badge> : null}

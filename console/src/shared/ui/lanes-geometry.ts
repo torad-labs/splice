@@ -85,6 +85,19 @@ export function newestArcs(messages: readonly LaneMessage[], cards: ReadonlySet<
   return [...newest.values()].sort((left, right) => left.at - right.at);
 }
 
+/** The newest message of each direction of every pair, drawn or not: what the lanes have SEEN is
+ *  kept over every message, so a card that appears after its hand-off (a session the registry
+ *  listed late) does not make that old hand-off look like one crossing now. */
+export function newestPairs(messages: readonly LaneMessage[]): Map<string, number> {
+  const newest = new Map<string, number>();
+  for (const message of messages) {
+    if (message.from === message.to) continue;
+    const key = `${message.from}>${message.to}`;
+    newest.set(key, Math.max(newest.get(key) ?? message.at, message.at));
+  }
+  return newest;
+}
+
 /** The arcs a message crossed since `seen` was taken: a pair whose newest message moved, or a pair
  *  that was not there at all. What was on the board at first paint never counts, so opening the
  *  page does not fire every arc at once. */
@@ -93,6 +106,23 @@ export function crossings(seen: ReadonlyMap<string, number>, arcs: readonly Lane
     const was = seen.get(arc.key);
     return was === undefined || arc.at > was;
   }).map((arc) => arc.key);
+}
+
+/** One read of the hand-offs: what is seen after it, and the drawn arcs that crossed since the last.
+ *  Hand-offs not read yet (null) are no read at all, and the first read only takes note: an empty
+ *  list taken as the first read made every message already sent cross the board when the chat
+ *  arrived, on every open (Hitstop, 2026-09-25). */
+export function readOf(
+  seen: ReadonlyMap<string, number> | null,
+  messages: readonly LaneMessage[] | null,
+  arcs: readonly LaneArc[],
+): { seen: ReadonlyMap<string, number> | null; crossed: string[] } {
+  if (messages === null) return { seen, crossed: [] };
+  const pairs = newestPairs(messages);
+  if (seen === null) return { seen: pairs, crossed: [] };
+  const next = new Map(seen);
+  for (const [key, at] of pairs) next.set(key, Math.max(next.get(key) ?? at, at));
+  return { seen: next, crossed: crossings(seen, arcs) };
 }
 
 /** Which side of a card an arc leaves from when its pair runs both ways: the two directions would

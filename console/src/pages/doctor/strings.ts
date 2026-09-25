@@ -5,6 +5,7 @@
 // em-dash separator never reaches the page (checkFix and checkFinding split on it).
 export const S = {
   title: 'Doctor',
+  about: 'About doctor',
   sample: 'Sample data',
   attentionFirst: 'Attention first',
   bySection: 'By section',
@@ -62,6 +63,7 @@ export const S = {
 } as const;
 
 export const H = {
+  about: 'Checks on this install, each with its evidence and its fix.',
   noReport: 'This splice version does not serve the doctor report.',
   noChecks: 'The daemon sent an empty report; run splice doctor to compare.',
   report: 'The fields the daemon served, under their own names.',

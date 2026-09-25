@@ -25,6 +25,11 @@ netty = "4.2.17.Final"          # 4.2.16.Final resolved; GHSA-8c42-7qj2-3j46 (CO
 # that owns that classpath (see the reasoning there). Build-time only, never in the shipped jar.
 # A detekt bump would be the cleaner fix but is unavailable: 1.23.8 is the latest release.
 jackson = "2.21.5"              # 2.20.1 resolved; advisories in jackson-core/databind
+# freemarker rides in on the ROOT script classpath under kover (kover-gradle-plugin -> kover-features-jvm
+# -> intellij-coverage-reporter -> coverage-report), floored in build-logic/build.gradle.kts beside
+# jackson for the same reason. Build-time only, never in the shipped jar. No bump reaches it: kover
+# 0.9.9 and coverage-report 1.0.27 are the latest releases, and 1.0.27 still pins 2.3.32.
+freemarker = "2.3.35"           # 2.3.32 resolved; GHSA-27j2-h3m2-8237 (critical, template-loading path traversal)
 
 [libraries]
 graaljs-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graaljs" }

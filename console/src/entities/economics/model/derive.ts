@@ -26,11 +26,17 @@ export interface Totals {
   toolsDeferred: number;
   deferralTurns: number;
   rateLimited: number;
+  /** The dollars of the priced turns, as the daemon priced each at its own model's card. */
+  costUsd: number;
+  /** Turns whose dollars are not in costUsd: those whose model had no card, and every turn of an
+   *  hour recorded before the daemon priced turns. */
+  unpricedTurns: number;
 }
 
 const ZERO: Totals = {
   turns: 0, inTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, outTokens: 0, reqBytes: 0,
   upstreamBytes: 0, toolsEager: 0, toolsDeferred: 0, deferralTurns: 0, rateLimited: 0,
+  costUsd: 0, unpricedTurns: 0,
 };
 
 export function sum(buckets: readonly EconomicsBucket[]): Totals {
@@ -46,6 +52,8 @@ export function sum(buckets: readonly EconomicsBucket[]): Totals {
     toolsDeferred: a.toolsDeferred + b.tools_deferred,
     deferralTurns: a.deferralTurns + b.deferral_turns,
     rateLimited: a.rateLimited + b.rate_limited,
+    costUsd: a.costUsd + (b.cost_usd ?? 0),
+    unpricedTurns: a.unpricedTurns + (b.cost_usd === null ? b.turns : b.unpriced_turns),
   }), ZERO);
 }
 
@@ -148,42 +156,16 @@ export function burn(
 }
 
 /**
- * A rate card, structurally the daemon's `ModelRates` (splice/core/model/TokenCost.kt): USD per
- * MILLION tokens, cache_write optional because a vendor that does not report a separate write
- * bucket bills those tokens at the input rate.
+ * The dollars of [totals], or null when it has turns and none of them was priced.
  *
- * Declared here rather than imported from `@entities/model` because one slice may not import
- * another; the shapes are structurally identical, so a catalog row's rates satisfy this directly.
+ * The daemon prices each turn at record time at the card of the model that turn ran (V4-221), so
+ * the console multiplies nothing: an hour mixes models (a haiku subagent, a compaction model), and
+ * pricing its token sums at one card mispriced every turn on another. A window with some unpriced
+ * turns reads its priced dollars, and the page counts the rest beside them. No turns at all is
+ * $0, a reading.
  */
-export interface CostRates {
-  input: number;
-  cache_read: number;
-  output: number;
-  cache_write?: number;
-}
-
-const TOKENS_PER_MILLION = 1_000_000;
-
-/**
- * USD for [totals] at [rates], computed the way the daemon computes it (`TokenCost.of`).
- *
- * THE FRESH-BUCKET SUBTRACTION IS THE WHOLE POINT. `in_tokens` is the TOTAL the plan meters and it
- * already CONTAINS the cache-read and cache-write halves, so billing it at the input rate on top of
- * billing those halves at their own rates charges the same tokens twice — at the most expensive
- * rate in the card. Fresh = total - read - write, floored at 0 for a bucket written before V4-86
- * whose `cache_write_tokens` is absent.
- *
- * A write with no declared write rate bills at the INPUT rate and not at zero: a cache write never
- * costs less than a miss (TokenCost.kt, ModelRates.cacheWrite).
- */
-export function costOf(totals: Totals, rates: CostRates): number {
-  const fresh = Math.max(0, totals.inTokens - totals.cachedTokens - totals.cacheWriteTokens);
-  const perWrite = rates.cache_write ?? rates.input;
-  const usd = fresh * rates.input
-    + totals.cachedTokens * rates.cache_read
-    + totals.cacheWriteTokens * perWrite
-    + totals.outTokens * rates.output;
-  return usd / TOKENS_PER_MILLION;
+export function costOf(totals: Totals): number | null {
+  return totals.turns > 0 && totals.unpricedTurns >= totals.turns ? null : totals.costUsd;
 }
 
 /** Per-hour input tokens over the last [hours], oldest first, with missing hours as 0 so the

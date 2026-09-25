@@ -13,7 +13,7 @@
 // (entities/economics/model/derive.ts carries the whole story).
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
-import { useEconomics, startEconomicsPolling, burn, hitRate, perTurn, amplification, wireDelta, sum, within } from '@entities/economics';
+import { useEconomics, startEconomicsPolling, burn, costOf, hitRate, perTurn, amplification, wireDelta, sum, within } from '@entities/economics';
 import type { EconomicsPayload, HeadEconomics, UsagePayload } from '@shared/api';
 import { startModelsPolling, useModels, slotTiers, windowSourceText } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
@@ -37,7 +37,7 @@ import type { Column, RowGroup } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
 import { TokenChart, CostChart, ByteChart, ToolChart, LimitedChart, WINDOWS } from '@widgets/scope-chart';
 import { dispositions } from './coverage';
-import { DEFAULT_VIEWS, fmtUsd, perHour, pricedCost, ratesFor, sortedHeads } from './model';
+import { DEFAULT_VIEWS, fmtUsd, perHour, sortedHeads } from './model';
 import { PlanBay } from './plan';
 import { H, S, U } from './strings';
 import './usage.css';
@@ -88,11 +88,10 @@ function hoursLeft(burnRate: number, ceiling: number | null, spent: number): str
 
 /** The insets for one head: every chart the rollup supports, each framed with its basis. The
  *  bars take the head's own colour (DESIGN.md section 5), stepped by kind of token. */
-function HeadCharts({ head, windowIndex, now, rates }: {
+function HeadCharts({ head, windowIndex, now }: {
   head: HeadEconomics;
   windowIndex: number;
   now: number;
-  rates: ReturnType<typeof ratesFor>;
 }) {
   const chartWindow = WINDOWS[windowIndex];
   const totals = sum(within(head.buckets, chartWindow.hours, now));
@@ -104,7 +103,7 @@ function HeadCharts({ head, windowIndex, now, rates }: {
     <div className="myx-usage-detail-grid">
       <div className="myx-usage-charts">
         <TokenChart buckets={head.buckets} window={chartWindow} now={now} />
-        <CostChart buckets={head.buckets} window={chartWindow} now={now} rates={rates} />
+        <CostChart buckets={head.buckets} window={chartWindow} now={now} />
         <ByteChart buckets={head.buckets} window={chartWindow} now={now} />
         <ToolChart buckets={head.buckets} window={chartWindow} now={now} />
         <LimitedChart buckets={head.buckets} window={chartWindow} now={now} />
@@ -199,12 +198,9 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
   const allTokens = all.inTokens + all.outTokens;
   const read = hitRate(all);
 
-  // Cost prices each head by its own rate card; a head with none is left out and counted, never
-  // priced at zero.
-  const priceOf = pricedCost(new Map(heads.map((head) => [head.key, ratesFor(catalog, head.key)])));
-  const unpriced = perHead.filter(({ head, totals }) => totals.turns > 0 && ratesFor(catalog, head.key) === null).length;
-  const cost = perHead.reduce((held, { head, totals }) => held + priceOf(head, totals), 0);
-  const priced = perHead.some(({ head }) => ratesFor(catalog, head.key) !== null);
+  // The daemon priced each turn at its own model's card; a turn it could not price is left out of
+  // the dollars and counted beside them, never priced at zero.
+  const cost = costOf(all);
   const trend = (values: number[], label: string, format: (value: number) => string) => (
     <span className="myx-usage-trend">
       <span className="myx-usage-trend-note" aria-hidden="true">{U.lastDay}</span>
@@ -324,9 +320,9 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
               />
               <Stat
                 label={S.cost}
-                value={priced ? fmtUsd(cost) : S.absent}
-                {...(priced ? { trend: trend(perHour(heads, TREND_HOURS, now, priceOf), S.cost, fmtUsd) } : {})}
-                {...(unpriced === 0 ? {} : { sub: <>{`${unpriced} ${U.unpriced}`}<InfoTip text={H.unpriced} label={S.unpricedWhy} /></> })}
+                value={cost === null ? S.absent : fmtUsd(cost)}
+                {...(cost === null ? {} : { trend: trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.costUsd), S.cost, fmtUsd) })}
+                {...(all.unpricedTurns === 0 ? {} : { sub: <>{`${fmtInt(all.unpricedTurns)} ${U.unpriced}`}<InfoTip text={H.unpriced} label={S.unpricedWhy} /></> })}
               />
               <Stat
                 label={S.cacheRead}
@@ -362,7 +358,7 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
               actions={<span className="myx-usage-note">{`${S.updated} ${timeAgo(payload.generated_at, now)}`}</span>}
               className={cx('myx-usage-detail', hueClass(hueOf(active.key)))}
             >
-              <HeadCharts head={active} windowIndex={windowIndex} now={now} rates={ratesFor(catalog, active.key)} />
+              <HeadCharts head={active} windowIndex={windowIndex} now={now} />
             </Section>
           )}
 

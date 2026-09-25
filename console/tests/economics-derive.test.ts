@@ -7,7 +7,7 @@
 // 100%). A gauge built on uncached tokens reads comfortable at the exact moment the quota dies.
 import { describe, expect, test } from 'vitest';
 import {
-  sum, within, hitRate, writeRate, amplification, perTurn, toolSurface, wireDelta, burn, hourly,
+  sum, within, hitRate, writeRate, amplification, perTurn, toolSurface, wireDelta, burn, hourly, costOf,
 } from '../src/entities/economics/model/derive';
 import type { EconomicsBucket, HeadEconomics } from '../src/shared/api';
 
@@ -20,6 +20,7 @@ function bucket(hoursAgo: number, over: Partial<EconomicsBucket> = {}): Economic
     turns: 0, in_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, out_tokens: 0,
     req_bytes: 0, upstream_req_bytes: 0,
     tools_eager: 0, tools_deferred: 0, deferral_turns: 0, rate_limited: 0,
+    cost_usd: 0, unpriced_turns: 0,
     ...over,
   };
 }
@@ -27,6 +28,28 @@ function bucket(hoursAgo: number, over: Partial<EconomicsBucket> = {}): Economic
 function head(buckets: EconomicsBucket[], ceiling: number | null = null): HeadEconomics {
   return { key: 'claudex', label: 'claudex', ceiling_tokens: ceiling, buckets };
 }
+
+describe('the dollars, as the daemon priced each turn (V4-221)', () => {
+  test('a window sums the priced dollars and counts every turn whose dollars are not in them', () => {
+    const totals = sum([
+      bucket(1, { turns: 4, cost_usd: 0.5, unpriced_turns: 1 }), // one turn on a model with no card
+      bucket(2, { turns: 3, cost_usd: null }), // recorded before the daemon priced turns
+      bucket(3, { turns: 2, cost_usd: 0.25 }),
+    ]);
+    expect(totals.costUsd).toBeCloseTo(0.75, 12);
+    expect(totals.unpricedTurns).toBe(1 + 3);
+    expect(costOf(totals)).toBeCloseTo(0.75, 12);
+  });
+
+  test('an hour not priced then is no dollar figure, never $0', () => {
+    expect(costOf(sum([bucket(1, { turns: 5, cost_usd: null })]))).toBeNull();
+  });
+
+  test('turns on a model with no card are no dollar figure; no turns at all is $0, a reading', () => {
+    expect(costOf(sum([bucket(1, { turns: 2, cost_usd: 0, unpriced_turns: 2 })]))).toBeNull();
+    expect(costOf(sum([]))).toBe(0);
+  });
+});
 
 describe('the metered quantity', () => {
   /** THE ONE THAT MATTERS. A 90%-cached prompt bills in full. */

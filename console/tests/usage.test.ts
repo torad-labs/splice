@@ -1,7 +1,8 @@
 // USAGE AND ITS WINDOWS (row M2-06). The things worth proving here are the ones that would
-// quietly change a decision: what a dollar figure is actually made of, that a window draws every
-// hour it claims, and that a route the daemon has not built yet reads as a named empty rather than
-// as an empty catalog.
+// quietly change a decision: that a dollar figure is the daemon's and a turn it could not price is
+// counted rather than priced at zero, that a window draws every hour it claims, and that a route the
+// daemon has not built yet reads as a named empty rather than as an empty catalog. How one turn is
+// priced is the daemon's (TurnPrice, EconomicsStoreTest); this page multiplies nothing.
 //
 // CONTRACTS.md section 4: a .ts test holds no JSX (TS1161), so elements are built with
 // createElement and asserted on the markup react-dom/server returns; and a BOARD takes its payload
@@ -13,10 +14,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 
 import { costOf, sum, within } from '../src/entities/economics';
+import { CostChart } from '../src/widgets/scope-chart';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
 import { UsageBoard } from '../src/pages/usage';
 import { fixtureEconomics, fixtureModels, FIXTURE_NOW } from '../src/pages/usage/fixtures/usage';
-import { fmtUsd, perHour, ratesFor, sortedHeads } from '../src/pages/usage/model';
+import { fmtUsd, perHour, sortedHeads } from '../src/pages/usage/model';
 import { NOT_REREAD } from '../src/entities/account';
 import type { AccountRow } from '../src/entities/account';
 import { PlanBay, planRows, readText, windowCells, windowTone } from '../src/pages/usage/plan';
@@ -36,38 +38,6 @@ const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => 
 const HOUR_MS = 3_600_000;
 const NOW = 1_787_400_000_000;
 
-describe('economics: what a dollar figure is made of', () => {
-  const rates = { input: 1.25, cache_read: 0.125, cache_write: 1.5, output: 10 };
-  const totals = { ...sum([]), inTokens: 1_000_000, cachedTokens: 800_000, cacheWriteTokens: 100_000, outTokens: 50_000 };
-
-  test('fresh input is the total minus both cache halves, and each half is priced by its own rate', () => {
-    // 100k fresh at 1.25 + 800k read at 0.125 + 100k written at 1.5 + 50k out at 10, per million.
-    expect(costOf(totals, rates)).toBeCloseTo(0.875, 10);
-  });
-
-  test('billing the total at the input rate is the double-charge this function exists to prevent', () => {
-    // The naive version — in_tokens at the input rate, ON TOP of the two cache halves — reads 2.00
-    // against this function's 0.875, i.e. 2.3x the real bill, at the most expensive rate in the card.
-    const naive = (1_000_000 * rates.input + 800_000 * rates.cache_read + 100_000 * 1.5 + 50_000 * rates.output) / 1_000_000;
-    expect(naive).toBeCloseTo(2, 10);
-    expect(costOf(totals, rates)).toBeLessThan(naive);
-  });
-
-  test('a cache write with no declared write rate bills at the input rate, never at zero', () => {
-    const noWrite = { ...totals, cacheWriteTokens: 100_000 };
-    const withRate = costOf(noWrite, rates);
-    const withoutRate = costOf(noWrite, { input: 1.25, cache_read: 0.125, output: 10 });
-    expect(withRate).toBeCloseTo(0.875, 10);
-    expect(withoutRate).toBeCloseTo(0.85, 10);
-    expect(withoutRate).toBeGreaterThan(0);
-  });
-
-  test('a bucket that predates the cache-write field cannot bill negative fresh tokens', () => {
-    const legacy = { ...sum([]), inTokens: 100, cachedTokens: 100, cacheWriteTokens: 0, outTokens: 0 };
-    expect(costOf(legacy, rates)).toBeCloseTo((100 * 0.125) / 1_000_000, 12);
-  });
-});
-
 describe('chart mapping', () => {
   const bucket = (
     hour: number, inTokens: number, cached: number, write: number,
@@ -76,7 +46,7 @@ describe('chart mapping', () => {
     hour, turns: 1, in_tokens: inTokens, cached_tokens: cached, cache_write_tokens: write,
     out_tokens: 10, req_bytes: reqBytes, upstream_req_bytes: upstreamBytes,
     tools_eager: tools, tools_deferred: tools * 2,
-    deferral_turns: 1, rate_limited: 0,
+    deferral_turns: 1, rate_limited: 0, cost_usd: 0, unpriced_turns: 0,
   });
   const end = Math.floor(NOW / HOUR_MS) * HOUR_MS;
   // The middle hour is deliberately missing: an idle hour must draw as a gap.
@@ -134,14 +104,6 @@ describe('chart mapping', () => {
 });
 
 describe('usage page', () => {
-  test('the rate card that prices a head is its pinned model, and nothing while the route is pending', () => {
-    expect(ratesFor(fixtureModels, 'claudex')?.input).toBe(1.25);
-    expect(ratesFor(fixtureModels, 'claude-deepseek')?.cache_write).toBeUndefined();
-    expect(ratesFor(fixtureModels, 'claude-kimi')).toBeNull();
-    expect(ratesFor({ pending: 'V4-127' }, 'claudex')).toBeNull();
-    expect(ratesFor(null, 'claudex')).toBeNull();
-  });
-
   test('heads are racked in key order', () => {
     expect(sortedHeads(fixtureEconomics.heads).map((head) => head.key)).toEqual([
       'claude-deepseek', 'claude-splice', 'claudex',
@@ -153,22 +115,41 @@ describe('usage page', () => {
     for (const entry of WINDOWS) expect(markup).toContain(entry.label);
     for (const head of fixtureEconomics.heads) expect(markup).toContain(head.label);
     // The charts are scope insets. A measured one says nothing of its basis; the estimated one
-    // says so, because its dollars are this console's multiplication, not the daemon's count.
+    // says so, because its dollars are tokens times a declared card, not a vendor's invoice.
     expect(markup).toContain('myx-scope');
     expect(markup).not.toContain('>Measured<');
     expect(markup).toContain('<span class="myx-scope-basis">Estimated</span>');
-    // Cost is priced because the catalog carries the pinned model rates, and drawn hour by hour.
-    expect(markup).not.toContain('No prices set');
+    // Cost is drawn hour by hour, because the opened head's turns were priced.
+    expect(markup).not.toContain('No priced turns');
     expect(markup).toContain('aria-label="Cost per hour"');
     // The legend names the dollars as the inset does: an estimate, never money spent.
     expect(markup).toMatch(/myx-swatch-spent"[^>]*><\/span><span>Estimated cost<\/span>/);
     expect(markup).not.toContain('>Spent<');
   });
 
-  test('with no catalog there is no dollar figure, and the inset says so rather than printing zero', () => {
-    const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: { pending: 'V4-127' }, now: FIXTURE_NOW }));
-    expect(markup).toContain('No prices set');
+  test('a window with turns and none priced has no dollar figure, and the inset says so rather than printing zero', () => {
+    const unpriced = fixtureEconomics.heads.filter((head) => head.key === 'claude-splice');
+    const markup = render(h(UsageBoard, { payload: { ...fixtureEconomics, heads: unpriced }, catalog: fixtureModels, now: FIXTURE_NOW }));
+    expect(markup).toContain('No priced turns');
     expect(markup).toContain('<span class="myx-scope-basis">Unavailable</span>');
+    // and the totals row prints the absence glyph, not $0.000
+    expect(markup).not.toContain('$0.000');
+  });
+
+  test('the cost inset counts the turns it could not price beside the dollars', () => {
+    const end = Math.floor(FIXTURE_NOW / HOUR_MS) * HOUR_MS;
+    const hour = (at: number, turns: number, cost: number | null, unpriced: number) => ({
+      hour: at, turns, in_tokens: 1000, cached_tokens: 0, cache_write_tokens: 0, out_tokens: 10, req_bytes: 0,
+      upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0, deferral_turns: 0, rate_limited: 0,
+      cost_usd: cost, unpriced_turns: unpriced,
+    });
+    const markup = render(h(CostChart, {
+      buckets: [hour(end - HOUR_MS, 3, null, 0), hour(end, 5, 0.012, 2)],
+      window: first(WINDOWS),
+      now: FIXTURE_NOW,
+    }));
+    expect(markup).toMatch(/<span>Estimated cost<\/span><span class="myx-schart-value">\$0\.0120<\/span>/);
+    expect(markup).toMatch(/<span>Unpriced turns<\/span><span class="myx-schart-value">2<\/span>/);
   });
 });
 
@@ -177,6 +158,7 @@ describe('the totals row', () => {
   const bucket = (hour: number, turns: number) => ({
     hour, turns, in_tokens: 100 * turns, cached_tokens: 0, cache_write_tokens: 0, out_tokens: 10 * turns,
     req_bytes: 0, upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0, deferral_turns: 0, rate_limited: 0,
+    cost_usd: 0, unpriced_turns: 0,
   });
 
   test('a trend is one figure per hour, oldest first, summed across heads, an idle hour at zero', () => {
@@ -189,16 +171,16 @@ describe('the totals row', () => {
 
   const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
 
-  test('cost prices each head by its own card, and a head with no card is counted, never priced at zero', () => {
-    // claude-splice is in the rollup and not in the catalog, so it has no card
-    expect(ratesFor(fixtureModels, 'claude-splice')).toBeNull();
-    const priced = fixtureEconomics.heads.reduce((held, head) => {
-      const card = ratesFor(fixtureModels, head.key);
-      return card === null ? held : held + costOf(sum(within(head.buckets, 24, FIXTURE_NOW)), card);
-    }, 0);
-    expect(priced).toBeGreaterThan(0);
-    expect(markup).toContain(`>${fmtUsd(priced)}<`);
-    expect(markup).toContain('1 unpriced');
+  test('cost is the daemon\'s dollars summed across heads, and the turns it could not price are counted, never priced at zero', () => {
+    // claude-splice's model has no rate card: every one of its turns is unpriced
+    const day = sum(fixtureEconomics.heads.flatMap((head) => within(head.buckets, 24, FIXTURE_NOW)));
+    const splice = sum(within(fixtureEconomics.heads.find((head) => head.key === 'claude-splice')?.buckets ?? [], 24, FIXTURE_NOW));
+    expect(splice.turns).toBeGreaterThan(0);
+    expect(day.unpricedTurns).toBe(splice.turns);
+    const cost = costOf(day);
+    expect(cost).toBeGreaterThan(0);
+    expect(markup).toContain(`>${fmtUsd(cost ?? 0)}<`);
+    expect(markup).toContain(`${splice.turns} turns unpriced`);
   });
 
   test('each figure carries its shape: the in and out split, a day of trend, the cache ring', () => {

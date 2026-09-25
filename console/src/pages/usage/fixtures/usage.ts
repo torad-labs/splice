@@ -17,7 +17,9 @@ const HOUR_MS = 3_600_000;
 const HOURS = 168;
 
 
-function bucketAt(hour: number, index: number, scale: number, ceilingShare: number): EconomicsBucket {
+/** The sample's dollars: a flat price per million input tokens, standing in for the daemon's per-turn
+ *  pricing, or null for a head whose model has no rate card, whose every turn is unpriced. */
+function bucketAt(hour: number, index: number, scale: number, ceilingShare: number, usdPerMillion: number | null): EconomicsBucket {
   const at = new Date(hour).getUTCHours();
   // Quiet between midnight and 06:00 UTC, ramping to a plateau through the working hours.
   const shape = at < 6 ? 0.06 : at < 9 ? 0.35 + (at - 6) * 0.15 : at < 20 ? 1 : 0.4;
@@ -39,13 +41,15 @@ function bucketAt(hour: number, index: number, scale: number, ceilingShare: numb
     tools_deferred: turns * 31,
     deferral_turns: turns,
     rate_limited: shape > 0.9 && index % 11 === 0 ? 3 : 0,
+    cost_usd: usdPerMillion === null ? 0 : Math.round(inTokens * usdPerMillion) / 1_000_000,
+    unpriced_turns: usdPerMillion === null ? turns : 0,
   };
 }
 
-function bucketsFor(scale: number, outputShare: number): EconomicsBucket[] {
+function bucketsFor(scale: number, outputShare: number, usdPerMillion: number | null): EconomicsBucket[] {
   const end = Math.floor(FIXTURE_NOW / HOUR_MS) * HOUR_MS;
   return Array.from({ length: HOURS }, (_, index) =>
-    bucketAt(end - (HOURS - 1 - index) * HOUR_MS, index, scale, outputShare),
+    bucketAt(end - (HOURS - 1 - index) * HOUR_MS, index, scale, outputShare, usdPerMillion),
   );
 }
 
@@ -53,9 +57,9 @@ export const fixtureEconomics: EconomicsPayload = {
   retention_hours: 720,
   generated_at: FIXTURE_NOW,
   heads: [
-    { key: 'claudex', label: 'claudex', ceiling_tokens: 420_000_000, buckets: bucketsFor(1, 0.011) },
-    { key: 'claude-splice', label: 'claude-splice', ceiling_tokens: 180_000_000, buckets: bucketsFor(0.55, 0.014) },
-    { key: 'claude-deepseek', label: 'claude-deepseek', ceiling_tokens: null, buckets: bucketsFor(0.3, 0.02) },
+    { key: 'claudex', label: 'claudex', ceiling_tokens: 420_000_000, buckets: bucketsFor(1, 0.011, 0.36) },
+    { key: 'claude-splice', label: 'claude-splice', ceiling_tokens: 180_000_000, buckets: bucketsFor(0.55, 0.014, null) },
+    { key: 'claude-deepseek', label: 'claude-deepseek', ceiling_tokens: null, buckets: bucketsFor(0.3, 0.02, 0.03) },
   ],
 };
 

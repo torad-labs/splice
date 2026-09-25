@@ -21,8 +21,10 @@ export const S = {
   upstream: 'To provider',
   eager: 'Sent up front',
   deferred: 'On demand',
-  /** The cost legend's one key: the window's dollars, an estimate at the head's rate card, so the key
-   *  does not claim them as spent (Marlin, 2026-09-25). */
+  /** The cost legend's one key: the window's dollars, an estimate at each turn's rate card, so the
+   *  key does not claim them as spent (Marlin, 2026-09-25). */
   spent: 'Estimated cost',
-  noRates: 'No prices set',
+  /** Turns the daemon could not price: no rate card, or recorded before it priced turns. */
+  unpriced: 'Unpriced turns',
+  noPriced: 'No priced turns',
 } as const;

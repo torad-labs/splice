@@ -162,9 +162,10 @@ function HandoffEnd({ row, label }: { row: SessionRow | null; label: string }) {
 function FleetHandoffs({ rows, board }: { rows: readonly SessionRow[]; board: BoardEdgesPayload }) {
   const handoffs = fleetHandoffs(rows, board);
   const columns: Column<Handoff>[] = [
-    { key: 'from', label: S.from, width: '40%', cell: (handoff) => <HandoffEnd row={handoff.from} label={handoff.fromLabel} /> },
-    { key: 'to', label: S.to, width: '40%', primary: true, cell: (handoff) => <HandoffEnd row={handoff.to} label={handoff.toLabel} /> },
-    { key: 'at', label: S.at, width: '20%', align: 'end', mono: true, cell: (handoff) => timeAgo(handoff.at) },
+    // No widths: three short facts a row, so the table is as wide as they are (sessions.css).
+    { key: 'from', label: S.from, cell: (handoff) => <HandoffEnd row={handoff.from} label={handoff.fromLabel} /> },
+    { key: 'to', label: S.to, primary: true, cell: (handoff) => <HandoffEnd row={handoff.to} label={handoff.toLabel} /> },
+    { key: 'at', label: S.at, align: 'end', mono: true, cell: (handoff) => timeAgo(handoff.at) },
   ];
   return (
     <Section title={S.handoffs} count={handoffs.length} className="myx-sx-handoffs">

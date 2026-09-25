@@ -14,7 +14,7 @@ import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { UNLISTED } from '@entities/team';
 import type { TeamPayload, TeamSlot } from '@entities/team';
 import {
-  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Lanes, Legend, Meter, Pips, Reveal, Section, Sparkline,
+  Badge, BasisTag, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Lanes, Legend, Meter, Pips, Reveal, Section, Sparkline,
   StackedBar, Stat, StatRow, weightedColumns,
 } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup, Tone } from '@shared/ui';
@@ -134,6 +134,7 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
       />
       <Stat
         label={S.cost}
+        basis="estimated"
         value={table === null ? S.absent : money(table.total.cost)}
         {...(table !== null && table.total.cost === null ? { sub: S.unpriced } : {})}
       />
@@ -188,7 +189,7 @@ export function TeamMembers({ board, by }: { board: TeamPayload; by: 'head' | 'r
       label: S.tokens,
       cell: (seat) => <TokenSplit input={seat.member?.tokensIn ?? null} output={seat.member?.tokensOut ?? null} scale={scale} />,
     },
-    { key: 'cost', label: S.cost, align: 'end', mono: true, cell: (seat) => money(seat.member?.costEst ?? null) },
+    { key: 'cost', label: S.cost, basis: 'estimated', align: 'end', mono: true, cell: (seat) => money(seat.member?.costEst ?? null) },
     { key: 'last', label: S.lastTurn, mono: true, cell: (seat) => seat.member?.lastTurn ?? S.absent },
     { key: 'checks', label: S.checks, cell: (seat) => <ChecksBadge checks={seat.member?.checks ?? null} /> },
   ];
@@ -258,7 +259,8 @@ export function TeamLanes({ board }: { board: TeamPayload }) {
       const title = seatName(board, seat);
       const role = roleName(board.team.slots, seat.slot);
       // A member named for its role would print the word twice; the second line says only news.
-      return { key: seat.slot.id, title, meta: role === title ? null : role, tone: stateOf(seat).tone, word: stateOf(seat).word, start: null };
+      // A seat stands at its session's start; an open or unlisted seat has none and stands apart.
+      return { key: seat.slot.id, title, meta: role === title ? null : role, tone: stateOf(seat).tone, word: stateOf(seat).word, start: seat.member?.startedAt ?? null };
     }),
   }));
   // A message names its parties as the board prints them (pages/teams/board.ts messagesOf): a
@@ -323,7 +325,7 @@ export function SeatDetail({ board, seat }: { board: TeamPayload; seat: Seat }) 
       ...reported(S.diff, member.diff),
       [S.tokensIn, member.tokensIn === null ? S.absent : fmtInt(member.tokensIn)] as const,
       [S.tokensOut, member.tokensOut === null ? S.absent : fmtInt(member.tokensOut)] as const,
-      [S.cost, money(member.costEst)] as const,
+      [S.cost, <>{money(member.costEst)}<BasisTag basis="estimated" /></>] as const,
       [S.lastTurn, member.lastTurn ?? S.absent] as const,
       [S.lastMessage, lastReceived(board, member.name) ?? S.none] as const,
       [S.checks, <ChecksBadge checks={member.checks} />] as const,
@@ -429,7 +431,7 @@ export function CostPerRole({ data }: { data: TeamViewData | null }) {
     { key: 'role', label: S.role, cell: (row) => row.role },
     { key: 'turns', label: S.turns, width: '10%', align: 'end', mono: true, cell: (row) => fmtInt(row.turns) },
     { key: 'tokens', label: S.tokens, width: '40%', cell: (row) => <TokenSplit input={row.input} output={row.output} scale={scale} /> },
-    { key: 'cost', label: S.cost, width: '14%', align: 'end', mono: true, cell: (row) => money(row.cost) },
+    { key: 'cost', label: S.cost, basis: 'estimated', width: '14%', align: 'end', mono: true, cell: (row) => money(row.cost) },
   ];
   return (
     <Section title={S.costPerRole} info={info} actions={<Legend items={TOKEN_KEY} label={S.tokensKey} />}>

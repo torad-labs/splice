@@ -65,6 +65,11 @@ button.myx-sx-peer:hover { color: var(--fg); }
 
 /* the fleet's hand-offs follow the board */
 .myx-sx > .myx-sx-handoffs { margin-block-start: var(--space-7); }
+/* Three short facts a row (who, to whom, when): the table is as wide as they are, where a full-width
+   one left 650 px of nothing between From and To at 2560 (splice-lead, 2026-09-25). */
+.myx-sx-handoffs .myx-dt-wrap { width: fit-content; max-width: 100%; }
+.myx-sx-handoffs .myx-dt th,
+.myx-sx-handoffs .myx-dt td { padding-inline-end: var(--space-7); }
 
 /* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
    Past 3000 the board keeps a readable measure and the fleet's hand-offs take the rest; an opened

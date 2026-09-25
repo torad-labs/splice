@@ -12,8 +12,9 @@ import type { CSSProperties, ReactNode } from 'react';
 import { cx } from '../lib';
 import { Badge } from './kit';
 import type { Tone } from './kit';
-import { arcPath, columnsOf, crossings, newestArcs, sideOf } from './lanes-geometry';
+import { arcPath, columnsOf, crossings, newestArcs, sideOf, trackTemplate } from './lanes-geometry';
 import type { Box, LaneArc, LaneMessage } from './lanes-geometry';
+import { S } from './strings';
 import './lanes.css';
 
 export type { LaneMessage } from './lanes-geometry';
@@ -99,8 +100,8 @@ export function Lanes({ lanes, messages, label, open, selected = null, cardLabel
   const columns = useMemo(() => columnsOf(lanes.map((lane) => lane.cards)), [lanes]);
   const hueOfCard = useMemo(() => new Map(lanes.flatMap((lane) => lane.cards.map((card) => [card.key, lane.hue] as const))), [lanes]);
   const arcs = useMemo(() => newestArcs(messages, new Set(hueOfCard.keys())), [messages, hueOfCard]);
-  // What moves the drawing: the arcs, and where each card sits (its lane and its place on it).
-  const shape = `${lanes.map((lane) => `${lane.key}:${lane.cards.map((card) => card.key).join(',')}`).join('|')}#${arcs.map((arc) => `${arc.key}@${arc.at}`).join('|')}`;
+  // What moves the drawing: the arcs, and where each card sits (its lane and its column).
+  const shape = `${lanes.map((lane) => `${lane.key}:${lane.cards.map((card) => `${card.key}@${columns.at.get(card.key) ?? 0}`).join(',')}`).join('|')}#${arcs.map((arc) => `${arc.key}@${arc.at}`).join('|')}`;
 
   useLayoutEffect(() => {
     const root = board.current;
@@ -143,7 +144,16 @@ export function Lanes({ lanes, messages, label, open, selected = null, cardLabel
 
   return (
     <div className="myx-lanes" role="group" aria-label={label}>
-      <div className="myx-lanes-board" ref={board} style={{ '--lane-columns': Math.max(columns.size, 1) } as CSSProperties}>
+      <div className="myx-lanes-board" ref={board} style={{ '--lane-template': trackTemplate(columns) } as CSSProperties}>
+      {columns.undated === 0 ? null : (
+        // The undated cards' place says nothing about when they started, and this caption says so.
+        <div className="myx-lane myx-lanes-axis">
+          <span />
+          <div className="myx-lane-track">
+            <span className="myx-lanes-unknown" style={{ gridColumn: `${columns.dated + (columns.dated > 0 ? 2 : 1)} / span ${columns.undated}` }}>{S.startUnknown}</span>
+          </div>
+        </div>
+      )}
       {lanes.map((lane) => (
         <div key={lane.key} className={cx('myx-lane', lane.hue)} role="group" aria-label={lane.name}>
           <div className="myx-lane-head">
@@ -165,7 +175,7 @@ export function Lanes({ lanes, messages, label, open, selected = null, cardLabel
               );
               const className = cx('myx-lane-card', card.tone === 'warn' && 'myx-lane-card-warn', selected === card.key && 'myx-lane-card-open');
               return (
-                <li key={card.key} className="myx-lane-slot" style={{ gridColumn: (columns.get(card.key) ?? 0) + 1 }}>
+                <li key={card.key} className="myx-lane-slot" style={{ gridColumn: (columns.at.get(card.key) ?? 0) + 1 }}>
                   {open === undefined ? (
                     <span ref={register} className={className} aria-label={`${lane.name} ${cardLabel(card)}`}>{body}</span>
                   ) : (

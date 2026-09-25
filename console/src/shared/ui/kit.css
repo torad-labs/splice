@@ -52,6 +52,8 @@
 }
 .myx-sec-meta { font-weight: 400; color: var(--fg-subtle); }
 .myx-sec-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A figure's basis beside its label, a section's title or a column's name (BasisTag). */
+.myx-basis { flex: none; margin-inline-start: var(--space-2); font-size: var(--text-1); font-weight: 400; color: var(--fg-subtle); }
 .myx-sec-count {
   align-self: center;
   padding: 0 var(--space-3);

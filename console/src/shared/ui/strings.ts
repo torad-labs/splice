@@ -3,6 +3,8 @@
 export const S = {
   /** The info mark beside an empty state's line, which explains what would fill it. */
   why: 'Why',
+  /** Over the lanes' undated cards, whose place on the strand is not their start (shared/ui/lanes). */
+  startUnknown: 'Start unknown',
 } as const;
 
 /** A number's basis, printed only when it is not the default: a measured figure says nothing, and

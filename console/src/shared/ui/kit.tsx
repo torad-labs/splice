@@ -6,7 +6,15 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { cx } from '../lib';
 import { InfoTip } from './charts';
+import { BASIS } from './strings';
+import type { Basis } from './types';
 import './kit.css';
+
+/** A figure's basis in words, beside the figure's label, whenever it is not the default: an estimate
+ *  is never read as a charge (DESIGN.md section 10). A measured figure prints nothing. */
+export function BasisTag({ basis }: { basis?: Basis | undefined }) {
+  return basis === undefined || basis === 'measured' ? null : <span className="myx-basis">{BASIS[basis]}</span>;
+}
 
 /** The help a title carries on hover and focus: one plain sentence, and the name of its mark. */
 export interface Info {
@@ -42,9 +50,11 @@ export function PageHeader({ title, info, actions, children }: {
 /** A titled group of content. No box: a title row, then whatever it holds. `meta` is a quiet word
  *  beside the title (a group's kind, `head` or `project`); `count` prints after it; `info` is its
  *  tip. */
-export function Section({ title, meta, count, info, actions, children, className }: {
+export function Section({ title, meta, basis, count, info, actions, children, className }: {
   title: ReactNode;
   meta?: string;
+  /** The basis of every figure the section prints, beside its title. */
+  basis?: Basis;
   count?: number;
   info?: Info | undefined;
   actions?: ReactNode;
@@ -58,6 +68,7 @@ export function Section({ title, meta, count, info, actions, children, className
           <h2 className="myx-sec-title">
             {meta === undefined ? null : <span className="myx-sec-meta">{meta}</span>}
             <span className="myx-sec-name">{title}</span>
+            <BasisTag basis={basis} />
             {count === undefined ? null : <span className="myx-sec-count">{count}</span>}
           </h2>
           {info === undefined ? null : <InfoTip text={info.text} label={info.label} />}
@@ -76,6 +87,8 @@ export interface Column<T> {
   cell: (row: T) => ReactNode;
   /** A CSS width for the column (`30%`, `calc(8 * var(--u))`); columns without one share what is left. */
   width?: string;
+  /** The basis of the column's figures, printed beside its name when it is not measured. */
+  basis?: Basis;
   align?: 'start' | 'end';
   /** Figures and identifiers: tabular numerals in the mono face. */
   mono?: boolean;
@@ -187,6 +200,7 @@ export function DataTable<T>({ columns, rows, groups, rowKey, label, onOpen, ope
             {columns.map((column) => (
               <th key={column.key} scope="col" className={cx(column.align === 'end' && 'myx-dt-end')}>
                 {column.label}
+                <BasisTag basis={column.basis} />
               </th>
             ))}
           </tr>
@@ -264,8 +278,9 @@ export function Badge({ tone, children, quiet = false }: { tone: Tone; children:
 }
 
 /** A number that is the point of its tile: a small label over a large figure, and one line under. */
-export function Stat({ label, value, unit, sub, tone, chart, figure, trend }: {
+export function Stat({ label, basis, value, unit, sub, tone, chart, figure, trend }: {
   label: string;
+  basis?: Basis;
   value: ReactNode;
   unit?: string;
   sub?: ReactNode;
@@ -278,7 +293,7 @@ export function Stat({ label, value, unit, sub, tone, chart, figure, trend }: {
    *  width from the figure, which a sparkline beside it cut to `175....` in a narrow tile. */
   trend?: ReactNode;
 }) {
-  const name = <p className="myx-stat-label">{label}</p>;
+  const name = <p className="myx-stat-label">{label}<BasisTag basis={basis} /></p>;
   return (
     <div className={cx('myx-stat', tone !== undefined && `myx-stat-${tone}`, figure !== undefined && 'myx-stat-figured')}>
       {trend === undefined ? name : <div className="myx-stat-head">{name}<div className="myx-stat-trend">{trend}</div></div>}

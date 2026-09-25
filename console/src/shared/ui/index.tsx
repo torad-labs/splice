@@ -39,7 +39,7 @@ export { FieldBox } from './field-box';
 export { Reveal } from './reveal';
 export { Empty } from './empty';
 export { Figure } from './figure';
-export { Badge, DataTable, DetailPanel, KeyValue, Meter, PageHeader, Section, Segmented, Stat, StatRow, Tally, weightedColumns } from './kit';
+export { Badge, BasisTag, DataTable, DetailPanel, KeyValue, Meter, PageHeader, Section, Segmented, Stat, StatRow, Tally, weightedColumns } from './kit';
 export type { Column, RowGroup, Tone } from './kit';
 export { Braid, InfoTip, LayerChip, Legend, LifetimeBar, Pips, Ring, Sparkline, StackedBar, Tip, Waterfall } from './charts';
 export type { BarPart, Mark, Strand, WaterfallStage } from './charts';

@@ -1,12 +1,14 @@
 /* The lanes (lanes.tsx): one strand per head in its hue, cards on the strand, arcs between cards.
-   Paint order, bottom up: the strand, the cards' grounds, the arcs, the cards' words. A hand-off
-   that crosses a lane stays whole where it passes a card, and the card's name still reads over it. */
+   Paint order, bottom up: the strand, the arcs, the cards. A hand-off that passes a card goes under
+   it, so no card and no word on one is ever crossed; it shows again where it leaves the card. */
 .myx-lanes {
   --lane-card-h: calc(4.75 * var(--u));
   --lane-card-w: calc(17 * var(--u));
   /* the narrowest a card gets before the board scrolls instead */
   --lane-card-min: calc(11 * var(--u));
   --lane-strand: calc(.25 * var(--u));
+  /* between the dated cards and the undated ones (lanes-geometry trackTemplate) */
+  --lane-gap: var(--space-7);
   overflow-x: auto;
 }
 /* The drawing the cards and arcs share: the page's width, and wider only when the cards at their
@@ -37,8 +39,8 @@
   font-size: var(--text-3);
   font-weight: 600;
 }
-/* On a narrow window the name stands over its strand, where an arc can cross it: the name and its
-   count stand on a patch of the page's ground, as a card's words stand on the card's. */
+/* On a narrow window the name stands over its strand, where an arc can pass: the name and its
+   count stand over the arcs on a patch of the page's ground, so no arc crosses them either. */
 .myx-lane-head > * {
   position: relative;
   z-index: 3;
@@ -53,13 +55,13 @@
 }
 
 /* The strand, a line through the middle of the lane, and the board's columns: one per card, shared
-   by every lane, so each card has its own place across the board (columnsOf). */
+   by every lane, so each card has its own place across the board (columnsOf, trackTemplate). */
 .myx-lane-track {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(var(--lane-columns), minmax(var(--lane-card-min), 1fr));
+  grid-template-columns: var(--lane-template);
   column-gap: var(--space-5);
   min-height: var(--lane-card-h);
   background: linear-gradient(
@@ -72,8 +74,20 @@
 }
 .myx-lane-slot { grid-row: 1; display: flex; justify-content: center; }
 
+/* Over the undated cards, apart from the dated ones: a caption and a rule, and no strand under
+   them, so their place on the board does not read as when they started. */
+.myx-lanes-axis .myx-lane-track { min-height: 0; background: none; }
+.myx-lanes-unknown {
+  grid-row: 1;
+  padding-block-end: var(--space-2);
+  border-block-end: var(--hair) solid var(--line);
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+  text-align: center;
+}
+
 .myx-lane-card {
-  /* The card's ground, opaque, which its words also stand on (below). */
+  /* The card's ground: opaque, so an arc passing under the card does not show through it. */
   --lane-ground: var(--bg-raised);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -92,6 +106,9 @@
   color: var(--fg);
   font: inherit;
   text-align: start;
+  /* opaque and over the arcs (.myx-lanes-arcs) */
+  position: relative;
+  z-index: 2;
 }
 button.myx-lane-card { cursor: pointer; transition: background-color var(--dur-1) ease; }
 button.myx-lane-card:hover { --lane-ground: var(--bg-hover); }
@@ -107,18 +124,6 @@ button.myx-lane-card:focus-visible { outline: var(--focus-width) solid var(--foc
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The words stand over the arcs, each on a patch of the card's ground just its own size: an arc
-   that crosses the card shows everywhere but under a word, so it never strikes one through. */
-.myx-lane-card > .myx-lane-card-title,
-.myx-lane-card > .myx-lane-card-meta,
-.myx-lane-card > .myx-badge {
-  position: relative;
-  z-index: 3;
-  justify-self: start;
-  max-width: 100%;
-  background: var(--lane-ground);
-  box-shadow: 0 0 0 calc(.125 * var(--u)) var(--lane-ground);
-}
 /* The name takes the card's whole width; the project and the state share the line under it. */
 .myx-lane-card-title { grid-column: 1 / -1; font-size: var(--text-3); font-weight: 600; }
 .myx-lane-card-meta { grid-column: 1; align-self: center; font-size: var(--text-1); color: var(--fg-muted); }
@@ -127,7 +132,7 @@ button.myx-lane-card:focus-visible { outline: var(--focus-width) solid var(--foc
 .myx-lanes-arcs {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 1;
   overflow: visible;
   pointer-events: none;
 }

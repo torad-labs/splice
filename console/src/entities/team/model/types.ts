@@ -189,6 +189,8 @@ export interface TeamMemberRow {
   sessionId: string;
   /** HH:MM:SS the session started, when the registry reports it. */
   created: string | null;
+  /** Epoch ms the session started, when the registry reports it: where its card stands on the lanes. */
+  startedAt: number | null;
   uptime: string | null;
   turns: number | null;
   tokensIn: number | null;

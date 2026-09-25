@@ -431,3 +431,26 @@ describe('the composer', () => {
     expect(optionsFor(listed, '', blank)).toEqual([blank, ...listed]);
   });
 });
+
+describe('a Teams dollar is an estimate, and says so', () => {
+  // Marlin, 2026-09-25: the figures are rate-card prices of the tokens, and on a ChatGPT, Grok or
+  // Kimi plan nobody pays them (CHANGELOG, TurnPrice.kt). Every place Teams prints a dollar carries
+  // the kit's estimated basis, the word Usage prints over its cost chart.
+  const dollars = (html: string): number => (html.match(/\$\d/g) ?? []).length;
+  const tagged = (html: string): number => (html.match(/class="myx-basis">Estimated</g) ?? []).length;
+
+  test('the cost figure, the members\' cost column, the cost per role and an opened seat', () => {
+    const stats = render(createElement(TeamStats, { board: sampleBoard, data: sampleData }));
+    expect(stats).toMatch(/myx-stat-label">Cost<span class="myx-basis">Estimated</);
+    const members = render(createElement(TeamMembers, { board: sampleBoard, by: 'head' }));
+    expect(members).toMatch(/>Cost<span class="myx-basis">Estimated<\/span><\/th>/);
+    const roles = render(createElement(CostPerRole, { data: sampleData }));
+    expect(dollars(roles)).toBeGreaterThan(0); // the denominator: a table with no dollars would pass vacuously
+    expect(roles).toMatch(/>Cost<span class="myx-basis">Estimated<\/span><\/th>/);
+    const seat = seatsOf(sampleBoard).find((candidate) => candidate.member !== null && candidate.member.costEst !== null);
+    expect(seat).toBeDefined();
+    if (seat === undefined) return;
+    const detail = render(createElement(SeatDetail, { board: sampleBoard, seat }));
+    expect(dollars(detail)).toBe(tagged(detail));
+  });
+});

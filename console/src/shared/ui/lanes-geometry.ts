@@ -33,19 +33,42 @@ export interface Dated {
   start: number | null;
 }
 
+/** Where the cards stand across the board: each card's column, and how many cards are dated. */
+export interface Columns {
+  at: Map<string, number>;
+  dated: number;
+  undated: number;
+}
+
 /**
- * Each card's column, shared by every lane: the cards of the whole board in start order, oldest
- * first, one column each. No two cards stand one above the other, so an arc between two lanes runs
- * across the board instead of down a gap, and a strand read left to right is the order the
- * sessions started. A card with no start stands after the dated ones, in lane order.
+ * Each card's column, shared by every lane: the dated cards of the whole board in start order,
+ * oldest first, one column each. No two cards stand one above the other, so an arc between two
+ * lanes runs across the board instead of down a gap, and a strand read left to right is the order
+ * the sessions started. A card with no start makes no claim on that order (Marlin, 2026-09-25): the
+ * undated cards stand apart, one column each in lane order after a gap column, under a caption that
+ * says their start is unknown (lanes.tsx).
  */
-export function columnsOf(lanes: readonly (readonly Dated[])[]): Map<string, number> {
+export function columnsOf(lanes: readonly (readonly Dated[])[]): Columns {
   const all = lanes.flatMap((cards, lane) => cards.map((card, at) => ({ card, lane, at })));
-  all.sort((left, right) =>
-    (left.card.start ?? Number.POSITIVE_INFINITY) - (right.card.start ?? Number.POSITIVE_INFINITY)
-    || left.lane - right.lane
-    || left.at - right.at);
-  return new Map(all.map((entry, column) => [entry.card.key, column]));
+  const dated = all.filter((entry) => entry.card.start !== null);
+  dated.sort((left, right) => (left.card.start ?? 0) - (right.card.start ?? 0) || left.lane - right.lane || left.at - right.at);
+  const undated = all.filter((entry) => entry.card.start === null);
+  const gap = dated.length > 0 && undated.length > 0 ? 1 : 0;
+  return {
+    at: new Map([
+      ...dated.map((entry, column) => [entry.card.key, column] as const),
+      ...undated.map((entry, column) => [entry.card.key, dated.length + gap + column] as const),
+    ]),
+    dated: dated.length,
+    undated: undated.length,
+  };
+}
+
+/** The strand's columns: one per dated card, then a gap and one per undated card when there are both. */
+export function trackTemplate({ dated, undated }: Pick<Columns, 'dated' | 'undated'>): string {
+  const cards = (count: number): string => `repeat(${count}, minmax(var(--lane-card-min), 1fr))`;
+  if (dated === 0 || undated === 0) return cards(Math.max(1, dated + undated));
+  return `${cards(dated)} var(--lane-gap) ${cards(undated)}`;
 }
 
 /** The arcs to draw: the newest message of each direction between two cards on the lanes, oldest

@@ -118,7 +118,9 @@ describe('the members', () => {
 
   test("the registry gives the state, start, uptime and workspace, and an unlisted session says so", () => {
     expect(members[0]).toMatchObject({ state: 'busy', created: '11:55:00', uptime: '2h 5m', workspace: '/repo' });
-    expect(members[1]).toMatchObject({ state: UNLISTED, created: null, uptime: null, workspace: null });
+    expect(members[0].startedAt).toBe(SESSIONS[0].started_at); // the epoch the lanes order it by
+    expect(members[0].startedAt).not.toBeNull();
+    expect(members[1]).toMatchObject({ state: UNLISTED, created: null, startedAt: null, uptime: null, workspace: null });
     const gone = membersOf(TEAM, [registry('aaaaaaaa-1111', { availability: 'gone' })], ECONOMICS, NOW)[0];
     expect(gone.state).toBe('gone');
     expect(gone.uptime).toBeNull();

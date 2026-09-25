@@ -84,6 +84,7 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
       state: row === undefined ? UNLISTED : live ? (row.status ?? 'live') : row.availability,
       sessionId: session,
       created: started === null ? null : hhmmss(started),
+      startedAt: started,
       uptime: started !== null && live ? span(now - started) : null,
       turns: tally?.turns ?? null,
       tokensIn: tally === null ? null : tokensIn(tally),

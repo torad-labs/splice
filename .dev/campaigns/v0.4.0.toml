@@ -6662,3 +6662,11 @@ title = "No row declares an unmeasured window: muse-spark-1.2's 1M has a measure
 files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "app/src/main/resources/splice.example.toml"]
 status = "todo"
 verify = "the measurement receipt (tokens by the backend's count, the answer, the time) beside the row; CI gate on the train sha."
+
+[[items]]
+id = "V4-237"
+phase = "release"
+title = "A stored Claude login is never copied over a head's live one (V4-129 follow-up, found 2026-09-25). ClaudeLogins.materializeSelected copies the selected stored .credentials.json into the claude-splice tree at every launch (ClaudeLogins.kt:84-107). Claude Code rotates its refresh token on each refresh, so a snapshot is stale after the first one: every launch restored the 2026-09-20 'max' snapshot, the client reused a rotated refresh token, and upstream answered 401 'OAuth access token has been revoked.' (daemon log 21:04:29Z); a fresh /login lasted only until the next launch overwrote it. The class is AuthKind.kt:10-17's rotation rule, broken by splice's own copy. Interim, 2026-09-25: the live store's selection moved aside (selected.bak-2026-09-25), so launches restore nothing. The fix keeps one live file per login and never copies a rotating secret, for example a per-label Claude config tree the head launches into. splice-lead."
+files = ["integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt", "features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt", "features/launch/src/main/kotlin/splice/launch/wrap/ClaudeHeadRoutes.kt"]
+status = "todo"
+verify = "red first: a test where a head's tree holds a login newer than the stored one, and a launch leaves the tree holding the stored (older) generation; green after: the launch keeps the newest generation and nothing copies a stored login over a live one; CI gate on the train sha."

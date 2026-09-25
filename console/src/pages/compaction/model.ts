@@ -11,9 +11,16 @@ import { S } from './strings';
  *  `warn`, never `ok`, because an unknown outcome is not a success. */
 export type CompactState = 'ok' | 'warn' | 'fail';
 
+/** The two picks that are a summary (PickedText.kt): the model's own text, or its reasoning promoted.
+ *  Named, never matched by prefix: `model_text_weak` also starts with `model`, and it is the text
+ *  that failed the weak-summary check with no reasoning to promote (Marlin, 2026-09-25). */
+const SUMMARY = new Set(['model_text', 'model_thinking']);
+/** Nothing came back: an empty pick (no text, no reasoning), an empty reply, a broken stream. */
+const FAILED = new Set(['empty', 'empty_model', 'stream_error', 'upstream_error']);
+
 export function stateOf(outcome: string): CompactState {
-  if (outcome.startsWith('model')) return 'ok';
-  if (outcome === 'empty_model' || outcome === 'stream_error' || outcome === 'upstream_error') return 'fail';
+  if (SUMMARY.has(outcome)) return 'ok';
+  if (FAILED.has(outcome)) return 'fail';
   return 'warn';
 }
 

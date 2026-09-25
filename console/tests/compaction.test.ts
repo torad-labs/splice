@@ -19,7 +19,13 @@ const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => 
 describe('an outcome earns one state', () => {
   test('a summary is ok, a failure is fail, and an outcome the console has not met is never ok', () => {
     expect(stateOf('model_text')).toBe('ok');
-    expect(stateOf('model_summary')).toBe('ok');
+    expect(stateOf('model_thinking')).toBe('ok');
+    // the text that failed the weak-summary check, with no reasoning to promote (PickedText.kt:28)
+    expect(stateOf('model_text_weak')).toBe('warn');
+    // a name that merely starts like a summary is not one
+    expect(stateOf('model_summary')).toBe('warn');
+    // no text and no reasoning: nothing was summarised (PickedText.kt:29)
+    expect(stateOf('empty')).toBe('fail');
     expect(stateOf('empty_model')).toBe('fail');
     expect(stateOf('stream_error')).toBe('fail');
     expect(stateOf('upstream_error')).toBe('fail');

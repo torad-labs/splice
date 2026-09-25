@@ -125,9 +125,14 @@ internal object Concentration {
      *     2.18 -> 3.49 (C 153.5 -> 177.5, den 70.5 -> 50.8). TopologyWindows.kt 2.52 -> 3.21
      *     (C 172.0 -> 180.0, den 68.2 -> 56.0). Daemon.kt 2.27 -> 3.19 (C 141.5 -> 168.5, den
      *     62.4 -> 52.8: ShutdownDaemon, DeclaredHead(s) and TopologyLoader).
-     *  The remedy is decomposing these seven, not re-merging the slices. */
-    const val RATCHET_RECORDED = "2026-09-23"
-    const val RATCHET_MAX_HIGH = 19
+     *  The remedy is decomposing these seven, not re-merging the slices.
+     *
+     *  2026-09-25, 19 -> 18, V4-220 item 6b, cause `neighbourhood`, measured with this law's census at
+     *  7ceed1b8b (19, a scratch baseline of 0 to list them) and at 0c8ce9393 (18). StatuslineRenderer.kt
+     *  3.05 -> 2.59 left the band, the file unchanged: of the packages it imports, splice.accounts.pool is
+     *  the one the change touched (AccountPoolJson now writes each account's credential verdict). */
+    const val RATCHET_RECORDED = "2026-09-25"
+    const val RATCHET_MAX_HIGH = 18
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

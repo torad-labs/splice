@@ -234,6 +234,8 @@ On the first launch of each head, splice links its `sessions` directory to the s
 
 There is nothing to configure. `sessions` is in the default `[claude].share` list. Put it in a head's `isolate` list to wall that head off, or remove it from `share` to turn the feature off everywhere. The fresh-machine e2e checks the link on both heads of a clean install.
 
+The console's Teams page turns this into a team. Give it a repo, a goal and role slots, each with a role, a head, its own instructions and a session. From its next turn, every bound session's system prompt carries its role, the team goal, the slot's instructions and where to reach the lead. The board shows the members by head, the hand-offs between them with their text, what each session is doing, and turns, tokens and cost per role. A plain `claude` session can hold a slot, but its own messages don't pass through splice, so the board shows only what it receives.
+
 ## Troubleshooting
 
 `splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints
@@ -339,8 +341,6 @@ request with one tool per listed model, so tool calling and streaming are proven
 depends on them. Status and doctor label these heads `local runtime` and never imply subscription
 or quota state. Set `local = false` on a provider to opt out of the loopback rule, `local = true`
 to force it elsewhere. A local head also asks its runtime for token counts, which is what makes
-Claude Code's context meter move and its auto-compaction fire; a runtime that refuses that request
-field takes `quirks = { stream_usage = false }`. A local head also asks its runtime for token counts, which is what makes
 Claude Code's context meter move and its auto-compaction fire; a runtime that refuses that request
 field takes `quirks = { stream_usage = false }`. See [`tools/e2e/local-models/README.md`](tools/e2e/local-models/README.md) for
 what each runtime reports and how it was tested.

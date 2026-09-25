@@ -140,14 +140,19 @@ public class EconomicsStore(
                 // being diluted to a misleading 0.0 by turns that never had the choice.
                 deferralTurns = b.deferralTurns + if (turn.toolsEager != null) 1 else 0,
                 rateLimited = b.rateLimited + if (turn.rateLimited) 1 else 0,
-                costUsd = b.costUsd?.plus(usd ?: 0.0),
-                unpricedTurns = b.unpricedTurns + if (usd == null) 1 else 0,
-            )
+            ).let { priced(it, usd) }
             trimUnderLock()
             version += 1
         }
         CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
     }
+
+    /** V4-221: the turn's dollars into its hour; null [usd] is a turn with no card. A null hour (one
+     *  written before the field) stays null: a partial sum must not read as the hour's cost. */
+    private fun priced(b: EconomicsBucket, usd: Double?): EconomicsBucket = b.copy(
+        costUsd = b.costUsd?.plus(usd ?: 0.0),
+        unpricedTurns = b.unpricedTurns + if (usd == null) 1 else 0,
+    )
 
     /** The turn's tokens as the perf-row counters [TurnPrice] prices (in_tokens inclusive of both
      *  cache buckets, as the perf row writes it). */

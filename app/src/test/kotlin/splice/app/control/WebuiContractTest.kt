@@ -96,7 +96,9 @@ class WebuiContractTest {
                 override fun path() = "/tmp/codex.log"
             },
             economics = HeadEconomicsSource {
-                listOf(EconomicsRow(1_000, 2, 300, 270, 24, 5, 400, 440, 28, 48, 2, 1, costUsd = 0.42, unpricedTurns = 1))
+                listOf(
+                    EconomicsRow(1_000, 2, 300, 270, 24, 5, 400, 440, 28, 48, 2, 1, costUsd = 0.42, unpricedTurns = 1),
+                )
             },
             warnPct = 80,
             warnTokens5h = 0,

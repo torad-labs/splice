@@ -17,7 +17,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Pin or release the next account
 - Relabel or remove an account
 - Refresh a login
-- Store or remove an API key (V4-220)
+- Store or remove an API key
 
 ## compaction
 

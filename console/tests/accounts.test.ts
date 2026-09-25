@@ -33,10 +33,11 @@ import {
   windowFigure, windowName,
 } from '../src/widgets/account-table';
 import { refusalOf } from '../src/features/account-login';
-import { arrangeAccounts, columnsOf, fixtureName, headNote, keyCommand, keyHelp, nextReset } from '../src/pages/accounts/model';
+import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget, nextReset } from '../src/pages/accounts/model';
 import { signInOf } from '../src/entities/auth';
 import { dispositions } from '../src/pages/accounts/coverage';
 import { AccountsBoard, ApiKeyDetail } from '../src/pages/accounts';
+import { S as KEY_WORDS, SOURCE } from '../src/features/api-key/strings';
 import type { HeadRow } from '../src/pages/accounts';
 import { H, S, clientSignIn } from '../src/pages/accounts/strings';
 import { ABSENT } from '../src/shared/lib';
@@ -551,12 +552,26 @@ describe('the api-key heads have a table of their own', () => {
     expect((out.match(/myx-dt-tone-warn/g) ?? []).length).toBe(1);
   });
 
-  test('an opened api-key head gives the command that stores its key, and says the next request uses it', () => {
+  test('an opened api-key head stores its key from the detail, and says the next request uses it', () => {
+    // V4-220 item 1: the form is `splice key set` over PUT /api/keys/{ENV}; nothing is stored yet,
+    // so there is no remove to offer.
     const row = { head: 'claude-deepseek', kind: 'api-key', present: false, masked: null, note: null, envVar: 'DEEPSEEK_API_KEY' };
-    const out = render(h(ApiKeyDetail, { row }));
-    expect(out).toContain('splice key set DEEPSEEK_API_KEY');
+    const out = render(h(ApiKeyDetail, { row, keyState: { name: 'DEEPSEEK_API_KEY', stored: false, heads: [{ head: 'claude-deepseek', source: 'missing' }] } }));
+    expect(keyTarget(row)).toBe('DEEPSEEK_API_KEY');
+    expect(out).toContain(`>${KEY_WORDS.newKey}<`);
+    expect(out).toMatch(/<input[^>]*type="password"/);
+    expect(out).toContain(`>${KEY_WORDS.store}<`);
+    expect(out).not.toContain(`>${KEY_WORDS.remove}<`);
+    expect(out).toMatch(new RegExp(`>${S.readFrom}<[\\s\\S]*>${SOURCE.missing}<`));
     expect(keyHelp(row)).toBe(H.keyStore);
     expect(out).toContain(H.keyStore);
+  });
+
+  test('a key the store holds offers its remove, and a head the environment feeds reads it from there', () => {
+    const row = { head: 'claude-grok', kind: 'api-key', present: true, masked: null, note: null, envVar: 'XAI_API_KEY', keyMasked: 'xai-…9f2c' };
+    const out = render(h(ApiKeyDetail, { row, keyState: { name: 'XAI_API_KEY', stored: true, heads: [{ head: 'claude-grok', source: 'environment' }] } }));
+    expect(out).toContain(`>${KEY_WORDS.remove}<`);
+    expect(out).toMatch(new RegExp(`>${S.readFrom}<[\\s\\S]*>${SOURCE.environment}<`));
   });
 
   test('the help follows the order the daemon reads a key in: variable, key_file, then the store', () => {
@@ -567,13 +582,14 @@ describe('the api-key heads have a table of their own', () => {
     // a key_file is read before the store, so the head is sent to the file and offered no command
     const filed = { ...base, present: true, keyFile: '/keys/or.txt' };
     expect(keyHelp(filed)).toBe(H.keyFile);
-    expect(keyCommand(filed)).toBeNull();
-    expect(render(h(ApiKeyDetail, { row: filed }))).not.toContain('splice key set');
+    expect(keyTarget(filed)).toBeNull();
+    expect(render(h(ApiKeyDetail, { row: filed }))).not.toContain(`>${KEY_WORDS.store}<`);
     expect(render(h(ApiKeyDetail, { row: filed }))).toContain('/keys/or.txt');
     // with the variable and the file both empty, the store is what the daemon reads next
     const empty = { ...base, present: false, keyFile: '/keys/or.txt' };
     expect(keyHelp(empty)).toBe(H.keyStore);
-    expect(render(h(ApiKeyDetail, { row: empty }))).toContain('splice key set OR_KEY');
+    expect(keyTarget(empty)).toBe('OR_KEY');
+    expect(render(h(ApiKeyDetail, { row: empty }))).toContain(`>${KEY_WORDS.store}<`);
   });
 });
 

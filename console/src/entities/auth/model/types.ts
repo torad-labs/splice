@@ -89,3 +89,27 @@ export type AuthActionOutcome =
   | { action: 'remove'; result: AccountMutationPayload };
 
 export type AuthActionState = AuthActionOutcome | PendingRoute;
+
+// ── the key store (V4-220 item 1: `splice key list|set|unset` over the console, KeyRoutes.kt) ──
+
+/** One head that reads a key, and which link of its read chain supplies it now: `environment`,
+ *  `file`, `store` or `missing` (ApiKeyAuthProvider's key_source), `unknown` from a provider that
+ *  predates it. A string, not a union: a link the daemon adds later still prints as itself. */
+export interface KeyReader {
+  head: string;
+  source: string;
+}
+
+/** One key by name, never by value: whether splice's store holds it, and who reads it from where.
+ *  A stored key a head reads from the environment or its file is shadowed, never applied. */
+export interface KeyState {
+  name: string;
+  stored: boolean;
+  heads: KeyReader[];
+}
+
+/** GET /api/keys: every key a head reads or the store holds, sorted by name. */
+export interface KeysPayload {
+  path: string;
+  keys: KeyState[];
+}

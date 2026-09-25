@@ -259,6 +259,49 @@ async function nextCell(main: Locator, account: string): Promise<Locator> {
   return row.getByRole('cell').nth(names.indexOf('Next'));
 }
 
+test('an api-key head\'s key is stored and removed from its detail, and each answer says where the head reads it', async ({ page }) => {
+  // V4-220 item 1 against the real jar: the stack's api-key head reads CONSOLE_E2E_NO_SUCH_KEY,
+  // which nothing sets, so it reads nowhere until the store holds one. The daemon's key store sits
+  // beside SPLICE_CONFIG in the stack's own home. The doctor rows later in this file read the key as
+  // unset, so the store is emptied however this test ends.
+  const name = 'CONSOLE_E2E_NO_SUCH_KEY';
+  const secret = `sk-e2e-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const faults = await open(page, 'accounts');
+  try {
+    await headRow(page, STACK.keyHead).click();
+    const detail = page.getByRole('complementary', { name: 'Account detail' });
+    const readFrom = detail.getByRole('definition').filter({ hasText: /^(Nowhere|Key store|Environment|Key file)$/ });
+    await expect(readFrom).toHaveText('Nowhere', { timeout: 15_000 });
+    await expect(detail.getByRole('button', { name: 'Remove key', exact: true })).toHaveCount(0);
+
+    const box = detail.getByLabel('New key', { exact: true });
+    await box.fill(secret);
+    const stored = page.waitForResponse((response) => response.request().method() === 'PUT'
+      && new URL(response.url()).pathname === `/api/keys/${name}`);
+    await detail.getByRole('button', { name: 'Store key', exact: true }).click();
+    expect((await stored).status()).toBe(200);
+    await expect(detail.getByRole('status')).toHaveText(`${STACK.keyHead} uses the stored key from its next request.`);
+    await expect(box, 'the box keeps no key once the store answered').toHaveValue('');
+    await expect(readFrom).toHaveText('Key store');
+    const keys = page.locator('main').getByRole('table', { name: 'API keys', exact: true });
+    await expect(keys.getByRole('row').filter({ hasText: name })).toContainText('Set');
+    expect(await page.content(), 'the value is on no page').not.toContain(secret);
+
+    await detail.getByRole('button', { name: 'Remove key', exact: true }).click();
+    const removed = page.waitForResponse((response) => response.request().method() === 'DELETE'
+      && new URL(response.url()).pathname === `/api/keys/${name}`);
+    await detail.getByRole('button', { name: `Remove ${name}`, exact: true }).click();
+    expect((await removed).status()).toBe(200);
+    await expect(detail.getByRole('status')).toHaveText(`${STACK.keyHead} has no key now.`);
+    await expect(readFrom).toHaveText('Nowhere');
+    expect(faults.pageErrors, 'the accounts page threw').toEqual([]);
+  } finally {
+    await page.evaluate(async ([storage, variable]) => {
+      await fetch(`/api/keys/${variable}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem(storage) ?? ''}` } });
+    }, [KEY_STORAGE, name]);
+  }
+});
+
 test('accounts shows the OAuth account with the windows its provider reported', async ({ page }) => {
   await open(page, 'accounts');
   const main = page.locator('main');

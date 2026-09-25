@@ -24,6 +24,8 @@ export const S = {
   variable: 'Variable',
   keyFile: 'Key file',
   key: 'Key',
+  /** The link of the head's read chain that supplies its key now (GET /api/keys). */
+  readFrom: 'Read from',
   keySet: 'Set',
   keyMissing: 'Missing',
   signedIn: 'Signed in',

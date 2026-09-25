@@ -109,7 +109,7 @@
 }
 .myx-dt tbody tr + tr td { border-top: var(--hair) solid var(--line); }
 .myx-dt .myx-dt-end { text-align: end; }
-.myx-dt .myx-dt-mono { font-family: var(--font-mono); font-size: var(--text-1); }
+.myx-dt .myx-dt-mono { font-family: var(--font-mono); font-size: var(--text-2); }
 .myx-dt .myx-dt-primary { color: var(--fg); font-weight: 500; }
 
 /* An openable table: the primary cell's button stretches over its row. */
@@ -136,9 +136,112 @@
   outline-offset: calc(-1 * var(--focus-width));
 }
 .myx-dt tbody tr.myx-dt-selected td { background: var(--bg-active); }
-.myx-dt tbody tr.myx-dt-selected td:first-child { box-shadow: inset var(--focus-width) 0 0 var(--accent); }
-.myx-dt tbody tr.myx-dt-tone-warn td:first-child { box-shadow: inset var(--focus-width) 0 0 var(--warn); }
-.myx-dt tbody tr.myx-dt-tone-danger td:first-child { box-shadow: inset var(--focus-width) 0 0 var(--danger); }
+.myx-dt tbody tr.myx-dt-tone-warn td { background: var(--warn-soft); }
+.myx-dt tbody tr.myx-dt-tone-danger td { background: var(--danger-soft); }
+/* A head's row carries the head's colour as a bar on its leading edge (DESIGN.md section 5). */
+.myx-dt tbody tr.myx-dt-hued td:first-child {
+  box-shadow: inset var(--space-2) 0 0 var(--hue);
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+}
+/* The band already carries the colour, so the title's own mark would say it twice. */
+.myx-dt-run.myx-dt-hued .myx-dt-group .myx-hm-mark { display: none; }
+/* A run titled by a head takes a faint wash of the head's colour: the board's airline band. */
+.myx-dt-run.myx-dt-hued .myx-dt-group th {
+  background: color-mix(in srgb, var(--hue) 9%, var(--bg));
+  box-shadow: inset var(--space-2) 0 0 var(--hue);
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+}
+
+/* A grouped table: each run opens with a title row (a head's mark and name, a project, an hour). */
+.myx-dt-run + .myx-dt-run .myx-dt-group th { border-top: var(--hair) solid var(--line); }
+.myx-dt-group th {
+  padding: var(--space-5) var(--space-4) var(--space-3);
+  background: var(--bg);
+  font-size: var(--text-3);
+  font-weight: 600;
+  color: var(--fg);
+  text-align: start;
+  white-space: normal;
+}
+.myx-dt-group-head { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.myx-dt-group-title { display: inline-flex; align-items: center; min-width: 0; }
+.myx-dt-group-count {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+.myx-dt-group-actions { margin-inline-start: auto; font-size: var(--text-2); font-weight: 400; }
+.myx-dt-group-actions a { color: var(--fg-muted); text-decoration: none; }
+.myx-dt-group-actions a:hover { color: var(--fg); }
+.myx-dt-group-note {
+  display: block;
+  margin-block-start: var(--space-2);
+  font-size: var(--text-2);
+  font-weight: 400;
+  color: var(--fg-subtle);
+}
+.myx-dt-run .myx-dt-group + tr td { border-top: var(--hair) solid var(--line); }
+
+/* ---------- tally: the counts a page is about ---------- */
+.myx-tally { display: flex; flex-wrap: wrap; gap: var(--space-8); margin: 0; }
+.myx-tally-item { display: grid; gap: var(--space-1); }
+.myx-tally-value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-7);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.myx-tally-label { font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-tally-ok .myx-tally-value { color: var(--ok); }
+.myx-tally-warn .myx-tally-value { color: var(--warn); }
+.myx-tally-danger .myx-tally-value { color: var(--danger); }
+
+/* ---------- the page head every page not yet rebuilt still prints ---------- */
+.myx-page-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-5);
+  margin-block-end: var(--space-6);
+}
+.myx-page-title {
+  margin: 0;
+  font-size: var(--text-6);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: -.015em;
+  color: var(--fg);
+}
+
+/* ---------- segmented ---------- */
+.myx-seg {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+}
+.myx-seg-item {
+  padding: var(--space-1) var(--space-4);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.myx-seg-item:hover { color: var(--fg); }
+.myx-seg-item-on,
+.myx-seg-item-on:hover { background: var(--bg-active); color: var(--fg); font-weight: 500; }
 
 /* ---------- badge ---------- */
 .myx-badge {
@@ -283,9 +386,7 @@
   font-size: var(--text-3);
 }
 .myx-empt-text { font-weight: 500; color: var(--fg); }
-.myx-empt-text::first-letter { text-transform: uppercase; }
 .myx-empt-source { font-size: var(--text-2); color: var(--fg-subtle); }
-.myx-empt-source::first-letter { text-transform: uppercase; }
 
 /* ---------- reveal (shared/ui/reveal.tsx) ---------- */
 .myx-reveal { display: grid; gap: var(--space-3); justify-items: start; }
@@ -299,6 +400,5 @@
   color: var(--fg-muted);
   cursor: pointer;
 }
-.myx-reveal-btn::first-letter { text-transform: uppercase; }
 .myx-reveal-btn:hover { background: var(--bg-hover); color: var(--fg); }
 .myx-reveal-body { font-size: var(--text-2); color: var(--fg-muted); max-width: 72ch; }

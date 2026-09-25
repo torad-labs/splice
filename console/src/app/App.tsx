@@ -1,13 +1,13 @@
-// The console shell: a fixed rule on top, a rail of bays on the left, the
-// page's bay in the middle. The rule never scrolls and the rail is always
-// visible; everything else is the page's own composition.
+// The console shell (docs/design/DESIGN.md section 6): the sidebar of grouped pages on the left,
+// and the page column holding the status strip over the page. The strip never scrolls and the
+// sidebar is always visible; everything else is the page's own composition.
 //
 // Routing is hash-based because the artifact is one file served at / and
 // /dashboard by the control server (CONTRACTS.md section 3). Addresses are
 // canonical (`#/fleet`); the tab router's bare addresses are rewritten once at
 // boot in index.tsx, and a bare path typed mid-session still lands on its
 // address through the redirect routes below.
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import { Navigate, Outlet, RouterProvider, createHashRouter, useLocation } from 'react-router';
 import { useTheme } from '@features/theme';
 import { Palette } from '@features/palette';
@@ -18,6 +18,7 @@ import { Rule } from '@widgets/rule';
 import { Empty } from '@shared/ui';
 import { ADDRESSES, LEGACY_PATHS, PAGE_ROW, addressOf, type Address } from './rows';
 import { pageFor } from './pages';
+import { RAIL_GROUPS } from './nav';
 import './app.css';
 
 /** The page an address shows: its own module, or the honest empty naming its row. */
@@ -42,12 +43,14 @@ function Console() {
   // cannot import the palette (or the reverse). The app layer is where the two
   // meet: it hands the list down and takes the selection back.
   const views = usePageViews(address);
+  // The sidebar's "jump to" opens the same palette the keyboard does.
+  const [palette, setPalette] = useState(false);
 
   return (
     <div className="myx-console">
-      <Rule />
-      <div className="myx-console-body">
-        <Rail active={address} addresses={ADDRESSES} />
+      <Rail active={address} groups={RAIL_GROUPS} theme={theme} onTheme={set} onJump={() => setPalette(true)} />
+      <div className="myx-console-main">
+        <Rule />
         <main className="myx-console-page">
           <Outlet />
         </main>
@@ -58,6 +61,8 @@ function Console() {
         onSelectView={(id) => selectView(address, id)}
         theme={theme}
         onTheme={set}
+        open={palette}
+        onOpenChange={setPalette}
       />
       <UnlockMgmt />
     </div>

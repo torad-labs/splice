@@ -39,6 +39,13 @@ export const S = {
   sevenResets: '7d resets',
   /** When splice last read the head's windows. */
   read: 'read',
+  /** A plan card's two windows, and the word before a reset countdown. */
+  fiveWindow: '5h window',
+  sevenWindow: '7d window',
+  resets: 'resets',
+  /** The page's stat row, for the chosen window. */
+  cacheRead: 'cache read',
+  share: 'share',
   /** A window whose reset time passed after splice read it: the figure is from before the reset. */
   alreadyReset: 'already reset',
   stale: 'stale',

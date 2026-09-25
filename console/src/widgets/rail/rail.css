@@ -1,152 +1,154 @@
-/* The rail, bound to the measured rail-labels region
-   (.impeccable/build/scaffold/layout.css): the label column sits at 1.2% of the
-   frame with a 7% width, which inside the rail is 13.33% / 77.78%.
+/* The sidebar (docs/design/DESIGN.md section 6). A raised column with the page list in four
+   groups; the current page takes the active ground and full ink. No hue: colour here would claim
+   to be a head. */
 
-   The tabs themselves are the comp's, read off its own pixels rather than from
-   a component default: each address is an 80x29px plate of --plate (the comp
-   measures #b5a68f there, against the strips' #ded9c6), ruled off from the room
-   on every side, carrying its label in the plate's ink at --text-2 (the comp's
-   ascenders measure 13px and its labels are about 15px per word pair). The
-   standing address is NOT marked by tinting the plate: the comp prints a green
-   bar to the RIGHT of the plate, outside it, so the plate keeps one fill and
-   "where am I" is a separate mark rather than a second colour. The column is
-   spread over the measured 97.5% of its height rather than packed at the top,
-   so the bays keep the comp's 29px tab and 33px gap at any window size. */
-
-.myx-rail {
-  /* The comp's rail plates measure #b5a68f, a cream a step or two under --strip, mixed here from
-     the world's own paper and its mute ink (lands at 182,178,161). */
-  --plate: color-mix(in srgb, var(--strip) 70%, var(--strip-ink-mute));
-  --plate-hover: color-mix(in srgb, var(--strip) 88%, var(--room));
-  /* the holder slot each plate sits in: one step up from the rail's floor */
-  --slot: color-mix(in srgb, var(--room-deep) 93%, white);
-  position: relative;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
-  background: var(--room-deep);
-  border-right: var(--hair) solid var(--hairline);
-}
-
-/* THE TABS ARE MADE OF TYPE (2026-09-23, console design pass). They were shares of the rail's
-   HEIGHT (a 3.66% tab on an 80.76% column) while their label is a share of the frame's WIDTH, so
-   on any frame flatter than the comp's 3:2 the plate shrank under its word: at 1440x900 a 25px
-   plate held a 14px bold label and "compaction" ran out of both ends. A plate is now a fixed
-   number of rems, so it scales with the word it carries; only the gap between slots follows the
-   frame's height, capped at the comp's own spacing, so thirteen addresses fit a 16:9 frame. */
-.myx-rail-tabs {
+.myx-side {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-3);
+  min-height: 0;
+  background: var(--bg-raised);
+  border-right: var(--hair) solid var(--line);
 }
 
-/* THE SLOT: a dark holder the plate is racked in, wider than the plate so the standing mark has
-   a place inside it (the comp's green bar sits in the slot, right of the plate). */
-.myx-rail-tab {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  height: 2.5rem;
-  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-2);
-  background: var(--slot);
-  box-shadow:
-    inset 0 var(--hair) 0 0 var(--hairline),
-    0 0 0 var(--hair) color-mix(in srgb, var(--room) 27%, black);
-  border-radius: 0;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
+.myx-side-top {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4) var(--space-4);
 }
-/* THE PLATE: the holder edge itself, painted as a printed cream label with a pin at each end. */
-.myx-rail-tab .myx-edge {
-  position: relative;
-  flex: 1 1 auto;
-  justify-content: center;
-  align-items: center;
-  padding-inline: var(--space-4);
-  background: var(--plate);
-  box-shadow: 0 0 0 var(--hair) color-mix(in srgb, var(--plate) 60%, black);
-  transition: background-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
-}
-.myx-rail-tab .myx-edge-label {
-  color: var(--strip-ink);
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  font-variation-settings: 'wdth' 75;
+
+.myx-side-wordmark {
+  margin: 0;
+  padding-inline: var(--space-3);
+  font-size: var(--text-5);
   font-weight: 600;
-  white-space: nowrap;
-}
-/* The two pins: the holder mark at the left end and a pseudo at the right. They are one printed
-   ornament of the plate, not state, so both take the plate's ink whatever the address. */
-.myx-rail-tab .myx-edge-mark,
-.myx-rail-tab .myx-edge::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: var(--space-2);
-  height: var(--space-2);
-  margin-block-start: calc(-1 * var(--space-2) / 2);
-  border-radius: 50%;
-  background: var(--strip-ink);
-}
-.myx-rail-tab .myx-edge-mark { inset-inline-start: var(--space-2); }
-.myx-rail-tab .myx-edge::after { inset-inline-end: var(--space-2); }
-
-@media (hover: hover) and (pointer: fine) {
-  .myx-rail-tab:hover .myx-edge { background: var(--plate-hover); }
-}
-.myx-rail-tab:active .myx-edge { transform: scale(0.97); }
-@media (prefers-reduced-motion: reduce) {
-  .myx-rail-tab:active .myx-edge { transform: none; }
+  line-height: var(--leading-tight);
+  letter-spacing: -.02em;
+  color: var(--fg);
 }
 
-/* THE STANDING MARK: the comp's green bar, inside the slot to the right of the plate. The address
-   stays readable with the colour gone (aria-current carries it). */
-.myx-rail-tab[aria-current='page']::after {
-  content: '';
-  position: absolute;
-  inset-block: var(--space-2);
-  inset-inline-end: var(--space-2);
-  width: var(--space-2);
-  background: var(--edge-green);
+.myx-side-jump {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: var(--text-2);
+  cursor: pointer;
+  text-align: start;
 }
-.myx-rail-tab:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+.myx-side-jump:hover { border-color: var(--line-strong); color: var(--fg-muted); }
+.myx-side-jump-word { flex: 1; }
+.myx-side-kbd {
+  padding: 0 var(--space-2);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
 }
 
-/* ---------- THE PHONE (M3-03): THE RAIL IS A BOTTOM STRIP OF ADDRESSES ----------
-   Below 720 the rail is the last row of the shell (app.css) and its thirteen plates lie in one
-   line that scrolls sideways under the thumb. Every measured number above is a share of a
-   vertical column that does not exist here, so the tabs give up their percentages and take their
-   own size: the same plate, the same two marks, the same word. A plate is at least --space-8 tall
-   (48px), which is the touch floor, and the standing mark moves from beside the plate to under
-   it -- the same 7-in-80 green bar, turned to lie along the plate it marks. */
+.myx-side-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: var(--space-2) var(--space-4) var(--space-5);
+}
+
+.myx-side-group + .myx-side-group { margin-block-start: var(--space-5); }
+
+.myx-side-group-label {
+  margin: 0 0 var(--space-2);
+  padding-inline: var(--space-3);
+  font-size: var(--text-1);
+  font-weight: 500;
+  color: var(--fg-subtle);
+}
+
+.myx-side-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.myx-side-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  font-size: var(--text-3);
+  text-decoration: none;
+  transition: background-color var(--dur-1) ease, color var(--dur-1) ease;
+}
+.myx-side-link:hover { background: var(--bg-hover); color: var(--fg); }
+.myx-side-link-current,
+.myx-side-link-current:hover {
+  background: var(--bg-active);
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.myx-side-icon {
+  display: inline-flex;
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+}
+.myx-side-icon svg { width: 100%; height: 100%; }
+.myx-side-link-current .myx-side-icon { color: var(--fg); }
+
+.myx-side-foot {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: var(--hair) solid var(--line);
+}
+
+.myx-side-theme {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--text-2);
+  cursor: pointer;
+  text-align: start;
+}
+.myx-side-theme:hover { background: var(--bg-hover); color: var(--fg); }
+
+/* ---------- phone: the pages become one sideways row ---------- */
 @media (max-width: 720px) {
-  .myx-rail {
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-right: 0;
-    border-top: var(--hair) solid var(--hairline);
-    scrollbar-width: none;
-  }
-  .myx-rail-tabs {
-    width: max-content;
+  .myx-side {
     flex-direction: row;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-3) var(--space-4);
+    border-right: 0;
+    border-bottom: var(--hair) solid var(--line);
   }
-  .myx-rail-tab {
-    height: auto;
-    min-height: var(--space-8);
-    padding: var(--space-2) var(--space-2) var(--space-4);
+  .myx-side-top { padding: var(--space-3); }
+  .myx-side-jump,
+  .myx-side-foot,
+  .myx-side-group-label { display: none; }
+  .myx-side-nav {
+    display: flex;
+    gap: var(--space-1);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: var(--space-3);
+    scrollbar-width: none;
   }
-  .myx-rail-tab .myx-edge { padding-inline: var(--space-5); }
-  .myx-rail-tab[aria-current='page']::after {
-    inset-inline: var(--space-2);
-    inset-block: auto var(--space-1);
-    width: auto;
-    height: var(--space-2);
-  }
+  .myx-side-group + .myx-side-group { margin: 0; }
+  .myx-side-list { display: flex; gap: var(--space-1); }
+  .myx-side-link { white-space: nowrap; }
 }

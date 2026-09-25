@@ -45,6 +45,15 @@ export const S = {
   absent: ABSENT,
   idle: 'idle',
   undated: 'not dated',
+  /** The board's last column, and the three words it prints (the daemon's availability). */
+  status: 'status',
+  live: 'live',
+  stale: 'stale',
+  gone: 'gone',
+  /** A hand-off's direction column. */
+  way: 'way',
+  /** The timeline's span, after its hours. */
+  window: 'window',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

@@ -1,8 +1,7 @@
-// The fixed rule: who the console is, what time it is, whether the daemon is
-// answering, whether a saved knob is still waiting for a restart, and the plan
-// window closest to running out. It never scrolls and it never guesses: every
-// figure carries its basis, and a window no head reports says so instead of
-// reading zero.
+// The status strip (docs/design/DESIGN.md section 6): whether the link is live, whether the daemon is
+// answering, the plan window closest to running out and when it resets, whether a saved knob is
+// still waiting for a restart, and the time. It sits over every page, never scrolls and never
+// guesses: a window no head reports says so instead of reading zero.
 //
 // The rule reads entities through their public exports and owns nothing: the
 // only state it keeps is the clock, and the only reads it starts are the ones
@@ -15,24 +14,25 @@
 // payloads rather than from the stores (a static render sees a store's initial
 // state and never its current one).
 import { useEffect, useState } from 'react';
-import { startControlStatusPolling, useControlStatus } from '@entities/control-status';
+import { HeadMark, startControlStatusPolling, useControlStatus } from '@entities/control-status';
 import { useHeads } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { headsReportingNone, nearestWindow, startUsagePolling, useUsage } from '@entities/usage';
+import { headsReportingNone, nearestWindow, planLevel, startUsagePolling, useUsage } from '@entities/usage';
 import { useRestartPending } from '@entities/config';
 import { useSession } from '@entities/session';
 import { connect, useEvents } from '@entities/events';
 import { wireLive } from './wire';
 import type { ConnectionStatus } from '@entities/events';
 import { timeAgo } from '@shared/lib';
-import { Figure, HolderEdge } from '@shared/ui';
+import { Badge } from '@shared/ui';
+import type { Tone } from '@shared/ui';
 import type { AuthPayload, UsagePayload } from '@shared/api';
 import { S } from './strings';
 import './rule.css';
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
-/** HH:MM:SS, local or UTC. The rule prints both, the way the strip bay does. */
+/** HH:MM:SS, local or UTC. The strip prints both. */
 export function clockText(epochMs: number, utc: boolean): string {
   const at = new Date(epochMs);
   const hours = utc ? at.getUTCHours() : at.getHours();
@@ -58,6 +58,9 @@ function useClock(): { local: string; utc: string } {
  */
 export type HealthState = 'green' | 'amber' | 'red' | 'grey';
 
+/** The status colour each health state prints beside its word. */
+const HEALTH_TONE: Record<HealthState, Tone> = { green: 'ok', amber: 'warn', red: 'danger', grey: 'neutral' };
+
 export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: boolean): HealthState {
   // A 401 is the daemon ANSWERING: without the key the console cannot say how the daemon is, and
   // the red "unreachable" it printed over the key gate was a claim the answer had just disproved.
@@ -76,16 +79,23 @@ export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: 
         <span className="myx-rule-absent">no head reports a limit</span>
       ) : (
         <>
-          <span className="myx-rule-head">{nearest.head}</span>
+          <HeadMark head={nearest.head} />
           {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
           <span className="myx-rule-period">{nearest.window}</span>
-          <Figure value={nearest.pct} unit="%" basis="measured" />
+          <span className={`myx-rule-figure myx-rule-pct-${pctTone(nearest.pct, usage?.warn_pct ?? 0)}`}>{nearest.pct}%</span>
           <span className="myx-rule-word">{S.used}</span>
           {nearest.reset !== null ? <span className="myx-rule-reset">resets {nearest.reset}</span> : null}
         </>
       )}
     </p>
   );
+}
+
+/** A plan share's tone, from the daemon's own lines: danger at the critical line, warn past its warn
+ *  line, the plain ink below both. */
+export function pctTone(pct: number, warnPct: number): Tone {
+  const level = planLevel(pct, warnPct);
+  return level === 'critical' ? 'danger' : level === 'warn' ? 'warn' : 'neutral';
 }
 
 /** How long the link may be silent before it is in doubt: the daemon writes a heartbeat after
@@ -109,18 +119,19 @@ export function ConnectionCell({ status, lastFrameAt, lastBeatAt = null, now = D
   lastBeatAt?: number | null;
   now?: number;
 }) {
-  const edge = status === 'live' ? 'green' : status === 'reconnecting' ? 'amber' : 'grey';
+  const tone: Tone = status === 'live' ? 'ok' : status === 'reconnecting' ? 'warn' : 'neutral';
   const word = status === 'live' ? S.live : status === 'reconnecting' ? S.reconnecting : S.off;
   const silent = lastBeatAt !== null && now - lastBeatAt > LINK_SILENT_MS;
   return (
     <p className="myx-rule-cell myx-rule-connection">
-      <HolderEdge state={edge} label={word} />
+      <Badge tone={tone} quiet>{word}</Badge>
       {lastFrameAt === null ? (
         <span className="myx-rule-absent">no events yet</span>
       ) : (
         <>
           <span className="myx-rule-word">{S.lastEvent}</span>
-          <Figure value={timeAgo(lastFrameAt, now)} basis={silent ? 'stale' : 'measured'} />
+          <span className="myx-rule-figure">{timeAgo(lastFrameAt, now)}</span>
+          {silent ? <span className="myx-rule-word">{S.stale}</span> : null}
         </>
       )}
     </p>
@@ -135,7 +146,7 @@ export function NoneCell({ usage }: { usage: UsagePayload | null }) {
   if (none === null) return null;
   return (
     <p className="myx-rule-cell myx-rule-none">
-      <Figure value={none} basis="measured" />
+      <span className="myx-rule-figure">{none}</span>
       <span className="myx-rule-word">{S.noneTail}</span>
     </p>
   );
@@ -146,18 +157,17 @@ export function NoneCell({ usage }: { usage: UsagePayload | null }) {
  * knob except three at start, so a saved restart-only value does nothing until
  * the daemon restarts, and the console must not let that read as "applied".
  *
- * The cell is the same gesture as everywhere else in this world - a holder edge
- * that cocks, with a printed label and the count of pending keys as a figure. It
- * reads the store a page's save left behind, so the rule starts no route and no
- * poll of its own; when the store clears (what a restart does to it, and the
- * only thing that honestly can) the cell is gone.
+ * The cell is a warn badge with the count of pending keys. It reads the store a
+ * page's save left behind, so the strip starts no route and no poll of its own;
+ * when the store clears (what a restart does to it, and the only thing that
+ * honestly can) the cell is gone.
  */
 export function PendingRestartCell({ pending }: { pending: readonly string[] }) {
   if (pending.length === 0) return null;
   return (
     <p className="myx-rule-cell myx-rule-pending">
-      <HolderEdge state="amber" label={S.restartPending} />
-      <Figure value={pending.length} basis="measured" />
+      <Badge tone="warn">{S.restartPending}</Badge>
+      <span className="myx-rule-figure">{pending.length}</span>
     </p>
   );
 }
@@ -195,40 +205,24 @@ export function Rule() {
 
   return (
     <header className="myx-rule">
-      <p className="myx-rule-cell myx-rule-wordmark">{S.wordmark}</p>
+      <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} lastBeatAt={connection.lastBeatAt} />
 
-      <p className="myx-rule-cell myx-rule-clocks">
-        <span className="myx-rule-clock">{local}</span>
-        <span className="myx-rule-clock-word">{S.local}</span>
-        <span className="myx-rule-clock">{utc}</span>
-        <span className="myx-rule-clock-word">{S.utc}</span>
+      <p className="myx-rule-cell myx-rule-health">
+        <Badge tone={HEALTH_TONE[health]} quiet>{S.health[health]}</Badge>
       </p>
 
-      <div className="myx-rule-cell myx-rule-health">
-        <HolderEdge state={health} label={S.health[health]} />
-      </div>
-
-      {/* THE FIVE MEASURED CELLS SIT AT THE COMP'S OWN X, and the two signals the comp never had
-          take the tail of the no-window slot. This replaced a row that flowed window and none from
-          41% to 99%: flowing kept everything visible but moved two MEASURED cells by +18.8 and
-          +18.7 points on all thirteen addresses (M1-28's punch list). The window cell now takes its
-          measured 41% and 30%, and the no-window cell its measured 72% and 27%, leaving the band's
-          own numbers at delta 0.00. */}
       <WindowCell usage={usage} auth={auth} />
 
-      <div className="myx-rule-tail">
-        <NoneCell usage={usage} />
+      <NoneCell usage={usage} />
 
-        {/* The two signals the comp never had. They ride in the tail of the no-window slot because
-            that is the only room the comp's own measurements leave: its 27% slot measures 414.7 px
-            and the count inside it 127.8 px, while this signal measures 157.8 px, so the pair sits
-            8.4 points clear. The connection signal is the daemon's live state and belongs beside
-            `daemon ok` by meaning, but that cell's 10% slot is 154 px and already carries the
-            health word — there is no room there. */}
-        <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} lastBeatAt={connection.lastBeatAt} />
+      <PendingRestartCell pending={pendingRestart} />
 
-        <PendingRestartCell pending={pendingRestart} />
-      </div>
+      <p className="myx-rule-cell myx-rule-clocks">
+        <span className="myx-rule-figure">{local}</span>
+        <span className="myx-rule-word">{S.local}</span>
+        <span className="myx-rule-figure">{utc}</span>
+        <span className="myx-rule-word">{S.utc}</span>
+      </p>
     </header>
   );
 }

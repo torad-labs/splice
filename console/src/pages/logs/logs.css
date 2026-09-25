@@ -1,13 +1,41 @@
-/* The logs page: a header of selectors, the tail rack, and the request drawer. Tokens only
-   (CONTRACTS.md section 1); radius 0, no shadow, no glow. */
+/* The logs page: the stream surface (docs/design/DESIGN.md section 7). The filter rail on the left
+   and the stream beside it; the request capture sits under the stream. */
 
-.myx-lg {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
+.myx-lg { display: grid; gap: var(--space-5); }
+.myx-lg .myx-ph { margin-block-end: 0; }
+
+.myx-lg-body {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
 }
 
-.myx-lg-head { align-items: flex-end; }
+.myx-lg-rail { display: grid; gap: var(--space-6); align-content: start; }
+.myx-lg-group { display: grid; gap: var(--space-1); justify-items: start; }
+.myx-lg-group .myx-input,
+.myx-lg-group .myx-input-box { width: 100%; }
+.myx-lg-label { margin: 0 0 var(--space-2); font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
 
+.myx-lg-head {
+  display: flex;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-2);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  text-align: start;
+  cursor: pointer;
+}
+.myx-lg-head:hover { background: var(--bg-hover); color: var(--fg); }
+.myx-lg-head-on,
+.myx-lg-head-on:hover { background: var(--bg-active); color: var(--fg); font-weight: 500; }
 
+.myx-lg-main { display: grid; gap: var(--space-6); min-width: 0; }
+
+@media (max-width: 900px) {
+  .myx-lg-body { grid-template-columns: minmax(0, 1fr); }
+}

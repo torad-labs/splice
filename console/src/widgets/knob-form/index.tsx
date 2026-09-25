@@ -18,7 +18,7 @@ import type { ConfigValue } from '@shared/api';
 import { parseConfigInput } from '@entities/config';
 import type { KnobDisposition, Provenance } from '@entities/config';
 import { Choice, Flag, Key } from '@shared/controls';
-import { HolderEdge } from '@shared/ui';
+import { Badge } from '@shared/ui';
 import { KNOB_COPY, unitText } from './copy';
 import type { KnobCopy, KnobGroup } from './copy';
 import { GROUP_LABELS, KNOB_LABELS, S, SOURCE_LABELS } from './strings';
@@ -89,7 +89,7 @@ function ValueNote({ knobKey, value }: { knobKey: string; value: ConfigValue }) 
 function Source({ provenance, hot }: { provenance: Provenance; hot: boolean }) {
   return (
     <span className="myx-knob-source">
-      <span className="myx-knob-prov">{SOURCE_LABELS[provenance]}</span>
+      <span className={`myx-knob-prov myx-knob-prov-${provenance.replace(/ /g, '-')}`}>{SOURCE_LABELS[provenance]}</span>
       <span className="myx-knob-hot">{hot ? S.live : S.restart}</span>
     </span>
   );
@@ -205,7 +205,7 @@ export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wordin
             </button>
           </span>
         ) : null}
-        {pending ? <HolderEdge state="amber" label={S.pending} /> : null}
+        {pending ? <Badge tone="warn">{S.pending}</Badge> : null}
         {dirty ? <Key busy={busy ?? false} onClick={() => save(parsed)}>{S.save}</Key> : null}
       </span>
       {scopeNote === undefined || scopeNote === null ? null : <p className="myx-knob-scope">{scopeNote}</p>}
@@ -245,10 +245,23 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wo
       .sort((left, right) => orderOf(left.key) - orderOf(right.key)),
   })).filter(({ knobs }) => knobs.length > 0);
 
+  // The groups as a list to jump by, beside the knobs (DESIGN.md section 7). They scroll the page
+  // rather than link, because the address bar holds the console's route and not an anchor.
+  const jump = (group: KnobGroup) => document.getElementById(`knob-group-${group}`)?.scrollIntoView({ block: 'start' });
+
   return (
-    <div className="myx-knob-groups">
+    <div className="myx-knob-rack">
+      <nav className="myx-knob-index" aria-label={S.groups}>
+        {groups.map(({ group, knobs }) => (
+          <button key={group} type="button" className="myx-knob-index-item" onClick={() => jump(group)}>
+            <span>{GROUP_LABELS[group]}</span>
+            <span className="myx-knob-index-count">{knobs.length}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="myx-knob-groups">
       {groups.map(({ group, knobs }) => (
-        <section key={group} className="myx-knob-group" aria-label={GROUP_LABELS[group]}>
+        <section key={group} id={`knob-group-${group}`} className="myx-knob-group" aria-label={GROUP_LABELS[group]}>
           <h3 className="myx-knob-group-title">{GROUP_LABELS[group]}</h3>
           <div className="myx-knobs">
             {knobs.map((disposition) => (
@@ -266,6 +279,7 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wo
           </div>
         </section>
       ))}
+      </div>
     </div>
   );
 }

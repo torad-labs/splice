@@ -1,11 +1,11 @@
 // The scope charts: one dark inset per question, each drawn as stacked bars from the daemon's
 // hourly sums, each with a legend that PRINTS its numbers.
 //
-// WHY THE SERIES ARE MONOCHROME. The only colours this world spends on meaning are the holder-edge
-// states, and they mean attention — ok, warn, unhealthy. A four-series chart borrowing them would
-// say "cache writes are unhealthy" to anyone who has learned the vocabulary. So a stack steps
-// through one ink at four opacities instead, and the legend beside it names each step and prints
-// its total, which is what keeps the shape readable without colour and through a grayscale capture.
+// WHY THE SERIES ARE ONE COLOUR. A hue in this console means a head (docs/design/DESIGN.md section
+// 5), and status colours mean attention, so neither is free to name a kind of token: a stack in
+// four hues would claim four heads. A stack steps through ONE colour at four opacities instead,
+// the head's own colour when a head's section binds `--hue` around the chart, and the legend beside
+// it names each step and prints its total, which keeps the shape readable without colour.
 //
 // WHY RECTS ONLY. The SVG stretches to its frame with preserveAspectRatio="none", which distorts
 // anything that is not an axis-aligned rectangle. Bars survive it; a stroke or a circle would not.
@@ -13,7 +13,7 @@ import type { EconomicsBucket } from '@shared/api';
 import { costOf, sum } from '@entities/economics';
 import type { CostRates } from '@entities/economics';
 import { fmtBytes, fmtInt, fmtTokens } from '@shared/lib';
-import { ScopeInset, StripField } from '@shared/ui';
+import { ScopeInset } from '@shared/ui';
 import { limitedRows, peakMax, peakOf, tokenRows, byteRows, toolRows, totalOf, windowHours } from './model';
 import type { ChartWindow, HourRow } from './model';
 import { S } from './strings';
@@ -89,7 +89,8 @@ function Legend({ rows, series, format = fmtTokens }: {
       {series.map((entry) => (
         <div className="myx-schart-key" key={entry.key}>
           <span className={`myx-swatch myx-swatch-${entry.key}`} aria-hidden="true" />
-          <StripField w={14} label={entry.label} value={format(totalOf(rows, entry.key))} />
+          <span>{entry.label}</span>
+          <span className="myx-schart-value">{format(totalOf(rows, entry.key))}</span>
         </div>
       ))}
     </div>

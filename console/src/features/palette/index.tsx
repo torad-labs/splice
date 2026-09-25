@@ -5,7 +5,7 @@
 // It takes the views, the theme and the addresses as props rather than reaching
 // for them: the app layer composes the slices, and a feature cannot import a
 // feature (the boundaries wall).
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Command } from 'cmdk';
 import { useNavigate } from 'react-router';
 import { S } from './strings';
@@ -22,6 +22,10 @@ export interface PaletteProps {
   onSelectView: (id: string) => void;
   theme: 'dark' | 'light';
   onTheme: (theme: 'dark' | 'light') => void;
+  /** Held by the caller when something besides the keyboard opens the palette (the sidebar's
+   *  "jump to"); left out, the palette holds its own. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** `/` is a jumper only when the operator is not typing into something. */
@@ -31,8 +35,17 @@ function isTyping(target: EventTarget | null): boolean {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }
 
-export function Palette({ addresses, views, onSelectView, theme, onTheme }: PaletteProps) {
-  const [open, setOpen] = useState(false);
+export function Palette({ addresses, views, onSelectView, theme, onTheme, open: held, onOpenChange }: PaletteProps) {
+  const [own, setOwn] = useState(false);
+  const open = held ?? own;
+  // One setter for both holders, taking a value or an updater like useState's.
+  const latest = useRef(open);
+  latest.current = open;
+  const setOpen = useCallback((next: boolean | ((shown: boolean) => boolean)) => {
+    const value = typeof next === 'function' ? next(latest.current) : next;
+    setOwn(value);
+    onOpenChange?.(value);
+  }, [onOpenChange]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -49,7 +62,7 @@ export function Palette({ addresses, views, onSelectView, theme, onTheme }: Pale
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [setOpen]);
 
   return (
     <Command.Dialog

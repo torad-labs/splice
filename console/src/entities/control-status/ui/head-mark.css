@@ -1,0 +1,33 @@
+/* The head mark and the hue binding (docs/design/DESIGN.md section 5). A mark is a rounded bar,
+   never a dot: a round dot is status, and the two must not be mistaken for each other. */
+.myx-hue-0 { --hue: var(--head-none); }
+.myx-hue-1 { --hue: var(--head-1); }
+.myx-hue-2 { --hue: var(--head-2); }
+.myx-hue-3 { --hue: var(--head-3); }
+.myx-hue-4 { --hue: var(--head-4); }
+.myx-hue-5 { --hue: var(--head-5); }
+.myx-hue-6 { --hue: var(--head-6); }
+.myx-hue-7 { --hue: var(--head-7); }
+.myx-hue-8 { --hue: var(--head-8); }
+
+.myx-hm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.myx-hm-mark {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-5);
+  border-radius: var(--radius-1);
+  background: var(--hue);
+}
+.myx-hm-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

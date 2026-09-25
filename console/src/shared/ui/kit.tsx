@@ -1,9 +1,9 @@
 // The console's building blocks: a page head, a section, a data table, a status badge, a stat, a
-// meter, a detail panel and a key/value list. Flat grounds and one hairline; the page carries its
-// hierarchy in type size and weight, not in boxes. Every label prop takes a word from the caller's
-// strings.ts (lowercase) and prints it through `sentence`, so the chrome reads in sentence case.
+// meter, a detail panel and a key/value list (docs/design/DESIGN.md section 9). Flat grounds and one
+// hairline; the page carries its hierarchy in type size and weight, not in boxes. Every label prop
+// takes a word from the caller's strings.ts and prints it as written: the voice is lowercase.
 import type { CSSProperties, ReactNode } from 'react';
-import { cx, sentence } from '../lib';
+import { cx } from '../lib';
 import './kit.css';
 
 /** A status colour. It never travels alone: a badge always prints its word. */
@@ -21,7 +21,7 @@ export function PageHeader({ title, description, actions, children }: {
     <header className="myx-ph">
       <div className="myx-ph-top">
         <div className="myx-ph-titles">
-          <h1 className="myx-ph-title">{sentence(title)}</h1>
+          <h1 className="myx-ph-title">{title}</h1>
           {description === undefined ? null : <p className="myx-ph-desc">{description}</p>}
         </div>
         {actions === undefined ? null : <div className="myx-ph-actions">{actions}</div>}
@@ -46,7 +46,7 @@ export function Section({ title, meta, count, description, actions, children, cl
     <section className={cx('myx-sec', className)}>
       <div className="myx-sec-head">
         <h2 className="myx-sec-title">
-          {meta === undefined ? null : <span className="myx-sec-meta">{sentence(meta)}</span>}
+          {meta === undefined ? null : <span className="myx-sec-meta">{meta}</span>}
           <span className="myx-sec-name">{title}</span>
           {count === undefined ? null : <span className="myx-sec-count">{count}</span>}
         </h2>
@@ -72,15 +72,32 @@ export interface Column<T> {
   primary?: boolean;
 }
 
-/**
- * A table: one header row of column names, then one row per item. When `onOpen` is given, the
- * primary cell holds a button that opens the row and stretches over the whole row, so a pointer
- * can press anywhere on it and a keyboard reaches it with Tab, and the table keeps its table
- * semantics (a row is never a button).
- */
-export function DataTable<T>({ columns, rows, rowKey, label, onOpen, openLabel, selectedKey = null, rowTone }: {
-  columns: readonly Column<T>[];
+/** A titled run of rows in a DataTable: a board grouped by head, by project, or by hour. */
+export interface RowGroup<T> {
+  key: string;
+  title: ReactNode;
+  /** The class that binds the run's `--hue`, when the run is one head's: its title row takes the
+   *  head's colour. */
+  hue?: string;
+  count?: number;
+  /** A line under the title that says something about the whole group. */
+  note?: ReactNode;
+  actions?: ReactNode;
   rows: readonly T[];
+}
+
+/**
+ * A table: one header row of column names, then one row per item, or one titled run of rows per
+ * group. When `onOpen` is given, the primary cell holds a button that opens the row and stretches
+ * over the whole row, so a pointer can press anywhere on it and a keyboard reaches it with Tab, and
+ * the table keeps its table semantics (a row is never a button).
+ */
+export function DataTable<T>({ columns, rows, groups, rowKey, label, onOpen, openLabel, selectedKey = null, rowTone, rowHue, className }: {
+  columns: readonly Column<T>[];
+  /** The rows, when the table is one run. */
+  rows?: readonly T[];
+  /** The rows in titled runs, when it is grouped; `rows` is then ignored. */
+  groups?: readonly RowGroup<T>[];
   rowKey: (row: T) => string;
   /** The table's accessible name. */
   label: string;
@@ -88,12 +105,54 @@ export function DataTable<T>({ columns, rows, rowKey, label, onOpen, openLabel, 
   /** The open button's accessible name for a row. */
   openLabel?: (row: T) => string;
   selectedKey?: string | null;
-  /** A row that needs attention takes a tinted ground; its status cell still says why. */
+  /** A row that needs attention takes a tint; its status cell still says why. */
   rowTone?: (row: T) => Tone | null;
+  /** The class that binds a row's `--hue` (a head's colour, from the caller's entity); the row then
+   *  carries that colour as a bar on its leading edge. */
+  rowHue?: (row: T) => string | null;
+  className?: string;
 }) {
   const hasWidths = columns.some((column) => column.width !== undefined);
+  const runs: readonly RowGroup<T>[] = groups ?? [{ key: '', title: null, rows: rows ?? [] }];
+  const grouped = groups !== undefined;
+
+  const row = (item: T) => {
+    const key = rowKey(item);
+    const selected = key === selectedKey;
+    const tone = rowTone?.(item) ?? null;
+    const hue = rowHue?.(item) ?? null;
+    return (
+      <tr key={key} className={cx(selected && 'myx-dt-selected', tone !== null && `myx-dt-tone-${tone}`, hue !== null && `myx-dt-hued ${hue}`)}>
+        {columns.map((column) => {
+          const content = column.cell(item);
+          const cellClass = cx(
+            column.align === 'end' && 'myx-dt-end',
+            column.mono === true && 'myx-dt-mono',
+            column.primary === true && 'myx-dt-primary',
+          );
+          if (column.primary === true && onOpen !== undefined) {
+            return (
+              <td key={column.key} className={cellClass}>
+                <button
+                  type="button"
+                  className="myx-dt-opener"
+                  aria-expanded={selected}
+                  {...(openLabel === undefined ? {} : { 'aria-label': openLabel(item) })}
+                  onClick={() => onOpen(item)}
+                >
+                  {content}
+                </button>
+              </td>
+            );
+          }
+          return <td key={column.key} className={cellClass}>{content}</td>;
+        })}
+      </tr>
+    );
+  };
+
   return (
-    <div className="myx-dt-wrap">
+    <div className={cx('myx-dt-wrap', className)}>
       <table className={cx('myx-dt', onOpen !== undefined && 'myx-dt-open', hasWidths && 'myx-dt-fixed')} aria-label={label}>
         <colgroup>
           {columns.map((column) => (
@@ -104,47 +163,69 @@ export function DataTable<T>({ columns, rows, rowKey, label, onOpen, openLabel, 
           <tr>
             {columns.map((column) => (
               <th key={column.key} scope="col" className={cx(column.align === 'end' && 'myx-dt-end')}>
-                {sentence(column.label)}
+                {column.label}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
-          {rows.map((row) => {
-            const key = rowKey(row);
-            const selected = key === selectedKey;
-            const tone = rowTone?.(row) ?? null;
-            return (
-              <tr key={key} className={cx(selected && 'myx-dt-selected', tone !== null && `myx-dt-tone-${tone}`)}>
-                {columns.map((column) => {
-                  const content = column.cell(row);
-                  const className = cx(
-                    column.align === 'end' && 'myx-dt-end',
-                    column.mono === true && 'myx-dt-mono',
-                    column.primary === true && 'myx-dt-primary',
-                  );
-                  if (column.primary === true && onOpen !== undefined) {
-                    return (
-                      <td key={column.key} className={className}>
-                        <button
-                          type="button"
-                          className="myx-dt-opener"
-                          aria-expanded={selected}
-                          {...(openLabel === undefined ? {} : { 'aria-label': openLabel(row) })}
-                          onClick={() => onOpen(row)}
-                        >
-                          {content}
-                        </button>
-                      </td>
-                    );
-                  }
-                  return <td key={column.key} className={className}>{content}</td>;
-                })}
+        {runs.map((run) => (
+          <tbody key={run.key} className={cx(grouped && 'myx-dt-run', run.hue !== undefined && `myx-dt-hued ${run.hue}`)}>
+            {grouped ? (
+              <tr className="myx-dt-group">
+                <th scope="rowgroup" colSpan={columns.length}>
+                  <span className="myx-dt-group-head">
+                    <span className="myx-dt-group-title">{run.title}</span>
+                    {run.count === undefined ? null : <span className="myx-dt-group-count">{run.count}</span>}
+                    {run.actions === undefined ? null : <span className="myx-dt-group-actions">{run.actions}</span>}
+                  </span>
+                  {run.note === undefined ? null : <span className="myx-dt-group-note">{run.note}</span>}
+                </th>
               </tr>
-            );
-          })}
-        </tbody>
+            ) : null}
+            {run.rows.map(row)}
+          </tbody>
+        ))}
       </table>
+    </div>
+  );
+}
+
+/** A line of large figures, each over its word: the counts a page is about (live, stale, gone). */
+export function Tally({ items }: { items: readonly { label: string; value: ReactNode; tone?: Tone }[] }) {
+  return (
+    <dl className="myx-tally">
+      {items.map((item) => (
+        <div key={item.label} className={cx('myx-tally-item', item.tone !== undefined && `myx-tally-${item.tone}`)}>
+          <dd className="myx-tally-value">{item.value}</dd>
+          <dt className="myx-tally-label">{item.label}</dt>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** A few mutually exclusive choices in one row (a time window, a tail length): the chosen one takes
+ *  the active ground, and each is a toggle button a reader hears as pressed or not. */
+export function Segmented<V extends string>({ label, options, value, onChange }: {
+  /** The group's accessible name. */
+  label: string;
+  options: readonly { value: V; label: string }[];
+  value: V;
+  onChange: (value: V) => void;
+}) {
+  return (
+    <div className="myx-seg" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={cx('myx-seg-item', option.value === value && 'myx-seg-item-on')}
+          aria-pressed={option.value === value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -169,7 +250,7 @@ export function Stat({ label, value, unit, sub, tone }: {
 }) {
   return (
     <div className={cx('myx-stat', tone !== undefined && `myx-stat-${tone}`)}>
-      <p className="myx-stat-label">{sentence(label)}</p>
+      <p className="myx-stat-label">{label}</p>
       <p className="myx-stat-value">
         {value}
         {unit === undefined ? null : <span className="myx-stat-unit">{unit}</span>}
@@ -218,7 +299,7 @@ export function DetailPanel({ title, label, status, onClose, closeLabel, childre
           <h2 className="myx-panel-title">{title}</h2>
           {status === undefined ? null : <div className="myx-panel-status">{status}</div>}
         </div>
-        <button type="button" className="myx-panel-close" onClick={onClose}>{sentence(closeLabel)}</button>
+        <button type="button" className="myx-panel-close" onClick={onClose}>{closeLabel}</button>
       </div>
       <div className="myx-panel-body">{children}</div>
     </aside>
@@ -231,7 +312,7 @@ export function KeyValue({ rows }: { rows: readonly (readonly [string, ReactNode
     <dl className="myx-kv">
       {rows.map(([key, value]) => (
         <div className="myx-kv-row" key={key}>
-          <dt>{sentence(key)}</dt>
+          <dt>{key}</dt>
           <dd>{value}</dd>
         </div>
       ))}

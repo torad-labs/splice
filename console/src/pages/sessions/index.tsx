@@ -1,29 +1,28 @@
-// The sessions page: one bay of session strips per group, under four saved
-// views (by head, by project, by team, and a timeline), with the opened strip
-// swelling into its detail column.
+// The sessions page: the departure board (docs/design/DESIGN.md section 7). One row per session with
+// fixed columns and the status printed last, grouped under four saved views (by head, by project,
+// by team, and a timeline). Opening a row puts its detail beside the board; the board stays.
 //
-// WHAT THE STRIP SAYS, and why the states are printed rather than coloured. The
-// holder edge carries availability (green live, amber stale, grey gone) and
-// ALWAYS prints the word beside it, so a grayscale screenshot still says which
-// session stopped reporting. A stale session also cocks, which is the world's
-// gesture for "this one needs me": it is alive but has not been heard from
-// inside the stale window. A gone session is not struck: striking is the
-// verdict on a disabled or excluded row, and a gone session is still readable
+// WHAT THE ROW SAYS, and why the states are printed rather than coloured. The status cell carries
+// availability (ok live, warn stale, neutral gone) and ALWAYS prints the word beside its dot, so a
+// greyscale screenshot still says which session stopped reporting. A stale row also marks its
+// leading edge, because it is the one that needs the operator. A gone session is not struck:
+// striking is the verdict on a disabled or excluded row, and a gone session is still readable
 // (its transcript and its perf rows stay).
 //
-// WHAT IS DELIBERATELY NOT HERE: the per-session turn join of FEATURES.md 4.4
-// (turns by the perf session tag, tokens by bucket, cost). Those numbers come
-// from /api/perf/turns, which is pending V4-127, so the block could only print
-// an honest empty today; it belongs with the turns page that owns that route.
+// WHAT IS DELIBERATELY NOT HERE: the per-session turn join of FEATURES.md 4.4 (turns by the perf
+// session tag, tokens by bucket, cost). Those numbers come from /api/perf/turns, which is pending
+// V4-127, so the block could only print an honest empty today; it belongs with the turns page that
+// owns that route.
 //
-// The file exports two things: SessionsPage, which reads the entities and loads
-// a capture fixture, and SessionsBoard, which draws a payload it is handed. The
-// split is what lets the test render the board from data instead of from a
-// store (a static render sees a zustand store's initial state, never its
-// current one), and it is also the fixture seam.
+// The file exports two things: SessionsPage, which reads the entities and loads a capture fixture,
+// and SessionsBoard, which draws a payload it is handed. The split is what lets the test render
+// the board from data instead of from a store (a static render sees a zustand store's initial
+// state, never its current one), and it is also the fixture seam.
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
+import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import {
   fetchSessionEdges,
   latestPeer,
@@ -40,12 +39,13 @@ import {
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
-import { Bay, Empty, Figure, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, PageHeader, Reveal, Section, Tally } from '@shared/ui';
+import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
 import { S } from './strings';
 import { groupByOf, groupHref, selectionOf } from './select';
-import { projectKeyOf, SessionStrip } from './strip';
+import { baseOf, FIELD_LABEL, fieldsOf, headText, projectKeyOf, toneOf } from './strip';
 import './sessions.css';
 
 const PAGE_ID = 'sessions';
@@ -88,27 +88,32 @@ function peerAddressOf(rows: readonly SessionRow[], edge: SessionEdgesPayload['e
   return rows.find((row) => row.session_id === edge.from)?.address ?? S.absent;
 }
 
-/** One hand-off, as a strip: which way it went, to whom, and when. */
+type Edge = SessionEdgesPayload['edges'][number];
+
+/** The opened session's hand-offs: which way each went, to whom, and when. */
 function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: readonly SessionRow[] }) {
   if (edges === null) return null;
   if (edges.edges.length === 0) return <Empty text="no hand-offs yet" source="a message this session sends to another, or gets from one, shows here" />;
+  const columns: Column<Edge>[] = [
+    { key: 'way', label: S.way, width: '16%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
+    { key: 'peer', label: S.peer, width: '34%', primary: true, cell: (edge) => peerLabel(rows, edge) },
+    { key: 'address', label: S.address, width: '32%', mono: true, cell: (edge) => peerAddressOf(rows, edge) },
+    { key: 'at', label: S.at, width: '18%', align: 'end', mono: true, cell: (edge) => timeAgo(edge.at) },
+  ];
   return (
-    <>
-      {[...edges.edges].sort((a, b) => b.at - a.at).map((edge) => (
-        <Strip
-          key={`${edge.from}:${edge.to}:${edge.at}`}
-          edge="grey"
-          edgeLabel={edge.direction === 'out' ? S.sent : S.received}
-          ariaLabel={`${edge.direction} ${edge.to}`}
-        >
-          <StripField w={20} label={S.peer} value={peerLabel(rows, edge)} />
-          <StripField w={22} label={S.address} value={peerAddressOf(rows, edge)} />
-          <StripField w={10} label={S.at} value={timeAgo(edge.at)} />
-        </Strip>
-      ))}
-    </>
+    <DataTable
+      columns={columns}
+      rows={[...edges.edges].sort((a, b) => b.at - a.at)}
+      rowKey={(edge) => `${edge.from}:${edge.to}:${edge.at}`}
+      label={S.handoffs}
+    />
   );
 }
+
+/** Column widths for the board, by field key: the view with a head column gives it room from the
+ *  name and project. Status always closes the row, at 10%. */
+const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '26%', project: '22%', started: '16%', seen: '12%', peer: '14%' };
+const WIDTH_WITH_HEAD: Record<string, string> = { name: '20%', head: '16%', project: '16%', started: '14%', seen: '10%', peer: '14%' };
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
 export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
@@ -155,8 +160,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
   const selection = selectionOf(rows, active, Date.now());
   const by = groupByOf(active);
   const openLabel = by === 'repo' ? S.openProject : by === 'team' ? S.openTeam : S.openHead;
-  const groupWord = by === 'repo' ? S.project : by === 'team' ? S.team : S.head;
-  const undated = selection.kind === 'timeline' ? selection.timeline.undated : [];
+  const hueOf = useHues();
   const idleBuckets = selection.kind === 'timeline'
     ? selection.timeline.buckets.filter((bucket) => bucket.sessions.length === 0).length
     : 0;
@@ -164,27 +168,103 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
   if (locked) return <Empty text="console locked" source="management key" />;
   if (error !== null && payload === null) return <Fault message={error} />;
 
-  const strip = (row: SessionRow) => (
-    <SessionStrip
-      key={keyOf(row)}
-      row={row}
-      peer={peerOf(row)}
-      selected={keyOf(row) === openId}
-      order={active.fields}
-      onOpen={() => setOpenId(keyOf(row))}
-    />
-  );
+  // THE COLUMNS ARE THE VIEW'S FIELDS, in its order, with the status closing the row the way an
+  // airport board prints its remark last. A grouped view does not repeat its group as a column:
+  // the group's own title row already names it.
+  const order = active.fields;
+  const widths = order.includes('head') ? WIDTH_WITH_HEAD : WIDTH_WITHOUT_HEAD;
+  const columns: Column<SessionRow>[] = [
+    ...order.flatMap((key): Column<SessionRow>[] => {
+      const label = FIELD_LABEL[key];
+      if (label === undefined) return [];
+      const width = widths[key];
+      const base = { key, label, ...(width === undefined ? {} : { width }) };
+      if (key === 'head') return [{ ...base, cell: (row) => <HeadMark head={row.head}>{headText(row)}</HeadMark> }];
+      return [{
+        ...base,
+        primary: key === 'name',
+        mono: key === 'started' || key === 'seen',
+        cell: (row) => fieldsOf(row, peerOf(row), [key])[0]?.value ?? S.absent,
+      }];
+    }),
+    { key: 'status', label: S.status, width: '10%', cell: (row) => <Badge tone={toneOf(row)} quiet>{row.availability}</Badge> },
+  ];
+
+  const groupTitle = (key: string): ReactNode => {
+    if (by === 'head' || by === null) {
+      return key === UNKNOWN_HEAD ? <HeadMark head="" hue={0}>{S.noHead}</HeadMark> : <HeadMark head={key} />;
+    }
+    if (by === 'repo') return key === 'unattributed' ? key : baseOf(key);
+    return key;
+  };
+
+  const groups: RowGroup<SessionRow>[] = selection.kind === 'groups'
+    ? selection.groups.map((group) => {
+      // The daemon's own word for a session it ties to no head. There is no head to open, and
+      // `head: unknown head` read as a fault rather than a fact about how the session was started,
+      // so the group says which and why.
+      const headless = (by === 'head' || by === null) && group.key === UNKNOWN_HEAD;
+      const byHead = by === 'head' || by === null;
+      return {
+        key: group.key,
+        title: groupTitle(group.key),
+        count: group.count,
+        rows: group.rows,
+        ...(byHead ? { hue: hueClass(headless ? 0 : hueOf(group.key)) } : {}),
+        ...(headless
+          ? { note: noHeadWhy(group.rows) }
+          : { actions: <a href={groupHref(by)}>{openLabel}</a> }),
+      };
+    })
+    : [
+      ...selection.timeline.buckets
+        .filter((bucket) => bucket.sessions.length > 0)
+        .map((bucket) => ({
+          key: String(bucket.start),
+          title: `${pad(new Date(bucket.start).getHours())}:00`,
+          count: bucket.sessions.length,
+          rows: bucket.sessions,
+        })),
+      ...(selection.timeline.undated.length === 0
+        ? []
+        : [{ key: 'undated', title: S.undated, count: selection.timeline.undated.length, rows: selection.timeline.undated }]),
+    ];
+
+  const count = (state: SessionRow['availability']) => rows.filter((row) => row.availability === state).length;
+  const stale = count('stale');
 
   return (
     <div className="myx-sx">
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
+      <PageHeader
+        title={S.title}
+        actions={(
+          <>
+            {sample === undefined ? null : <Badge tone="neutral">{S.sample}</Badge>}
+            <Reveal label={S.headless}>
+              <p className="myx-sx-note">{payload?.note ?? S.registry}</p>
+            </Reveal>
+          </>
+        )}
+      >
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        <Reveal label={S.headless}>
-          <p className="myx-sx-note">{payload?.note ?? S.registry}</p>
-        </Reveal>
-        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
-      </header>
+      </PageHeader>
+
+      {rows.length === 0 ? null : (
+        <div className="myx-sx-tally">
+          <Tally
+            items={[
+              { label: S.live, value: count('live') },
+              { label: S.stale, value: stale, ...(stale > 0 ? { tone: 'warn' as const } : {}) },
+              { label: S.gone, value: count('gone') },
+            ]}
+          />
+          {selection.kind === 'timeline' ? (
+            <p className="myx-sx-window">
+              {selection.window.hours}h {S.window}, {idleBuckets} {S.idle}
+            </p>
+          ) : null}
+        </div>
+      )}
 
       {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
           carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
@@ -194,7 +274,7 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
         className={open === null ? 'myx-sx-board' : 'myx-sx-board myx-sx-board-open'}
         {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
       >
-        <div className="myx-sx-bays">
+        <div className="myx-sx-list">
           {/* A registry read that fails after one landed keeps the rows and says so: the fault used
               to show only while nothing had loaded, so a dead daemon's sessions read as live. */}
           {error === null ? null : <Fault message={error} lastRead={lastRead} />}
@@ -202,93 +282,52 @@ export function SessionsBoard({ payload, edges = null, boardEdges = null, edgesE
               the same fact as "no hand-offs". */}
           {edgesError === null ? null : <Fault message={edgesError} />}
           {rows.length === 0 ? (
-            <Empty text="no sessions yet" source="a claude code session shows here once it starts" />
-          ) : selection.kind === 'groups' ? (
-            selection.groups.map((group) => {
-              // The daemon's own word for a session it ties to no head. There is no head to open,
-              // and `head: unknown head` read as a fault in the console rather than a fact about
-              // how the session was started, so the bay says which and why.
-              const headless = by === 'head' && group.key === UNKNOWN_HEAD;
-              return (
-                <Bay
-                  key={group.key}
-                  label={headless ? S.noHead : `${groupWord}: ${group.key}`}
-                  count={group.count}
-                  compact
-                  {...(headless ? {} : { actions: <a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a> })}
-                >
-                  {headless ? <p key="why" className="myx-sx-why">{noHeadWhy(group.rows)}</p> : null}
-                  {group.rows.map(strip)}
-                </Bay>
-              );
-            })
+            <Empty text="no sessions in flight" source="start claude code through a splice head and it lands here" />
           ) : (
-            <>
-              <div className="myx-sx-window">
-                <Figure value={selection.window.hours} unit="h" basis="measured" />
-                <Figure value={idleBuckets} unit={S.idle} basis="measured" />
-              </div>
-              {selection.timeline.buckets
-                .filter((bucket) => bucket.sessions.length > 0)
-                .map((bucket) => (
-                  <Bay
-                    key={bucket.start}
-                    label={`${pad(new Date(bucket.start).getHours())}:00`}
-                    count={bucket.sessions.length}
-                    compact
-                  >
-                    {bucket.sessions.map(strip)}
-                  </Bay>
-                ))}
-              {undated.length === 0 ? null : (
-                <Bay label={S.undated} count={undated.length} compact>
-                  {undated.map(strip)}
-                </Bay>
-              )}
-            </>
+            <DataTable
+              className="myx-sx-table"
+              columns={columns}
+              groups={groups}
+              rowKey={keyOf}
+              label={S.title}
+              onOpen={(row) => setOpenId(keyOf(row))}
+              openLabel={(row) => `${S.title} ${sessionLabel(row)}`}
+              selectedKey={openId}
+              rowTone={(row) => (row.availability === 'stale' ? 'warn' : null)}
+              rowHue={(row) => hueClass(hueOf(row.head))}
+            />
           )}
         </div>
 
-        {/* The column COLLAPSES to 0 width until a strip is opened (.myx-sx-board /
-            .myx-sx-board-open): the swell only exists once there is something to swell to, so
-            there is no empty to fill here. */}
-        {/* THE EMPTY LANDMARK IS HIDDEN WHILE IT IS EMPTY (M1-123, one shape across five pages).
-            At rest this aside is mounted and holds nothing, and an <aside> with a label is a
-            COMPLEMENTARY LANDMARK whatever else it carries — measured in the live accessibility
-            tree: role=complementary, ignored=false, children=0 — so a reader's landmark list
-            carried an empty "session detail". aria-hidden is gated by the SAME `open === null` that
-            gates the content, so the exposure and the content cannot desync: they are one
-            expression, not two facts kept in step. The element stays mounted, which is what gives
-            the track something to transition from — the whole reason collapse beat unmount. */}
-        <aside className="myx-sx-detail myx-swell" aria-label={S.detail} aria-hidden={open === null}>
-          {open === null ? null : (
-            <>
-              <div className="myx-sx-detail-head">
-                <span className="myx-sx-detail-name">{sessionLabel(open)}</span>
-                <button type="button" className="myx-sx-close" onClick={() => setOpenId(null)}>
-                  {S.close}
-                </button>
-              </div>
-              <Bay label={S.conversation}>
-                {open.session_id === null ? (
-                  <Empty text="this registration carries no session id" source="session registry" />
-                ) : (
-                  <Conversation sessionId={open.session_id} />
-                )}
-              </Bay>
-              <Bay label={S.files}>
-                {projectKeyOf(open) === null ? (
-                  <Empty text="this registration carries no cwd" source="session registry" />
-                ) : (
-                  <FileView projectId={projectKeyOf(open) ?? ''} />
-                )}
-              </Bay>
-              <Bay label={S.handoffs}>
-                <EdgeRows edges={edges} rows={rows} />
-              </Bay>
-            </>
-          )}
-        </aside>
+        {/* THE DETAIL IS UNMOUNTED AT REST: nothing holds a column until a row is opened, and an
+            empty labelled <aside> would still be a landmark in a reader's list (M1-123). */}
+        {open === null ? null : (
+          <DetailPanel
+            title={sessionLabel(open)}
+            label={S.detail}
+            status={<Badge tone={toneOf(open)} quiet>{open.availability}</Badge>}
+            onClose={() => setOpenId(null)}
+            closeLabel={S.close}
+          >
+            <Section title={S.conversation}>
+              {open.session_id === null ? (
+                <Empty text="this registration carries no session id" source="session registry" />
+              ) : (
+                <Conversation sessionId={open.session_id} />
+              )}
+            </Section>
+            <Section title={S.files}>
+              {projectKeyOf(open) === null ? (
+                <Empty text="this registration carries no cwd" source="session registry" />
+              ) : (
+                <FileView projectId={projectKeyOf(open) ?? ''} />
+              )}
+            </Section>
+            <Section title={S.handoffs}>
+              <EdgeRows edges={edges} rows={rows} />
+            </Section>
+          </DetailPanel>
+        )}
       </div>
     </div>
   );

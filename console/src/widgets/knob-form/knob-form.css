@@ -1,174 +1,169 @@
-/* The knob rack: one section per group, and in each a column of rows that read top to bottom as
-   name, what it does, the value, and where the value came from. Spacing and type sizes come from
-   the token scales only (ast-grep wall webui-css-tokens-only); radius is 0 and there is no shadow
-   or glow anywhere in the world. */
-.myx-knob-groups {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
+/* The knob rack: the form surface (docs/design/DESIGN.md section 7). A sticky list of groups on the
+   left to jump by, and the knobs in one column on the right, one row each: its name with the TOML
+   key under it and one line on what it does, the field with its unit, then where the value comes
+   from and whether it applies live. */
+
+.myx-knob-rack {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  gap: var(--space-7);
+  align-items: start;
 }
 
+.myx-knob-index {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.myx-knob-index-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-2);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  text-align: start;
+  cursor: pointer;
+}
+.myx-knob-index-item:hover { background: var(--bg-hover); color: var(--fg); }
+.myx-knob-index-count { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-subtle); }
+
+.myx-knob-groups { display: grid; gap: var(--space-7); min-width: 0; }
+
+.myx-knob-group { scroll-margin-top: var(--space-5); }
 .myx-knob-group-title {
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  background: var(--room-deep);
-  font-family: var(--font-label);
-  font-size: var(--text-3);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-4);
   font-weight: 600;
-  color: var(--ink-strong);
+  color: var(--fg);
 }
 
 .myx-knobs {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  overflow: hidden;
 }
 
 .myx-knob {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-4);
-  background: var(--strip);
-  color: var(--strip-ink);
-  /* --hair IS A WIDTH AND --hairline IS A COLOUR (M1-75): `1px solid var(--hair)` substitutes to
-     `1px solid 1px`, which is invalid and draws nothing. */
-  border-bottom: var(--hair) solid var(--strip-field-line);
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem) minmax(9rem, 11rem);
+  grid-template-areas:
+    "name    value foot"
+    "summary value foot"
+    "scope   scope scope";
+  column-gap: var(--space-6);
+  row-gap: var(--space-1);
+  align-items: start;
+  padding: var(--space-5);
+  background: var(--bg);
 }
+.myx-knob + .myx-knob { border-top: var(--hair) solid var(--line); }
+.myx-knob[data-changed] { background: var(--bg-raised); }
 
-.myx-knob:last-child {
-  border-bottom: 0;
-}
-
-.myx-knob-name {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.myx-knob-label {
-  font-family: var(--font-label);
-  font-size: var(--text-3);
-  font-weight: 600;
-}
-
-/* The key is how splice.toml, the environment and the CLI spell the knob: kept, but quiet. */
+.myx-knob-name { grid-area: name; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.myx-knob-label { font-size: var(--text-3); font-weight: 500; color: var(--fg); }
 .myx-knob-key {
-  font-family: var(--font-code);
+  font-family: var(--font-mono);
   font-size: var(--text-1);
-  color: var(--strip-ink-mute);
+  color: var(--fg-subtle);
   overflow-wrap: anywhere;
 }
-
-.myx-knob-summary,
-.myx-knob-scope {
-  margin: 0;
-  max-width: 72ch;
-  font-family: var(--font-label);
+.myx-knob-summary {
+  grid-area: summary;
+  margin: var(--space-2) 0 0;
+  max-width: 64ch;
   font-size: var(--text-2);
-  line-height: 1.4;
-  color: var(--strip-ink-mute);
-}
-
-.myx-knob-scope {
-  color: var(--strip-ink);
+  color: var(--fg-muted);
 }
 
 .myx-knob-value {
+  grid-area: value;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
+  gap: var(--space-3);
+  min-width: 0;
 }
-
-.myx-knob-input,
-.myx-knob-figure {
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-3);
-  color: var(--strip-ink);
-}
-
 .myx-knob-input {
-  width: 32ch;
-  max-width: 100%;
-  padding: var(--space-1) 0;
-  border: 0;
-  border-bottom: var(--hair) solid var(--strip-field-line);
-  background: transparent;
-}
-
-.myx-knob-input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
-
-.myx-knob-unit {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  font-family: var(--font-label);
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
   font-size: var(--text-2);
-  color: var(--strip-ink-mute);
+  line-height: var(--leading);
 }
-
-/* The readable form of a raw count ("30 min" beside 1800000 ms) is what the eye goes to, so it
-   carries the value's own ink rather than the unit's mute. */
-.myx-knob-readable {
-  color: var(--strip-ink);
-}
+.myx-knob-input:hover { border-color: var(--fg-subtle); }
+.myx-knob-input:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 0; border-color: var(--focus); }
+.myx-knob-input::placeholder { color: var(--fg-subtle); }
+.myx-knob-choice { flex: 1 1 8rem; min-width: 0; }
+.myx-knob-choice .myx-choice-label { display: none; }
+.myx-knob-figure { font-family: var(--font-mono); font-size: var(--text-2); color: var(--fg); }
+.myx-knob-unit { display: inline-flex; gap: var(--space-2); font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-knob-readable { font-family: var(--font-mono); color: var(--fg-muted); }
 
 .myx-knob-foot {
+  grid-area: foot;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-1);
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--strip-ink-mute);
-}
-
-.myx-knob-source {
-  display: inline-flex;
-  gap: var(--space-3);
-}
-
-.myx-knob-changed {
-  display: inline-flex;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
-  color: var(--strip-ink);
 }
-
+.myx-knob-source { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.myx-knob-prov {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
+  font-size: var(--text-1);
+  font-weight: 500;
+  line-height: var(--leading);
+  color: var(--fg-muted);
+}
+.myx-knob-prov-default { background: none; padding: 0; color: var(--fg-subtle); font-weight: 400; }
+.myx-knob-hot { font-size: var(--text-1); color: var(--fg-subtle); }
+.myx-knob-changed { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-size: var(--text-1); color: var(--fg-muted); }
 .myx-knob-reset {
   padding: 0;
+  background: none;
   border: 0;
-  background: transparent;
   font: inherit;
-  color: var(--strip-ink);
+  color: var(--fg);
   text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: .2em;
   cursor: pointer;
 }
+.myx-knob-reset:hover { text-decoration-color: var(--fg-muted); }
+.myx-knob-reset[disabled] { color: var(--fg-subtle); cursor: not-allowed; }
 
-.myx-knob-reset:disabled {
-  cursor: default;
-  color: var(--strip-ink-mute);
+.myx-knob-scope {
+  grid-area: scope;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-2);
+  background: var(--warn-soft);
+  font-size: var(--text-2);
+  color: var(--fg);
 }
 
-/* A printed knob (fleet detail, MCP host limits): the same three lines without the sentence. */
-.myx-knob-readout .myx-knob-value {
-  margin-top: 0;
-}
+.myx-knob-readout { opacity: 1; }
 
-/* A picker's own label would print the knob's name a second time under the row's name; it stays
-   in the accessibility tree (the combobox is labelled by it) and leaves the page. */
-.myx-knob-choice .myx-choice-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+@media (max-width: 1100px) {
+  .myx-knob-rack { grid-template-columns: minmax(0, 1fr); }
+  .myx-knob-index { position: static; display: flex; flex-wrap: wrap; }
+  .myx-knob {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "name" "summary" "value" "foot" "scope";
+    row-gap: var(--space-3);
+  }
 }

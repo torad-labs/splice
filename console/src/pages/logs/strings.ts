@@ -6,9 +6,8 @@ export const S = {
   title: 'logs',
   locked: 'console locked',
   sample: 'sample data',
-  /** The tail-size choice and the bay it fills: how many of the log's last lines to read. */
+  /** The tail-size choice: how many of the log's last lines to read. */
   tail: 'lines',
-  log: 'log',
   drawer: 'request capture',
   /** The tail restarted because the daemon rotated its log file. */
   rotated: 'log rotated',
@@ -17,4 +16,7 @@ export const S = {
   tag: 'tag',
   level: 'level',
   all: 'all',
+  search: 'search',
+  /** The rail of filters beside the stream. */
+  filters: 'log filters',
 } as const;

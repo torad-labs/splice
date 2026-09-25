@@ -1,51 +1,46 @@
 ---
 name: splice console
-description: A loopback-only operator console for a Claude Code gateway daemon, printed as a rack of strips in a graphite room.
+description: The operator console of a Claude Code gateway daemon. A departure board for the sessions in flight, grey everywhere else, and one colour per head carried to every place that head appears.
 colors:
-  room: "#0B0E0E"
-  room-deep: "#080A0A"
-  bay: "#090D0D"
-  ink: "#C9C3B4"
-  ink-mute: "#9D9B8E"
-  ink-strong: "#EAE8D9"
-  strip: "#DED9C6"
-  strip-ink: "#141414"
-  strip-ink-mute: "#5A5749"
-  strip-field: "#E4E0D1"
-  strip-field-line: "#A8A392"
-  plate: "#C3B6A0"
-  plate-line: "#645F50"
-  edge-green: "#548630"
-  edge-amber: "#9A6E10"
-  edge-red: "#E63521"
-  edge-grey: "#6E6D68"
-  scope: "#090C0C"
-  scope-ink: "#EAE8D9"
-  focus: "#3F76B4"
-  hairline: "rgba(236,234,226,.10)"
-  hairline-strong: "rgba(236,234,226,.22)"
+  bg: "#0b0c0e"
+  bg-raised: "#131418"
+  bg-hover: "#1a1c20"
+  bg-active: "#20232a"
+  line: "#23252b"
+  line-strong: "#30333a"
+  fg: "#ededf0"
+  fg-muted: "#a3a6ae"
+  fg-subtle: "#878a93"
+  ok: "#4fbf87"
+  warn: "#e0a44a"
+  danger: "#f07171"
+  head-1: "#6eadfe"
+  head-2: "#ee8f58"
+  head-3: "#00c5be"
+  head-4: "#e686be"
+  head-5: "#a0b74d"
+  head-6: "#b896f3"
+  head-7: "#1fbcea"
+  head-8: "#c9a732"
 typography:
-  label:
-    fontFamily: "Archivo, 'Helvetica Neue', Arial, sans-serif"
+  ui:
+    fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif"
     fontSize: "var(--text-1)..var(--text-6)"
     fontWeight: 400
-    lineHeight: 1.4
+    lineHeight: 1.5
     letterSpacing: "normal"
   figure:
-    fontFamily: "Archivo, 'Helvetica Neue', Arial, sans-serif"
-    fontSize: "var(--text-1)..var(--text-6)"
-    fontWeight: 400
-    lineHeight: 1.5
+    fontFamily: "'IBM Plex Mono', ui-monospace, monospace"
+    fontSize: "var(--text-1)..var(--text-7)"
+    fontWeight: 500
+    lineHeight: 1.25
     letterSpacing: "normal"
     fontFeature: "font-variant-numeric: tabular-nums"
-  code:
-    fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace"
-    fontSize: "var(--text-2)..var(--text-3)"
-    fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: "normal"
 rounded:
-  all: "0px"
+  mark: "4px"
+  control: "6px"
+  panel: "8px"
+  pill: "999px"
 spacing:
   1: "2px"
   2: "4px"
@@ -56,176 +51,291 @@ spacing:
   7: "32px"
   8: "48px"
 components:
-  key:
-    backgroundColor: "{colors.strip}"
-    textColor: "{colors.strip-ink}"
-    rounded: "{rounded.all}"
+  button:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.control}"
+    padding: "4px 12px"
+  button-primary:
+    backgroundColor: "{colors.fg}"
+    textColor: "{colors.bg}"
+    rounded: "{rounded.control}"
+    padding: "4px 12px"
+  nav-item-current:
+    backgroundColor: "{colors.bg-active}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.control}"
     padding: "4px 8px"
-  key-hover:
-    backgroundColor: "{colors.strip}"
-    textColor: "{colors.strip-ink}"
-  key-primary:
-    backgroundColor: "{colors.strip}"
-    textColor: "{colors.strip-ink}"
-  key-danger:
-    backgroundColor: "{colors.strip}"
-    textColor: "{colors.edge-red}"
-  strip-field:
-    backgroundColor: "{colors.strip-field}"
-    textColor: "{colors.strip-ink}"
-    rounded: "{rounded.all}"
-    padding: "4px 8px 12px"
-  bay-head:
-    backgroundColor: "{colors.plate}"
-    textColor: "{colors.strip-ink}"
-    rounded: "{rounded.all}"
-    padding: "4px 8px"
+  head-mark:
+    backgroundColor: "{colors.head-1}"
+    rounded: "{rounded.mark}"
+    size: "8px x 16px"
+  board-row:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.fg-muted}"
+    height: "44px"
 ---
 
-# Design System: splice console
+# The splice console
 
-## 1. Overview
+This file is the console's identity: what it looks like, why, and the rules a page follows. It
+replaces the strip-bay world ("paper strips racked in steel bays"), which the operator retired on
+2026-09-24. `docs/design/PRODUCT.md` still says who the console is for; this file says how it
+looks. The tokens it names live in `console/src/shared/tokens.css`, and the walls that hold them
+are in `quality/rules/console/`.
 
-**Creative North Star: "The Strip Bay"**
+## 1. The idea in one paragraph
 
-The console is a rack in a graphite room: opaque paper strips racked in steel bays, each strip a
-printed record — an account, a head, a turn — carrying a colored holder edge that flags its
-state. Nothing floats and nothing glows. A value is a printed figure in a boxed field, a label is
-mute ink above a hairline, and the only saturated color in the frame is the holder edge itself,
-because the world's one rule is that attention is a color and everything else is graphite and
-paper. PRODUCT.md's own voice — "terse, lowercase, data-first... the loudest thing on screen is a
-real warning" — is the strip bay's whole brief: this is an instrument panel for one operator
-glancing between terminal sessions, not a marketing surface.
+A developer has several Claude Code sessions running on several heads. They open the console
+for one answer and go back to the terminal. So the console is built like an airport departure
+board: one line per session, fixed columns, the state printed in words, and the one thing that
+matters most shown in colour. Here that thing is the head. Every head gets its own colour, and
+that colour follows the head everywhere: its sessions on the board, its turns, its bars in the
+usage charts, its lines in the log, its scope in settings. The rest of the console is grey. When
+the operator sees orange anywhere, it means the same head.
 
-This system explicitly rejects the KPI-tile dashboard: no hero metric rendered at a jump in size,
-no sparkline or progress ring standing in for content, no card-and-shadow SaaS vocabulary. It also
-retired an entire earlier world (the "Torad plate" system: warm paper, cinnabar/vermilion accent,
-serif numerals) — that world is gone from the shipped build; nothing below should be read against
-it.
+## 2. What we studied
 
-**Key Characteristics:**
-- Flat, radius-0 paper-on-graphite construction; depth by tonal plane and hairline, never shadow.
-- One functional accent per state (the holder edge's green/amber/red/grey); no second accent color anywhere in the room.
-- Two faces only: a label/figure grotesque (Archivo, tabular figures) and a monospace for genuinely code-shaped content (JetBrains Mono).
-- A width-driven root scalar (`--root-size: max(16px, 1.0417vw)`, `tokens.css`) ties root font size to the frame's own width, so the console is the comp's render scaled, not the comp's type sitting inside a wider layout. (`light-dark()` is unrelated to this: it themes three surviving legacy color tokens — `--surface-sunk`, `--line-mute`, `--data-neg` — and touches no size.)
-- Every spacing and text value is a token (`--space-N`, `--text-N`); raw px in a component rule is a wall violation (`webui-css-tokens-only`).
+Twenty products: ten consoles in splice's own trade, and ten designs known for being well made
+and fun to use. Screenshots stayed in the study seats' scratchpads; this list cites public pages
+only, and nothing needed a login.
 
-## 2. Colors
+### Ten gateway and proxy consoles
 
-The palette is a near-black graphite room holding pale, warm-cream paper; the only chroma is four holder-edge hues and one focus blue, each reserved for a single functional role.
+Weighted as asked: claude-code-router and Langfuse count most, Kong and TrueFoundry least.
 
-### Primary
-- **Strip Paper** (`#DED9C6` dark / `#F5EDDD` light): the printed record itself — every strip, key and field box is this paper or one step off it. It carries the console's entire content layer.
+| # | Product | Public source | Why it counts | What we took |
+|---|---|---|---|---|
+| 1 | claude-code-router | github.com/musistudio/claude-code-router | 37.4k stars; the nearest product to splice (it routes Claude Code) | One card shows a provider's several quota windows side by side ("primary quota (4h) 97%", "secondary quota (7d) 94%"); an endpoint pill with a live dot |
+| 2 | Langfuse | langfuse.com/docs/observability | 35k stars; the open reference for LLM tracing | The session → trace → step hierarchy; a waterfall bar that prints its duration and cost inline |
+| 3 | LiteLLM | github.com/BerriAI/litellm, docs.litellm.ai | 57.9k stars, 240M+ Docker pulls | A grouped sidebar (gateway, observability, access control); ↑K/↓J to step between requests in the drawer |
+| 4 | OpenRouter | openrouter.ai, openrouter.ai/blog/announcements/activity-dashboard | 500T+ tokens a month (its own claim); ranks Claude Code as its top app | The request drawer's routing waterfall ("routing 16ms → provider 420ms"); the per-message token bar coloured by role |
+| 5 | Portkey | portkey.ai, docs.portkey.ai/docs/product/observability | 24,000+ organisations (GlobeNewswire, 2026-03-24) | An icon strip on every log row saying what the gateway did (cache, retry, fallback) without opening it |
+| 6 | Helicone | helicone.ai, docs.helicone.ai/features/sessions | YC W23; 11.1B requests on its live counter | Timing, call tree and transcript on one screen |
+| 7 | Vercel AI Gateway | vercel.com/ai-gateway, vercel.com/docs/observability | 200k+ teams | A log filter rail on the left, and a detail panel with its own address |
+| 8 | Cloudflare AI Gateway | developers.cloudflare.com/ai-gateway | 500M requests in beta, 100k+ developers | Stat tiles over a tab bar; nothing else worth copying |
+| 9 | TrueFoundry AI Gateway | truefoundry.com/ai-gateway | $19M Series A | p50, p75, p90 and p99 as tabs over one chart |
+| 10 | Kong AI Gateway | konghq.com/products/kong-ai-gateway | 900+ enterprise customers | A query builder for analytics; too heavy for one operator, so we took nothing |
 
-### Secondary
-- **Plate Cream** (`#C3B6A0` dark / `#D6D8D3` light): the bolted head plate over a bay — a third, distinct cream reserved for the rack's own label plate and the shell's modal gate, never for content strips.
+Two findings shaped the plan. None of the ten show a rolling five-hour or seven-day plan window
+with its reset time, except claude-code-router's quota card, so splice's accounts and usage pages
+start from that card. And every one of them uses one brand accent on the chrome, usually blue or
+indigo, so a console with a grey frame already stands apart.
 
-### Tertiary (holder-edge accents; each is a state, not a decoration)
-- **Edge Green** (`#548630` dark / `#1F882C` light): healthy / ok.
-- **Edge Amber** (`#9A6E10`, both themes): degraded / warn.
-- **Edge Red** (`#E63521`, both themes): failed / error.
-- **Edge Grey** (`#6E6D68`, both themes): neutral / no-state, the pin every strip prints when it carries no holder edge.
+### Ten acclaimed designs
 
-### Neutral
-- **Graphite Room** (`#0B0E0E` dark / `#E0E2DF` light): the page ground.
-- **Room Deep / Bay** (`#080A0A`–`#090D0D` dark / `#ABB0AC` light): the rail and rack floor, a deeper matte than the room so a bay reads as a container.
-- **Rule Ink** (`#C9C3B4` dark / `#161A19` light) and **Ink Strong** (`#EAE8D9` dark / `#0A0C0B` light): text printed directly on the room (the top rule, page heads, settings options).
-- **Strip Ink** (`#141414`, both themes) and **Strip Ink Mute** (`#5A5749`, both themes): text printed on paper — deliberately near-black in both themes, because paper carries dark ink regardless of which room it sits in.
-- **Focus** (`#3F76B4` dark / `#2869D5` light): the one blue in the room, reserved for the focus ring.
+Chosen by claude-builder for acclaim you can cite and for being fun without being busy.
 
-### Named Rules
-**The One Accent Rule.** Color is never decorative. A holder edge is the only place attention is carried by color, it always ships with a text label (color is never the sole signal), and there is no second accent anywhere else in the frame — a former vermilion/cinnabar accent is "the one pigment the world forbids by name" (`ui.css`).
+| # | Design | Public source | Acclaim | Its one bold place |
+|---|---|---|---|---|
+| 1 | Flighty | flighty.com | Apple Design Award 2023, Interaction | The departure board: one line per flight, and status carries the colour |
+| 2 | Things 3 | culturedcode.com/things | Apple Design Award 2017 | One control with real physics (the Magic Plus button) |
+| 3 | Halide Mark II | halide.cam | Apple Design Award 2022, Visuals | An instrument, not an app; one yellow on near-black |
+| 4 | (Not Boring) Habits | notboring.software | Apple Design Award 2022, Delight and Fun | One rendered object per screen, everything around it quiet |
+| 5 | CARROT Weather | meetcarrot.com/weather | Apple Design Award 2021, Interaction | The fun is in the words, with a dial that turns it off |
+| 6 | Linear | linear.app | A whole design trend is named after it | Speed: every action is on the keyboard, and colour is only for status |
+| 7 | Raycast | raycast.com | Product Hunt Golden Kitty 2024 | The command palette is the product |
+| 8 | Teenage Engineering OP-1 field | teenage.engineering/products/op-1 | Design S Gold 2012; SFMOMA collection | Colour as a binding: the blue knob moves the blue thing |
+| 9 | Playdate | play.date | "All it's cranked up to be" (The Verge, 2022) | One playful affordance, the crank, and one yellow |
+| 10 | landonorris.com | landonorris.com | Awwwards Site of the Year (announced 2026-02) | One electric accent, and a small "next race" card that is always there |
 
-**The Own-Ground-Own-Ink Rule.** Every plane declares its own ink and a shared label inherits it (`color: inherit`) rather than hard-coding a room ink into a primitive that also prints on paper. Two separate defects shipped from binding a room ink into a shared class that was later reused on paper (`M2R-01`, `M3-04`) — a token is landed against the plane it prints on, never borrowed.
+The lesson common to all ten: each spends its boldness in one place and keeps the rest quiet,
+and the bold part always does a job.
 
-**The Plane-Measured Contrast Rule.** Hairline and mute-ink strengths are allowed to differ between the dark and light themes because each is measured against its own ground to the same target band, not equalized numerically. Splitting the difference between two grounds 200 luminance points apart would either under-articulate one room or over-articulate the other.
+## 3. Principles
 
-**PROVENANCE NOTE — an unapproved value in the shipped system.** The light theme's `--scope` token (`tokens.css`, the `[data-theme="light"]` block, the `SCOPE` group) is measured off `.impeccable/mocks/decision/assigned.png`, a decision-round comp that was never approved as the comp of record. Every other light-theme value in that file is re-derived from the approved comp (`team-board-a.png`) or from `assigned.png`'s own measured planes under an explicit re-derivation ruling (M1-11); `--scope` alone carries no such ruling — it is simply read off the unapproved image. Record this as what it is: a value backed by an unapproved decision-round comp, not by the approved comp, kept because it is the only measurement on hand, not because its provenance was cleared.
+1. **Colour means a head.** The one bold place is the head colour (OP-1). Eight hues, assigned in
+   the daemon's own head order, used for that head and nothing else. The chrome has no hue of its
+   own. A status colour (ok, warn, danger) only appears beside its word.
+2. **The name always travels with the colour.** A colour mark is never alone: the head's name sits
+   beside it, so the screen still reads in greyscale and for colour-blind readers.
+3. **One line per thing.** A session, a turn, a log line and a knob each take one row with fixed
+   columns (Flighty). Details open beside the list, never in a modal, and the list stays in view
+   (Vercel, OpenRouter).
+4. **Big numbers only where the number is the point.** Plan left, turns in flight and cache hit
+   rate get a large figure. Everything else is table-sized.
+5. **Always know the state of the daemon.** A slim status strip sits on top of every page: link
+   state, daemon health, the nearest plan limit and when it resets (Lando's race card, the
+   claude-code-router endpoint pill).
+6. **Everything is one keystroke away.** ⌘K or / opens the palette, which reaches every page,
+   view, head and theme (Raycast, Linear). The sidebar shows the shortcut so people learn it.
+7. **Say it plainly.** Lowercase, short, the fact first (PRODUCT.md's voice). Fun lives in the
+   empty states and never in the data.
 
-## 3. Typography
+## 4. The default check
 
-**Label/Figure Font:** Archivo (variable, wght 100–900, wdth 62–125), with 'Helvetica Neue', Arial, sans-serif as fallback.
-**Code Font:** JetBrains Mono (variable), with ui-monospace, SFMono-Regular, monospace as fallback.
+What a Linear or Vercel clone would pick on each axis, what splice picks, and why.
 
-**Character:** One compact, condensed grotesque carries every label and every printed value in the room; a genuinely monospace face is reserved for content that is actually monospace-shaped (a TOML body, a log line, a file path). There is no third, larger display face — the system has no hero-metric size jump; a figure is marked by its tabular face, not by a size increase.
+| Axis | A Linear / Vercel clone | splice | Why |
+|---|---|---|---|
+| Type | Inter (Linear) or Geist (Vercel); mono only for code | IBM Plex Sans for words, IBM Plex Mono for every figure: times, tokens, percentages, ids | Plex was drawn for engineering instruments and its figures read like a readout. Mono figures don't jitter as live numbers tick. And it is neither of the two defaults |
+| Colour | Grey plus one brand accent on the chrome (Linear's indigo, Vercel's blue) | Grey chrome with no hue. The accent is the ink itself, so the primary button is simply the brightest thing. Eight head colours are the only hues, plus status colours next to their words | The question the operator brings is "which head?". Colour that answers it is worth more than colour that brands the frame |
+| Layout | A sidebar, a page header, a grid of cards | A sidebar, an always-on status strip, one board per page, detail opening beside the list; stat tiles only on number pages | A card grid hides row order, and row order is the data here |
+| Nav | A flat list of features, or workspace first | Four groups named for splice's own objects (in flight, routing, plans, daemon). Home is sessions. ⌘K reaches all of it | See section 6: the grouping follows the session, its head, its plan and the daemon under them |
+| Motion | Springs and fades on everything | Nothing a keyboard triggers animates. Hover and open take 120 to 180ms. A status change on the board cross-fades its word, and that is the only motion with meaning | A console opened between terminal sessions must feel instant |
+| Density | Airy, 48px rows | 44px board rows, 36px table rows, 13px table text | The operator reads many sessions and heads at once |
 
-### Hierarchy
-- **Figure** (400, `inherit` size, tabular-nums): any number or identifier that must line up in a column — strip values, config values, chart bases. One size, set by its container; the design explicitly rejects a hero-metric ladder (value/unit/basis at three different sizes) because it "made the top of every page look broken."
-- **Bay Label** (400, `--text-3`/17px at root 16px, `--strip-ink`): the rack's own plate label.
-- **Strip Value** (400, `--text-3`, `--strip-ink`): the strip's printed record value.
-- **Strip Label / Field Label** (400, `--text-1`/12px, `--strip-ink-mute`): the mute caption above a boxed field's hairline rule.
-- **Body** (400, `--text-3`, line-height 1.55, `--ink`): running page text on the room ground.
+## 5. The bold place: head colour
 
-### Named Rules
-**The One Size Rule.** A Figure is one size at any call site; what marks a value as a figure is the tabular numeral face, never a size jump. A page that wants a genuinely large number sets that size on its own container — the primitive itself never does.
+- **Palette.** `--head-1` to `--head-8`: blue, orange, teal, pink, lime, violet, sky, gold. They
+  were picked in OKLCH at even lightness, with the most distinct hues first, so a daemon with
+  three heads gets the three most distinct colours. Dark values sit at L 0.74, and light values at
+  L 0.54 so they stay above 4:1 on white. Every value clears 3:1 against its ground (non-text
+  contrast, WCAG 1.4.11); most clear 7:1 in dark.
+- **Assignment.** A head's colour is its index in the daemon's registry (`GET /api/status`,
+  `registry`), mod 8. The registry keeps topology order, so adding a head never changes an
+  existing head's colour. A session with no splice head, or a head the registry does not list,
+  gets the neutral grey.
+- **Shape.** A head mark is a rounded 8×16 bar before the head's name (`HeadMark`, in
+  `@entities/control-status`). In a chart the head's series takes the hue. A board grouped by head
+  gives the group title a mark. Status never uses this shape: status is a round dot followed by
+  its word.
+- **Where it appears.** Sessions (head column and group titles), turns (head column and waterfall
+  bars), fleet (each head's title), usage (each head's row and chart series), logs (the head
+  column and head filter), settings (the scope picker), accounts (the heads an account serves).
 
-**The Regular-Weight Rule.** Strip labels and strip values are weight 400, not 600/bold, measured against the comp's own recorded text regions (which read regular, not semibold, at both 12px and 16px). A bold weight on a narrow strip column costs more truncation than it buys emphasis.
+## 6. Navigation and information architecture
 
-## 4. Elevation
+The 13 pages were 13 flat peers. They now sit in four groups, built from splice's own objects
+rather than from what other proxies put on their home pages:
 
-The system is flat by construction: **radius is 0 everywhere** and depth is conveyed by tonal plane and hairline outline, never by `box-shadow` blur/offset. Where the comp shows a three-part paper edge (an outer dark outline, a shaded border, a brighter inner lip) or a recessed bolt hole, those are built from stacked zero-blur `box-shadow` rings and `color-mix()` against the plane they sit on — a printed edge, not a drop shadow. A "shadow" in this system reads as ink, not as light falling on an elevated card.
+| Group | Object | Pages | Answers |
+|---|---|---|---|
+| in flight | the session in flight | sessions, turns, teams, projects | who is working, where, how fast |
+| routing | the head | fleet, models, compaction | where the work goes, and on which model |
+| plans | the account window | accounts, usage | how much plan is left, and who spent it |
+| daemon | the daemon under all of it | settings, mcp, logs, doctor | how it is tuned, and is it healthy |
 
-### Shadow Vocabulary (paper-edge rings, not ambient shadows)
-- **Strip Border** (`border: var(--hair) solid color-mix(in srgb, var(--strip) 76%, white)`): the paper's own brighter inner lip.
-- **Strip Outline Ring** (`box-shadow: 0 0 0 var(--hair) color-mix(...)`): the paper's shaded mid-tone, one ring out from the border.
-- **Strip Room Ring** (`box-shadow: 0 0 0 calc(var(--hair)*2) color-mix(in srgb, var(--bay) …%, black)`): the darkest outline, mixed against the plane (the bay) it is drawn on, so it never needs a per-theme hex.
-- **Bay Inset Ring** (`inset 0 0 0 var(--hair) color-mix(in srgb, var(--room) 27%, black)`): the recessed frame of a rack.
+- **Addresses stay.** `#/fleet` and the rest are unchanged, and no page is renamed. What changes
+  is the order: `ADDRESSES` in `app/rows.ts` follows the nav, so the console opens on sessions,
+  the first object.
+- **The shell.** A 232px sidebar holds the wordmark, a "jump to" button showing ⌘K, the four
+  groups, and the theme switch at the bottom. Each item is an icon and its label. The current
+  page gets the active ground, full ink and weight 500, plus `aria-current="page"`. The
+  sidebar's arrow-key movement is kept.
+- **The status strip.** A 44px strip runs along the top of the page column. It holds the link
+  (a live dot and its word), daemon health, the nearest plan limit with its reset countdown, heads
+  without limits, a pending restart, and the local and UTC clocks. It never moves the layout.
+- **Phone width.** Below 720px the sidebar becomes a horizontal row of items above the page, with
+  no group labels, and the status strip wraps.
 
-### Named Rules
-**The Flat-By-Default, Ink-Not-Light Rule.** No radius, no ambient drop shadow anywhere in the room. Where the comp shows depth (a paper edge, a bolt recess, a stile highlight), it is reproduced as stacked hairline rings mixed against the exact plane they sit on, never as a `box-shadow` blur simulating a light source.
+## 7. The four surface types
 
-## 5. Components
+Every page is one of four types. Build new pages from these.
 
-### Buttons (Key)
-- **Shape:** radius 0, `var(--hair)` hairline border — "a printed strip that can be pressed."
-- **Primary:** same box as the default key; the world has no second accent to promote a button with, so a primary key is the identical printed key with the room's bright ink border (`--ink-strong`).
-- **Hover / Focus:** hover lifts only the border color to `--strip-ink` (no fill change, no edge color) so a still-hovering pointer after a click can tell hover from armed; focus is always the world's 2px `--focus` ring at 1–2px offset, on the element itself, never the browser default.
-- **Danger / Armed (Confirm):** resting danger is an outlined key in `--data-neg`; armed is visibly more urgent — a filled 16% danger tint plus the same danger border — so a scan of the bench cannot mistake an armed control for an idle one.
+### A live list: the departure board (Sessions)
 
-### Strip / StripField (the signature component)
-The strip is the one row module the whole console is built from: an opaque paper rack row, cut to the width of its own fields (never stretched to its container), carrying a `HolderEdge` mark in a fixed 6ch-plus-mark column at its start. A `StripField` is a boxed cell with a label 4px above a mute hairline and a tabular value 4px below it; its width is a fixed `ch` count resolved against the value's own face, so columns stay aligned strip to strip and never shrink under flex pressure. An unedged strip still prints a small ink pin where its holder-edge mark would be, so every strip — stateful or not — reads as printed paper with a fixed geometry.
+- One row per session, 44px tall, with fixed columns: session, head (with its mark), project,
+  started, seen, last hand-off, status. Times use the mono face.
+- The status column comes last, as on an airport board: a dot and a word (`live`, `stale`,
+  `gone`). A stale row gets a warn tint on its leading edge, because it is the one that needs the
+  operator.
+- Above the board sits a summary line of large figures: live, stale and gone counts.
+- Views (by head, by project, by team, timeline) are tabs under the title. A grouped view gives
+  each group a title row, with the head mark when grouped by head.
+- The whole row opens the session. The detail panel opens on the right and the board narrows; it
+  never covers the board.
 
-### Bay (rack container)
-- **Corner Style:** radius 0, two 16px stile rails (a repeating gradient carrying both the rail face and its punched bolt holes), a ribbed unprinted floor at a 31–32px pitch.
-- **Background:** `--bay`, one deliberate step below the room so the rack recedes rather than merely differs.
-- **Head Plate:** a discrete, centered, paper plate (`--plate`) bolted over the rack, carrying the rack's label, count and actions, with four corner pins and the same three-part paper edge as a strip.
-- **Internal Padding:** `--space-7` gap between strips, `--space-7 0 --space-3` rack padding.
+### A numbers page (Usage)
 
-### Fields / Inputs (Field, Input)
-- **Style:** a printed field box — `--strip-field` paper, `--hair` hairline in `--strip-field-line`, radius 0, tabular figure face for the value.
-- **Focus:** the world's 2px `--focus` ring, 1–2px offset — never a glow or a color-shifted border.
-- **Error / Disabled:** an invalid field shifts its border to `--strip-ink`, never to a red fill — color is never the sole signal, so the reason is printed in text.
+- Plan windows come first, one card per plan, using claude-code-router's shape: each window is
+  a big percentage, a meter and "resets in 2h 3m". A meter turns warn at 75% and danger at 90%,
+  and the word says so.
+- Then a stat row: tokens, turns, cache hit and cost for the chosen window.
+- Then the heads table: a head mark, figures in mono, and a share bar in the head's colour.
+- Charts use head hues for per-head series and greys for kinds of token (fresh input, cache read,
+  cache write, output), so a hue always means a head.
 
-### Choice (select) and Flag (checkbox)
-- **Style:** the same printed field box as Input, value left / state word right, no chevron — "the world has no icon set." Options print in flow, as a bay of one-field strips; there is no floating popover layer or z-index stack, because a list printed in flow cannot land off-screen.
-- **State:** the chosen option's border goes to `--strip-ink`; the pointer's own hovered position is a separate, lighter border state.
+### A form (Settings)
 
-### Navigation (Rail / Rule)
-- **Style:** a top rule (5.8% of frame height, type-derived so it scales with the root rather than the viewport) and a left rail (9vw, 118px floor) of address tabs, both drawn on the room. On mobile (≤720px) the rail collapses to a bottom strip of addresses within thumb reach, and the rack rails (crossing hairlines keyed to the tab pitch) stop drawing because the pitch they're keyed to no longer exists.
-- **Mobile treatment:** a page's detail column becomes a full-screen swell over the room rather than a side column, arriving with the world's one authored entrance (`--dur-2` fade + translateY), and closes with a printed key shown only in that mode.
+- The scope picker sits under the title: `global`, then one chip per head with its mark.
+- Groups of knobs run in a single column, with a sticky list of groups on the left for jumping.
+- A knob is one row: the name, the TOML key in mono under it, one line saying what it does, the
+  input with its unit, where the value comes from (`default`, `toml`, `head`, `state`, `env`) as
+  a quiet badge, and `applies live` or `on restart`.
 
-### ScopeInset (chart frame)
-A recessed, always-dark inset (`--scope`, `#090C0C`/`#1F2422`) with a ruled grid, used for every chart in both themes — the one place the console deliberately does not follow the room/paper split. The approved comp is dark and draws no chart; the light theme's dark inset is read off the decision-round comp `assigned.png`, whose chart insets are dark on paper (see the provenance note at the end of section 2).
+### A stream (Logs)
 
-## 6. Do's and Don'ts
+- A filter rail on the left: head (chips with marks), tail length, tag, level, search.
+- The stream fills the rest: time in mono, then the message. `key=value` pairs are split so keys
+  print in the subtle ink and values in full ink, which makes a perf line scannable.
+- Following pins the newest line to the bottom. While paused, a bar says how many lines arrived.
+- A request capture panel sits under the stream, closed until opened.
 
-### Do:
-- **Do** keep every color, spacing and type value bound to a token (`--space-1`..`--space-8`, `--text-1`..`--text-6`, the section-1 palette tokens); the `webui-css-tokens-only` wall fails a raw px or hex in a component rule.
-- **Do** carry state exclusively through the four holder-edge colors, each always paired with a text label.
-- **Do** measure a new plane's ink and border against the exact background it prints on, and record the reading in a comment, the way every existing token in `tokens.css` does.
-- **Do** keep radius at 0 and depth as tonal plane plus hairline everywhere.
-- **Do** use the tabular figure face for anything that lines up in a column (a number, an id, a config value); use the mute label face for captions; use the monospace face only for genuinely monospace content (TOML, logs, paths).
+## 8. Tokens
 
-### Don't:
-- **Don't** introduce a second accent color. The room's holder edges and the focus blue are the whole of its chroma; a former vermilion/cinnabar accent is "the one pigment the world forbids by name."
-- **Don't** build a hero-metric tile (a value at a jumped-up size over a small unit and basis). PRODUCT.md's anti-goal is explicit: this system rejects "the KPI-tile dashboard of the category."
-- **Don't** add a card-and-shadow surface, a sparkline, a progress ring, or a soft-shadowed rounded rectangle standing in for real content — the room has no shadow vocabulary and no radius to support them.
-- **Don't** use a dashed-box, centered-text empty state; an empty rack prints as a strip carrying no data, same paper, same hairline, same field origin as a populated one.
-- **Don't** reintroduce a floating popover/menu layer with a z-index stack; this world's options print in flow.
-- **Don't** invent a kicker or an eyebrow label, a hard-offset neobrutalist shadow, a system display face, or a Unicode/emoji glyph standing in for an icon — none of these appear anywhere in the shipped build, and none should be added to extend the system (see documenter's note below on why they are not canonized as absence-driven rules either).
+All values live in `console/src/shared/tokens.css`. A page sheet may only read them: spacing
+through `var(--space-N)` (`webui-css-tokens-only`), font size through `var(--text-N)`
+(`webui-css-font-size-scale`), and colour only in the token sheet (`webui-css-no-color-literals`).
 
----
+### Scale
 
-**Known residuals of this shipped build (facts, not rules to inherit):**
-1. **The typeface ceiling.** Archivo at its wdth-axis floor still sets roughly 1.25–1.42x the comp's traced width at matching ink height, so board labels print about 20–27% shorter (by ascender/digit height) than the comp, and strip values still elide in narrow columns. This is an open operator decision (campaign follow-up F3: choosing a genuinely narrower face), not a rule this document prescribes going forward.
-2. **Authored short column names.** The builder head bay prints short, hand-authored column names (`acct`, `wndw`, `tok out`, `ctx left`) because a column name prints once per rack and the comp's full names (`account`, `window`, `tokens out`, `context left`) overflow that bay's measured columns by 1.3–5.3px in Archivo; the lead bay, whose columns hold them, prints the comp's words. Treat these as accepted shipped labels, not as a naming convention to extend to new columns without re-measuring space.
+| Token | Values |
+|---|---|
+| `--space-0..8` | 0, 2, 4, 8, 12, 16, 24, 32, 48 px (in rem) |
+| `--text-1..7` | 12, 13, 14, 16, 20, 24, 32 px. 12 for captions and column labels, 13 for table cells and controls, 14 for body and nav, 16 for section titles, 20 and 24 for page titles, 32 for a number that is the point |
+| `--leading-tight`, `--leading` | 1.25, 1.5 |
+| `--radius-1..3`, `--radius-full` | 4px (marks, badges), 6px (controls), 8px (panels, cards), pill |
+| `--dur-1..3` | 120, 180, 240ms; 0ms under `prefers-reduced-motion` |
+
+### Colour, dark (default) / light
+
+| Role | Dark | Light |
+|---|---|---|
+| `--bg` page | `#0b0c0e` | `#ffffff` |
+| `--bg-raised` sidebar, panels, table heads | `#131418` | `#f7f7f8` |
+| `--bg-hover` | `#1a1c20` | `#f1f2f4` |
+| `--bg-active` current page, selected row | `#20232a` | `#eaecf0` |
+| `--line`, `--line-strong` | `#23252b`, `#30333a` | `#e4e5e9`, `#d3d5db` |
+| `--fg` text (16.8:1 / 18.1:1) | `#ededf0` | `#15161a` |
+| `--fg-muted` (8.0:1 / 7.7:1) | `#a3a6ae` | `#50535c` |
+| `--fg-subtle` (5.7:1 / 5.9:1) | `#878a93` | `#61646d` |
+| `--accent` primary action, the ink itself | `#ededf0` | `#15161a` |
+| `--ok`, `--warn`, `--danger` | `#4fbf87`, `#e0a44a`, `#f07171` | `#166b44`, `#855304`, `#b02f2f` |
+| `--head-1..8` | `#6eadfe #ee8f58 #00c5be #e686be #a0b74d #b896f3 #1fbcea #c9a732` | `#266ec3 #b04d00 #008882 #a84482 #647a00 #7d56b8 #007eaf #8e6900` |
+| `--series-1..4` kinds of token | the ink, stepped from `--fg` to `--line-strong` | the same, stepped |
+
+Every text and ground pair clears WCAG AA in both themes, and `console/tests/contrast.test.ts`
+computes them from the token sheet.
+
+### Type
+
+IBM Plex Sans (variable, weights 100 to 700) and IBM Plex Mono (400, 500, 600), latin subset,
+SIL OFL 1.1, embedded in the single-file build (`shared/fonts/`). No network fonts. Body 14px,
+tables 13px. Page titles 24px at weight 600. Figures use Plex Mono with tabular numbers.
+
+## 9. Components
+
+The building blocks are in `console/src/shared/ui/kit.tsx`, and pages compose them:
+`PageHeader`, `Section`, `DataTable` (the board is a DataTable whose rows open), `Badge` (a dot and
+a word), `Stat` and `StatRow`, `Meter`, `DetailPanel`, `KeyValue`. `HeadMark` lives with the
+registry it reads (`@entities/control-status`). Controls (`Choice`, buttons, inputs) keep their
+behaviour and take the new look.
+
+## 10. Voice
+
+- Lowercase, per PRODUCT.md: `sessions`, `by head`, `about this list`. Labels are three words or
+  fewer (the label wall).
+- The fact comes first: `resets in 2h 3m`, not `your plan window will reset in`.
+- Absent values keep their vocabulary (`–`, `none`, `unknown`, `unavailable`, `ineligible`,
+  `not built`); each is a different fact.
+- Empty states may be warm, and only they may be: "no sessions in flight. start one with a head,
+  like claudex, and it lands here."
+- No em-dashes in UI text (the copy gate).
+
+## 11. Accessibility
+
+- AA contrast for all text in both themes. Marks and meters clear 3:1.
+- A visible focus ring on everything focusable: 2px in the ink colour, offset 2px.
+- Colour is never the only signal: head marks carry the name, and status dots carry the word.
+- `prefers-reduced-motion` zeroes every duration.
+- Keyboard: the palette on ⌘K or /, arrow keys in the sidebar, Tab to every row opener, Escape
+  closes a panel.
+
+## 12. What this replaces
+
+The strip-bay world is retired: paper strips, holder edges, bays, the Archivo and JetBrains faces,
+the `--root-size` viewport scalar, and the comp of record with the tools that measured against it
+(`console/.impeccable/`, `console/tools/src/commands/{comp,gate,look,typography}.ts`,
+`docs/design/type-spec.md`). The old token names stay mapped to the new roles in one marked block
+of `tokens.css` until the last page moves, and then they are deleted.

@@ -1,175 +1,85 @@
-/* Settings: a page of bays holding forms. The world reaches it through the bay
-   frames, the plate labels, the holder edges and the figure face, not through a
-   rack of strips — a strip is a focusable button and a form field inside one is
-   a nested interactive element. Tokens only for spacing and type; radius 0. */
-.myx-settings {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
+/* Settings: the form surface (docs/design/DESIGN.md section 7). The scope picker, the finder, then
+   the knob rack (widgets/knob-form), and under it the topology and the claude head. */
 
-/* a section of the page, one step under the page's own title (it printed at the title's size) */
-.myx-settings-title {
-  margin: 0;
-  font-size: var(--text-4);
-  color: var(--ink-strong);
-  font-weight: 500;
-}
+.myx-settings { display: grid; gap: var(--space-7); }
+.myx-settings .myx-ph { margin-block-end: 0; }
+.myx-settings .myx-sec + .myx-sec { margin-block-start: 0; }
 
-.myx-settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
+.myx-settings-section { display: grid; gap: var(--space-4); }
+.myx-settings-section > .myx-sec-head { margin-block-end: 0; }
 
-.myx-settings-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+/* ---------- scope: global, then one button per head wearing its mark ---------- */
+.myx-settings-scope {
+  display: inline-flex;
   flex-wrap: wrap;
+  gap: var(--space-1);
+  justify-self: start;
+  padding: var(--space-1);
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
 }
-
-.myx-settings-note {
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-}
-
-.myx-settings-path {
-  font-family: var(--font-figure);
-  font-size: var(--text-2);
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
-.myx-settings-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.myx-settings-findings {
-  margin: 0;
-  padding-left: var(--space-4);
-  font-size: var(--text-2);
-  color: var(--ink);
-}
-
-/* ---- THE KNOB RACK IS A RACK, NOT A COLUMN (M2-21) --------------------------------
-   The page composed its 45 knobs as ONE full-width column, which at the comp's own plate height
-   is about 5400px of rack inside a 1024px frame — five screens, of which the reader sees seven
-   knobs. The comp composes four narrow bays side by side (head: claude, head: claude-deepseek,
-   team chat, activity), each a vertical rack of short tables; the two frames differ on the COLUMN
-   COUNT more than on anything else, and this is that difference applied to the members the page
-   already has. No content is added and no knob is invented: the same 45 plates, laid out in as
-   many columns as the bay affords, so the page shows about a third of its rack at once instead of
-   a seventh.
-
-   ROW FLOW, so the plates fill left to right and the last row is the only ragged one — column
-   flow would leave every column's floor at a different height and the rack's closing rule would
-   sit at four different y positions. The keys read left to right and then down.
-
-   NO ROW GAP, deliberately: `.myx-knob` carries its own padding and its own bottom rule, so a row
-   gap would space the rack twice and the closing rule would float away from the row it closes.
-   The COLUMN gap is the gutter the comp's bays keep between them.
-
-   minmax rather than a fixed repeat, so the column count follows the bay instead of a number this
-   sheet guessed, and the 1120px floor is the page's own body breakpoint (see projects.css and
-   sessions.css): below it the rack is one column again, which is also what a narrow frame wants.
-   420px and not 320: a row carries its name, a sentence on what it does and the value with its
-   unit, and at 341px the sentence wraps to four lines and pushes the value out of the row's eye
-   line. */
-.myx-settings .myx-knobs {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
-  gap: 0 var(--space-4);
-  align-content: start;
-}
-
-@media (max-width: 1120px) {
-  .myx-settings .myx-knobs { grid-template-columns: minmax(0, 1fr); }
-}
-
-/* A bay's rows are field boxes, not strips, so the rack needs the padding the
-   strip module would otherwise bring. */
-.myx-settings .myx-bay-rows .myx-fbox {
-  padding: var(--space-2) var(--space-4);
-  /* --hair IS A WIDTH AND --hairline IS A COLOUR (M1-75). This read
-     `border-bottom: 1px solid var(--hair)`, which substitutes to `1px solid 1px` - invalid at
-     computed-value time, so border-bottom-style reset to its initial `none` and THE RULE DREW
-     NOTHING. Not a currentColor fallback: measured on the live DOM, .myx-settings .myx-bay-rows .myx-fbox (n=74) computed
-     border-bottom-style `none` and border-bottom-width `0px`, against .myx-rule (which spells
-     the idiom correctly) computing solid / 1px / rgba(236,234,226,.1). The idiom is documented
-     at tokens.css:55-56: `border-top: var(--hair) solid var(--hairline)`.
-
-     THE COLOUR IS --strip-field-line AND NOT --hairline, because these rows sit on PAPER. That
-     idiom's --hairline is the ROOM's line: measured on this ground it composites to #E5E1D3 over
-     #E4E0D1 in dark, which is 1.01:1 - a rule that is drawn and still cannot be seen, which is the
-     same defect as the one above wearing a valid declaration. --strip-field-line measures 1.91:1
-     in dark and 3.56:1 in light on the same ground. The two sibling sites, .myx-knob and .myx-head,
-     DO sit on the room and keep --hairline: this is D7's shape for a border, so the line follows
-     the plane rather than the idiom. */
-  border-bottom: var(--hair) solid var(--strip-field-line);
-}
-
-.myx-settings .myx-bay-rows .myx-fbox:last-child {
-  border-bottom: 0;
-}
-
-.myx-settings-topology,
-.myx-settings-claude {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-/* A selector option: the rail's idiom, a pressable whose state is a printed
-   holder edge. Styled down to the edge itself so nothing of the browser's
-   default button reads as another world's control. */
 .myx-settings-head-option {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-4);
   background: none;
   border: 0;
-  padding: 0;
+  border-radius: var(--radius-1);
   font: inherit;
-  color: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
   cursor: pointer;
 }
+.myx-settings-head-option:hover { color: var(--fg); }
+.myx-settings-head-option-active,
+.myx-settings-head-option-active:hover { background: var(--bg-active); color: var(--fg); font-weight: 500; }
+.myx-settings-head-option .myx-hm-mark { height: var(--space-4); }
 
-.myx-settings-head-option:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+.myx-settings-tools {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-5);
 }
+.myx-settings-pending { display: flex; align-items: center; gap: var(--space-3); margin: 0; }
 
-/* One topology table: a sheet of paper under its group's bay, its name, then its values in a
-   wrapping row. Paper so the controls' labels (strip ink) read, the same ground the knob rows use. */
+.myx-settings-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.myx-settings-note { margin: 0; max-width: 80ch; font-size: var(--text-2); color: var(--fg-muted); }
+.myx-settings-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.myx-settings-actions { display: flex; align-items: center; gap: var(--space-3); }
+.myx-settings-findings { margin: 0; padding-left: var(--space-5); font-size: var(--text-2); color: var(--fg); }
+
+.myx-settings-topology,
+.myx-settings-claude { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* ---------- topology: one table per section of splice.toml ---------- */
 .myx-topo-table {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  background: var(--strip);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
 }
 .myx-topo-title {
   margin: 0;
-  font-family: var(--font-code);
+  font-family: var(--font-mono);
   font-size: var(--text-2);
-  font-weight: normal;
-  color: var(--strip-ink);
+  font-weight: 500;
+  color: var(--fg);
 }
 .myx-topo-fields {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: var(--space-3) var(--space-4);
+  gap: var(--space-4) var(--space-5);
 }
-.myx-topo-flag {
-  display: inline-flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.myx-topo-key {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--strip-ink-mute);
-}
+.myx-topo-flag { display: inline-flex; flex-direction: column; gap: var(--space-2); }
+.myx-topo-key { font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }

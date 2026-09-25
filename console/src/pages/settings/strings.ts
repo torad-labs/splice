@@ -4,6 +4,8 @@
 export const S = {
   title: 'settings',
   knobs: 'runtime knobs',
+  /** The group of scope buttons: global, then one per head. */
+  scope: 'knob scope',
   find: 'find a knob',
   findHint: 'name or key',
   topology: 'topology',

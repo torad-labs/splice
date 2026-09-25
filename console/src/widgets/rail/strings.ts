@@ -1,6 +1,12 @@
-// Labels of the rail. Every label is three words or fewer, lowercase, no
-// em-dash (the label wall globs this file).
+// Labels of the sidebar. Every label is three words or fewer, lowercase, no em-dash (the label
+// wall globs this file).
 export const S = {
-  /** The rail's accessible name: the bays, not "navigation". */
-  nav: 'bays',
+  /** The sidebar's accessible name. */
+  nav: 'pages',
+  wordmark: 'splice',
+  /** The button that opens the palette; the shortcut prints beside it. */
+  jump: 'jump to',
+  /** The theme switch, named for what it switches to. */
+  toDark: 'dark theme',
+  toLight: 'light theme',
 } as const;

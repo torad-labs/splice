@@ -1,8 +1,7 @@
-// Labels of the fixed rule. Three words or fewer, lowercase, no em-dash (the
+// Labels of the status strip. Three words or fewer, lowercase, no em-dash (the
 // label wall globs this file). The honest empty for a window no head reports
 // is not a label and lives in the component (CONTRACTS.md section 4).
 export const S = {
-  wordmark: 'splice',
   local: 'local',
   utc: 'utc',
   /** The daemon's own three words for its health, printed beside the edge. */
@@ -23,6 +22,8 @@ export const S = {
   off: 'off',
   /** Before the age of the last event the stream delivered. */
   lastEvent: 'last event',
+  /** After that age, when the link has gone silent past its heartbeat. */
+  stale: 'stale',
   /** Beside a count: heads with no plan limit to report (a pay-per-token key has none). */
   noneTail: 'heads without limits',
 } as const;

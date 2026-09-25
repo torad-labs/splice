@@ -5,12 +5,10 @@ export const S = {
   title: 'log tail',
   head: 'head',
   tail: 'tail',
-  search: 'search',
   follow: 'follow',
   paused: 'paused',
   time: 'time',
   text: 'message',
-  path: 'file',
   all: 'all',
   /** The count of lines that arrived while the reader was not following. */
   newLines: 'new lines',

@@ -1,88 +1,74 @@
-/* The palette: a printed list over the room. Radius 0, no icons, one active
-   row marked by a holder edge, and the two rooms available as items rather
-   than as a toggle in a corner. */
+/* The palette (docs/design/DESIGN.md section 3, principle 6): one list over every page, the saved
+   views of the current page and the two themes. It opens on ⌘K or / with no animation: it is used
+   many times a day, and a keyboard-opened thing that animates feels slow. */
 
 .myx-palette-scrim {
   position: fixed;
   inset: 0;
-  /* No z-index: the world has no stack ladder, and it does not need one here. The scrim and the
-     palette are the last things the shell renders, so they paint over the rail and the rule by
-     document order - which is the one ordering a reader can see in App.tsx. */
-  background: color-mix(in srgb, var(--room) 72%, transparent);
+  background: var(--overlay);
 }
 
 .myx-palette {
   position: fixed;
   left: 50%;
-  top: 18%;
+  top: 16%;
   transform: translateX(-50%);
-  width: min(36rem, 90vw);
-  background: var(--strip);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
+  width: min(36rem, 92vw);
+  max-height: 60vh;
   display: flex;
   flex-direction: column;
-  max-height: 60vh;
   overflow: hidden;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-float);
 }
 
 .myx-palette-input {
-  font-family: var(--font-label);
-  font-size: var(--text-4);
-  color: var(--strip-ink);
-  background: var(--strip-field);
-  border: none;
-  border-bottom: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  padding: var(--space-3);
+  padding: var(--space-5);
+  background: none;
+  border: 0;
+  border-bottom: var(--hair) solid var(--line);
   outline: none;
+  font: inherit;
+  font-size: var(--text-4);
+  color: var(--fg);
 }
-.myx-palette-input::placeholder { color: var(--strip-ink-mute); }
+.myx-palette-input::placeholder { color: var(--fg-subtle); }
 
 .myx-palette-list {
   overflow-y: auto;
-  padding: var(--space-2) 0;
+  padding: var(--space-3);
 }
 
 .myx-palette-group [cmdk-group-heading] {
-  font-family: var(--font-label);
+  padding: var(--space-3) var(--space-3) var(--space-2);
   font-size: var(--text-1);
-  color: var(--strip-ink-mute);
-  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-weight: 500;
+  color: var(--fg-subtle);
 }
 
 .myx-palette-item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  /* FIGURE: a palette item is an address name, read in a list. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-2);
   font-size: var(--text-3);
-  font-variant-numeric: tabular-nums;
-  color: var(--strip-ink);
-  padding: var(--space-2) var(--space-3);
+  color: var(--fg-muted);
   cursor: pointer;
-  /* the holder edge, drawn only on the row the keyboard is standing on */
-  border-inline-start: var(--space-1) solid transparent;
 }
-.myx-palette-item[data-selected='true'] {
-  background: var(--strip-field);
-  border-inline-start-color: var(--edge-green);
-}
-.myx-palette-item[aria-disabled='true'] { color: var(--strip-ink-mute); }
+.myx-palette-item[data-selected='true'] { background: var(--bg-active); color: var(--fg); }
+.myx-palette-item[aria-disabled='true'] { color: var(--fg-subtle); }
 
 .myx-palette-mark {
   margin-inline-start: auto;
-  font-family: var(--font-label);
   font-size: var(--text-1);
-  color: var(--strip-ink-mute);
+  color: var(--fg-subtle);
 }
 
 .myx-palette-empty {
-  font-family: var(--font-label);
+  padding: var(--space-4) var(--space-3);
   font-size: var(--text-2);
-  color: var(--strip-ink-mute);
-  padding: var(--space-3);
+  color: var(--fg-subtle);
 }

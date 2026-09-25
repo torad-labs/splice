@@ -120,33 +120,26 @@
    ============================================================ */
 
 /* --- HolderEdge: the only place attention is a color, always with a label --- */
+/* The legacy holder edge prints as the new status mark: a round dot and its word, the dot in the
+   status colour (docs/design/DESIGN.md section 5: a round dot is status, never a head). */
 .myx-edge {
   display: inline-flex;
-  align-items: stretch;
+  align-items: center;
   gap: var(--space-2);
+  white-space: nowrap;
 }
 .myx-edge-mark {
-  width: var(--space-2);
-  background: var(--edge-grey);
-  transition: background-color var(--dur-1) var(--ease-out);
+  flex: none;
+  width: .375rem;
+  height: .375rem;
+  border-radius: var(--radius-full);
+  background: var(--fg-subtle);
 }
-.myx-edge-green .myx-edge-mark { background: var(--edge-green); }
-.myx-edge-amber .myx-edge-mark { background: var(--edge-amber); }
-.myx-edge-red   .myx-edge-mark { background: var(--edge-red); }
-.myx-edge-grey  .myx-edge-mark { background: var(--edge-grey); }
-.myx-edge-label {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  /* THE LABEL TAKES ITS GROUND'S INK (M2R-01). This was `var(--ink)`, the ROOM's ink, as the base
-     rule -- right for a holder edge standing in the room (rule cells, page heads, settings options,
-     11.03:1 dark) and wrong on every paper ground, which is why three consumers overrode it back to
-     --strip-ink (the strip edge below, rail.css, team-compose.css) and the fourth, the log tail's
-     Flag, did not: #C9C3B4 on the key's #DED9C6 measured 1.24:1 in the dark room. Three overrides
-     and one miss is a wrong default. Every ground in this world already declares its own ink
-     (body --ink via app.css, .myx-strip and .myx-key --strip-ink), so the label inherits it: a room
-     edge still prints room ink and a paper edge prints paper ink without anyone remembering to. */
-  color: inherit;
-}
+.myx-edge-green .myx-edge-mark { background: var(--ok); }
+.myx-edge-amber .myx-edge-mark { background: var(--warn); }
+.myx-edge-red   .myx-edge-mark { background: var(--danger); }
+.myx-edge-grey  .myx-edge-mark { background: var(--fg-subtle); }
+.myx-edge-label { font-size: var(--text-1); color: inherit; }
 
 /* --- Strip: the one row module. The edge column holds a holder edge whose
    mark is inset until the strip is selected, when it runs the full height. --- */
@@ -756,36 +749,22 @@
 .myx-scope {
   display: flex;
   flex-direction: column;
-  margin: var(--space-0);
-  background: var(--scope);
-  border: var(--hair) solid var(--scope-grid);
-  border-radius: 0;
+  min-width: 0;
+  margin: 0;
+  background: var(--bg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
 }
 .myx-scope-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) 0;
 }
-.myx-scope-title {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--scope-ink);
-}
-.myx-scope-basis {
-  /* FIGURE: the basis word is read beside a chart's figure, on its baseline. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-1);
-  color: var(--scope-ink);
-}
-.myx-scope-body {
-  padding: var(--space-3);
-  background-image:
-    repeating-linear-gradient(to right, var(--scope-grid) 0 var(--hair), transparent var(--hair) var(--space-6)),
-    repeating-linear-gradient(to bottom, var(--scope-grid) 0 var(--hair), transparent var(--hair) var(--space-6));
-}
+.myx-scope-title { font-size: var(--text-2); font-weight: 500; color: var(--fg); }
+.myx-scope-basis { font-size: var(--text-1); color: var(--fg-subtle); }
+.myx-scope-body { padding: var(--space-4) var(--space-5) var(--space-5); }
 
 /* --- FieldBox: a knob with its provenance and its hot/restart verdict. --- */
 .myx-fbox {

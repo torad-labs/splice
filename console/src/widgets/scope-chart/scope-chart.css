@@ -1,80 +1,72 @@
-/* The scope charts. One ink stepped through four opacities: the holder-edge colours
-   mean attention and are not available as series colours, so a stack is told apart
-   by value and named by the legend beside it. Tokens only for spacing and type. */
+/* The charts (docs/design/DESIGN.md section 7). Bars take the colour of whatever binds `--hue`
+   around them: a head's section binds its head, so a head's charts are drawn in its own colour.
+   Kinds of token are told apart by steps of that one colour and named by the legend beside the
+   plot, which prints every total: the shape reads without colour and in a greyscale capture. */
 .myx-schart {
   display: block;
   width: 100%;
-  height: calc(var(--space-8) * 3);
-  /* transparent, so the inset's ruled grid reads BEHIND the bars (2026-09-23, console design
-     pass): an opaque plot covered the grid and left it showing only under the legend, where it
-     crossed the legend's own strips and read as the two overlapping */
-  background: transparent;
+  height: calc(var(--space-8) * 2.5);
+  background:
+    repeating-linear-gradient(to bottom, var(--chart-grid) 0 var(--hair), transparent var(--hair) 25%);
+  border-bottom: var(--hair) solid var(--line-strong);
 }
 
-/* A hairline of the ground between stacked segments, so two adjacent steps of the
-   same ink read as two segments and not as one longer one. */
-.myx-schart-seg {
-  shape-rendering: crispEdges;
-  stroke: var(--scope);
-  stroke-width: 0.5;
-}
+.myx-schart-seg { shape-rendering: crispEdges; fill: var(--hue, var(--series-1)); }
 
-.myx-schart-fresh { fill: var(--scope-ink); }
-.myx-schart-cached { fill: var(--scope-ink); opacity: 0.62; }
-.myx-schart-write { fill: var(--scope-ink); opacity: 0.38; }
-.myx-schart-out { fill: var(--scope-ink); opacity: 0.2; }
-.myx-schart-upstream { fill: var(--scope-ink); }
-.myx-schart-request { fill: var(--scope-ink); opacity: 0.45; }
-.myx-schart-eager { fill: var(--scope-ink); }
-.myx-schart-deferred { fill: var(--scope-ink); opacity: 0.4; }
-.myx-schart-limited { fill: var(--scope-ink); }
+.myx-schart-cached { opacity: .62; }
+.myx-schart-write { opacity: .38; }
+.myx-schart-out { opacity: .22; }
+.myx-schart-request { opacity: .45; }
+.myx-schart-deferred { opacity: .4; }
 
 .myx-schart-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  /* the legend is printed on the inset's plain ground, a band under the ruled plot */
-  margin: var(--space-3) calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
-  padding: var(--space-3);
-  background: var(--scope);
-  border-top: var(--hair) solid var(--scope-grid);
+  gap: var(--space-2) var(--space-5);
+  margin-block-start: var(--space-4);
 }
 
 .myx-schart-key {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+}
+.myx-schart-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 500;
+  color: var(--fg);
 }
 
 .myx-swatch {
-  width: var(--space-4);
-  height: var(--space-3);
-  background: var(--scope-ink);
   flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  background: var(--hue, var(--series-1));
 }
-
-.myx-swatch-cached { opacity: 0.62; }
-.myx-swatch-write { opacity: 0.38; }
-.myx-swatch-out { opacity: 0.2; }
-.myx-swatch-request { opacity: 0.45; }
-.myx-swatch-deferred { opacity: 0.4; }
+.myx-swatch-cached { opacity: .62; }
+.myx-swatch-write { opacity: .38; }
+.myx-swatch-out { opacity: .22; }
+.myx-swatch-request { opacity: .45; }
+.myx-swatch-deferred { opacity: .4; }
 
 .myx-schart-figure {
-  /* FIGURE: the chart's figure line, tabular so columns line up. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-5);
-  color: var(--scope-ink);
   margin: 0;
-  padding: var(--space-3) 0;
+  padding: var(--space-4) 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-7);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
 }
 
 .myx-schart-note,
 .myx-schart-empty {
-  font-size: var(--text-1);
-  color: var(--scope-ink);
-  opacity: 0.72;
   margin: 0;
-  padding: var(--space-3) 0;
+  padding: var(--space-2) 0;
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
 }

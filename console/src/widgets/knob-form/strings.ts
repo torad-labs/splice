@@ -20,6 +20,8 @@ export const S = {
    *  fact about the knob, beside `applies live`; `restart to apply` read as an order to restart
    *  now, on a page (mcp) that had changed nothing. */
   restart: 'applies on restart',
+  /** The list of knob groups the rack prints beside the knobs, to jump by. */
+  groups: 'knob groups',
 } as const;
 
 /** Where a value came from, in the operator's words. The entity's provenance names are the

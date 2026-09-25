@@ -1,4 +1,5 @@
-// The plan limits bay: every head's own 5h and 7d plan windows, from /api/usage `quota`.
+// The plan limits: every head's own 5h and 7d plan windows, from /api/usage `quota`, one card per
+// head with each window's share large, its meter and its reset.
 //
 // This is the number the operator hunts for before a long session ("which login still has room"),
 // and until 2026-09-24 no page printed it for a single-login head: the accounts route fills its
@@ -8,19 +9,16 @@
 // window from a turn's response headers or the usage poll, so a head that has not run since its
 // window reset still holds the figure from before it (claude-muse read 99% of a 7d window that had
 // reset 3.7 days earlier, live /api/usage 2026-09-24).
-import type { ReactNode } from 'react';
+import { HeadMark } from '@entities/control-status';
 import { planLevel, planWindows, resetsInText } from '@entities/usage';
 import type { PlanWindow } from '@entities/usage';
 import type { HeadUsageEntry, UsagePayload } from '@shared/api';
 import { ABSENT, timeAgo } from '@shared/lib';
-import { Bay, Strip, StripField } from '@shared/ui';
-import type { Edge } from '@shared/ui';
+import { Badge, Empty, Meter, Section } from '@shared/ui';
+import type { Tone } from '@shared/ui';
 import { Blank } from '@shared/controls';
 import { EMPTIES } from './model';
 import { S } from './strings';
-
-/** The rack's widths in ch, shared by the name row and the cells (see ColumnNames in index.tsx). */
-export const PLAN_COLS = [18, 8, 9, 14, 9, 14, 10] as const;
 
 interface PlanRow {
   entry: HeadUsageEntry;
@@ -42,11 +40,11 @@ export function planRows(usage: UsagePayload, nowMs: number): PlanRow[] {
   return rows.sort((left, right) => (right.live?.pct ?? -1) - (left.live?.pct ?? -1) || left.entry.key.localeCompare(right.entry.key));
 }
 
-/** The edge for a row: the fullest live window's level, grey when every window has reset. */
-export function planEdge(row: PlanRow, warnPct: number): { edge: Edge; label: string } {
-  if (row.live === null) return { edge: 'grey', label: S.stale };
-  const level = planLevel(row.live.pct, warnPct);
-  return { edge: level === 'critical' ? 'red' : level === 'warn' ? 'amber' : 'green', label: `${row.live.pct}%` };
+/** A window's tone at its share: danger at the critical line, warn past the daemon's warn line,
+ *  and the neutral ink below both (DESIGN.md section 7: the word says it, the colour repeats it). */
+export function windowTone(pct: number, warnPct: number): Tone {
+  const level = planLevel(pct, warnPct);
+  return level === 'critical' ? 'danger' : level === 'warn' ? 'warn' : 'neutral';
 }
 
 /** One window's two cells: how much is used and when it resets. */
@@ -65,40 +63,57 @@ export function readText(windows: readonly PlanWindow[], nowMs: number): string 
   return newest === null ? ABSENT : timeAgo(newest * 1000, nowMs);
 }
 
-function PlanStrip({ row, warnPct, now }: { row: PlanRow; warnPct: number; now: number }) {
-  const { edge, label } = planEdge(row, warnPct);
-  const five = windowCells(row.windows.find((window) => window.window === '5h'), now);
-  const seven = windowCells(row.windows.find((window) => window.window === '7d'), now);
+/** One window as the card prints it: its name, its share large, the meter, and when it resets. */
+function WindowFigure({ label, window, warnPct, now }: { label: string; window: PlanWindow | undefined; warnPct: number; now: number }) {
+  const cells = windowCells(window, now);
+  const tone = window === undefined || window.stale ? 'neutral' : windowTone(window.pct, warnPct);
   return (
-    <Strip edge={edge} edgeLabel={label} ariaLabel={`${S.planLimits} ${row.entry.label}`}>
-      <StripField w={PLAN_COLS[0]} value={row.entry.label} mono={false} />
-      <StripField w={PLAN_COLS[1]} value={row.entry.usage?.quota?.plan ?? ABSENT} mono={false} />
-      <StripField w={PLAN_COLS[2]} value={five.used} />
-      <StripField w={PLAN_COLS[3]} value={five.resets} mono={false} />
-      <StripField w={PLAN_COLS[4]} value={seven.used} />
-      <StripField w={PLAN_COLS[5]} value={seven.resets} mono={false} />
-      <StripField w={PLAN_COLS[6]} value={readText(row.windows, now)} />
-    </Strip>
+    <div className={`myx-plan-window myx-plan-${tone}`}>
+      <p className="myx-plan-label">{label}</p>
+      <p className="myx-plan-pct">{cells.used}</p>
+      <Meter value={window === undefined || window.stale ? 0 : window.pct / 100} tone={tone} label={`${label} ${cells.used}`} />
+      <p className="myx-plan-resets">
+        {window === undefined ? ABSENT : window.stale ? S.alreadyReset : `${S.resets} ${cells.resets}`}
+      </p>
+    </div>
   );
 }
 
-export function PlanBay({ usage, error = null, now, names }: {
+/** One head's plan: its mark, its plan name, when splice read it, and each window side by side, the
+ *  shape claude-code-router gives a provider's several quotas (DESIGN.md section 7). */
+function PlanCard({ row, warnPct, now }: { row: PlanRow; warnPct: number; now: number }) {
+  return (
+    <article className="myx-plan" aria-label={`${S.planLimits} ${row.entry.label}`}>
+      <header className="myx-plan-head">
+        <HeadMark head={row.entry.key}>{row.entry.label}</HeadMark>
+        {row.entry.usage?.quota?.plan === undefined ? null : <Badge tone="neutral">{row.entry.usage.quota.plan}</Badge>}
+        <span className="myx-plan-read">{`${S.read} ${readText(row.windows, now)}`}</span>
+      </header>
+      <div className="myx-plan-windows">
+        <WindowFigure label={S.fiveWindow} window={row.windows.find((window) => window.window === '5h')} warnPct={warnPct} now={now} />
+        <WindowFigure label={S.sevenWindow} window={row.windows.find((window) => window.window === '7d')} warnPct={warnPct} now={now} />
+      </div>
+    </article>
+  );
+}
+
+export function PlanBay({ usage, error = null, now }: {
   usage: UsagePayload | null;
   /** The read's failure, which the page prints as a fault: a failed read is not still loading. */
   error?: string | null;
   now: number;
-  names: ReactNode;
 }) {
   if (usage === null) return error === null ? <Blank strips={2} /> : null;
   const rows = planRows(usage, now);
   return (
-    <Bay
-      label={S.planLimits}
-      count={rows.length}
-      empty={{ text: EMPTIES.noPlan.text, source: EMPTIES.noPlan.source }}
-      fields={names}
-    >
-      {rows.map((row) => <PlanStrip key={row.entry.key} row={row} warnPct={usage.warn_pct} now={now} />)}
-    </Bay>
+    <Section title={S.planLimits} count={rows.length}>
+      {rows.length === 0 ? (
+        <Empty text={EMPTIES.noPlan.text} source={EMPTIES.noPlan.source} />
+      ) : (
+        <div className="myx-plans">
+          {rows.map((row) => <PlanCard key={row.entry.key} row={row} warnPct={usage.warn_pct} now={now} />)}
+        </div>
+      )}
+    </Section>
   );
 }

@@ -1,18 +1,18 @@
 /* ============================================================
-   splice console · tokens
+   splice console · tokens (docs/design/DESIGN.md section 8)
 
    One calm system in two themes on the root element, dark by default:
      :root, :root[data-theme="dark"]   dark  (the default, whatever the OS says)
      :root[data-theme="light"]         light
 
-   Flat grounds in three quiet steps, one hairline, one accent (the Torad prussian blue, the
-   brand's "instrument" colour) and three status colours that only ever travel with a printed
-   word. Type is Geist (shared/fonts.css). Spacing and type sizes never appear as raw numbers in a
-   page sheet: they come from var(--space-N) and var(--text-N) (ast-grep wall
-   webui-css-tokens-only), and every ink/ground pair below clears WCAG AA in both themes
-   (tests/contrast.test.ts computes them from this file).
-
-   The lattice this file implements is CONTRACTS.md section 1.
+   The chrome is grey: three quiet grounds, one hairline, and the ink itself as the accent, so the
+   primary action is simply the brightest thing on screen. The only hues are data: eight head
+   colours (--head-1..8), each bound to one head wherever it appears, and three status colours
+   that only ever travel with their word. Type is IBM Plex Sans and Plex Mono (shared/fonts.css).
+   Spacing and type sizes never appear as raw numbers in a page sheet: they come from
+   var(--space-N) and var(--text-N) (walls webui-css-tokens-only and webui-css-font-size-scale),
+   colour never leaves this file (webui-css-no-color-literals), and every ink/ground pair below
+   clears WCAG AA in both themes (tests/contrast.test.ts computes them from this file).
    ============================================================ */
 
 :root {
@@ -63,8 +63,10 @@
   --dur-3: 240ms;
   --ease-out: cubic-bezier(.23, 1, .32, 1);
 
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --sidebar-width: 14.5rem; /* 232 */
 
   /* ---------- GROUND ---------- */
   --bg: #0b0c0e;          /* the page */
@@ -79,11 +81,11 @@
   --fg-muted: #a3a6ae;    /*  8.0:1 */
   --fg-subtle: #878a93;   /*  5.7:1, and 4.6:1 on --bg-active */
 
-  /* ---------- ACCENT (one) ---------- */
-  --accent: #6ea8d6;
-  --accent-hover: #86b8df;
-  --accent-fg: #0b0c0e;   /* text on an accent fill, 7.7:1 */
-  --accent-soft: rgba(110, 168, 214, .14);
+  /* ---------- ACCENT: the ink itself ---------- */
+  --accent: #ededf0;
+  --accent-hover: #ffffff;
+  --accent-fg: #0b0c0e;   /* text on an accent fill, 16.8:1 */
+  --accent-soft: rgba(237, 237, 240, .08);
 
   /* ---------- STATUS (always beside its word) ---------- */
   --ok: #4fbf87;
@@ -93,15 +95,27 @@
   --warn-soft: rgba(224, 164, 74, .14);
   --danger-soft: rgba(240, 113, 113, .14);
 
-  /* ---------- CHARTS (series in order; the first is the accent) ---------- */
-  --chart-1: #6ea8d6;
-  --chart-2: #a48ce6;
-  --chart-3: #4fbf87;
-  --chart-4: #e0a44a;
-  --chart-5: #e57ba6;
+  /* ---------- HEADS: one colour per head, in the daemon's registry order ----------
+     OKLCH L .74 C .135 at hues 255 50 190 345 120 300 225 92: blue, orange, teal, pink, lime,
+     violet, sky, gold, the most distinct first. Each clears 7.4:1 on --bg and --bg-raised. */
+  --head-1: #6eadfe;
+  --head-2: #ee8f58;
+  --head-3: #00c5be;
+  --head-4: #e686be;
+  --head-5: #a0b74d;
+  --head-6: #b896f3;
+  --head-7: #1fbcea;
+  --head-8: #c9a732;
+  --head-none: #62666f;   /* a session no head claims; 3.2:1 on --bg-raised */
+
+  /* ---------- SERIES: kinds that are not heads, in grey steps ---------- */
+  --series-1: #ededf0;
+  --series-2: #a3a6ae;
+  --series-3: #6b6f78;
+  --series-4: #3d4048;
   --chart-grid: #1d1f24;
 
-  --focus: #6ea8d6;
+  --focus: #ededf0;
   --overlay: rgba(4, 5, 6, .66);
   --shadow-float: 0 12px 32px rgba(0, 0, 0, .45), 0 0 0 1px #2a2d33;
 }
@@ -120,10 +134,10 @@
   --fg-muted: #50535c;    /*  7.7:1 */
   --fg-subtle: #61646d;   /*  5.9:1, and 5.0:1 on --bg-active */
 
-  --accent: #1b5a92;
-  --accent-hover: #154a79;
-  --accent-fg: #ffffff;   /* 7.2:1 */
-  --accent-soft: rgba(27, 90, 146, .10);
+  --accent: #15161a;
+  --accent-hover: #000000;
+  --accent-fg: #ffffff;   /* 18.1:1 */
+  --accent-soft: rgba(21, 22, 26, .06);
 
   --ok: #166b44;
   --warn: #855304;
@@ -132,14 +146,24 @@
   --warn-soft: rgba(133, 83, 4, .12);
   --danger-soft: rgba(176, 47, 47, .12);
 
-  --chart-1: #1b5a92;
-  --chart-2: #6d4fc2;
-  --chart-3: #1f8a57;
-  --chart-4: #b47507;
-  --chart-5: #b8467a;
+  /* OKLCH L .54 C .15, same hues: each clears 4.0:1 on --bg and --bg-raised. */
+  --head-1: #266ec3;
+  --head-2: #b04d00;
+  --head-3: #008882;
+  --head-4: #a84482;
+  --head-5: #647a00;
+  --head-6: #7d56b8;
+  --head-7: #007eaf;
+  --head-8: #8e6900;
+  --head-none: #8e919a;   /* 3.1:1 on --bg */
+
+  --series-1: #15161a;
+  --series-2: #50535c;
+  --series-3: #8e919a;
+  --series-4: #c9ccd2;
   --chart-grid: #eceef1;
 
-  --focus: #1b5a92;
+  --focus: #15161a;
   --overlay: rgba(20, 22, 26, .32);
   --shadow-float: 0 12px 32px rgba(20, 22, 26, .14), 0 0 0 1px #e1e3e7;
 }

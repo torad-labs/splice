@@ -40,8 +40,9 @@ import {
 import type { TopologyWriteResult } from '@entities/topology';
 import { HeadAddForm, HeadEditRow, headRows } from '@features/head-edit';
 import { useViews, ViewTabs } from '@features/views';
+import { HeadMark } from '@entities/control-status';
 import { cx } from '@shared/lib';
-import { Bay, Empty, HolderEdge } from '@shared/ui';
+import { Badge, Bay, Empty, PageHeader, Section } from '@shared/ui';
 import { Blank, Fault, Input } from '@shared/controls';
 import { HEAD_WORDING, KnobRack, knobMatches } from '@widgets/knob-form';
 import { dispositions } from './coverage';
@@ -234,22 +235,19 @@ export function SettingsPage() {
       className="myx-settings"
       {...(import.meta.env.DEV && sample !== null ? { 'data-sample': sample.name } : {})}
     >
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
+      <PageHeader title={S.title} actions={sample === null ? undefined : <Badge tone="neutral">{S.sample}</Badge>}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {sample === null ? null : <HolderEdge state="grey" label={S.sample} />}
-      </header>
+      </PageHeader>
 
       {config.error === null ? null : <Fault message={config.error} lastRead={sample === null ? config.lastUpdated : null} />}
       {topology.error === null ? null : <Fault message={topology.error} lastRead={sample === null ? topology.lastUpdated : null} />}
       {claude.error === null ? null : <Fault message={claude.error} lastRead={sample === null ? claude.lastUpdated : null} />}
       {claudeFault === null ? null : <Fault message={claudeFault} />}
 
-      <section className="myx-settings-section">
-        <h2 className="myx-settings-title">{S.knobs}</h2>
-        <div className="myx-settings-row">
-          {/* The rail's selector idiom: the active option prints a green holder edge and the rest
-              a grey one, so which head these knobs describe is a printed word and not a colour. */}
+      <Section title={S.knobs} {...(configPayload === null ? {} : { count: shown.length })} className="myx-settings-section">
+        {/* The scope: every head's own values, or the global ones. Each head wears its colour mark
+            (DESIGN.md section 5); which one is chosen is the pressed state and the active ground. */}
+        <div className="myx-settings-scope" role="group" aria-label={S.scope}>
           {headOptions(configPayload?.layers.perHead, heads.map((row) => row.key)).map((option) => (
             <button
               key={option}
@@ -258,7 +256,7 @@ export function SettingsPage() {
               aria-pressed={option === head}
               onClick={() => setHead(option)}
             >
-              <HolderEdge state={option === head ? 'green' : 'grey'} label={option} />
+              {option === 'global' ? option : <HeadMark head={option} />}
             </button>
           ))}
         </div>
@@ -268,35 +266,31 @@ export function SettingsPage() {
             ? `Values saved here become ${head}'s own, written to its overrides in splice.toml. They take effect after a daemon restart.`
             : 'Values saved here apply to every head. Pick a head above to give it a value of its own.'}
         </p>
-        <Input label={S.find} value={query} onChange={setQuery} w={32} placeholder={S.findHint} />
-        {configPayload === null ? <Blank strips={6} /> : null}
-        {pendingRestart.length === 0 ? null : (
-          <div className="myx-settings-row">
-            <HolderEdge state="amber" label={S.restart} />
-            <span className="myx-settings-note">{pendingRestart.join(', ')}</span>
-          </div>
-        )}
-        <Bay
-          label={S.knobs}
-          count={shown.length}
-          empty={{ text: EMPTIES.noKnobs.text, source: EMPTIES.noKnobs.source }}
-        >
-          {configPayload === null ? null : (
-            <KnobRack
-              dispositions={shown}
-              pending={pendingRestart}
-              busyKey={busyKey}
-              onSave={perHeadView ? saveForHead : saveGlobal}
-              scopeNote={scopeNote}
-              {...(perHeadView ? { wording: HEAD_WORDING } : {})}
-              perHead={perHeadView}
-            />
+        <div className="myx-settings-tools">
+          <Input label={S.find} value={query} onChange={setQuery} w={32} placeholder={S.findHint} />
+          {pendingRestart.length === 0 ? null : (
+            <p className="myx-settings-pending">
+              <Badge tone="warn">{S.restart}</Badge>
+              <span className="myx-settings-note">{pendingRestart.join(', ')}</span>
+            </p>
           )}
-        </Bay>
-      </section>
+        </div>
+        {configPayload === null ? <Blank strips={6} /> : shown.length === 0 ? (
+          <Empty text={EMPTIES.noKnobs.text} source={EMPTIES.noKnobs.source} />
+        ) : (
+          <KnobRack
+            dispositions={shown}
+            pending={pendingRestart}
+            busyKey={busyKey}
+            onSave={perHeadView ? saveForHead : saveGlobal}
+            scopeNote={scopeNote}
+            {...(perHeadView ? { wording: HEAD_WORDING } : {})}
+            perHead={perHeadView}
+          />
+        )}
+      </Section>
 
-      <section className="myx-settings-section">
-        <h2 className="myx-settings-title">{S.topology}</h2>
+      <Section title={S.topology} className="myx-settings-section">
         {topologyState === null ? <Blank strips={4} /> : null}
         {fixture === null && topologyState === null ? (
           <Empty text={EMPTIES.noConfig.text} source={EMPTIES.noConfig.source} />
@@ -329,10 +323,9 @@ export function SettingsPage() {
             </Bay>
           </>
         )}
-      </section>
+      </Section>
 
-      <section className="myx-settings-section">
-        <h2 className="myx-settings-title">{S.claudeHead}</h2>
+      <Section title={S.claudeHead} className="myx-settings-section">
         <ClaudeModeSection
           state={fixture === null ? claude.data : {
             mode: 'separate',
@@ -351,7 +344,7 @@ export function SettingsPage() {
           onWrap={() => action(wrapClaudeHead)}
           onUnwrap={() => action(unwrapClaudeHead)}
         />
-      </section>
+      </Section>
     </div>
   );
 }

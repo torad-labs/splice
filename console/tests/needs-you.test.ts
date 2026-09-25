@@ -239,6 +239,15 @@ describe('the doctor', () => {
     expect(out[1].fix).toMatchObject({ kind: 'open', href: '#/doctor' });
   });
 
+  test('a remedy the report masked is printed with why, never offered to copy (Marlin, 2026-09-25)', () => {
+    const checks: DoctorCheck[] = [{ id: 'installation/PATH', status: 'fail', detail: `~/.local/bin is not on PATH${SEP}add to your shell rc: export PATH="<redacted:path>"` }];
+    const [need] = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW).needs;
+    expect(need.fix).toEqual({ kind: 'masked', command: 'add to your shell rc: export PATH="<redacted:path>"' });
+    const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
+    expect(html).toContain(H.masked);
+    expect(html).not.toContain('>Copy<');
+  });
+
   test('a head\'s sign-in check is said once, on the head', () => {
     const checks: DoctorCheck[] = [{ id: 'auth/claudex', status: 'fail', detail: `not signed in${SEP}claudex login` }];
     const out = needsOf(quiet({

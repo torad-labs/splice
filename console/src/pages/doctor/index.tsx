@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { checkFinding, checkSection, collapseChecks, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import { checkFinding, checkSection, collapseChecks, fetchUpgrade, fixMasked, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
 import type { CheckRow, DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
@@ -21,7 +21,7 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Blank, Choice, Copy, Fault, Input, Key, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
-import { Badge, DataTable, DetailPanel, Empty, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
 import {
   EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersionText, gateReport, groupChecks, latestText, logsHeadOf,
@@ -82,14 +82,15 @@ function checkFacts(row: CheckRow): [string, ReactNode][] {
 }
 
 /** The opened check's fix with its copy key. A remedy that is a `splice logs --head` command also
- *  opens that log here, since this console has the page for it. */
-function FixLine({ fix }: { fix: string | null }) {
+ *  opens that log here, since this console has the page for it. A fix the report's redaction
+ *  reached runs nothing as pasted, so it is printed with why and no copy key. */
+export function FixLine({ fix }: { fix: string | null }) {
   if (fix === null) return <Empty text={S.noFix} />;
   const logsHead = logsHeadOf(fix);
   return (
     <p className="myx-dc-fix">
       <code className="myx-dc-command">{fix}</code>
-      <Copy value={fix} label={S.copyFix} />
+      {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} /> : <Copy value={fix} label={S.copyFix} />}
       {logsHead === null ? null : <KeyLink href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</KeyLink>}
     </p>
   );

@@ -10,7 +10,7 @@
 import { exclusionText } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import type { DoctorCheck, DoctorSlice } from '@entities/doctor';
-import { checkFinding, collapseChecks, wantsAttention } from '@entities/doctor';
+import { checkFinding, collapseChecks, fixMasked, wantsAttention } from '@entities/doctor';
 import { headAttention } from '@entities/heads';
 import { inflightFrom, isStalled } from '@entities/perf';
 import { sessionLabel, UNKNOWN_HEAD } from '@entities/session';
@@ -83,6 +83,8 @@ export type Fix =
   | { kind: 'restart'; head: string }
   | { kind: 'restart-daemon' }
   | { kind: 'copy'; command: string }
+  /** A remedy the report's redaction reached: printed with why, never offered to copy. */
+  | { kind: 'masked'; command: string }
   | { kind: 'open'; href: string; label: string };
 
 export interface Need {
@@ -274,7 +276,7 @@ function doctorNeeds(checks: readonly DoctorCheck[], saidFor: ReadonlySet<string
     head: null,
     subject: row.label,
     finding: [...new Set(row.members.map(checkFinding))].join('; '),
-    fix: row.fix === null ? open('#/doctor', S.openDoctor) : { kind: 'copy', command: row.fix },
+    fix: row.fix === null ? open('#/doctor', S.openDoctor) : { kind: fixMasked(row.fix) ? 'masked' : 'copy', command: row.fix },
   }));
 }
 

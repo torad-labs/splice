@@ -20,7 +20,7 @@ import { DaemonRestart } from '@features/daemon-restart';
 import { clockText } from '@widgets/rule';
 import { Confirm, Copy, Key, KeyLink } from '@shared/controls';
 import { poll, timeAgo } from '@shared/lib';
-import { Badge, DataTable, Empty, PageHeader, Section } from '@shared/ui';
+import { Badge, DataTable, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
 import type { Column, Tone } from '@shared/ui';
 import { needsOf } from './model';
 import type { Fix, Need, NeedsList, Read, Reading, ReadState } from './model';
@@ -69,10 +69,11 @@ export function FixCell({ fix }: { fix: Fix }) {
     case 'restart-daemon':
       return <DaemonRestart />;
     case 'copy':
+    case 'masked':
       return (
         <span className="myx-ny-fix">
           <code className="myx-ny-command">{fix.command}</code>
-          <Copy value={fix.command} />
+          {fix.kind === 'copy' ? <Copy value={fix.command} /> : <InfoTip text={H.masked} label={S.maskedWhy} />}
         </span>
       );
     case 'open':

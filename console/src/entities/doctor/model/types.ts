@@ -76,6 +76,16 @@ export function wantsAttention(status: DoctorStatus): boolean {
   return status === 'fail' || status === 'warn';
 }
 
+/**
+ * Whether the report's redaction reached a fix: the daemon masks a value (`<redacted>`) or a path it
+ * does not recognise (`<redacted:path>`), and a line with a mask in it runs nothing as pasted
+ * (Marlin, 2026-09-25: `export PATH="<redacted:path>"` sat beside a Copy button). Such a fix is
+ * printed, never offered to copy.
+ */
+export function fixMasked(fix: string): boolean {
+  return /<redacted(?::[a-z-]+)?>/.test(fix);
+}
+
 /** What the check found: its detail without the remedy, which a page prints on its own line. */
 export function checkFinding(check: DoctorCheck): string {
   const at = check.detail.indexOf(FIX_SEPARATOR);

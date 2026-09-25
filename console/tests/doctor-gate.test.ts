@@ -16,9 +16,9 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
-import { collapseChecks, isRedacted, leaksIn, leaksInText } from '../src/entities/doctor';
+import { collapseChecks, fixMasked, isRedacted, leaksIn, leaksInText } from '../src/entities/doctor';
 import type { CheckRow, DoctorCheck, DoctorPayload } from '../src/entities/doctor';
-import { DoctorBoard, openIdOf } from '../src/pages/doctor';
+import { DoctorBoard, FixLine, openIdOf } from '../src/pages/doctor';
 import { EMPTIES } from '../src/pages/doctor/model';
 import { S } from '../src/pages/doctor/strings';
 import { ABSENT } from '../src/shared/lib';
@@ -215,5 +215,24 @@ describe('an opened check stays open while its status moves', () => {
     const recorded = openIdOf(warnRow as CheckRow);
     expect(opened('warn', recorded)).toBeGreaterThan(closed);
     expect(opened('fail', recorded), 'the detail closed as the check got worse').toBeGreaterThan(closed);
+  });
+});
+
+describe('a fix the report masked is never offered to copy', () => {
+  // Marlin, 2026-09-25: `export PATH="<redacted:path>"` sat beside a Copy button, which copies a
+  // line that runs nothing. The daemon's own masks mark it; anything else is a real command.
+  test('the daemon\'s masks mark a fix; a real command does not', () => {
+    expect(fixMasked('add to your shell rc: export PATH="<redacted:path>"')).toBe(true);
+    expect(fixMasked('export OPENROUTER_API_KEY=<redacted>   then: splice restart')).toBe(true);
+    expect(fixMasked('splice install --all')).toBe(false);
+    expect(fixMasked('export PATH="$HOME/.local/bin:$PATH"')).toBe(false);
+  });
+
+  test('the opened check prints a masked fix with why, and a real one with its copy key', () => {
+    const masked = renderToStaticMarkup(h(FixLine, { fix: 'export PATH="<redacted:path>"' }));
+    expect(masked).toContain('export PATH=&quot;&lt;redacted:path&gt;&quot;');
+    expect(masked).not.toContain('Copy fix');
+    expect(masked).toContain('Why no copy');
+    expect(renderToStaticMarkup(h(FixLine, { fix: 'splice install --all' }))).toContain('Copy fix');
   });
 });

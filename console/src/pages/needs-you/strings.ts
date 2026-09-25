@@ -60,6 +60,8 @@ export const S = {
   openTeams: 'Open team',
   openAccounts: 'Open accounts',
   openDoctor: 'Open doctor',
+  /** The tip on a fix the report masked, in place of its copy key. */
+  maskedWhy: 'Why no copy',
 } as const;
 
 export const H = {
@@ -78,6 +80,7 @@ export const H = {
   seatEnded: 'Its bound session ended; bind another in the team.',
   seatUnlisted: 'Its bound session is not in the registry.',
   quietSince: 'Alive, but never heard from since it registered.',
+  masked: 'Part of this line is masked, so it will not run pasted.',
 } as const;
 
 export const U = {

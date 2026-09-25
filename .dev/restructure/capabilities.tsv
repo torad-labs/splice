@@ -2437,3 +2437,4 @@ console/src/features/daemon-upgrade/daemon-upgrade.css	635dc12d06925cd1050655425
 console/tests/daemon-upgrade.test.ts	7c2a3db29413de0d33499ff397b37aa55032aa597c04d95a908bf08f19403c3a	created		the upgrade's wire held to UpgradeRunRoutes.kt and UpgradeRuns.kt, the client, the rules and the rendered run states
 console/src/shared/lib/link.ts	d8796d7efafc31a604487ef7ff2c7cffdb21b91bb7a93fdb2d5dd4d8b00b55a2	created		the link to one item on its page, #/<page>?open=<id>: built and read by one module, so the id a list writes is the id the page opens by
 console/tests/link.test.ts	861cb3389a68e766b02a9aae236c45bed6a13d373ae1bb524ae9404cd7c04090	created		the item link round-trips any id, and a page or a board opens the item it names and nothing when it names none
+app/src/test/kotlin/splice/app/Slf4jProviderTest.kt	a6371b7730cc12e1484e388f69cabc9c9f4d40401b935f66bb0dce128436fbb0	created		SLF4J starts on the shipped classpath, and in the fat jar, without a word on stderr

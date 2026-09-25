@@ -2435,3 +2435,5 @@ console/src/features/daemon-upgrade/model.ts	80e99011a784c087dfd87ddb4a2260cbbac
 console/src/features/daemon-upgrade/strings.ts	93729b30a71b9030a2aa41add7871fd64dda719e8c6a4d3ad6e83d43b94841d2	created		the upgrade form's words, under the copy gate
 console/src/features/daemon-upgrade/daemon-upgrade.css	635dc12d06925cd1050655425da00eeaf81114df548b9e2bf4ffc2a6f249b3c6	created		the upgrade form's layout: the release box and keys, the refusal, the run and its bounded log
 console/tests/daemon-upgrade.test.ts	7c2a3db29413de0d33499ff397b37aa55032aa597c04d95a908bf08f19403c3a	created		the upgrade's wire held to UpgradeRunRoutes.kt and UpgradeRuns.kt, the client, the rules and the rendered run states
+console/src/shared/lib/link.ts	d8796d7efafc31a604487ef7ff2c7cffdb21b91bb7a93fdb2d5dd4d8b00b55a2	created		the link to one item on its page, #/<page>?open=<id>: built and read by one module, so the id a list writes is the id the page opens by
+console/tests/link.test.ts	861cb3389a68e766b02a9aae236c45bed6a13d373ae1bb524ae9404cd7c04090	created		the item link round-trips any id, and a page or a board opens the item it names and nothing when it names none

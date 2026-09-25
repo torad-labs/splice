@@ -14,7 +14,7 @@ export const job: PageJob = {
     { name: 'Restart the daemon' },
     { name: 'Copy a fix command' },
     { name: 'Open the page that holds an item' },
-    { name: 'Open the item itself on its page', row: 'V4-219' },
+    { name: 'Open the item itself on its page' },
     { name: 'Apply a doctor check\'s fix' },
   ],
 };

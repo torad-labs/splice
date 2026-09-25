@@ -22,7 +22,7 @@ import { DoctorFix } from '@features/doctor-fix';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Blank, Choice, Copy, Fault, Input, Key, KeyLink } from '@shared/controls';
-import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
+import { ABSENT, fmtInt, timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
 import {
@@ -329,7 +329,7 @@ export function DoctorPage() {
     return () => stops.forEach((stop) => stop());
   }, []);
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useOpen(useLinkedId());
   const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
 
   const { search } = useLocation();

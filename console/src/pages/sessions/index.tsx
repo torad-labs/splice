@@ -33,6 +33,7 @@ import { HeadlessMark, HeadMark, hueClass, NO_SPLICE_HEAD, NO_SPLICE_HEAD_WHY, u
 import {
   fetchSessionEdges,
   peerLabel,
+  sessionKey,
   sessionLabel,
   startBoardEdgesPolling,
   startSessionsPolling,
@@ -48,7 +49,7 @@ import { FileView } from '@widgets/file-view';
 import { Badge, DataTable, DetailPanel, Empty, Lanes, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { timeAgo } from '@shared/lib';
+import { timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import { H, S, U } from './strings';
 import { groupByOf, groupHref, isLanes, lanesOf, selectionOf } from './select';
 import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, projectText, startedText, toneOf } from './strip';
@@ -184,10 +185,12 @@ const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '20%', project: '18%'
 const WIDTH_WITH_HEAD: Record<string, string> = { name: '16%', head: '14%', project: '16%', life: '24%', peer: '20%' };
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, view, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
+export function SessionsBoard({ payload, view, linked = null, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
   payload: SessionsPayload | null;
   /** The view to draw; the page's active saved view when omitted. A test names the one it is about. */
   view?: View;
+  /** The session a link asks to open (`?open=<session key>`), read by the page. */
+  linked?: string | null;
   /** The OPENED session's edges, for its hand-offs bay. */
   edges?: SessionEdgesPayload | null;
   /** Every session's edges (GET /api/sessions/edges), for the peer column of every row. */
@@ -205,16 +208,10 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
 }) {
   const { active: saved } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const active = view ?? saved;
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  // A registration with no session id still has to be openable, and its key
-  // must not collide with "nothing is open": `session_id === openId` would
-  // match null against null and open the first id-less row on load (found in
-  // the 2026-09-18 capture).
-  const keyOf = (row: SessionRow): string => row.session_id ?? `pid:${row.pid ?? 0}`;
+  const [openId, setOpenId] = useOpen(linked);
 
   const rows = payload?.sessions ?? [];
-  const open = rows.find((row) => keyOf(row) === openId) ?? null;
+  const open = rows.find((row) => sessionKey(row) === openId) ?? null;
 
   // The OPENED session's hand-offs bay reads its own edges route when it opens; the peer column of
   // every row comes from the one board-wide read (GET /api/sessions/edges, the route M2-02 asked
@@ -280,7 +277,7 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
           cell: (row) => {
             const peer = peerFor(row);
             const peerHue = peer?.row == null ? hueClass(0) : hueClass(hueOf(peer.row.head));
-            return <PeerCell peer={peer} hue={peerHue} onOpen={(target) => setOpenId(keyOf(target))} />;
+            return <PeerCell peer={peer} hue={peerHue} onOpen={(target) => setOpenId(sessionKey(target))} />;
           },
         }];
       }
@@ -345,7 +342,7 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
       title: groupTitle(group.key),
       hue: hueClass(headless ? 0 : hueOf(group.key)),
       cards: group.rows.map((row) => ({
-        key: keyOf(row),
+        key: sessionKey(row),
         title: sessionLabel(row),
         meta: projectText(row),
         tone: toneOf(row),
@@ -358,7 +355,7 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
   const messages: LaneMessage[] | null = boardEdges === null
     ? null
     : fleetHandoffs(rows, boardEdges).flatMap((handoff) => (
-      handoff.from === null || handoff.to === null ? [] : [{ from: keyOf(handoff.from), to: keyOf(handoff.to), at: handoff.at }]
+      handoff.from === null || handoff.to === null ? [] : [{ from: sessionKey(handoff.from), to: sessionKey(handoff.to), at: handoff.at }]
     ));
 
   const count = (state: SessionRow['availability']) => rows.filter((row) => row.availability === state).length;
@@ -424,9 +421,9 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
               className="myx-sx-table"
               columns={columns}
               groups={groups}
-              rowKey={keyOf}
+              rowKey={sessionKey}
               label={S.title}
-              onOpen={(row) => setOpenId(keyOf(row))}
+              onOpen={(row) => setOpenId(sessionKey(row))}
               openLabel={(row) => `${S.title} ${sessionLabel(row)}`}
               selectedKey={openId}
               rowTone={(row) => (row.availability === 'stale' ? 'warn' : null)}
@@ -499,6 +496,7 @@ export default function SessionsPage() {
   const registry = useSessionRegistry((s) => s);
   const edges = useSessionEdges((s) => s);
   const boardEdges = useBoardEdges((s) => s);
+  const linked = useLinkedId();
   const [sample, setSample] = useState<{ name: string; payload: SessionsPayload } | null>(null);
   const name = fixtureName();
   const fixture = sample === null ? null : sample.payload;
@@ -535,6 +533,7 @@ export default function SessionsPage() {
   return (
     <SessionsBoard
       payload={fixture ?? registry.data}
+      linked={linked}
       edges={edges.data}
       // Live edges never join a sample's rows: a capture's peers would be another board's.
       boardEdges={fixture === null ? boardEdges.data : null}

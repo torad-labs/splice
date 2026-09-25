@@ -16,6 +16,7 @@ export {
   latestPeer,
   nameForAddress,
   peerLabel,
+  sessionKey,
   sessionLabel,
   timeline,
   UNATTRIBUTED,

@@ -27,7 +27,7 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import type { AuthPayload, UsagePayload } from '@shared/api';
 import { Blank, Fault } from '@shared/controls';
-import { ABSENT, fmtInt } from '@shared/lib';
+import { ABSENT, fmtInt, useLinkedId, useOpen } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import {
@@ -59,7 +59,12 @@ export const DEFAULT_VIEWS: readonly View[] = [
 
 /** The key the detail panel is showing. One thing open at a time, addressed by what it is. */
 export function openAccountKey(account: AccountRow): string {
-  return `account:${accountKey(account)}`;
+  return linkedAccountKey(accountKey(account));
+}
+
+/** The open key of the account a link names by its account key. */
+function linkedAccountKey(key: string): string {
+  return `account:${key}`;
 }
 
 export function openHeadKey(head: string): string {
@@ -181,8 +186,10 @@ export function ApiKeyDetail({ row, keyState = null }: {
 
 /** The board, drawn from a payload it is handed rather than from the store, so a test can hand it
  *  pools (a static render only ever sees a store's initial state). */
-export function AccountsBoard({ payload, headRows = [], usage = null, auth = null, keys = null, nowMs, error = null, lastRead = null, sample }: {
+export function AccountsBoard({ payload, linked = null, headRows = [], usage = null, auth = null, keys = null, nowMs, error = null, lastRead = null, sample }: {
   payload: AccountsState | null;
+  /** The account a link asks to open (`?open=<account key>`), read by the page. */
+  linked?: string | null;
   /** Every head as GET /api/auth reports it: the fallback table, the Claude logins and the keys. */
   headRows?: readonly HeadRow[];
   /** What the heads report for themselves, and their auth cards: the nearest limit reads both for a
@@ -199,7 +206,7 @@ export function AccountsBoard({ payload, headRows = [], usage = null, auth = nul
   sample?: string | undefined;
 }) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useOpen(linked === null ? null : linkedAccountKey(linked));
   const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
 
   const pending = payload !== null && 'pending' in payload;
@@ -337,6 +344,7 @@ export function AccountsPage() {
   const authResource = useAuth((state) => state);
   const usage = useUsage((state) => state.data);
   const keys = useKeys((state) => state.data);
+  const linked = useLinkedId();
 
   const fixture = fixtureName(search, import.meta.env.DEV);
   const nowMs = useNow(CLOCK_MS, fixtureNow(fixture));
@@ -364,6 +372,7 @@ export function AccountsPage() {
   return (
     <AccountsBoard
       payload={rows === null ? accountsResource.data : { accounts: [...rows] }}
+      linked={linked}
       headRows={headRows}
       usage={rows === null ? usage : null}
       auth={rows === null ? authResource.data : null}

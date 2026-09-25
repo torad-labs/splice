@@ -23,7 +23,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
             DoctorCheck(
                 "PATH",
                 CheckStatus.FAIL,
-                "$binDir is not on PATH — installed commands won't resolve",
+                "$binDir is not on PATH, so installed commands won't resolve",
                 "add to your shell rc: ${rcLine(binDir)}",
             )
         }
@@ -63,7 +63,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                 DoctorCheck(
                     CHECK_WRAPPER,
                     CheckStatus.FAIL,
-                    "'$command' at $link is unreadable (${SafeFailureText.render(entryStat)}) — not missing",
+                    "'$command' at $link is unreadable (${SafeFailureText.render(entryStat)}), not missing",
                     "fix access to $link and its parents, then re-run doctor",
                 )
             !Files.isSymbolicLink(link) ->
@@ -99,7 +99,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                     DoctorCheck(
                         CHECK_WRAPPER,
                         CheckStatus.WARN,
-                        "$binDir could not be listed (${SafeFailureText.render(failure)}) — " +
+                        "$binDir could not be listed (${SafeFailureText.render(failure)}), so " +
                             "commands left behind by a renamed or removed head were not checked",
                         "fix access to $binDir, then re-run doctor",
                     ),
@@ -114,7 +114,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                 DoctorCheck(
                     CHECK_WRAPPER,
                     CheckStatus.WARN,
-                    "'${link.fileName}' → $shim names no head in the topology — a renamed or removed head's command",
+                    "'${link.fileName}' → $shim names no head in the topology (left by a renamed or removed head)",
                     "rm $link   (or give a head that command again in the topology)",
                 )
             }

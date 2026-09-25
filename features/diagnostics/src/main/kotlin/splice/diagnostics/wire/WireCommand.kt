@@ -63,13 +63,13 @@ public class WireCommand(
     /** The management key, or null with the reason printed: the route takes nothing else. */
     private fun mgmtKey(envReader: EnvReader): String? = when (val read = MgmtKeyFile().read(envReader)) {
         is MgmtKeyRead.Present -> read.key
-        MgmtKeyRead.Absent -> fail("no management key yet — the daemon mints it on first launch").let { null }
+        MgmtKeyRead.Absent -> fail("no management key yet; the daemon mints it on first launch").let { null }
         is MgmtKeyRead.Unreadable -> fail("management key unreadable: ${read.reason}").let { null }
     }
 
     /** What the head answered, in the head's own words when it refused. */
     private fun report(opts: WireOpts, port: Int, reply: ControlReply?): Boolean = when (reply?.status) {
-        null -> fail("head ${opts.head} is not answering on :$port — is the daemon running? (splice status)")
+        null -> fail("head ${opts.head} is not answering on :$port. Is the daemon running? (splice status)")
         HttpURLConnection.HTTP_OK -> printPayload(reply.body, opts.json)
         HttpURLConnection.HTTP_NOT_FOUND -> fail(JsonScalars.str(parse(reply.body), "error") ?: reply.body)
         else -> fail("head ${opts.head} answered ${reply.status}: ${reply.body}")
@@ -85,7 +85,7 @@ public class WireCommand(
         }
         val cfg = topology.heads[head]
         if (cfg == null) {
-            fail("no head named '$head' in $path — heads: ${topology.heads.keys.joinToString(", ")}")
+            fail("no head named '$head' in $path (heads: ${topology.heads.keys.joinToString(", ")})")
             return null
         }
         return cfg.port
@@ -101,7 +101,7 @@ public class WireCommand(
         val keep = JsonScalars.strOrEmpty(payload["keep"])
         val head = JsonScalars.strOrEmpty(payload["key"])
         output.line(
-            "${BOLD}splice wire $head$RESET $DIM— ${records.size}/$keep kept upstream bodies, oldest first$RESET",
+            "${BOLD}splice wire $head$RESET $DIM(${records.size}/$keep kept upstream bodies, oldest first)$RESET",
         )
         if (records.isEmpty()) output.line("  ${DIM}no upstream request since the daemon started$RESET")
         records.forEach { record -> printRecord(record.jsonObject) }

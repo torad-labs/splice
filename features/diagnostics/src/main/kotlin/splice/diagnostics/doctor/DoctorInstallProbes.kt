@@ -65,7 +65,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
             DoctorCheck(
                 "jar",
                 CheckStatus.FAIL,
-                "jar at $jar is unreadable (${SafeFailureText.render(failure)}) — not missing",
+                "jar at $jar is unreadable (${SafeFailureText.render(failure)}), not missing",
                 "fix access to $jar and its parents, then re-run doctor",
             )
         }
@@ -90,19 +90,19 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
             noSuch && !entryPresent -> DoctorCheck(
                 "shim",
                 CheckStatus.FAIL,
-                "launch shim missing at $shim — every wrapper needs it",
+                "launch shim missing at $shim, and every wrapper needs it",
                 FIX_REINSTALL_SHIM,
             )
             noSuch -> DoctorCheck(
                 "shim",
                 CheckStatus.FAIL,
-                "launch shim at $shim is a dangling symlink — its target is gone",
+                "launch shim at $shim is a dangling symlink: its target is gone",
                 "re-run install.sh; fixing access cannot help a link with no target",
             )
             else -> DoctorCheck(
                 "shim",
                 CheckStatus.FAIL,
-                "launch shim at $shim is unreadable (${SafeFailureText.render(failure)}) — not missing",
+                "launch shim at $shim is unreadable (${SafeFailureText.render(failure)}), not missing",
                 "fix access to $shim and its parents, then re-run doctor",
             )
         }
@@ -115,7 +115,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
                 return DoctorCheck(
                     "shim",
                     CheckStatus.FAIL,
-                    "launch shim at $shim is unreadable (${SafeFailureText.render(failure)}) — not missing",
+                    "launch shim at $shim is unreadable (${SafeFailureText.render(failure)}), not missing",
                     "fix access to $shim and its parents, then re-run doctor",
                 )
             }
@@ -167,7 +167,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
             DoctorCheck(
                 "gh",
                 CheckStatus.INFO,
-                "installed, not signed in — release installs and upgrades skip the provenance check",
+                "installed, not signed in; release installs and upgrades skip the provenance check",
                 "gh auth login",
             )
         }

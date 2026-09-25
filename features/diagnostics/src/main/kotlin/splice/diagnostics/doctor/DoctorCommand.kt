@@ -87,7 +87,7 @@ public class DoctorCommand(
         when {
             failures > 0 ->
                 output.line(
-                    "  " + palette.paint(palette.dead, "$failures issue(s)") + " — fixes listed above. Re-run " +
+                    "  " + palette.paint(palette.dead, "$failures issue(s)") + ": fixes listed above. Re-run " +
                         palette.paint(palette.signal, "splice doctor") + " after.",
                 )
             warnings > 0 ->

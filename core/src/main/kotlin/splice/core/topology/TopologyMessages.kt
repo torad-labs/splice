@@ -30,15 +30,15 @@ public object TopologyMessages {
 
     /** Names both heads and the port so the operator sees the collision, not a phantom bind error. */
     public fun portCollisionMessage(port: Int, keys: List<String>): String =
-        "port $port is claimed by ${keys.joinToString(" and ")} — give each head its own port"
+        "port $port is claimed by ${keys.joinToString(" and ")}; give each head its own port"
 
     /** Names the head and its out-of-range port so the operator sees the config problem, not a
      *  phantom bind error (CTL-005). */
     public fun invalidPortMessage(key: String, port: Int): String =
-        "head '$key' has an invalid port $port (must be $validPortRange) — fix [heads.$key] port in splice.toml"
+        "head '$key' has an invalid port $port (must be $validPortRange); fix [heads.$key] port in splice.toml"
 
     /** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
      *  Naming both heads points the operator at the topology collision instead of a phantom head. */
     public fun ambiguousHeadMessage(command: String, keys: List<String>): String =
-        "ambiguous head '$command' — heads ${keys.joinToString(" and ")} both use that command; fix the topology"
+        "ambiguous head '$command': heads ${keys.joinToString(" and ")} both use that command; fix the topology"
 }

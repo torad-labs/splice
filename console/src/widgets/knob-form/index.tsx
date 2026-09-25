@@ -108,7 +108,7 @@ const DOUBLINGS = 3;
  *  floor and no ceiling (ConfigCoercion), so the scale is logarithmic, three doublings either side
  *  of the reference; a percent has both ends and reads 0 to 100. A port is an address, not an
  *  amount, and a zero has no place on a log scale (it means "no limit" on the knobs that take it),
- *  so neither draws one. */
+ *  so neither draws one. The row draws it only off its reference (Scale). */
 export function scaleOf(unit: KnobUnit | undefined, value: ConfigValue, reference: ConfigValue): { at: number; mark: number } | null {
   if (typeof value !== 'number' || typeof reference !== 'number' || unit === undefined || unit === 'port') return null;
   if (unit === 'percent') return { at: clamp(value / 100), mark: clamp(reference / 100) };
@@ -116,8 +116,11 @@ export function scaleOf(unit: KnobUnit | undefined, value: ConfigValue, referenc
   return { at: clamp(0.5 + Math.log2(value / reference) / (DOUBLINGS * 2)), mark: 0.5 };
 }
 
+/** The scale, drawn only off the reference and with the reference's mark labelled. At the reference
+ *  there is nothing to place: a rack at defaults drew dozens of identical centred sliders that do
+ *  not drag, and said "at default" only to a screen reader (Hitstop, 2026-09-25). */
 function Scale({ unit, value, reference, label, word }: { unit: KnobUnit | undefined; value: ConfigValue; reference: ConfigValue; label: string; word: string }) {
-  const scale = scaleOf(unit, value, reference);
+  const scale = value === reference ? null : scaleOf(unit, value, reference);
   if (scale === null) return null;
   const pct = (share: number): string => `${share * 100}%`;
   const from = Math.min(scale.at, scale.mark);
@@ -126,6 +129,7 @@ function Scale({ unit, value, reference, label, word }: { unit: KnobUnit | undef
       <span className="myx-knob-scale-run" style={{ left: pct(from), width: pct(Math.abs(scale.at - scale.mark)) }} />
       <span className="myx-knob-scale-mark" style={{ left: pct(scale.mark) }} />
       <span className="myx-knob-scale-dot" style={{ left: pct(scale.at) }} />
+      <span className="myx-knob-scale-ref" style={{ left: pct(scale.mark) }} aria-hidden="true">{`${word} ${String(reference)}`}</span>
     </span>
   );
 }

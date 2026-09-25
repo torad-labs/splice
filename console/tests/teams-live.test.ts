@@ -133,6 +133,13 @@ describe('the members', () => {
     expect(members[1]).toMatchObject({ turns: null, tokensIn: null, tokensOut: null, costEst: null, checks: null, lastTurn: null });
   });
 
+  test("a slot on a head the daemon did not read has no tally: splice never saw its turns (Marlin, 2026-09-25)", () => {
+    // The daemon still answers the slot, with zeros it never measured: a plain `claude` architect
+    // read $0.000 and 0 turns beside members splice does see.
+    const unread = membersOf(TEAM, SESSIONS, { ...ECONOMICS, heads_read: ['claudex'] }, NOW);
+    expect(unread[0]).toMatchObject({ head: 'claude', turns: null, tokensIn: null, tokensOut: null, costEst: null, checks: null, lastTurn: null });
+  });
+
   test('a figure no route reports is null, never a zero', () => {
     for (const member of members) {
       expect(member.window).toBeNull();
@@ -163,7 +170,7 @@ describe('the messages and the activity', () => {
   const members = membersOf(TEAM, SESSIONS, ECONOMICS, NOW);
 
   test('the sender resolves by session and the recipient by slot; a stranger keeps its own string', () => {
-    const messages = messagesOf(members, CHAT);
+    const messages = messagesOf(members, CHAT) ?? [];
     expect(messages.map((m) => [m.time, m.from, m.to, m.fromHead])).toEqual([
       [hhmm(NOW - 600_000), 'lead-seat', 'bbbbbbbb-2222', 'claude'],
       [hhmm(NOW - 300_000), 'cccccccc-9999', 'someone-else', '–'],
@@ -171,10 +178,16 @@ describe('the messages and the activity', () => {
   });
 
   test('a text the daemon could not read prints its reason, and no packet is invented', () => {
-    const messages = messagesOf(members, CHAT);
+    const messages = messagesOf(members, CHAT) ?? [];
     expect(messages[0].text).toBe('build it');
     expect(messages[1].text).toBe('text not read: no transcript for the sender in ~/.claude/projects');
     expect(messages.every((m) => m.packet === '–')).toBe(true);
+  });
+
+  test('a chat or an activity not read yet is null, never an empty day (Hitstop, 2026-09-25)', () => {
+    expect(messagesOf(members, null)).toBeNull();
+    expect(activityOf(members, null)).toBeNull();
+    expect(messagesOf(members, { ...CHAT, messages: [] })).toEqual([]);
   });
 
   test('a sample lands under its member', () => {
@@ -182,15 +195,15 @@ describe('the messages and the activity', () => {
   });
 
   test("panels answered for ANOTHER team are not this team's", () => {
-    const board = boardOf(TEAM, SESSIONS, { ...PANELS, teamId: 'team-2' }, NOW);
-    expect(board.messages).toEqual([]);
+    const board = boardOf(TEAM, SESSIONS, { ...PANELS, teamId: 'team-2' }, NOW, null);
+    expect(board.messages).toBeNull();
     expect(board.members[0].turns).toBeNull();
     expect(viewDataOf(board, [], [], { ...PANELS, teamId: 'team-2' }, NOW)).toBeNull();
     expect(panelStates(board, { ...PANELS, teamId: 'team-2' }).chat).toBeNull();
   });
 
   test("a panel that failed is the widget's error, not an empty list", () => {
-    const board = boardOf(TEAM, SESSIONS, { ...PANELS, chat: { error: 'HTTP 500' } }, NOW);
+    const board = boardOf(TEAM, SESSIONS, { ...PANELS, chat: { error: 'HTTP 500' } }, NOW, null);
     const states = panelStates(board, { ...PANELS, chat: { error: 'HTTP 500' } });
     expect(states.chat).toEqual({ error: 'HTTP 500' });
     expect(states.feed).toMatchObject({ clientMatching: true });
@@ -292,7 +305,7 @@ describe('the turns running now', () => {
   });
 
   test('the count is the running turns, and it is unknown, not none, before the heads answer', () => {
-    const board = boardOf(TEAM, SESSIONS, PANELS, NOW);
+    const board = boardOf(TEAM, SESSIONS, PANELS, NOW, null);
     const data = viewDataOf(board, [], GATES, PANELS, NOW);
     expect(data?.inFlight).toBe(2);
     expect(data?.turns.filter((t) => t.live)).toHaveLength(2);

@@ -3,6 +3,7 @@
 // basis of every field that is not measured, and the peer. Pure, so it is directly testable.
 import type { Basis, Tone } from '@shared/ui';
 import { timeAgo } from '@shared/lib';
+import { NO_SPLICE_HEAD } from '@entities/control-status';
 import { nameForAddress, peerLabel, sessionLabel, UNKNOWN_HEAD } from '@entities/session';
 import type { BoardEdgesPayload, SessionEdge, SessionRow } from '@entities/session';
 import { S } from './strings';
@@ -142,7 +143,7 @@ export function projectText(row: SessionRow): string | null {
  *  splice`), or not readable (`no splice head`). It printed `unknown head` for both. */
 export function headText(row: SessionRow): string {
   if (row.head !== '' && row.head !== UNKNOWN_HEAD) return row.head;
-  return row.route === 'direct' ? S.direct : S.noHead;
+  return row.route === 'direct' ? S.direct : NO_SPLICE_HEAD;
 }
 
 /**

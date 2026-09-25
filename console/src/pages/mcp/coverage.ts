@@ -8,10 +8,20 @@
 //
 // `/mcp/{name}` is NOT declared anywhere as a page name: the baseline already excludes it with a
 // reason ("client transport, not an operator surface").
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   // The shared MCP host's status. Read-only, and the only MCP route that exists: there is no
   // restart route, which the page prints as an honest empty rather than inventing a call.
   { kind: 'route', name: '/api/mcp', disposition: 'read-only' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'Which MCP servers are running, and are they healthy and within limits?',
+  leaves: 'Each server\'s state, sessions, restarts and last error, and the host limits in effect.',
+  actions: [
+    { name: 'Open a server' },
+    { name: 'Edit the host limits in Settings' },
+  ],
+};

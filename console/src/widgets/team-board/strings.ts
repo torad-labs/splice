@@ -8,7 +8,7 @@ export const S = {
   slotsBound: 'Slots bound',
   turns: 'Turns',
   tokens: 'Tokens',
-  cost: 'Cost',
+  cost: 'API cost',
   inFlight: 'In flight',
   messages: 'Messages',
   lastHour: 'Last hour',
@@ -62,13 +62,15 @@ export const S = {
   noTurnsToday: 'No turns today',
   readingTurns: 'Reading turns',
   /** The economics. */
-  costPerRole: 'Cost per role',
+  costPerRole: 'Per-role API cost',
   turnsPerSlot: 'Turns per slot',
   economicsWhy: 'About lifetime totals',
   untaggedWhy: 'About untagged turns',
-  readingCosts: 'Reading costs',
-  costsUnreadable: 'Costs unreadable',
+  readingCosts: 'Reading API costs',
+  costsUnreadable: 'Estimates unreadable',
   noTurns: 'No turns yet',
+  /** The tip on a role splice never saw. */
+  unseenWhy: 'Why unknown',
   /** What any cell with no value prints (ABSENT in @shared/lib). */
   absent: ABSENT,
 } as const;
@@ -80,6 +82,7 @@ export const H = {
   economics: 'Lifetime totals, joined to slots on the session tag.',
   untagged: "Turns on the team's heads that carried no session tag.",
   noTurns: "Turns show here once the team's sessions run them.",
+  unseen: 'Splice never sees turns on a head it does not run.',
 } as const;
 
 export const U = {
@@ -90,4 +93,6 @@ export const U = {
   turns: 'turns',
   running: 'running',
   kb: 'KB',
+  /** Before the roles a lifetime figure leaves out. */
+  without: 'without',
 } as const;

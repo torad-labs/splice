@@ -244,13 +244,14 @@ const LAST_HOUR = Array.from({ length: 61 }, (_, index) => {
 });
 
 /** The sample team, as the page draws it. */
-export const sampleBoard: TeamPayload = {
+export const sampleBoard = {
   team: TEAM,
   members: MEMBERS,
   messages: MESSAGES,
   activity: ACTIVITY,
   coldCacheHint: false,
-};
+  spliceHeads: new Set(['claudex', 'claude-grok', 'bonsai-2-27b']),
+} satisfies TeamPayload;
 
 /** What the views read beyond the board: the day's turns, the lifetime tallies, the last hour. */
 export const sampleData: TeamViewData = {

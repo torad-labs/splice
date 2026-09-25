@@ -3,6 +3,7 @@
 // both.
 export const S = {
   title: 'Logs',
+  about: 'About logs',
   locked: 'Console locked',
   unreadable: 'Log unreadable',
   sample: 'Sample data',
@@ -22,5 +23,6 @@ export const S = {
 } as const;
 
 export const H = {
+  about: "The tail of each head's log, as the daemon wrote it.",
   locked: 'The management key unlocks this page.',
 } as const;

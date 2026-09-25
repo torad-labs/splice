@@ -121,7 +121,8 @@ topology editor or the forms are the primary settings surface.
 
 1. Every number on screen comes from the daemon and says whether it is measured, estimated,
    unavailable or stale.
-2. Read-only by default. A mutation confirms first and names the live sessions it will interrupt.
+2. Every CLI capability has a console action; a mutation confirms first and names the live sessions
+   it interrupts. (Operator ruling, 2026-09-25; the coverage wall holds the CLI's verbs to it.)
 3. Every knob shows where its value came from and whether a change is live or needs a restart.
 4. Every surface designs its whole state cycle: loading, empty, nominal, warn, error, stale.
 5. N heads read as N identical instruments. Consistency is the feature, and a head that is down

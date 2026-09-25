@@ -29,7 +29,7 @@ import type { View } from '@features/views';
 import { ArrowLeftIcon } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { ArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight';
 import { ArrowUpRightIcon } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
-import { HeadMark, hueClass, useControlStatus, useHues } from '@entities/control-status';
+import { HeadlessMark, HeadMark, hueClass, NO_SPLICE_HEAD, NO_SPLICE_HEAD_WHY, useControlStatus, useHues } from '@entities/control-status';
 import {
   fetchSessionEdges,
   peerLabel,
@@ -45,7 +45,7 @@ import {
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
-import { Badge, DataTable, DetailPanel, Empty, InfoTip, Lanes, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, Lanes, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
@@ -75,7 +75,7 @@ const AVAILABILITY: Record<SessionRow['availability'], string> = { live: S.live,
 
 /** Why a session has no head: splice did not start it, or the daemon could not read how it was
  *  started. It says only what the registry knows: where a turn goes is the turns page's fact. */
-export const NO_HEAD_WHY = H.noHead;
+export const NO_HEAD_WHY = NO_SPLICE_HEAD_WHY;
 
 /** Why a group of sessions has no head, for its tip, from each row's route when the daemon reports
  *  one: a session started with `claude` directly skips splice; one whose environment could not be
@@ -297,12 +297,7 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
     if (by === 'head' || by === null) {
       if (key !== UNKNOWN_HEAD) return <HeadMark head={key} />;
       const headless = rows.filter((row) => row.head === UNKNOWN_HEAD);
-      return (
-        <span className="myx-sx-headless">
-          <HeadMark head="" hue={0}>{S.noHead}</HeadMark>
-          <InfoTip text={noHeadWhy(headless)} label={S.noHead} side="bottom" />
-        </span>
-      );
+      return <HeadlessMark why={noHeadWhy(headless)} />;
     }
     if (by === 'repo') return key === 'unattributed' ? key : baseOf(key);
     return key;
@@ -346,7 +341,7 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
     const headless = group.key === UNKNOWN_HEAD;
     return {
       key: group.key,
-      name: headless ? S.noHead : registry?.find((entry) => entry.key === group.key)?.label ?? group.key,
+      name: headless ? NO_SPLICE_HEAD : registry?.find((entry) => entry.key === group.key)?.label ?? group.key,
       title: groupTitle(group.key),
       hue: hueClass(headless ? 0 : hueOf(group.key)),
       cards: group.rows.map((row) => ({
@@ -359,8 +354,9 @@ export function SessionsBoard({ payload, view, edges = null, boardEdges = null, 
       })),
     };
   });
-  const messages: LaneMessage[] = boardEdges === null
-    ? []
+  // Hand-offs not read yet are null, not none: the lanes take no read of them until they are.
+  const messages: LaneMessage[] | null = boardEdges === null
+    ? null
     : fleetHandoffs(rows, boardEdges).flatMap((handoff) => (
       handoff.from === null || handoff.to === null ? [] : [{ from: keyOf(handoff.from), to: keyOf(handoff.to), at: handoff.at }]
     ));

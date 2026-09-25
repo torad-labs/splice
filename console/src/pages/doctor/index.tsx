@@ -12,8 +12,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { checkFinding, checkSection, fetchUpgrade, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
-import type { DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
+import { checkFinding, checkSection, collapseChecks, fetchUpgrade, fixMasked, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import type { CheckRow, DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
 import { DaemonRestart } from '@features/daemon-restart';
@@ -21,13 +21,13 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Blank, Choice, Copy, Fault, Input, Key, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, timeAgo } from '@shared/lib';
-import { Badge, DataTable, DetailPanel, Empty, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
 import {
-  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersionText, collapseChecks, gateReport, groupChecks, latestText, logsHeadOf,
+  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersion, gateReport, groupChecks, latestText, logsHeadOf,
   playgroundNext, reportFacts, rollbackText, rowTone, statusParts, subjectOf,
 } from './model';
-import type { CheckRow, PlaygroundEvent } from './model';
+import type { PlaygroundEvent } from './model';
 import { fixtureDoctor } from './fixtures/doctor';
 import { fixtureName } from './model';
 import { dispositions } from './coverage';
@@ -82,14 +82,16 @@ function checkFacts(row: CheckRow): [string, ReactNode][] {
 }
 
 /** The opened check's fix with its copy key. A remedy that is a `splice logs --head` command also
- *  opens that log here, since this console has the page for it. */
-function FixLine({ fix }: { fix: string | null }) {
+ *  opens that log here, since this console has the page for it. A fix the report's redaction
+ *  reached runs nothing as pasted, so it is printed with why and no copy key. The why opens below
+ *  its mark: a long command wraps the mark under it, and a tip above would cover the masked part. */
+export function FixLine({ fix }: { fix: string | null }) {
   if (fix === null) return <Empty text={S.noFix} />;
   const logsHead = logsHeadOf(fix);
   return (
     <p className="myx-dc-fix">
       <code className="myx-dc-command">{fix}</code>
-      <Copy value={fix} label={S.copyFix} />
+      {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} side="bottom" /> : <Copy value={fix} label={S.copyFix} />}
       {logsHead === null ? null : <KeyLink href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</KeyLink>}
     </p>
   );
@@ -106,6 +108,7 @@ function Figures({ shown, checks, upgrade }: { shown: DoctorPayload | null; chec
   const attention = shown === null ? null : attentionCount(checks);
   const parts = shown === null ? null : attentionParts(checks);
   const failing = checks.some((check) => check.status === 'fail');
+  const claude = shown === null ? null : claudeVersion(shown.claude_code.version);
   return (
     <StatRow>
       <Stat
@@ -124,7 +127,11 @@ function Figures({ shown, checks, upgrade }: { shown: DoctorPayload | null; chec
         value={shown?.splice.version ?? ABSENT}
         {...(upgrade === null ? {} : { sub: <Badge tone={verdictTone(upgrade)}>{S.verdictName[upgradeVerdict(upgrade)]}</Badge> })}
       />
-      <Stat label={S.claudeCode} value={shown === null ? ABSENT : claudeVersionText(shown.claude_code.version)} />
+      <Stat
+        label={S.claudeCode}
+        value={claude?.figure ?? ABSENT}
+        {...(claude?.note == null ? {} : { sub: claude.note })}
+      />
     </StatRow>
   );
 }
@@ -230,7 +237,7 @@ export function DoctorBoard({ report, pending = null, error = null, lastRead = n
 
   return (
     <div className="myx-dc" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
-      <PageHeader title={S.title} {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}>
+      <PageHeader title={S.title} info={{ text: H.about, label: S.about }} {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
 

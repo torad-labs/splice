@@ -11,7 +11,7 @@
 // the accounts page prints.
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { startAccountsPolling, useAccounts } from '@entities/account';
+import { poolOf, selectedExcluded, startAccountsPolling, useAccounts } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { fetchConfig, fetchTopologyStale, knobDispositions, useConfig } from '@entities/config';
@@ -37,7 +37,7 @@ import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
 import { Blank, Confirm, Copy, Fault, Key, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo } from '@shared/lib';
 import {
-  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow,
+  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow, Tip,
 } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { NextRule, accountColumns, accountKey, accountName, accountTone } from '@widgets/account-table';
@@ -45,7 +45,7 @@ import { KnobReadout } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import {
   EMPTIES, HEAD_FIELDS, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
-  inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone, windowTone,
+  inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone, windowTone,
 } from './model';
 import type { CauseHelp, LastTurn } from './model';
 import { H, S } from './strings';
@@ -168,6 +168,10 @@ function Latency({ line }: { line: HeadLine }) {
 /** Up to this many slots, each is a pip the eye can count; past it, a meter. */
 const PIPS_MAX = 16;
 
+/** Past this many slots, the pips stand in two even rows: one row of twelve does not fit the
+ *  column beside its figure, and wrapped nine and three. */
+const PIPS_ROW = 8;
+
 function InFlight({ head }: { head: HeadStatus }) {
   const gate = head.gate;
   if (gate === null) return <>{ABSENT}</>;
@@ -175,7 +179,13 @@ function InFlight({ head }: { head: HeadStatus }) {
   if (gate.max <= PIPS_MAX) {
     return (
       <span className="myx-fl-slots">
-        <Pips used={gate.inflight} total={gate.max} label={`${S.inflight} ${head.label}`} mark={gate.inflight >= gate.max ? 'warn' : 'series-1'} />
+        <Pips
+          used={gate.inflight}
+          total={gate.max}
+          label={`${S.inflight} ${head.label}`}
+          mark={gate.inflight >= gate.max ? 'warn' : 'series-1'}
+          rows={gate.max > PIPS_ROW ? 2 : 1}
+        />
         <span className="myx-fl-figure">{inflightText(head)}</span>
       </span>
     );
@@ -198,7 +208,9 @@ function WindowFigure({ window, label }: { window: HeadWindow; label: string }) 
 function LastTurnCell({ last, nowMs }: { last: LastTurn; nowMs: number }) {
   switch (last.kind) {
     case 'live':
-      return <Badge tone="accent" quiet>{`${last.phase} ${fmtMs(last.ageMs)}`}</Badge>;
+      // The column has room for a word, and "streaming 3.2s" ran past its edge at 1600: the cell
+      // says a turn is running, and its phase and age stand in the tip.
+      return <Tip text={`${last.phase} ${fmtMs(last.ageMs)}`}><Badge tone="accent" quiet>{S.running}</Badge></Tip>;
     case 'ago':
       return <>{timeAgo(last.ts, nowMs)}</>;
     case 'none':
@@ -407,7 +419,7 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
 
   return (
     <div className="myx-fl">
-      <PageHeader title={S.title} actions={all.length === 0 ? undefined : <AddHead />}>
+      <PageHeader title={S.title} info={{ text: H.about, label: S.about }} actions={all.length === 0 ? undefined : <AddHead />}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
 

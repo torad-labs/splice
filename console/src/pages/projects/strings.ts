@@ -16,7 +16,7 @@ export const S = {
   sessions: 'Sessions',
   teams: 'Teams',
   turns: 'Turns today',
-  cost: 'Cost today',
+  cost: 'API cost today',
   last: 'Last seen',
   state: 'State',
   /** Something is running in the repo now, or nothing is. */

@@ -177,6 +177,8 @@ describe('the knob row', () => {
   test('a number draws where it sits against its default', () => {
     const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 24, defaultValue: 12 }), pending: false, onSave: () => undefined }));
     expect(html).toContain('aria-label="Concurrent turns: 24, default 12"');
+    // the reference is labelled under its mark
+    expect(html).toContain('myx-knob-scale-ref" style="left:50%" aria-hidden="true">default 12<');
     // twice the default is one doubling of the three either side: a sixth right of centre
     expect(scaleOf('count', 24, 12)).toEqual({ at: 0.5 + 1 / 6, mark: 0.5 });
     expect(scaleOf('count', 12, 12)).toEqual({ at: 0.5, mark: 0.5 });
@@ -187,6 +189,11 @@ describe('the knob row', () => {
     expect(scaleOf('count', 0, 12)).toBeNull();
     expect(scaleOf('port', 3100, 3099)).toBeNull();
     expect(scaleOf(undefined, 4, 4)).toBeNull();
+  });
+
+  test('a value at its default draws no scale: nothing is off, so nothing is placed (Hitstop, 2026-09-25)', () => {
+    const html = render(h(KnobForm, { disposition: knob({ key: 'maxInflight', value: 12, defaultValue: 12 }), pending: false, onSave: () => undefined }));
+    expect(html).not.toContain('myx-knob-scale');
   });
 
   test('the source is the layer stack with the winner lit, and live or restart is a glyph', () => {

@@ -4,7 +4,7 @@
 // pair as one bar whose pale end reaches p95, an idle turn against its head's own limit. The
 // figure stays beside every shape, and an absent value prints the absence dash, never a zero the
 // daemon did not report.
-import { STAGE_MARKS, waterfall } from '@entities/perf';
+import { isStalled, STAGE_MARKS, waterfall } from '@entities/perf';
 import type { InflightTurn, PerfStats, PerfSummaryHead, TurnRow } from '@entities/perf';
 import type { HeadStatus } from '@shared/api';
 import { HeadMark } from '@entities/control-status';
@@ -178,12 +178,6 @@ export function Gates({ slots }: { slots: readonly HeadSlots[] }) {
       ))}
     </div>
   );
-}
-
-/** A live turn idle past its head's own stream idle limit is the one that needs the operator: it
- *  is the difference between a turn that is reasoning and one that has hung. */
-export function isStalled(turn: InflightTurn): boolean {
-  return turn.idleMs > turn.streamIdleMs;
 }
 
 export function inflightColumns(nameOf: (key: string) => string): Column<InflightTurn>[] {

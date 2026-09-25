@@ -2,6 +2,7 @@
 // sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure.
 export const S = {
   title: 'Fleet',
+  about: 'About the fleet',
   byHead: 'By head',
   byProvider: 'By provider',
   attentionFirst: 'Attention first',
@@ -40,6 +41,8 @@ export const S = {
   openLog: 'Open log',
   signIn: 'Sign in',
   none: 'None',
+  /** The last turn of a head with one running now: the word the team timeline gives a live turn. */
+  running: 'Running',
   noHeads: 'No heads yet',
   fieldsUnavailable: 'Model list unavailable',
   poolsUnavailable: 'Pools unavailable',
@@ -70,6 +73,7 @@ export const S = {
 } as const;
 
 export const H = {
+  about: 'Every head, its health, and the account each will use next.',
   firstByte: "Time to first byte over the fleet's recent turns.",
   add: 'Add another provider from a terminal with this command.',
   noHeads: 'Run splice setup, then splice add for each further provider.',

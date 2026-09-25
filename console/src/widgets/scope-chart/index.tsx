@@ -9,9 +9,9 @@
 //
 // WHY RECTS ONLY. The SVG stretches to its frame with preserveAspectRatio="none", which distorts
 // anything that is not an axis-aligned rectangle. Bars survive it; a stroke or a circle would not.
+import type { ReactNode } from 'react';
 import type { EconomicsBucket } from '@shared/api';
 import { costOf, sum } from '@entities/economics';
-import type { CostRates } from '@entities/economics';
 import { fmtBytes, fmtInt, fmtTokens } from '@shared/lib';
 import { ScopeInset } from '@shared/ui';
 import { limitedRows, peakMax, peakOf, tokenRows, byteRows, toolRows, totalOf, windowHours } from './model';
@@ -78,11 +78,13 @@ function StackedBars({ rows, series, ariaLabel, mode = 'stack' }: {
   );
 }
 
-/** The legend: a swatch, the series name, and the number. The number is the point. */
-function Legend({ rows, series, format = fmtTokens }: {
+/** The legend: a swatch, the series name, and the number. The number is the point. [children] are
+ *  keys with no series of their own, printed after the swatched ones. */
+function Legend({ rows, series, format = fmtTokens, children }: {
   rows: readonly HourRow[];
   series: readonly Series[];
   format?: (value: number) => string;
+  children?: ReactNode;
 }) {
   return (
     <div className="myx-schart-legend">
@@ -93,6 +95,7 @@ function Legend({ rows, series, format = fmtTokens }: {
           <span className="myx-schart-value">{format(totalOf(rows, entry.key))}</span>
         </div>
       ))}
+      {children}
     </div>
   );
 }
@@ -139,33 +142,39 @@ export function TokenChart({ buckets, window, now }: {
 }
 
 /**
- * Cost, from the declared rates, hour by hour. Basis `estimated`, never `measured`: the tokens are
- * the daemon's and exact, but the dollars are this console multiplying them by a card the operator
- * wrote in the topology, and a vendor's real invoice can differ. With no rates declared there is no
- * dollar figure at all, which is what the honest empty says rather than a confident zero.
+ * Cost, hour by hour, as the daemon priced each turn at its own model's card (V4-221). Basis
+ * `estimated`, never `measured`: the tokens are exact, but the dollars are those tokens times a card
+ * the operator wrote in the topology, and a vendor's real invoice can differ. The turns the daemon
+ * could not price are counted in the legend, never drawn as dollars; a window with turns and none
+ * of them priced has no dollar figure, and the empty says so rather than printing a confident zero.
  */
-export function CostChart({ buckets, window, now, rates }: {
+export function CostChart({ buckets, window, now }: {
   buckets: readonly EconomicsBucket[];
   window: ChartWindow;
   now: number;
-  rates: CostRates | null;
 }) {
-  if (rates === null) {
+  const hours = slice(buckets, window, now);
+  const totals = sum(hours);
+  if (costOf(totals) === null) {
     return (
       <ScopeInset title={S.cost} basis="unavailable">
-        <p className="myx-schart-empty">{S.noRates}</p>
+        <p className="myx-schart-empty">{S.noPriced}</p>
       </ScopeInset>
     );
   }
-  const found = new Map(slice(buckets, window, now).map((bucket) => [bucket.hour, bucket]));
-  const rows: HourRow[] = windowHours(window.hours, now).map((at) => {
-    const bucket = found.get(at);
-    return { at, values: { spent: bucket === undefined ? 0 : costOf(sum([bucket]), rates) } };
-  });
+  const found = new Map(hours.map((bucket) => [bucket.hour, bucket]));
+  const rows: HourRow[] = windowHours(window.hours, now).map((at) => ({ at, values: { spent: found.get(at)?.cost_usd ?? 0 } }));
   return (
     <ScopeInset title={S.cost} basis="estimated">
       <StackedBars rows={rows} series={COST} ariaLabel={S.cost} />
-      <Legend rows={rows} series={COST} format={(usd) => `$${usd.toFixed(4)}`} />
+      <Legend rows={rows} series={COST} format={(usd) => `$${usd.toFixed(4)}`}>
+        {totals.unpricedTurns === 0 ? null : (
+          <div className="myx-schart-key">
+            <span>{S.unpriced}</span>
+            <span className="myx-schart-value">{fmtInt(totals.unpricedTurns)}</span>
+          </div>
+        )}
+      </Legend>
     </ScopeInset>
   );
 }

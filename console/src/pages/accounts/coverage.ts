@@ -4,7 +4,7 @@
 //
 // All seven were `pending: M2-04` in the baseline; this file is the row honouring that. The
 // disposition says what the console does with the route, not what the daemon does with it.
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   // Read per head: kind, whether a credential is present, the masked account id, last refresh,
@@ -32,4 +32,20 @@ export const dispositions: readonly Disposition[] = [
   // from the commit that serves them; the page's key form reads and writes them (console, train 18).
   { kind: 'route', name: '/api/keys', disposition: 'read-only' },
   { kind: 'route', name: '/api/keys/{name}', disposition: 'editable' },
+  // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
+  { kind: 'verb', name: 'login', disposition: 'editable' },
+  { kind: 'verb', name: 'key', disposition: 'pending', where: 'V4-220' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'Which login will each head use, and how close is each to its limit?',
+  leaves: 'Every pooled account\'s windows, resets and the next target, and whether each head\'s login works.',
+  actions: [
+    { name: 'Sign in an account' },
+    { name: 'Pin or release the next account' },
+    { name: 'Relabel or remove an account' },
+    { name: 'Refresh a login' },
+    { name: 'Store or remove an API key', row: 'V4-220' },
+  ],
+};

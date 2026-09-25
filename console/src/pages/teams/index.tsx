@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { fetchTeamPanels, fetchTeams, isPending, useTeamPanels, useTeams } from '@entities/team';
 import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/session';
+import { useSpliceHeads } from '@entities/control-status';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { fetchPerfTurns, inflightFrom, usePerfTurns } from '@entities/perf';
 import { ViewTabs, useViews, type View } from '@features/views';
@@ -122,8 +123,8 @@ function liveEmpty(teams: TeamsState | null, error: string | null, onNew?: () =>
 export function panelStates(board: TeamPayload, panels: TeamPanels | null): { chat: TeamChatState; feed: ActivityFeedState } {
   if (panels === null || panels.teamId !== board.team.id) return { chat: null, feed: null };
   return {
-    chat: 'error' in panels.chat ? { error: panels.chat.error } : { messages: board.messages },
-    feed: 'error' in panels.activity ? { error: panels.activity.error } : { activity: board.activity, clientMatching: true },
+    chat: 'error' in panels.chat ? { error: panels.chat.error } : board.messages === null ? null : { messages: board.messages },
+    feed: 'error' in panels.activity ? { error: panels.activity.error } : board.activity === null ? null : { activity: board.activity, clientMatching: true },
   };
 }
 
@@ -174,7 +175,7 @@ export function TeamView({ board, mode, data, chat, feed, onEdit }: {
         <TeamChat state={chat} />
         <ActivityFeed state={feed} />
       </div>
-      <CostPerRole data={data} />
+      <CostPerRole board={board} data={data} />
     </div>
   );
 }
@@ -268,6 +269,7 @@ export function TeamsPage() {
   const teams = useTeams((state) => state);
   const panels = useTeamPanels((state) => state);
   const registry = useSessionRegistry((state) => state);
+  const spliceHeads = useSpliceHeads();
   const heads = useHeads((state) => state.data);
 
   // The composer picks a slot's head and session from what the daemon lists, so both are read once
@@ -305,10 +307,13 @@ export function TeamsPage() {
 
   const sessions = registry.data?.sessions ?? [];
   const rows = turns.data !== null && !isPending(turns.data) ? turns.data.landed : [];
-  const live = open === null ? null : boardOf(open, sessions, panels.data, now);
+  const live = open === null ? null : boardOf(open, sessions, panels.data, now, spliceHeads);
   const board = fixture ?? live;
   const states = fixture !== null
-    ? { chat: { messages: fixture.messages }, feed: { activity: fixture.activity, clientMatching: true } }
+    ? {
+      chat: fixture.messages === null ? null : { messages: fixture.messages },
+      feed: fixture.activity === null ? null : { activity: fixture.activity, clientMatching: true as const },
+    }
     : live === null ? { chat: null, feed: null } : panelStates(live, panels.data);
 
   const listed = fixture !== null ? [fixture.team] : list;

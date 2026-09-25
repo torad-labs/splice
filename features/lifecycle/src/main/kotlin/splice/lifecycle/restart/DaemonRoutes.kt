@@ -35,18 +35,30 @@
 // from inside the daemon's own handler kills the process writing the response — the 202 never lands,
 // in-flight turns are CUT rather than drained, and the cold start it then performs runs from the
 // service's environment. That is the finding this row was cut from.
+//
+// V4-220: A COMPACTION IN FLIGHT IS WAITED FOR FIRST (RestartAfterCompactions), as `splice restart`
+// waits since V4-216. The 202 then says `waiting` and names the compactions; the daemon keeps serving,
+// drains once they are gone, and GET /api/daemon/restart reports the phase. `?now=1` skips the wait.
 package splice.lifecycle.restart
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 /** The status word an accepted restart answers with: the phase the daemon is entering, not one it has
  *  reached. */
 private const val DRAINING = "draining"
+private const val WAITING = "waiting"
+private const val IDLE = "idle"
+
+/** The query values that skip the compaction wait, as `splice restart --now` does. */
+private val NOW_VALUES = setOf("1", "true")
 
 /** Refused because the wiring never told this daemon how to find out whether anything restarts it.
  *
@@ -74,7 +86,8 @@ public fun interface DaemonSupervised {
     public operator fun invoke(): Boolean
 }
 
-public class DaemonRoutes {
+/** [restart] is the daemon's one wait-then-drain: every restart the daemon itself takes on goes through it. */
+public class DaemonRoutes(private val restart: RestartAfterCompactions) {
 
     /** [shutdown] and [supervised] ARRIVE AT CALL TIME: the routing lambda reads the server's own
      *  properties as it calls, so neither is captured, and a route that captured them would answer
@@ -95,12 +108,33 @@ public class DaemonRoutes {
             refuse(call, RESTART_UNSUPERVISED, HttpStatusCode.Conflict)
             return
         }
-        call.respondText(
-            buildJsonObject { put("status", DRAINING) }.toString(),
-            ContentType.Application.Json,
-            HttpStatusCode.Accepted,
-        )
-        shutdown()
+        val now = call.request.queryParameters["now"] in NOW_VALUES
+        val phase = restart.request(now, shutdown)
+        call.respondText(phaseJson(phase).toString(), ContentType.Application.Json, HttpStatusCode.Accepted)
+        if (phase is RestartPhase.Draining) shutdown()
+    }
+
+    /** GET /api/daemon/restart: where a restart the daemon took on stands. */
+    public suspend fun statusJson(call: ApplicationCall) {
+        call.respondText(phaseJson(restart.phase()).toString(), ContentType.Application.Json)
+    }
+
+    private fun phaseJson(phase: RestartPhase): JsonObject = buildJsonObject {
+        when (phase) {
+            RestartPhase.Idle -> put("status", IDLE)
+            RestartPhase.Draining -> put("status", DRAINING)
+            is RestartPhase.Waiting -> {
+                put("status", WAITING)
+                putJsonArray("compactions") {
+                    phase.compactions.forEach { slot ->
+                        addJsonObject {
+                            put("head", slot.head)
+                            put("age_ms", slot.ageMs)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun refuse(call: ApplicationCall, message: String, status: HttpStatusCode) {

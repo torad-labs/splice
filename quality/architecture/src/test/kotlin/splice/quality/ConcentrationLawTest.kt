@@ -127,10 +127,10 @@ internal object Concentration {
      *     62.4 -> 52.8: ShutdownDaemon, DeclaredHead(s) and TopologyLoader).
      *  The remedy is decomposing these seven, not re-merging the slices.
      *
-     *  2026-09-25, 19 -> 18, DOWN, measured by this law on PR #271's coverage run (36146732495):
-     *  StatuslineRenderer.kt left the band, 3.49 -> 2.98, with no change of its own since 90cf92371,
-     *  so the fall is its neighbourhood's. Recorded because the law prints this remedy, and a
-     *  baseline held above the measured count is room for the next regression. */
+     *  2026-09-25, 19 -> 18, V4-220 item 6b, cause `neighbourhood`, measured with this law's census at
+     *  7ceed1b8b (19, a scratch baseline of 0 to list them) and at 0c8ce9393 (18). StatuslineRenderer.kt
+     *  3.05 -> 2.59 left the band, the file unchanged: of the packages it imports, splice.accounts.pool is
+     *  the one the change touched (AccountPoolJson now writes each account's credential verdict). */
     const val RATCHET_RECORDED = "2026-09-25"
     const val RATCHET_MAX_HIGH = 18
 

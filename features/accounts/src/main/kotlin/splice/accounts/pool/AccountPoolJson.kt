@@ -1,6 +1,6 @@
 // PORT-OF: daemon/control/.../api/auth/AuthRoutes.kt (AccountPoolJson) — the account pool's one JSON
 // projection, written into /api/auth and /api/usage alike; the masked auth fields it may carry are an
-// allowlist, never a denylist.
+// allowlist, never a denylist. V4-220 item 6b: each account's `auth` carries the verdict shape too.
 package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -8,6 +8,7 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.accounts.CredentialVerdictJson
 import splice.core.auth.AuthDescription
 
 public class AccountPoolJson {
@@ -52,6 +53,7 @@ public class AccountPoolJson {
         into.putJsonObject("auth") {
             put("kind", description.kind)
             put("present", description.present)
+            CredentialVerdictJson().write(this, description.verdict)
             description.fields.forEach { (key, value) ->
                 if (safeAuthField(key)) put(key, value)
             }

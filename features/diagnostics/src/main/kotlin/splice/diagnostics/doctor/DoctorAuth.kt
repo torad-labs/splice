@@ -6,6 +6,7 @@
 package splice.diagnostics.doctor
 
 import splice.accounts.status.CredentialPresence
+import splice.core.auth.CredentialVerdict
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
@@ -32,13 +33,23 @@ internal class DoctorAuth(output: TerminalOutput) {
     ): List<DoctorCheck> {
         val topology = (topo as? DoctorTopology.Parsed)?.topology
             ?: return listOf(DoctorCheck("auth", CheckStatus.INFO, "skipped (no readable topology)"))
-        val heads = probeHeads(topology, envReader)
+        val daemon = splitBrain.read(snapshot, envReader)
+        val heads = probeHeads(topology, envReader).map { head -> seenBy(head, daemon) }
         if (heads.isEmpty()) return listOf(DoctorCheck("auth", CheckStatus.INFO, "no heads configured"))
         // Severity is honest to "can I use splice at all": with zero authed heads a missing credential
         // is THE blocker (FAIL); once any head works, the others are ignorable (WARN).
         val missingStatus = if (heads.none { it.present }) CheckStatus.FAIL else CheckStatus.WARN
         val checks = verdict.credentialVerdict(heads, missingStatus)
-        return checks + splitBrain.checks(heads, snapshot, envReader) + sharedFileChecks(topology)
+        return checks + splitBrain.checks(heads, daemon) + sharedFileChecks(topology)
+    }
+
+    /** V4-220 item 6b: a self-managed head's credential is the caller's, so only the running daemon —
+     *  which sees upstream answer every forwarded turn — knows whether it works; its verdict decides
+     *  presence, and a login upstream rejected is missing, not client-native. */
+    private fun seenBy(head: DoctorHeadAuth, daemon: DaemonAuthSeen): DoctorHeadAuth {
+        val verdict = (daemon as? DaemonAuthSeen.Seen)?.heads?.get(head.key)?.verdict
+        if (!head.selfManaged || verdict == null) return head
+        return head.copy(present = verdict !is CredentialVerdict.Rejected, daemonVerdict = verdict)
     }
 
     /** 2026-09-05: a head whose auth.file is the vendor app's own credential file shares one

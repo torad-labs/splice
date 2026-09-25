@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.core.auth.CredentialVerdict
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import java.net.HttpURLConnection
@@ -114,17 +115,29 @@ public object DaemonProbe {
             }
         }.getOrNull()
 
-    /** Per-head credential presence as the DAEMON sees it (`/api/auth`), or null when unreachable.
-     *  Doctor compares this against shell-side presence to catch the exported-after-boot trap. */
-    public fun authPresence(port: Int, key: String): Map<String, Boolean>? =
+    /** One head's credential as the DAEMON sees it. [verdict] is what upstream last said about a
+     *  forwarded credential (V4-220 item 6b); [CredentialVerdict.Held] from a daemon that predates it. */
+    public data class HeadAuthSeen(public val present: Boolean, public val verdict: CredentialVerdict)
+
+    /** Per-head credential state as the DAEMON sees it (`/api/auth`), or null when unreachable.
+     *  Doctor compares presence against the shell's to catch the exported-after-boot trap, and reads
+     *  a client head's verdict because only the daemon sees upstream's answers. */
+    public fun authSeen(port: Int, key: String): Map<String, HeadAuthSeen>? =
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null when unreachable'; doctor prints 'the daemon did not answer' for the null instead of a per-head verdict.
         Cancellables.runCatchingCancellable {
             request("http://127.0.0.1:$port/api/auth", bearer = key) { connection ->
-                json.parseToJsonElement(body(connection)).jsonObject.mapValues { (_, v) ->
-                    v.jsonObject["present"]?.jsonPrimitive?.booleanOrNull == true
-                }
+                json.parseToJsonElement(body(connection)).jsonObject.mapValues { (_, v) -> headAuthSeen(v.jsonObject) }
             }
         }.getOrNull()
+
+    private fun headAuthSeen(head: JsonObject): HeadAuthSeen {
+        val verdict = head["verdict"] as? JsonObject
+        return HeadAuthSeen(
+            present = head["present"]?.jsonPrimitive?.booleanOrNull == true,
+            verdict = CredentialVerdict.of(JsonScalars.str(verdict, "state"), JsonScalars.long(verdict, "at_epoch_ms"))
+                ?: CredentialVerdict.Held,
+        )
+    }
 
     internal fun <T> request(
         url: String,

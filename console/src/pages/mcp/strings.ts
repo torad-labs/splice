@@ -2,6 +2,7 @@
 // sentence of twelve words or fewer, shown on hover or focus. U: a unit beside a figure.
 export const S = {
   title: 'MCP',
+  about: 'About MCP',
   sample: 'Sample data',
   byName: 'By name',
   hostedFirst: 'Hosted first',
@@ -44,6 +45,7 @@ export const S = {
 } as const;
 
 export const H = {
+  about: 'The MCP servers splice runs, their health, and the host limits.',
   hostingOff: 'Set mcp_hosting = true under [daemon] to share servers.',
   noServers: "Stdio servers from Claude Code's MCP settings appear here.",
   restarts: 'Exited servers restart on their next call, backing off up to 60s.',

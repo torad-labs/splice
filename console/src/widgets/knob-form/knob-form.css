@@ -109,7 +109,7 @@
 .myx-knob-readable { font-family: var(--font-mono); color: var(--fg-muted); }
 
 /* the value against its default: a faint axis, a tick at the default, the run between, a dot */
-.myx-knob-scale { position: relative; display: block; height: calc(.625 * var(--u)); margin-inline: var(--space-1); }
+.myx-knob-scale { position: relative; display: block; height: calc(.625 * var(--u)); margin-inline: var(--space-1); margin-block-end: var(--space-5); }
 .myx-knob-scale::before {
   content: '';
   position: absolute;
@@ -127,6 +127,17 @@
   background: var(--fg);
   box-shadow: 0 0 0 calc(.125 * var(--u)) var(--bg);
   transform: translate(-50%, -50%);
+}
+/* The reference's value under its mark: the one place on the scale that is not the value. */
+.myx-knob-scale-ref {
+  position: absolute;
+  top: 100%;
+  margin-block-start: var(--space-1);
+  transform: translateX(-50%);
+  font-size: var(--text-1);
+  line-height: 1;
+  color: var(--fg-subtle);
+  white-space: nowrap;
 }
 .myx-knob[data-changed] .myx-knob-scale-dot { box-shadow: 0 0 0 calc(.125 * var(--u)) var(--bg-raised); }
 

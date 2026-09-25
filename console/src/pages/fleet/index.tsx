@@ -407,7 +407,7 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
 
   return (
     <div className="myx-fl">
-      <PageHeader title={S.title} actions={all.length === 0 ? undefined : <AddHead />}>
+      <PageHeader title={S.title} info={{ text: H.about, label: S.about }} actions={all.length === 0 ? undefined : <AddHead />}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
 

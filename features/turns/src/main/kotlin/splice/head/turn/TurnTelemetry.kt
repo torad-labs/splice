@@ -94,7 +94,7 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
-        recordEconomics(snap, rateLimited)
+        recordEconomics(snap, drive.upstreamModel, rateLimited)
         recordSpend(rowTs, drive.upstreamModel, snap.counters)
     }
 
@@ -112,12 +112,14 @@ internal class TurnTelemetry(
     /** Fold this turn into the hourly quota rollup. The perf snapshot is the single source for
      *  BOTH the JSONL row and this store, so the dashboard can never disagree with the log line.
      *  Wrapped because recordPerf's contract is never-throws and telemetry must not fail a turn. */
-    private fun recordEconomics(snap: PerfSnapshot, rateLimited: Boolean) {
+    private fun recordEconomics(snap: PerfSnapshot, model: String, rateLimited: Boolean) {
         val store = economics ?: return
         Cancellables.discard(
             Cancellables.runCatchingCancellable {
                 store.record(
                     TurnEconomics(
+                        // V4-221: priced at THIS turn's card, the model the perf row names.
+                        model = model,
                         inTokens = snap.counters[PerfKeys.IN_TOKENS] ?: 0,
                         cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS] ?: 0,
                         // V4-86: the cache-WRITE bucket. Absent on a perf row written before the

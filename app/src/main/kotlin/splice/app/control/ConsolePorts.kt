@@ -5,7 +5,9 @@ package splice.app.control
 
 import splice.accounts.signin.ConsoleAccounts
 import splice.core.compaction.CompactionInstructions
+import splice.core.config.KeyStore
 import splice.core.topology.TopologyWriter
+import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.events.bus.EventBus
@@ -91,6 +93,10 @@ public class ConsolePorts {
     public var doctor: DoctorReport? = null
     public var upgrade: UpgradeStatus? = null
 
+    /** V4-220 item 4: the fixes POST /api/doctor/fix/{id} runs. Null answers a named 503, never a
+     *  fix that silently did nothing. */
+    public var doctorFixes: DoctorFixes? = null
+
     /** V4-137: whether anything would bring this daemon back after it drains. Assigned beside the
      *  ports above, and read at CALL time by the routing lambda for the same reason they are.
      *
@@ -122,4 +128,9 @@ public class ConsolePorts {
     /** V4-133: the daemon's ONE upstream probe for POST /api/playground, assigned like [budgets].
      *  Null answers with a named 503 — never a payload that reads as a completed run. */
     public var playground: PlaygroundProbe? = null
+
+    /** V4-220 item 3: the key store GET/PUT/DELETE /api/keys read and write — the same keys.toml the
+     *  api-key heads read on every request, assigned by ConsoleWiring like [budgets]. Null answers the
+     *  three routes with a named 503, never an empty key list. */
+    public var keys: KeyStore? = null
 }

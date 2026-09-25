@@ -81,4 +81,30 @@ class KeyCommandTest {
     fun `unknown subcommand is a usage error`(@TempDir tmp: Path) {
         assertFalse(KeyCommand().key(listOf("frobnicate"), store(tmp)))
     }
+
+    // V4-222: KeyStore REFUSES a write with check() — an IllegalStateException — when keys.toml is
+    // unreadable or a peer holds its lock. runCatchingCancellable does not catch that type, so `set`
+    // ended in an uncaught exception and a stack trace, and `unset` had no catch at all.
+    @Test
+    fun `set and unset on an unreadable store end in the CLI's own message - V4-222`(@TempDir tmp: Path) {
+        val s = store(tmp)
+        s.write("OPENROUTER_API_KEY", "sk-kept")
+        Files.setPosixFilePermissions(s.path, PosixFilePermissions.fromString("---------"))
+        val stderr = ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(PrintStream(stderr, true))
+        val (set, unset) = try {
+            KeyCommand().key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-new"), s) to
+                KeyCommand().key(listOf("unset", "OPENROUTER_API_KEY"), s)
+        } finally {
+            System.setErr(realErr)
+            Files.setPosixFilePermissions(s.path, PosixFilePermissions.fromString("rw-------"))
+        }
+        val said = stderr.toString()
+        assertFalse(set, "a refused set is a failed verb")
+        assertFalse(unset, "a refused unset is a failed verb")
+        assertTrue(said.contains("splice key set: keys.toml unreadable"), said)
+        assertTrue(said.contains("splice key unset: keys.toml unreadable"), said)
+        assertEquals("sk-kept", s.read("OPENROUTER_API_KEY"), "the refused writes kept what the store held")
+    }
 }

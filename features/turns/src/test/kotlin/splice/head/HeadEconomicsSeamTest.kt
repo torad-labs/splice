@@ -29,6 +29,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
@@ -79,7 +80,7 @@ private class EconomicsRig(tmp: Path) {
     }
     val port: Int get() = head.port
     val perfFile: Path = tmp.resolve("perf.jsonl")
-    val economics = EconomicsStore(tmp.resolve("economics.json"))
+    val economics = EconomicsStore(tmp.resolve("economics.json"), TurnPrice(null))
     val head = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
@@ -150,7 +151,7 @@ private class EconomicsRig(tmp: Path) {
 private class TelemetryRig(tmp: Path, private val tag: String) {
     val log = LogSink { }
     val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
-    val economics = EconomicsStore(tmp.resolve("economics-$tag.json"))
+    val economics = EconomicsStore(tmp.resolve("economics-$tag.json"), TurnPrice(null))
     val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L }, economics)
 
     suspend fun drive(): TurnDrive = TurnDrive(

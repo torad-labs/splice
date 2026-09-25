@@ -17,6 +17,8 @@
   color: var(--fg);
 }
 
+.myx-fl-slots { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; }
+
 .myx-fl-lat {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

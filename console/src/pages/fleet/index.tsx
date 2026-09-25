@@ -35,7 +35,7 @@ import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
 import { Blank, Confirm, Copy, Fault, Key } from '@shared/controls';
 import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo } from '@shared/lib';
 import {
-  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, Sparkline, StackedBar, Stat, StatRow,
+  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow,
 } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { NextRule, accountColumns, accountKey, accountName, accountTone } from '@widgets/account-table';
@@ -163,10 +163,21 @@ function Latency({ line }: { line: HeadLine }) {
   );
 }
 
+/** Up to this many slots, each is a pip the eye can count; past it, a meter. */
+const PIPS_MAX = 16;
+
 function InFlight({ head }: { head: HeadStatus }) {
   const gate = head.gate;
   if (gate === null) return <>{ABSENT}</>;
   if (gate.max === 'unlimited') return <span className="myx-fl-figure">{inflightText(head)}</span>;
+  if (gate.max <= PIPS_MAX) {
+    return (
+      <span className="myx-fl-slots">
+        <Pips used={gate.inflight} total={gate.max} label={`${S.inflight} ${head.label}`} mark={gate.inflight >= gate.max ? 'warn' : 'series-1'} />
+        <span className="myx-fl-figure">{inflightText(head)}</span>
+      </span>
+    );
+  }
   return (
     <Meter
       value={ratio(gate.inflight, gate.max)}

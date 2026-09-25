@@ -405,8 +405,13 @@ describe('what one head row prints', () => {
     expect(row({ versionMatch: false })).toContain('myx-dt-tone-warn');
   });
 
-  test('in flight is a meter against the ceiling, and the count alone when there is none', () => {
+  test('in flight is a pip per slot, a meter past what pips can count, and the count alone with no ceiling', () => {
     expect(row()).toContain('>1/4<');
+    expect(cell(S.inflight)).toContain(`aria-label="${S.inflight} claudex: 1 of 4"`);
+    expect((cell(S.inflight).match(/class="myx-pip[ "]/g) ?? []).length).toBe(4);
+    const wide = cell(S.inflight, { gate: gate({ inflight: 3, max: 32 }) });
+    expect(wide).toContain('role="meter"');
+    expect(wide).not.toContain('myx-pip');
     const open = row({ gate: gate({ max: 'unlimited' }) });
     expect(open).toContain('>1<');
     expect(open).not.toContain(`aria-label="${S.inflight} claudex"`);

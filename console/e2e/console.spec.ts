@@ -73,11 +73,18 @@ async function open(page: Page, name: string): Promise<Faults> {
 
 /** Opens the tip [trigger] describes and fails unless the operator sees all of it: its box inside
  *  the window, and hit-testing at its four inner corners finding the tip, not a clip or what a clip
- *  leaves. A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips. */
-async function expectWholeTip(trigger: Locator, where: string): Promise<void> {
+ *  leaves. A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips.
+ *  With [subject], the tip must also leave clear the text it explains. */
+async function expectWholeTip(trigger: Locator, where: string, subject?: Locator): Promise<void> {
   await trigger.hover();
   const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
   await expect(tip, `${where}: the tip did not open`).toBeVisible();
+  if (subject !== undefined) {
+    const [a, b] = [await tip.boundingBox(), await subject.boundingBox()];
+    const overlaps = a !== null && b !== null
+      && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    expect(overlaps, `${where}: the open tip covers the text it explains`).toBe(false);
+  }
   const seen = await tip.evaluate((body: HTMLElement) => {
     body.style.pointerEvents = 'auto';
     const box = body.getBoundingClientRect();
@@ -394,7 +401,7 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.getByRole('button').click();
   const detail = page.getByRole('complementary', { name: 'Check detail' });
-  await expectWholeTip(detail.getByRole('button', { name: 'Why no copy', exact: true }), 'doctor detail panel');
+  await expectWholeTip(detail.getByRole('button', { name: 'Why no copy', exact: true }), 'doctor detail panel', detail.getByText(masked));
 
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#/needs-you`);
   const why = page.locator('main').getByRole('button', { name: 'Why no copy', exact: true }).first();

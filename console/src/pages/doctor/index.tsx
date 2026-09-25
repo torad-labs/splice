@@ -83,14 +83,15 @@ function checkFacts(row: CheckRow): [string, ReactNode][] {
 
 /** The opened check's fix with its copy key. A remedy that is a `splice logs --head` command also
  *  opens that log here, since this console has the page for it. A fix the report's redaction
- *  reached runs nothing as pasted, so it is printed with why and no copy key. */
+ *  reached runs nothing as pasted, so it is printed with why and no copy key. The why opens below
+ *  its mark: a long command wraps the mark under it, and a tip above would cover the masked part. */
 export function FixLine({ fix }: { fix: string | null }) {
   if (fix === null) return <Empty text={S.noFix} />;
   const logsHead = logsHeadOf(fix);
   return (
     <p className="myx-dc-fix">
       <code className="myx-dc-command">{fix}</code>
-      {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} /> : <Copy value={fix} label={S.copyFix} />}
+      {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} side="bottom" /> : <Copy value={fix} label={S.copyFix} />}
       {logsHead === null ? null : <KeyLink href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</KeyLink>}
     </p>
   );

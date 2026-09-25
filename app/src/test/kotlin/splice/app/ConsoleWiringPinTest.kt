@@ -119,6 +119,17 @@ class ConsoleWiringPinTest {
         )
     }
 
+    /** V4-220 item 4: the fix route must run over the daemon's own doctor and environment, the ones
+     *  /api/doctor reports from. Unwired, the console's Fix button answers a named 503 forever. */
+    @Test
+    fun `the control plane wires the doctor fixes the console runs`() {
+        assertTrue(
+            consoleWiringSource().contains("srv.ports.doctorFixes = DoctorWiring.fixes()"),
+            "ConsoleWiring must assign `srv.ports.doctorFixes`, or POST /api/doctor/fix/{id} answers a named " +
+                "503 while /api/doctor lists fixes the daemon could run",
+        )
+    }
+
     /** The roster is a MAP so an absent key and a present-key-null stay different facts — a head the
      *  wiring never named versus a head whose operator declared no tiers. Collapsing them is what a
      *  per-head nullable list would have done, and the page exists to show the second. */

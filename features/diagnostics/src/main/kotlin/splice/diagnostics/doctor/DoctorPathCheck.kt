@@ -9,6 +9,7 @@ import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.Paths
 
 internal class DoctorPathCheck(private val probes: DoctorProbes) {
     fun check(binDir: Path, envReader: EnvReader): DoctorCheck {
@@ -23,8 +24,23 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                 "PATH",
                 CheckStatus.FAIL,
                 "$binDir is not on PATH — installed commands won't resolve",
-                "add to your shell rc: export PATH=\"$binDir:\$PATH\"",
+                "add to your shell rc: ${rcLine(binDir)}",
             )
+        }
+    }
+
+    // V4-220 item 4: the one fix meant for pasting must survive the report's redaction. Expanded, the
+    // line read `export PATH="~/.local/bin:$PATH"` after DoctorRedaction, which takes everything up to
+    // the quote as ONE path token, finds no allowed prefix for `~/.local/bin:$PATH`, and masks it —
+    // the console showed `export PATH="<redacted:path>"`. `$HOME` names no path at all, so the line
+    // passes unchanged and pastes into any rc; a bin dir outside home is quoted on its own, where the
+    // redaction reads it as splice's own directory.
+    private fun rcLine(binDir: Path): String {
+        val home = Paths.get(System.getProperty("user.home"))
+        return if (binDir.startsWith(home) && binDir != home) {
+            "export PATH=\"\$HOME/${home.relativize(binDir)}:\$PATH\""
+        } else {
+            "export PATH=\"$binDir\":\"\$PATH\""
         }
     }
 
@@ -36,7 +52,13 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
             .exceptionOrNull()
         return when {
             entryStat is java.nio.file.NoSuchFileException ->
-                DoctorCheck(CHECK_WRAPPER, CheckStatus.FAIL, "'$command' is not linked", FIX_RELINK)
+                DoctorCheck(
+                    CHECK_WRAPPER,
+                    CheckStatus.FAIL,
+                    "'$command' is not linked",
+                    FIX_RELINK,
+                    DoctorFix.INSTALL_ALL,
+                )
             entryStat != null ->
                 DoctorCheck(
                     CHECK_WRAPPER,
@@ -57,6 +79,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                     CheckStatus.FAIL,
                     "'$command' is a dangling symlink (target gone)",
                     FIX_RELINK,
+                    DoctorFix.INSTALL_ALL,
                 )
             else -> DoctorCheck(CHECK_WRAPPER, CheckStatus.OK, "'$command' → ${Files.readSymbolicLink(link)}")
         }

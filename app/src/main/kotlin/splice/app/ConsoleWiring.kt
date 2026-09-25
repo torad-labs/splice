@@ -88,6 +88,7 @@ internal object ConsoleWiring {
         // instead of a quiet lie.
         srv.ports.declaredHeads = topology.declaredHeads
         srv.ports.doctor = DoctorReport(DoctorWiring::consoleJson)
+        srv.ports.doctorFixes = DoctorWiring.fixes()
         srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus(EnvReader(System::getenv))::json)
         // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
         // unassigned is SAFE BY CONSTRUCTION — ConsolePorts.supervised is null until set and the

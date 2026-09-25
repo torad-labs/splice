@@ -5,6 +5,7 @@ package splice.diagnostics.doctor
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -159,7 +160,8 @@ class DoctorReportTest {
         )
         val out = report(env, withLogs = false, run = failing)
         val check = out.getValue("checks").jsonArray.single().jsonObject
-        assertEquals(setOf("id", "status", "detail"), check.keys, "schema 1: a check is exactly these three")
+        assertEquals(setOf("id", "status", "detail", "fix_id"), check.keys, "schema 1: a check is exactly these four")
+        assertEquals(JsonNull, check.getValue("fix_id"), "a login is the operator's to run: no fix id")
         assertEquals("auth/codex", check.getValue("id").jsonPrimitive.content)
         assertEquals("fail", check.getValue("status").jsonPrimitive.content)
         val detail = check.getValue("detail").jsonPrimitive.content

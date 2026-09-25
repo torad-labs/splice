@@ -116,7 +116,7 @@ public class ControlServer(
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val sessionMount = SessionsMount(sessions, heads, config, ports, guard)
     private val events = EventsMount(ports, guard)
-    private val diagnostics = DiagnosticsMount(resolver, ports, guard)
+    private val diagnostics = DiagnosticsMount(resolver, ports, guard, log)
     private val models = ModelsMount(heads, ports, guard)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard)
     private val mcp = mcpHost?.let { McpMount(it, guard) }

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.Knob
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.EnvReader
@@ -170,7 +171,7 @@ class AddCommandTest {
         val topology = TopologyLoader.parse(Files.readString(config()))
         assertEquals("chatgpt-oauth", topology.providers.getValue("codex").auth.kind)
         assertEquals("claudex", topology.heads.getValue("codex").claude.command)
-        assertEquals("gpt-5.6-sol", topology.heads.getValue("codex").pinnedModel)
+        assertEquals("gpt-6-sol", topology.heads.getValue("codex").pinnedModel)
         assertEquals(listOf("login:codex", "codex"), installed)
         assertEquals(1, restarted, "the daemon was up and --yes accepted the restart")
     }
@@ -384,6 +385,43 @@ class AddCommandTest {
         assertEquals("claude-splice", topology.heads.getValue("claude-splice").claude.command)
         assertEquals(listOf("claude-splice"), installed, "no sign-in, the wrapper linked")
     }
+
+    /** V4-224, RED before: codex pinned gpt-5.6-sol at 400K, grok grok-4.6, claude Fable 5 and Opus 5 at
+     *  200K. The windows are the vendors' own (AddProfileCatalog names each doc); the codex and grok
+     *  knobs are what a head with no pinned_model falls back to, so they name the same models. */
+    @Test
+    fun `a fresh add reaches each family's latest model at its vendor's window - V4-224`(@TempDir home: Path) =
+        withHome(home) {
+            starter()
+            val bases = listOf(
+                "https://chatgpt.com/backend-api/codex",
+                "https://api.x.ai/v1",
+                "https://api.anthropic.com",
+                "https://api.meta.ai",
+            )
+            val routes = bases.associate { "GET $it" to "{}" }
+            Files.writeString(authFile("chatgpt-oauth"), TOKENS)
+            val ahead = System.currentTimeMillis() + HOUR_MS
+            Files.writeString(authFile("grok-oauth"), """{"tokens":{"access_token":"a"},"expires":$ahead}""")
+            Files.writeString(authFile("muse-oauth"), """{"access_token":"acct-token-fake"}""")
+            for (family in listOf("codex", "grok", "claude", "muse")) {
+                val added = runBlocking { command(http(routes), login = false).add(listOf(family, "--yes"), env) }
+                assertTrue(added, family)
+            }
+            val heads = TopologyLoader.parse(Files.readString(config())).heads
+            val latest = mapOf(
+                "codex" to ("gpt-6-sol" to 272_000L),
+                "grok" to ("grok-4.7" to 500_000L),
+                "claude-splice" to ("claude-fable-5-1" to 1_000_000L),
+                "muse" to ("muse-spark-1.3[1m]" to 1_000_000L),
+            )
+            val landed = latest.keys.associateWith { heads.getValue(it).let { h -> h.pinnedModel to h.contextWindow } }
+            assertEquals(latest, landed)
+            val claudeSlots = heads.getValue("claude-splice").models.orEmpty().associate { it.slot to it.id }
+            assertEquals("claude-opus-5-5", claudeSlots["opus"], "Claude Code's opus tier")
+            assertEquals(heads.getValue("codex").pinnedModel, Knob.PINNED_MODEL.default, "CLAUDEX_PINNED_MODEL")
+            assertEquals(heads.getValue("grok").pinnedModel, Knob.GROK_MODEL.default, "CLAUDE_GROK_MODEL")
+        }
 
     @Test
     fun `a command equal to a head whose command is omitted is refused`(@TempDir home: Path) = withHome(home) {

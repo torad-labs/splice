@@ -11,7 +11,7 @@
 // the plan, and three of the five were shapes the daemon never sent: the switch's (corrected
 // before), the login's (`login_id`, `flow` and a `landed` state, none on the wire, so a login never
 // polled and never finished) and the account edit's (`kind` and `label` on an answer that is `ok`).
-import type { PendingRoute } from '@shared/api';
+import type { LoginView, PendingRoute } from '@shared/api';
 
 /** POST /api/auth/{head}/switch, as SwitchRoute.kt answers it: `ok`, and the reason when not. The
  *  console typed a richer payload (head, to, from, reason, time) that the daemon never sent. The
@@ -20,26 +20,6 @@ import type { PendingRoute } from '@shared/api';
 export interface SwitchPayload {
   ok: boolean;
   error?: string;
-}
-
-/** Where one login stands (LoginSessions.kt): STARTING until the flow announces itself, WAITING once
- *  it has handed out its code or link, SIGNED_IN once the credential is on disk, LIVE_AFTER_RESTART
- *  once the daemon has restarted the head and the account is in its pool, FAILED at any point. */
-export const LOGIN_STATES = ['starting', 'waiting', 'signed_in', 'live_after_restart', 'failed'] as const;
-export type LoginState = (typeof LOGIN_STATES)[number];
-
-/** One login as the daemon reports it. The code and the links arrive on a poll, once the flow
- *  announces them; which of them a login carries is the flow's (a device flow a code and its link, a
- *  browser flow the URL to open), so each is null until then and never defaulted. This is a console
- *  add's `sign_in` (AddViews.login): its head is in no file yet, so it names none. */
-export interface LoginView {
-  id: string;
-  state: LoginState;
-  user_code: string | null;
-  verification_uri: string | null;
-  browser_url: string | null;
-  /** The daemon's own sentence when the login failed. */
-  failure_reason: string | null;
 }
 
 /** POST /api/auth/{head}/login answers with the login's STARTING view, and GET

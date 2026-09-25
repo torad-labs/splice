@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { LOGIN_STATES } from '../src/entities/auth';
+import { LOGIN_STATES } from '../src/shared/api';
 import type { LoginStatusPayload, LoginView } from '../src/entities/auth';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');

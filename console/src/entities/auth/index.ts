@@ -11,16 +11,15 @@ export {
   switchAccount,
   unpinAccount,
 } from './api';
-export { LOGIN_STATES, PENDING_AUTH_WRITES } from './model/types';
+export { PENDING_AUTH_WRITES } from './model/types';
 export type {
   AccountMutationPayload,
   AuthActionOutcome,
   AuthActionState,
-  LoginState,
   LoginStatusPayload,
-  LoginView,
   SwitchPayload,
 } from './model/types';
+export type { LoginState, LoginView } from '@shared/api';
 export { LIVE_KINDS } from './model/live';
 export { isClientLogin, signInOf } from './model/sign-in';
 export type { SignIn, SignInState } from './model/sign-in';

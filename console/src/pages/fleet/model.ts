@@ -1,7 +1,6 @@
 // The fleet page's pure half: how a saved view turns the head list into groups, how severe a head's
 // state is and which colour says it, the latency series each head draws, how the two field sources
 // are read when they exist, and which accounts an opened head rides.
-import { isExcluded } from '@entities/account';
 import type { AccountRow } from '@entities/account';
 import { headAttention, providerFamily } from '@entities/heads';
 import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
@@ -202,27 +201,6 @@ export function lastTurnOf(head: HeadStatus, lastTs: number | null | undefined):
 }
 
 // ── the opened head's account pool (M4-02) ──────────────────────────────────────────────────────
-
-/**
- * The accounts one head rides, out of GET /api/accounts: every row whose `heads` names it.
- *
- * Read off the row rather than joined on anything the console knows, because the daemon already did
- * the join: a login two heads share is ONE row carrying both keys (AccountsRoute.merge, joined on the
- * credential path), so it belongs to both pools and appears in both.
- */
-export function poolOf(accounts: readonly AccountRow[], headKey: string): AccountRow[] {
-  return accounts.filter((account) => account.heads.includes(headKey));
-}
-
-/**
- * HeadSignals.accountExcluded, exactly as that field's contract states it: the head rides a pool
- * whose SELECTED account is excluded. `isExcluded` is the predicate the account's own state uses, so
- * the head and its pool can never disagree about the same account. A single login's `selected` is
- * null (no pool selects it), so it never trips this.
- */
-export function selectedExcluded(pool: readonly AccountRow[], nowMs: number): boolean {
-  return pool.some((account) => account.selected === true && isExcluded(account, nowMs));
-}
 
 /**
  * A pool with labelled accounts and no next target: nothing is available, which is the state that

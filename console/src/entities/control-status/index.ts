@@ -1,5 +1,5 @@
 import { controlStatusStore } from './model/store';
 
 export { startControlStatusPolling } from './api';
-export { HeadMark, hueClass, hueOf, useHue, useHues, type Hue } from './ui';
+export { HeadlessMark, HeadMark, NO_SPLICE_HEAD, NO_SPLICE_HEAD_WHY, hueClass, hueOf, registryLists, useHue, useHues, useSpliceHeads, type Hue } from './ui';
 export const useControlStatus = controlStatusStore.use;

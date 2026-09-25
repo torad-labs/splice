@@ -71,6 +71,43 @@ async function open(page: Page, name: string): Promise<Faults> {
   return faults;
 }
 
+/** Opens the tip [trigger] describes and fails unless the operator sees all of it: its box inside
+ *  the window, and hit-testing at its four inner corners finding the tip, not a clip or what a clip
+ *  leaves. A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips.
+ *  With [subject], the tip must also leave clear the text it explains. */
+async function expectWholeTip(trigger: Locator, where: string, subject?: Locator): Promise<void> {
+  await trigger.hover();
+  const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
+  await expect(tip, `${where}: the tip did not open`).toBeVisible();
+  if (subject !== undefined) {
+    const [a, b] = [await tip.boundingBox(), await subject.boundingBox()];
+    const overlaps = a !== null && b !== null
+      && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    expect(overlaps, `${where}: the open tip covers the text it explains`).toBe(false);
+  }
+  const seen = await tip.evaluate((body: HTMLElement) => {
+    body.style.pointerEvents = 'auto';
+    const box = body.getBoundingClientRect();
+    const inWindow = box.left >= 0 && box.top >= 0
+      && box.right <= document.documentElement.clientWidth && box.bottom <= window.innerHeight;
+    const inset = 2;
+    const corners = [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]]
+      .map(([x, y]) => [x + (x === box.left ? inset : -inset), y + (y === box.top ? inset : -inset)]);
+    const onTop = corners.every(([x, y]) => body.contains(document.elementFromPoint(x, y)));
+    body.style.pointerEvents = '';
+    return { inWindow, onTop };
+  });
+  expect(seen, `${where}: the open tip must be whole in the window and on top`).toEqual({ inWindow: true, onTop: true });
+}
+
+/** Every stat figure on the page that its tile cuts, by its text: a figure is the point of its tile,
+ *  and a version or a count read as "2.1.2…" is a different value. */
+async function cutFigures(page: Page): Promise<string[]> {
+  return page.locator('main .myx-stat-value').evaluateAll((figures) => figures
+    .filter((figure) => figure.scrollWidth > figure.clientWidth)
+    .map((figure) => figure.textContent ?? ''));
+}
+
 test('the page set comes from the source', () => {
   expect(PAGES, `no page directories under ${PAGES_DIR}`).toContain('fleet');
 });
@@ -79,9 +116,10 @@ test('the address splice dashboard opens unlocks the console and leaves no key b
   // The fragment is what DashboardCommand's redirect page sends the browser to; no init script.
   const key = env('CONSOLE_E2E_KEY');
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#k=${encodeURIComponent(key)}`);
-  // The landing page is sessions: a locked console could not have read these two from the daemon.
-  await expect(page.locator('main')).toContainText(STACK.sender.name);
-  await expect(page.locator('main')).toContainText(STACK.peer.name);
+  // The landing page is Needs you (V4-219), and its read time prints only once every input it rests
+  // on answered: a locked console, refused on every read, could not print it.
+  await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
+  await expect(page.locator('main').getByText(/^Read \d\d:\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
   expect(await page.getByText('management key required').count(), 'the handed-over key did not unlock').toBe(0);
   expect(page.url(), 'the key was left in the address').not.toContain(key);
   expect(await page.evaluate((storage) => localStorage.getItem(storage), KEY_STORAGE), 'the key was not kept').toBe(key);
@@ -106,6 +144,7 @@ for (const name of PAGES) {
     const text = (await main.count()) > 0 ? await main.innerText() : '';
     expect.soft(text.trim().length, 'main printed nothing').toBeGreaterThan(0);
     expect.soft(text.match(LEAKED_VALUE)?.[0] ?? null, 'a value the console never received was printed').toBeNull();
+    expect.soft(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
     expect.soft(faults.pageErrors, 'uncaught page errors').toEqual([]);
     expect.soft([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
     expect.soft(faults.consoleErrors, 'console errors').toEqual([]);
@@ -231,6 +270,43 @@ test('accounts shows the OAuth account with the windows its provider reported', 
     .toHaveAccessibleDescription('Pinned, then primary, then last used, then most weekly room.');
 });
 
+test('a table cell lets its open tip out, and twelve slots stand six and six', async ({ page }) => {
+  // Fleet at 1600, 2026-09-25: a gate of twelve wrapped its pips nine and three, and "streaming 3.2s"
+  // ran past the Last turn column's edge. The cell says Running now, with the phase in its tip, and
+  // a cell's own clip cut every tip in a table to a sliver until the cell let an open one out.
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.route('**/api/heads', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { heads: { gate: Record<string, unknown> | null }[] };
+    const head = body.heads.find((entry) => entry.gate !== null);
+    if (head?.gate != null) {
+      head.gate = { ...head.gate, max: 12, inflight: 1, live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 3_200, idle_ms: 20 }] };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'fleet');
+  const table = page.getByRole('table', { name: 'Heads', exact: true });
+  const running = table.getByText('Running', { exact: true }).first();
+  await expect(running).toBeVisible({ timeout: 15_000 });
+  await running.hover();
+  const tip = table.getByRole('tooltip').filter({ hasText: 'streaming 3.2s' });
+  await expect(tip).toBeVisible();
+  // Seen, not only laid out: the top of the tip, above its cell, is the tip and not what a clip
+  // leaves. A tip takes no pointer, so hit-testing would pass through it; it takes one for the probe,
+  // and hit-testing still honours every clip.
+  const seen = await tip.evaluate((body) => {
+    (body as HTMLElement).style.pointerEvents = 'auto';
+    const box = body.getBoundingClientRect();
+    return body.contains(document.elementFromPoint(box.x + box.width / 2, box.y + 2));
+  });
+  expect(seen, 'the open tip must not be clipped by its cell').toBe(true);
+  const rows = await table.getByRole('img', { name: /: 1 of 12$/ }).first().evaluate((pips) => {
+    const tops = [...pips.children].map((pip) => Math.round(pip.getBoundingClientRect().top));
+    return [...new Set(tops)].map((top) => tops.filter((at) => at === top).length);
+  });
+  expect(rows, 'twelve pips in two even rows').toEqual([6, 6]);
+});
+
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {
   await open(page, 'fleet');
   const main = page.locator('main');
@@ -323,6 +399,73 @@ test('doctor renders the stack\'s report whole, the api-key row\'s fix included'
   await row.getByRole('button').click();
   const detail = page.getByRole('complementary', { name: 'Check detail' });
   await expect(detail).toContainText('CONSOLE_E2E_NO_SUCH_KEY is not set');
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at Needs you\'s right edge', async ({ page }) => {
+  // The tip opened inside the panel's scroll box, which cut it at the panel's left edge, and in Needs
+  // you's last column, where the window cut it (2026-09-25 renders). The stack's own masked fix went
+  // with V4-220's `splice key set`, and the daemon still masks a value or a path it does not know in
+  // any other fix, so the report carries one here, in the daemon's own detail shape.
+  const masked = 'CONSOLE_E2E_MASKED=<redacted>';
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { checks: { id: string; status: string; detail: string }[] };
+    const fix = ` ${String.fromCharCode(0x2014)} fix: export ${masked}`;
+    body.checks.push({ id: 'configuration/e2e-masked', status: 'warn', detail: `a value doctor masks${fix}` });
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const row = page.locator('main').getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: masked });
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole('button').click();
+  const detail = page.getByRole('complementary', { name: 'Check detail' });
+  await expectWholeTip(detail.getByRole('button', { name: 'Why no copy', exact: true }), 'doctor detail panel', detail.getByText(masked));
+
+  await page.goto(`${env('CONSOLE_E2E_BASE')}/#/needs-you`);
+  const item = page.locator('main').getByRole('row').filter({ hasText: masked });
+  await expect(item, 'the masked fix is not on Needs you').toBeVisible({ timeout: 15_000 });
+  const why = item.getByRole('button', { name: 'Why no copy', exact: true });
+  await expectWholeTip(why, 'needs you, last column');
+  expect(faults.pageErrors, 'a page threw').toEqual([]);
+});
+
+test('Doctor\'s figures read whole beside an open check', async ({ page }) => {
+  // The open panel narrows the four tiles: at 1600 the Claude Code tile cut its version to "2.1.2…"
+  // (Marlin, 2026-09-25).
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  // The stack's claude may print a shorter version than the one that was cut; the tile reads this one.
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { claude_code: { version: string | null } };
+    body.claude_code.version = '2.1.282 (Claude Code)';
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const row = page.locator('main').getByRole('table', { name: 'Checks', exact: true }).getByRole('row').nth(1);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole('button').click();
+  await expect(page.getByRole('complementary', { name: 'Check detail' })).toBeVisible();
+  await expect(page.locator('main .myx-stat-value')).not.toHaveCount(0);
+  expect(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('a Claude Code probe that read no version reads unknown, with the daemon\'s sentence whole under it', async ({ page }) => {
+  // CI run 36184525303: no `claude` on the runner, and the daemon's sentence was the tile's figure,
+  // cut to an ellipsis.
+  const failed = 'present (version probe failed: failure (message withheld, may quote file bytes))';
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { claude_code: { version: string | null } };
+    body.claude_code.version = failed;
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const tile = page.locator('main .myx-stat').filter({ hasText: 'Claude Code' });
+  await expect(tile.locator('.myx-stat-value')).toHaveText('Unknown', { timeout: 15_000 });
+  await expect(tile.locator('.myx-stat-sub')).toHaveText(failed);
+  expect(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
   expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });
 

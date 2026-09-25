@@ -20,6 +20,8 @@ export const S = {
   rollback: 'Rollback',
   lastChecked: 'Last checked',
   claudeCode: 'Claude Code',
+  /** The Claude Code tile's figure when the probe read no version; the daemon's sentence is under it. */
+  unknownVersion: 'Unknown',
   /** The report's own facts, as served: the payload's field name beside its value. */
   report: 'Report',
   aboutReport: 'About the report',
@@ -30,6 +32,8 @@ export const S = {
   appliesTo: 'Applies to',
   finding: 'Finding',
   copyFix: 'Copy fix',
+  /** The tip on a fix the report masked, in place of its copy key. */
+  maskedWhy: 'Why no copy',
   openLog: 'Open log',
   noFix: 'No fix offered',
   playground: 'Playground',
@@ -64,6 +68,7 @@ export const S = {
 
 export const H = {
   about: 'Checks on this install, each with its evidence and its fix.',
+  masked: 'Part of this line is masked, so it will not run pasted.',
   noReport: 'This splice version does not serve the doctor report.',
   noChecks: 'The daemon sent an empty report; run splice doctor to compare.',
   report: 'The fields the daemon served, under their own names.',

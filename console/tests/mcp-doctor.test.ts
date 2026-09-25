@@ -27,17 +27,16 @@ import {
   attentionCount,
   attentionParts,
   canSend,
-  claudeVersionText,
-  collapseChecks,
+  claudeVersion,
   groupChecks,
   latestText,
   logsHeadOf,
   playgroundNext,
   rollbackText,
   statusParts,
-  wantsAttention,
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
+import { collapseChecks, wantsAttention } from '../src/entities/doctor';
 import { S as DOCTOR_WORDS } from '../src/pages/doctor/strings';
 import { ABSENT } from '../src/shared/lib';
 import type { PlaygroundState } from '../src/pages/doctor/model';
@@ -235,8 +234,16 @@ describe('every failing check carries its fix', () => {
   });
 
   test('Claude Code\'s version drops the product name its tile already prints', () => {
-    expect(claudeVersionText('2.1.282 (Claude Code)')).toBe('2.1.282');
-    expect(claudeVersionText('2.1.282')).toBe('2.1.282');
+    expect(claudeVersion('2.1.282 (Claude Code)')).toEqual({ figure: '2.1.282', note: null });
+    expect(claudeVersion('2.1.282')).toEqual({ figure: '2.1.282', note: null });
+  });
+
+  test('a probe that read no version is unknown in the figure, with the daemon\'s sentence whole under it', () => {
+    // CI run 36184525303, no `claude` on the runner: the whole sentence was the figure, cut to an ellipsis.
+    const failed = 'present (version probe failed: failure (message withheld, may quote file bytes))';
+    expect(claudeVersion(failed)).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: failed });
+    expect(claudeVersion('probe timed out')).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: 'probe timed out' });
+    expect(claudeVersion('present')).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: 'present' });
   });
 
   test('attention first lists every check that wants the operator before any that does not', () => {
@@ -473,7 +480,8 @@ describe('the upgrade verdict', () => {
 
 describe('the coverage manifests', () => {
   test('the routes of this row are disposed exactly once, across the two files', () => {
-    const names = [...mcpDispositions, ...doctorDispositions].map((entry) => entry.name);
+    // Routes only: doctor also answers the doctor and version verbs (V4-219), which the coverage wall counts.
+    const names = [...mcpDispositions, ...doctorDispositions].filter((entry) => entry.kind === 'route').map((entry) => entry.name);
     // This list is the pages' route INVENTORY and stays exact on purpose: a new fetch site with no
     // disposition should fail here by name. Four since M4-06. /api/heads/{head}/capture moved to the
     // turns page (M4-04: its request drawer's switch reads and writes it), and budgets, alerts and

@@ -17,8 +17,6 @@ export const S = {
   openHead: 'Open head',
   openProject: 'Open project',
   openTeam: 'Open team',
-  /** The group of sessions the daemon ties to no head. */
-  noHead: 'No splice head',
   /** A session's head cell when it was started with `claude` directly, not through a head. */
   direct: 'Started directly',
   conversation: 'Conversation',
@@ -60,7 +58,6 @@ export const S = {
 
 export const H = {
   noSessions: 'Start Claude Code through a splice head to see it here.',
-  noHead: 'Splice did not start these, or cannot tell which head did.',
   registry: 'Sessions Claude Code registered on this machine.',
 } as const;
 

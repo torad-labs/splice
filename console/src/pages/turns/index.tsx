@@ -59,7 +59,7 @@ import { clockOf, groupByOf, rowKeyer, selectionOf } from './select';
 import { H, S, U } from './strings';
 import './turns.css';
 
-export { atText, badgesOf, cacheHitOf, isStalled, landedKeysOf, lengthOf, slotsFrom } from './columns';
+export { atText, badgesOf, cacheHitOf, landedKeysOf, lengthOf, slotsFrom } from './columns';
 export type { HeadSlots } from './columns';
 
 const PAGE_ID = 'turns';

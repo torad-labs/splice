@@ -59,7 +59,8 @@ function answered<T extends object>(panels: TeamPanels | null, team: TeamRow, pi
  * and the working directory; the daemon's per-slot tally supplies the turns, tokens, cost and
  * checks, but ONLY when the slot has held no session but this one: a slot's tally sums every
  * session it ever held, and printing that on a later session's strip would be another session's
- * work under this one's name.
+ * work under this one's name. A slot on a head the daemon did not read (`heads_read`: one splice does
+ * not run) has a tally of zeros splice never measured, so none is printed: its figures are unknown.
  */
 export function membersOf(team: TeamRow, sessions: readonly SessionRow[], economics: TeamEconomicsPayload | null, now: number): TeamMemberRow[] {
   return team.slots.flatMap((slot): TeamMemberRow[] => {
@@ -67,7 +68,8 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
     if (session === null) return [];
     const row = sessions.find((s) => s.session_id === session);
     const own = slot.sessions_history.every((held) => held === session);
-    const tally = own ? (economics?.slots.find((t) => t.slot === slot.id) ?? null) : null;
+    const read = economics?.heads_read.includes(slot.head) ?? false;
+    const tally = own && read ? (economics?.slots.find((t) => t.slot === slot.id) ?? null) : null;
     const started = row?.started_at ?? null;
     const live = row?.availability === 'live';
     return [{
@@ -134,13 +136,14 @@ export function activityOf(members: readonly TeamMemberRow[], activity: TeamActi
 }
 
 /** The board of one team. */
-export function boardOf(team: TeamRow, sessions: readonly SessionRow[], panels: TeamPanels | null, now: number): TeamPayload {
+export function boardOf(team: TeamRow, sessions: readonly SessionRow[], panels: TeamPanels | null, now: number, spliceHeads: ReadonlySet<string> | null): TeamPayload {
   const members = membersOf(team, sessions, answered(panels, team, (p) => p.economics), now);
   return {
     team,
     members,
     messages: messagesOf(members, answered(panels, team, (p) => p.chat)),
     activity: activityOf(members, answered(panels, team, (p) => p.activity)),
+    spliceHeads,
   };
 }
 

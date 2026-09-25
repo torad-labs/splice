@@ -27,6 +27,7 @@
 .myx-hue-7-down { --hue: var(--head-down-7); }
 .myx-hue-8-down { --hue: var(--head-down-8); }
 
+.myx-hm-headless { display: inline-flex; align-items: center; gap: var(--space-2); }
 .myx-hm {
   display: inline-flex;
   align-items: center;

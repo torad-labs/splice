@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { CrownSimpleIcon } from '@phosphor-icons/react/dist/csr/CrownSimple';
-import { HeadMark, hueClass, useHues } from '@entities/control-status';
+import { HeadlessMark, HeadMark, hueClass, NO_SPLICE_HEAD, registryLists, useHues } from '@entities/control-status';
 import { UNLISTED } from '@entities/team';
 import type { TeamPayload, TeamSlot } from '@entities/team';
 import {
@@ -77,6 +77,17 @@ function RoleCell({ slot }: { slot: TeamSlot }) {
   );
 }
 
+/** Whether the registry, once read, leaves [head] out: a head splice does not run. An unread
+ *  registry names every head as it is. */
+const unlisted = (board: TeamPayload, head: string): boolean => registryLists(board.spliceHeads, head) === false;
+
+/** A slot's head: its mark, or the one name and tip every page gives a head splice does not run
+ *  (Marlin, 2026-09-25: a plain `claude` slot printed "claude" here and "No splice head" on
+ *  Sessions). */
+function HeadCell({ board, head }: { board: TeamPayload; head: string }) {
+  return unlisted(board, head) ? <HeadlessMark /> : <HeadMark head={head} />;
+}
+
 /** In and out tokens as one bar on the table's shared scale, with the sum after it. */
 function TokenSplit({ input, output, scale }: { input: number | null; output: number | null; scale: number }) {
   if (input === null || output === null) return <>{S.absent}</>;
@@ -103,8 +114,13 @@ function TokenSplit({ input, output, scale }: { input: number | null; output: nu
 export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewData | null }) {
   const slots = board.team.slots;
   const bound = slots.filter((slot) => slot.session !== null).length;
-  const table = data === null || 'error' in data.economics ? null : costTable(data.economics);
+  const table = data === null || 'error' in data.economics ? null : costTable(data.economics, slots);
   const hour = data?.lastHour ?? [];
+  // The lifetime figures leave out the roles splice never saw, and say which.
+  const without = table === null || table.unseen.length === 0 ? null : `${U.without} ${table.unseen.join(', ')}`;
+  const turnsSub = [table !== null && table.unattributed > 0 ? `${fmtInt(table.unattributed)} ${U.untagged}` : null, without]
+    .filter((part) => part !== null)
+    .join(' · ');
   return (
     <StatRow>
       <Stat
@@ -116,11 +132,12 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
       <Stat
         label={S.turns}
         value={table === null ? S.absent : fmtInt(table.total.turns)}
-        {...(table !== null && table.unattributed > 0 ? { sub: `${fmtInt(table.unattributed)} ${U.untagged}` } : {})}
+        {...(turnsSub === '' ? {} : { sub: turnsSub })}
       />
       <Stat
         label={S.tokens}
         value={table === null ? S.absent : fmtTokens(table.total.input + table.total.output)}
+        {...(without === null ? {} : { sub: without })}
         {...(table === null ? {} : {
           chart: (
             <StackedBar
@@ -138,7 +155,7 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
         label={S.cost}
         basis="estimated"
         value={table === null ? S.absent : money(table.total.cost)}
-        {...(table !== null && table.total.cost === null ? { sub: S.unpriced } : {})}
+        {...(table !== null && table.total.cost === null ? { sub: S.unpriced } : without === null ? {} : { sub: without })}
       />
       <Stat
         label={S.inFlight}
@@ -181,7 +198,7 @@ export function TeamMembers({ board, by }: { board: TeamPayload; by: 'head' | 'r
       cell: (seat) => seat.member?.name ?? <span className="myx-tb-open">{S.openSeat}</span>,
     },
     { key: 'role', label: S.role, cell: (seat) => <RoleCell slot={seat.slot} /> },
-    ...(by === 'head' ? [] : [{ key: 'head', label: S.head, cell: (seat: Seat) => <HeadMark head={seat.slot.head} /> }]),
+    ...(by === 'head' ? [] : [{ key: 'head', label: S.head, cell: (seat: Seat) => <HeadCell board={board} head={seat.slot.head} /> }]),
     { key: 'model', label: S.model, mono: true, cell: (seat) => seat.slot.model ?? S.absent },
     ...(hasWindow ? [{ key: 'window', label: S.window, mono: true, cell: (seat: Seat) => seat.member?.window ?? S.absent }] : []),
     { key: 'state', label: S.state, cell: (seat) => <Badge tone={stateOf(seat).tone} quiet>{stateOf(seat).word}</Badge> },
@@ -199,7 +216,7 @@ export function TeamMembers({ board, by }: { board: TeamPayload; by: 'head' | 'r
 
   const groups: RowGroup<Seat>[] = seatGroups(board, by).map((group) => ({
     key: group.key,
-    title: by === 'head' ? <HeadMark head={group.key} /> : group.key,
+    title: by === 'head' ? <HeadCell board={board} head={group.key} /> : group.key,
     count: group.seats.length,
     rows: group.seats,
     ...(by === 'head' ? { hue: hueClass(hueOf(group.key)) } : {}),
@@ -254,8 +271,8 @@ export function TeamLanes({ board }: { board: TeamPayload }) {
 
   const lanes: Lane[] = seatGroups(board, 'head').map((group) => ({
     key: group.key,
-    name: group.key,
-    title: <HeadMark head={group.key} />,
+    name: unlisted(board, group.key) ? NO_SPLICE_HEAD : group.key,
+    title: <HeadCell board={board} head={group.key} />,
     hue: hueClass(hueOf(group.key)),
     cards: group.seats.map((seat) => {
       const title = seatName(board, seat);
@@ -309,7 +326,7 @@ export function SeatDetail({ board, seat }: { board: TeamPayload; seat: Seat }) 
   const reported = (label: string, value: ReactNode | null): (readonly [string, ReactNode])[] => (value === null ? [] : [[label, value]]);
   const rows: (readonly [string, ReactNode])[] = [
     [S.role, <RoleCell slot={slot} />],
-    [S.head, <HeadMark head={slot.head} />],
+    [S.head, <HeadCell board={board} head={slot.head} />],
     [S.model, slot.model ?? S.absent],
     [S.account, slot.account ?? S.absent],
     ...(member === null ? [] : [
@@ -423,20 +440,31 @@ export function TeamTimeline({ board, data }: { board: TeamPayload; data: TeamVi
 // ---- the economics -------------------------------------------------------------------------
 
 /** Turns, tokens and cost per role over the team's life, as the daemon tallies them, with the turns
- *  it could place in no role and how far back the oldest turn it holds reaches. */
-export function CostPerRole({ data }: { data: TeamViewData | null }) {
+ *  it could place in no role and how far back the oldest turn it holds reaches. A role on no head
+ *  the daemon read prints its figures as unknown, with why: its zeros were never measured. */
+export function CostPerRole({ board, data }: { board: TeamPayload; data: TeamViewData | null }) {
   const info = { text: H.economics, label: S.economicsWhy };
   if (data === null) return <Section title={S.costPerRole} info={info}><Empty text={S.readingCosts} /></Section>;
   if ('error' in data.economics) {
     return <Section title={S.costPerRole} info={info}><Empty text={S.costsUnreadable} source={data.economics.error} /></Section>;
   }
-  const table = costTable(data.economics);
-  const scale = Math.max(1, ...table.rows.map((row) => row.input + row.output));
+  const table = costTable(data.economics, board.team.slots);
+  const seen = (row: RoleCost): boolean => !table.unseen.includes(row.role);
+  const scale = Math.max(1, ...table.rows.filter(seen).map((row) => row.input + row.output));
   const columns: Column<RoleCost>[] = [
-    { key: 'role', label: S.role, cell: (row) => row.role },
-    { key: 'turns', label: S.turns, width: '10%', align: 'end', mono: true, cell: (row) => fmtInt(row.turns) },
-    { key: 'tokens', label: S.tokens, width: '40%', cell: (row) => <TokenSplit input={row.input} output={row.output} scale={scale} /> },
-    { key: 'cost', label: S.cost, basis: 'estimated', width: '14%', align: 'end', mono: true, cell: (row) => money(row.cost) },
+    {
+      key: 'role',
+      label: S.role,
+      cell: (row) => (seen(row) ? row.role : <span className="myx-tb-unseen">{row.role}<InfoTip text={H.unseen} label={S.unseenWhy} /></span>),
+    },
+    { key: 'turns', label: S.turns, width: '10%', align: 'end', mono: true, cell: (row) => (seen(row) ? fmtInt(row.turns) : S.absent) },
+    {
+      key: 'tokens',
+      label: S.tokens,
+      width: '40%',
+      cell: (row) => (seen(row) ? <TokenSplit input={row.input} output={row.output} scale={scale} /> : S.absent),
+    },
+    { key: 'cost', label: S.cost, basis: 'estimated', width: '14%', align: 'end', mono: true, cell: (row) => (seen(row) ? money(row.cost) : S.absent) },
   ];
   return (
     <Section title={S.costPerRole} info={info} actions={<Legend items={TOKEN_KEY} label={S.tokensKey} />}>

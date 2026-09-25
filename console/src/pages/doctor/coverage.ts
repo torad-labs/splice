@@ -1,7 +1,7 @@
 // The names this page owns, taken over from the baseline the coverage wall (row M1-04) reads. A
 // name carries exactly ONE page disposition and the wall fails on two, so the row's routes split
 // between this file and pages/mcp/coverage.ts: `/api/mcp` is declared there, the other three here.
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   // The report and the upgrade status, both read and never written (V4-127 serves them).
@@ -18,4 +18,21 @@ export const dispositions: readonly Disposition[] = [
   // V4-220 item 4: the Fix button for a row whose `fix_id` names a fix the daemon runs itself
   // (install_all). Declared with the daemon commit that serves it; the answer is doctor re-run.
   { kind: 'route', name: '/api/doctor/fix/{id}', disposition: 'editable' },
+  // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
+  { kind: 'verb', name: 'doctor', disposition: 'read-only' },
+  { kind: 'verb', name: 'version', disposition: 'read-only' },
+  // install --all is the Fix on every wrapper row it relinks: POST /api/doctor/fix/install_all (#275).
+  { kind: 'verb', name: 'install', disposition: 'pending', where: 'V4-220' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'Is anything wrong with this install, and what fixes it?',
+  leaves: 'Every check\'s verdict with its evidence and fix, the versions in play, and a prompt sent through a head end to end.',
+  actions: [
+    { name: 'Copy a check\'s fix' },
+    { name: 'Send a test prompt through a head' },
+    { name: 'Open a head\'s log' },
+    { name: 'Run a check\'s fix', row: 'V4-220' },
+  ],
+};

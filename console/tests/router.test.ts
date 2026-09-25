@@ -22,8 +22,9 @@ import {
 import { PAGE_KEYS, pageFor } from '../src/app/pages';
 
 describe('the address table', () => {
-  test('is the thirteen addresses, in the sidebar order', () => {
+  test('is the fourteen addresses, in the sidebar order', () => {
     expect(ADDRESSES).toEqual([
+      'needs-you',
       'sessions',
       'turns',
       'teams',
@@ -53,7 +54,7 @@ describe('the address table', () => {
 
   test('every address names the row that will build it', () => {
     for (const address of ADDRESSES) {
-      expect(PAGE_ROW[address], address).toMatch(/^M[123]-/);
+      expect(PAGE_ROW[address], address).toMatch(/^(M[123]|V4)-/);
     }
   });
 });
@@ -77,7 +78,7 @@ describe('canonicalHash', () => {
   test('keeps the query so a dev fixture survives boot (CONTRACTS.md section 4)', () => {
     expect(canonicalHash('#/accounts?fixture=demo')).toBe('#/accounts?fixture=demo');
     expect(canonicalHash('#auth?fixture=demo')).toBe('#/accounts?fixture=demo');
-    expect(canonicalHash('#?fixture=demo')).toBe('#/sessions?fixture=demo');
+    expect(canonicalHash('#?fixture=demo')).toBe('#/needs-you?fixture=demo');
   });
 
   test('a bare path lands too, because the hash history adds the slash', () => {
@@ -87,11 +88,11 @@ describe('canonicalHash', () => {
     expect(canonicalHash('#/burn')).toBe('#/usage');
   });
 
-  test('an unknown or empty address goes to the first address, the sessions in flight', () => {
-    expect(canonicalHash('#/nowhere')).toBe('#/sessions');
-    expect(canonicalHash('#nowhere')).toBe('#/sessions');
-    expect(canonicalHash('')).toBe('#/sessions');
-    expect(canonicalHash('#')).toBe('#/sessions');
+  test('an unknown or empty address goes to the first address, what needs the operator (V4-219)', () => {
+    expect(canonicalHash('#/nowhere')).toBe('#/needs-you');
+    expect(canonicalHash('#nowhere')).toBe('#/needs-you');
+    expect(canonicalHash('')).toBe('#/needs-you');
+    expect(canonicalHash('#')).toBe('#/needs-you');
     expect(canonicalHash('#/turns?fixture=day')).toBe('#/turns?fixture=day');
     expect(canonicalHash('#/fleet/')).toBe('#/fleet');
   });
@@ -111,9 +112,9 @@ describe('addressOf', () => {
     expect(addressOf('/config')).toBe('settings');
   });
 
-  test('anything else is the first address, the sessions in flight', () => {
-    expect(addressOf('/nowhere')).toBe('sessions');
-    expect(addressOf('/')).toBe('sessions');
+  test('anything else is the first address, what needs the operator', () => {
+    expect(addressOf('/nowhere')).toBe('needs-you');
+    expect(addressOf('/')).toBe('needs-you');
   });
 
   test('the old paths with their own redirect routes point at the right address', () => {
@@ -164,7 +165,7 @@ describe('page discovery against the tree', () => {
   test('the glob only ever holds page indexes', () => {
     expect(PAGE_KEYS.length).toBeGreaterThan(0);
     for (const key of PAGE_KEYS) {
-      expect(key, key).toMatch(/^\.\.\/pages\/[a-z]+\/index\.tsx$/);
+      expect(key, key).toMatch(/^\.\.\/pages\/[a-z]+(-[a-z]+)*\/index\.tsx$/);
     }
   });
 

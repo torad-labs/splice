@@ -11,9 +11,10 @@
 
 import { S } from './strings';
 
-// In the sidebar's order (docs/design/DESIGN.md section 6), so the first address, the one the
-// console opens on, is the first object: the session in flight.
+// In the sidebar's order (docs/design/DESIGN.md section 6), so the first address is the one the
+// console opens on: what needs the operator now (V4-219), then the session in flight.
 export const ADDRESSES = [
+  'needs-you',
   'sessions',
   'turns',
   'teams',
@@ -35,7 +36,7 @@ export type Address = (typeof ADDRESSES)[number];
  *  flight, the head it runs on, the plan it spends, and the daemon under all of them. Every address
  *  sits in exactly one group, in ADDRESSES order (tests/router.test.ts holds both). */
 export const NAV_GROUPS: ReadonlyArray<{ label: string; addresses: readonly Address[] }> = [
-  { label: S.inFlight, addresses: ['sessions', 'turns', 'teams', 'projects'] },
+  { label: S.inFlight, addresses: ['needs-you', 'sessions', 'turns', 'teams', 'projects'] },
   { label: S.routing, addresses: ['fleet', 'models', 'compaction'] },
   { label: S.plans, addresses: ['accounts', 'usage'] },
   { label: S.daemon, addresses: ['settings', 'mcp', 'logs', 'doctor'] },
@@ -43,6 +44,7 @@ export const NAV_GROUPS: ReadonlyArray<{ label: string; addresses: readonly Addr
 
 /** The row that will create each page directory, printed in its honest empty. */
 export const PAGE_ROW: Record<Address, string> = {
+  'needs-you': 'V4-219',
   fleet: 'M2-01',
   turns: 'M2-03',
   sessions: 'M2-02',

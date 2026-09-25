@@ -1,7 +1,7 @@
 import { configStore } from './model/store';
 import { restartStore } from './model/restart';
 
-export { fetchConfig, applyConfigPatch, fetchTopologyStale } from './api';
+export { fetchConfig, applyConfigPatch, fetchTopologyStale, probeTopologyStale } from './api';
 export { clearRestartPending, markRestartPending, restartStore } from './model/restart';
 export {
   diffPatch,

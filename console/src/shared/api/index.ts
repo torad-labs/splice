@@ -470,10 +470,17 @@ export const control = {
 // An edited-but-inert topology used to be invisible everywhere; the config page banners it.
 export async function fetchTopologyStale(): Promise<boolean> {
   try {
-    const res = await fetch('/health');
-    const body = (await res.json()) as { topologyStale?: boolean };
-    return body.topologyStale === true;
+    return await probeTopologyStale();
   } catch {
     return false; // fail open — a health hiccup must never block the page
   }
+}
+
+/** The same flag, or a throw when /health did not answer it: for a reader that must tell "not
+ *  stale" from "not read" (Needs you prints the second as unknown, never as nothing to do). */
+export async function probeTopologyStale(): Promise<boolean> {
+  const res = await fetch('/health');
+  if (!res.ok) throw new Error(`/health answered ${res.status}`);
+  const body = (await res.json()) as { topologyStale?: boolean };
+  return body.topologyStale === true;
 }

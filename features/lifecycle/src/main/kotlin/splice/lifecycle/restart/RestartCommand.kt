@@ -16,6 +16,7 @@ import splice.daemonclient.DaemonSettings
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.lifecycle.start.DaemonColdStart
+import splice.lifecycle.upgrade.JdkUpgradeInflight
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 
@@ -38,8 +39,9 @@ public class RestartCommand(
     private val settings = DaemonSettings(errors)
 
     /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
-     *  upgrade just activated (the old CLI running `splice upgrade` is not the version coming up). */
-    public fun restart(expectedVersion: String = GATEWAY_VERSION): Boolean {
+     *  upgrade just activated (the old CLI running `splice upgrade` is not the version coming up).
+     *  [waitForCompactions] false is `--now`, and the upgrade's own call, which has waited already. */
+    public fun restart(expectedVersion: String = GATEWAY_VERSION, waitForCompactions: Boolean = true): Boolean {
         // Load topology once: controlPort AND the FALLBACK head ports come from it. The head ports feed
         // the stop check so a restart never declares success while a head port is still bound (F3).
         // Silence here re-opened F3: a null topology made headPorts empty, `none {}` went vacuously
@@ -57,7 +59,8 @@ public class RestartCommand(
             }
             .getOrNull()
         val port = settings.controlPort(topology, env)
-        if (!stopIfRunning(port, topology?.heads?.values?.map { it.port } ?: emptyList())) return false
+        val tomlPorts = topology?.heads?.values?.map { it.port } ?: emptyList()
+        if (!stopIfRunning(port, tomlPorts, waitForCompactions)) return false
         val started = coldStart.ensureDaemon(port, expectedVersion)
         if (started) output.line("splice: daemon restarted")
         return started
@@ -66,9 +69,10 @@ public class RestartCommand(
     // The env is the constructor's (the splitBrainChecks / DaemonSettings idiom) so the stop decision
     // and its message are drivable against a temp CLAUDEX_STATE_DIR — DR-174's arms drive THIS
     // function, not the helper under it.
-    internal fun stopIfRunning(port: Int, tomlPorts: List<Int>): Boolean {
+    internal fun stopIfRunning(port: Int, tomlPorts: List<Int>, waitForCompactions: Boolean = true): Boolean {
         val running = DaemonProbe.healthVersion(port) ?: return true
         val key = stopKeyOrExplain() ?: return false
+        if (waitForCompactions) CompactionWait(output, JdkUpgradeInflight(env, port)).await()
         val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
         if (scope.degraded) {
             output.line(

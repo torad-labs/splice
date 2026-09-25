@@ -21,6 +21,7 @@ import splice.head.HeadServer
 import splice.head.NoHeadEvents
 import splice.head.admission.RequestMaterializationGate
 import splice.head.compact.ShadowClassifier
+import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.wire.WireTap
@@ -54,6 +55,7 @@ internal class HeadServerFactory(
         provider: Provider,
         stores: HeadStores,
         forwardClientAuth: Boolean,
+        compactionRecordings: CompactionRecordings,
     ): HeadServer {
         val key = ctx.key
         val cfg = ctx.cfg
@@ -81,6 +83,7 @@ internal class HeadServerFactory(
                     // every other head's bodies unkept.
                     wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) },
                     trace = stores.trace,
+                    compactionRecordings = compactionRecordings,
                 ),
                 quotaBundle = HeadDeps.HeadQuota(
                     quota = stores.quota,

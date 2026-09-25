@@ -53,6 +53,7 @@ class HeadServerCompactionReplayTest {
     private val port: Int get() = head.port
     private val gate = InflightGate({ 0 })
     private val lines = CopyOnWriteArrayList<String>()
+    private val tmp = Files.createTempDirectory("head-compaction-replay")
     private lateinit var head: HeadServer
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }
@@ -60,8 +61,15 @@ class HeadServerCompactionReplayTest {
 
     @BeforeAll
     fun setUp() = runBlocking {
-        val tmp = Files.createTempDirectory("head-compaction-replay")
-        head = HeadServer(
+        head = buildHead()
+        head.start()
+        awaitListening(port)
+    }
+
+    /** A head over [tmp]: a second one built after a stop is the next daemon process, a fresh
+     *  replay over the same state root (V4-216). */
+    private fun buildHead(): HeadServer =
+        HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
                     key = "codex",
@@ -90,9 +98,6 @@ class HeadServerCompactionReplayTest {
                 log = { lines += it },
             ),
         )
-        head.start()
-        awaitListening(port)
-    }
 
     @AfterAll
     fun tearDown() = runBlocking {
@@ -200,6 +205,41 @@ class HeadServerCompactionReplayTest {
         )
         assertTrue(sse.contains("event: message_stop"), "the recorded answer must be whole: $sse")
         assertEquals(upstreamAfterFirst, mock.upstreamBodies.size, "the retry must not start a second upstream turn")
+        assertTrue(logged("replaying its answer, no upstream turn", mark), lines.drop(mark).joinToString())
+    }
+
+    /** V4-216, RED before the store: the answer lived only in the replay's memory, so a daemon restart
+     *  between a detached compaction's answer and its retry lost the answer, and the retry paid for a
+     *  second upstream compaction. The head is replaced, not restarted: a new HeadServer over the
+     *  same state root is what the next daemon process builds. */
+    @Test
+    fun `a compaction answer kept before a restart is replayed by the next head over the same state`() = runBlocking {
+        mock.resetHold()
+        val mark = lines.size
+        val upstreamBefore = mock.upstreamBodies.size
+        val socket = openCompaction()
+        assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        socket.close()
+        assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+        mock.releaseHold()
+        assertTrue(waitFor(20_000) { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
+
+        head.stop()
+        head = buildHead()
+        head.start()
+        awaitListening(port)
+        val upstreamAfterFirst = mock.upstreamBodies.size
+
+        val sse = post(body)
+        assertEquals(
+            upstreamAfterFirst,
+            mock.upstreamBodies.size,
+            "the retry after the restart must not start a second upstream turn\n${lines.drop(mark).joinToString("")}",
+        )
+        assertTrue(sse.contains("held"), "the retry must receive the kept answer: $sse")
+        assertTrue(sse.contains("event: message_stop"), "the kept answer must be whole: $sse")
         assertTrue(logged("replaying its answer, no upstream turn", mark), lines.drop(mark).joinToString())
     }
 

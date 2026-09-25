@@ -236,6 +236,10 @@ public class StatePaths(
      *  discovered model. */
     public fun modelRosterFile(headKey: String): Path = stateDir.resolve("$headKey-models.json")
 
+    /** V4-216: a head's finished compaction answers, kept for the client's byte-identical retry
+     *  (FileCompactionRecordings), owner-only: each file is a summary of the user's conversation. */
+    public fun compactionRecordingsDir(headKey: String): Path = stateDir.resolve("compactions").resolve(headKey)
+
     /** Compact-stats JSONL lives in the ROOT dir (not state/) — legacy layout, kept with the names.
      *  The two legacy names are irregular on purpose (claudex-…, claude-grok-…); overridable per head. */
     public fun compactStatsFile(headKey: String, nameOverride: String? = null): Path {

@@ -20,6 +20,7 @@ import splice.head.admission.RequestMaterializationGate
 import splice.head.admission.TurnQuota
 import splice.head.compact.CompactStats
 import splice.head.compact.ShadowClassifier
+import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.perf.PerfStats
@@ -112,6 +113,9 @@ public data class HeadDeps(
         /** V4-174: the head's opt-in full request/response trace. NULL IS OFF, the same law as
          *  [wireTap]: no default, so a construction site that forgets cannot get a trace. */
         val trace: TraceStore?,
+        /** V4-216: where a compaction's answer waits for its retry across a daemon restart. No
+         *  default: a head built without it would replay only within one process, and compile. */
+        val compactionRecordings: CompactionRecordings,
     )
 
     /** Which account a turn spends, and the trackers that decide eligibility. */

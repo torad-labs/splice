@@ -39,6 +39,7 @@ import splice.head.MockChatGptUpstream
 import splice.head.awaitListening
 import splice.head.compact.CompactStats
 import splice.head.compact.ShadowClassifier
+import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
 import splice.head.usage.UsageStore
 import splice.upstream.ProviderTuning
@@ -262,6 +263,7 @@ private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
         clientWindows = ClientWindows(),
         wireTap = null,
         trace = null,
+        compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions"), log = {}),
     ),
     quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget),
     seams = HeadDeps.HeadSeams(),

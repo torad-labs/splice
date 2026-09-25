@@ -53,7 +53,7 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
         now: WallClock = WallClock { System.currentTimeMillis() },
     ): Boolean {
         val home = Paths.get(System.getProperty("user.home")).toString()
-        output.line("${BOLD}splice sessions$RESET $DIM— Claude Code sessions registered in ~/.claude/sessions$RESET")
+        output.line("${BOLD}splice sessions$RESET$DIM: Claude Code sessions registered in ~/.claude/sessions$RESET")
         output.line("")
         val listing = registry.list()
         val rows = listing.sessions
@@ -141,7 +141,7 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
     }
 
     private fun unattributed(why: String): Map<String, HeadConfig> {
-        errors.line("splice sessions: topology not readable ($why) — heads shown as unknown")
+        errors.line("splice sessions: topology not readable ($why); heads shown as unknown")
         return emptyMap()
     }
 }

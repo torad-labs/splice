@@ -114,7 +114,7 @@ public class CompactStats(
                 Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }
                     .onFailure {
                         if (skippedLogged.compareAndSet(false, true)) {
-                            log("[compact] $file has unreadable rows — stats totals are LOW by those rows\n")
+                            log("[compact] $file has unreadable rows; stats totals are LOW by those rows\n")
                         }
                     }.getOrNull()
             }
@@ -127,7 +127,7 @@ public class CompactStats(
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
-                log("[compact] $file unreadable (${SafeFailureText.render(failure)}) — stats rendered empty\n")
+                log("[compact] $file unreadable (${SafeFailureText.render(failure)}); stats rendered empty\n")
             }
             if (genuinelyAbsent) unreadableLogged.set(false)
             emptyList()

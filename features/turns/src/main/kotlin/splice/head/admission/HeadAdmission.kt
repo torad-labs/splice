@@ -229,7 +229,7 @@ internal class HeadAdmission(
     private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?): String {
         val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
         val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
-            "limited, so it is holding new turns for ${waitS}s — retry after that."
+            "limited, so it is holding new turns for ${waitS}s. Retry after that."
         if (windowResetEpochSeconds == null) return base
         return "$base The upstream reports its quota window resets at " +
             "${AccountResetText.format(windowResetEpochSeconds)}; if this keeps happening, that is the real deadline."

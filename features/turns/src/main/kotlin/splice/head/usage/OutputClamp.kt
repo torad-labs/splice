@@ -35,7 +35,7 @@ internal object OutputClampPolicy {
         val max = clientMaxTokens?.takeIf { it > 0 }
         return { n ->
             if (max != null && n > max) {
-                log("[$headTag] output_tokens $n > client max_tokens $max compact=$compact — clamping reported usage\n")
+                log("[$headTag] output_tokens $n > client max_tokens $max compact=$compact; clamping reported usage\n")
                 max
             } else {
                 n

@@ -49,7 +49,7 @@ internal class UsageRingFile(
         // ast-grep-ignore: kt-no-silent-result-collapse -- a failed size reads 0, and the read below throws the same error, logged by its getOrElse at UsageRingFile.kt:57
         val size = Cancellables.runCatchingCancellable { Files.size(usageFile) }.getOrDefault(0L)
         if (size > MAX_USAGE_FILE_BYTES) {
-            log("[usage] $usageFile is ${size}B > ${MAX_USAGE_FILE_BYTES}B cap — treating as empty, 5h window reset\n")
+            log("[usage] $usageFile is ${size}B > ${MAX_USAGE_FILE_BYTES}B cap; treating as empty, 5h window reset\n")
             return emptyList()
         }
         return Cancellables.runCatchingCancellable {
@@ -65,7 +65,7 @@ internal class UsageRingFile(
                 !Files.exists(usageFile, LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
                 log(
-                    "[usage] $usageFile unreadable/corrupt (${SafeFailureText.render(it)}) — " +
+                    "[usage] $usageFile unreadable/corrupt (${SafeFailureText.render(it)}); " +
                         "treating as empty, 5h window reset\n",
                 )
             }
@@ -99,7 +99,7 @@ internal class UsageRingFile(
                 // exists so that a future wrapped or custom exception cannot START quoting the
                 // state bytes being written, and `.message` opts out of that silently.
                 log(
-                    "[usage] $usageFile persist FAILED (${SafeFailureText.render(failure)}) — the 5h window " +
+                    "[usage] $usageFile persist FAILED (${SafeFailureText.render(failure)}); the 5h window " +
                         "survives in memory only until a later write succeeds\n",
                 )
             }

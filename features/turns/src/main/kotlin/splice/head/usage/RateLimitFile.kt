@@ -36,7 +36,7 @@ internal class RateLimitFile(
             !Files.exists(ratelimitFile, LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
             log(
-                "[usage] $ratelimitFile unreadable (${SafeFailureText.render(failure)}) — " +
+                "[usage] $ratelimitFile unreadable (${SafeFailureText.render(failure)}); " +
                     "ratelimit HUD state treated as absent\n",
             )
         }

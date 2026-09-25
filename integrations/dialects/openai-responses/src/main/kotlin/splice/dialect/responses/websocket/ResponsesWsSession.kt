@@ -141,7 +141,7 @@ internal class ResponsesWsSession(
                 chained = false,
                 fullSendReason = unanswered.takeIf { it.isNotEmpty() }?.let {
                     "the server holds ${it.size} unanswered tool call(s) this turn never answers " +
-                        "(${it.joinToString(", ")}) — a chained send would be refused"
+                        "(${it.joinToString(", ")}); a chained send would be refused"
                 },
             )
         } else {

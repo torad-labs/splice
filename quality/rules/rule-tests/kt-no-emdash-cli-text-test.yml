@@ -6,6 +6,8 @@ valid:
   # the report's fix separator: built from its code point, never spelled in a string
   - 'private val FIX_SEPARATOR = " ${Char(0x2014)} fix: "'
   - 'val detail = "every account is out ($at): $detail"'
+  # V4-238: a regex's clause boundary is read, not written; it names the character with the regex escape
+  - 'val re = Regex("[^.,;:!?\\x{2014}\\n]{0,2000}?retry")'
 invalid:
   - 'val detail = "splice.toml changed since the daemon booted — the running topology is stale"'
   # after an interpolation: the em-dash sits in its own string_content node
@@ -18,3 +20,8 @@ invalid:
   - 'val text = "''${r.key}'' is already configured — pick another --name"'
   # and the launch path's sign-in notice
   - 'val line = "''$label'' is not signed in — requests will fail until you run: ${spec.loginCommand}"'
+  # V4-238 batch 2: a turn's refusal to the client, the daemon's CLI text and the build's gate text
+  - 'val refusal = "head is stopping — retry"'
+  - 'output.line("splice: the daemon did not stop — terminate it manually and retry")'
+  - 'val detail = "Rate limit exceeded — $gatewayClause to avoid a retry wave"'
+  - 'throw UnreadableMetadata("$where: no <component> elements found — an unread metadata file must not read as empty")'

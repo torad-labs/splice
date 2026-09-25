@@ -115,7 +115,7 @@ internal class LocalResponses(
         )
         emitter.emitError(
             ErrorType.OVERLOADED,
-            "${provider.key}: the compaction this retry followed did not finish — retry",
+            "${provider.key}: the compaction this retry followed did not finish; retry",
         )
     }
 

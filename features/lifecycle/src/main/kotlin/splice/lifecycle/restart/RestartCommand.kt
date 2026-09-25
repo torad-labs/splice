@@ -53,7 +53,7 @@ public class RestartCommand(
             .onFailure { failure ->
                 output.line(
                     "splice: could not read ${TopologyLoader.configPath(env)} " +
-                        "(${SafeFailureText.render(failure)}) — " +
+                        "(${SafeFailureText.render(failure)}); " +
                         "falling back to the running daemon for head ports",
                 )
             }
@@ -76,14 +76,14 @@ public class RestartCommand(
         val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
         if (scope.degraded) {
             output.line(
-                "splice: WARNING — could not enumerate this daemon's head ports (config unreadable and " +
+                "splice: WARNING: could not enumerate this daemon's head ports (config unreadable and " +
                     "/api/heads unreachable). The stop check can only see :$port, so a head still " +
                     "holding its port may go unnoticed and the new daemon can hit EADDRINUSE.",
             )
         }
         output.line("splice: stopping daemon $running on :$port…")
         return daemonStop.stopDaemon(port, key, scope.ports).also { stopped ->
-            if (!stopped) output.line("splice: the daemon did not stop — terminate it manually and retry")
+            if (!stopped) output.line("splice: the daemon did not stop; terminate it manually and retry")
         }
     }
 
@@ -100,12 +100,12 @@ public class RestartCommand(
             is MgmtKeyRead.Present -> read.key
             is MgmtKeyRead.Unreadable -> null.also {
                 output.line(
-                    "splice: mgmt-key at $keyFile is unreadable (${read.reason}) — can't stop the " +
+                    "splice: mgmt-key at $keyFile is unreadable (${read.reason}); can't stop the " +
                         "daemon. Fix the file's permissions; it may exist, so nothing needs re-minting.",
                 )
             }
             is MgmtKeyRead.Absent -> null.also {
-                output.line("splice: mgmt-key not found at $keyFile — can't stop the daemon")
+                output.line("splice: mgmt-key not found at $keyFile; can't stop the daemon")
             }
         }
     }

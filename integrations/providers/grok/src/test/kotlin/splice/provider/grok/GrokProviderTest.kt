@@ -238,7 +238,7 @@ class GrokProviderTest {
         drLog.clear()
         assertNull(deniedAuth.refresh())
         assertTrue(
-            drLog.any { it.contains("no credential file — not logged in") },
+            drLog.any { it.contains("no credential file, so not logged in") },
             "true absence stays honest: $drLog",
         )
         assertTrue(drLog.none { it.contains("NOT a logged-out state") }, "absence is not a read failure: $drLog")

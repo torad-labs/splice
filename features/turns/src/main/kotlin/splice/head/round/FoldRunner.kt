@@ -94,7 +94,7 @@ internal class FoldRunner(
                 acc = acc.plusRound(p.usage)
             }
             buffer.discard()
-            log("[$key] fold re-anchor ${reanchorAttempt + 1}: ${failure.type.wireName} mid-round — retrying\n")
+            log("[$key] fold re-anchor ${reanchorAttempt + 1}: ${failure.type.wireName} mid-round; retrying\n")
             backoff(reanchorAttempt, 0)
             body = retry
             reanchorAttempt++

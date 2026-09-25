@@ -45,9 +45,16 @@ export interface TeamViewData {
  *  makes between a turn and a session (TurnDrive.SESSION_TAG_CHARS). */
 export const SESSION_TAG_CHARS = 8;
 
-/** HH:MM of an epoch in UTC, the clock of the daemon's day (TeamsReads.kt reads `?day=` as UTC). */
-export function utcClock(epochMs: number): string {
-  return new Date(epochMs).toISOString().slice(11, 16);
+const pad = (value: number): string => String(value).padStart(2, '0');
+
+/** HH:MM, or HH:MM:SS with `seconds`, on the operator's own clock, as Turns prints its times. The
+ *  daemon's DAY is UTC (TeamsReads.kt reads `?day=` as a UTC date), so the window the page reads is
+ *  the UTC day and its help says so; the times in it are local (Marlin, 2026-09-25: the page
+ *  printed UTC times beside a local clock with no word of it). */
+export function clockText(epochMs: number, seconds = false): string {
+  const at = new Date(epochMs);
+  const hm = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  return seconds ? `${hm}:${pad(at.getSeconds())}` : hm;
 }
 
 // ---- the seats -----------------------------------------------------------------------------
@@ -128,13 +135,14 @@ const HOUR_MS = 3_600_000;
 
 /** The clock the day is drawn on: from the tick before the first thing that happened (a turn, a
  *  hand-off), and never less than the last hour, to now, on the smallest step that keeps the ticks
- *  to eight. */
+ *  to eight. The ticks stand on the operator's own clock, so a six-hour step reads 06:00, 12:00. */
 export function dayAxis(starts: readonly number[], now: number): DayAxis {
   const first = Math.min(now - HOUR_MS, ...starts);
   const step = STEPS_MS.find((ms) => (now - first) / ms <= MAX_TICKS) ?? STEPS_MS[STEPS_MS.length - 1];
-  const from = Math.floor(first / step) * step;
+  const west = new Date(first).getTimezoneOffset() * 60_000;
+  const from = Math.floor((first - west) / step) * step + west;
   const ticks: DayAxis['ticks'] = [];
-  for (let at = from; at <= now; at += step) ticks.push({ at, label: utcClock(at) });
+  for (let at = from; at <= now; at += step) ticks.push({ at, label: clockText(at) });
   return { from, to: now, ticks };
 }
 

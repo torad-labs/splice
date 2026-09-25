@@ -8,6 +8,7 @@
 // carries none of these bytes, which the row's note proves by grepping the
 // built file.
 import type { TeamActivity, TeamEconomicsPayload, TeamMemberRow, TeamMessage, TeamPayload, TeamRow, TeamSlot } from '@entities/team';
+import { clockText } from '@widgets/team-board';
 import type { TeamTurn, TeamViewData } from '@widgets/team-board';
 
 /** Epoch ms of HH:MM(:SS) on the sample's day, in UTC like the daemon's day. */
@@ -237,7 +238,7 @@ const ECONOMICS: TeamEconomicsPayload = {
 const LAST_HOUR = Array.from({ length: 61 }, (_, index) => {
   const minute = at(13, 2) + index * MINUTE;
   return {
-    at: new Date(minute).toISOString().slice(11, 16),
+    at: clockText(minute),
     turns: TURNS.filter((t) => t.start <= minute && minute <= t.start + t.ms).length,
   };
 });

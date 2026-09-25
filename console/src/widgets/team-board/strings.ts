@@ -76,7 +76,7 @@ export const S = {
 export const H = {
   members: 'Every slot the team declares, with the session bound to it.',
   openSeat: 'Bind a session to this slot in the team editor.',
-  today: "Each bar is one turn; times are UTC, the daemon's day.",
+  today: "Each bar is one turn, over the daemon's UTC day.",
   economics: 'Lifetime totals, joined to slots on the session tag.',
   untagged: "Turns on the team's heads that carried no session tag.",
   noTurns: "Turns show here once the team's sessions run them.",

@@ -275,7 +275,10 @@ describe("the day's timeline", () => {
     expect(axis.to).toBe(sampleData.now);
     expect(axis.from).toBeLessThanOrEqual(Math.min(...sampleData.turns.map((turn) => turn.start)));
     expect(axis.ticks.length).toBeLessThanOrEqual(8);
-    expect(axis.ticks[0].label).toBe('09:00');
+    // The first tick stands on a whole local hour, within a step of the first turn.
+    const first = new Date(axis.ticks[0].at);
+    expect([first.getMinutes(), first.getSeconds()]).toEqual([0, 0]);
+    expect(axis.ticks[0].label).toBe(`${String(first.getHours()).padStart(2, '0')}:00`);
     // An idle team still gets the last hour, not a zero-width clock.
     const idle = dayAxis([], sampleData.now);
     expect(idle.to - idle.from).toBeGreaterThanOrEqual(3_600_000);
@@ -307,7 +310,9 @@ describe('the cost per role', () => {
     expect(table.total.cost).toBeCloseTo(0.736, 6);
     const html = render(createElement(CostPerRole, { data: sampleData }));
     expect(html).toContain('2 untagged');
-    expect(html).toContain('since 2025-05-22 09:14');
+    const oldest = new Date(economics.oldest_turn_epoch_millis ?? 0);
+    const two = (value: number) => String(value).padStart(2, '0');
+    expect(html).toContain(`since ${oldest.getFullYear()}-${two(oldest.getMonth() + 1)}-${two(oldest.getDate())} ${two(oldest.getHours())}:${two(oldest.getMinutes())}`);
   });
 
   test('cache reads and writes count as tokens in, and one unpriced role unprices the total', () => {

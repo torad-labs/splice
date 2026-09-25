@@ -19,21 +19,24 @@ import {
 } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup, Tone } from '@shared/ui';
 import { cx, fmtInt, fmtMs, fmtTokens } from '@shared/lib';
-import { costTable, dayAxis, lanesOf, lastReceived, roleName, seatGroups, seatsOf, slotName, utcClock } from './model';
+import { clockText, costTable, dayAxis, lanesOf, lastReceived, roleName, seatGroups, seatsOf, slotName } from './model';
 import type { RoleCost, Seat, TeamViewData } from './model';
 import { H, S, U } from './strings';
 import './team-board.css';
 
 export {
   SESSION_TAG_CHARS, costTable, dayAxis, lanesOf, lastReceived, roleName, rolesOf, seatGroups, seatsOf, slotName,
-  tokensIn, utcClock,
+  tokensIn, clockText,
 } from './model';
 export type { CostTable, DayAxis, RoleCost, Seat, SeatGroup, TeamHourPoint, TeamTurn, TeamViewData } from './model';
 
 const money = (value: number | null): string => (value === null ? S.absent : `$${value.toFixed(3)}`);
 
-/** YYYY-MM-DD HH:MM in UTC, the daemon's clock. */
-const utcStamp = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 16).replace('T', ' ');
+/** YYYY-MM-DD HH:MM on the operator's own clock. */
+const stamp = (epochMs: number): string => {
+  const at = new Date(epochMs);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')} ${clockText(epochMs)}`;
+};
 
 /** A word as a badge prints it: the client's own status words arrive lowercase. */
 const capital = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1);
@@ -403,7 +406,7 @@ export function TeamTimeline({ board, data }: { board: TeamPayload; data: TeamVi
                 key={turn.id}
                 className={cx('myx-tt-turn', turn.live ? 'myx-mark-ok' : 'myx-mark-series-1')}
                 style={{ left: x(turn.start), width: `${Math.min(100, (turn.ms / span) * 100)}%` }}
-                title={`${utcClock(turn.start)}, ${fmtMs(turn.ms)}`}
+                title={`${clockText(turn.start)}, ${fmtMs(turn.ms)}`}
               />
             ))}
           </span>
@@ -445,7 +448,7 @@ export function CostPerRole({ data }: { data: TeamViewData | null }) {
               <InfoTip text={H.untagged} label={S.untaggedWhy} />
             </span>
           )}
-          {table.oldest === null ? null : <span className="myx-tb-note-part">{`${U.since} ${utcStamp(table.oldest)}`}</span>}
+          {table.oldest === null ? null : <span className="myx-tb-note-part">{`${U.since} ${stamp(table.oldest)}`}</span>}
         </p>
       )}
     </Section>

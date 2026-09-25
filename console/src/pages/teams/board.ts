@@ -4,8 +4,8 @@
 // economics, and the day's perf rows of the team's sessions. Pure: no store and no clock (the
 // caller passes `now`), so the suite holds every join against fixed payloads.
 //
-// EVERY STAMP IS UTC, because the daemon's day is (TeamsReads.kt reads `?day=` as a UTC date), and
-// the page says so once, on its timeline's help.
+// THE DAY IS UTC, because the daemon's is (TeamsReads.kt reads `?day=` as a UTC date), and the page
+// says so once, on its timeline's help. The times in it print on the operator's own clock.
 import type { SessionRow } from '@entities/session';
 import type { InflightTurn, TurnRow } from '@entities/perf';
 import { UNLISTED } from '@entities/team';
@@ -20,7 +20,7 @@ import type {
   TeamPayload,
   TeamRow,
 } from '@entities/team';
-import { SESSION_TAG_CHARS, tokensIn } from '@widgets/team-board';
+import { SESSION_TAG_CHARS, clockText, tokensIn } from '@widgets/team-board';
 import type { TeamHourPoint, TeamTurn, TeamViewData } from '@widgets/team-board';
 import { ABSENT } from '@shared/lib';
 
@@ -29,9 +29,8 @@ const MINUTE_MS = 60_000;
 
 export { UNLISTED };
 
-const iso = (epochMs: number): string => new Date(epochMs).toISOString();
-export const hhmm = (epochMs: number): string => iso(epochMs).slice(11, 16);
-export const hhmmss = (epochMs: number): string => iso(epochMs).slice(11, 19);
+export const hhmm = (epochMs: number): string => clockText(epochMs);
+export const hhmmss = (epochMs: number): string => clockText(epochMs, true);
 
 /** A duration the way the board prints one: `4h 49m` past the hour, `2m 25s` under it. */
 export function span(ms: number): string {

@@ -34,7 +34,9 @@ import { exitStatusOf } from "../lib/status.ts";
 export const usage = "run [--java-home-only]                the gate of record: JDK 21, then clean gateOfRecord through the slot, then the release rehearsal";
 
 export const GATE_OF_RECORD_LABEL = "gate-of-record";
-export const GATE_OF_RECORD_TASKS = ["--no-build-cache", "clean", "gateOfRecord", "--continue"] as const;
+/** `--profile` writes build/reports/profile/: each task's time, which CI keeps as an artifact, so where a
+ *  gate's minutes go is read off the run rather than guessed from log timestamps. */
+export const GATE_OF_RECORD_TASKS = ["--no-build-cache", "clean", "gateOfRecord", "--continue", "--profile"] as const;
 /** The legs that run after the slot is released, because they take the slot themselves. */
 export const AFTER_THE_SLOT: readonly { readonly label: string; readonly command: readonly string[] }[] = [
   { label: "release rehearsal", command: ["bun", "tools/release", "verify"] },

@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { cx } from '../lib';
+import { S } from './strings';
 import './ui.css';
 
 /* PANEL AND EMPTYSTATE WERE EXPORTED AND PLACED NOWHERE, AND ARE DELETED (M1-101).
@@ -97,7 +98,7 @@ export function ConfirmBtn({ children, onConfirm, busy }: {
         disabled={busy}
         aria-busy={busy || undefined}
       >
-        {busy ? 'working' : children}
+        {busy ? S.working : children}
       </button>
     );
   }
@@ -111,9 +112,9 @@ export function ConfirmBtn({ children, onConfirm, busy }: {
         disabled={busy}
         aria-busy={busy || undefined}
       >
-        {busy ? 'working' : 'confirm'}
+        {busy ? S.working : S.confirm}
       </button>
-      <button type="button" className="myx-btn" onClick={disarm} disabled={busy}>cancel</button>
+      <button type="button" className="myx-btn" onClick={disarm} disabled={busy}>{S.cancel}</button>
     </span>
   );
 }
@@ -132,7 +133,7 @@ export { Empty } from './empty';
 export { Figure } from './figure';
 export { Badge, DataTable, DetailPanel, KeyValue, Meter, PageHeader, Section, Segmented, Stat, StatRow, Tally } from './kit';
 export type { Column, RowGroup, Tone } from './kit';
-export { Braid, InfoTip, LayerChip, LifetimeBar, Ring, Sparkline, StackedBar, Tip, Waterfall } from './charts';
+export { Braid, InfoTip, LayerChip, Legend, LifetimeBar, Pips, Ring, Sparkline, StackedBar, Tip, Waterfall } from './charts';
 export type { BarPart, Mark, Strand, WaterfallStage } from './charts';
 export type { Provenance } from './field-box';
 export type { Edge, Basis } from './types';

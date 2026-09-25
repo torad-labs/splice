@@ -419,39 +419,39 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
     return at >= 0 && calls.slice(at + 1).some((call) => call.method === 'GET');
   };
 
-  const turns = page.getByRole('button', { name: `turns ${STACK.oauthHead} ${STACK.model}` });
+  const turns = page.getByRole('button', { name: `Turn detail ${STACK.oauthHead} ${STACK.model}` });
   await expect(turns.first()).toBeVisible({ timeout: 15_000 });
   await turns.first().click();
-  const detail = page.getByRole('complementary', { name: 'turn detail' });
-  const toggle = detail.getByRole('switch', { name: 'body capture' });
+  const detail = page.getByRole('complementary', { name: 'Turn detail' });
+  const toggle = detail.getByRole('switch', { name: 'Body capture' });
   // Off by default, and saying so (PRODUCT.md: nothing is recorded that the operator did not ask for).
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await expect(detail).toContainText('capture off for this head');
+  await expect(detail).not.toContainText('Recording bodies');
 
   await toggle.click();
   await expect.poll(() => wroteThenReread(true), { message: 'the switch never wrote enabled=true and re-read' }).toBe(true);
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   // The daemon answers restart_required and its re-read still runs capture off: both are printed.
-  await expect(detail).toContainText('written to splice.toml');
-  await expect(detail).toContainText('capture off for this head');
+  await expect(detail).toContainText('Restart to apply');
+  await expect(detail).not.toContainText('Recording bodies');
   const toml = readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8');
   expect(toml, 'the write did not reach splice.toml').toMatch(new RegExp(`\\[heads\\.${STACK.oauthHead}\\.overrides\\][^[]*trace = "true"`));
 
   // A turn driven AFTER the write: its bodies are not recorded until the daemon restarts, and no
-  // route serves a body, so opening it must not print one.
+  // route serves a body, so opening it must not print one. The table lists the newest turn first.
   const before = await turns.count();
   await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'));
   await expect(turns).toHaveCount(before + 1, { timeout: 15_000 });
-  await turns.last().click();
-  await expect(detail).toContainText('written to splice.toml');
-  await expect(detail).toContainText('capture off for this head');
+  await turns.first().click();
+  await expect(detail).toContainText('Restart to apply');
+  await expect(detail).not.toContainText('Recording bodies');
   await expect(detail).not.toContainText(TURN_PROMPT);
 
   // And back off: the write and its re-read agree, so nothing is pending.
   await toggle.click();
   await expect.poll(() => wroteThenReread(false), { message: 'the switch never wrote enabled=false and re-read' }).toBe(true);
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await expect(detail).not.toContainText('written to splice.toml');
+  await expect(detail).not.toContainText('Restart to apply');
   expect(readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8')).toMatch(/trace = "false"/);
   expect(faults.pageErrors, 'the capture journey threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);

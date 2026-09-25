@@ -87,3 +87,64 @@
 .myx-lt-inner { position: relative; width: 100%; }
 .myx-lt-row { position: absolute; left: 0; right: 0; }
 .myx-lt-row:hover .myx-lt-line { background: var(--bg-hover); }
+
+/* A perf line, drawn (perf-line.tsx): the disclosure, the model, the turn's waterfall against the
+   slowest turn in the tail, its length, then the cache hit and the tokens in and out as bars against
+   the tail's largest. The daemon's own line opens under it. */
+.myx-lt-perf { display: grid; row-gap: var(--space-2); white-space: normal; }
+.myx-lt-perf-row {
+  display: grid;
+  grid-template-columns: var(--space-6) minmax(0, 10rem) minmax(6rem, 1fr) 4rem 8rem 6.5rem 6.5rem;
+  grid-template-areas: 'toggle model wf ms hit in out';
+  align-items: center;
+  column-gap: var(--space-4);
+}
+.myx-lt-toggle { grid-area: toggle; }
+.myx-lt-model { grid-area: model; }
+.myx-lt-wf { grid-area: wf; min-width: 0; }
+.myx-lt-figure { grid-area: ms; }
+.myx-lt-hit { grid-area: hit; min-width: 0; }
+.myx-lt-in { grid-area: in; min-width: 0; }
+.myx-lt-out { grid-area: out; min-width: 0; }
+
+.myx-lt-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: var(--space-6);
+  height: var(--space-5);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-2);
+  color: var(--fg-subtle);
+  cursor: pointer;
+}
+.myx-lt-toggle:hover { background: var(--bg-active); color: var(--fg); }
+.myx-lt-toggle svg { transition: transform var(--dur-1) var(--ease-out); }
+.myx-lt-open .myx-lt-toggle svg { transform: rotate(90deg); }
+
+.myx-lt-model { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.myx-lt-model .myx-badge { flex: none; font-family: var(--font-sans); }
+.myx-lt-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.myx-lt-figure { text-align: end; font-variant-numeric: tabular-nums; color: var(--fg); }
+.myx-lt-perf .myx-meter-figure { min-width: 0; font-size: var(--text-1); color: var(--fg); }
+.myx-lt-unit { color: var(--fg-subtle); }
+
+.myx-lt-raw {
+  padding-inline-start: calc(var(--space-6) + var(--space-4));
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+
+@media (max-width: 900px) {
+  .myx-lt-bar { flex-wrap: wrap; }
+  .myx-lt-bar .myx-legend { order: 1; flex-basis: 100%; }
+  .myx-lt-perf-row {
+    grid-template-columns: var(--space-6) repeat(3, minmax(0, 1fr));
+    grid-template-areas: 'toggle model model ms' '. wf wf wf' '. hit in out';
+    row-gap: var(--space-2);
+  }
+}

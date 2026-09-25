@@ -3,6 +3,10 @@
 export const S = {
   /** The info mark beside an empty state's line, which explains what would fill it. */
   why: 'Why',
+  /** The two-step control's words while it works, and once armed. */
+  working: 'Working',
+  confirm: 'Confirm',
+  cancel: 'Cancel',
 } as const;
 
 /** A number's basis, printed only when it is not the default: a measured figure says nothing, and

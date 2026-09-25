@@ -1,22 +1,26 @@
-// Labels of the logs page. Three words or fewer, lowercase, no em-dash (the label
-// wall globs this file). The pending empties, the empty tail's reason and the
-// capture-off sentence are not labels and live in the component (CONTRACTS.md
-// section 4).
+// Every word the logs page prints (docs/design/DESIGN.md section 10). S holds labels: three words or
+// fewer, sentence case. H holds help: one sentence of twelve words or fewer. tests/copy.test.ts holds
+// both.
 export const S = {
-  title: 'logs',
-  locked: 'console locked',
-  sample: 'sample data',
+  title: 'Logs',
+  locked: 'Console locked',
+  unreadable: 'Log unreadable',
+  sample: 'Sample data',
   /** The tail-size choice: how many of the log's last lines to read. */
-  tail: 'lines',
-  drawer: 'request capture',
+  tail: 'Lines',
+  drawer: 'Request capture',
   /** The tail restarted because the daemon rotated its log file. */
-  rotated: 'log rotated',
-  head: 'head',
+  rotated: 'Log rotated',
+  head: 'Head',
   /** The tag and level filters. */
-  tag: 'tag',
-  level: 'level',
-  all: 'all',
-  search: 'search',
+  tag: 'Tag',
+  level: 'Level',
+  all: 'All',
+  search: 'Search',
   /** The rail of filters beside the stream. */
-  filters: 'log filters',
+  filters: 'Log filters',
+} as const;
+
+export const H = {
+  locked: 'The management key unlocks this page.',
 } as const;

@@ -1,19 +1,26 @@
-// The turns page: what is running now, what landed, and how each turn spent its time.
+// The turns page: what is running now, what landed, and where each turn's time went.
 //
-// THREE BAYS, and what each one can honestly say today.
-//   in flight  - the gate snapshots on GET /api/heads, which exist: one strip per live turn, with
-//                the phase and the idle time, cocked when the turn has outlived the head's own
-//                idle threshold (the difference between reasoning and hung).
-//   summary    - GET /api/perf/summary, which exists: per head, the windowed percentiles, the
-//                failure share and the dropped-telemetry lower bound.
-//   landed     - GET /api/perf/turns, which does NOT exist yet (V4-127): the honest empty names
-//                that row, and no mocked row ever stands in for it.
+// WHAT EACH SECTION CAN HONESTLY SAY, and the read behind it.
+//   in flight  - the gate snapshots on GET /api/heads: per head, the slots in use against its limit
+//                and the turns queued for one. A daemon that also lists the live turns gets a row per
+//                turn, with its idle time against the head's own stream idle limit, so a hung turn
+//                reads as a full bar and a badge. This daemon lists none: its heads route writes the
+//                list empty (HeadStatus.kt), so the counts are what this section can always say, and
+//                it said "nothing in flight" beside five running turns before (2026-09-25).
+//   summary    - GET /api/perf/summary: per head, the window's percentiles, the failure share and
+//                the dropped-telemetry lower bound. A head with no turns in the window is named on
+//                one line, never a row of dashes that would read as a fast head.
+//   stages,    - the loaded landed turns (GET /api/perf/turns): where their time went, in the five
+//   tokens       parts of a turn, and what their prompts cost in cache terms. Both say how many
+//                turns they read, because it is not the summary's window.
+//   landed     - the same turns, newest first, each with its waterfall on one scale shared by the
+//                table, so a slow turn is a long bar before its figure is read.
 //
-// The waterfall is the answer to "why was this slow": queue wait, upstream wait and streaming as
-// separate rows of one bar, because the daemon records where the time went and never why (the
-// console labels the phases and stops there - FEATURES.md 2.12).
-import { useEffect, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+// The waterfall answers "why was this slow" only as far as the daemon can: queue wait, upstream wait
+// and streaming as separate parts, because the daemon records where the time went and never why
+// (FEATURES.md 2.12).
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
 import {
@@ -26,100 +33,56 @@ import {
   usePerfSummary,
   usePerfTurns,
   waterfall,
+  STAGE_MARKS,
   STAGE_NAMES,
 } from '@entities/perf';
 import type {
   CaptureState,
   InflightTurn,
   PendingRoute,
-  PerfSummaryHead,
   PerfSummaryPayload,
   StageGroup,
   TurnRow,
   TurnsState,
 } from '@entities/perf';
 import { useHeads, startHeadsPolling } from '@entities/heads';
+import { HeadMark } from '@entities/control-status';
 import { useSession } from '@entities/session';
-import { RequestDrawer, Waterfall } from '@widgets/waterfall';
-import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
+import { RequestDrawer, TurnWaterfall } from '@widgets/waterfall';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, PageHeader, Section, StackedBar } from '@shared/ui';
+import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { fmtMs, fmtShare, timeAgo } from '@shared/lib';
-import type { Basis } from '@shared/ui';
-import { basisProp } from './strip';
-import { S } from './strings';
-import { itemsOf, selectionOf } from './select';
-import type { Selection } from './select';
-import { InflightStrip, LandedNames, TurnStrip } from './strip';
+import { fmtMs, fmtShare, fmtTokens, timeAgo } from '@shared/lib';
+import { badgesOf, Gates, inflightColumns, landedColumns, landedKeysOf, lengthOf, slotsFrom, summaryColumns } from './columns';
+import type { HeadSlots } from './columns';
+import { clockOf, groupByOf, rowKeyer, selectionOf } from './select';
+import { H, S, U } from './strings';
 import './turns.css';
+
+export { atText, badgesOf, cacheHitOf, isStalled, landedKeysOf, lengthOf, slotsFrom } from './columns';
+export type { HeadSlots } from './columns';
 
 const PAGE_ID = 'turns';
 
-const LANDED_FIELDS = [
-  'time', 'head', 'model', 'outcome', 'total', 'firstByte', 'tokensIn', 'cached', 'cacheWrite',
-  'tokensOut', 'retries', 'attempts', 'inflight', 'dropped',
-];
-const INFLIGHT_FIELDS = ['session', 'head', 'phase', 'age', 'idle', 'compact'];
+const LANDED_FIELDS = ['time', 'head', 'model', 'outcome', 'timing', 'firstByte', 'cache', 'tokensIn', 'tokensOut'];
+
+/** The landed columns kept while a turn is open beside the table. */
+const OPEN_KEYS: ReadonlySet<string> = new Set(['time', 'head', 'model', 'outcome', 'timing']);
 
 /** The four views this page ships. `table` is the default and stands first. */
 const DEFAULT_VIEWS: View[] = [
-  { id: 'table', name: 'table', layout: 'table', filter: {}, sort: null, group: null, fields: LANDED_FIELDS },
-  { id: 'timeline', name: 'timeline', layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['time', 'head', 'model', 'outcome', 'total'] },
-  { id: 'by-model', name: 'by model', layout: 'table', filter: {}, sort: null, group: 'model', fields: LANDED_FIELDS },
-  { id: 'by-outcome', name: 'by outcome', layout: 'table', filter: {}, sort: null, group: 'outcome', fields: LANDED_FIELDS },
+  { id: 'table', name: S.table, layout: 'table', filter: {}, sort: null, group: null, fields: LANDED_FIELDS },
+  { id: 'timeline', name: S.timeline, layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['time', 'head', 'model', 'outcome', 'timing'] },
+  { id: 'by-model', name: S.byModel, layout: 'table', filter: {}, sort: null, group: 'model', fields: LANDED_FIELDS },
+  { id: 'by-outcome', name: S.byOutcome, layout: 'table', filter: {}, sort: null, group: 'outcome', fields: LANDED_FIELDS },
 ];
 
-const ROW_H = 40;
+// ------------------------------------------------------------------------ where the time went
 
-/** A cell the rollup does not carry prints the absence glyph, never a zero the daemon did not
- *  report. It carries no basis: `–` is the whole statement, and the word `unavailable` beside it
- *  said the same thing twice (m1 design review B8). */
-function cell(value: number | undefined, format: (n: number) => string): { value: string; basis?: Basis | undefined } {
-  return value === undefined ? { value: S.absent } : { value: format(value), basis: 'measured' };
-}
-
-/** The summary rack's own columns (it summarizes a window, so its fields are not the landed
- *  rack's), declared once for the bay head and the rows below it (CONTRACTS.md section 2, m1
- *  design review B9). */
-/**
- * WHERE THE TIME WENT, AND WHAT IT COST (M2-20) -- TWO SMALL MEMBERS, EACH WEARING ITS OWN HEADER.
- *
- * WHY THESE TWO AND NOT THE OTHER SIXTY. M2-20's trap is printing the headroom: turns holds 117
- * served fields and prints 55, and consuming that inventory would be the padded page M1-111 refused
- * from the other direction. M1-109 measured what actually earns PRINTED -- the grey header strip a
- * table wears, and the plate a bay label sits on -- and the comp earns 6.17 by composing MANY SMALL
- * MEMBERS where our pages compose few large ones. So the test for a member is not "is this field
- * served" but "does it answer a question a person has", and this page's person is scanning for cost,
- * latency and outcome.
- *
- * WHAT EARNED ITS PLACE. The page's own header says the daemon "records where the time went and
- * never why", and the summary rack prints P50 and P95 totals -- it says how LONG a turn took and
- * never WHERE. The pipeline marks are served on every row, are the daemon's own instrumentation,
- * and answer the question the page's comment names, summed into the five parts of a turn the
- * waterfall already groups them by (see stageRowsOf). SECOND MEMBER: the summary prints ONE cache scalar, while the four token
- * classes (in, cached, cache write, out) are served and unprinted -- and cached versus written is
- * the ten-to-one price difference the operator actually pays. Both are per-head rows, which is the
- * grain the rest of this page reads.
- *
- * WHAT WAS REJECTED, WITH REASONS, because a census that only lists what it took is an inventory:
- *   - THE TRANSPORT FIELDS (req_bytes, upstream_req_bytes, sse_bytes_in, bytes_out, events_in,
- *     frames_out, content_frames_out, frames_skipped): they answer a protocol engineer's question
- *     and not this page's. A reader scanning for cost, latency and outcome cannot act on a frame
- *     count.
- *   - THE RETRY BREAKDOWN (attempts, post_send_retries, reanchors, backoff_ms, auth_ms, refresh_ms,
- *     write_ms, usage_ms, stall_ms): mostly zero on healthy traffic, so a table of them spends a
- *     header to say nothing, and the summary already prints retries and refreshes as scalars. If a
- *     retry ever earns a place it earns it as a column on a table that is already there.
- *   - THE PER-TURN IDENTITY FIELDS (session, account, cache_cold, inflight, async_io_drops,
- *     tools_eager, tools_deferred): they belong to the strip that is already rendering that turn,
- *     not to a second table about it.
- *   - first_byte, first_frame, first_delta, total, ts, model, outcome, compact: ALREADY PRINTED,
- *     by the summary rack and the landed strips.
- */
-const STAGE_GROUPS: readonly { group: StageGroup; label: string }[] = (
-  ['ingest', 'queue', 'upstream', 'stream', 'finish'] as const
-).map((group) => ({ group, label: STAGE_NAMES[group] }));
+const STAGE_ORDER: readonly StageGroup[] = ['ingest', 'queue', 'upstream', 'stream', 'finish'];
 
 export interface StageRow {
+  group: StageGroup;
   label: string;
   /** Summed over every loaded turn that reached this part. */
   ms: number;
@@ -134,11 +97,11 @@ export interface StageRow {
  *
  * THE MARKS ARE CUMULATIVE: each is ms since the request arrived (PerfKeys, "marks are
  * *_ms-since-arrival"), so a part's time is the DIFFERENCE between two marks, which is what
- * entities/perf's `waterfall` computes for one turn. This table used to add the raw marks up as if
- * each were a duration, so `finish` (the whole turn) and `stream end` (nearly the whole turn) read
- * half of all time each and every earlier stage read 0.0 % (console review, 2026-09-24). A part a
- * turn never reached is left out of that turn rather than counted as zero, and a part no loaded turn
- * reached is not printed.
+ * entities/perf's `waterfall` computes for one turn. This used to add the raw marks up as if each
+ * were a duration, so `finish` (the whole turn) and `stream end` (nearly the whole turn) read half of
+ * all time each and every earlier stage read 0.0 % (console review, 2026-09-24). A part a turn never
+ * reached is left out of that turn rather than counted as zero, and a part no loaded turn reached is
+ * not printed.
  */
 export function stageRowsOf(rows: readonly TurnRow[]): StageRow[] {
   const totals = new Map<StageGroup, { ms: number; turns: number }>();
@@ -152,117 +115,179 @@ export function stageRowsOf(rows: readonly TurnRow[]): StageRow[] {
       sum += ms;
     }
   }
-  return STAGE_GROUPS.flatMap(({ group, label }) => {
+  return STAGE_ORDER.flatMap((group) => {
     const at = totals.get(group);
-    return at === undefined ? [] : [{ label, ms: at.ms, perTurn: at.ms / at.turns, share: sum === 0 ? 0 : at.ms / sum }];
+    return at === undefined ? [] : [{ group, label: STAGE_NAMES[group], ms: at.ms, perTurn: at.ms / at.turns, share: sum === 0 ? 0 : at.ms / sum }];
   });
 }
 
 /** A 0..1 share as a person reads it (@shared/lib's fmtShare, kept under this page's name). */
 export const shareText = fmtShare;
 
-/** The four token classes per head, with the cache hit share: what the operator pays for. */
-function tokenRowsOf(rows: readonly TurnRow[]): { head: string; in: number; cached: number; write: number; out: number; hit: number }[] {
-  const byHead = new Map<string, { head: string; in: number; cached: number; write: number; out: number; hit: number }>();
-  for (const row of rows) {
-    const at = byHead.get(row.head) ?? { head: row.head, in: 0, cached: 0, write: 0, out: 0, hit: 0 };
-    at.in += row.in_tokens ?? 0;
-    at.cached += row.cached_tokens ?? 0;
-    at.write += row.cache_write_tokens ?? 0;
-    at.out += row.out_tokens ?? 0;
-    byHead.set(row.head, at);
-  }
-  return [...byHead.values()].map((at) => ({ ...at, hit: at.in === 0 ? 0 : at.cached / at.in }));
+/** The loaded turns filed by head, in the order each head first appears. */
+function byHead(rows: readonly TurnRow[]): Map<string, TurnRow[]> {
+  const heads = new Map<string, TurnRow[]>();
+  for (const row of rows) heads.set(row.head, [...(heads.get(row.head) ?? []), row]);
+  return heads;
 }
 
-/** The window is the bay's own label now, not a column repeating `24h` on every row; the rest
- *  are sized to what they print (`10.6s`, `98%`), which is what let the rack fit its bay. */
-export const SUMMARY_COLUMNS: readonly { key: string; label: string; w: number }[] = [
-  { key: 'head', label: S.head, w: 20 },
-  { key: 'rows', label: S.rows, w: 8 },
-  { key: 'first_p50', label: S.firstByte, w: 10 },
-  { key: 'first_p95', label: S.firstByteP95, w: 12 },
-  { key: 'total_p50', label: S.turnTime, w: 10 },
-  { key: 'total_p95', label: S.turnTimeP95, w: 12 },
-  { key: 'failure', label: S.failureShare, w: 8 },
-  { key: 'retries', label: S.retries, w: 8 },
-  { key: 'refreshes', label: S.refreshes, w: 9 },
-  { key: 'cache', label: S.cacheHit, w: 9 },
-  { key: 'peak', label: S.peakInflight, w: 13 },
-  { key: 'drops', label: S.ioDrops, w: 12 },
-];
-
-function summaryFields(head: PerfSummaryHead): { key: string; label: string; w: number; value: string; basis?: Basis | undefined }[] {
-  const first = head.time_before_first_byte_ms;
-  const total = head.total_ms;
-  const values: Record<string, { value: string; basis?: Basis | undefined }> = {
-    head: { value: head.label, basis: 'measured' },
-    rows: { value: String(head.count), basis: 'measured' },
-    first_p50: cell(first?.p50, fmtMs),
-    first_p95: cell(first?.p95, fmtMs),
-    total_p50: cell(total?.p50, fmtMs),
-    total_p95: cell(total?.p95, fmtMs),
-    failure: cell(head.failure_share, shareText),
-    retries: cell(head.retries, String),
-    refreshes: cell(head.refreshes, String),
-    cache: cell(head.cache_hit_ratio ?? undefined, shareText),
-    peak: cell(head.peak_inflight, String),
-    drops: cell(head.io_drops_in_window, String),
-  };
-  return SUMMARY_COLUMNS.flatMap((column) => {
-    const found = values[column.key];
-    return found === undefined ? [] : [{ ...column, ...found }];
-  });
-}
-
-/** The sentence an empty window prints, which is FEATURES.md 4.3's own: a window with no rows says
- *  so, and never reads as zero latency. It lives here, not in strings.ts, because an honest empty
- *  is not a label (CONTRACTS.md section 4). It is what a reader who needs the whole statement gets
- *  — the strip's aria-label — because the printed edge carries the state in two words. */
-export const NO_ROWS = 'no turns in this window';
-
-/** Where a turn goes once it lands: said under every rack of landed rows when there are none. */
-const LANDS_HERE = 'turns land here as the heads serve them';
-
-/** One head's windowed summary. A head whose window is empty never gets a strip: eight rows of
- *  dashes buried the two heads that had turns (console review, 2026-09-24), so the empty ones are
- *  NAMED on one line under the rack instead (IdleHeads), and an empty window still never reads as a
- *  fast one. */
-function SummaryStrip({ head }: { head: PerfSummaryHead }) {
+/** One bar per head of an average turn in its parts, on one scale, under the whole table's bar,
+ *  which alone carries the figures: the per-head bars compare, the first one reads. */
+function StageBars({ rows, nameOf }: { rows: readonly TurnRow[]; nameOf: (key: string) => string }) {
+  const lines = [...byHead(rows)].map(([head, turns]) => ({ head, stages: stageRowsOf(turns) }));
+  const length = (stages: readonly StageRow[]): number => stages.reduce((held, stage) => held + stage.perTurn, 0);
+  const scale = Math.max(0, ...lines.map((line) => length(line.stages)));
+  const parts = (stages: readonly StageRow[]) => stages.map((stage) => ({
+    key: stage.group, label: stage.label, value: stage.perTurn, mark: STAGE_MARKS[stage.group],
+  }));
   return (
-    <Strip edge="green" edgeLabel="" ariaLabel={`${S.summary} ${head.label}`}>
-      {summaryFields(head).map((field) => (
-        <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
-      ))}
-    </Strip>
-  );
-}
-
-/** An idle head as the line names it, with when it last ran a turn when the daemon says
- *  (`last_ts`): `bonsai (last 2d ago)`, `bonsai-vast (never)`. */
-function idleName(head: PerfSummaryHead): string {
-  if (head.last_ts === undefined) return head.label;
-  return head.last_ts === null ? `${head.label} (never)` : `${head.label} (last ${timeAgo(head.last_ts)})`;
-}
-
-/** The heads a window holds no turns for, named on one line: an absence said once, not per row. */
-export function IdleHeads({ summary }: { summary: PerfSummaryPayload }) {
-  const idle = summary.heads.filter((head) => head.empty).map(idleName);
-  if (idle.length === 0) return null;
-  return <p className="myx-tn-idle">{`${S.noTurnsIn} ${summary.window}: ${idle.join(', ')}`}</p>;
-}
-
-/** A band between groups in the virtualized list: the name of what follows, and how much of it. */
-function Band({ label, count }: { label: string; count: number }) {
-  return (
-    <div className="myx-tn-band">
-      <HolderEdge state="grey" label={label} />
-      <span className="myx-tn-band-count">{count}</span>
+    <div className="myx-tn-stages">
+      <StackedBar label={S.stages} legend format={fmtMs} parts={parts(stageRowsOf(rows))} />
+      <div className="myx-tn-stage-heads">
+        {lines.map((line) => (
+          <div key={line.head} className="myx-tn-stage-head">
+            <HeadMark head={line.head}>{nameOf(line.head)}</HeadMark>
+            <StackedBar label={`${S.stages} ${nameOf(line.head)}`} format={fmtMs} total={scale} parts={parts(line.stages)} />
+            <span className="myx-tn-figure">{fmtMs(length(line.stages))}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
+// ------------------------------------------------------------------------------------ tokens
+
+export interface TokenRow {
+  head: string;
+  in: number;
+  cached: number;
+  write: number;
+  out: number;
+}
+
+/** The four token classes per head: what the operator pays for, since a cache read and a cache
+ *  write are priced ten to one apart. */
+export function tokenRowsOf(rows: readonly TurnRow[]): TokenRow[] {
+  const heads = new Map<string, TokenRow>();
+  for (const row of rows) {
+    const at = heads.get(row.head) ?? { head: row.head, in: 0, cached: 0, write: 0, out: 0 };
+    at.in += row.in_tokens ?? 0;
+    at.cached += row.cached_tokens ?? 0;
+    at.write += row.cache_write_tokens ?? 0;
+    at.out += row.out_tokens ?? 0;
+    heads.set(row.head, at);
+  }
+  return [...heads.values()];
+}
+
+/** The input's three parts: `in_tokens` holds the cache read and the cache write (PerfKeys), and
+ *  what is left is the miss, the part priced in full. The strong grey is the expensive part. */
+const INPUT_KEY = [
+  { mark: 'series-3', label: S.cached },
+  { mark: 'series-2', label: S.written },
+  { mark: 'series-1', label: S.uncached },
+] as const;
+
+function tokenColumns(scale: number, nameOf: (key: string) => string): Column<TokenRow>[] {
+  return [
+    { key: 'head', label: S.head, width: '20%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
+    {
+      key: 'input',
+      label: S.input,
+      width: '46%',
+      cell: (row) => (
+        <span className="myx-tn-split">
+          <StackedBar
+            label={S.input}
+            total={scale}
+            format={fmtTokens}
+            parts={[
+              { key: 'cached', label: S.cached, value: row.cached, mark: INPUT_KEY[0].mark },
+              { key: 'write', label: S.written, value: row.write, mark: INPUT_KEY[1].mark },
+              { key: 'miss', label: S.uncached, value: Math.max(0, row.in - row.cached - row.write), mark: INPUT_KEY[2].mark },
+            ]}
+          />
+          <span className="myx-tn-figure">{fmtTokens(row.in)}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'hit',
+      label: S.cacheHit,
+      width: '20%',
+      cell: (row) => (row.in === 0 ? S.absent : (
+        <Meter tone="neutral" value={row.cached / row.in} label={`${S.cacheHit} ${fmtShare(row.cached / row.in)}`} figure={fmtShare(row.cached / row.in)} />
+      )),
+    },
+    { key: 'out', label: S.output, width: '14%', align: 'end', mono: true, cell: (row) => fmtTokens(row.out) },
+  ];
+}
+
+/** One turn's prompt in its three parts, with the figures, and what it answered with. */
+function TurnTokens({ row }: { row: TurnRow }) {
+  if (row.in_tokens === undefined && row.out_tokens === undefined) return <>{S.absent}</>;
+  const input = row.in_tokens ?? 0;
+  const cached = row.cached_tokens ?? 0;
+  const write = row.cache_write_tokens ?? 0;
+  return (
+    <div className="myx-tn-turn-tokens">
+      <StackedBar
+        label={S.input}
+        legend
+        format={fmtTokens}
+        parts={[
+          { key: 'cached', label: S.cached, value: cached, mark: INPUT_KEY[0].mark },
+          { key: 'write', label: S.written, value: write, mark: INPUT_KEY[1].mark },
+          { key: 'miss', label: S.uncached, value: Math.max(0, input - cached - write), mark: INPUT_KEY[2].mark },
+        ]}
+      />
+      <KeyValue
+        rows={[
+          [S.input, row.in_tokens === undefined ? S.absent : fmtTokens(row.in_tokens)],
+          [S.output, row.out_tokens === undefined ? S.absent : fmtTokens(row.out_tokens)],
+          [S.firstByte, row.first_byte === undefined ? S.absent : fmtMs(row.first_byte)],
+        ]}
+      />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------------------------ summary
+
+/** An idle head as the line names it, with when it last ran a turn when the daemon says
+ *  (`last_ts`): `bonsai 2d ago`, `bonsai-vast never`. */
+function lastText(last: number | null | undefined): string | null {
+  if (last === undefined) return null;
+  return last === null ? S.never : `${U.last} ${timeAgo(last)}`;
+}
+
+/** The heads a window holds no turns for, named on one line: an absence said once, not per row. */
+export function IdleHeads({ summary }: { summary: PerfSummaryPayload }) {
+  const idle = summary.heads.filter((head) => head.empty);
+  if (idle.length === 0) return null;
+  return (
+    <p className="myx-tn-idle">
+      <span className="myx-tn-idle-name">{S.noTurnsIn}</span>
+      {idle.map((head) => {
+        const last = lastText(head.last_ts);
+        return (
+          <span key={head.key} className="myx-tn-idle-head">
+            <HeadMark head={head.key}>{head.label}</HeadMark>
+            {last === null ? null : <span className="myx-tn-quiet">{last}</span>}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+// -------------------------------------------------------------------------------------- board
+
 export interface TurnsBoardProps {
+  /** Each head's gate: slots in use, the limit and the queue. */
+  slots?: readonly HeadSlots[];
+  /** The live turns, where the daemon lists them. */
   inflight: InflightTurn[];
   landed: TurnsState | PendingRoute | null;
   summary: PerfSummaryPayload | null;
@@ -279,207 +304,209 @@ export interface TurnsBoardProps {
   sample?: string | undefined;
 }
 
-export function TurnsBoard({ inflight, landed, summary, capture, captureError = null, locked = false, error = null, lastRead = null, sample }: TurnsBoardProps) {
+export function TurnsBoard({ slots = [], inflight, landed, summary, capture, captureError = null, locked = false, error = null, lastRead = null, sample }: TurnsBoardProps) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const pending = landed !== null && 'pending' in landed;
   const rows = landed !== null && !pending ? landed.landed : [];
   const unread = landed !== null && !pending ? landed.unread : [];
-  const stageRows = stageRowsOf(rows);
-  const tokenRows = tokenRowsOf(rows);
   // The rows carry the head KEY (`bonsai`); the summary and the fleet print its label
   // (`claude-bonsai`), the name the operator launches it by. One name per head on the page.
   const labels = new Map((summary?.heads ?? []).map((head) => [head.key, head.label]));
   const nameOf = (key: string): string => labels.get(key) ?? key;
-  const selection: Selection = selectionOf(rows, active, Date.now());
-  const items = pending ? [] : itemsOf(selection);
-  const open = items.find((item) => item.kind === 'row' && item.key === openKey);
 
-  const virtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_H,
-    getItemKey: (index) => items[index].key,
-    overscan: 10,
-  });
+  const selection = selectionOf(rows, active, Date.now());
+  // A row's key is its head and ts, with an ordinal only among twins, computed ONCE per render so
+  // the table, the selection and the open panel all read the same key for the same row.
+  const keyer = rowKeyer();
+  const listed = selection.kind === 'table' ? selection.rows
+    : selection.kind === 'groups' ? selection.groups.flatMap((group) => group.rows)
+      : [...selection.timeline.buckets.flatMap((bucket) => bucket.rows), ...selection.timeline.undated];
+  const keys = new Map(listed.map((row) => [row, keyer(row)]));
+  const keyOf = (row: TurnRow): string => keys.get(row) ?? `${row.head}:${row.ts}`;
+  const open = listed.find((row) => keyOf(row) === openKey) ?? null;
 
   // Re-read on every opened turn, not only on a new head: the settings the daemon runs change at a
   // restart, and the turn the operator just opened is the moment they are asking about.
   useEffect(() => {
-    if (open?.kind !== 'row') return;
-    void fetchCapture(open.row.head);
-  }, [open?.kind === 'row' ? open.row.head : null, open?.kind === 'row' ? open.row.ts : null]);
+    if (open === null) return;
+    void fetchCapture(open.head);
+  }, [open?.head, open?.ts]);
 
-  const idleBuckets = selection.kind === 'timeline'
+  if (locked) return <Empty text={S.locked} />;
+  if (error !== null && landed === null) return <Fault message={error} />;
+
+  const by = groupByOf(active);
+  // Opened, the table gives the detail its room and keeps the columns that find a turn: the cache
+  // and the tokens move into the detail, where they were cut to `90!` and `1...` beside it.
+  const keysShown = landedKeysOf(active.fields)
+    .filter((key) => key !== by)
+    .filter((key) => open === null || OPEN_KEYS.has(key));
+  const scale = Math.max(0, ...listed.map(lengthOf));
+  const columns = landedColumns(keysShown, scale, nameOf);
+
+  const groups: RowGroup<TurnRow>[] | null = selection.kind === 'groups'
+    ? selection.groups.map((group) => ({
+      key: group.key,
+      title: by === 'outcome' ? <Badge tone={group.key === 'ok' ? 'ok' : 'danger'} quiet>{group.key}</Badge> : group.key,
+      count: group.count,
+      rows: group.rows,
+    }))
+    : selection.kind === 'timeline'
+      ? [
+        ...selection.timeline.buckets
+          .filter((bucket) => bucket.rows.length > 0)
+          .map((bucket) => ({ key: String(bucket.start), title: clockOf(bucket.start), count: bucket.rows.length, rows: bucket.rows })),
+        ...(selection.timeline.undated.length === 0
+          ? []
+          : [{ key: 'undated', title: S.undated, count: selection.timeline.undated.length, rows: selection.timeline.undated }]),
+      ]
+      : null;
+
+  const idleHours = selection.kind === 'timeline'
     ? selection.timeline.buckets.filter((bucket) => bucket.rows.length === 0).length
     : 0;
+  const ran = summary?.heads.filter((head) => !head.empty) ?? [];
+  const counted = slots.reduce((held, head) => held + head.inflight, 0);
+  const unlisted = Math.max(0, counted - inflight.length);
+  const tokenRows = tokenRowsOf(rows);
+  const tokenScale = Math.max(0, ...tokenRows.map((row) => row.in));
 
-  if (locked) return <Empty text="console locked" source="management key" />;
-  if (error !== null && landed === null) return <Fault message={error} />;
+  let landedBody: ReactNode;
+  if (pending) landedBody = <Empty text={S.historyUnavailable} source={H.historyUnavailable} />;
+  else if (listed.length === 0) landedBody = <Empty text={S.noTurns} source={H.noTurns} />;
+  else {
+    const table = {
+      columns,
+      rowKey: keyOf,
+      label: S.landed,
+      onOpen: (row: TurnRow) => setOpenKey(keyOf(row)),
+      openLabel: (row: TurnRow) => `${S.detail} ${nameOf(row.head)} ${row.model ?? S.absent}`,
+      selectedKey: openKey,
+      rowTone: (row: TurnRow) => (row.outcome === 'ok' ? null : 'danger' as const),
+    };
+    landedBody = groups === null
+      ? <DataTable className="myx-tn-table" {...table} rows={listed} />
+      : <DataTable className="myx-tn-table" {...table} groups={groups} />;
+  }
 
   return (
     <div className="myx-tn">
-      <header className="myx-page-head">
-        <h1 className="myx-page-title">{S.title}</h1>
+      <PageHeader
+        title={S.title}
+        info={{ text: H.about, label: S.about }}
+        actions={sample === undefined ? undefined : <Badge tone="neutral">{S.sample}</Badge>}
+      >
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {selection.kind === 'timeline' ? (
-          <>
-            <Figure value={selection.window.hours} unit="h" basis="measured" />
-            <Figure value={idleBuckets} unit={S.idle} basis="measured" />
-          </>
-        ) : null}
-        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
-      </header>
+      </PageHeader>
 
       {/* A read that fails after one landed keeps the turns and says so. The fault used to show
           only while nothing had loaded (console walkthrough, 2026-09-24): with the daemon down this
           page printed its last summary and stage times as if they were live, and no fault at all. */}
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
+      <Section title={S.inflight} count={Math.max(inflight.length, counted)}>
+        {slots.length === 0 && inflight.length === 0 ? <Empty text={S.nothingInFlight} source={H.nothingInFlight} /> : null}
+        {slots.length === 0 ? null : <Gates slots={slots} />}
+        {/* The gates count turns the daemon does not list (HeadStatus.kt writes the list empty, row
+            V4-213): said as a count of unlisted turns, never as "nothing in flight". */}
+        {unlisted > 0 ? (
+          <p className="myx-tn-unlisted">
+            <Badge tone="neutral">{`${unlisted} ${U.unlisted}`}</Badge>
+            <InfoTip text={H.unlisted} label={S.unlistedWhy} />
+          </p>
+        ) : null}
+        {inflight.length === 0 ? null : (
+          <DataTable
+            columns={inflightColumns(nameOf)}
+            rows={inflight}
+            rowKey={(turn) => `${turn.head}:${turn.label}`}
+            label={S.inflight}
+            rowTone={(turn) => (turn.idleMs > turn.streamIdleMs ? 'warn' : null)}
+          />
+        )}
+      </Section>
+
+      <Section title={S.summary} {...(summary === null ? {} : { count: ran.length })} info={{ text: H.summary, label: S.summaryWhy }}>
+        {summary === null ? (
+          <Empty text={S.noSummary} source={H.noSummary} />
+        ) : (
+          <>
+            {ran.length === 0 ? null : (
+              <DataTable columns={summaryColumns(ran)} rows={ran} rowKey={(head) => head.key} label={S.summary} />
+            )}
+            <IdleHeads summary={summary} />
+          </>
+        )}
+      </Section>
+
+      {pending || rows.length === 0 ? null : (
+        <div className="myx-tn-pair">
+          <Section title={S.stages} info={{ text: H.stages, label: S.stagesWhy }}>
+            <StageBars rows={rows} nameOf={nameOf} />
+          </Section>
+          <Section title={S.tokens} info={{ text: H.tokens, label: S.tokensWhy }} actions={<Legend items={INPUT_KEY} label={S.tokensKey} />}>
+            <DataTable columns={tokenColumns(tokenScale, nameOf)} rows={tokenRows} rowKey={(row) => row.head} label={S.tokens} />
+          </Section>
+        </div>
+      )}
+
       {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
           carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
           inferring it. The guard is IN the expression, so a production build drops the branch and
           the attribute's very name - fixture-leak.mjs asserts it is absent from dist. */}
       <div
-        className={open === undefined ? 'myx-tn-board' : 'myx-tn-board myx-tn-board-open'}
+        className={open === null ? 'myx-tn-board' : 'myx-tn-board myx-tn-board-open'}
         {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
       >
-        <div className="myx-tn-bays">
-          <Bay
-            label={S.inflight}
-            count={inflight.length}
-            compact
-            empty={{ text: 'nothing in flight', source: 'a turn shows here while it runs' }}
-          >
-            {inflight.map((turn) => (
-              <InflightStrip key={`${turn.head}:${turn.label}`} turn={turn} order={INFLIGHT_FIELDS} headName={nameOf(turn.head)} />
-            ))}
-          </Bay>
+        <Section
+          title={S.landed}
+          {...(pending ? {} : { count: rows.length })}
+          {...(selection.kind === 'timeline' ? { meta: `${selection.window.hours}h ${U.window}, ${idleHours} ${U.idle}` } : {})}
+          actions={listed.length === 0 ? undefined : <Legend items={[
+            { mark: STAGE_MARKS.ingest, label: STAGE_NAMES.ingest },
+            { mark: STAGE_MARKS.upstream, label: S.waits },
+            { mark: STAGE_MARKS.stream, label: STAGE_NAMES.stream },
+          ]} label={S.stagesKey} />}
+        >
+          {/* A head whose turns could not be read is NAMED, in the daemon's words: the table below
+              is missing its rows, and a table that silently lost a head reads like one that idled. */}
+          {unread.map((head) => <Fault key={`${head.head}:${head.reason}`} message={`${nameOf(head.head)}: ${head.reason}`} />)}
+          {landedBody}
+        </Section>
 
-          <Bay
-            label={summary === null ? S.summary : `${S.summary} ${summary.window}`}
-            compact
-            {...(summary === null ? {} : { count: summary.heads.filter((head) => !head.empty).length })}
-            empty={{ text: 'no summary yet', source: 'the daemon has not answered' }}
-          >
-            {summary?.heads.filter((head) => !head.empty).map((head) => <SummaryStrip key={head.key} head={head} />)}
-            {summary === null ? null : <IdleHeads key="idle" summary={summary} />}
-          </Bay>
-
-          {/* THE TWO COMPOSED MEMBERS (M2-20). Each is a small table wearing its own header, which
-              is the unit M1-109 measured the comp earning its printed area with. They sit between
-              the summary and the landed rack because they are aggregates over the same rows: the
-              summary says how long turns took, these say where the time went and what it cost. */}
-          <Bay
-            label={S.stages}
-            compact
-            {...(pending ? {} : { count: stageRows.length, empty: { text: NO_ROWS, source: LANDS_HERE } })}
-          >
-            {stageRows.map((stage) => (
-              <Strip key={stage.label} edge="grey" edgeLabel="" ariaLabel={`${S.stage} ${stage.label}`}>
-                <StripField w={20} label={S.stage} value={stage.label} mono={false} />
-                <StripField w={10} label={S.perTurn} value={fmtMs(stage.perTurn)} basis="measured" />
-                <StripField w={8} label={S.share} value={shareText(stage.share)} basis="measured" />
-              </Strip>
-            ))}
-          </Bay>
-
-          <Bay
-            label={S.tokens}
-            compact
-            {...(pending ? {} : { count: tokenRows.length, empty: { text: NO_ROWS, source: LANDS_HERE } })}
-          >
-            {tokenRows.map((row) => (
-              <Strip key={row.head} edge="grey" edgeLabel="" ariaLabel={`${S.tokens} ${nameOf(row.head)}`}>
-                <StripField w={20} label={S.head} value={nameOf(row.head)} mono={false} />
-                <StripField w={11} label={S.tokIn} value={row.in.toLocaleString('en-US')} />
-                <StripField w={11} label={S.tokCached} value={row.cached.toLocaleString('en-US')} />
-                <StripField w={13} label={S.tokWrite} value={row.write.toLocaleString('en-US')} />
-                <StripField w={11} label={S.tokOut} value={row.out.toLocaleString('en-US')} />
-                <StripField w={8} label={S.hit} value={row.in === 0 ? S.absent : shareText(row.hit)} {...basisProp(row.in === 0 ? undefined : 'measured')} />
-              </Strip>
-            ))}
-          </Bay>
-
-          <Bay
-            label={S.landed}
-            compact
-            {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: LANDS_HERE } })}
-          >
-            {/* A head whose turns could not be read is NAMED, in the daemon's words: the list below is
-                missing its rows, and a rack that silently lost a head reads exactly like one that
-                was idle. */}
-            {unread.map((head) => <Fault key={`${head.head}:${head.reason}`} message={`${nameOf(head.head)}: ${head.reason}`} />)}
-            {pending ? (
-              <Empty text="turn history unavailable" source="this splice version does not serve it" />
-            ) : (
-              <div className="myx-tn-scroll" ref={scrollRef}>
-                <LandedNames order={active.fields} />
-                <div className="myx-tn-inner" style={{ height: virtualizer.getTotalSize() }}>
-                  {virtualizer.getVirtualItems().map((item) => {
-                    const entry = items[item.index];
-                    return (
-                      <div
-                        key={entry.key}
-                        className="myx-tn-item"
-                        data-index={item.index}
-                        ref={virtualizer.measureElement}
-                        style={{ transform: `translateY(${item.start}px)` }}
-                      >
-                        {entry.kind === 'band' ? (
-                          <Band label={entry.label} count={entry.count} />
-                        ) : (
-                          <TurnStrip
-                            row={entry.row}
-                            selected={entry.key === openKey}
-                            order={active.fields}
-                            onOpen={() => setOpenKey(entry.key)}
-                            headName={nameOf(entry.row.head)}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+        {/* THE DETAIL IS UNMOUNTED AT REST: nothing holds a column until a row is opened, and an
+            empty labelled <aside> would still be a landmark in a reader's list (M1-123). */}
+        {open === null ? null : (
+          <DetailPanel
+            title={`${nameOf(open.head)} ${open.model ?? S.absent}`}
+            label={S.detail}
+            status={(
+              <span className="myx-tn-badges">
+                {badgesOf(open).map((badge) => <Badge key={badge.key} tone={badge.tone} quiet>{badge.text}</Badge>)}
+              </span>
             )}
-          </Bay>
-        </div>
-
-        {/* M1-123'S DECISION, APPLIED VERBATIM (M2-20): the aside stays mounted and keeps its
-            aria-label, and carries aria-hidden while collapsed, gated by the SAME expression that
-            gates its content -- so the exposure and the content cannot desync, because they are one
-            expression rather than two facts kept in step. The shape was decided by the seat holding
-            fleet, sessions and projects, with the three rejected alternatives measured off the real
-            accessibility tree; this seat is applying it rather than choosing a variant. The column
-            stays mounted at rest for the reason collapse beat unmount: the collapsing track needs
-            something to transition from. */}
-        <aside className="myx-tn-detail myx-swell" aria-label={S.detail} aria-hidden={open?.kind !== 'row' ? true : undefined}>
-          {open?.kind !== 'row' ? null : (
-            <>
-              <div className="myx-tn-detail-head">
-                <span className="myx-tn-detail-name">{`${nameOf(open.row.head)} ${open.row.model ?? S.absent}`}</span>
-                <button type="button" className="myx-tn-close" onClick={() => setOpenKey(null)}>
-                  {S.close}
-                </button>
-              </div>
-              <Bay label={S.title}>
-                <Waterfall row={open.row} />
-              </Bay>
-              <Bay label={S.detail}>
-                {/* Another head's capture never stands in for this one while its read is in
-                    flight: the drawer waits for a read of the head this turn ran on. */}
-                <RequestDrawer
-                  capture={capture !== null && capture.running.head === open.row.head ? capture : null}
-                  error={captureError}
-                  onSwitch={(enabled) => void putCapture(open.row.head, enabled)}
-                />
-              </Bay>
-            </>
-          )}
-        </aside>
+            onClose={() => setOpenKey(null)}
+            closeLabel={S.close}
+          >
+            <Section title={S.timing}>
+              <TurnWaterfall row={open} />
+            </Section>
+            <Section title={S.tokens}>
+              <TurnTokens row={open} />
+            </Section>
+            <Section title={S.capture}>
+              {/* Another head's capture never stands in for this one while its read is in flight:
+                  the drawer waits for a read of the head this turn ran on. */}
+              <RequestDrawer
+                capture={capture !== null && capture.running.head === open.head ? capture : null}
+                error={captureError}
+                onSwitch={(enabled) => void putCapture(open.head, enabled)}
+              />
+            </Section>
+          </DetailPanel>
+        )}
       </div>
     </div>
   );
@@ -552,6 +579,7 @@ export default function TurnsPage() {
 
   return (
     <TurnsBoard
+      slots={fixture !== null ? [] : slotsFrom(heads.data ?? [])}
       inflight={fixture !== null ? fixture.inflight : inflightFrom(heads.data ?? [])}
       landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed, unread: [] } : turns.data}
       summary={fixture !== null ? fixture.summary : summary.data}

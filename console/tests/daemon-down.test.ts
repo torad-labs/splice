@@ -127,7 +127,7 @@ describe('a page keeps its rows, shows the fault and marks the rows stale', () =
     }));
     expect(out).toContain(DOWN);
     expect(out).toContain(STALE_MARK);
-    expect(out, 'the rows it held are still drawn').toContain('myx-tn-bays');
+    expect(out, 'the rows it held are still drawn').toContain('myx-tn-table');
   });
 
   test('sessions, projects, logs and teams, which hid it by the same gate', () => {

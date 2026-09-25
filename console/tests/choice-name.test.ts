@@ -76,9 +76,9 @@ describe('the call sites that rendered nameless are named', () => {
     }));
     // the head and the tail length are button groups now (a mark per head, a segmented tail), so
     // their name is the group's; the two that stayed choices are named comboboxes
-    expect(comboboxNames(out)).toEqual(['tag', 'level']);
-    expect(out).toMatch(/role="group" aria-label="head"/);
-    expect(out).toMatch(/role="group" aria-label="lines"/);
+    expect(comboboxNames(out)).toEqual(['Tag', 'Level']);
+    expect(out).toMatch(/role="group" aria-label="Head"/);
+    expect(out).toMatch(/role="group" aria-label="Lines"/);
   });
 
   test('team compose: every slot picker', () => {

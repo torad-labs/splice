@@ -32,11 +32,9 @@
 .myx-fl-lat .myx-spark { min-width: 0; }
 .myx-fl-lat .myx-fl-figure { min-width: 5ch; text-align: end; }
 
-.myx-fl-add,
 .myx-fl-cause,
 .myx-fl-keys,
 .myx-fl-next { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.myx-fl-add-label { font-size: var(--text-2); color: var(--fg-muted); }
 .myx-fl-cause { margin: 0; font-size: var(--text-2); color: var(--fg); }
 .myx-fl-command { font-family: var(--font-mono); font-size: var(--text-2); }
 

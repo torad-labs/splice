@@ -28,7 +28,8 @@ export const dispositions: readonly Disposition[] = [
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
   { kind: 'verb', name: 'status', disposition: 'read-only' },
   { kind: 'verb', name: 'restart', disposition: 'editable' },
-  { kind: 'verb', name: 'add', disposition: 'pending', where: 'V4-220' },
+  // add is the Add backend key: the add form in the detail panel (widgets/add-backend).
+  { kind: 'verb', name: 'add', disposition: 'editable' },
   { kind: 'verb', name: 'upgrade', disposition: 'pending', where: 'V4-220' },
   // Adding a backend, `splice add` over HTTP (V4-220 item 3): a new head joins this page's fleet.
   { kind: 'route', name: '/api/add/profiles', disposition: 'read-only' },
@@ -46,7 +47,7 @@ export const job: PageJob = {
   actions: [
     { name: 'Start, stop or restart a head' },
     { name: 'Restart the daemon' },
-    { name: 'Add a backend', row: 'V4-220' },
+    { name: 'Add a backend' },
     { name: 'Upgrade or roll back splice', row: 'V4-220' },
   ],
 };

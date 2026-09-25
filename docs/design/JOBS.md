@@ -52,7 +52,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 
 - Start, stop or restart a head
 - Restart the daemon
-- Add a backend (V4-220)
+- Add a backend
 - Upgrade or roll back splice (V4-220)
 
 ## logs

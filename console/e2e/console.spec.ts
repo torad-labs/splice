@@ -404,6 +404,44 @@ test('fleet opens a head with its account pool and the next target marked', asyn
   expect(faults.pageErrors, 'opening a head threw').toEqual([]);
 });
 
+test('a backend is added from the fleet\'s detail panel through the daemon\'s own add, and a failed check prints its rows', async ({ page }) => {
+  // V4-220 item 3 against the real jar: the `api-key` profile asks a name, a base URL and a model.
+  // Nothing supplies its key, so the checks refuse (409, with the rows), and the add is discarded:
+  // a save would write the stack's splice.toml and restart the daemon under the journeys after it.
+  const faults = await open(page, 'fleet');
+  await page.locator('main').getByRole('button', { name: 'Add backend', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Add backend' });
+  await pick(panel, 'Profile', 'api-key');
+  await panel.getByLabel('Head name', { exact: true }).fill('claude-e2e-added');
+  await panel.getByLabel('Base URL', { exact: true }).fill('http://127.0.0.1:9/v1');
+  await panel.getByLabel('Model id', { exact: true }).fill('e2e/added-model');
+  const opened = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/add');
+  await panel.getByRole('button', { name: 'Continue', exact: true }).click();
+  expect((await opened).status()).toBe(200);
+  await expect(panel.getByRole('definition').filter({ hasText: /^claude-e2e-added$/ })).toBeVisible();
+  await expect(panel).toContainText('API key');
+  // The key-signed head stores its key with the Accounts key form itself.
+  await expect(panel.getByRole('button', { name: 'Store key', exact: true })).toBeVisible();
+
+  const verified = page.waitForResponse((response) => response.request().method() === 'POST'
+    && /^\/api\/add\/[^/]+\/verify$/.test(new URL(response.url()).pathname));
+  await panel.getByRole('button', { name: 'Run checks', exact: true }).click();
+  const answer = await verified;
+  const body = await answer.json() as { error: string; checks: { name: string; ok: boolean }[] };
+  expect(answer.status()).toBe(409);
+  expect(body.checks.some((check) => !check.ok), 'a check failed').toBe(true);
+  await expect(panel.getByRole('alert')).toContainText(body.error);
+  await expect(panel.locator('.myx-add-check')).toHaveCount(body.checks.length);
+
+  const discarded = page.waitForResponse((response) => response.request().method() === 'DELETE'
+    && /^\/api\/add\/[^/]+$/.test(new URL(response.url()).pathname));
+  await panel.getByRole('button', { name: 'Discard', exact: true }).click();
+  expect((await discarded).status()).toBe(200);
+  await expect(panel).toHaveCount(0);
+  expect(faults.pageErrors, 'the fleet page threw').toEqual([]);
+});
+
 test('the draining restart confirms inline and prints the daemon\'s refusal verbatim', async ({ page }) => {
   const posts: string[] = [];
   page.on('request', (request) => {

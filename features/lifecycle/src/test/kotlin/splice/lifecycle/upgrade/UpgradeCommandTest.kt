@@ -238,7 +238,8 @@ class UpgradeCommandTest {
         val good = Path.of(java.net.URI(release(home)))
         val fake = UpgradeFetch { url -> Files.readAllBytes(good.resolve(url.substringAfterLast('/'))) }
         val remote = "https://example.invalid/releases/download/v9.9.9"
-        return captured { command(home, remote, fetch = fake, ghAuth = ghAuth, ghVerify = ghVerify).upgrade(emptyList()) }
+        val upgrade = command(home, remote, fetch = fake, ghAuth = ghAuth, ghVerify = ghVerify)
+        return captured { upgrade.upgrade(emptyList()) }
     }
 
     private fun attestations() = calls.filter { it.take(3) == listOf("gh", "attestation", "verify") }

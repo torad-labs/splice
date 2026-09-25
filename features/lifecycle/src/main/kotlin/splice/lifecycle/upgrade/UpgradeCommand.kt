@@ -98,7 +98,8 @@ internal class UpgradeCommand(
         Files.move(staging, dir, StandardCopyOption.ATOMIC_MOVE)
         output.line("  $GREEN✓$RESET ${"staged".padEnd(UPGRADE_PAD)} $version -> $dir")
         candidate.provenanceGap?.let { gap ->
-            output.line("  $YELLOW!$RESET ${"provenance".padEnd(UPGRADE_PAD)} not checked (gh $gap); to verify it later:")
+            val label = "provenance".padEnd(UPGRADE_PAD)
+            output.line("  $YELLOW!$RESET $label not checked (gh $gap); to verify it later:")
             for (asset in listOf(JAR_ASSET, SHIM_ASSET)) output.line("      ${release.verifyLater(dir.resolve(asset))}")
         }
         if (!daemon.waitIdle(a.now)) {

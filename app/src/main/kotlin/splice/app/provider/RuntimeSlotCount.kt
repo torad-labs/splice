@@ -71,7 +71,7 @@ internal class RuntimeSlotCount(
         is SlotsReading.Count ->
             "[$tag] slot affinity: the runtime runs ${now.slots} slots; each conversation keeps its own\n"
         is SlotsReading.Unreadable ->
-            "[$tag] slot affinity paused: ${now.why} — turns go out unpinned until it answers with a slot count\n"
+            "[$tag] slot affinity paused: ${now.why}; turns go out unpinned until it answers with a slot count\n"
     }
 }
 

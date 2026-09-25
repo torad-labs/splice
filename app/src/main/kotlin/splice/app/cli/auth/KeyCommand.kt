@@ -103,7 +103,7 @@ internal class KeyCommand(
     private fun readKeyMasked(): String? {
         val console = System.console() ?: run {
             System.err.println(
-                "splice key set: no interactive console — use --stdin, or --value (visible in ps/history)",
+                "splice key set: no interactive console; use --stdin, or --value (visible in ps/history)",
             )
             return null
         }

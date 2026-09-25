@@ -74,7 +74,7 @@ internal class MuseCredentialStore(
     ): MuseCredentialSnapshot? {
         val after = CredentialFileEvidenceReader.read(authPath)
         if (before != after.identity) {
-            log("[muse-auth] credential changed during read — retrying on the next probe")
+            log("[muse-auth] credential changed during read; retrying on the next probe")
             return null
         }
         return MuseCredentialSnapshot(

@@ -50,7 +50,7 @@ internal class LaunchResponse {
         return when {
             verdict is CredentialVerdict.Rejected ->
                 "'$label': upstream rejected the Claude login on the last forwarded turn " +
-                    "(${Instant.ofEpochMilli(verdict.atEpochMs)}) — run /login in this session"
+                    "(${Instant.ofEpochMilli(verdict.atEpochMs)}); run /login in this session"
             // A file-configured head's primary fix is the file it reads, not an env var it never used.
             keyFile != null ->
                 "'$label' has no upstream API key: add it to $keyFile, or run: splice key set $envVar. " +
@@ -59,7 +59,7 @@ internal class LaunchResponse {
                 "'$label' has no upstream API key: requests will fail until you run: splice key set $envVar. " +
                     "The next request reads it, with no restart (a key kept in the daemon's environment " +
                     "instead needs export $envVar there, then: splice restart)"
-            else -> "'$label' is not signed in — requests will fail until you run: ${spec.loginCommand}"
+            else -> "'$label' is not signed in. Requests will fail until you run: ${spec.loginCommand}"
         }
     }
 }

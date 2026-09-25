@@ -110,7 +110,7 @@ internal class CodexAuthJson(
             !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent) {
             log(
-                "[codex-auth] failed to read $authPath: ${SafeFailureText.render(failure)} — " +
+                "[codex-auth] failed to read $authPath: ${SafeFailureText.render(failure)}; " +
                     "no credentials served (NOT a logged-out state)",
             )
         }
@@ -154,7 +154,7 @@ internal class CodexAuthJson(
         }
             .onFailure {
                 log(
-                    "[codex-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
+                    "[codex-auth] stat of $authPath failed: ${SafeFailureText.render(it)}; " +
                         "skipping peer rotation, refreshing instead",
                 )
             }

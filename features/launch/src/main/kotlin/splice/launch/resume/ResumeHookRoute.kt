@@ -122,7 +122,7 @@ public class ResumeHookRoute(
             }
         if (rewritten > 0) {
             log(
-                "[resume] ${LogSafe.str(managed.head.key)}: session ${LogSafe.str(sessionId)} resumed here — " +
+                "[resume] ${LogSafe.str(managed.head.key)}: session ${LogSafe.str(sessionId)} resumed here; " +
                     "${LogSafe.str(rewritten.toString())} assistant rows moved onto ${LogSafe.str(pinnedModel)}\n",
             )
         }

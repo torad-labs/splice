@@ -151,11 +151,11 @@ public class LoginMuse(
             is MuseMintAttempt.InvalidAccountToken ->
                 output.line("splice: muse key mint failed: account token rejected")
             is MuseMintAttempt.SubscriptionRequired -> {
-                val action = attempt.actionUrl?.let { " — $it" }.orEmpty()
+                val action = attempt.actionUrl?.let { ": $it" }.orEmpty()
                 output.line("splice: muse subscription inactive$action")
             }
             is MuseMintAttempt.RateLimited ->
-                output.line("splice: muse key mint rate limited — first turn will retry")
+                output.line("splice: muse key mint rate limited; the first turn will retry")
             is MuseMintAttempt.Denied ->
                 output.line("splice: muse key mint failed: ${attempt.detail}")
         }

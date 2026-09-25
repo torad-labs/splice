@@ -24,7 +24,7 @@ internal class OAuthCallbackPage {
             // Name the DESTINATION, not "your terminal": /login is usually invoked from inside a
             // Claude Code session, where there is no terminal to go back to. xAI's own CLI does
             // exactly this — "You can close this window and return to Grok Build."
-            "You’re all set — close this window and return to your splice session."
+            "You’re all set. Close this window and return to your splice session."
         } else {
             "Something went wrong signing in. You can close this tab and try again."
         }
@@ -48,7 +48,7 @@ internal class OAuthCallbackPage {
         """
     <!doctype html><html lang="en"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>splice — ${if (ok) "signed in" else "sign-in failed"}</title>
+    <title>splice: ${if (ok) "signed in" else "sign-in failed"}</title>
     <style>
       :root { color-scheme: light dark; }
       * { box-sizing: border-box; margin: 0; }

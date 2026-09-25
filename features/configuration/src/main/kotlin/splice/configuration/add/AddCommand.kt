@@ -48,9 +48,9 @@ internal class AddCommand(
 
     private suspend fun added(candidate: AddCandidate, env: EnvReader): Boolean {
         val title = "$BOLD${candidate.resolved.origin}$RESET"
-        output.line("$title $DIM— '${candidate.key}' as $CYAN${candidate.command}$RESET")
+        output.line("$title$DIM: '${candidate.key}' as $CYAN${candidate.command}$RESET")
         val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
-        if (!ok) output.line("${YELLOW}nothing written$RESET — ${candidate.path} is unchanged")
+        if (!ok) output.line("${YELLOW}nothing written$RESET: ${candidate.path} is unchanged")
         return ok && finish(candidate, env)
     }
 
@@ -97,7 +97,7 @@ internal class AddCommand(
         val daemonLabel = "daemon".padEnd(ADD_PAD)
         val activated = when {
             !ports.daemonUp(port) -> true.also {
-                output.line("  $daemonLabel not running — '${c.key}' comes up on first launch")
+                output.line("  $daemonLabel not running; '${c.key}' comes up on first launch")
             }
             c.args.yes || confirm("Restart the daemon so '${c.key}' comes up now?", default = true) -> ports.restart()
             // Needed (V4-227 sweep): the daemon reads splice.toml at start, so a new head waits for one.
@@ -110,9 +110,9 @@ internal class AddCommand(
             output.line("  Launch      $CYAN${c.command}$RESET")
         } else {
             val then = "run ${CYAN}splice restart$RESET, then $CYAN${c.command}$RESET"
-            output.line("  $RED✗$RESET $daemonLabel restart failed — the head is saved; $then")
+            output.line("  $RED✗$RESET $daemonLabel restart failed. The head is saved; $then")
         }
-        output.line("  Checkup     ${CYAN}splice doctor$RESET $DIM— anything wrong prints its fix$RESET")
+        output.line("  Checkup     ${CYAN}splice doctor$RESET $DIM(anything wrong prints its fix)$RESET")
         return activated
     }
 
@@ -121,7 +121,7 @@ internal class AddCommand(
         if (link is AddLinked.NotLinked) {
             val fix = "${CYAN}splice install ${c.key}$RESET"
             val why = link.why?.let { " ($it)" }.orEmpty()
-            output.line("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked$why — run: $fix")
+            output.line("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked$why; run: $fix")
         }
     }
 

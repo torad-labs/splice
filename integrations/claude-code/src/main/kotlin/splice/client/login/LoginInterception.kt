@@ -110,7 +110,7 @@ internal object LoginInterception {
                 log(
                     "[login] /login interception NOT installed in $configDir " +
                         // SAFE-RENDER-EXEMPT[2026-08-31]: staged-file copy leg — a FileSystemException over paths this code authored, never their content
-                        "(${leg.exceptionOrNull()?.message}) — commands/login.md or its hook failed; " +
+                        "(${leg.exceptionOrNull()?.message}): commands/login.md or its hook failed; " +
                         "the head runs without an interceptor\n",
                 )
             }
@@ -157,7 +157,7 @@ internal object LoginInterception {
             log(
                 "[login] key-setup advertiser NOT installed in $configDir " +
                     // SAFE-RENDER-EXEMPT[2026-08-31]: staged commands/login.md copy — a FileSystemException over paths this code authored, never content
-                    "(${leg.exceptionOrNull()?.message}) — the paste flow stays undiscoverable this launch\n",
+                    "(${leg.exceptionOrNull()?.message}); the paste flow stays undiscoverable this launch\n",
             )
         }
         return leg.getOrElse { emptyMap() }
@@ -207,13 +207,13 @@ internal object LoginInterception {
         if (tokenCapture != null) {
             throw IOException(
                 // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
-                "$configDir cannot execute a staged hook (${execFailure.message}) — the capture " +
+                "$configDir cannot execute a staged hook (${execFailure.message}), so the capture " +
                     "hook would register but never run; refusing to launch uninterceptable",
             )
         }
         log(
             // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
-            "[login] hooks NOT installed in $configDir (${execFailure.message}) — the directory " +
+            "[login] hooks NOT installed in $configDir (${execFailure.message}): the directory " +
                 "cannot execute scripts (noexec mount?); the head runs without an interceptor\n",
         )
         return false

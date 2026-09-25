@@ -75,7 +75,7 @@ internal class GrokAuthDescribe(
             )
         }.onFailure {
             log(
-                "[grok-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +
+                "[grok-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
                     "invalid_grant latch check skipped",
             )
         }.getOrNull()

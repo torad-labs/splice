@@ -13,3 +13,8 @@ invalid:
   - 'val notice = """[log line exceeds $n bytes — skipped]"""'
   # the escape spelling parses inside string_content: without its branch it walks past the wall
   - 'val detail = "missing at $keyFile \u2014 admin endpoints will 401"'
+  # V4-238: the CLI's own text. app's sign-in line and splice add's refusal, as they read before.
+  - 'println("splice: empty key — nothing stored.")'
+  - 'val text = "''${r.key}'' is already configured — pick another --name"'
+  # and the launch path's sign-in notice
+  - 'val line = "''$label'' is not signed in — requests will fail until you run: ${spec.loginCommand}"'

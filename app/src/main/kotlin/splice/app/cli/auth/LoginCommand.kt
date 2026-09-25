@@ -154,7 +154,10 @@ internal class LoginCommand(
             "chatgpt-oauth" -> codex.spec(headKey, oauthAuthPath(provider), label)
             "grok-oauth" -> grok.spec(headKey, oauthAuthPath(provider), label)
             else -> {
-                println("splice: head '$headKey' uses ${provider.auth.kind} auth — no browser login for that kind.")
+                println(
+                    "splice: head '$headKey' uses ${provider.auth.kind} auth, " +
+                        "so there is no browser login for that kind.",
+                )
                 null
             }
         }

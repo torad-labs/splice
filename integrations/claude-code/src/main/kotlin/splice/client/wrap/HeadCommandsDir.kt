@@ -35,7 +35,7 @@ internal object HeadCommandsDir {
             log(
                 "[login] shared commands NOT reconciled into $configDir " +
                     // SAFE-RENDER-EXEMPT[2026-08-31]: staged commands dir link leg — a FileSystemException over paths this code authored, never content
-                    "(${leg.exceptionOrNull()?.message}) — this head's own commands dir is " +
+                    "(${leg.exceptionOrNull()?.message}), so this head's own commands dir is " +
                     "missing the operator's entries\n",
             )
         }

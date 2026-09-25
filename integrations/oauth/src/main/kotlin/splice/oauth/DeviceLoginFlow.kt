@@ -87,10 +87,10 @@ public class DeviceLoginFlow(
                 Outcome.ABORT -> return false
                 Outcome.EXPIRED -> {
                     if (restarts++ >= MAX_EXPIRED_RESTARTS) {
-                        output.line("splice: login for '${spec.head}' expired too many times — try again.")
+                        output.line("splice: login for '${spec.head}' expired too many times; try again.")
                         return false
                     }
-                    output.line("splice: the code expired — requesting a fresh one…")
+                    output.line("splice: the code expired; requesting a fresh one…")
                 }
             }
         }
@@ -143,7 +143,7 @@ public class DeviceLoginFlow(
             return
         }
         output.line("")
-        output.line("  splice: sign in to ${spec.head} — enter this code in your browser:")
+        output.line("  splice: to sign in to ${spec.head}, enter this code in your browser:")
         output.line("")
         output.line("      ${auth.userCode}")
         output.line("")
@@ -166,7 +166,7 @@ public class DeviceLoginFlow(
             val resp = Cancellables.runCatchingBestEffort {
                 postToken(client, spec, auth.deviceCode, loginIo)
             }.onFailure {
-                output.line("splice: login poll did not reach the token endpoint — ${SafeFailureText.render(it)}")
+                output.line("splice: login poll did not reach the token endpoint: ${SafeFailureText.render(it)}")
             }.getOrNull()
             val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS, loginIo)
             when (step) {

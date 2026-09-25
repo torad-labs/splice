@@ -28,7 +28,7 @@ public class HeadBoundedContinue {
             index < 0 || args.any(::namesResume) -> ContinueResolution(args, null)
             cwd.isNullOrBlank() -> ContinueResolution(
                 args,
-                "this launch shim sent no cwd, so -c is not bounded to this head's own sessions — " +
+                "this launch shim sent no cwd, so -c is not bounded to this head's own sessions; " +
                     "run `splice install` to refresh app/src/main/dist/bin/splice-launch",
             )
             else -> bounded(ownTree, args.filterIndexed { position, _ -> position != index }, cwd)
@@ -39,7 +39,7 @@ public class HeadBoundedContinue {
         val newest = SessionOwnership(ownTree).newestFor(cwd)
             ?: return ContinueResolution(
                 rest,
-                "no session of this head in $cwd to continue — starting a new one " +
+                "no session of this head in $cwd to continue, so a new one starts " +
                     "(join another head's session by name with -r <id>)",
             )
         return ContinueResolution(rest + listOf(RESUME_LONG, newest.id), null)

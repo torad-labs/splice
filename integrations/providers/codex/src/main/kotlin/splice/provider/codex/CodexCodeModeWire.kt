@@ -63,7 +63,7 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         rewrite.omitted.filter { announced.add(it.record.id) }.forEach { omission ->
             log(
                 "[code-mode] history rewrite skipped record ${omission.record.id.take(RECORD_ID_LOG_CHARS)} " +
-                    "(outer ${omission.record.outerCallId}): ${omission.reason} — its client calls stay in " +
+                    "(outer ${omission.record.outerCallId}): ${omission.reason}; its client calls stay in " +
                     "the history as ordinary tool calls",
             )
         }

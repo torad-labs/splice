@@ -185,6 +185,10 @@ If the daemon is already running, finish pending work before a full `splice rest
 
 For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice; splice stores no Claude credential. Use Claude Code's own `/login` inside that head.
 
+### The billing word in Claude Code's header
+
+Claude Code's header prints a billing word beside the model. On `claude-splice` it names your Claude plan, for example `Claude Max`, because Claude Code signs in itself. On every other head it reads `API Usage Billing`: Claude Code only has names for Anthropic's own plans and clouds, so it prints that for any other service. It does not mean Anthropic is billing you. Each head uses the plan or key you set it up with, and splice's status line shows an estimate at API rates, labelled `API est.`, where splice has a rate card for the model.
+
 ## Manage your sessions
 
 Use `splice dashboard` to see all heads in one place: live status, start/stop/restart controls, layered configuration with provenance, per-head usage soft-warnings, authentication and logs. These are local controls, not a hosted service.

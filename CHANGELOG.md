@@ -103,6 +103,12 @@ origin.
 - **Anthropic treats routing Claude Code through a custom gateway as unsupported.** splice is
   tested against Claude Code 2.1.282. When a session runs a newer one, doctor, `splice status`
   and the status line say so once.
+- **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
+  only has names for Anthropic's own plans and clouds, so it prints that for any other service. It
+  does not mean Anthropic is billing you: each head uses the plan or key you set it up with, and
+  splice's status line shows an estimate at API rates, labelled `API est.`, where splice has a rate
+  card for the model. On `claude-splice`, Claude Code signs in itself and its header names your
+  Claude plan.
 
 ### Added
 - **`splice setup` can hand an NVIDIA card to rig.** On Linux x86_64 with a card nvidia-smi can

@@ -7164,6 +7164,7 @@ verify = "red first: a statusline body for a session whose last assistant usage 
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T08:10:36.053Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T08:10:36Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-274-attr -- :features-usage:test :features-usage:detekt :quality-architecture:test --continue" exit=0 tests=361 touched=features/usage/src/main/kotlin/splice/usage/statusline/StatuslineUsageOwner.kt,features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRoute.kt,features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt,features/usage/src/test/kotlin/splice/usage/statusline/StatuslineResumeUsageTest.kt tail="over count): 1 red, 'back on claude-splice, whose turns all predate claudex's: ... 90k/272k · 33%'. MUTANT 3 (count without the running total): 1 red, 'the head counted the session's turns'. All three restored in the same block with a matching sha256. In the shared tree, ConcentrationLawTest reads band HIGH 17 -> 18 (UpstreamClient.kt 3.01) from uncommitted V4-276 edits; the clean export holds 17."
 
 [[items]]
 id = "V4-275"

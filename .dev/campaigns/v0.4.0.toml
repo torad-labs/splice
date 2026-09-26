@@ -7772,3 +7772,11 @@ verify = "red first: a test that uncomments every KNOB REFERENCE line into a [de
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T16:41:50.505Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T16:41:50Z
+
+[[items]]
+id = "V4-318"
+phase = "P2"
+title = "a store selector returns a held value, never a fresh one: the projects detail opens again, and a wall refuses the class"
+files = ["console/src/pages/projects/standing.tsx", "quality/rules/console/store-selector-fresh-value.yml", "quality/rules/rule-tests/store-selector-fresh-value-test.yml", ".dev/restructure/capabilities.tsx"]
+status = "todo"
+verify = "CI gate green on the fix sha, the projects journey (console/e2e/console.spec.ts:871) among its passes; the rule test fires on an inline ?? [] / ?? {} / literal selector and passes the module-constant form; tsc, eslint and vitest clean"

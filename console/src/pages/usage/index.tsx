@@ -322,7 +322,7 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
                 label={S.cost}
                 value={cost === null ? S.absent : fmtUsd(cost)}
                 {...(cost === null ? {} : { trend: trend(perHour(heads, TREND_HOURS, now, (_, totals) => totals.costUsd), S.cost, fmtUsd) })}
-                {...(all.unpricedTurns === 0 ? {} : { sub: <>{`${fmtInt(all.unpricedTurns)} ${U.unpriced}`}<InfoTip text={H.unpriced} label={S.unpricedWhy} /></> })}
+                {...(all.unpricedTurns === 0 ? {} : { sub: <>{`${fmtInt(all.unpricedTurns)} ${all.unpricedTurns === 1 ? U.unpricedOne : U.unpriced}`}<InfoTip text={H.unpriced} label={S.unpricedWhy} /></> })}
               />
               <Stat
                 label={S.cacheRead}

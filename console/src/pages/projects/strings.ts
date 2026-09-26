@@ -54,7 +54,7 @@ export const H = {
   about: 'Every repo the daemon has seen a session run in.',
   noProjects: 'A repo shows here once a session runs in it.',
   /** Declared rates make a dollar figure an estimate; no rates is no figure, never zero. */
-  cost: 'Estimated from declared rates; repos with none are left out.',
+  cost: 'Estimated from declared rates; turns with none are counted, not priced.',
   /** The row's `compaction` is null: the daemon's failure to report, not "no rule". */
   unwired: 'The daemon did not report its compaction table.',
   clientOwn: "Claude Code's own instructions apply; rules go under [compaction] in splice.toml.",
@@ -64,6 +64,8 @@ export const H = {
 } as const;
 
 export const U = {
-  unpriced: 'unpriced',
+  /** After the count of turns a cost figure leaves out: their model had no rate card. */
+  unpriced: 'turns unpriced',
+  unpricedOne: 'turn unpriced',
   of: 'of',
 } as const;

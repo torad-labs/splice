@@ -20,9 +20,12 @@ export interface ProjectRow {
   /** Turns since day_start, joined on the 8-character session tag over the repo's registry sessions
    *  and every session its teams' slots ever held. */
   turns_today: number;
-  /** USD today, or null when no head declares rates for the models it ran: absent rates mean "no
-   *  dollar figure" (FEATURES.md 2.3), never a cost of zero. */
+  /** USD today of the turns a declared rate priced, or null when there are turns and none was
+   *  priced: absent rates mean "no dollar figure" (FEATURES.md 2.3), never a cost of zero. */
   cost_today_usd: number | null;
+  /** Turns today whose model had no rate card, so their dollars are not in cost_today_usd (V4-269).
+   *  Absent from an older daemon, whose dollars were null when any turn was unpriced. */
+  unpriced_turns_today?: number;
   /** The start of the day those counts cover, epoch ms: the UTC day, sent rather than assumed,
    *  because the console must not print "today" over a boundary it guessed. */
   day_start: number;

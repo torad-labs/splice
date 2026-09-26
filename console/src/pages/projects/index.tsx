@@ -21,8 +21,8 @@ import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHea
 import type { Column } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
-import { ProjectCompaction, ProjectStatusline, StateBadge, costText, dayText, detailRowsOf, useOpenProject } from './detail';
-import { H, S, U } from './strings';
+import { ProjectCompaction, ProjectStatusline, StateBadge, costText, dayText, detailRowsOf, unpricedText, unpricedTurnsOf, useOpenProject } from './detail';
+import { H, S } from './strings';
 import './projects.css';
 
 const PAGE_ID = 'projects';
@@ -82,7 +82,7 @@ function Summary({ rows }: { rows: readonly ProjectRow[] }) {
   const turns = rows.reduce((sum, row) => sum + row.turns_today, 0);
   const priced = rows.filter((row) => row.cost_today_usd !== null);
   const cost = priced.reduce((sum, row) => sum + (row.cost_today_usd ?? 0), 0);
-  const unpriced = rows.length - priced.length;
+  const unpriced = rows.reduce((sum, row) => sum + unpricedTurnsOf(row), 0);
   return (
     <StatRow>
       <Stat
@@ -109,7 +109,7 @@ function Summary({ rows }: { rows: readonly ProjectRow[] }) {
         {...(unpriced === 0 ? {} : {
           sub: (
             <span className="myx-px-note">
-              {unpriced} {U.unpriced}
+              {unpricedText(unpriced)}
               <InfoTip text={H.cost} label={S.cost} />
             </span>
           ),

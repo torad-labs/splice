@@ -7554,3 +7554,11 @@ title = "Saving a knob in the global view says when it failed or was refused (5-
 files = ["console/src/pages/settings/index.tsx", "console/tests/settings.test.ts"]
 status = "todo"
 verify = "red first in vitest, quoted: a global save whose PATCH rejects prints nothing; a 200 with rejected {key: reason} prints nothing; green: each prints the daemon's sentence under the knob and the spinner clears; console eslint, typecheck and vitest through the gate's console legs"
+
+[[items]]
+id = "V4-306"
+phase = "release"
+title = "Two console reads say they failed instead of showing a number or a view that is not true (5-day review, C shard silent-failure, 2026-09-26). (1) tokenRowsOf sums each landed turn's token counts with '?? 0' (turns/index.tsx:172-183) and the Tokens table prints the sums as figures (:212 Input, :224 Output), so a head whose turns carry no counts (turns that failed before the daemon wrote telemetry) reads Input 0 and Output 0, a claim of zero traffic, while the Cache hit cell in the same row already prints the absence mark for the same state (:220); and a head where only some turns reported prints a partial sum as the whole. Count the turns that reported: absent when none did, and a lower-bound mark (the status line's '≥' convention) when some did not. (2) The open add's poll drops a failed read ('readAdd(openId).then(setView, () => undefined)', widgets/add-backend/index.tsx:223), so while the daemon is down the sign-in panel keeps its last view (a Sign in button, a credential state) with no fault for as long as reads keep failing, unlike the profiles read beside it (:210-216): put the failure in the widget's fault and clear it on the next good read"
+files = ["console/src/pages/turns/index.tsx", "console/src/pages/turns/strings.ts", "console/tests/turns.test.ts", "console/src/widgets/add-backend/index.tsx", "console/tests/add-backend.test.ts"]
+status = "todo"
+verify = "red first in vitest, quoted: a head whose two turns have null token counts renders Input 0 and Output 0; a head with one counted and one uncounted turn renders the partial sum with no mark; an open add whose poll read rejects renders no fault; green: absent for none reported, the marked lower bound for some, the fault printed and cleared by the next good read; console eslint, typecheck and vitest through the gate's console legs"

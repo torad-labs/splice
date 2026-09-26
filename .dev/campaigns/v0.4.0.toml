@@ -6547,10 +6547,13 @@ id = "V4-220"
 phase = "release"
 title = "The console does everything the CLI does (operator 2026-09-25: 'why is it read only? Why cant I do everything the cli can in it?'). INVENTORY from the source: the CLI's verbs are CommandParser.kt:28-50 (doctor version shim-version init install uninstall login setup add add-model models upgrade status restart dashboard key logs sessions perf wire trace). The console already writes through 20 calls (sign in, switch, remove and relabel an account; start, stop and restart a head; daemon restart; config PATCH; topology PUT; wrap and unwrap the Claude head; teams; budgets; alerts; capture; playground). MISSING, each needing a daemon route plus a console action: add a backend (splice add: profile, sign-in, verify, save, restart); add-model; key set (masked, replace-only); upgrade and rollback (splice upgrade, run out of process so the daemon can replace its own jar); the doctor fixes (install --all, the PATH line, the shim), so every failing check that has a command has a Fix button; uninstall stays CLI-only with the reason recorded. A WALL keeps it: the console coverage denominator gains every CLI verb parsed from CommandParser.kt, and each verb gets a disposition (the page and action that covers it, or excluded with a written reason), so a new CLI verb with no console answer fails the build by name."
 files = ["app/src/main/kotlin/splice/app/control/", "features/configuration/src/main/kotlin/splice/configuration/add/", "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/", "console/src/shared/coverage/", "console/src/features/", "console/src/entities/"]
-status = "todo"
+status = "in_flight"
 verify = "bun tools/gate run"
 # [2026-09-25] Progress 2026-09-25: items 6 (e8e32628d) and 6b (0c8ce9393, 254e439a7) landed in train 16 at 45c4db93e. Item 3 (keys) on #275: d91ad831b, 0e800c4a8 (KeyRoutes split three ways after the concentration law put it in band HIGH at 3.99), 81fb58dde (two KeysRouteTest cases that never ran: non-void runBlocking @Test, see V4-223), f0dedda80 (a PUT on an unreadable keys.toml answered 500; now 409). No-leak test red by mutant (route logging the body value; an 8-char mask). 4a1d83f4c closes the kt-no-companion-objects blind spot (a modified companion inside a sealed class parses as an infix expression on ast-grep 0.45.3) that 6b's CredentialVerdict slipped through.
 # [2026-09-25] #275 (a6f86d282) lands in train 18: the console does what the CLI does for the first set of verbs, including the doctor fix route. Still open: item 3 (add a backend), in flight in claude-builder's wt-v4-220-add, and the follow-ups in #287 (a5807bb0d, with feat d5d0b346b merged in), which ride train 19.
+claimed_by = "console"
+claimed_at = "2026-09-26T13:38:08.653Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T13:38:08Z
 
 [[items]]
 id = "V4-221"

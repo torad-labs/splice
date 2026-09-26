@@ -7683,3 +7683,11 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T13:36:31.304Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T13:36:31Z
 # [2026-09-26] RECEIPT cmd="bash scratch plan_recipe harness (lib.sh sourced, plan-limit.sh's PLAN_RECIPE + plan_recipe eval'd, OUT/HOME scratch, curl_mgmt stubbed); bash -n + shellcheck -x plan-limit.sh" exit=0 tests=0 touched=tools/e2e/docker/plan-limit.sh tail="r $OUT; $HOME/.e2e-private/recipe-planlimit.json mode 600; plan_recipe rc=0 with both CLAUDE_CODE_RETRY_WATCHDOG checks reading $PLAN_RECIPE; keep_transcripts' -newer reads $PLAN_RECIPE too; bash -n ok; shellcheck exit 0 (pre-existing SC2015 at :107 grouped, SC2034 unread TURN_END_MS removed). MUTANT: write back to $OUT => OUT 1 file and the watchdog grep fails (rc=1), restored sha ebc53dc0 MATCH."
+
+[[items]]
+id = "V4-312"
+phase = "release"
+title = "The console's topology wall counts every serialized field of splice.toml, not only the @SerialName ones (console, V4-220 closeout 2026-09-26): denominator.ts:8 parses @SerialName values only, so a field named by its property (Topology.kt:37-44 daemon, claude, compaction, defaults, providers, heads, projects; CompactionScope.kt:9-27) is never counted and baseline.ts:152 records CompactionScope contributing none; a new [compaction] or [projects] field ships with no console answer and the wall stays green. The denominator comes from the serializer's own descriptor, dumped by a Kotlin test into a checked-in manifest the wall reads"
+files = ["console/src/shared/coverage/denominator.ts", "console/src/shared/coverage/baseline.ts", "console/tests/coverage.test.ts", ".dev/restructure/capabilities.tsv"]
+status = "todo"
+verify = "red first: with the manifest in place, the wall names every topology element it has no disposition for (quoted); a Kotlin test that walks Topology.serializer().descriptor (recursively through the table types) fails BY NAME when the checked-in manifest omits or adds an element; a mutant that adds a field to CompactionScope reds both; cd console && bun test tests/coverage.test.ts; the module's detekt and test"

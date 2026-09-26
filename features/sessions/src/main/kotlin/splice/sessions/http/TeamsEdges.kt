@@ -16,6 +16,9 @@ private const val DIRECTION_INTERNAL = "internal"
 private const val DIRECTION_OUT = "out"
 private const val DIRECTION_IN = "in"
 
+/** What ends an address's scheme (`uds:`): a SendMessage `to` without one is a bare name. */
+private const val ADDRESS_SCHEME_END = ':'
+
 /** One team edge: the stored edge with its `to` resolved, its direction, and the slots at each end. */
 internal class TeamEdge(
     val edge: MessageEdge,
@@ -78,11 +81,15 @@ internal class Members(team: Team, private val records: List<SessionRecord>) {
         records.firstOrNull { it.sessionId == session }?.head ?: slotOfSession[session]?.head
 
     /** The edges touching a member, oldest first, `to` resolved to an address where the registry knows
-     *  the name. An edge between two non-members is not the team's. */
+     *  the name. An edge between two non-members is not the team's. Neither is a call to no session: a
+     *  member's subagent is addressed by a bare name ("code-review") and answers its parent as "main",
+     *  and that traffic is the member's own tool work, never a hand-off (V4-263). A session is a member,
+     *  or an address, which carries its scheme (`uds:`, SessionRegistry.kt's `address`). */
     fun edges(all: List<MessageEdge>): List<TeamEdge> = all.mapNotNull { stored ->
         val edge = stored.copy(to = addressOfName[stored.to] ?: stored.to)
         val from = slotOfSession[edge.from]
         val to = slotOfAddress[edge.to] ?: slotOfSession[edge.to]
+        if (to == null && ADDRESS_SCHEME_END !in edge.to) return@mapNotNull null
         direction(from, to)?.let { TeamEdge(edge, it, from, to, headOf(edge.from)) }
     }.sortedBy { it.edge.at }
 

@@ -7513,6 +7513,7 @@ verify = "red first, each quoted: a row fenced 'console/src/x/*' over a director
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T13:15:08.357Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T13:15:08Z
+# [2026-09-26] RECEIPT cmd="bun test tools/gate; node .dev/web-console/wire-check.mjs --selftest; bun tools/gate slot v4-297-i5-info-{red,green,green2} -- :quality-architecture:test --info; bun tools/gate slot v4-309-297-green2 -- :features-models:test :features-models:detekt :quality-architecture:test :quality-architecture:detekt" exit=0 tests=527 touched=.dev/web-console/wire-check.mjs,tools/gate/src/lib/laws.ts,tools/gate/src/lib/no-python.ts,tools/gate/test/laws.test.ts,tools/gate/test/no-python.test.ts,quality/architecture/build.gradle.kts,quality/architecture/src/test/kotlin/splice/quality/ConventionalTypeLawTest.kt,quality/architecture/src/test/kotlin/splice/quality/ReleaseReadinessLawTest.kt tail="hout the optional quote -> \"QUOTED path\" red; M4 callers without workflows -> both workflow arms red; M5 import without the alias -> selftest 28/29; M6 reader stops after the first val -> 28/29; M7 reader skips the rest of a @SerialName line -> 28/29; Kotlin M8 (an unreadable file reads as no copy) and M9 (the port rule reads only = 39xxx) run in the post-12:10 CT slot; results appended as a note."
 
 [[items]]
 id = "V4-298"

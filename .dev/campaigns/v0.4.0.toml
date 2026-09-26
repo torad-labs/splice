@@ -7812,3 +7812,11 @@ title = "Resume a session on another head: a read-only recipe route names the co
 files = ["app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt", "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt"]
 status = "todo"
 verify = "red: GET /api/sessions/{id}/resume?head=<h> answers 404; green: a registry session with a transcript under head A asked for head B answers argv, head, from, to_tree, model, live; an unlinked head is refused naming splice install claude-<h>; live follows the registry; nothing is copied by the read; route and console files named at claim"
+
+[[items]]
+id = "V4-321"
+phase = "release"
+title = "Message a session within FEATURES.md:328's boundary: the session detail gives the copyable SendMessage call, and splice writes to no client socket (V4-247)"
+files = [".dev/campaigns/web-console/FEATURES.md"]
+status = "todo"
+verify = "FEATURES.md:328 marks the copyable SendMessage instruction 'have': first show where the console already prints it (file:line and a render), or build it on the session detail with Copy; no daemon route, no socket write; console files named at claim"

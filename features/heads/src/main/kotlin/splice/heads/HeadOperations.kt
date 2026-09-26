@@ -68,9 +68,11 @@ public class ListHeads(
     private val listing: HeadStatusListing,
 ) {
     public suspend fun handle(call: ApplicationCall) {
-        val body = buildJsonObject {
-            putJsonArray("heads") { listing.snapshots().forEach { add(it) } }
-        }
-        call.respondText(body.toString(), ContentType.Application.Json)
+        call.respondText(json(), ContentType.Application.Json)
     }
+
+    /** The /api/heads body, also read in process by the daemon's own doctor (V4-230). */
+    public fun json(): String = buildJsonObject {
+        putJsonArray("heads") { listing.snapshots().forEach { add(it) } }
+    }.toString()
 }

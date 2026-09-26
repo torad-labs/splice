@@ -193,10 +193,7 @@ public class RateLimitCooldown public constructor(
         // V4-233: a held PLAN window is the upstream's own statement, not a burst's stamp, so its
         // reset is stated as the deadline. No em dash, and none of the client's stop phrases.
         val detail = when {
-            plan != null ->
-                "Rate limit exceeded: the upstream reports this plan's ${plan.windowWords} window is used up " +
-                    "until ${Instant.ofEpochSecond(plan.resetEpochSeconds)}, and $gatewayClause. The session " +
-                    "resumes after the reset."
+            plan != null -> plan.refusal(holding = gatewayClause)
             providerResetMs > 0 -> {
                 // WALL base, not elapsed: providerResetMs is a DELAY, and printing it against the
                 // elapsed clock would name a 1970-era instant to the operator.

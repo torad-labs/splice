@@ -56,18 +56,12 @@ public class PlanHold internal constructor(
         held.set(null)
     }
 
-    /** V4-234: what a client is told when the upstream named a spent plan window. Our sentence, in
-     *  the same envelope a real upstream sends, because whether a persistent Claude Code keeps
-     *  waiting is decided by the words it reads here, and the reset is the signal that should decide
-     *  it. No em dash, and none of the client's stop phrases (RateLimitRefusalClientContractTest
-     *  holds the list). */
-    internal fun clientBody(limit: PlanLimit): String =
-        ErrorEnvelope.of(
-            "rate_limit_error",
-            "Rate limit exceeded: the upstream reports this plan's ${limit.windowWords} window is used up " +
-                "until ${Instant.ofEpochSecond(limit.resetEpochSeconds)}. The session waits and resumes after " +
-                "the reset.",
-        ).toString()
+    /** V4-234: what a client is told when the upstream named a spent plan window. Our sentence
+     *  ([PlanLimit.refusal]), in the same envelope a real upstream sends, because whether a persistent
+     *  Claude Code keeps waiting is decided by the words it reads here, and the reset is the signal
+     *  that should decide it. Built here, beside the pooled refusal's class, under the pre-content
+     *  wall's written exemption for this file. */
+    internal fun clientBody(limit: PlanLimit): String = ErrorEnvelope.of("rate_limit_error", limit.refusal()).toString()
 }
 
 private data class Held(val untilMs: Long, val limit: PlanLimit)

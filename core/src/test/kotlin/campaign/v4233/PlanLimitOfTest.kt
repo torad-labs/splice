@@ -97,4 +97,21 @@ class PlanLimitOfTest {
         assertEquals("7-day Opus", PlanLimit("seven_day_opus", now).windowWords)
         assertEquals("7-day Sonnet", PlanLimit("seven_day_sonnet", now).windowWords)
     }
+
+    @Test
+    fun `every refusal of a spent window is one sentence, naming the window, the reset and any hold`() {
+        val limit = PlanLimit("five_hour", now)
+        val reset = "2026-09-21T14:13:20Z"
+
+        assertEquals(
+            "Rate limit exceeded: the upstream reports this plan's 5-hour window is used up until $reset. " +
+                "The session waits and resumes after the reset.",
+            limit.refusal(),
+        )
+        assertEquals(
+            "Rate limit exceeded: the upstream reports this plan's 5-hour window is used up until $reset, " +
+                "and this gateway is holding retries for 90s. The session waits and resumes after the reset.",
+            limit.refusal(holding = "this gateway is holding retries for 90s"),
+        )
+    }
 }

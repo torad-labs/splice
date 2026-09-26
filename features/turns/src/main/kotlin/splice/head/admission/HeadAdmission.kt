@@ -235,10 +235,7 @@ internal class HeadAdmission(
      *  read as "back in two minutes" against an 88-minute window, and one carrying only the window
      *  told the operator to wait 88 minutes for a limit his own re-send cleared in seconds. */
     private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?, plan: PlanLimit?): String {
-        if (plan != null) {
-            return "Rate limit exceeded: this plan's ${plan.windowWords} window is used up until " +
-                "${AccountResetText.format(plan.resetEpochSeconds)}. The session waits and resumes after the reset."
-        }
+        if (plan != null) return plan.refusal()
         val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
         val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
             "limited, so it is holding new turns for ${waitS}s. Retry after that."

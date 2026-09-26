@@ -89,10 +89,18 @@ const POOLED_FILE = "integrations/upstream/src/main/kotlin/splice/upstream/retry
 const POOLED_MARK = "RateLimitCooldown";
 const POOLED_REASON = "2026-09-17: the POOLED-REFUSAL fail-fast body, synthesized by the cooldown itself";
 
+const PLAN_HOLD_FILE = "integrations/upstream/src/main/kotlin/splice/upstream/retry/PlanHold.kt";
+const PLAN_HOLD_MARK = "PlanHold";
+const PLAN_HOLD_REASON =
+  "2026-09-26 (V4-233, splice-lead's ruling): the PLAN-HOLD refusal body, the pooled refusal's class, synthesized " +
+  "by the cooldown's plan hold and thrown as UpstreamFailed from the upstream layer (RetryPolicy's giveUp); its own " +
+  "file only because RateLimitCooldown is at detekt's function ceiling";
+
 const EXEMPTIONS: [string, string, string][] = [
   [COLLECT_FILE, COLLECT_MARK, COLLECT_REASON],
   [PRE_TURN_FILE, PRE_TURN_MARK, PRE_TURN_REASON],
   [POOLED_FILE, POOLED_MARK, POOLED_REASON],
+  [PLAN_HOLD_FILE, PLAN_HOLD_MARK, PLAN_HOLD_REASON],
 ];
 
 const ROUTED = "PreContentWireType.of(";
@@ -638,6 +646,11 @@ function selftest(): number {
     { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [POOLED_FILE]: `class ${POOLED_MARK} { ${envelopeBody} }` }, SEAM_OK, false);
   kase("envelopes: the pooled exemption without its mark is RED",
     { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [POOLED_FILE]: `class SomethingElse { ${envelopeBody} }` }, SEAM_OK, true, POOLED_MARK);
+  // V4-233's plan-hold refusal, paired the same way.
+  kase("envelopes: the plan-hold refusal keeps its WRITTEN exemption",
+    { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [PLAN_HOLD_FILE]: `class ${PLAN_HOLD_MARK} { ${envelopeBody} }` }, SEAM_OK, false);
+  kase("envelopes: the plan-hold exemption without its mark is RED",
+    { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [PLAN_HOLD_FILE]: `class SomethingElse { ${envelopeBody} }` }, SEAM_OK, true, PLAN_HOLD_MARK);
 
   kase("envelopes: the collect path keeps its WRITTEN exemption", tree(), SEAM_OK, false);
   kase("envelopes: the exemption's file is no longer the collect terminal",

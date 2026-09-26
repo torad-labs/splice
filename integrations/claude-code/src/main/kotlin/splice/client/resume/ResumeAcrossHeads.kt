@@ -60,6 +60,25 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 /** A Claude Code session id, and the only shape allowed to become a path component or a message. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
 
+private const val NOT_A_SESSION_ID = "a session id is letters, digits, '-' and '_' only, up to 128 characters"
+
+/** What a launch's `-r SESSION_ID` WOULD resolve to, asked without acting (V4-320): the one resolution
+ *  [ResumeAcrossHeads.adopt] acts on, so a recipe that describes a resume and the launch that performs it
+ *  cannot disagree about which transcript is taken or where it lands. */
+public sealed class ResumePlan {
+    /** The id is in the calling head's own tree: it resumes where it lies. */
+    public data class Owned(public val transcript: Path) : ResumePlan()
+
+    /** The id is in another head's tree ([fromHead]): the launch copies [from] to [into]. */
+    public data class Copy(public val from: Path, public val fromHead: Path, public val into: Path) : ResumePlan()
+
+    /** The id is in no head's tree; [searchedHeads] names where it looked. */
+    public data class Absent(public val sessionId: String, public val searchedHeads: List<String>) : ResumePlan()
+
+    /** The text is not a session id; the cause never echoes it. */
+    public data class Invalid(public val cause: String) : ResumePlan()
+}
+
 /** The answer to "where did this launch's `-r SESSION_ID` come from?". A sealed OUTCOME, not an
  *  exception: every refusal is a value the caller's `when` has to handle. */
 public sealed class SessionAdoption {
@@ -108,22 +127,37 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         served: Collection<String>,
         log: LogSink = LogSink(DaemonLog::write),
     ): SessionAdoption {
+        val roster = Roster(pinnedModel, served)
+        return when (val plan = plan(callingConfigDir, otherConfigDirs, sessionId, log)) {
+            is ResumePlan.Invalid -> SessionAdoption.Invalid(plan.cause)
+            is ResumePlan.Absent -> SessionAdoption.Absent(plan.sessionId, plan.searchedHeads)
+            is ResumePlan.Owned ->
+                SessionAdoption.HeadOwned(plan.transcript, rewriteInPlace(plan.transcript, roster, log))
+            is ResumePlan.Copy -> copyIn(callingConfigDir, plan, sessionId, roster, log)
+        }
+    }
+
+    /** What [adopt] would do for the same arguments, read only: nothing is copied, linked or rewritten.
+     *  The resume recipe route asks this (V4-320). */
+    public fun plan(
+        callingConfigDir: Path,
+        otherConfigDirs: List<Path>,
+        sessionId: String,
+        log: LogSink = LogSink(DaemonLog::write),
+    ): ResumePlan {
         // The id becomes a path component and reaches operator-facing text, so it is validated
         // before either.
-        if (!SESSION_ID_SHAPE.matches(sessionId)) {
-            return SessionAdoption.Invalid("a session id is letters, digits, '-' and '_' only, up to 128 characters")
-        }
-        val roster = Roster(pinnedModel, served)
+        if (!SESSION_ID_SHAPE.matches(sessionId)) return ResumePlan.Invalid(NOT_A_SESSION_ID)
         val others = otherConfigDirs.filter { it != callingConfigDir }.distinct()
         val own = findAllIn(callingConfigDir, sessionId, log).firstOrNull()
         val foreign = others.flatMap { dir -> findAllIn(dir, sessionId, log) }
         return when {
-            own != null ->
-                SessionAdoption.HeadOwned(own.transcript, rewriteInPlace(own.transcript, roster, log))
-            foreign.isEmpty() -> SessionAdoption.Absent(sessionId, (listOf(callingConfigDir) + others).map(::headName))
-            else -> {
-                val chosen = preferSameCwd(callingConfigDir, foreign, log)
-                copyIn(callingConfigDir, chosen, sessionId, roster, log)
+            own != null -> ResumePlan.Owned(own.transcript)
+            foreign.isEmpty() -> ResumePlan.Absent(sessionId, (listOf(callingConfigDir) + others).map(::headName))
+            else -> preferSameCwd(callingConfigDir, foreign, log).let { chosen ->
+                val into = callingConfigDir.resolve(Keys.PROJECTS).resolve(chosen.cwdDir)
+                    .resolve(sessionId + TRANSCRIPT_SUFFIX)
+                ResumePlan.Copy(chosen.transcript, chosen.headConfigDir, into)
             }
         }
     }
@@ -182,31 +216,31 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
      *  hand Claude Code a transcript that is half another head's. The source is read only. */
     private fun copyIn(
         callingConfigDir: Path,
-        chosen: Located,
+        plan: ResumePlan.Copy,
         sessionId: String,
         roster: Roster,
         log: LogSink,
     ): SessionAdoption {
-        val targetDir = callingConfigDir.resolve(Keys.PROJECTS).resolve(chosen.cwdDir)
-        val target = targetDir.resolve(sessionId + TRANSCRIPT_SUFFIX)
+        val target = plan.into
+        val targetDir = target.parent
         val targetSubdir = targetDir.resolve(sessionId)
         val copied = Cancellables.runCatchingCancellable {
             Files.createDirectories(targetDir)
             // A real byte copy, never a link: a link would put the source head's tree inside the
             // calling head's, which is exactly the leak this row removes.
-            Files.copy(chosen.transcript, target, REPLACE_EXISTING)
-            val sourceSubdir = chosen.transcript.resolveSibling(sessionId)
+            Files.copy(plan.from, target, REPLACE_EXISTING)
+            val sourceSubdir = plan.from.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
             rewriter.rewrite(target, roster.pinned, roster.served)
         }
         val rewritten = copied.getOrElse { cause ->
-            return SessionAdoption.Refused(sessionId, chosen.headConfigDir, SafeFailureText.render(cause))
+            return SessionAdoption.Refused(sessionId, plan.fromHead, SafeFailureText.render(cause))
         }
         log(
-            "[resume] adopted session $sessionId from ${chosen.headConfigDir} into $callingConfigDir " +
+            "[resume] adopted session $sessionId from ${plan.fromHead} into $callingConfigDir " +
                 "($rewritten assistant rows rewritten to ${roster.pinned}); the source tree is untouched\n",
         )
-        return SessionAdoption.Adopted(sessionId, chosen.transcript, target, rewritten)
+        return SessionAdoption.Adopted(sessionId, plan.from, target, rewritten)
     }
 
     /** Directories, then files, copying CONTENT: a symlink recreated verbatim would point back into

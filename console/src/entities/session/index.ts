@@ -6,6 +6,7 @@ export {
   fetchBoardEdges,
   fetchSessions,
   fetchSessionEdges,
+  fetchResumeRecipe,
   startBoardEdgesPolling,
   startSessionsPolling,
 } from './api';
@@ -26,6 +27,7 @@ export { UNKNOWN_HEAD } from './model/types';
 export type {
   BoardEdgesPayload,
   EdgeDirection,
+  ResumeRecipe,
   SessionAvailability,
   SessionEdge,
   SessionEdgesPayload,

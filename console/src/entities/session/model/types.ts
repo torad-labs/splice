@@ -128,6 +128,28 @@ export interface SessionEdgesPayload {
   edges: HandedEdge[];
 }
 
+/** GET /api/sessions/{id}/resume?head=<key> (ResumeRecipeRoute, V4-320): what `<command> -r <id>` on
+ *  that head does, read without doing it. The launch asks the same resolution and acts on it; this
+ *  copies and rewrites nothing. A refusal is the control plane's `{"error": <sentence>}`. */
+export interface ResumeRecipe {
+  session_id: string;
+  head: string;
+  /** What the operator runs: the head's wrapper command, `-r`, the id. */
+  argv: string[];
+  /** The transcript the resume reads. */
+  from: string;
+  /** The directory of the head's own tree the session resumes from. */
+  to_tree: string;
+  /** True when the launch copies the transcript in from another head's tree; false when the head
+   *  already holds it and it resumes where it lies. */
+  copies: boolean;
+  /** The head's pinned model, which the transcript's assistant rows are moved onto. */
+  model: string;
+  /** Whether the original session runs now, by the registry; null when the daemon has none wired. A
+   *  running original and its resumed copy diverge from the first turn. */
+  live: boolean | null;
+}
+
 /** GET /api/sessions/edges (ActivityRoutes.boardEdges): every registry session's edges in one read,
  *  keyed by session id, empty arrays included, each in the per-session route's edge shape. */
 export interface BoardEdgesPayload {

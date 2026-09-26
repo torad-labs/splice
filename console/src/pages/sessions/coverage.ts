@@ -24,6 +24,9 @@ export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/sessions/{id}/transcript', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/{id}/edges', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/edges', disposition: 'read-only' },
+  // V4-320: the recipe for resuming a session on another head. Read-only by construction: the launch
+  // that runs the command is the one that copies, and the console starts no client.
+  { kind: 'route', name: '/api/sessions/{id}/resume', disposition: 'read-only' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
   { kind: 'verb', name: 'sessions', disposition: 'read-only', via: '/api/sessions' },
 ];
@@ -37,5 +40,6 @@ export const job: PageJob = {
     { name: 'Open a session for its detail' },
     { name: 'Read a hand-off\'s text' },
     { name: 'Copy the call that messages a session' },
+    { name: 'Copy the command that resumes a session on another head' },
   ],
 };

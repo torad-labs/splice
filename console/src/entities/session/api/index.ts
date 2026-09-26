@@ -4,7 +4,7 @@
 import { bindUnauthorized, currentKey, request, storeKey } from '@shared/api';
 import { poll } from '@shared/lib';
 import { boardEdgesStore, sessionEdgesStore, sessionRegistryStore, sessionStore } from '../model/store';
-import type { BoardEdgesPayload, SessionEdgesPayload, SessionsPayload } from '../model/types';
+import type { BoardEdgesPayload, ResumeRecipe, SessionEdgesPayload, SessionsPayload } from '../model/types';
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -68,6 +68,13 @@ export async function fetchBoardEdges(): Promise<void> {
   } catch (err) {
     boardEdgesStore.setError(messageOf(err));
   }
+}
+
+/** What resuming a session on a head does (V4-320), read when the operator picks the head and never
+ *  polled: the answer is the one pick's. It rejects with the daemon's sentence, which for a head whose
+ *  command is not linked names the install that fixes it. */
+export function fetchResumeRecipe(sessionId: string, head: string): Promise<ResumeRecipe> {
+  return request<ResumeRecipe>(`/api/sessions/${encodeURIComponent(sessionId)}/resume?head=${encodeURIComponent(head)}`);
 }
 
 /** The board's edges at the registry's own cadence, so a row and its peer come from the same tick. */

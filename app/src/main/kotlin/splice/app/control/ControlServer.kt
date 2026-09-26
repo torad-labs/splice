@@ -134,7 +134,7 @@ public class ControlServer(
     )
 
     private val models = ModelsMount(heads, ports, guard)
-    private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard)
+    private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, sessions)
     private val mcp = mcpHost?.let { McpMount(it, guard) }
 
     @Volatile

@@ -30,7 +30,9 @@ import { ArrowLeftIcon } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { ArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight';
 import { ArrowUpRightIcon } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
 import { HeadlessMark, HeadMark, hueClass, NO_SPLICE_HEAD, NO_SPLICE_HEAD_WHY, useControlStatus, useHues } from '@entities/control-status';
+import { useHeads } from '@entities/heads';
 import {
+  fetchResumeRecipe,
   fetchSessionEdges,
   peerLabel,
   sessionKey,
@@ -43,12 +45,12 @@ import {
   useSessionRegistry,
   UNKNOWN_HEAD,
 } from '@entities/session';
-import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
+import type { BoardEdgesPayload, ResumeRecipe, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
-import { Badge, DataTable, DetailPanel, Empty, InfoTip, Lanes, LifetimeBar, PageHeader, Reveal, Section, StackedBar } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Lanes, LifetimeBar, PageHeader, Reveal, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
-import { Copy, Fault } from '@shared/controls';
+import { Choice, Copy, Fault } from '@shared/controls';
 import { readFor, timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import type { Keyed } from '@shared/lib';
 import { H, S, U } from './strings';
@@ -178,6 +180,81 @@ function SendCall({ row }: { row: SessionRow }) {
     <div className="myx-sx-send">
       <code className="myx-sx-call">{call}</code>
       <Copy value={call} />
+    </div>
+  );
+}
+
+/** A word the shell reads as itself, else single-quoted: the copied line runs the argv the daemon
+ *  answered, whatever a head's command is called. */
+export function shellWord(word: string): string {
+  return /^[\w./=-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
+}
+
+/** What resuming on the picked head does (V4-320): the command with its copy key, then the launch's
+ *  own resolution of it. Exported so a test can hand it a recipe. */
+export function ResumeRecipeView({ recipe }: { recipe: ResumeRecipe }) {
+  const line = recipe.argv.map(shellWord).join(' ');
+  const original = recipe.live === null ? S.absent : recipe.live ? (
+    <>
+      <Badge tone="warn" quiet>{S.stillLive}</Badge>
+      <InfoTip text={H.stillLive} label={S.stillLive} />
+    </>
+  ) : S.notRunning;
+  return (
+    <>
+      <div className="myx-sx-send">
+        <code className="myx-sx-call">{line}</code>
+        <Copy value={line} />
+      </div>
+      <KeyValue
+        rows={[
+          [S.transcript, recipe.from],
+          [S.landsIn, recipe.copies ? recipe.to_tree : S.inPlace],
+          [S.model, recipe.model],
+          [S.original, original],
+        ]}
+      />
+    </>
+  );
+}
+
+/** The head the resume offers before the operator picks one: the first that is not the session's own,
+ *  since resuming where it runs is what the session already does; its own when it is the only one. */
+export function firstOtherHead(keys: readonly string[], own: string): string | null {
+  return keys.find((key) => key !== own) ?? keys[0] ?? null;
+}
+
+/** The opened session resumed on a head the operator picks, first any head but its own. Splice
+ *  starts no client, so the answer is the command and what its launch will do; the page keys this by
+ *  session, so a pick never outlives the session it was made for. */
+function ResumeElsewhere({ sessionId, own }: { sessionId: string; own: string }) {
+  const heads = useHeads((state) => state.data);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<{ head: string; recipe: ResumeRecipe | null; fault: string | null } | null>(null);
+  const keys = (heads ?? []).map((head) => head.key);
+  const head = picked ?? firstOtherHead(keys, own);
+
+  useEffect(() => {
+    if (head === null) return undefined;
+    let current = true;
+    void fetchResumeRecipe(sessionId, head)
+      .then((recipe) => ({ head, recipe, fault: null }))
+      .catch((err: unknown) => ({ head, recipe: null, fault: err instanceof Error ? err.message : String(err) }))
+      .then((read) => {
+        if (current) setAnswer(read);
+      });
+    return () => {
+      current = false;
+    };
+  }, [sessionId, head]);
+
+  if (head === null) return <Empty text={S.noHeads} />;
+  const shown = answer?.head === head ? answer : null;
+  return (
+    <div className="myx-sx-resume">
+      <Choice label={S.resumeOn} value={head} options={(heads ?? []).map((row) => ({ value: row.key, label: row.label }))} onChange={setPicked} />
+      {shown?.fault == null ? null : <Fault message={shown.fault} />}
+      {shown?.recipe == null ? null : <ResumeRecipeView recipe={shown.recipe} />}
     </div>
   );
 }
@@ -496,6 +573,13 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
             </Section>
             <Section title={S.sendTo} info={{ text: H.sendTo, label: S.sendWhy }}>
               <SendCall row={open} />
+            </Section>
+            <Section title={S.resume} info={{ text: H.resume, label: S.resumeWhy }}>
+              {open.session_id === null ? (
+                <Empty text={S.noSessionId} />
+              ) : (
+                <ResumeElsewhere key={open.session_id} sessionId={open.session_id} own={open.head} />
+              )}
             </Section>
           </DetailPanel>
         )}

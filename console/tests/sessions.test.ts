@@ -14,13 +14,13 @@
 // current one; the store-reading default exports are the page the shell mounts.
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { View } from '../src/features/views';
-import type { SessionEdgesPayload, SessionRow } from '../src/entities/session';
-import { sessionKey } from '../src/entities/session';
+import type { ResumeRecipe, SessionEdgesPayload, SessionRow } from '../src/entities/session';
+import { fetchResumeRecipe, sessionKey } from '../src/entities/session';
 import { Reveal } from '../src/shared/ui';
 import type { TranscriptMessage } from '../src/entities/transcript';
-import { DEFAULT_VIEWS, HandoffText, NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
+import { DEFAULT_VIEWS, HandoffText, NO_HEAD_WHY, ResumeRecipeView, SessionsBoard, firstOtherHead, noHeadWhy, shellWord } from '../src/pages/sessions';
 
 /** The board view these tests are about: the lanes are the page's default now, the table a view. */
 const BY_HEAD = DEFAULT_VIEWS.filter((view) => view.id === 'by-head')[0];
@@ -491,5 +491,81 @@ describe('a live session gives the SendMessage call that reaches it (V4-321)', (
     const stale = opened(session({ availability: 'stale' }));
     expect(stale).not.toContain('SendMessage(');
     expect(stale).toContain('Not live');
+  });
+});
+
+// ── V4-320: resuming a session on another head, as the command and what its launch does ──
+
+describe('the opened session gives the command that resumes it on another head (V4-320)', () => {
+  const recipe = (over: Partial<ResumeRecipe> = {}): ResumeRecipe => ({
+    session_id: 'sid-live',
+    head: 'grok',
+    argv: ['claude-grok', '-r', 'sid-live'],
+    from: '/home/user/.splice/heads/codex/projects/-dev-atlas/sid-live.jsonl',
+    to_tree: '/home/user/.splice/heads/grok/projects/-dev-atlas',
+    copies: true,
+    model: 'grok-5',
+    live: true,
+    ...over,
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('a copy names the command, the transcript, where it lands, the model, and that the original runs', () => {
+    const html = render(h(ResumeRecipeView, { recipe: recipe() }));
+    expect(html).toContain('>claude-grok -r sid-live</code>');
+    expect(html).toContain('>Copy<');
+    expect(html).toContain('/home/user/.splice/heads/codex/projects/-dev-atlas/sid-live.jsonl');
+    expect(html).toContain('/home/user/.splice/heads/grok/projects/-dev-atlas');
+    expect(html).toContain('grok-5');
+    expect(html).toContain('Still running');
+    expect(html).not.toContain('In place');
+  });
+
+  test('a session the head already holds resumes in place, and the original says whether it runs', () => {
+    const owned = render(h(ResumeRecipeView, { recipe: recipe({ copies: false, live: false }) }));
+    expect(owned).toContain('In place');
+    expect(owned).not.toContain('/home/user/.splice/heads/grok/projects/-dev-atlas<');
+    expect(owned).toContain('Not running');
+    expect(owned).not.toContain('Still running');
+    const unwatched = render(h(ResumeRecipeView, { recipe: recipe({ live: null }) }));
+    expect(unwatched).not.toContain('Not running');
+    expect(unwatched).not.toContain('Still running');
+  });
+
+  test('the copied line quotes a word the shell would split, and leaves a plain one as it is', () => {
+    expect(shellWord('claude-grok')).toBe('claude-grok');
+    expect(shellWord('sid_1.2=a/b')).toBe('sid_1.2=a/b');
+    expect(shellWord('my head')).toBe("'my head'");
+    expect(shellWord("it's")).toBe("'it'\\''s'");
+  });
+
+  test('the head offered first is any but the session\'s own, and its own when it is the only one', () => {
+    expect(firstOtherHead(['claudex', 'grok'], 'claudex')).toBe('grok');
+    expect(firstOtherHead(['claudex'], 'claudex')).toBe('claudex');
+    expect(firstOtherHead([], 'claudex')).toBeNull();
+  });
+
+  test('the read names the session and the head, and a refusal arrives as the daemon wrote it', async () => {
+    const asked: string[] = [];
+    const refusal = 'The claude-grok command is not linked; run splice install grok.';
+    vi.stubGlobal('fetch', (input: unknown): Promise<Response> => {
+      asked.push(String(input));
+      const body = asked.length === 1 ? recipe() : { error: refusal };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: asked.length === 1 ? 200 : 409 }));
+    });
+    expect(await fetchResumeRecipe('sid live', 'grok')).toEqual(recipe());
+    await expect(fetchResumeRecipe('sid-live', 'grok')).rejects.toThrow(refusal);
+    expect(asked[0]).toBe('/api/sessions/sid%20live/resume?head=grok');
+  });
+
+  test("the opened session's detail carries the section, and says so when no head is known", () => {
+    const html = render(h(SessionsBoard, { payload: payload([session()]), view: BY_HEAD, linked: sessionKey(session()) }));
+    expect(html).toContain('Resume elsewhere');
+    expect(html).toContain('No heads');
+    const noId = render(h(SessionsBoard, { payload: payload([session({ session_id: null })]), view: BY_HEAD, linked: sessionKey(session({ session_id: null })) }));
+    expect(noId).toContain('Resume elsewhere');
   });
 });

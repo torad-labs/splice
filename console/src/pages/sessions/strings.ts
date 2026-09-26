@@ -57,6 +57,19 @@ export const S = {
   sendTo: 'Send a message',
   sendWhy: 'About sending',
   notLive: 'Not live',
+  /** The opened session resumed on a head the operator picks (V4-320): the command, and what the
+   *  launch does with the transcript. */
+  resume: 'Resume elsewhere',
+  resumeWhy: 'About resuming',
+  resumeOn: 'Resume on',
+  transcript: 'Transcript',
+  landsIn: 'Lands in',
+  inPlace: 'In place',
+  model: 'Model',
+  original: 'Original',
+  stillLive: 'Still running',
+  notRunning: 'Not running',
+  noHeads: 'No heads',
   noSessions: 'No sessions',
   noHandoffs: 'No hand-offs',
   noSessionId: 'No session id',
@@ -70,6 +83,8 @@ export const H = {
   registry: 'Sessions Claude Code registered on this machine.',
   sendTo: 'Paste into another Claude session; splice never writes to one.',
   notLive: 'A session that is not live may never answer.',
+  resume: 'Run it in a terminal; splice copies nothing until that launch.',
+  stillLive: 'The original still runs; the resumed copy diverges from it.',
 } as const;
 
 export const U = {

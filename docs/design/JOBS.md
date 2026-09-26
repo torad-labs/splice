@@ -128,6 +128,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Open a session for its detail
 - Read a hand-off's text
 - Copy the call that messages a session
+- Copy the command that resumes a session on another head
 
 ## settings
 

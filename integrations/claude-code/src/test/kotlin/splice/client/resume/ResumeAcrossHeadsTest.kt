@@ -173,6 +173,42 @@ class ResumeAcrossHeadsTest {
         )
     }
 
+    // V4-320: plan() is the resolution adopt() acts on, asked without acting, so a resume recipe and the
+    // `-r` launch it describes cannot disagree. On one fixture, each plan names what the adoption then
+    // does, and asking every plan writes nothing.
+    @Test
+    fun `a plan names what the adoption then does, and writes nothing itself - V4-320`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        val kimi = headConfig(home, "kimi")
+        write(calling.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("unrelated.jsonl"), "{}\n")
+        register(home, "kimi", encodedCwd("elsewhere"), "abc-123", model = "k3-256k")
+        val foreign = register(home, "kimi", encodedCwd("repo"), "abc-123", model = "k3-256k")
+        val own = register(home, "codex", encodedCwd("repo"), "own-1", model = pinned)
+        val resume = ResumeAcrossHeads()
+        val before = files(home)
+
+        val copy = resume.plan(calling, listOf(kimi), "abc-123", log = {}) as ResumePlan.Copy
+        val owned = resume.plan(calling, listOf(kimi), "own-1", log = {}) as ResumePlan.Owned
+        val absent = resume.plan(calling, listOf(kimi), "nowhere-9", log = {}) as ResumePlan.Absent
+        assertTrue(resume.plan(calling, listOf(kimi), "../x", log = {}) is ResumePlan.Invalid)
+        assertEquals(before, files(home), "a plan copies and rewrites nothing")
+
+        assertEquals(foreign to kimi, copy.from to copy.fromHead)
+        val adopted = adoption(calling, listOf(kimi), "abc-123") as SessionAdoption.Adopted
+        assertEquals(copy.from to copy.into, adopted.from to adopted.into)
+        assertEquals(own, owned.transcript)
+        val kept = adoption(calling, listOf(kimi), "own-1") as SessionAdoption.HeadOwned
+        assertEquals(owned.transcript, kept.transcript)
+        val missed = adoption(calling, listOf(kimi), "nowhere-9") as SessionAdoption.Absent
+        assertEquals(absent.searchedHeads, missed.searchedHeads)
+    }
+
+    /** Every file under [root] with its bytes' hash: a before and after that sees any copy or rewrite. */
+    private fun files(root: Path): Map<String, Int> = Files.walk(root).use { paths ->
+        paths.filter { Files.isRegularFile(it) }.toList()
+            .associate { root.relativize(it).toString() to Files.readAllBytes(it).contentHashCode() }
+    }
+
     @Test
     fun `an argument that is not a session id is refused without being echoed`(@TempDir home: Path) {
         val calling = headConfig(home, "codex")

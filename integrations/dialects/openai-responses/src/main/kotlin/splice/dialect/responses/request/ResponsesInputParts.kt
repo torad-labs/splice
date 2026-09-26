@@ -73,8 +73,11 @@ internal class ResponsesInputParts(minImageEdgePx: Int? = null) {
         }
     }
 
-    internal fun roleText(role: String, text: String): JsonObject = buildJsonObject {
+    /** A text message. [phase] is an assistant message's, commentary or final_answer (V4-335), in
+     *  the place the continuation markers put it (ResponsesFold, ResponsesReanchorController). */
+    internal fun roleText(role: String, text: String, phase: String? = null): JsonObject = buildJsonObject {
         put("role", role)
+        if (phase != null) put("phase", phase)
         put(FIELD_CONTENT, text)
     }
 }

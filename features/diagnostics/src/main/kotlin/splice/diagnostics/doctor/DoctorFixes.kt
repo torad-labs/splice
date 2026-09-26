@@ -17,9 +17,8 @@ package splice.diagnostics.doctor
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
 import splice.launch.install.InstallCommand
-import splice.launch.install.InstallRefused
+import splice.launch.install.InstallFailureText
 
 /** One fix's answer: [report] is the `doctor --json` text of the run taken AFTER the fix. */
 public sealed class DoctorFixOutcome {
@@ -49,7 +48,7 @@ public class DoctorFixes(private val doctor: DoctorCommand, private val env: Env
         val after = doctor.collect(env)
         val report = doctor.reportJson(after, env)
         val remaining = after.sections.flatMap { it.second }.count { it.fixId == fix }
-        val refusal = ran.exceptionOrNull()?.let(::refusalText)
+        val refusal = ran.exceptionOrNull()?.let(InstallFailureText::render)
             ?: "$verb ran, but $remaining doctor row(s) still call for it".takeIf { remaining > 0 }
         return if (refusal == null) {
             DoctorFixOutcome.Applied(fix, report)
@@ -57,11 +56,6 @@ public class DoctorFixes(private val doctor: DoctorCommand, private val env: Env
             DoctorFixOutcome.Refused(fix, refusal, report)
         }
     }
-
-    // InstallRefused is a sentence splice composed from paths, commands and head keys, printed by the
-    // CLI verbatim; anything else goes through the renderer that withholds quoted bytes.
-    private fun refusalText(failure: Throwable): String =
-        (failure as? InstallRefused)?.message ?: SafeFailureText.render(failure)
 }
 
 private const val INSTALL_ALL_ARG = "--all"

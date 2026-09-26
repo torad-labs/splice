@@ -626,6 +626,11 @@ origin.
   typed and threw it away: the live-turn question after `splice add codex` needed its answer typed
   twice. The reader now reads only what is already typed while the sign-in waits, and stops before
   the next prompt asks (V4-251).
+- **`splice add` says why it could not link a wrapper.** When the link failed, the add printed
+  `not linked (failure (message withheld: it may quote file bytes))` instead of the reason, such as
+  `launch shim not found at … (run install.sh)`. The CLI's add and the console's add now print the
+  linker's own sentence, as `splice doctor`'s fix already did; any other failure is still withheld
+  (V4-255).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

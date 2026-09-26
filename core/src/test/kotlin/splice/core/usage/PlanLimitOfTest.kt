@@ -23,15 +23,15 @@ class PlanLimitOfTest {
 
     @Test
     fun `a rejected five-hour claim with its reset ahead is a spent plan window`() {
-        assertEquals(PlanLimit("five_hour", now + 3_600), planLimitOf(spent("five_hour", "${now + 3_600}"), now))
+        assertEquals(PlanLimit("five_hour", now + 3_600), PlanLimits.of(spent("five_hour", "${now + 3_600}"), now))
     }
 
     @Test
     fun `every seven-day claim is a plan window a week long`() {
-        assertEquals(PlanLimit("seven_day", now + 86_400), planLimitOf(spent("seven_day", "${now + 86_400}"), now))
+        assertEquals(PlanLimit("seven_day", now + 86_400), PlanLimits.of(spent("seven_day", "${now + 86_400}"), now))
         assertEquals(
             PlanLimit("seven_day_opus", now + 86_400),
-            planLimitOf(spent("seven_day_opus", "${now + 86_400}"), now),
+            PlanLimits.of(spent("seven_day_opus", "${now + 86_400}"), now),
         )
     }
 
@@ -39,12 +39,12 @@ class PlanLimitOfTest {
     fun `a reset further out than one whole window is held no longer than the window`() {
         assertEquals(
             PlanLimit("five_hour", now + FIVE_HOURS_SECONDS),
-            planLimitOf(spent("five_hour", "${now + 10 * 3_600}"), now),
+            PlanLimits.of(spent("five_hour", "${now + 10 * 3_600}"), now),
             "a malformed reset must not hold a head past the window its claim names",
         )
         assertEquals(
             PlanLimit("seven_day", now + SEVEN_DAYS_SECONDS),
-            planLimitOf(spent("seven_day", "${now + 30 * 86_400}"), now),
+            PlanLimits.of(spent("seven_day", "${now + 30 * 86_400}"), now),
         )
     }
 
@@ -52,7 +52,7 @@ class PlanLimitOfTest {
     fun `a reset spelled in milliseconds is the same instant`() {
         assertEquals(
             PlanLimit("five_hour", now + 3_600),
-            planLimitOf(spent("five_hour", "${(now + 3_600) * 1_000}"), now),
+            PlanLimits.of(spent("five_hour", "${(now + 3_600) * 1_000}"), now),
         )
     }
 
@@ -82,6 +82,14 @@ class PlanLimitOfTest {
             "a reset that is not a number" to spent("five_hour", "soon"),
             "no unified family at all" to headers("retry-after" to "30"),
         )
-        cases.forEach { (why, h) -> assertNull(planLimitOf(h, now), why) }
+        cases.forEach { (why, h) -> assertNull(PlanLimits.of(h, now), why) }
+    }
+
+    @Test
+    fun `a claim reads in words, and a model-scoped week names its model`() {
+        assertEquals("5-hour", PlanLimit("five_hour", now).windowWords)
+        assertEquals("7-day", PlanLimit("seven_day", now).windowWords)
+        assertEquals("7-day Opus", PlanLimit("seven_day_opus", now).windowWords)
+        assertEquals("7-day Sonnet", PlanLimit("seven_day_sonnet", now).windowWords)
     }
 }

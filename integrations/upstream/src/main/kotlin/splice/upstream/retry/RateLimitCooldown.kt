@@ -175,8 +175,8 @@ public class RateLimitCooldown public constructor(
         if (remainingMs <= 0) {
             // V4-233: the clamp lifted while a plan window is still named spent, so this turn is the
             // re-probe V4-47 keeps, and the log says which one it is.
-            planHold.claim()?.let { claim ->
-                onRetry("plan hold: probing upstream ${planHold.forMs()}ms before the named $claim reset")
+            planHold.live()?.let { plan ->
+                onRetry("plan hold: probing upstream ${planHold.forMs()}ms before the named ${plan.claim} reset")
             }
             return
         }
@@ -184,7 +184,7 @@ public class RateLimitCooldown public constructor(
         val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
         val gatewayClause = "this gateway is holding retries for ${waitS}s"
         val providerResetMs = providerUnavailableForMs()
-        val planClaim = planHold.claim()
+        val plan = planHold.live()
         // V4-47: when the provider reset is KNOWN, name it and say plainly that the gateway interval
         // is not a retry schedule. The live episode: Retry-After 5301000ms clamped to 120s, body
         // reset 20:02:52Z hours away, and the operator retried three times on a countdown that could
@@ -193,11 +193,10 @@ public class RateLimitCooldown public constructor(
         // V4-233: a held PLAN window is the upstream's own statement, not a burst's stamp, so its
         // reset is stated as the deadline. No em dash, and none of the client's stop phrases.
         val detail = when {
-            planClaim != null -> {
-                val resetsAt = Instant.ofEpochMilli(wallClock() + planHold.forMs())
-                "Rate limit exceeded: the upstream reports this plan's ${planWindowWords(planClaim)} window " +
-                    "is used up until $resetsAt, and $gatewayClause. The session resumes after the reset."
-            }
+            plan != null ->
+                "Rate limit exceeded: the upstream reports this plan's ${plan.windowWords} window is used up " +
+                    "until ${Instant.ofEpochSecond(plan.resetEpochSeconds)}, and $gatewayClause. The session " +
+                    "resumes after the reset."
             providerResetMs > 0 -> {
                 // WALL base, not elapsed: providerResetMs is a DELAY, and printing it against the
                 // elapsed clock would name a 1970-era instant to the operator.

@@ -12,6 +12,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.perf.OutcomeTag
 import splice.core.perf.TurnPerf
+import splice.core.usage.PlanLimit
 import splice.core.util.WallClock
 import splice.head.ClientAuth
 import splice.head.HeadDeps
@@ -25,7 +26,6 @@ import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
-import splice.upstream.retry.planWindowWords
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class HeadAdmission(
@@ -169,9 +169,7 @@ internal class HeadAdmission(
         val now = wallClock()
         // V4-233: a held PLAN window is the upstream's own statement that the plan is spent until an
         // instant, so that instant is the deadline, and a persistent client sleeps once, until it.
-        val plan = deps.upstream.planHoldClaim?.let { claim ->
-            PlanDeadline(claim, (now + deps.upstream.planHoldForMs) / MILLIS_PER_SECOND)
-        }
+        val plan = deps.upstream.planHold
         val retryEpochSeconds = plan?.resetEpochSeconds ?: clientRetryEpochSeconds(now, armedMs)
         val windowResetEpochSeconds =
             deps.upstream.providerResetForMs.takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
@@ -233,9 +231,9 @@ internal class HeadAdmission(
      *  horizons matters because they are different facts: a message carrying only the 120s hold
      *  read as "back in two minutes" against an 88-minute window, and one carrying only the window
      *  told the operator to wait 88 minutes for a limit his own re-send cleared in seconds. */
-    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?, plan: PlanDeadline?): String {
+    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?, plan: PlanLimit?): String {
         if (plan != null) {
-            return "Rate limit exceeded: this plan's ${planWindowWords(plan.claim)} window is used up until " +
+            return "Rate limit exceeded: this plan's ${plan.windowWords} window is used up until " +
                 "${AccountResetText.format(plan.resetEpochSeconds)}. The session waits and resumes after the reset."
         }
         val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
@@ -356,6 +354,3 @@ internal class HeadAdmission(
 }
 
 private const val MILLIS_PER_SECOND = 1000L
-
-/** V4-233: the spent plan window a refusal names, and the instant it resets. */
-private data class PlanDeadline(val claim: String, val resetEpochSeconds: Long)

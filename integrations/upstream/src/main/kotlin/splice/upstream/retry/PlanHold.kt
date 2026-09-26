@@ -32,7 +32,7 @@ public class PlanHold internal constructor(
     internal fun hold(limit: PlanLimit, onRetry: RetryNotice): Long? {
         val delayMs = limit.resetEpochSeconds * MS_PER_S - wallClock()
         if (delayMs <= 0L) return null
-        val candidate = Held(clock() + delayMs, limit.claim)
+        val candidate = Held(clock() + delayMs, limit)
         held.updateAndGet { current ->
             if (current == null || candidate.untilMs > current.untilMs) candidate else current
         }
@@ -47,41 +47,27 @@ public class PlanHold internal constructor(
     /** How long the held window stays spent; 0 when no hold is live. */
     public fun forMs(): Long = held.get()?.let { maxOf(0L, it.untilMs - clock()) } ?: 0L
 
-    /** The held window's claim (`five_hour`, `seven_day`...) while the hold is live, or null. */
-    public fun claim(): String? = held.get()?.takeIf { it.untilMs > clock() }?.claim
+    /** The held window, exactly as the upstream named it, while the hold is live; null otherwise. */
+    public fun live(): PlanLimit? = held.get()?.takeIf { it.untilMs > clock() }?.limit
 
     /** An answered turn or a restart ends the hold: either the window is open again (a top-up, or
      *  a reset that came early) or the operator chose to ask the upstream afresh. */
     internal fun clear() {
         held.set(null)
     }
+
+    /** V4-234: what a client is told when the upstream named a spent plan window. Our sentence, in
+     *  the same envelope a real upstream sends, because whether a persistent Claude Code keeps
+     *  waiting is decided by the words it reads here, and the reset is the signal that should decide
+     *  it. No em dash, and none of the client's stop phrases (RateLimitRefusalClientContractTest
+     *  holds the list). */
+    internal fun clientBody(limit: PlanLimit): String =
+        ErrorEnvelope.of(
+            "rate_limit_error",
+            "Rate limit exceeded: the upstream reports this plan's ${limit.windowWords} window is used up " +
+                "until ${Instant.ofEpochSecond(limit.resetEpochSeconds)}. The session waits and resumes after " +
+                "the reset.",
+        ).toString()
 }
 
-private data class Held(val untilMs: Long, val claim: String)
-
-/** V4-234: what a client is told when the upstream named a spent plan window. Our sentence, in the
- *  same envelope a real upstream sends, because whether a persistent Claude Code keeps waiting is
- *  decided by the words it reads here, and the reset is the signal that should decide it. No em
- *  dash, and none of the client's stop phrases (RateLimitRefusalClientContractTest holds the list). */
-internal fun planLimitBody(limit: PlanLimit): String =
-    ErrorEnvelope.of(
-        "rate_limit_error",
-        "Rate limit exceeded: the upstream reports this plan's ${planWindowWords(limit.claim)} window is " +
-            "used up until ${Instant.ofEpochSecond(limit.resetEpochSeconds)}. The session waits and resumes " +
-            "after the reset.",
-    ).toString()
-
-/** A unified claim in words: `five_hour` is "5-hour", `seven_day` "7-day", and a model-scoped
- *  seven-day claim names its model (`seven_day_opus` is "7-day Opus"). */
-public fun planWindowWords(claim: String): String = when {
-    claim == FIVE_HOUR_CLAIM -> "5-hour"
-    claim == SEVEN_DAY_CLAIM -> "7-day"
-    claim.startsWith("${SEVEN_DAY_CLAIM}_") ->
-        "7-day " + claim.removePrefix("${SEVEN_DAY_CLAIM}_").split('_').joinToString(" ") { part ->
-            part.replaceFirstChar { it.uppercaseChar() }
-        }
-    else -> claim
-}
-
-private const val FIVE_HOUR_CLAIM = "five_hour"
-private const val SEVEN_DAY_CLAIM = "seven_day"
+private data class Held(val untilMs: Long, val limit: PlanLimit)

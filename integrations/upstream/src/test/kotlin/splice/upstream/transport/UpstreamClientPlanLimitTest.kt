@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.util.concurrent.atomic.AtomicBoolean
@@ -70,7 +71,7 @@ class UpstreamClientPlanLimitTest {
         assertEquals(1, calls.get(), "a spent plan window is not re-sent before the reset it named")
         assertEquals(429, failure.status)
         assertOurSentence(failure.body)
-        assertEquals("five_hour", client.planHoldClaim)
+        assertEquals(PlanLimit("five_hour", reset), client.planHold, "the hold is the upstream's own reset, exactly")
         assertTrue(
             client.planHoldForMs in (HOUR_S - 10) * MS..HOUR_S * MS,
             "held until the upstream's reset: ${client.planHoldForMs}ms",
@@ -100,7 +101,7 @@ class UpstreamClientPlanLimitTest {
             assertEquals(3, calls.get(), "V4-61: every attempt in the budget is spent")
             assertEquals(PLAN_BODY, failure.body, "the upstream's words pass through unchanged")
             assertEquals(0L, client.planHoldForMs)
-            assertNull(client.planHoldClaim)
+            assertNull(client.planHold)
         }
 
     @Test
@@ -160,7 +161,7 @@ class UpstreamClientPlanLimitTest {
         assertEquals(2, calls.get(), "the turn after the lift is the probe, and it went out")
         assertTrue(notices.any { it.startsWith("plan hold: probing upstream") }, notices.toString())
         assertEquals(0L, client.planHoldForMs, "an answered turn ends the hold")
-        assertNull(client.planHoldClaim)
+        assertNull(client.planHold)
     }
 
     @Test

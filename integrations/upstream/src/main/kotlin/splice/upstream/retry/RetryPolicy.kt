@@ -69,7 +69,9 @@ internal class RetryRules(private val maxRetries: Int) {
             val limit = last.planLimit
             val planned = limit?.let { cooldown.planHold.hold(it, onRetry) }
             cooldown.arm(planned ?: last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
-            if (limit != null && planned != null) throw UpstreamFailed(planLimitBody(limit), last.status, layers)
+            if (limit != null && planned != null) {
+                throw UpstreamFailed(cooldown.planHold.clientBody(limit), last.status, layers)
+            }
         }
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).

@@ -33,6 +33,7 @@
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
+import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.upstream.DnsBackoff
@@ -111,11 +112,13 @@ public class UpstreamClient(
      *  429 body actually named, and it is the only one worth telling a client to come back at. */
     public val providerResetForMs: Long get() = cooldown.providerUnavailableForMs()
 
-    /** V4-233: how long the upstream's named PLAN window stays spent (0 when none is held), and its
-     *  claim. The admission plane hands this reset to the client instead of the cooldown's lift,
-     *  because it is the upstream's own statement and not a burst's stamp. */
+    /** V4-233: how long the upstream's named PLAN window stays spent (0 when none is held). */
     public val planHoldForMs: Long get() = cooldown.planHold.forMs()
-    public val planHoldClaim: String? get() = cooldown.planHold.claim()
+
+    /** V4-233: the held plan window exactly as the upstream named it, or null. The admission plane
+     *  hands its reset to the client instead of the cooldown's lift, because it is the upstream's own
+     *  statement and not a burst's stamp. */
+    public val planHold: PlanLimit? get() = cooldown.planHold.live()
 
     /**
      * Prepare an upstream POST and run [block] with the streaming response. Handles retries

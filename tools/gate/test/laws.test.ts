@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { check, cssFences, undecidableFences, type Row } from "../src/lib/laws.ts";
+import { CSS_WALK_DEPTH, check, cssFences, undecidableFences, type Row } from "../src/lib/laws.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -92,6 +92,50 @@ describe("gate ledger laws: the unreadable fence", () => {
       const result = check(one(unreadable, "npx tsc --noEmit"));
       expect([result.dispositions.undecidable, result.dispositions.ok, result.findings.length]).toEqual([1, 0, 1]);
       expect(result.findings[0]!.detail).toStartWith("DID NOT RUN");
+    });
+  });
+});
+
+// V4-297: two fences the walk answered `no` without having looked. A `dir/*` fence (the ledgers carry
+// them: '.github/ISSUE_TEMPLATE/*', 'goals/*') had only a `/**` suffix stripped, so it statted a literal
+// `*`, got ENOENT and read "holds no CSS"; and a .css below the walk's depth cap, 6, read `no` as well.
+describe("gate ledger laws: the fence the walk did not finish", () => {
+  const box = join(tmpdir(), `gate-laws-unwalked-${process.pid}`);
+  const styled = join(box, "styled");
+  const deep = join(box, "deep");
+  const bottomless = join(box, "bottomless");
+  const arm = (body: () => void): void => {
+    mkdirSync(styled, { recursive: true });
+    writeFileSync(join(styled, "rule.css"), "a{}");
+    const seventh = join(deep, "a", "b", "c", "d", "e", "f", "g");
+    mkdirSync(seventh, { recursive: true });
+    writeFileSync(join(seventh, "sunk.css"), "a{}");
+    const past = join(bottomless, ...Array.from({ length: CSS_WALK_DEPTH + 2 }, (_, i) => `d${i}`));
+    mkdirSync(past, { recursive: true });
+    writeFileSync(join(past, "lost.css"), "a{}");
+    try {
+      body();
+    } finally {
+      rmSync(box, { recursive: true, force: true });
+    }
+  };
+
+  test("a `dir/*` fence over a directory holding a .css is a law-25 row, like `dir/**`", () => {
+    arm(() => {
+      for (const fence of [`${styled}/*`, `${styled}/**`, `${styled}/`, `${styled}*`]) {
+        expect(cssFences([fence]), fence).toEqual([fence]);
+        expect(laws(one([fence], "npx tsc --noEmit")), fence).toEqual(["law-25"]);
+      }
+    });
+  });
+
+  test("a .css 7 levels down is found; one past the depth the walk goes to is `unknown`, never `no`", () => {
+    arm(() => {
+      expect(cssFences([`${deep}/**`])).toEqual([`${deep}/**`]);
+      const fence = [`${bottomless}/**`];
+      expect(undecidableFences(fence)).toEqual(fence);
+      const result = check(one(fence, "npx tsc --noEmit"));
+      expect([result.dispositions.undecidable, result.dispositions.ok]).toEqual([1, 0]);
     });
   });
 });

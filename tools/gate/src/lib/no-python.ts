@@ -62,6 +62,11 @@ function gitLs(root: string, ...pathspec: string[]): string[] {
 
 const at = (root: string, f: string) => join(root, f);
 
+/** The tracked files whose invocations are literal command lines: shell scripts, .mjs, package.json
+ *  scripts and CI's workflows, whose `run:` lines call the gate's scripts too (V4-297: neither caller
+ *  census read them). One list, so the dangling and runtime censuses read the same surface. */
+const CALLERS = ["*.sh", "*.mjs", "package.json", ".github/workflows/*.yml", ".github/workflows/*.yaml"];
+
 /** Tracked .py files THAT ACTUALLY EXIST.
  *
  *  The existsSync filter is not belt-and-braces; without it this census reports a green that is
@@ -161,11 +166,11 @@ export function mismatchedRuntimes(text: string): string[] {
 }
 
 /** THE SEVENTH CENSUS: every tracked caller read for a mismatched runtime. Same caller surface as
- *  the dangling census — tracked .sh, .mjs and package.json — because that is the surface whose
- *  invocations are literal command lines. */
+ *  the dangling census ([CALLERS]), because that is the surface whose invocations are literal
+ *  command lines. */
 function runtimeMismatch(root: string): string[] {
   const out: string[] = [];
-  for (const caller of gitLs(root, "*.sh", "*.mjs", "package.json")) {
+  for (const caller of gitLs(root, ...CALLERS)) {
     if (SELF.has(caller)) continue;
     let text: string;
     try {
@@ -280,11 +285,12 @@ function untracked(root: string): string[] {
  *  the orchestrator had verified the FILES against each other and neither the WIRING. No
  *  allowlist. Paths resolve from the REPO ROOT, the house convention; interpolated paths are
  *  invisible, a limit of the instrument and not a pass. */
-const INVOCATION = /(?:python3|bun)\s+([A-Za-z0-9_./-]+\.(?:py|ts))/g;
+// V4-297: the optional quote, as in MISMATCH — `bun "tools/gone.ts"` read as no call at all.
+const INVOCATION = /(?:python3|bun)\s+["']?([A-Za-z0-9_./-]+\.(?:py|ts))/g;
 
 function dangling(root: string): string[] {
   const out = new Set<string>();
-  for (const caller of gitLs(root, "*.sh", "*.mjs", "package.json")) {
+  for (const caller of gitLs(root, ...CALLERS)) {
     let text: string;
     try {
       text = readFileSync(at(root, caller), "utf8");
@@ -648,7 +654,7 @@ export function wall(root: string): WallReport {
 
 /** The caller surface whose invocations are literal command lines — the same one the wall's
  *  seventh census reads, so the two halves are the same rule and not two readings of it. */
-const CALLER = /(?:\.sh|\.mjs|package\.json)$/;
+const CALLER = /(?:\.sh|\.mjs|package\.json|^\.github\/workflows\/[^/]+\.ya?ml)$/;
 
 type Event = { tool_name?: string; tool_input?: Record<string, unknown> };
 

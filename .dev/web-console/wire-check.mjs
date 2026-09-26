@@ -84,6 +84,9 @@ const SOURCE_ROOTS = ['app', 'core', 'features', 'integrations'];
 // The composition root that mounts the control API. Feature slices serve most of its routes now, and
 // which slices is DERIVED from what this tree imports (daemon(), below), never from a list here.
 const CONTROL = 'app/src/main/kotlin/splice/app/control/';
+// A kotlinx payload's two tokens: `@SerialName("w")` (group 1) renames the val after it; a val is its
+// name (2), its type (3) and whether a default follows (4).
+const KOTLINX_TOKEN = /@SerialName\s*\(\s*"([^"]+)"\s*\)|\b(?:override\s+)?va[lr]\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,)=]+)(=)?/g;
 
 function fail(message) {
   console.error(`wire-check: DID NOT RUN — ${message}`);
@@ -287,7 +290,9 @@ function daemon() {
   // (2026-09-23): 59 more files, 9 more census entries, and one new MATCH that was FALSE — the team
   // row's `created` matched ModelCatalog.kt's OpenAI model `created`, a key no teams route sends.
   const packageOf = (text) => text.match(/^package\s+([\w.]+)/m)?.[1];
-  const mounted = new Set(composition.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/^import\s+([\w.]+)\.\w+\s*$/gm)].map((m) => m[1])));
+  // `as D` is optional: an aliased import mounts its package as surely as a plain one (V4-297).
+  const mounted = new Set(composition.flatMap((f) =>
+    [...readFileSync(f, 'utf8').matchAll(/^import\s+([\w.]+)\.\w+(?:\s+as\s+\w+)?\s*$/gm)].map((m) => m[1])));
   const control = [...composition, ...all.filter((p) => /^(?:features|integrations)\//.test(relative(ROOT, p)) &&
     mounted.has(packageOf(readFileSync(p, 'utf8'))))];
 
@@ -410,11 +415,11 @@ function daemon() {
 
       if (/@Serializable\b/.test(line)) { serializable = true; depth = 0; continue; }
       if (serializable) {
-        const sn = line.match(/@SerialName\s*\(\s*"([^"]+)"/);
-        if (sn !== null) { serialName = sn[1]; continue; }
-        const prop = line.match(/\b(?:override\s+)?va[lr]\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,)=]+)(=)?/);
-        if (prop !== null) {
-          note(serialName ?? prop[1], at, prop[3] !== undefined || /\?\s*$/.test(prop[2].trim()), 'kotlinx');
+        // Every `@SerialName` and `val` on the line, in order (V4-297): a one-line class carries all
+        // its vals on one line, and a `@SerialName` shares its val's line as often as not.
+        for (const m of line.matchAll(KOTLINX_TOKEN)) {
+          if (m[1] !== undefined) { serialName = m[1]; continue; }
+          note(serialName ?? m[2], at, m[4] !== undefined || /\?\s*$/.test(m[3].trim()), 'kotlinx');
           serialName = null;
         }
         depth += (line.match(/\(/g) ?? []).length - (line.match(/\)/g) ?? []).length;
@@ -818,6 +823,19 @@ async function selftest() {
   const other = 'fun r() { get("/api/probe") { } }\nval y = buildJsonObject { put("unrelated_key", 1) }\n';
   put(`${CONTROL}Empty.kt`, `import splice.probe.ProbeRoute\n${other}`);
   ok('a key emitted by a feature package the control plane imports is read', exit(bare), 0);
+  // V4-297: an aliased import mounts its package too. `import a.b.C as D` fell outside the import
+  // pattern, so a package the control plane reached only through an alias left the census.
+  put(`${CONTROL}Empty.kt`, `import splice.probe.ProbeRoute as Probe\n${other}`);
+  ok('a key emitted by a package the control plane imports only under an alias is read', exit(bare), 0);
+  // V4-297: a @Serializable class read by half. Only the FIRST `val` on a line was a key, so a one-line
+  // payload lost the rest (BudgetsPayload.unreadable); and `@SerialName` on its own val's line skipped
+  // that val and renamed the NEXT one (Budget.action read as `daily_usd`).
+  put(`${CONTROL}Empty.kt`,
+    'fun r() { get("/api/probe") { } }\n@Serializable\nprivate data class W(val z: Int, val a: String)\n');
+  ok('every val of a one-line @Serializable class is a key', exit(bare), 0);
+  put(`${CONTROL}Empty.kt`, 'fun r() { get("/api/probe") { } }\n@Serializable\nprivate data class W(\n' +
+    '    @SerialName("zz") val z: Int,\n    val a: String,\n)\n');
+  ok('a @SerialName on its val\'s own line names that val, not the next one', exit(bare), 0);
   put(`${CONTROL}Empty.kt`, other);
   const unmounted = runIn(bare);
   ok('the same key in a feature package the control plane does NOT import is not read',

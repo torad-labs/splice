@@ -215,6 +215,40 @@ describe("the no-python wall", () => {
     commit(r);
   }, (r) => existsSync(join(r, "checks", "exists.ts")));
 
+  // V4-297: INVOCATION missed a QUOTED literal path, the shape MISMATCH was hardened for, and neither
+  // caller census read a workflow, where CI's own `run:` lines call the gate's scripts.
+  arm("a .sh calling a QUOTED path to a script that does NOT exist", "red", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "run.sh", 'bun "tools/gone.ts" check .\n');
+    w(r, ALLOW, list(["a.py"]));
+    commit(r);
+  }, (r) => existsSync(join(r, "run.sh")) && !existsSync(join(r, "tools", "gone.ts")));
+
+  arm("a workflow calling a script that does NOT exist", "red", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, ".github/workflows/ci.yml", "jobs:\n  gate:\n    steps:\n      - run: bun tools/gone.ts\n");
+    w(r, ALLOW, list(["a.py"]));
+    commit(r);
+  }, (r) => existsSync(join(r, ".github", "workflows", "ci.yml")) && !existsSync(join(r, "tools", "gone.ts")));
+
+  arm("a workflow calling a script that DOES exist", "green", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "tools/here.ts", "//\n");
+    w(r, ".github/workflows/ci.yml", "jobs:\n  gate:\n    steps:\n      - run: bun tools/here.ts\n");
+    w(r, ALLOW, list(["a.py"]));
+    commit(r);
+  }, (r) => existsSync(join(r, "tools", "here.ts")));
+
+  // Listed as an invoker, so the file census and the invoker census are satisfied and only the
+  // runtime census can charge it.
+  arm("a workflow running a .ts with python3", "red", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "tools/here.ts", "//\n");
+    w(r, ".github/workflows/ci.yml", "jobs:\n  gate:\n    steps:\n      - run: python3 tools/here.ts\n");
+    w(r, ALLOW, list(["a.py"], [".github/workflows/ci.yml"]));
+    commit(r);
+  }, (r) => existsSync(join(r, "tools", "here.ts")));
+
   // ── the fifth census: a ledger instruction naming a file that is gone ──────────────────────
   // Graded ONLY on rows that have not run yet. The two green arms are the boundary, and they
   // matter more than the red one: without them the obvious "any missing path is bad"

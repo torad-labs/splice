@@ -81,6 +81,26 @@ export function readLedger(root: string, ledger: string): Row[] {
 // --------------------------------------------------------------------- law 25
 
 /**
+ * How deep the CSS walk goes below a fence. It was 6, which a Kotlin module passes on its own
+ * (`src/main/kotlin/splice/<module>/<package>/...`), and past it the walk answered `no` (V4-297).
+ * The deepest tracked path in this repository is 10 directories below the root, so 32 is never
+ * reached by a real tree, only by a symlink cycle (statSync follows links), and past it the answer
+ * is `unknown`: a tree the walk did not finish is not a tree without CSS.
+ */
+export const CSS_WALK_DEPTH = 32;
+
+/**
+ * The directory a fence names, with the glob suffixes the ledger's own fencePrefix strips
+ * (.dev/campaigns/ledger.ts:760) and then its trailing slashes. V4-297: only `/**` was stripped, so
+ * a `dir/*` fence (the ledgers carry them) statted a literal `*`, got ENOENT and read "holds no CSS".
+ */
+function fenceRoot(entry: string): string {
+  const normalized = entry.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  const suffix = ["/**", "/*", "**", "*"].find((glob) => normalized.endsWith(glob));
+  return suffix === undefined ? normalized : normalized.slice(0, -suffix.length).replace(/\/+$/, "");
+}
+
+/**
  * Does a path on disk hold a .css file? THREE answers and not two: `yes`, `no`, `unknown`.
  *
  * This once returned a BOOLEAN and every `catch` arm returned `false`, so a tree the process could
@@ -95,13 +115,17 @@ export function readLedger(root: string, ledger: string): Row[] {
  * did not run (law 23). A .css found before the unreadable part decides the question: `yes` wins.
  */
 function holdsCss(prefix: string): "yes" | "no" | "unknown" {
-  const root = prefix.endsWith("/**") ? prefix.slice(0, -3) : prefix;
+  const root = fenceRoot(prefix);
   let unknown = false;
   const note = (error: unknown): void => {
     if ((error as { code?: string }).code !== "ENOENT") unknown = true;
   };
   const walk = (dir: string, depth: number): boolean => {
-    if (depth > 6) return false;
+    // V4-297: a tree deeper than the walk goes was never looked at, so it is not a `no`.
+    if (depth > CSS_WALK_DEPTH) {
+      unknown = true;
+      return false;
+    }
     let entries: string[];
     try {
       entries = readdirSync(dir);

@@ -6851,3 +6851,14 @@ verify = "red first: a test where the install throws InstallRefused(\"launch shi
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T02:59:30.243Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T02:59:30Z
+
+[[items]]
+id = "V4-256"
+phase = "release"
+title = "Before promotion, TESTED_CLAUDE_CODE is npm's latest Claude Code (Marlin, 2026-09-26): npm's latest is 2.1.283, published Sep 25 18:46Z (stable 2.1.274), and 0.4.0 pins 2.1.282 (core/src/main/kotlin/splice/core/Versions.kt:10), so every new user's first launch at release would say newer than tested. Move the pin to whatever npm's latest is on the release day and run the docker e2e on it (its receipt fails when the image's version differs from the pin). Then compare the takes' framed rows under that version and retake only if they differ (the standing rule). The takes stay on 2.1.282: on 2.1.283 this jar's version check prints its notice in a pane on camera. splice-lead sequences it after the last take."
+files = ["core/src/main/kotlin/splice/core/Versions.kt"]
+status = "todo"
+verify = "npm view @anthropic-ai/claude-code dist-tags on the release day equals TESTED_CLAUDE_CODE at the release sha; the docker e2e receipt on that sha records the same version; the framed-row comparison is written down with the takes' records; CI gate on the train sha."
+claimed_by = "splice-lead"
+claimed_at = "2026-09-26T03:02:47.649Z"
+# [2026-09-26] CLAIM: owner=splice-lead at=2026-09-26T03:02:47Z

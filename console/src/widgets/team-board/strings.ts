@@ -95,4 +95,6 @@ export const U = {
   kb: 'KB',
   /** Before the roles a lifetime figure leaves out. */
   without: 'without',
+  /** After the count of turns a cost figure leaves out: their model had no rate card. */
+  unpriced: 'turns unpriced',
 } as const;

@@ -121,6 +121,11 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
   const turnsSub = [table !== null && table.unattributed > 0 ? `${fmtInt(table.unattributed)} ${U.untagged}` : null, without]
     .filter((part) => part !== null)
     .join(' · ');
+  // The cost is the priced turns' dollars, and it counts the turns no card priced (V4-264).
+  const costSub = table === null ? '' : table.total.cost === null ? S.unpriced
+    : [table.total.unpriced > 0 ? `${fmtInt(table.total.unpriced)} ${U.unpriced}` : null, without]
+      .filter((part) => part !== null)
+      .join(' · ');
   return (
     <StatRow>
       <Stat
@@ -155,7 +160,7 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
         label={S.cost}
         basis="estimated"
         value={table === null ? S.absent : money(table.total.cost)}
-        {...(table !== null && table.total.cost === null ? { sub: S.unpriced } : without === null ? {} : { sub: without })}
+        {...(costSub === '' ? {} : { sub: costSub })}
       />
       <Stat
         label={S.inFlight}

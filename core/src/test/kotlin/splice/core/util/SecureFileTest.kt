@@ -5,11 +5,13 @@ package splice.core.util
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
@@ -51,6 +53,33 @@ class SecureFileTest {
 
             assertNull(SecureFile.ownerOnlyDirectory(logs))
             assertTrue(Files.isDirectory(logs), "the directory is still made")
+        }
+    }
+
+    // V4-275: the first-run splice.toml's primitive. Owner-only from the instant the file exists, and
+    // exclusive: it never writes over, or through, anything already at the path.
+    @Test
+    fun `createNew0600 makes the file owner-only and never writes over one already there`(@TempDir tmp: Path) {
+        assumeTrue(Files.getFileStore(tmp).supportsFileAttributeView("posix"), "POSIX modes")
+        val file = tmp.resolve("splice.toml")
+
+        SecureFile.createNew0600(file, "[daemon]\n".toByteArray())
+
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
+        assertEquals("[daemon]\n", Files.readString(file))
+        assertThrows(FileAlreadyExistsException::class.java) { SecureFile.createNew0600(file, "x".toByteArray()) }
+        assertEquals("[daemon]\n", Files.readString(file), "the file already there is untouched")
+    }
+
+    @Test
+    fun `createNew0600 on a filesystem without POSIX modes still creates the file`(@TempDir tmp: Path) {
+        val zip = URI.create("jar:${tmp.resolve("config.zip").toUri()}")
+        FileSystems.newFileSystem(zip, mapOf("create" to "true")).use { fs ->
+            val file = fs.getPath("/splice.toml")
+
+            SecureFile.createNew0600(file, "[daemon]\n".toByteArray())
+
+            assertEquals("[daemon]\n", Files.readString(file))
         }
     }
 }

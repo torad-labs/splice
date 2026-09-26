@@ -4,9 +4,9 @@ package splice.configuration.add
 
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 
 /** Whether the candidate's tables reached the file. */
 internal sealed class AddWritten {
@@ -24,7 +24,8 @@ internal sealed class AddWritten {
 
 internal class AddWrite {
 
-    /** A sibling temp file, then ONE rename — the previous file is intact until then. The candidate
+    /** A sibling temp file, then ONE rename — the previous file is intact until then — owner-only
+     *  (0600) from the temp file's creation (V4-275), since splice.toml can hold header secrets. The candidate
      *  was built from [AddCandidate.existing]; a sign-in and the checks ran since, so the file is read
      *  again first and a change in between (an editor, a second add) refuses the write instead of being
      *  overwritten by a rename. A file that cannot be read again (deleted, replaced by something
@@ -43,9 +44,7 @@ internal class AddWrite {
             onFailure = { AddWritten.Unreadable(SafeFailureText.render(it)) },
         )
         if (stale != null) return stale
-        val tmp = path.resolveSibling(path.fileName.toString() + ".add-${ProcessHandle.current().pid()}.tmp")
-        Files.writeString(tmp, composed)
-        Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        SecureFile.writeAtomic0600(path, composed)
         return AddWritten.Written
     }
 

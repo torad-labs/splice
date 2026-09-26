@@ -27,6 +27,10 @@
 // overwritten. The write itself is a temp file and an ATOMIC_MOVE, after re-reading the file to
 // refuse when someone else changed it since the read.
 //
+// OWNER-ONLY AND CAPPED (V4-275). splice.toml can hold header secrets (extra_headers), and so does
+// every backup of it: both are written 0600 from the instant they exist (SecureFile), and only the
+// newest BACKUPS_KEPT backups stay. Before, both landed at the umask and every edit's backup stayed.
+//
 // :core IS ktoml-FREE (module law), which is why the parser is injected and TomlScan.kt reads TOML
 // only as far as statement boundaries: tables, keys, and where each value starts and ends.
 package splice.core.topology
@@ -37,10 +41,10 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.model.HeadDiscoveredModels
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
@@ -50,6 +54,10 @@ import java.util.HexFormat
 // why: 12 hex characters of the file's SHA-256, carried as the write's precondition token. Long
 // enough that two concurrent edits cannot collide by accident, short enough to pass in a header.
 private const val HASH_PREFIX = 12
+
+// why: enough to walk a session of console edits back one by one. Each backup is a whole copy of
+// splice.toml, header secrets included, so they are not kept forever; the name's UTC stamp sorts them.
+private const val BACKUPS_KEPT = 10
 private const val TOPOLOGY_FILE = "splice.toml"
 private const val UNEXPRESSIBLE = "the writer cannot express this edit; nothing was written"
 
@@ -82,6 +90,7 @@ public class TopologyWriter(
     private val json = Json { encodeDefaults = false }
     private val keys = TomlKeys()
     private val stamp = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
+    private val backupPrefix = "${path.fileName}.bak-"
 
     /** The topology the file declares right now, as the canonical tree the console reads and edits.
      *  Throws what the parser throws when the file does not parse; the route answers that. */
@@ -123,12 +132,29 @@ public class TopologyWriter(
         }
         val bytes = existing.toByteArray()
         val hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)).take(HASH_PREFIX)
-        val backup = path.resolveSibling("${path.fileName}.bak-${stamp.format(Instant.ofEpochMilli(clock()))}-$hash")
-        if (!Files.exists(backup)) Files.write(backup, bytes)
-        val tmp = path.resolveSibling("${path.fileName}.write-${ProcessHandle.current().pid()}.tmp")
-        Files.writeString(tmp, composed)
-        Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        val backup = path.resolveSibling("$backupPrefix${stamp.format(Instant.ofEpochMilli(clock()))}-$hash")
+        if (!Files.exists(backup)) SecureFile.writeAtomic0600(backup, existing)
+        SecureFile.writeAtomic0600(path, composed)
+        dropOldBackups()
         return TopologyWriteResult.Written(backup)
+    }
+
+    /** Every backup past the newest [BACKUPS_KEPT]. One that cannot be deleted now goes at a later
+     *  edit; the write it follows has already landed. */
+    private fun dropOldBackups() {
+        val backups =
+            // ast-grep-ignore: kt-no-silent-result-collapse -- a directory that cannot be listed now keeps its backups until a later edit lists it; the write has landed
+            Cancellables.runCatchingCancellable {
+                Files.list(path.toAbsolutePath().parent).use { paths ->
+                    paths.filter { it.fileName.toString().startsWith(backupPrefix) }.toList()
+                }
+            }.getOrDefault(emptyList())
+        backups.sortedByDescending { it.fileName.toString() }.drop(BACKUPS_KEPT).forEach { old ->
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { Files.deleteIfExists(old) },
+                "an old backup that cannot be deleted now is dropped at a later edit",
+            )
+        }
     }
 
     private fun refused(message: String): TopologyWriteResult =

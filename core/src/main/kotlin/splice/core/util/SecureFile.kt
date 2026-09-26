@@ -8,9 +8,11 @@
 // (JDK-only here), so every provider + app can depend on this.
 package splice.core.util
 
+import java.nio.channels.Channels
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermissions
 
 // v0.4.0 review round 2: every result here is a verdict the caller must act on (ownerOnlyDirectory's
@@ -98,5 +100,21 @@ public object SecureFile {
             runCatching { Files.setPosixFilePermissions(path, OWNER_ONLY) },
             "POSIX perms unsupported on this filesystem → keep the completed write",
         )
+    }
+
+    /**
+     * V4-275: create [path] holding [bytes], owner-only (0600) from the instant it exists, and only
+     * when nothing is there: CREATE_NEW, so a file (or a dangling link) that appeared since the caller
+     * looked is never written through or over; that throws FileAlreadyExistsException. On a non-POSIX
+     * filesystem the mode is best-effort, as in [writeAtomic0600].
+     */
+    public fun createNew0600(path: Path, bytes: ByteArray) {
+        val options = setOf(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+        val channel = try {
+            Files.newByteChannel(path, options, PosixFilePermissions.asFileAttribute(OWNER_ONLY))
+        } catch (_: UnsupportedOperationException) {
+            Files.newByteChannel(path, options)
+        }
+        Channels.newOutputStream(channel).use { it.write(bytes) }
     }
 }

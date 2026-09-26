@@ -12,6 +12,7 @@ import splice.core.SHIM_VERSION
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -24,10 +25,12 @@ internal fun interface StarterWrite {
     fun claim(path: java.nio.file.Path, starter: ByteArray)
 }
 
-/** The production claim: CREATE_NEW — exclusive by construction, never a truncate. */
+/** The production claim: CREATE_NEW — exclusive by construction, never a truncate — and owner-only
+ *  from creation (V4-275): the operator edits this file by hand, secrets included, and an editor keeps
+ *  the mode it finds. */
 internal object ExclusiveStarterWrite : StarterWrite {
     override fun claim(path: java.nio.file.Path, starter: ByteArray) {
-        Files.write(path, starter, java.nio.file.StandardOpenOption.CREATE_NEW)
+        SecureFile.createNew0600(path, starter)
     }
 }
 

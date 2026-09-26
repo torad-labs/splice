@@ -67,8 +67,9 @@ internal object DiskWrites {
         helpers = listOf(
             Helper(
                 "core/src/main/kotlin/splice/core/util/SecureFile.kt",
-                Regex("""\bwriteAtomic0600\s*\("""),
-                "the owner-only atomic replace every credential and state file goes through",
+                Regex("""\b(writeAtomic0600|createNew0600)\s*\("""),
+                "the owner-only writes: the atomic replace every credential and state file goes through, and the " +
+                    "exclusive create of the first-run splice.toml",
             ),
             Helper(
                 "core/src/main/kotlin/splice/core/util/JsonlSink.kt",

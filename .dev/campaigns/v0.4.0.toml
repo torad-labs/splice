@@ -6716,6 +6716,7 @@ title = "No row declares an unmeasured window: muse-spark-1.2's 1M has a measure
 files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "app/src/main/resources/splice.example.toml"]
 status = "todo"
 verify = "the measurement receipt (tokens by the backend's count, the answer, the time) beside the row; CI gate on the train sha."
+# [2026-09-26] RECEIPT cmd="one Anthropic-wire streamed turn, max_tokens 64, through the claude-muse head at muse-spark-1.2, 2026-09-25; tokens by the daemon.log perf line in_tokens=; CI gate run 36184236269 on cd4f80600 (PR #298, merged 772d8a9fe into train 20)" exit=0 tests=0 touched=app/src/main/resources/splice.example.toml,features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt tail="the measured source). Measurement: 1,010,789 input tokens by the backend's own count (past the 1,000,000 window declared), sent Sep 25, 3:00:01 PM CT, served 3:00:47 PM CT (46.4 s), cold: attempts=1, cached_tokens=0; calibration 22,779 tokens at 1,000 filler repetitions. The 1M row stands, the ceiling Claude Code's [1m] implies. No test count: the change is a comment; the proof is the measurement."
 
 [[items]]
 id = "V4-237"

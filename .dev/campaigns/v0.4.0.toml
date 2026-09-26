@@ -8055,6 +8055,7 @@ verify = "red first: the ledger's own selftest gains a case, an empty-fence row 
 claimed_by = "console"
 claimed_at = "2026-09-26T22:36:49.997Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T22:36:49Z
+# [2026-09-26] RECEIPT cmd="red: bun .dev/campaigns/ledger.ts .dev/campaigns/v0.4.0.toml selftest, 192/194, FAIL 'an empty-fence row records a --touched - receipt (V4-332)': 'ledger: receipt: --touched (and --deleted) must be repo-relative plain paths without whitespace, comma-separated'; FAIL 'reaches done': 'E1: \"done\" needs a receipt first'. The fenced twin already held. green: selftest 194/194; bash tools/gate/test/campaign-cli-selftest.sh OK (14 ledgers round-tripped, byte-identical); bash tools/gate/test/campaign-cli-selftest-canary.sh 16 passed, 0 failed (real ledgers byte-identical); bun tools/gate typecheck exit 0, no added debt. Mutants, run from scratch copies of .dev/campaigns so no seat's CLI changed: the fence condition dropped (empty always refused) killed by the 2 E1 checks; the refusal dropped (empty always accepted) killed by the E2 twin. Committed 2032ae5f9" exit=0 tests=194 touched=.dev/campaigns/ledger.ts tail="194/194; canary 16/0; mutants 2/2 killed. Pre-existing and untouched: ledger.ts:33's header still says the selftest runs 185 checks"
 
 [[items]]
 id = "V4-333"

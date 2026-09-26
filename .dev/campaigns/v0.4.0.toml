@@ -8103,3 +8103,11 @@ title = "Code-mode records are kept per conversation, not 128 for the whole head
 files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeBridge.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/"]
 status = "todo"
 verify = "red first: a registry test with 19 conversations of 10 records each shows the first conversation's records evicted on today's tree while it is still live; green: retention is per conversation (bounded per conversation and by total bytes), the live conversation keeps its records, an abandoned conversation still ages out; live: the day's 'history rewrite skipped' and 'abandoned record' counts in the receipt"
+
+[[items]]
+id = "V4-338"
+phase = "release"
+title = "splice trace <head> --last N --json answers without reading the whole trace store: today it dies with java.lang.OutOfMemoryError (kotlinx JsonTreeReader) on claudex's 3.7 GB of day files (2026-09-26), so the one tool that shows a GPT turn's real responses is unusable exactly when a head is busy"
+files = ["app/src/main/kotlin/splice/app/cli/"]
+status = "todo"
+verify = "red first: a test over a generated trace store larger than the CLI heap asserts --last 3 returns 3 records, failing on today's tree with the OOM; green: the read streams from the newest day file backwards and holds at most N records; live: splice trace claudex --last 3 --json exits 0"

@@ -7347,8 +7347,11 @@ id = "V4-287"
 phase = "release"
 title = "Code mode's 24-hour promise holds on an idle head, and the disk-writes law claims only what it checks (tonight's review of V4-260/V4-262, 2026-09-26). (1) README's '<head>-code-mode.json' row and SECURITY.md say code-mode records, which keep the model's reasoning summaries in plaintext, last up to 24 hours, but the registry sweeps only when it is built at daemon start or when a code-mode turn touches it, and park() resets updatedAt: a claudex head that runs one script and goes idle keeps it for days on a daemon that stays up (CodexCodeModeRegistry.kt:26-68,95-144; CodexCodeModeSweeper.kt:32-61; SECURITY.md:60-61). Sweep on a timer the bridge cancels at head stop, or say the real rule; the promise is a privacy one, so the timer is the better half. (2) README says DiskWritesLawTest 'fails when any source file writes a file this section does not name', but the law keeps the first write hit per file and a NotAFile entry exempts every match of its call text, so a second write in a named file stays green (DiskWritesLawTest.kt:161,178): ratchet the write sites per file, or narrow the sentence to what the law checks"
 files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeBridge.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexCodeModeBridgeTest.kt", "quality/architecture/src/test/kotlin/splice/quality/DiskWritesLawTest.kt", "README.md", ".github/SECURITY.md"]
-status = "todo"
+status = "in_flight"
 verify = "red first: an idle head's code-mode record older than 24 hours still on disk with the daemon up; a second unlisted write in a named file passing the law (both quoted). Green: the record goes within the sweep interval after 24 hours, and the law's mutant (a new write site in CompactionRecordings.kt) goes red, or README states exactly what the law checks; :integrations-provider-codex:test (or the module's name) :quality-architecture:test and detekt through the slot"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T10:32:04.367Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T10:32:04Z
 
 [[items]]
 id = "V4-288"

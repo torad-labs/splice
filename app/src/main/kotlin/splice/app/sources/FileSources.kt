@@ -3,6 +3,7 @@
 package splice.app.sources
 
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.perf.PerfSessionTail
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
@@ -95,8 +96,7 @@ public class PerfStatsSource(private val stats: PerfStats) :
     override fun tailNumeric(n: Int): List<Map<String, Long>> = stats.tailNumeric(n)
 
     /** V4-37: the same rows narrowed to one session — what the statusline's cost segment sums. */
-    override fun tailNumericFor(sessionId: String): List<Map<String, Long>> =
-        stats.tailNumericFor(sessionId)
+    override fun sessionTail(sessionId: String): PerfSessionTail = stats.sessionTail(sessionId)
 
     /** V4-45: how many rows that same reader had to DROP. Delegated live rather than snapshotted —
      *  the statusline renderer is cached per head and built once, so a captured number would freeze

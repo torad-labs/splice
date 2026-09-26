@@ -104,7 +104,7 @@ step "topology written" write_plan_topology
 
 # ── 3. install and cold start, as a user would ─────────────────────────────────────────────────
 install_plan() {
-  [ -f "$ARTIFACTS/splice.jar" ] && [ -f "$ARTIFACTS/splice-launch" ] || { echo "no artifacts in $ARTIFACTS"; return 1; }
+  { [ -f "$ARTIFACTS/splice.jar" ] && [ -f "$ARTIFACTS/splice-launch" ]; } || { echo "no artifacts in $ARTIFACTS"; return 1; }
   local installer="$REPO/install.sh"
   [ -f "$ARTIFACTS/install.sh" ] && installer="$ARTIFACTS/install.sh"
   SPLICE_JAR="$ARTIFACTS/splice.jar" SPLICE_SHIM="$ARTIFACTS/splice-launch" bash "$installer" </dev/null || return 1
@@ -121,13 +121,18 @@ plan_cold_start() {
 step "daemon cold start: both heads ready" plan_cold_start
 
 # The launch recipe is where persistent retry is planted; without it the client stops after its
-# default retries and the rest of this scenario would be measuring something else.
+# default retries and the rest of this scenario would be measuring something else. It carries the
+# turn key too, so it lives in lib.sh's 0700 $PRIVATE, 0600 from its first byte, never under $OUT,
+# which run.sh copies into the receipts and e2e-docker.yml uploads (V4-311).
+PLAN_RECIPE="$PRIVATE/recipe-planlimit.json"
 plan_recipe() {
-  curl_mgmt -X POST -H 'Content-Type: application/json' \
-    --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/planlimit" \
-    > "$OUT/recipe-planlimit.json" || return 1
-  grep -o '"CLAUDE_CODE_RETRY_WATCHDOG":"[^"]*"' "$OUT/recipe-planlimit.json" || { echo "no CLAUDE_CODE_RETRY_WATCHDOG in the recipe"; return 1; }
-  grep -q '"CLAUDE_CODE_RETRY_WATCHDOG":"1"' "$OUT/recipe-planlimit.json" || { echo "persistent retry is not planted"; return 1; }
+  mkdir -p "$PRIVATE" && chmod 0700 "$PRIVATE" || return 1
+  ( umask 077
+    curl_mgmt -X POST -H 'Content-Type: application/json' \
+      --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/planlimit" \
+      > "$PLAN_RECIPE" ) || return 1
+  grep -o '"CLAUDE_CODE_RETRY_WATCHDOG":"[^"]*"' "$PLAN_RECIPE" || { echo "no CLAUDE_CODE_RETRY_WATCHDOG in the recipe"; return 1; }
+  grep -q '"CLAUDE_CODE_RETRY_WATCHDOG":"1"' "$PLAN_RECIPE" || { echo "persistent retry is not planted"; return 1; }
 }
 step "launch recipe: persistent retry planted" plan_recipe
 
@@ -136,7 +141,6 @@ step "what the client is told: the relabelled frame, the refusal, the buffered 4
   bun "$PLAN_TS" probe "$PROBE_HEAD_PORT" "$OUT/first-frame.json"
 
 # ── 5. the real client sleeps through the limit and resumes after the reset ─────────────────────
-TURN_END_MS=0
 plan_turn() {
   local out rc
   out="$(ANTHROPIC_API_KEY=mock-key DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
@@ -155,7 +159,7 @@ step "upstream timeline while at its limit" bun "$PLAN_TS" upstream "$OUT/upstre
 # The client's own record of what it was told: its transcripts, wherever the head's config dir put them.
 keep_transcripts() {
   mkdir -p "$OUT/claude-transcripts"
-  find "$HOME" -path '*/projects/*.jsonl' -newer "$OUT/recipe-planlimit.json" -exec cp {} "$OUT/claude-transcripts/" \; 2>/dev/null
+  find "$HOME" -path '*/projects/*.jsonl' -newer "$PLAN_RECIPE" -exec cp {} "$OUT/claude-transcripts/" \; 2>/dev/null
   ls -l "$OUT/claude-transcripts"
 }
 step "Claude Code transcripts kept" keep_transcripts

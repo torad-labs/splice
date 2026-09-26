@@ -6654,6 +6654,7 @@ verify = "red first: install.sh under a scratch HOME that is not the passwd home
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T08:05:00.367Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T08:05:00Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-231 -- :quality-architecture:test --tests 'splice.quality.ReleaseReadinessLawTest' --continue" exit=0 tests=60 touched=install.sh,quality/architecture/src/test/kotlin/splice/quality/ReleaseReadinessLawTest.kt tail="l/bin, the bug itself); the red is the law's mutant on today's install.sh: run_jar without -Duser.home -> exit 1, 'install-jar-in-its-home: install.sh lacks SPLICE_BIN_DIR=\"$BIN_DIR\" SPLICE_SHARE_DIR=\"$SHARE_DIR\" java -Duser.home=\"$HOME\" -jar \"$@\"' (60 tests, 1 failed), install.sh restored in the same block (sha 287ec631). GREEN: ReleaseReadinessLawTest 60/0; bash -n and shellcheck -S error clean."
 
 [[items]]
 id = "V4-232"

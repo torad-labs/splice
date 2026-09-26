@@ -29,7 +29,7 @@ splice puts Claude Code in front of the backend you choose.
   app/ assembles all of it.
 ```
 
-Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Claude Code. Use `claude-grok`, `claude-kimi` or `claude-muse` for those subscriptions, or connect an API backend such as OpenRouter. You keep Claude Code itself: its tools, permission checks and terminal, your hooks, skills and settings, and a session's history when you resume it on another head (`claude-grok -r`). Each head can have its own system prompt, and each provider its own tool handling; splice connects it all to the backend you choose.
+Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Claude Code. Use `claude-grok`, `claude-kimi` or `claude-muse` for those subscriptions, or connect an API backend such as OpenRouter. You keep Claude Code itself: its tools, permission checks and terminal, your hooks, skills, agents, commands, CLAUDE.md and permissions, and a session's history when you resume it on another head (`claude-grok -r`). Each head can have its own system prompt, and each provider its own tool handling; splice connects it all to the backend you choose.
 
 The gateway runs locally on your machine. Model requests still go to the chosen provider—this is not local model inference. Subscription connections run on the plan you already pay for; API-key connections use ordinary pay-per-token access.
 
@@ -511,6 +511,15 @@ Code's own system field, so the client's bytes ride through untouched, every exi
 instruction set** in it, so a `replace` head behaves like a bare model with tools attached. That is
 a deliberate choice, not a mistake, so `splice doctor` warns about it rather than refusing it; use
 it on a head you drive yourself. Two heads with different prompts never leak into each other.
+
+A repository can carry its own prompt too. `[projects."<root>"]` takes the same three keys and
+applies to every head working under that root, and `[projects."<root>".heads.<key>]` applies to
+one head there. The root is an absolute path or starts with `~/`. A relative `system_prompt_file`
+resolves against the root, so the prompt can live in the repo it governs, and when roots nest,
+the deepest one containing the session's directory wins. The layers apply in order: head, then
+project, then project-head. Appends stack as separate blocks in that order; a `replace` at any
+layer drops the client's field and every layer before it, and later appends still land after
+it. A session whose directory splice cannot resolve gets the head layer only.
 
 ### Code mode for ChatGPT
 

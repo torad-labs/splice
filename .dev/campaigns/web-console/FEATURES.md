@@ -97,17 +97,19 @@ in-flight turns before restarting (V4-74). One exception is live already: a mode
 - `[daemon]`: `control_port`, `state_dir`, `show_reasoning`, `summary`, `effort`,
   `replay_reasoning`, `mirror_reasoning`, `fold_reasoning_models`, `fold_max_continue`,
   `fold_marker_text`, `fold_max_tier`, `mcp_hosting`, `mcp_hosting_exclude`.
-- `[claude]`: `share` and `isolate` over `settings`, `mcps`, `skills`, `hooks`, `agents`,
-  `commands`, `plugins`, `claude_md`, `sessions`, `projects`; `config_dir`.
+- `[claude]`: `share`, the list of config items every head shares with the operator's own
+  `~/.claude`: `settings`, `mcps`, `skills`, `hooks`, `agents`, `commands`, `plugins`, `claude_md`,
+  `sessions`, `projects` (on-disk names such as `CLAUDE.md` match too). A head's own `isolate` and
+  `config_dir` sit in its `[heads.<key>.claude]`.
 - `[compaction]`: `instructions` or `file` (global); `[[compaction.model]]` with `model`,
   `instructions` or `file`; `[[compaction.project]]` with `path`, optional `model`,
   `instructions` or `file`. Inline text and file together is a load error, never silent precedence.
 - `[defaults]`: any runtime knob, applied to every head.
 - `[providers.<name>]`: `dialect` (openai-responses, openai-chat, anthropic-passthrough),
   `base_url`, `auth` (`kind`: chatgpt-oauth, grok-oauth, kimi-oauth, muse-oauth, api-key with
-  `env`, client; optional `file`), `quirks`, `extra_headers`, `models` (`id`, `label`,
-  `description`, `context_window`), `extra_windows`, `window_rules`, `default_context_window`,
-  `local` (inferred for openai-chat on a loopback base URL), `rates` per model id.
+  `env`; optional `file`), `quirks`, `extra_headers`, `models` (`id`, `label`, `description`,
+  `context_window`, and the row's own `rates`), `extra_windows`, `window_rules`,
+  `default_context_window`, `local` (inferred for openai-chat on a loopback base URL).
 - `[providers.<name>.quirks]`: `store`, `account_id_header`, `cache_key`, `effort_ceiling`,
   `summary_field`, `compact_effort`, `tool_choice`, `reasoning_cache`, `parallel_tool_calls`,
   `websocket`, `code_mode`, `zstd_request_body`, `reasoning_effort`, `mfjs`, `block_allowlist`,
@@ -118,11 +120,99 @@ in-flight turns before restarting (V4-74). One exception is live already: a mode
   dialect reads and say why the others are absent.
 - `[heads.<key>]`: `provider`, `port`, `discovery_prefix`, `pinned_model`, `models` as
   `{id, slot}` rows where slot is opus, sonnet, haiku or fable, `context_window`, `overrides`
-  (runtime knobs as strings), `claude` (`command`, `share`, `isolate`), `system_prompt` or
+  (runtime knobs as strings), `claude` (`command`, `config_dir`, `isolate`), `system_prompt` or
   `system_prompt_file` with `system_prompt_mode` append, replace or strip (a pattern list that
   deletes matching paragraphs from the client's own system text, V4-170), `rates`.
+- `[projects."<repo root>"]`: `system_prompt` or `system_prompt_file` with `system_prompt_mode`,
+  and per head under `heads.<key>` (V4-124), layered head, then project, then project-head.
 - Model rates: `input`, `cache_read`, `output`, optional `cache_write`, per million tokens.
   Absent rates mean "no dollar figure", never zero.
+
+The whole shape, one of each construct, as a file the daemon's loader parses
+(`FeaturesTopologyExampleTest`, V4-315):
+
+```toml
+[daemon]
+control_port = 3096
+show_reasoning = "text"
+mcp_hosting = true
+mcp_hosting_exclude = ["x"]
+
+[claude]
+share = ["settings", "mcps"]
+
+[compaction]
+instructions = "Keep every file path verbatim."
+
+[[compaction.model]]
+model = "gpt-6-astra"
+file = "~/compaction.md"
+
+[[compaction.project]]
+path = "/home/me/app"
+model = "gpt-6-astra"
+instructions = "Summarize the plan first."
+
+[defaults]
+maxInflight = "4"
+effort = "high"
+
+[providers.codex]
+dialect = "openai-responses"
+base_url = "https://chatgpt.com/backend-api/codex"
+auth = { kind = "chatgpt-oauth" }
+
+[providers.codex.quirks]
+store = false
+account_id_header = true
+
+[providers.codex.quirks.tool_surface]
+enabled = true
+defer = ["LSP"]
+search_limit = 8
+
+[providers.codex.extra_headers]
+x-anything = "a bag, not a schema"
+
+[[providers.codex.models]]
+id = "gpt-6-astra"
+label = "Astra"
+context_window = 400000
+rates = { input = 1.25, cache_read = 0.125, output = 10.0 }
+
+[providers.openrouter]
+dialect = "openai-chat"
+base_url = "https://openrouter.ai/api/v1"
+auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+
+[heads.claudex]
+provider = "codex"
+port = 3100
+discovery_prefix = "claudex-"
+pinned_model = "gpt-6-astra"
+models = [{ id = "gpt-6-astra", slot = "opus" }]
+system_prompt = "You are working on the app."
+system_prompt_mode = "append"
+
+[heads.claudex.claude]
+command = "claudex"
+config_dir = "~/.config/splice/claude"
+isolate = ["projects"]
+
+[heads.claudex.overrides]
+effort = "max"
+
+[heads.claudex.rates.gpt-6-astra]
+input = 1.25
+cache_read = 0.125
+output = 10.0
+
+[projects."/home/me/app"]
+system_prompt = "Plan first."
+
+[projects."/home/me/app".heads.claudex]
+system_prompt_mode = "append"
+```
 
 ### 2.4 Per-turn telemetry
 

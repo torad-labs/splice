@@ -284,8 +284,21 @@ internal class AddProfileCatalog {
             // standard pricing", so no tier. Writes are declared at the 1-hour rate: Claude Code asks for
             // the 1-hour cache on a subscriber's login (the pinned 2.1.282's bundle: ttl "1h", reason
             // "subscriber"), and this profile forwards that login.
+            //
+            // V4-270 RATES: the other three rows' cards from the same page (read 2026-09-25), per 1M tokens as
+            // input / cache hits / 1-hour writes / output: Fable 5.1 $10 / $0.25 / $20 / $50, Sonnet 5
+            // $2 / $0.20 / $4 / $10 (its launch price, which the page says "is now the standard price"), and
+            // Haiku 4.5 $1 / $0.10 / $2 / $5. Writes at the 1-hour rate, as for Opus 5.5. No tier: Fable 5.1
+            // and Sonnet 5 are Claude 4.6 and later, and Haiku 4.5's window is 200K. Claude Code takes its
+            // small-fast turns on Haiku 4.5, so without these a default install counted them unpriced.
             models = listOf(
-                AddModel("claude-fable-5-1", "Claude Fable 5.1", WINDOW_1M, listOf("fable")),
+                AddModel(
+                    "claude-fable-5-1",
+                    "Claude Fable 5.1",
+                    WINDOW_1M,
+                    listOf("fable"),
+                    rates = ModelRates(input = 10.0, cacheRead = 0.25, output = 50.0, cacheWrite = 20.0),
+                ),
                 AddModel(
                     "claude-opus-5-5",
                     "Claude Opus 5.5",
@@ -293,8 +306,20 @@ internal class AddProfileCatalog {
                     listOf("opus"),
                     rates = ModelRates(input = 4.0, cacheRead = 0.2, output = 20.0, cacheWrite = 8.0),
                 ),
-                AddModel("claude-sonnet-5", "Claude Sonnet 5", WINDOW_1M, listOf("sonnet")),
-                AddModel("claude-haiku-4-5", "Claude Haiku 4.5", WINDOW_200K, listOf("haiku")),
+                AddModel(
+                    "claude-sonnet-5",
+                    "Claude Sonnet 5",
+                    WINDOW_1M,
+                    listOf("sonnet"),
+                    rates = ModelRates(input = 2.0, cacheRead = 0.2, output = 10.0, cacheWrite = 4.0),
+                ),
+                AddModel(
+                    "claude-haiku-4-5",
+                    "Claude Haiku 4.5",
+                    WINDOW_200K,
+                    listOf("haiku"),
+                    rates = ModelRates(input = 1.0, cacheRead = 0.1, output = 5.0, cacheWrite = 2.0),
+                ),
             ),
             providerExtra = listOf("""extra_headers = { anthropic-version = "2023-06-01" }"""),
         ),

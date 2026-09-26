@@ -651,6 +651,10 @@ origin.
   printed `could not be asked: failure (message withheld: it may quote file bytes)`. A list that does
   not arrive within the 10-second budget, a TLS failure and a URL that does not parse now say so;
   any other failure is still withheld (V4-268).
+- **A team's API cost is a figure when some of its turns have no rate card.** One turn on a model
+  with no card, such as Claude Code's background haiku calls, nulled that member's dollars and the
+  team's total, and the tile read `Unpriced`. The cost is now the priced turns' dollars, with
+  `1 turn unpriced` beside it, and reads `Unpriced` only when no turn was priced (V4-264).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

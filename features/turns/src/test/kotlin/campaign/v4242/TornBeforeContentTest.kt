@@ -150,7 +150,11 @@ class TornBeforeContentTest {
             emitter = RecordingTerminal(),
             watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
             slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
-            pipeline = TurnPipeline(CompactStats(tmp.resolve("compact.jsonl")), log = {}, clampOutput = OutputClamp { it }),
+            pipeline = TurnPipeline(
+                CompactStats(tmp.resolve("compact.jsonl")),
+                log = {},
+                clampOutput = OutputClamp { it },
+            ),
             t0 = 0,
             trace = null,
             perf = TurnPerf(),

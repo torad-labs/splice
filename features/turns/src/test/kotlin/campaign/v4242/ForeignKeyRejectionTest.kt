@@ -59,7 +59,7 @@ private class RejectingUpstream(private val body: String) {
     init {
         server.createContext("/") { ex ->
             ex.requestBody.use { it.transferTo(OutputStream.nullOutputStream()) }
-            authorizations +=ex.requestHeaders.getFirst("Authorization")
+            authorizations += ex.requestHeaders.getFirst("Authorization")
             val bytes = body.toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
             ex.sendResponseHeaders(UNAUTHORIZED, bytes.size.toLong())

@@ -35,6 +35,9 @@ public object ForeignCredential {
         return failure.copy(
             type = ErrorType.API_ERROR,
             // The star run is shortened, so the upstream's sentence fits the client's snippet whole.
+            // SAFE-RENDER-EXEMPT[2026-09-26]: failure is a ClassifiedFailure, never a throwable, and its
+            // message is the classifier's reading of the upstream's HTTP body, whose one secret-shaped part
+            // is the upstream's own masked key, shortened further here (precedent: GrokOAuth.kt:157).
             message = "the upstream rejected a credential this account did not send: " +
                 failure.message.replace(STAR_RUN, SHORT_STARS),
             transient = true,

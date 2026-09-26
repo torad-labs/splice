@@ -153,7 +153,7 @@ class PeerCloseTest {
         mock.stop()
     }
 
-    private class Run(val sse: String, val logs: List<String>, val runner: ClosingRunner, val httpPosts: Int)
+    private data class Run(val sse: String, val logs: List<String>, val runner: ClosingRunner, val httpPosts: Int)
 
     private fun turnAgainst(events: List<String>): Run {
         val logs = CopyOnWriteArrayList<String>()

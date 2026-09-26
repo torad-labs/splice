@@ -14,6 +14,7 @@ import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
 import splice.upstream.TurnSignals
 import splice.upstream.WsRoundRunner
+import splice.upstream.failure.TearWords
 import java.io.IOException
 
 internal class WsRoundDrive(
@@ -42,10 +43,7 @@ internal class WsRoundDrive(
         // five times — every socket of the Codex outage of 2026-09-25 closed 1011 before output — and
         // the HTTP answer that could have named the cause was never asked. Caught here, upstream of
         // the translator, because the translator folds an I/O failure into its honest terminal.
-        val instrumented = events.catch { torn ->
-            if (tornBeforeContent(torn, inputs)) throw RoundNeedsSse(tearDetail(torn))
-            throw torn
-        }.onEach { evt ->
+        val instrumented = events.catch { torn -> throw reissuedOrItself(torn, inputs) }.onEach { evt ->
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
                 throw RoundNeedsSse(failureDetail(evt))
             }
@@ -108,6 +106,11 @@ internal class WsRoundDrive(
             .take(FAILURE_DETAIL_MAX_CHARS)
     }
 
+    /** V4-242: what [drive]'s collection rethrows for [torn]: the re-serve over SSE when the round tore
+     *  before the client saw anything of it, else [torn] itself, untouched. */
+    private fun reissuedOrItself(torn: Throwable, inputs: WsRoundInputs): Throwable =
+        if (tornBeforeContent(torn, inputs)) RoundNeedsSse(tearDetail(torn)) else torn
+
     /** V4-242: [torn] is the transport's tear of a round the client has seen nothing of, which neither
      *  the watchdog, a departed client nor the turn's own cancellation caused. The last two are this
      *  path's own: the client's message_start is written inside this round's flow (WsRoundDriver's
@@ -121,14 +124,11 @@ internal class WsRoundDrive(
             !inputs.drive.channel.clientGone.get() &&
             inputs.turnJob.isActive
 
-    /** The tear in its deepest words, which for a peer's close are the close itself: its code, its
-     *  reason and the events the round had received (InboxListener). One line, clipped like
+    /** The tear in its deepest words (TearWords), which for a peer's close are the close itself: its
+     *  code, its reason and the events the round had received (InboxListener). One line, clipped like
      *  [failureDetail]. */
     private fun tearDetail(torn: Throwable): String =
-        generateSequence(torn) { it.cause }
-            .take(TEAR_CAUSE_DEPTH)
-            .mapNotNull { link -> link.message?.takeIf { it.isNotBlank() } }
-            .lastOrNull()
+        TearWords.of(torn)
             .orEmpty()
             .ifEmpty { torn::class.simpleName.orEmpty() }
             .replace(oneLine, " ")
@@ -164,6 +164,3 @@ internal sealed class WsRoundResult {
 
 /** Long enough for a code and a sentence, short enough that one server message stays one line. */
 private const val FAILURE_DETAIL_MAX_CHARS = 240
-
-// V4-242: how far down a tear's causes its words are looked for; the websocket nests them two deep.
-private const val TEAR_CAUSE_DEPTH = 4

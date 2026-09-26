@@ -11,6 +11,7 @@ import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.wire.FIELD_TYPE
 import splice.upstream.transport.BufferCapacity
 import java.io.IOException
 import java.net.http.WebSocket
@@ -74,7 +75,7 @@ internal class InboxListener(
             onAnomaly()
             return
         }
-        pulse.event(JsonScalars.strOrEmpty(event[FIELD_TYPE]).ifEmpty { UNTYPED })
+        pulse.event(JsonScalars.strOrEmpty(event[FIELD_TYPE]).ifEmpty { TYPELESS_EVENT })
         if (!inbox.trySend(event).isSuccess) {
             log("[ws] inbox overflow/closed; anomaly\n")
             onAnomaly()
@@ -162,6 +163,5 @@ private val wsJson = Json {
 // stream without a close frame. See [InboxListener.endOfStream].
 private const val ABNORMAL_CLOSURE = 1006
 
-// V4-242: the event field the close line names a round's events by, and the name for one without it.
-private const val FIELD_TYPE = "type"
-private const val UNTYPED = "untyped"
+// V4-242: what the close line calls an event of the round that carries no type field.
+private const val TYPELESS_EVENT = "untyped"

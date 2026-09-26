@@ -10,14 +10,12 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
+import splice.upstream.failure.TearWords
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.WatchdogFired
 import java.io.IOException
 
 private const val MS_PER_S = 1000L
-
-// V4-242: how far down a tear's causes the words are looked for; a transport nests them two or three deep.
-private const val TEAR_CAUSE_DEPTH = 4
 
 internal class ResponsesTerminalDecision(
     private val ctx: StreamTurnContext,
@@ -136,12 +134,12 @@ internal class ResponsesTerminalDecision(
 
     // V4-242: a stream that tore says how, in the words of the error that tore it: the deepest cause,
     // which is the upstream's own close ("socket closed by the peer (status=1011, …) after …") when a
-    // websocket peer ended it. A stream that simply stopped has nothing to add and reads as it did.
+    // websocket peer ended it (TearWords). A stream that simply stopped has nothing to add and reads as it did.
     private fun noCompletionOutcome(state: ResponsesTurnState, tear: IOException?): TurnOutcome =
         if (ctx.clientGone()) {
             TurnOutcome.ClientAbandoned()
         } else {
-            val how = tear?.let(::deepestWords)?.let { "truncated: $it" } ?: "truncated"
+            val how = tear?.let(TearWords::of)?.let { "truncated: ${it.take(ERR_SNIPPET)}" } ?: "truncated"
             TurnOutcome.Failure(
                 "splice: upstream stream ended without response.completed ($how); retry",
                 partial = payload.partialOrNull(state),
@@ -149,18 +147,6 @@ internal class ResponsesTerminalDecision(
                 phase = FailurePhase.MID_OUTPUT,
             )
         }
-
-    // A URL in those words keeps its scheme and host only: an HTTP client's timeout text carries the
-    // whole request URL, and a path or query can carry a key (TransportFailureReason, same rule).
-    private fun deepestWords(tear: IOException): String? =
-        generateSequence<Throwable>(tear) { it.cause }
-            .take(TEAR_CAUSE_DEPTH)
-            .mapNotNull { link -> link.message?.trim()?.takeIf { it.isNotEmpty() } }
-            .lastOrNull()
-            ?.replace(urlPastHost, "$1")
-            ?.take(ERR_SNIPPET)
-
-    private val urlPastHost = Regex("""([a-zA-Z][a-zA-Z0-9+.-]*://[^/?#\s,\]]+)[^\s,\]]*""")
 
     // DR-7: an IDLE tear carries the round's salvage; a TOTAL-CAP tear does not, and the split is
     // the whole point. Idle is a STALL DETECTOR — the backend went quiet mid-part, the reasoning

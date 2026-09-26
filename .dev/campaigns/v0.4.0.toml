@@ -7459,6 +7459,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T13:25:08.219Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T13:25:08Z
 # [2026-09-26] amend by=orchestrator: files were ["tools/e2e/src/commands/code-mode.ts", "tools/e2e/src/commands/heads.ts", "tools/e2e/docker/lib.sh", "tools/e2e/docker/upgrade.sh", "tools/e2e/docker/inside.sh", "tools/e2e/test/code-mode.test.ts"]
+# [2026-09-26] SCOPE (orchestrator): the scrubbed daemon env gets ONE source, tools/e2e/src/daemon-env.ts (drops the CLAUDEX_/CODEX_/SPLICE_/CHATGPT_ family, then applies the harness's keys); oracle.ts:714's filter, code-mode.ts's two builders and heads.ts's reasoning-cache startDaemon call it. The red/green stays in code-mode.test.ts; the new file takes a census 'created' row. inside.sh stays on this row: V4-256's current work (the framed-row comparison) writes no product code
 
 [[items]]
 id = "V4-295"

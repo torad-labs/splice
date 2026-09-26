@@ -20,7 +20,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -52,8 +54,12 @@ class SessionsRoutesWiringTest {
 
     private fun json(body: String): JsonObject = Json.parseToJsonElement(body).jsonObject
 
-    /** A real control plane over a two-session registry, [stores] assigned the way ControlPlane does. */
-    private fun serve(stores: ActivityStores?, test: suspend (get: suspend (String) -> HttpResponse) -> Unit) {
+    /** A real control plane over a two-session registry, [stores] assigned the way ControlPlane does.
+     *  [test] gets a reader with the mgmt key and one without it. */
+    private fun serve(
+        stores: ActivityStores?,
+        test: suspend (get: suspend (String) -> HttpResponse, bare: suspend (String) -> HttpResponse) -> Unit,
+    ) {
         val sessions = Files.createDirectories(tmp.resolve("sessions"))
         for ((pid, id) in listOf(1 to ONE, 2 to TWO)) {
             val row = """{"pid":$pid,"sessionId":"$id","updatedAt":$SESSIONS_AT,"messagingSocketPath":"/run/$pid.sock"}"""
@@ -83,9 +89,11 @@ class SessionsRoutesWiringTest {
             runBlocking {
                 withTimeout(TIMEOUT_MS) {
                     while (runCatching { Socket("127.0.0.1", port).close() }.isFailure) delay(POLL_MS)
-                    test { path ->
-                        client.get("http://127.0.0.1:$port$path") { header("Authorization", "Bearer ${mgmt.get()}") }
-                    }
+                    val url = { path: String -> "http://127.0.0.1:$port$path" }
+                    test(
+                        { path -> client.get(url(path)) { header("Authorization", "Bearer ${mgmt.get()}") } },
+                        { path -> client.get(url(path)) },
+                    )
                 }
             }
         } finally {
@@ -99,7 +107,7 @@ class SessionsRoutesWiringTest {
         val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { SESSIONS_AT })
         stores.edges.record(MessageEdge(ONE, "uds:/run/2.sock", SESSIONS_AT, "toolu_1"))
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
-        serve(stores) { get ->
+        serve(stores) { get, bare ->
             val board = get("/api/sessions/edges")
             assertEquals(200, board.status.value, board.bodyAsText())
             val edge = """{"from":"$ONE","to":"uds:/run/2.sock","at":$SESSIONS_AT"""
@@ -109,7 +117,17 @@ class SessionsRoutesWiringTest {
             )
             val two = get("/api/sessions/$TWO/edges")
             assertEquals(200, two.status.value, two.bodyAsText())
-            assertEquals(json("""{"session_id":"$TWO","edges":[$edge,"direction":"in"}]}"""), json(two.bodyAsText()))
+            // V4-314: the edge carries its sender's text. No test transcript exists, so it says why,
+            // naming the trees searched: asserted by prefix, since the vanilla tree is the JVM's own.
+            val handed = json(two.bodyAsText())["edges"]!!.jsonArray.single().jsonObject
+            val reason = handed["missing_reason"]!!.jsonPrimitive.content
+            assertEquals(
+                json("""$edge,"direction":"in","text":null,"text_source":null,"missing_reason":"$reason"}"""),
+                handed,
+            )
+            assertTrue(reason.startsWith("no transcript for the sender in "), reason)
+            val anonymous = bare("/api/sessions/$TWO/edges")
+            assertEquals(401, anonymous.status.value, "an edge's text is read with the mgmt key only")
             // The transcript route is reached. A bad cursor is refused before any tree is opened, so
             // this proves the routing without reading the test JVM's own ~/.claude.
             val refused = get("/api/sessions/$ONE/transcript?cursor=bogus&limit=5")
@@ -120,7 +138,7 @@ class SessionsRoutesWiringTest {
 
     @Test
     fun `unwired stores answer both edges routes with the named 503, and the sessions rows still serve`() {
-        serve(null) { get ->
+        serve(null) { get, _ ->
             for (path in listOf("/api/sessions/edges", "/api/sessions/$ONE/edges")) {
                 val reply = get(path)
                 assertEquals(503, reply.status.value, "$path: ${reply.bodyAsText()}")

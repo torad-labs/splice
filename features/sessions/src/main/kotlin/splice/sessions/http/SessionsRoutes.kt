@@ -64,7 +64,7 @@ public class SessionsRoutes(
     private val teams: TeamSource = TeamSource { null },
 ) {
     /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
-    public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity)
+    public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity, SentTextSource(::sentTexts))
 
     /** One resolver per distinct root set: statuslineGitRoots is per-head overridable. */
     private val resolvers = ConcurrentHashMap<List<String>, RepoResolver>()

@@ -45,16 +45,7 @@ internal class TeamEdge(
         put("to", edge.to)
         put("to_slot", toSlot?.id)
         put("packet", JsonNull)
-        val text = sent?.texts?.get(edge.id)
-        put("text", text)
-        put("text_source", sent?.path?.takeIf { text != null })
-        put("missing_reason", if (text == null) missingReason(sent) else null)
-    }
-
-    private fun missingReason(sent: SentTexts?): String = when {
-        sent == null -> "no transcript lookup ran"
-        sent.path == null -> "no transcript for the sender in " + sent.searched.joinToString()
-        else -> "the call is not in ${sent.path}"
+        HandedText.put(this, edge.id, sent)
     }
 }
 

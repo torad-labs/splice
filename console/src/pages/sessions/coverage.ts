@@ -35,6 +35,6 @@ export const job: PageJob = {
   actions: [
     { name: 'Change the view: lanes, by head, by project, by team or timeline' },
     { name: 'Open a session for its detail' },
-    { name: 'Read a hand-off\'s text', row: 'V4-219' },
+    { name: 'Read a hand-off\'s text' },
   ],
 };

@@ -16,9 +16,11 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import type { View } from '../src/features/views';
-import type { SessionRow } from '../src/entities/session';
+import type { SessionEdgesPayload, SessionRow } from '../src/entities/session';
+import { sessionKey } from '../src/entities/session';
+import { Reveal } from '../src/shared/ui';
 import type { TranscriptMessage } from '../src/entities/transcript';
-import { DEFAULT_VIEWS, NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
+import { DEFAULT_VIEWS, HandoffText, NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pages/sessions';
 
 /** The board view these tests are about: the lanes are the page's default now, the table a view. */
 const BY_HEAD = DEFAULT_VIEWS.filter((view) => view.id === 'by-head')[0];
@@ -417,5 +419,50 @@ describe('a timeline row is titled by the clock time its span starts at (V4-302)
     expect(buckets.map(titleOf)).toEqual(buckets.map((bucket) => clock(bucket.start)));
     expect(buckets.map((bucket) => clock(bucket.start))).toEqual(['14:37', '14:40', '15:20', '16:00', '16:40', '17:20', '18:00']);
     expect(buckets.at(-1)?.end).toBe(from + 4 * HOUR);
+  });
+});
+
+// ── V4-314: what each hand-off said ─────────────────────────────────────────
+
+type HandedEdge = SessionEdgesPayload['edges'][number];
+
+describe('a hand-off carries the text its sender handed off (V4-314)', () => {
+  const said: HandedEdge = {
+    from: 'sid-live', to: 'uds:/run/b.sock', at: T0 + 30_000, direction: 'out',
+    text: 'HANDED-TEXT-NOT-IN-MARKUP', text_source: '/home/user/.claude/projects/x/sid-live.jsonl', missing_reason: null,
+  };
+  const unread: HandedEdge = {
+    from: 'sid-peer', to: 'uds:/run/user/1000/cc-socks/100.sock', at: T0 + 20_000, direction: 'in',
+    text: null, text_source: null, missing_reason: 'no transcript for the sender in /home/user/.claude/projects',
+  };
+  const opened = (edges: HandedEdge[]) => render(h(SessionsBoard, {
+    payload: payload([session()]),
+    view: BY_HEAD,
+    linked: sessionKey(session()),
+    edges: { last: { key: 'sid-live', data: { session_id: 'sid-live', edges }, at: T0 }, failures: new Map<string, string>() },
+  }));
+
+  test("the opened session's hand-offs print a message column, each text behind its own reveal", () => {
+    const out = opened([said, unread]);
+    expect(out).toContain('>Message<');
+    expect(out).toContain('Show message');
+    expect(out).not.toContain('HANDED-TEXT-NOT-IN-MARKUP');
+  });
+
+  test('a hand-off whose text was not read says why, and has nothing to reveal', () => {
+    const out = render(h(HandoffText, { edge: unread }));
+    expect(out).toContain('Not read');
+    expect(out).toContain('no transcript for the sender in /home/user/.claude/projects');
+    expect(out).not.toContain('myx-reveal-btn');
+    expect(opened([unread])).toContain('no transcript for the sender in /home/user/.claude/projects');
+  });
+
+  test('the reveal holds the text and the transcript it was read from', () => {
+    const cell = HandoffText({ edge: said }) as React.ReactElement<{ label: string; children: React.ReactNode }>;
+    expect(cell.type).toBe(Reveal);
+    expect(cell.props.label).toBe('Show message');
+    const shown = render(h(React.Fragment, null, cell.props.children));
+    expect(shown).toContain('HANDED-TEXT-NOT-IN-MARKUP');
+    expect(shown).toContain('/home/user/.claude/projects/x/sid-live.jsonl');
   });
 });

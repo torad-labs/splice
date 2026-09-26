@@ -48,6 +48,11 @@ export const S = {
   stale: 'Stale',
   gone: 'Gone',
   way: 'Direction',
+  /** A hand-off's text (V4-314), behind its reveal, or why it was not read. */
+  message: 'Message',
+  showMessage: 'Show message',
+  notRead: 'Not read',
+  whyNotRead: 'Why not read',
   noSessions: 'No sessions',
   noHandoffs: 'No hand-offs',
   noSessionId: 'No session id',

@@ -126,7 +126,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 
 - Change the view: lanes, by head, by project, by team or timeline
 - Open a session for its detail
-- Read a hand-off's text (V4-219)
+- Read a hand-off's text
 
 ## settings
 

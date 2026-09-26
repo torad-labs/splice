@@ -46,7 +46,7 @@ import {
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
-import { Badge, DataTable, DetailPanel, Empty, Lanes, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, Lanes, LifetimeBar, PageHeader, Reveal, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { readFor, timeAgo, useLinkedId, useOpen } from '@shared/lib';
@@ -128,16 +128,36 @@ function peerAddressOf(rows: readonly SessionRow[], edge: SessionEdgesPayload['e
 
 type Edge = SessionEdgesPayload['edges'][number];
 
-/** The opened session's hand-offs: which way each went, to whom, and when. */
+/** What a hand-off said (V4-314): its text behind a reveal, with the transcript it was read from, or
+ *  why the daemon found none. The text is out of the document until asked for, as a chat line's is. */
+export function HandoffText({ edge }: { edge: Edge }) {
+  if (edge.text === null) {
+    return (
+      <span className="myx-sx-unread">
+        {S.notRead}
+        <InfoTip text={edge.missing_reason ?? S.absent} label={S.whyNotRead} />
+      </span>
+    );
+  }
+  return (
+    <Reveal label={S.showMessage}>
+      <p className="myx-sx-said">{edge.text}</p>
+      <span className="myx-sx-said-from">{edge.text_source}</span>
+    </Reveal>
+  );
+}
+
+/** The opened session's hand-offs: which way each went, to whom, when, and what it said. */
 function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: readonly SessionRow[] }) {
   if (edges === null) return null;
   if (edges.edges.length === 0) return <Empty text={S.noHandoffs} />;
   const columns: Column<Edge>[] = [
-    { key: 'way', label: S.way, width: '24%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
-    { key: 'peer', label: S.peer, width: '28%', primary: true, cell: (edge) => peerLabel(rows, edge) },
+    { key: 'way', label: S.way, width: '16%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
+    { key: 'peer', label: S.peer, width: '22%', primary: true, cell: (edge) => peerLabel(rows, edge) },
     // The address is what a peer is reached at: read whole, so it wraps in a narrow panel.
-    { key: 'address', label: S.address, width: '28%', mono: true, wrap: true, cell: (edge) => peerAddressOf(rows, edge) },
-    { key: 'at', label: S.at, width: '20%', align: 'end', mono: true, cell: (edge) => timeAgo(edge.at) },
+    { key: 'address', label: S.address, width: '24%', mono: true, wrap: true, cell: (edge) => peerAddressOf(rows, edge) },
+    { key: 'said', label: S.message, width: '24%', wrap: true, cell: (edge) => <HandoffText edge={edge} /> },
+    { key: 'at', label: S.at, width: '14%', align: 'end', mono: true, cell: (edge) => timeAgo(edge.at) },
   ];
   return (
     <DataTable

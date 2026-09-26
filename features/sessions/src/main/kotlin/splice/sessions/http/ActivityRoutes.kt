@@ -10,6 +10,11 @@
 // address while the registry knows it; a name stored with no session is reported verbatim and is
 // nobody's `in`.
 //
+// THE ONE SESSION'S EDGES CARRY WHAT WAS HANDED OFF (V4-314): each edge's text, read by its tool_use id
+// from the sender's transcript through the same redacted read team chat uses (SentTextSource), with the
+// file it came from or why there is none ([HandedText]). The board route carries no text: it would read
+// every session's transcripts on each poll.
+//
 // UNWIRED STORES ARE NOT EMPTY STORES. A control plane built without the stores (tests, tools) answers
 // the two edges routes with a named 503, and leaves the `edges` key off the session rows rather than
 // reporting zero sends for sessions nobody watched.
@@ -19,6 +24,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -28,6 +34,7 @@ import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
+import splice.sessions.transcript.SentTexts
 
 internal const val EDGES_UNWIRED = "the activity stores are not wired into this control plane"
 
@@ -37,14 +44,20 @@ public fun interface ActivitySource {
     public operator fun invoke(): ActivityStores?
 }
 
-public class ActivityRoutes(private val registry: SessionSource, private val source: ActivitySource) {
-    /** GET /api/sessions/{id}/edges: `{session_id, edges}` in the SessionEdgesPayload shape. */
+public class ActivityRoutes(
+    private val registry: SessionSource,
+    private val source: ActivitySource,
+    private val texts: SentTextSource,
+) {
+    /** GET /api/sessions/{id}/edges: `{session_id, edges}` in the SessionEdgesPayload shape, each edge
+     *  with the text its sender handed off (V4-314), read once per sender from that sender's transcript. */
     public fun edges(sessionId: String): JsonReply {
-        val index = index() ?: return unwired()
-        val record = registry.read().firstOrNull { it.sessionId == sessionId }
+        val records = registry.read()
+        val index = index(records) ?: return unwired()
+        val record = records.firstOrNull { it.sessionId == sessionId }
         val body = buildJsonObject {
             put("session_id", sessionId)
-            put("edges", index.edgesOf(sessionId, record?.address))
+            put("edges", index.edgesOf(sessionId, record?.address, texts))
         }
         return JsonReply(HttpStatusCode.OK, body.toString())
     }
@@ -89,17 +102,32 @@ internal class Addresses(records: List<SessionRecord>) {
 internal class EdgeIndex(edges: List<MessageEdge>, records: List<SessionRecord>) {
     private val reported = Addresses(records).let { addresses -> edges.map(addresses::reported) }
 
-    /** The edges [sessionId] sent or received, oldest first, each with its direction. */
-    fun edgesOf(sessionId: String, address: String?): JsonArray = buildJsonArray {
-        mine(sessionId, address).forEach { (edge, direction) ->
-            add(
-                buildJsonObject {
-                    put("from", edge.from)
-                    put("to", edge.to)
-                    put("at", edge.at)
-                    put("direction", direction)
-                },
-            )
+    /** Each registry session's head, by session id: the tree its transcript is read from first. */
+    private val headOf: Map<String, String?> = records
+        .mapNotNull { record -> record.sessionId?.let { id -> id to record.head } }
+        .toMap()
+
+    /** The edges [sessionId] sent or received, oldest first, each with its direction. With [texts], each
+     *  also carries the text its sender handed off ([HandedText]), one read per sender for its own calls;
+     *  the board passes none, since it would read every session's transcript on each poll. */
+    fun edgesOf(sessionId: String, address: String?, texts: SentTextSource? = null): JsonArray {
+        val mine = mine(sessionId, address)
+        val found = texts?.let { source ->
+            mine.groupBy { it.first.from }
+                .mapValues { (sender, sent) -> source.read(sender, headOf[sender], sent.map { it.first.id }.toSet()) }
+        }
+        return buildJsonArray {
+            mine.forEach { (edge, direction) ->
+                add(
+                    buildJsonObject {
+                        put("from", edge.from)
+                        put("to", edge.to)
+                        put("at", edge.at)
+                        put("direction", direction)
+                        if (found != null) HandedText.put(this, edge.id, found[edge.from])
+                    },
+                )
+            }
         }
     }
 
@@ -129,3 +157,21 @@ internal class EdgeIndex(edges: List<MessageEdge>, records: List<SessionRecord>)
 
 private const val OUT = "out"
 private const val IN = "in"
+
+/** V4-314: the text a hand-off carried, as every edge reader reports it (a team's chat, a session's
+ *  edges): the redacted text the sender's transcript holds for the call, the file it was read from, or
+ *  why there is none. A text nobody found is null with its reason, never an empty string. */
+internal object HandedText {
+    fun put(into: JsonObjectBuilder, id: String, sent: SentTexts?) {
+        val text = sent?.texts?.get(id)
+        into.put("text", text)
+        into.put("text_source", sent?.path?.takeIf { text != null })
+        into.put("missing_reason", if (text == null) missingReason(sent) else null)
+    }
+
+    private fun missingReason(sent: SentTexts?): String = when {
+        sent == null -> "no transcript lookup ran"
+        sent.path == null -> "no transcript for the sender in " + sent.searched.joinToString()
+        else -> "the call is not in ${sent.path}"
+    }
+}

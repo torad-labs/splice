@@ -112,10 +112,20 @@ export interface SessionEdge {
   direction: EdgeDirection;
 }
 
-/** GET /api/sessions/{id}/edges: one session's edges, oldest first. */
+/** One of a session's own edges (V4-314): the stored edge with the text its sender handed off, read
+ *  on demand from the sender's transcript through the redacted read team chat uses (ActivityRoutes'
+ *  HandedText). A text not found is `text` null with `missing_reason` saying why, never ''. */
+interface HandedEdge extends SessionEdge {
+  text: string | null;
+  /** The transcript the text was read from; null with the text. */
+  text_source: string | null;
+  missing_reason: string | null;
+}
+
+/** GET /api/sessions/{id}/edges: one session's edges, oldest first, each with what it handed off. */
 export interface SessionEdgesPayload {
   session_id: string;
-  edges: SessionEdge[];
+  edges: HandedEdge[];
 }
 
 /** GET /api/sessions/edges (ActivityRoutes.boardEdges): every registry session's edges in one read,

@@ -62,6 +62,11 @@ button.myx-sx-peer:hover { color: var(--fg); }
   .myx-sx-board-open { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* a hand-off's text (V4-314): the message as sent, and the transcript it was read from */
+.myx-sx-said { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+.myx-sx-said-from { display: block; margin-block-start: var(--space-2); font-family: var(--font-mono); overflow-wrap: anywhere; color: var(--fg-subtle); }
+.myx-sx-unread { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--fg-subtle); }
+
 /* the fleet's hand-offs follow the board */
 .myx-sx > .myx-sx-handoffs { margin-block-start: var(--space-7); }
 /* Three short facts a row (who, to whom, when): the table is as wide as they are, where a full-width

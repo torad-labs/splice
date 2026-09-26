@@ -22,6 +22,7 @@ import splice.sessions.activity.MessageEdge
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
+import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
@@ -113,8 +114,8 @@ class SessionsConsoleRoutesTest {
         assertEquals(
             json(
                 """{"session_id":"$ALPHA","edges":[""" +
-                    """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 30},"direction":"out"},""" +
-                    """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in"}]}""",
+                    """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 30},"direction":"out",${unread()}},""" +
+                    """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",${unread()}}]}""",
             ),
             json(alpha.body),
         )
@@ -149,11 +150,78 @@ class SessionsConsoleRoutesTest {
         assertEquals(
             json(
                 """{"session_id":"$BETA","edges":[""" +
-                    """{"from":"$GAMMA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"in"}]}""",
+                    """{"from":"$GAMMA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"in",${unread()}}]}""",
             ),
             json(routes.edgeRoutes.edges(BETA).body),
         )
     }
+
+    @Test
+    fun `a session's edges carry the text each sender handed off, or say why there is none`() {
+        // V4-314: the same read team chat makes (TeamsReads.chat), once per sender, for its own calls.
+        // Alpha calls twice, and its transcript holds only the first: the second names the file read.
+        // Each sender's read starts at its own head's tree: alpha's codex, then the vanilla tree.
+        val stores = stores()
+        stores.edges.record(MessageEdge(ALPHA, "uds:/run/b.sock", NOW - 5, "toolu_9"))
+        assertTrue(AsyncFileIo.drain(), "the file lane drained")
+        val asked = mutableListOf<String>()
+        val routes = SessionsRoutes(
+            registry(),
+            handedTexts(asked),
+            heads = mapOf("codex" to head(tmp.resolve("codex"))),
+            activity = ActivitySource { stores },
+            vanilla = tmp.resolve(".claude"),
+        )
+        val edges = json(routes.edgeRoutes.edges(ALPHA).body)["edges"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(
+            json(
+                """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 30},"direction":"out",""" +
+                    """"text":"take the plan","text_source":"/t/alpha.jsonl","missing_reason":null}""",
+            ),
+            edges[0],
+        )
+        assertEquals(
+            json(
+                """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",""" +
+                    """"text":null,"text_source":null,"missing_reason":"no transcript for the sender in /t"}""",
+            ),
+            edges[1],
+        )
+        assertEquals(
+            json(
+                """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"out",""" +
+                    """"text":null,"text_source":null,"missing_reason":"the call is not in /t/alpha.jsonl"}""",
+            ),
+            edges[2],
+        )
+        assertEquals(3, edges.size)
+        assertEquals(
+            listOf("$ALPHA codex [toolu_1, toolu_9]", "$BETA .claude [toolu_2]"),
+            asked.sorted(),
+            "one read per sender, from its own head's tree first",
+        )
+        asked.clear()
+        routes.edgeRoutes.boardEdges()
+        assertEquals(emptyList<String>(), asked, "the board reads no transcript: it would read them all per poll")
+    }
+
+    /** Alpha's transcript holds its toolu_1 alone, and no other sender has one. Each read is logged in
+     *  [asked] with the tree it started at. */
+    private fun handedTexts(asked: MutableList<String>): TestTranscripts =
+        TestTranscripts(sends = { session, roots, ids ->
+            asked += "$session ${roots.first().fileName} ${ids.sorted()}"
+            if (session == ALPHA) {
+                SentTexts("/t/alpha.jsonl", mapOf("toolu_1" to "take the plan"), ids - "toolu_1", listOf("/t"))
+            } else {
+                SentTexts(null, emptyMap(), ids, listOf("/t"))
+            }
+        })
+
+    /** An edge's text keys when its sender has no transcript: these tests give no head a tree, so the
+     *  vanilla tree is the only one searched (V4-314). */
+    private fun unread(): String =
+        """"text":null,"text_source":null,""" +
+            """"missing_reason":"no transcript for the sender in ${tmp.resolve(".claude").resolve("projects")}""""
 
     private fun rowsOf(routes: SessionsRoutes): Map<String, JsonObject> =
         json(routes.sessionsJson())["sessions"]!!.jsonArray.map { it.jsonObject }

@@ -33,7 +33,7 @@ internal data class AddCheck(val name: String, val ok: Boolean, val detail: Stri
 
 /** What GET /models yielded: the dialect has no list, the endpoint could not serve it, or the ids. */
 internal sealed class ListedModels {
-    data class Absent(val dialect: String) : ListedModels()
+    data object Absent : ListedModels()
     data class Unreadable(val detail: String) : ListedModels()
     data class Listed(val ids: List<String>) : ListedModels()
 }
@@ -72,17 +72,18 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
      *  `splice models`' bearer lookup cannot drift into two answers. */
     private fun oauthPath(provider: ProviderConfig): Path? = credentials.pathFor(provider)
 
-    /** Any HTTP answer counts — an unauthenticated 401 still proves the endpoint is there. */
+    /** Any HTTP answer counts — an unauthenticated 401 still proves the endpoint is there. V4-266: so
+     *  the line says that, not the status, which beside a green tick read as a failure (a 403). */
     fun reachable(baseUrl: String): AddCheck {
         val reply = http("GET", baseUrl, null, null)
-        val detail = reply?.let { "HTTP ${it.status} from $baseUrl" } ?: "nothing answers at $baseUrl"
+        val detail = if (reply != null) "reachable at $baseUrl" else "nothing answers at $baseUrl"
         return AddCheck("base url", reply != null, detail)
     }
 
     /** The endpoint's model list where the dialect publishes one (openai-chat: GET /models). A list the
      *  dialect has but the endpoint cannot serve is [ListedModels.Unreadable], never "trusted". */
     fun listedModels(provider: ProviderConfig, key: String, env: EnvReader): ListedModels {
-        if (provider.dialect != Dialect.OPENAI_CHAT) return ListedModels.Absent(provider.dialect.toString())
+        if (provider.dialect != Dialect.OPENAI_CHAT) return ListedModels.Absent
         val url = provider.baseUrl.trimEnd('/') + "/models"
         val reply = http("GET", url, apiKey(provider, key, env), null)
         return when {
@@ -104,8 +105,12 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
      *  (an unreadable one fails as before), but an unlisted row is trusted and said to be. */
     fun modelsListed(models: List<String>, listed: ListedModels, authoritative: Boolean = true): AddCheck =
         when (listed) {
-            is ListedModels.Absent ->
-                AddCheck(MODELS_CHECK, true, "no model list on ${listed.dialect}; ${models.size} row(s) trusted")
+            // V4-267: in the user's terms, not the dialect's: where the rows came from and why nothing checked them.
+            ListedModels.Absent -> {
+                val count = if (models.size == 1) "1 model" else "${models.size} models"
+                val why = "this provider publishes no list to check them against"
+                AddCheck(MODELS_CHECK, true, "$count from splice's catalog; $why")
+            }
             is ListedModels.Unreadable ->
                 AddCheck(MODELS_CHECK, false, "${listed.detail}; the model list could not be checked")
             is ListedModels.Listed -> {

@@ -25,6 +25,7 @@ import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
 import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
+import splice.head.perf.SessionTotals
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -138,6 +139,9 @@ internal class ManagedHeadFactory(
             statePaths.perfStatsFile(ctx.key),
             archiveDir = statePaths.perfArchiveDir.takeIf { ctx.cfg.perfArchiveRetentionDays > 0 },
             archiveRetentionDays = ctx.cfg.perfArchiveRetentionDays,
+            // V4-244: each session's running total, fed by the rows this store appends and priced at
+            // each row's own model's card, against the same catalog the economics store uses.
+            totals = SessionTotals(statePaths.sessionTotalsFile(ctx.key), TurnPrice(ctx.catalog)),
         ),
         // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
         economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),

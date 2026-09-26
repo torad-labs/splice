@@ -22,6 +22,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.daemonclient.DaemonProbe
 import java.net.ServerSocket
 
 class DoctorHeadChecksTest {
@@ -30,6 +31,8 @@ class DoctorHeadChecksTest {
 
     private fun health(heads: Int?, ready: Int?, failed: Int?) =
         HealthView(version = "0.4.0", heads = heads, readyHeads = ready, failedHeads = failed)
+
+    private fun up(heads: Int?, ready: Int?, failed: Int?) = DaemonProbe.HealthProbe.Up(health(heads, ready, failed))
 
     private fun topology(vararg headPorts: Pair<String, Int>): Topology = Topology(
         providers = mapOf(
@@ -59,7 +62,7 @@ class DoctorHeadChecksTest {
         // probe tells them apart, and this is the case the operator is chasing when a wrapper
         // command hangs.
         val free = TestPorts.reserve()
-        val rows = checks.headChecks(DaemonSnapshot(port = 1, health = health(1, 1, 0)), topology("codex" to free))
+        val rows = checks.headChecks(DaemonSnapshot(port = 1, probe = up(1, 1, 0)), topology("codex" to free))
         val row = rowFor("codex", rows)
         assertEquals(CheckStatus.WARN, row.status, "an unbound head port is a WARN: $row")
         assertTrue(row.detail.contains(":$free"), "the row names the port: ${row.detail}")
@@ -70,7 +73,7 @@ class DoctorHeadChecksTest {
     fun `a head whose port is held reads listening, so the probe is not a constant - JW-02`() {
         ServerSocket(0).use { held ->
             val rows = checks.headChecks(
-                DaemonSnapshot(port = 1, health = health(1, 1, 0)),
+                DaemonSnapshot(port = 1, probe = up(1, 1, 0)),
                 topology("codex" to held.localPort),
             )
             val row = rowFor("codex", rows)
@@ -82,7 +85,7 @@ class DoctorHeadChecksTest {
 
     @Test
     fun `failed heads are a FAIL counting both sides - JW-02`() {
-        val rows = checks.headChecks(DaemonSnapshot(port = 1, health = health(3, 1, 2)), null)
+        val rows = checks.headChecks(DaemonSnapshot(port = 1, probe = up(3, 1, 2)), null)
         val summary = rows.single { it.detail.contains("FAILED to start") }
         assertEquals(CheckStatus.FAIL, summary.status, "dead heads are a failure, not a note: $summary")
         assertTrue(summary.detail.contains("2 of 3"), "the row counts both sides: ${summary.detail}")
@@ -93,7 +96,7 @@ class DoctorHeadChecksTest {
         // A foreign or ancient listener answers /health without heads/readyHeads/failedHeads. A
         // real daemon always sends all three, so absence is "nothing honest to report" — never a
         // zero, which would read as a healthy daemon with no heads.
-        val rows = checks.headChecks(DaemonSnapshot(port = 1, health = health(null, null, null)), null)
+        val rows = checks.headChecks(DaemonSnapshot(port = 1, probe = up(null, null, null)), null)
         assertEquals(emptyList<DoctorCheck>(), rows, "no counters means no verdict: $rows")
     }
 
@@ -102,7 +105,8 @@ class DoctorHeadChecksTest {
         // A stopped daemon's closed ports are expected, not findings: probing them would turn
         // every `splice doctor` on a stopped install into a wall of WARNs.
         val free = TestPorts.reserve()
-        val rows = checks.headChecks(DaemonSnapshot(port = 1, health = null), topology("codex" to free))
+        val stopped = DaemonSnapshot(port = 1, probe = DaemonProbe.HealthProbe.Down)
+        val rows = checks.headChecks(stopped, topology("codex" to free))
         assertEquals(emptyList<DoctorCheck>(), rows, "a stopped daemon yields no head rows: $rows")
     }
 }

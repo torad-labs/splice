@@ -28,7 +28,6 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 private const val READ_TIMEOUT_S = 5L
-private const val FIX_LOGS = "splice logs"
 
 // The mgmt-key check (DoctorHeadChecks.mgmtKeyCheck) already diagnoses a missing or unreadable key
 // with its own remedy; this read names the cause and points there rather than restating the fix.
@@ -90,9 +89,7 @@ public class JdkAccountPoolRead : AccountPoolRead {
         }
     }
 
-    private fun parsed(body: String): AccountPoolsRead =
-        Cancellables.runCatchingCancellable { AccountPoolsRead.Read(projection.parse(body)) }
-            .getOrElse { AccountPoolsRead.Unread(OTHER_SHAPE, FIX_RESTART) }
+    private fun parsed(body: String): AccountPoolsRead = projection.read(body)
 }
 
 /** The account_pool object under each head of /api/auth, and nothing else from that payload. */
@@ -106,6 +103,12 @@ internal class AccountPoolProjection {
         "credential_missing",
         "recovery_probe_in_flight",
     )
+
+    /** [body] as the pools it projects, or unread when it is not the shape this build reads: the CLI's
+     *  loopback read and the daemon's own doctor (V4-230) both read an /api/auth body through here. */
+    fun read(body: String): AccountPoolsRead =
+        Cancellables.runCatchingCancellable { AccountPoolsRead.Read(parse(body)) }
+            .getOrElse { AccountPoolsRead.Unread(OTHER_SHAPE, FIX_RESTART) }
 
     fun parse(body: String): Map<String, HeadAccountPoolView> =
         json.parseToJsonElement(body).jsonObject.mapNotNull { (head, value) ->

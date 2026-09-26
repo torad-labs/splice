@@ -292,8 +292,9 @@ export interface TurnsState {
   /** Heads the route clamped: their earliest rows in the asked window are missing from `landed`. A
    *  tail read's window is the daemon's default, the last 24 hours, so there too it is a gap. */
   truncated: TruncatedHead[];
-  /** The instant from which `landed` holds every turn the read asked for, set only when a cap cut
-   *  earlier ones: a clamped head's oldest row, or the oldest row a tail read's fleet cut kept. Before
-   *  it the list is short, so an hour there with no rows is unread, not idle (V4-290). */
+  /** The instant from which `landed` holds every turn: the window the daemon read from, or later
+   *  where a cap cut earlier ones (a clamped head's oldest row, or the oldest row a tail read's fleet
+   *  cut kept). Before it the list is short, so an hour there with no rows is unread, not idle
+   *  (V4-290, V4-300). Absent on a board no read fed (a fixture), which holds every turn it has. */
   completeFrom?: number;
 }

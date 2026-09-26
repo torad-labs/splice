@@ -15,6 +15,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { selectView } from '../src/features/views';
+import { viewStoreFor } from '../src/features/views/store';
 import type { View } from '../src/features/views';
 import { fetchPerfTurns, inflightFrom, waterfall } from '../src/entities/perf';
 import { perfTurnsStore } from '../src/entities/perf/model/store';
@@ -23,13 +24,14 @@ import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import { applyFilter, headOf, headsPresent, levelOf, levelsPresent, timeOf } from '../src/entities/logs';
 import type { LogFilter } from '../src/entities/logs';
 import { IdleHeads, TurnsBoard } from '../src/pages/turns';
-import { atText, badgesOf, landedKeysOf, shareText, slotsFrom, stageRowsOf, tokenRowsOf } from '../src/pages/turns/index';
+import { atText, badgesOf, landedKeysOf, readTurnsFor, shareText, slotsFrom, stageRowsOf, tokenRowsOf } from '../src/pages/turns/index';
 import { isStalled } from '../src/entities/perf';
 import { LogsBoard, unseenAfter } from '../src/pages/logs';
-import { rowKeyer, selectionOf, windowOf } from '../src/pages/turns/select';
+import { clockOf, rowKeyer, selectionOf, windowOf } from '../src/pages/turns/select';
 import { barRows, totalOf } from '../src/widgets/waterfall/model';
 import { counterRows, RequestDrawer, TurnWaterfall } from '../src/widgets/waterfall';
 import { LogLine } from '../src/widgets/log-tail';
+import { LIVE_BINDINGS } from '../src/widgets/rule/wire';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -530,72 +532,101 @@ describe('an idle head says when it last ran a turn', () => {
   });
 });
 
-describe("the timeline says where its window's turns start (V4-290)", () => {
-  // The page reads each head's newest 200 turns of the last 24 hours (the route's default window)
-  // and keeps the fleet's newest 200, while its timeline view draws those 24 hours: past 200 fleet
-  // turns in a day the timeline began partway through its window with no word, and every hour
-  // before the oldest turn it kept counted as idle.
-  const NOW = Date.UTC(2026, 8, 26, 12, 0, 0);
-  const MINUTE = 60_000;
-  afterEach(() => {
-    selectView('turns', 'table');
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
+// ── the timeline's read (V4-290, V4-300) ─────────────────────────────────────
+
+/** A local clock hour, so a window that ends here starts on one too. */
+const NOW = new Date(2026, 8, 26, 12, 0, 0).getTime();
+const MINUTE = 60_000;
+/** A saved view two days wide, as an operator would add one. */
+const TWO_DAYS: View = { id: 'two-days', name: 'Two days', layout: 'timeline', filter: { window: '48h', bucket: '1h' }, sort: null, group: null, fields: ['time', 'head'] };
+/** `count` turn instants, oldest first, `step` apart from `from`. */
+const spaced = (count: number, from: number, step: number): number[] => Array.from({ length: count }, (_, i) => from + i * step);
+const wire = (ts: number) => ({ ts, model: 'fable', outcome: 'ok', compact: false, session: null, account: null, cache_cold: null, total: 1_000 });
+/** One head's block as PerfRoutes.turnsFor writes it: its window from `since`, the newest `n` of it,
+ *  and what the window held. A string is a head listed with that error in place of its rows. */
+const route = (key: string, held: readonly number[] | string, since: number, n: number) => {
+  if (typeof held === 'string') return { key, label: key, error: held };
+  const window = held.filter((ts) => ts >= since);
+  const rows = window.slice(-n);
+  return { key, label: key, count: window.length, returned: rows.length, truncated: window.length > rows.length, oldest_held_ts: held[0] ?? null, rows: rows.map(wire) };
+};
+const answer = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+/** Stub a daemon at NOW holding each head's turns, and return the turn reads it was asked. A read
+ *  without `since` gets the route's default window, the last 24 hours (PerfRoutes.askedWindow). */
+function daemon(heads: Record<string, readonly number[] | string>): URLSearchParams[] {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
+  const asked: URLSearchParams[] = [];
+  vi.stubGlobal('fetch', (url: string) => {
+    const at = new URL(url, 'http://console');
+    if (at.pathname === '/api/heads') return answer({ heads: Object.keys(heads).map((key) => ({ key, running: true, gate: null })) });
+    asked.push(at.searchParams);
+    const key = at.searchParams.get('head') ?? '';
+    const n = Number(at.searchParams.get('n'));
+    const sinceText = at.searchParams.get('since');
+    const since = sinceText === null ? NOW - 24 * HOUR : Number(sinceText);
+    return answer({ since, n, heads: [route(key, heads[key] ?? [], since, n)] });
   });
-  /** `count` turn instants, oldest first, `step` apart from `from`. */
-  const spaced = (count: number, from: number, step: number): number[] => Array.from({ length: count }, (_, i) => from + i * step);
-  const wire = (ts: number) => ({ ts, model: 'fable', outcome: 'ok', compact: false, session: null, account: null, cache_cold: null, total: 1_000 });
-  /** One head's block as PerfRoutes.turnsFor writes it: the window's newest `n`, and what it held. */
-  const route = (key: string, held: readonly number[], n: number) => {
-    const rows = held.slice(-n);
-    return { key, label: key, count: held.length, returned: rows.length, truncated: held.length > rows.length, oldest_held_ts: held[0] ?? null, rows: rows.map(wire) };
-  };
-  const answer = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-  /** Stub a daemon holding each head's turns in the last 24 hours. */
-  const daemon = (heads: Record<string, readonly number[]>): void => {
-    vi.stubGlobal('fetch', (url: string) => {
-      const at = new URL(url, 'http://console');
-      if (at.pathname === '/api/heads') return answer({ heads: Object.keys(heads).map((key) => ({ key, running: true, gate: null })) });
-      const key = at.searchParams.get('head') ?? '';
-      const n = Number(at.searchParams.get('n'));
-      const since = at.searchParams.get('since');
-      return answer({ since: since === null ? NOW - 24 * HOUR : Number(since), n, heads: [route(key, heads[key] ?? [], n)] });
-    });
-  };
-  /** The page's own read (TurnsPage polls startPerfTurnsPolling(undefined): every head, the default
-   *  n, no since), then the board on its timeline view, and the section meta it prints. */
-  const timelineMeta = async (heads: Record<string, readonly number[]>): Promise<string> => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(NOW);
-    daemon(heads);
-    await fetchPerfTurns();
-    const props = { inflight: [], landed: perfTurnsStore.get().data, summary: null, capture: null };
-    render(h(TurnsBoard, props)); // the first render makes the page's view store
-    selectView('turns', 'timeline');
-    const metas = [...render(h(TurnsBoard, props)).matchAll(/<span class="myx-sec-meta">([^<]*)<\/span>/g)].map((match) => match[1]);
-    expect(metas).toHaveLength(1);
-    return metas[0];
-  };
+  return asked;
+}
+
+const boardProps = () => ({ inflight: [], landed: perfTurnsStore.get().data, summary: null, capture: null });
+
+/** One of the page's views, from its own store (the first render makes it), `TWO_DAYS` added. */
+function pageView(id: string): View {
+  render(h(TurnsBoard, boardProps()));
+  const store = viewStoreFor('turns', []);
+  if (!store.get().views.some((held) => held.id === TWO_DAYS.id)) store.add(TWO_DAYS);
+  const found = store.get().views.find((held) => held.id === id);
+  if (found === undefined) throw new Error(`the turns page has no view ${id}`);
+  return found;
+}
+
+/** The board on `view` over what the store holds, and the one section meta it prints. */
+function metaOn(view: View): string {
+  selectView('turns', view.id);
+  const metas = [...render(h(TurnsBoard, boardProps())).matchAll(/<span class="myx-sec-meta">([^<]*)<\/span>/g)].map((match) => match[1]);
+  expect(metas).toHaveLength(1);
+  return metas[0];
+}
+
+function resetTimeline(): void {
+  selectView('turns', 'table');
+  viewStoreFor('turns', []).remove(TWO_DAYS.id);
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+}
+
+describe("the timeline says where its window's turns start (V4-290)", () => {
+  // The fleet's newest 200 turns of the last 24 hours (the route's default window), the read the
+  // table views make and the one a timeline shows until its own read lands. Past 200 fleet turns in a
+  // day it began partway through the window with no word, and every hour before the oldest turn it
+  // kept counted as idle.
+  afterEach(resetTimeline);
 
   test('201 turns in a day: the timeline is complete only from the oldest turn kept, and no hour before it is idle', async () => {
-    const meta = await timelineMeta({
+    daemon({
       // One turn 20 hours ago, then 50 a minute apart from 3 hours ago: 51, under the head's cap.
       claude: [NOW - 20 * HOUR, ...spaced(50, NOW - 3 * HOUR, MINUTE)],
       // 150 in the last hour. The fleet holds 201, so its newest 200 leave out the turn 20 hours ago.
       claudex: spaced(150, NOW - HOUR, 20_000),
     });
+    await fetchPerfTurns();
     // The hours before three hours ago are unread, not idle; of the three since, the middle is idle.
-    expect(meta).toBe(`24h window, complete from ${atText(NOW - 3 * HOUR)}, 1 idle hours`);
+    expect(metaOn(pageView('timeline'))).toBe(`24h window, complete from ${atText(NOW - 3 * HOUR)}, 1 idle hours`);
   });
 
   test('one head past 200 turns in a day: the route kept its newest 200, and the timeline starts there', async () => {
-    const meta = await timelineMeta({ claude: spaced(201, NOW - 5 * HOUR, MINUTE) });
-    expect(meta).toBe(`24h window, complete from ${atText(NOW - 5 * HOUR + MINUTE)}, 1 idle hours`);
+    daemon({ claude: spaced(201, NOW - 5 * HOUR, MINUTE) });
+    await fetchPerfTurns();
+    expect(metaOn(pageView('timeline'))).toBe(`24h window, complete from ${atText(NOW - 5 * HOUR + MINUTE)}, 1 idle hours`);
   });
 
   test('200 turns in a day are the whole window: no mark, and every empty hour is idle', async () => {
-    const meta = await timelineMeta({ claude: spaced(100, NOW - 5 * HOUR, MINUTE), claudex: spaced(100, NOW - 2 * HOUR, 30_000) });
-    expect(meta).toBe('24h window, 21 idle hours');
+    daemon({ claude: spaced(100, NOW - 5 * HOUR, MINUTE), claudex: spaced(100, NOW - 2 * HOUR, 30_000) });
+    await fetchPerfTurns();
+    expect(metaOn(pageView('timeline'))).toBe('24h window, 21 idle hours');
   });
 
   test('a window read clamped on two heads is complete from the later of their oldest turns', async () => {
@@ -605,5 +636,73 @@ describe("the timeline says where its window's turns start (V4-290)", () => {
     if (read === null || 'pending' in read) throw new Error('expected turns');
     expect(read.landed).toHaveLength(4);
     expect(read.completeFrom).toBe(NOW - 2 * HOUR + MINUTE);
+  });
+});
+
+describe("the timeline's hours are real hours (V4-300)", () => {
+  afterEach(resetTimeline);
+
+  test('a bucket is titled by the clock hour it starts on', () => {
+    // Now is 14:37: the buckets began at 14:37 yesterday, so a 15:10 turn filed under "14:00".
+    const now = new Date(2026, 8, 27, 14, 37, 0).getTime();
+    const at = new Date(2026, 8, 26, 15, 10, 0).getTime();
+    const selection = selectionOf([turn({ ts: at })], view({ layout: 'timeline', filter: { window: '24h', bucket: '1h' } }), now);
+    if (selection.kind !== 'timeline') throw new Error('expected the timeline');
+    const { buckets } = selection.timeline;
+    const holding = buckets.find((bucket) => bucket.rows.length > 0);
+    expect(holding === undefined ? null : clockOf(holding.start)).toBe('15:00');
+    expect(buckets.filter((bucket) => new Date(bucket.start).getMinutes() !== 0)).toEqual([]);
+    expect(buckets).toHaveLength(24);
+    expect(buckets.at(-1)?.end).toBe(now);
+  });
+
+  test("the day's timeline reads its own window: 201 turns are all there, with no mark", async () => {
+    daemon({ claude: [NOW - 20 * HOUR, ...spaced(50, NOW - 3 * HOUR, MINUTE)], claudex: spaced(150, NOW - HOUR, 20_000) });
+    const timeline = pageView('timeline');
+    await readTurnsFor(timeline);
+    expect(metaOn(timeline)).toBe('24h window, 21 idle hours');
+  });
+
+  test('a two-day view reads its own window, capped per head as the Teams day is', async () => {
+    const asked = daemon({ claude: [NOW - 30 * HOUR + 10 * MINUTE, NOW - 2 * HOUR + 10 * MINUTE] });
+    const twoDays = pageView(TWO_DAYS.id);
+    await readTurnsFor(twoDays);
+    expect(asked.map((query) => [query.get('since'), query.get('n')])).toEqual([[String(NOW - 48 * HOUR), '2000']]);
+    // The turn 30 hours ago is read, and the hours around it are idle because they were read.
+    expect(metaOn(twoDays)).toBe('48h window, 46 idle hours');
+  });
+
+  test('a day read shown on a two-day view marks where it starts, and no hour before that is idle', async () => {
+    daemon({ claude: [NOW - 30 * HOUR + 10 * MINUTE, NOW - 2 * HOUR + 10 * MINUTE] });
+    await fetchPerfTurns();
+    expect(metaOn(pageView(TWO_DAYS.id))).toBe(`48h window, complete from ${atText(NOW - 24 * HOUR)}, 23 idle hours`);
+  });
+
+  test("a turn event leaves a page's window to its poll, never the fleet's newest 200 in its place", async () => {
+    // The live wiring refetched every turn.start and turn.end with the bare tail read, into the same
+    // store, so on a busy fleet the window a timeline (or the Teams day) read was swapped for the
+    // tail until the next poll. Re-reading the window per turn would fetch up to a day of rows per
+    // head per turn, so the window waits for its page's own poll.
+    const asked = daemon({ claude: [NOW - 30 * HOUR + 10 * MINUTE, NOW - 2 * HOUR + 10 * MINUTE] });
+    const twoDays = pageView(TWO_DAYS.id);
+    await readTurnsFor(twoDays);
+    await LIVE_BINDINGS.find((binding) => binding.entity === 'perf')?.refetch();
+    expect(asked.map((query) => [query.get('since'), query.get('n')])).toEqual([[String(NOW - 48 * HOUR), '2000']]);
+    expect(metaOn(twoDays)).toBe('48h window, 46 idle hours');
+  });
+
+  test('a turn event still refreshes a tail read, the one the table views and the fleet make', async () => {
+    const asked = daemon({ claude: [NOW - 2 * HOUR + 10 * MINUTE] });
+    await readTurnsFor(pageView('table'));
+    await LIVE_BINDINGS.find((binding) => binding.entity === 'perf')?.refetch();
+    expect(asked.map((query) => [query.get('since'), query.get('n')])).toEqual([[null, '200'], [null, '200']]);
+  });
+
+  test('a head the daemon could not read leaves no hour provably idle', async () => {
+    daemon({ claude: [NOW - 2 * HOUR + 10 * MINUTE], claudex: 'perf file unreadable: permission denied' });
+    await fetchPerfTurns();
+    const timeline = pageView('timeline');
+    expect(metaOn(timeline)).toBe('24h window');
+    expect(render(h(TurnsBoard, boardProps()))).toContain('claudex: perf file unreadable: permission denied');
   });
 });

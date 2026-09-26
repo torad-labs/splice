@@ -25,10 +25,10 @@ import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
 import {
   fetchCapture,
+  fetchPerfTurns,
   inflightFrom,
   putCapture,
   startPerfSummaryPolling,
-  startPerfTurnsPolling,
   useCapture,
   usePerfSummary,
   usePerfTurns,
@@ -52,10 +52,10 @@ import { RequestDrawer, TurnWaterfall } from '@widgets/waterfall';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { fmtMs, fmtShare, fmtTokens, timeAgo } from '@shared/lib';
+import { fmtMs, fmtShare, fmtTokens, poll, timeAgo } from '@shared/lib';
 import { atText, badgesOf, Gates, inflightColumns, landedColumns, landedKeysOf, lengthOf, slotsFrom, summaryColumns } from './columns';
 import type { HeadSlots } from './columns';
-import { clockOf, groupByOf, rowKeyer, selectionOf } from './select';
+import { clockOf, groupByOf, isTimeline, rowKeyer, selectionOf, sinceOf } from './select';
 import { H, S, U } from './strings';
 import './turns.css';
 
@@ -374,6 +374,9 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, cap
     ? selection.timeline.buckets.filter((bucket) => bucket.rows.length === 0 && (cutAt === null || bucket.start >= cutAt)).length
     : 0;
   const cutText = cutAt === null ? '' : `, ${U.completeFrom} ${atText(cutAt) ?? S.absent}`;
+  // An hour is idle only where every head was read: a head that could not be read may have served
+  // turns in any of them, and it is named above the table (V4-300).
+  const idleText = unread.length > 0 ? '' : `, ${idleHours} ${U.idle}`;
   const ran = summary?.heads.filter((head) => !head.empty) ?? [];
   const counted = slots.reduce((held, head) => held + head.inflight, 0);
   const unlisted = Math.max(0, counted - inflight.length);
@@ -470,7 +473,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, cap
         <Section
           title={S.landed}
           {...(pending ? {} : { count: rows.length })}
-          {...(selection.kind === 'timeline' ? { meta: `${selection.window.hours}h ${U.window}${cutText}, ${idleHours} ${U.idle}` } : {})}
+          {...(selection.kind === 'timeline' ? { meta: `${selection.window.hours}h ${U.window}${cutText}${idleText}` } : {})}
           actions={listed.length === 0 ? undefined : <Legend items={[
             { mark: STAGE_MARKS.ingest, label: STAGE_NAMES.ingest },
             { mark: STAGE_MARKS.upstream, label: S.waits },
@@ -548,7 +551,24 @@ function fixtureName(): string | null {
   return at === -1 ? null : new URLSearchParams(window.location.hash.slice(at)).get('fixture');
 }
 
+/** The rows a timeline reads per head: the route's own ceiling (PerfRoutes.kt MAX_TURNS), as the
+ *  Teams day reads, so its window is short only on a day busier than the route serves, and then
+ *  the meta says where it starts. */
+const WINDOW_CAP = 2_000;
+
+/** How often the landed turns are re-read: the fleet's newest every 5 s, a timeline's window (the
+ *  heaviest read on the page) at the 15 s its summary is read at, which hourly buckets never outpace. */
+const TAIL_EVERY_MS = 5_000;
+const WINDOW_EVERY_MS = 15_000;
+
+/** One read of the landed turns for a view: what the page's poll runs on every tick. */
+export function readTurnsFor(view: View): Promise<void> {
+  const since = sinceOf(view, Date.now());
+  return since === null ? fetchPerfTurns() : fetchPerfTurns(undefined, WINDOW_CAP, since);
+}
+
 export default function TurnsPage() {
+  const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const locked = useSession((s) => s.locked);
   const heads = useHeads((s) => s);
   const turns = usePerfTurns((s) => s);
@@ -559,9 +579,11 @@ export default function TurnsPage() {
   const fixture = sample === null ? null : sample.payload;
 
   useEffect(() => {
-    const stops = [startHeadsPolling(2000), startPerfTurnsPolling(undefined, 5000), startPerfSummaryPolling('24h', 15000)];
+    const stops = [startHeadsPolling(2000), startPerfSummaryPolling('24h', 15000)];
     return () => stops.forEach((stop) => stop());
   }, []);
+
+  useEffect(() => poll(() => readTurnsFor(active), isTimeline(active) ? WINDOW_EVERY_MS : TAIL_EVERY_MS), [active]);
 
   useEffect(() => {
     if (name === null) {

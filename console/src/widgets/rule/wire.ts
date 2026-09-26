@@ -19,7 +19,7 @@ import { subscribe, subscribeReopen } from '@entities/events';
 import type { EventKind } from '@entities/events';
 import { fetchHeads, LIVE_KINDS as HEADS_KINDS } from '@entities/heads';
 import { fetchUsage, LIVE_KINDS as USAGE_KINDS } from '@entities/usage';
-import { fetchPerfTurns, LIVE_KINDS as PERF_KINDS } from '@entities/perf';
+import { refetchPerfTurns, LIVE_KINDS as PERF_KINDS } from '@entities/perf';
 import { fetchSessions, LIVE_KINDS as SESSION_KINDS } from '@entities/session';
 import { fetchAccounts, LIVE_KINDS as ACCOUNT_KINDS } from '@entities/account';
 import { fetchAuth, LIVE_KINDS as AUTH_KINDS } from '@entities/auth';
@@ -39,7 +39,9 @@ export interface LiveBinding {
 export const LIVE_BINDINGS: readonly LiveBinding[] = [
   { entity: 'heads', kinds: HEADS_KINDS, refetch: () => fetchHeads() },
   { entity: 'usage', kinds: USAGE_KINDS, refetch: () => fetchUsage() },
-  { entity: 'perf', kinds: PERF_KINDS, refetch: () => fetchPerfTurns() },
+  // The page's own tail read again, and never a tail over a page's window: the store holds one read,
+  // and the page draws it (V4-300).
+  { entity: 'perf', kinds: PERF_KINDS, refetch: () => refetchPerfTurns() },
   { entity: 'session', kinds: SESSION_KINDS, refetch: () => fetchSessions() },
   { entity: 'account', kinds: ACCOUNT_KINDS, refetch: () => fetchAccounts() },
   { entity: 'auth', kinds: AUTH_KINDS, refetch: () => fetchAuth() },

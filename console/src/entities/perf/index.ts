@@ -6,6 +6,7 @@ export {
   fetchPerfSummary,
   fetchPerfTurns,
   putCapture,
+  refetchPerfTurns,
   startPerfPolling,
   startPerfSummaryPolling,
   startPerfTurnsPolling,

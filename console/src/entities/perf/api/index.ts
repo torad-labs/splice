@@ -59,6 +59,9 @@ async function readHeadTurns(head: string, n: number, since: number | undefined)
   }
 }
 
+/** The read fetchPerfTurns made last, which a turn event may make again (refetchPerfTurns). */
+let lastAsk: { head: string | undefined; n: number; since: number | undefined } = { head: undefined, n: DEFAULT_TAIL, since: undefined };
+
 /**
  * The landed rows plus the in-flight set. The live half comes from GET /api/heads rather than from
  * the heads entity because a slice may not import a sibling slice (eslint-plugin-boundaries): the
@@ -70,16 +73,18 @@ async function readHeadTurns(head: string, n: number, since: number | undefined)
  * parallel off the same heads read and merged (model/turns-wire.ts). One head failing does not
  * blank the others: it is named in `unread`, and only a read where EVERY head failed is an error.
  *
- * A read without `since` is a tail, the fleet's newest `n` (the Turns page); a read with `since` is
- * a window (the Teams day), and keeps every row each head served, the route's cap being per head
+ * A read without `since` is a tail, the fleet's newest `n` (the Turns tables, the fleet); a read with
+ * `since` is a window (a Turns timeline, the Teams day), and keeps every row each head served, the route's cap being per head
  * (V4-288: every read was cut to `n` across all heads, so a busy day began partway through).
  *
  * Either cap can leave the list short of what was asked. The daemon answers a tail read from its
  * own default window, the last 24 hours (PerfRoutes.askedWindow), which the Turns timeline draws in
  * full, so `completeFrom` says where the list starts holding every turn: the later of each clamped
- * head's oldest row and the oldest row the fleet cut kept (V4-290).
+ * head's oldest row and the oldest row the fleet cut kept (V4-290), and never before the window the
+ * daemon read, so a day read shown on a two-day timeline says where it starts (V4-300).
  */
 export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: number): Promise<void> {
+  lastAsk = { head, n, since };
   perfTurnsStore.startLoading();
   try {
     const heads = await request<HeadsPayload>('/api/heads');
@@ -92,6 +97,7 @@ export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: nu
     const unread = [...merged.unread, ...failed.map((read) => ({ head: read.head, reason: messageOf(read.err) }))];
     const landed = since === undefined ? merged.landed.slice(-n) : merged.landed;
     const cuts = [
+      ...reads.flatMap((read) => (read.ok ? [read.wire.since] : [])),
       ...merged.truncated.flatMap(({ head }) => merged.landed.find((row) => row.head === head)?.ts ?? []),
       ...(landed.length < merged.landed.length ? [landed[0].ts] : []),
     ];
@@ -110,6 +116,18 @@ export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: nu
     }
     perfTurnsStore.setError(messageOf(err));
   }
+}
+
+/**
+ * What a turn event runs: the page's last read again when it was a tail, cheap to refresh per turn.
+ * A window read (a timeline's, the Teams day) is left to its page's poll, timed to the read's
+ * weight: re-read on every turn it would fetch up to a day of rows per head per turn. The live
+ * wiring re-read the fleet's newest 200 instead, into the same store, and a page's window was
+ * swapped for that tail until its next poll (V4-300).
+ */
+export async function refetchPerfTurns(): Promise<void> {
+  if (lastAsk.since !== undefined) return;
+  await fetchPerfTurns(lastAsk.head, lastAsk.n);
 }
 
 export function startPerfPolling(intervalMs = 5000): () => void {

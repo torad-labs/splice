@@ -576,8 +576,15 @@ function headBlob(root: string, rel: string): string | null {
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
 }
 
+/** V4-271: an entry holds [rel] when it is that path or a path-ancestor of it, read through the SAME
+ *  normalizer the seat law's [fenceOverlap] uses, so a `dir/**` (or `dir/`) entry holds the files under
+ *  dir at receipt and stage exactly as it does at claim. The old test matched only an exact path or a
+ *  `dir/` prefix, so a file under a `dir/**` entry read as outside the fence that holds it. */
 function inFence(rel: string, fence: readonly string[]): boolean {
-  return fence.some((f) => f === rel || (f.endsWith("/") && rel.startsWith(f)));
+  return fence.some((f) => {
+    const prefix = fencePrefix(f);
+    return prefix !== "" && (rel === prefix || rel.startsWith(`${prefix}/`));
+  });
 }
 
 /**
@@ -2592,6 +2599,23 @@ async function selftest(): Promise<number> {
   sh("git", "reset", "-q"); rmSync(join(repo, "src", "stray.ts"));
   check("stage is silent about a new file inside another open row's fence", !asOrchestrator("stage", "W1").includes("src/new/n.ts"));
   sh("git", "reset", "-q");
+  // V4-271: a `dir/**` entry holds the files under dir wherever a path is judged against a fence, as it
+  // already did for the seat law's overlap (fencePrefix). inFence matched only an exact path or a `dir/`
+  // prefix, so a receipt for a file under its own `src/globbed/**` entry read as outside the fence.
+  await run("add", "--id", "W5", "--phase", "m9", "--title", "a glob fence at receipt and stage", "--verify", "", "--files", "src/globbed/**");
+  mkdirSync(join(repo, "src", "globbed", "deep"), { recursive: true }); await Bun.write(join(repo, "src", "globbed", "deep", "x.ts"), "// x\n");
+  {
+    const out = await run("receipt", "W5", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "src/globbed/deep/x.ts");
+    check("receipt holds a file under a dir/** entry inside the fence (V4-271)", !out.includes("outside this row's fence"), out.trim());
+  }
+  { const out = asOrchestrator("stage", "W5"); check("stage holds a file under a dir/** entry inside the fence (V4-271)", out.includes("staged 1 files") && !out.includes("outside the fence"), out.trim()); }
+  sh("git", "reset", "-q"); rmSync(join(repo, "src", "globbed"), { recursive: true });
+  await run("add", "--id", "W3", "--phase", "m9", "--title", "a window beside a glob", "--verify", "", "--files", "src/a.ts,src/win/");
+  await run("add", "--id", "W4", "--phase", "m9", "--title", "the glob beside the window", "--verify", "", "--files", "src/win/**");
+  mkdirSync(join(repo, "src", "win"), { recursive: true }); await Bun.write(join(repo, "src", "win", "n.ts"), "// n\n");
+  await run("receipt", "W3", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "src/a.ts");
+  { const out = asOrchestrator("stage", "W3"); check("stage is silent about a new file under another open row's dir/** entry (V4-271)", out.includes("staged 1 files") && !out.includes("src/win/n.ts"), out.trim()); }
+  sh("git", "reset", "-q"); rmSync(join(repo, "src", "win"), { recursive: true });
   await run("receipt", "M2", "--cmd", "bun test tests/y", "--exit", "0", "--tests", "2", "--touched", "src/b.ts,src/c.ts");
   // NO MOVED-BYTES RULE (operator ruling 2026-09-18: no hashes, no per-row review). Bytes that moved
   // since the receipt stage exactly like bytes that did not; the milestone CI run is the gate.

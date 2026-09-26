@@ -8015,6 +8015,7 @@ claimed_at = "2026-09-26T21:46:28.256Z"
 id = "V4-330"
 phase = "release"
 title = "The coalesced flush after flushNow writes nothing: EconomicsStore.persist's and SessionTotals.persist's version guard (v <= persistedVersion, EconomicsStore.kt:240, SessionTotals.kt:219) is pinned by a test, so a regression cannot bring back the late write V4-329 closed at teardown (console, V4-329 receipt 2026-09-26: the guard is what makes the pending 1 s flush a no-op, and nothing tests it)"
-files = ["features/turns/src/test/kotlin/splice/head/usage/EconomicsStoreTest.kt", "features/turns/src/test/kotlin/perf/SessionTotalsTest.kt"]
+files = ["features/turns/src/test/kotlin/splice/head/usage/EconomicsStoreTest.kt", "features/turns/src/test/kotlin/splice/head/perf/SessionTotalsTest.kt"]
 status = "todo"
 verify = "red first: a mutant that drops each guard (EconomicsStore.kt:240, SessionTotals.kt:219 minus its clean arm) survives today's suite, quoted; green: per store, record, flushNow, then run the pending coalesced flush deterministically (no wall-clock sleep: kt-tests-no-wall-clock) and assert no write happened (file bytes and mtime unchanged, or an injected writer counts 0); both mutants now killed by name; :features-turns:test under the slot"
+# [2026-09-26] amend by=orchestrator: files were ["features/turns/src/test/kotlin/splice/head/usage/EconomicsStoreTest.kt", "features/turns/src/test/kotlin/perf/SessionTotalsTest.kt"]

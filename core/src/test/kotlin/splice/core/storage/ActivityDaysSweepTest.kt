@@ -1,7 +1,7 @@
 // NEW: V4-273 — a day file goes when its day leaves the store's window, not when the store next
 // writes. Before, the only sweep ran inside an append (the first of each new day), so a store that
 // wrote nothing kept every day past its window on disk: yesterday's activity labels (kept for today
-// only since V4-261), message edges past their window and trace days past traceRetentionDays.
+// only from V4-261 until V4-285), message edges past their window and trace days past traceRetentionDays.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertFalse

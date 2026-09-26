@@ -6399,6 +6399,7 @@ status = "todo"
 verify = "#157 MERGEABLE with gate pass on its head; promotion-check green"
 # [2026-09-25] main merged into feat by #245 (48c74af5f; main carried one commit feat lacked, 9a99d6538 #230, whose content feat already had), so the promotion merges clean. #157 was closed at 2026-09-24 19:15:50 UTC by the history rewrite's force-push and GitHub refuses to reopen it; #247 replaces it (feat/v0.4.0 -> main, same title and body). Promotion stays the operator's: #247 is not merged by any seat.
 # [2026-09-25] HOLD (operator direction relayed by rig-lead 2026-09-25): do not promote 0.4.0 (#247 stays unmerged) until V4-212 closes on the rig release carrying rig-attention's engine work (0.1.7 or later).
+# [2026-09-26] main's one commit feat lacked (7b39c4463, #306 dependabot-automerge.yml sync) merged into feat/v0.4.0 at 5c1c2d23f (merge commit, only that workflow file changed; attribution scan clean over 2626 commits); gate run 36255705787 on d15ba9d3b. #247 reports MERGEABLE, mergeStateStatus BLOCKED (branch protection). V4-212 is done, so the relayed hold's condition is met; promotion remains the operator's act, not a seat's
 
 [[items]]
 id = "V4-205"

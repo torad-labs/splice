@@ -13,8 +13,9 @@ import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { slotTiers, startModelsPolling, useModels } from '@entities/model';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import type { HeadCatalog, ModelsPayload, PendingRoute } from '@entities/model';
+import { AddModels } from '@features/add-model';
 import { useViews, ViewTabs } from '@features/views';
-import { Blank, Fault } from '@shared/controls';
+import { Blank, Fault, Key } from '@shared/controls';
 import { ABSENT, fmtInt, fmtTokens, ratio } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Section, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
@@ -148,6 +149,8 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const hueOf = useHues();
   const [open, setOpen] = useState<OpenedModel | null>(null);
+  // The add-model panel takes the detail's place: opening one closes the other.
+  const [adding, setAdding] = useState(false);
 
   const heads = catalog === null || 'pending' in catalog ? [] : catalog.heads;
   const found = catalog === null ? null : findModel(catalog, open);
@@ -177,20 +180,29 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
       <>
         <Figures heads={heads} max={max} />
         <Section title={S.models} info={{ text: H.rates, label: S.aboutRates }}>
-          <div className={opened === null ? 'myx-md-board' : 'myx-md-board myx-md-board-open'}>
+          <div className={opened === null && !adding ? 'myx-md-board' : 'myx-md-board myx-md-board-open'}>
             <DataTable
               columns={columnsOf(max, !byHead, heads.some((head) => entriesOf(head).some((entry) => hasRates(entry.model))))}
               groups={groups}
               rowKey={(entry) => entry.key}
               label={S.models}
-              onOpen={(entry) => setOpen(opened?.key === entry.key ? null : { head: entry.head.head, id: entry.model.id })}
+              onOpen={(entry) => {
+                setAdding(false);
+                setOpen(opened?.key === entry.key ? null : { head: entry.head.head, id: entry.model.id });
+              }}
               openLabel={(entry) => `${S.openModel} ${entry.model.id}`}
               selectedKey={opened?.key ?? null}
               rowTone={(entry) => (entry.model.resolved ? null : 'warn')}
               rowHue={(entry) => hueClass(hueOf(entry.head.head))}
             />
+            {/* `splice add-model` (V4-220): the OpenRouter heads' offered models, picked and added. */}
+            {!adding ? null : (
+              <DetailPanel title={S.addModels} label={S.addModels} onClose={() => setAdding(false)} closeLabel={S.close}>
+                <AddModels />
+              </DetailPanel>
+            )}
             {/* Unmounted at rest: no track and no empty panel until a model is opened. */}
-            {opened === null ? null : (
+            {opened === null || adding ? null : (
               <DetailPanel
                 title={opened.model.id}
                 label={S.detail}
@@ -211,7 +223,20 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
       <PageHeader
         title={S.title}
         info={{ text: H.tiers, label: S.aboutTiers }}
-        {...(sample === undefined ? {} : { actions: <Badge tone="neutral">{S.sample}</Badge> })}
+        actions={(
+          <>
+            {heads.length === 0 ? null : (
+              <Key onClick={() => {
+                setOpen(null);
+                setAdding(true);
+              }}
+              >
+                {S.addModels}
+              </Key>
+            )}
+            {sample === undefined ? null : <Badge tone="neutral">{S.sample}</Badge>}
+          </>
+        )}
       >
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>

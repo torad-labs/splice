@@ -82,7 +82,7 @@ public class ClaudeHeadRoutes(
     private suspend fun respondUnconfigured(call: ApplicationCall) {
         call.respondText(
             LaunchReplies.errorJson(
-                "the '$CLAUDE_HEAD_KEY' head is not configured — wrap needs its catalog to materialize",
+                "the '$CLAUDE_HEAD_KEY' head is not configured, and wrap needs its catalog to materialize",
             ),
             ContentType.Application.Json,
             HttpStatusCode.ServiceUnavailable,

@@ -122,7 +122,7 @@ internal class SseRoundDriver(
         // still reaches names the same failure (V4-164: one describer for both).
         val detail = TransportFailureReason.of(e, upstreamUrl)
         return TurnOutcome.Failure(
-            "upstream connection failed ($detail) — retry",
+            "upstream connection failed ($detail); retry",
             // Locally synthesized: the upstream reported nothing, the socket did (G20 health split).
             providerReported = false,
             // Deliberately EMPTY, and the whole reason the gates above are what they are: nothing

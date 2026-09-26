@@ -20,6 +20,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.lifecycle.upgrade.CompactionSlot
+import splice.lifecycle.upgrade.CompactionWait
 import splice.lifecycle.upgrade.INFLIGHT_POLL_MS
 import splice.lifecycle.upgrade.InflightRead
 import splice.lifecycle.upgrade.UpgradeInflight

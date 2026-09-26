@@ -128,8 +128,8 @@ class LoginCollisionTest {
                 assertEquals("retained quota", Files.readString(quota))
             }
             assertFalse(Files.exists(pool.resolve("$label-5-quota.json"), LinkOption.NOFOLLOW_LINKS))
-            assertTrue(printed.contains("retained quota in $label-quota.json — saved credentials as $label-5.json"))
-            assertTrue(printed.contains("signed in — credentials written to $destination"))
+            assertTrue(printed.contains("retained quota in $label-quota.json; saved credentials as $label-5.json"))
+            assertTrue(printed.contains("signed in; credentials written to $destination"))
             assertFalse(printed.contains("token exchange error"), printed)
             assertFalse(printed.contains("private-account-id"), printed)
             assertFalse(printed.contains("refresh-secret"), printed)

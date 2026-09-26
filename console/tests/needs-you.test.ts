@@ -14,8 +14,15 @@ import type { SessionRow } from '../src/entities/session';
 import type { TeamRow, TeamSlot } from '../src/entities/team';
 import type { GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
 import { FixCell, NeedsYouBoard, needsOf, readingOf } from '../src/pages/needs-you';
-import type { NeedInputs, Read } from '../src/pages/needs-you';
+import type { Need, NeedInputs, Read } from '../src/pages/needs-you';
+import { AccountsBoard } from '../src/pages/accounts';
+import { DoctorBoard } from '../src/pages/doctor';
+import { FleetBoard } from '../src/pages/fleet';
+import type { FleetSources } from '../src/pages/fleet';
+import { SessionsBoard } from '../src/pages/sessions';
+import { linkedId } from '../src/shared/lib';
 import { H, S } from '../src/pages/needs-you/strings';
+import { S as FIX_WORDS } from '../src/features/doctor-fix/strings';
 import { clockText } from '../src/widgets/rule';
 
 const NOW = 1_790_000_000_000;
@@ -76,6 +83,12 @@ function doctor(checks: DoctorCheck[]): DoctorPayload {
     os: { name: 'linux', version: '6', arch: 'x64' }, jvm: { version: '21', vendor: 'x' }, checks,
   } as DoctorPayload;
 }
+
+/** Every Fleet source unread: the board opens a head from the heads alone. */
+const NO_FLEET_SOURCES: FleetSources = {
+  auth: null, usage: null, accounts: null, topology: null, catalogs: null, fieldsPending: false, topologyStale: false,
+  landed: [], lastTs: new Map(), overrides: [],
+};
 
 const USAGE: UsagePayload = { window_hours: 24, warn_pct: 80, warn_tokens_5h: 0, heads: [] };
 
@@ -248,6 +261,17 @@ describe('the doctor', () => {
     expect(html).not.toContain('>Copy<');
   });
 
+  test('a fix the daemon can run itself is run from the item, its command printed beside the key', () => {
+    // V4-220 item 4: the wrapper rows carry fix_id install_all, which POST /api/doctor/fix/{id} runs.
+    const checks: DoctorCheck[] = [{ id: 'installation/wrapper', status: 'fail', detail: `'claudex' missing${SEP}splice install --all`, fix_id: 'install_all' }];
+    const [need] = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW).needs;
+    expect(need.fix).toEqual({ kind: 'doctor-fix', id: 'install_all', command: 'splice install --all', masked: false });
+    const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
+    expect(html).toContain('>splice install --all</code>');
+    expect(html).toContain('>Copy<');
+    expect(html).toContain(`>${FIX_WORDS.run}<`);
+  });
+
   test('a head\'s sign-in check is said once, on the head', () => {
     const checks: DoctorCheck[] = [{ id: 'auth/claudex', status: 'fail', detail: `not signed in${SEP}claudex login` }];
     const out = needsOf(quiet({
@@ -282,5 +306,79 @@ describe('each fix is the control that makes it', () => {
     expect(copy).toContain('>splice key set X</code>');
     expect(copy).toContain('Copy');
     expect(html({ kind: 'open', href: '#/turns', label: S.openTurns })).toMatch(/href="#\/turns"[^>]*>.*Open turns/);
+  });
+});
+
+describe('each item opens itself on its page (V4-219)', () => {
+  /** The page and the id an item's link names. */
+  const target = (at: string): { page: string; id: string } => {
+    const [path = '', query = ''] = at.replace(/^#\//, '').split('?');
+    return { page: path, id: linkedId(`?${query}`) ?? '' };
+  };
+  /** The title of the detail a board opened, or null when it opened none. */
+  const opened = (html: string): string | null => /class="myx-panel-title">([^<]*)</.exec(html)?.[1] ?? null;
+
+  // Two of everything with the item in need second: a page that opened its first row, or opened
+  // nothing, fails here, and so does a link whose id is not the one its page opens by.
+  const heads = [head({ key: 'grok', label: 'grok' }), head({ running: false })];
+  const accounts = [account({ label: 'spare' }), account({ label: 'main', auth_excluded_until_epoch_millis: NOW + 60_000, auth_exclusion_reason: 'refresh rejected' })];
+  const sessions = [
+    session({ session_id: 'a', name: 'lead' }),
+    session({ session_id: 'b', name: 'builder', availability: 'stale' }),
+    session({ session_id: null, pid: 42, name: 'unbound', availability: 'stale' }),
+  ];
+  const report = doctor([{ id: 'daemon/port', status: 'ok', detail: 'fine' }, { id: 'daemon/disk', status: 'warn', detail: 'disk 91% full' }]);
+  const list = needsOf(quiet({
+    heads: read(heads),
+    accounts: read({ accounts }),
+    sessions: read({ note: '', sessions }),
+    doctor: read(report),
+    topology: read(true),
+  }), NOW);
+  const at = (source: string) => list.needs.filter((need) => need.source === source).map((need) => need.at);
+
+  test('each item names its own id on its own page; the daemon names none', () => {
+    expect(at('heads')).toEqual(['#/fleet?open=claudex']);
+    expect(at('accounts')).toEqual(['#/accounts?open=chatgpt-oauth%3Amain']);
+    expect(at('sessions')).toEqual(['#/sessions?open=b', '#/sessions?open=pid%3A42']);
+    // the seat's session left the registry: the item is the team, opened on Teams
+    expect(at('teams')).toEqual(['#/teams?open=t-1']);
+    expect(at('doctor')).toEqual(['#/doctor?open=daemon%2Fdisk']);
+    expect(at('daemon')).toEqual([null]);
+  });
+
+  test('a fleet-wide limit and a live turn have no detail of their own: their page', () => {
+    const full = account({ windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: null }] });
+    const live = [{ label: 'impl', compact: false, phase: 'streaming', age_ms: 90_000, idle_ms: 45_000 }];
+    const out = needsOf(quiet({ accounts: read({ accounts: [full] }), heads: read([head({ gate: gate({ inflight: 1, live }) })]) }), NOW).needs;
+    expect(out.map((need) => [need.source, need.at])).toEqual([['plans', '#/accounts'], ['turns', '#/turns']]);
+  });
+
+  test('the page a link names opens that item, not its first one', () => {
+    const board = (need: Need): string => {
+      const { page, id } = target(need.at ?? '');
+      switch (page) {
+        case 'fleet':
+          return renderToStaticMarkup(createElement(FleetBoard, { heads, sources: NO_FLEET_SOURCES, openKey: id, onOpen: () => undefined, nowMs: NOW }));
+        case 'accounts':
+          return renderToStaticMarkup(createElement(AccountsBoard, { payload: { accounts }, linked: id, nowMs: NOW }));
+        case 'sessions':
+          return renderToStaticMarkup(createElement(SessionsBoard, { payload: { note: '', sessions }, linked: id }));
+        case 'doctor':
+          return renderToStaticMarkup(createElement(DoctorBoard, { report, openKey: id, onToggle: () => undefined }));
+        default:
+          throw new Error(`no board for ${page}`);
+      }
+    };
+    const linked = list.needs.filter((need) => need.at?.includes('?open=') === true && need.source !== 'teams');
+    expect(linked.map((need) => need.source)).toEqual(['heads', 'accounts', 'sessions', 'sessions', 'doctor']);
+    for (const need of linked) expect([need.at, opened(board(need))]).toEqual([need.at, need.subject]);
+  });
+
+  test('the page column is the link to the item; the daemon, which no page opens, is its name', () => {
+    const html = renderToStaticMarkup(createElement(NeedsYouBoard, { list, now: NOW }));
+    expect(html).toContain(`href="#/fleet?open=claudex"><span class="myx-key-label">${S.sources.heads}</span>`);
+    expect(html).toContain(`href="#/doctor?open=daemon%2Fdisk"><span class="myx-key-label">${S.sources.doctor}</span>`);
+    expect(html).toMatch(new RegExp(`<td[^>]*>${S.sources.daemon}</td>`));
   });
 });

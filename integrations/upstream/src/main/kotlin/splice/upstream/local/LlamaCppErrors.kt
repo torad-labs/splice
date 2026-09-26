@@ -29,9 +29,9 @@ internal object LlamaCppErrors {
      *  and loses nothing, because the one shape that needs the object's fields arrives pre-stream. */
     fun explain(err: JsonObject?, code: String, message: String): String = when {
         code == EXCEED_CONTEXT -> tooLong(err, message)
-        code == UNAVAILABLE -> "$message — the local model server has not finished loading its model"
+        code == UNAVAILABLE -> "$message; the local model server has not finished loading its model"
         message.trim() == DECODE_OUT_OF_CONTEXT ->
-            "$message — the model server's KV cache is full: every slot draws on one shared context " +
+            "$message; the model server's KV cache is full: every slot draws on one shared context " +
                 "pool, and the other conversations on this server hold the rest of it"
         else -> message
     }

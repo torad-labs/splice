@@ -175,7 +175,7 @@ internal class WsRoundDriver(
     ): TurnOutcome? {
         log(
             "[${provider.key}] websocket round failed before any client frame " +
-                "($detail) — serving over SSE\n",
+                "($detail); serving over SSE\n",
         )
         runner.roundBypassed(drive.meta)
         return null

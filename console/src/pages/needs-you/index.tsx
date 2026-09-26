@@ -17,6 +17,7 @@ import { startSessionsPolling, useSessionRegistry } from '@entities/session';
 import { fetchTeams, useTeams } from '@entities/team';
 import { useUsage } from '@entities/usage';
 import { DaemonRestart } from '@features/daemon-restart';
+import { DoctorFix } from '@features/doctor-fix';
 import { clockText } from '@widgets/rule';
 import { Confirm, Copy, Key, KeyLink } from '@shared/controls';
 import { poll, timeAgo } from '@shared/lib';
@@ -61,6 +62,16 @@ function HeadWrite({ head, kind }: { head: string; kind: 'start' | 'restart' }) 
   );
 }
 
+/** A remedy's command, with its copy key, or with why there is none when the redaction reached it. */
+function FixCommand({ command, masked }: { command: string; masked: boolean }) {
+  return (
+    <span className="myx-ny-fix">
+      <code className="myx-ny-command">{command}</code>
+      {masked ? <InfoTip text={H.masked} label={S.maskedWhy} /> : <Copy value={command} />}
+    </span>
+  );
+}
+
 export function FixCell({ fix }: { fix: Fix }) {
   switch (fix.kind) {
     case 'start':
@@ -70,11 +81,13 @@ export function FixCell({ fix }: { fix: Fix }) {
       return <DaemonRestart />;
     case 'copy':
     case 'masked':
+      return <FixCommand command={fix.command} masked={fix.kind === 'masked'} />;
+    case 'doctor-fix':
       return (
-        <span className="myx-ny-fix">
-          <code className="myx-ny-command">{fix.command}</code>
-          {fix.kind === 'copy' ? <Copy value={fix.command} /> : <InfoTip text={H.masked} label={S.maskedWhy} />}
-        </span>
+        <>
+          <FixCommand command={fix.command} masked={fix.masked} />
+          <DoctorFix id={fix.id} />
+        </>
       );
     case 'open':
       return <KeyLink href={fix.href}>{fix.label}</KeyLink>;
@@ -90,7 +103,7 @@ function Subject({ need }: { need: Need }) {
 const NEED_COLUMNS: Column<Need>[] = [
   { key: 'item', label: S.item, primary: true, width: '22%', cell: (need) => <Subject need={need} /> },
   { key: 'finding', label: S.finding, wrap: true, cell: (need) => need.finding },
-  { key: 'page', label: S.page, width: '10%', cell: (need) => S.sources[need.source] },
+  { key: 'page', label: S.page, width: '10%', cell: (need) => (need.at === null ? S.sources[need.source] : <KeyLink href={need.at}>{S.sources[need.source]}</KeyLink>) },
   { key: 'fix', label: S.fix, width: '30%', wrap: true, cell: (need) => <FixCell fix={need.fix} /> },
 ];
 

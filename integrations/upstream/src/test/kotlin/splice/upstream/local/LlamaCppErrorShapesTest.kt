@@ -33,7 +33,7 @@ class LlamaCppErrorShapesTest {
         assertEquals(ErrorType.API_ERROR, f.type)
         assertTrue(f.transient)
         assertEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
-        assertTrue(f.message.startsWith("Loading model — the local model server has not finished loading"), f.message)
+        assertTrue(f.message.startsWith("Loading model; the local model server has not finished loading"), f.message)
     }
 
     // Mutant: drop the counts. The phrase survives, so the client still compacts, but it can no

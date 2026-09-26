@@ -34,7 +34,7 @@ import java.util.concurrent.CancellationException
 
 // WIRE-2/3/6 runaway-upstream guard message; the cap itself lives in spi.BufferCapacity (NF-06:
 // one definition, three dialects).
-private const val RUNAWAY_GUARD_MESSAGE = "chat backend: response exceeded max buffered size — aborting"
+private const val RUNAWAY_GUARD_MESSAGE = "chat backend: response exceeded max buffered size; aborting"
 
 public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTranslator {
 
@@ -138,7 +138,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                 // An UNRECOGNISED throwable says so in its own words rather than borrowing the
                 // truncation sentence: "truncated" is a diagnosis, and reporting an undiagnosed
                 // failure under one is the mislabelling the generic arm exists to avoid.
-                unexpected?.let { "chat: upstream stream failed ($it) — retry" }
+                unexpected?.let { "chat: upstream stream failed ($it); retry" }
                     ?: "chat: stream ended without a finish_reason (truncated); retry",
                 partial = partialRound(),
                 // V4-117: TWO shapes in ONE expression, so two causes. A TRUNCATION is the upstream

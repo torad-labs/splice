@@ -219,7 +219,7 @@ class TurnConnEndTest {
         // emitter would have to guess, and guessing "permanent" here would end sessions that a
         // retry fixes.
         assertEquals(false, emitter.errorPermanent, "an oversized upstream frame is a transient condition")
-        assertEquals("upstream sent an oversized streaming event — retry", emitter.errorMessage)
+        assertEquals("upstream sent an oversized streaming event; retry", emitter.errorMessage)
     }
 
     @Test
@@ -233,7 +233,7 @@ class TurnConnEndTest {
 
         assertEquals(pre.errorType, post.errorType, "this surface no longer forks on content")
         assertEquals(pre.errorPermanent, post.errorPermanent, "nor on permanence")
-        assertEquals("upstream sent an oversized streaming event — retry", post.errorMessage)
+        assertEquals("upstream sent an oversized streaming event; retry", post.errorMessage)
     }
 
     // V4-164, the operator's banner verbatim: "bonsai: upstream connection failed (no detail) —
@@ -248,8 +248,8 @@ class TurnConnEndTest {
 
         assertEquals(ErrorType.OVERLOADED, emitter.errorType, "a refused connect stays the class the client retries")
         assertEquals(
-            "codex: upstream connection failed (connection refused by 127.0.0.1:1 — nothing is listening there; " +
-                "the server is down or still starting) — retry",
+            "codex: upstream connection failed (connection refused by 127.0.0.1:1: nothing is listening there; " +
+                "the server is down or still starting); retry",
             emitter.errorMessage,
         )
     }

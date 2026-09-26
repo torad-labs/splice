@@ -43,7 +43,7 @@ internal class AddRefusalText {
 
     /** The CLI's sentence, printed after `splice add: `. */
     fun cli(r: AddRefusal): String = when (r) {
-        is AddRefusal.KeyTaken -> "'${r.key}' is already configured — pick another --name"
+        is AddRefusal.KeyTaken -> "'${r.key}' is already configured; pick another --name"
         is AddRefusal.CommandTaken -> "command '${r.command}' already belongs to a head"
         is AddRefusal.Unparseable -> "the candidate topology does not parse: ${r.detail}"
         is AddRefusal.NameRequired -> "--name is required for '${r.profile}' (lowercase letters, digits, dashes)"
@@ -51,7 +51,7 @@ internal class AddRefusalText {
         AddRefusal.QuotedValue -> "values must not contain quotes"
         is AddRefusal.LiveUnsupported ->
             "--live is only supported for api-key profiles; '${r.profile}' is exercised by its first launch, " +
-                "then splice doctor — drop --live"
+                "then splice doctor; drop --live"
         is AddRefusal.Models -> cliModels(r.problem)
     }
 
@@ -69,13 +69,19 @@ internal class AddRefusalText {
 
     /** The CLI's line after the file's path: nothing was written. */
     fun cliStale(r: AddWritten.Refused): String = when (r) {
-        AddWritten.Changed -> "changed while this add was running — rerun"
-        is AddWritten.Unreadable -> "could not be read again (${r.detail}) — nothing written"
+        AddWritten.Changed -> "changed while this add was running; rerun"
+        is AddWritten.Unreadable -> "could not be read again (${r.detail}); nothing written"
     }
 
     /** The console's sentence for the same refusal, naming the file. */
     fun consoleStale(path: String, r: AddWritten.Refused): String = when (r) {
         AddWritten.Changed -> "$path changed while this add was open, so nothing was saved; open the add again."
+        is AddWritten.Unreadable -> "$path could not be read again (${r.detail}), so nothing was saved."
+    }
+
+    /** add-model's sentence for the same refusal, one for both surfaces: it names no flag and no step. */
+    fun modelStale(path: String, r: AddWritten.Refused): String = when (r) {
+        AddWritten.Changed -> "$path changed while add-model was open, so nothing was saved; add the models again."
         is AddWritten.Unreadable -> "$path could not be read again (${r.detail}), so nothing was saved."
     }
 

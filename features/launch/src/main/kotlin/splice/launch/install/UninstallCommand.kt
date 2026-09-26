@@ -29,7 +29,7 @@ internal class UninstallCommand(
             val link = layout.wrapperLinkOrNull(bin, command)
             if (link == null) {
                 ok = false
-                output.line("splice: refusing '$command' — a wrapper must be a bare name directly under $bin")
+                output.line("splice: refusing '$command': a wrapper must be a bare name directly under $bin")
                 continue
             }
             Cancellables.runCatchingCancellable {
@@ -80,13 +80,13 @@ internal class UninstallCommand(
             return (topology.heads.map { (k, h) -> h.claude.command ?: k } + SELF_COMMAND).distinct()
         }
         if (attempt.exceptionOrNull() is java.nio.file.NoSuchFileException) {
-            output.line("splice: no config at $configPath — removing only the '$SELF_COMMAND' link")
+            output.line("splice: no config at $configPath, so only the '$SELF_COMMAND' link is removed")
             return listOf(SELF_COMMAND)
         }
         val reason = attempt.exceptionOrNull()?.let { splice.core.util.SafeFailureText.render(it) } ?: "unknown"
         errors.line(
-            "splice uninstall --all: $configPath unreadable ($reason) — " +
-                "head wrappers NOT removed; fix or delete the config and re-run",
+            "splice uninstall --all: $configPath unreadable ($reason). " +
+                "Head wrappers NOT removed; fix or delete the config and re-run",
         )
         return null
     }

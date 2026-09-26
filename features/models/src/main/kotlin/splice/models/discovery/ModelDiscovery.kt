@@ -62,4 +62,4 @@ public class ModelDiscovery(credentials: ModelCredentialSource) {
 }
 
 private const val LOCAL_NOT_ASKED =
-    "a local runtime lists the file it loaded, not a model to pick — its declared rows are the picker"
+    "a local runtime lists the file it loaded, not a model to pick; its declared rows are the picker"

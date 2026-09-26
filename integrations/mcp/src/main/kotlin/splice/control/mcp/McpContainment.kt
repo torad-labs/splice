@@ -69,7 +69,7 @@ public class McpContainment(
                 log(
                     "[mcp-host] hosted children are not capped: ${LogSafe.str(slice)} declares no " +
                         "memory ceiling " +
-                        "so they run in splice's own cgroup — declare a memory ceiling on that " +
+                        "so they run in splice's own cgroup; declare a memory ceiling on that " +
                         "slice to contain them\n",
                 )
             }
@@ -85,7 +85,7 @@ public class McpContainment(
         if (landed != adj) {
             log(
                 "[mcp-host] ${LogSafe.str(name)}: the child's oom_score_adj is " +
-                    "${LogSafe.str(landed?.toString() ?: "unreadable")}, not ${LogSafe.str(adj.toString())} — " +
+                    "${LogSafe.str(landed?.toString() ?: "unreadable")}, not ${LogSafe.str(adj.toString())}, so " +
                     "it keeps splice's own protection from the out-of-memory killers\n",
             )
         }

@@ -191,7 +191,7 @@ public class KimiOAuth {
             )
         }.onFailure {
             log(
-                "[kimi-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +
+                "[kimi-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
                     "invalid_grant latch check skipped",
             )
         }.getOrNull()

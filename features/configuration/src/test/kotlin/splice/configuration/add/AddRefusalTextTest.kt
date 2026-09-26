@@ -13,10 +13,10 @@ class AddRefusalTextTest {
 
     private val texts = AddRefusalText()
 
-    /** Each refusal with the CLI sentence it printed before V4-220 and the console's. */
+    /** Each refusal with its CLI sentence (no em dash since V4-238) and the console's. */
     private val refusals: Map<AddRefusal, Pair<String, String>> = mapOf(
         AddRefusal.KeyTaken("fw") to
-            ("'fw' is already configured — pick another --name" to "'fw' is already configured; pick another name."),
+            ("'fw' is already configured; pick another --name" to "'fw' is already configured; pick another name."),
         AddRefusal.CommandTaken("claudex") to (
             "command 'claudex' already belongs to a head" to
                 "The command 'claudex' already belongs to a head; pick another command."
@@ -35,7 +35,7 @@ class AddRefusalTextTest {
             ("values must not contain quotes" to "The base URL and the command must not contain quotes."),
         AddRefusal.LiveUnsupported("codex") to (
             "--live is only supported for api-key profiles; 'codex' is exercised by its first launch, " +
-                "then splice doctor — drop --live" to
+                "then splice doctor; drop --live" to
                 "'codex' has no live turn to run: its first launch exercises it."
             ),
         AddRefusal.Models(AddModelProblem.None) to (
@@ -58,11 +58,11 @@ class AddRefusalTextTest {
 
     private val stale: Map<AddWritten.Refused, Pair<String, String>> = mapOf(
         AddWritten.Changed to (
-            "changed while this add was running — rerun" to
+            "changed while this add was running; rerun" to
                 "/c/splice.toml changed while this add was open, so nothing was saved; open the add again."
             ),
         AddWritten.Unreadable("gone") to (
-            "could not be read again (gone) — nothing written" to
+            "could not be read again (gone); nothing written" to
                 "/c/splice.toml could not be read again (gone), so nothing was saved."
             ),
     )

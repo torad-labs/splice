@@ -122,7 +122,7 @@ internal class ReanchorContinuation(
         val failure = outcome as? TurnOutcome.Failure ?: return outcome
         if (attempts <= 0) return outcome
         return failure.copy(
-            message = "${failure.message.removeSuffix(RETRY_ADVICE)} — splice re-anchored it " +
+            message = "${failure.message.removeSuffix(RETRY_ADVICE)}; splice re-anchored it " +
                 "${attempts}x from the salvage, then gave up; retry",
         )
     }

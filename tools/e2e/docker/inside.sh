@@ -152,9 +152,12 @@ quota_bars() {
   line="$(curl_mgmt --data-binary '{"model":{"id":"gpt-5-codex"},"effort":{"level":"high"},"cost":{"total_cost_usd":1.5}}' \
     "http://127.0.0.1:$CONTROL_PORT/statusline/claudex" | strip_ansi)"
   printf '%s\n' "$line"
-  for frag in "Codex (mock)·high" '$1.50' "5h █░░░░░░░ 14%" "7d ███░░░░░ 42%"; do
+  # V4-240: this head has no rate card, and the blob's 1.50 is Claude Code's own figure, priced at
+  # Anthropic's card; under a ChatGPT model it is said in words, never shown as the figure.
+  for frag in "Codex (mock)·high" 'no rate card' "5h █░░░░░░░ 14%" "7d ███░░░░░ 42%"; do
     printf '%s' "$line" | grep -qF -- "$frag" || { echo "status line lacks '$frag'"; return 1; }
   done
+  ! printf '%s' "$line" | grep -qF -- '1.50' || { echo "status line shows the client's Anthropic-priced 1.50"; return 1; }
 }
 step "plan usage: 5h/7d windows on every claudex response and on its status line" quota_bars
 

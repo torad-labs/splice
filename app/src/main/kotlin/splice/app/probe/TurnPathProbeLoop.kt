@@ -90,7 +90,7 @@ public class TurnPathProbeLoop(
             if (cause == null || cause is CancellationException) return@invokeOnCompletion
             stalled[key] = true
             log(
-                "[$key] TURN PATH PROBE DIED ($cause) — marking the head stalled: liveness is no " +
+                "[$key] TURN PATH PROBE DIED ($cause); marking the head stalled: liveness is no " +
                     "longer being measured, so /health must not keep claiming ok.\n",
             )
         }
@@ -101,7 +101,7 @@ public class TurnPathProbeLoop(
     public fun tick() {
         val alive = probeOnce()
         if (alive) {
-            if (stalled[key] == true) log("[$key] turn path RECOVERED — resuming\n")
+            if (stalled[key] == true) log("[$key] turn path RECOVERED; resuming\n")
             consecutiveFailures = 0
             stalled[key] = false
         } else {
@@ -109,7 +109,7 @@ public class TurnPathProbeLoop(
             if (consecutiveFailures == STALL_THRESHOLD) {
                 stalled[key] = true
                 log(
-                    "[$key] TURN PATH STALLED — $consecutiveFailures consecutive loopback probes " +
+                    "[$key] TURN PATH STALLED: $consecutiveFailures consecutive loopback probes " +
                         "got no response in ${timeoutMs}ms; /health now reports ok:false. " +
                         "This is the accepted-but-never-dispatched wedge signature.\n",
                 )

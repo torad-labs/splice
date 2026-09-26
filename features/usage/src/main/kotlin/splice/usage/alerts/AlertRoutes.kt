@@ -47,7 +47,7 @@ private const val TEST_TIMEOUT_MS = 10_000L
 private const val BAD_ALERT_BODY = "the body must be {\"desktop\": bool, \"webhook_url\": string|null}"
 
 @Serializable
-private data class TestPing(val text: String = "splice test alert — GET/PUT /api/alerts is wired")
+private data class TestPing(val text: String = "splice test alert: GET/PUT /api/alerts is wired")
 
 public class AlertRoutes(
     private val source: AlertSource,

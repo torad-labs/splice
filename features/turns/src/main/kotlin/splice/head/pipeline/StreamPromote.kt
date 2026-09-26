@@ -55,7 +55,7 @@ internal class StreamPromote(
                 // this ending exists to prevent; the client's backoff bounds the re-sends.
                 emitter.emitError(
                     ErrorType.OVERLOADED,
-                    "splice: compact returned no content from model — retry (upstream ${outcome.outputShape})",
+                    "splice: compact returned no content from model; retry (upstream ${outcome.outputShape})",
                 )
                 PromoteVerdict(OutcomeTag.EMPTY_COMPACT.wire)
             }
@@ -63,7 +63,7 @@ internal class StreamPromote(
                 // The model closed a message with nothing in it: a finished answer, not a failure
                 // (codex ends the turn here). Ending clean is what stops the client retrying the
                 // same request a dozen times; the line keeps the shape so the class stays greppable.
-                log("[gateway] empty-message turn compact=false ${outcome.outputShape} — ending clean\n")
+                log("[gateway] empty-message turn compact=false ${outcome.outputShape}; ending clean\n")
                 PromoteVerdict(null, cleanTag = OutcomeTag.EMPTY_MESSAGE.wire)
             }
             honesty.nothingReachesTheClient(outcome, meta) -> {
@@ -82,7 +82,7 @@ internal class StreamPromote(
                 // unchanged, including the upstream shape, because they are the diagnosis.
                 emitter.emitError(
                     ErrorType.OVERLOADED,
-                    "splice: model returned no content (empty response) — retry (upstream ${outcome.outputShape})",
+                    "splice: model returned no content (empty response); retry (upstream ${outcome.outputShape})",
                 )
                 PromoteVerdict(OutcomeTag.EMPTY_MODEL.wire)
             }

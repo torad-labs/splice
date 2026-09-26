@@ -87,7 +87,7 @@ public object ReasoningReplay {
             if (!data.isNullOrEmpty()) {
                 log(
                     "[reasoning-replay] dropped an unusable reasoning envelope " +
-                        "(len=${data.length}) — omitted from replay\n",
+                        "(len=${data.length}); omitted from replay\n",
                 )
             }
             return null

@@ -74,7 +74,7 @@ internal class RateLimitStore(
                     if (!flushFailureLogged) {
                         flushFailureLogged = true
                         log(
-                            "[usage] ratelimit flush FAILED (${SafeFailureText.render(failure)}) — " +
+                            "[usage] ratelimit flush FAILED (${SafeFailureText.render(failure)}); " +
                                 "newest snapshot retained in memory until a later flush succeeds\n",
                         )
                     }

@@ -63,7 +63,7 @@ internal object AdminSupport {
                 ?.let(Paths::get)
         }.onFailure {
             System.err.println(
-                "splice: the running jar's own location did not parse (${SafeFailureText.render(it)}) — " +
+                "splice: the running jar's own location did not parse (${SafeFailureText.render(it)}); " +
                     "reading the installed copy instead",
             )
         }.getOrNull()
@@ -78,7 +78,7 @@ internal object AdminSupport {
                     !Files.exists(installed, java.nio.file.LinkOption.NOFOLLOW_LINKS)
                 if (failure != null && !genuinelyAbsent) {
                     println(
-                        "splice: $installed unreadable (${SafeFailureText.render(failure)}) — " +
+                        "splice: $installed unreadable (${SafeFailureText.render(failure)}); " +
                             "treating it as the installed jar; commands may fail until access is fixed",
                     )
                 }
@@ -111,7 +111,7 @@ internal object AdminSupport {
                     !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
                 if (failure != null && !genuinelyAbsent) {
                     println(
-                        "splice: $path unreadable (${SafeFailureText.render(failure)}) — " +
+                        "splice: $path unreadable (${SafeFailureText.render(failure)}); " +
                             "treating the credential as present; fix access, not login",
                     )
                 }

@@ -17,7 +17,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Pin or release the next account
 - Relabel or remove an account
 - Refresh a login
-- Store or remove an API key (V4-220)
+- Store or remove an API key
 
 ## compaction
 
@@ -40,7 +40,8 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Copy a check's fix
 - Send a test prompt through a head
 - Open a head's log
-- Run a check's fix (V4-220)
+- Run a check's fix
+- Upgrade or roll back splice
 
 ## fleet
 
@@ -52,8 +53,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 
 - Start, stop or restart a head
 - Restart the daemon
-- Add a backend (V4-220)
-- Upgrade or roll back splice (V4-220)
+- Add a backend
 
 ## logs
 
@@ -87,8 +87,8 @@ Each page answers one question. An action with a row in brackets is not built ye
 **Actions.**
 
 - Open a model
-- Add a model (V4-220)
-- Compare the declared models with what each provider publishes (V4-219)
+- Add a model
+- Compare the declared models with what each provider publishes (V4-239)
 
 ## needs-you
 
@@ -102,8 +102,8 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Restart the daemon
 - Copy a fix command
 - Open the page that holds an item
-- Open the item itself on its page (V4-219)
-- Apply a doctor check's fix (V4-220)
+- Open the item itself on its page
+- Apply a doctor check's fix
 
 ## projects
 
@@ -162,6 +162,8 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Open a turn's waterfall
 - Turn a head's request capture on or off
 - Start a stopped head
+- Read a head's captured request bodies (V4-239)
+- Read a head's request and response trace (V4-239)
 
 ## usage
 

@@ -63,8 +63,8 @@ internal class SetupSignIn(
             palette.paint(
                 palette.quiet,
                 "  Subscription heads reuse each vendor CLI's public OAuth client identity, signed in " +
-                    "separately for splice (its own credential file, any account) — " +
-                    "unofficial; use at your own risk.",
+                    "separately for splice (its own credential file, any account). " +
+                    "Unofficial; use at your own risk.",
             ),
         )
         var ok = true
@@ -72,7 +72,7 @@ internal class SetupSignIn(
             if (confirm("Sign in to ${palette.paint(palette.signal, command)} now?", default = true)) {
                 if (!loginHead(key)) ok = false
             } else {
-                println("  " + palette.paint(palette.quiet, "skipped — sign in later with: $command login"))
+                println("  " + palette.paint(palette.quiet, "skipped; sign in later with: $command login"))
             }
         }
         return ok

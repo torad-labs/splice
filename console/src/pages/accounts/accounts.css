@@ -9,7 +9,6 @@
 .myx-ac-main .myx-sec + .myx-sec { margin-block-start: 0; }
 
 .myx-ac-help { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: 0; }
-.myx-ac-command { font-family: var(--font-mono); font-size: var(--text-2); }
 
 .myx-ac-board {
   display: grid;

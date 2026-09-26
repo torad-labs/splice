@@ -230,7 +230,7 @@ public class GrokAuthProvider(
         val declaredExpiryMs = Cancellables.runCatchingCancellable { authJson.parseSnapshot() }
             .onFailure {
                 log(
-                    "[$LOG_TAG] auth.json unreadable while judging a $status — no veto, refresh runs: " +
+                    "[$LOG_TAG] auth.json unreadable while judging a $status; no veto, refresh runs: " +
                         SafeFailureText.render(it),
                 )
             }
@@ -242,7 +242,7 @@ public class GrokAuthProvider(
                 ?: "body not recognised as an entitlement rejection"
             log(
                 "[$LOG_TAG] upstream $status on a credential valid for another " +
-                    "${(declaredExpiryMs - clock()) / MS_PER_S}s — not an expiry, so NO refresh and " +
+                    "${(declaredExpiryMs - clock()) / MS_PER_S}s. That is not an expiry, so NO refresh and " +
                     "no sign-in. $sentence",
             )
         }
@@ -326,7 +326,7 @@ public class GrokAuthProvider(
             lastIneffectiveRefreshAtMs = clock()
             ineffectiveRefreshes.incrementAndGet()
             log(
-                "[$LOG_TAG] refresh succeeded but expiry did not advance past the stale floor — " +
+                "[$LOG_TAG] refresh succeeded but expiry did not advance past the stale floor; " +
                     "backing off ${REFRESH_INEFFECTIVE_BACKOFF_MS / MS_PER_S}s",
             )
         }

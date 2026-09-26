@@ -144,12 +144,12 @@ export function keyHelp(row: HeadRow): string {
   return row.keyFile === undefined ? H.keyReplace : H.keyFile;
 }
 
-/** The command that stores a head's key, or null where a set would not reach the daemon: a head
- *  reading a key file with a key in it is sent to the file instead. */
-export function keyCommand(row: HeadRow): string | null {
+/** The variable a stored key is written under for this head, or null where a store would not reach
+ *  the daemon: a head reading a key file with a key in it is sent to the file instead. */
+export function keyTarget(row: HeadRow): string | null {
   if (row.envVar === undefined) return null;
   if (row.keyFile !== undefined && row.present) return null;
-  return `splice key set ${row.envVar}`;
+  return row.envVar;
 }
 
 /**

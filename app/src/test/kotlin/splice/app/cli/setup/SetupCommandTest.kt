@@ -192,7 +192,7 @@ class SetupCommandTest {
                 }
             }
         }
-        assertTrue("unofficial; use at your own risk" in log, log)
+        assertTrue("Unofficial; use at your own risk" in log, log)
         assertTrue("own credential file" in log, log)
     }
 
@@ -621,7 +621,7 @@ summary = "detailed"
 replay_reasoning = false
 
 # Supported starter route: create an OpenRouter API key, then EITHER export OPENROUTER_API_KEY
-# or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600 — survives restarts from
+# or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600, which survives restarts from
 # any shell; inside a claude-openrouter session you can also paste it as a bare message and the
 # token-capture hook stores it without it reaching the model).
 # Experimental vendor-OAuth examples remain opt-in in app/src/main/resources/splice.example.toml.

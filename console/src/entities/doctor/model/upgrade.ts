@@ -45,3 +45,30 @@ export function upgradeVerdict(payload: UpgradePayload): UpgradeVerdict {
   if (payload.latest === null) return 'current';
   return payload.latest === payload.installed ? 'current' : 'behind';
 }
+
+/** Where a console-started run stands, in UpgradeRunState's wire words (UpgradeRuns.kt). `lost`: the
+ *  shell that ran it is gone and left no exit code (killed, or the machine went down). */
+export const UPGRADE_RUN_STATES = ['running', 'succeeded', 'failed', 'lost'] as const;
+export type UpgradeRunState = (typeof UPGRADE_RUN_STATES)[number];
+
+/** One `splice upgrade` the console started, as UpgradeRunRoutes.view writes it (V4-220 item 4). The
+ *  run is out of process and restarts the daemon, so its record lives on disk and whichever daemon is
+ *  up answers for it. */
+export interface UpgradeRun {
+  id: string;
+  /** The CLI's own arguments: `upgrade`, then `--to vX` or `--rollback` when asked. */
+  args: string[];
+  state: UpgradeRunState;
+  started_at_epoch_millis: number;
+  /** Null until the run ends, and on a lost run. */
+  exit_code: number | null;
+  /** The run's last 200 lines, colour codes stripped. */
+  output: string[];
+}
+
+/** What POST /api/upgrade asks for: neither field is the latest release, `to` one release, and
+ *  `rollback` the previous release, which takes no version. */
+export interface UpgradeAsk {
+  to?: string;
+  rollback?: true;
+}

@@ -49,13 +49,13 @@ internal class InboxListener(
         if (terminalSeen()) {
             // A frame after the round's terminal: the round it belongs to is over, so this can only
             // ever be served as some LATER round's first event. Poison instead.
-            log("[ws] frame arrived after the round terminal — poisoning rather than serving it later\n")
+            log("[ws] frame arrived after the round terminal; poisoning rather than serving it later\n")
             onAnomaly()
             return
         }
         assembly.append(data)
         if (assembly.length >= BufferCapacity.MAX_BUFFERED_CHARS) {
-            log("[ws] fragmented frame exceeded max buffered size — anomaly\n")
+            log("[ws] fragmented frame exceeded max buffered size; anomaly\n")
             assembly = StringBuilder()
             poisonFragmentAssembly()
             return
@@ -67,12 +67,12 @@ internal class InboxListener(
         val payload = assembly.toString()
         assembly.setLength(0)
         val event = Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(payload).jsonObject }
-            .onFailure { log("[ws] unparseable frame (${payload.length} chars) — anomaly\n") }
+            .onFailure { log("[ws] unparseable frame (${payload.length} chars); anomaly\n") }
             .getOrNull()
         if (event == null) {
             onAnomaly()
         } else if (!inbox.trySend(event).isSuccess) {
-            log("[ws] inbox overflow/closed — anomaly\n")
+            log("[ws] inbox overflow/closed; anomaly\n")
             onAnomaly()
         }
     }
@@ -94,7 +94,7 @@ internal class InboxListener(
     }
 
     override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
-        log("[ws] unexpected binary frame — anomaly\n")
+        log("[ws] unexpected binary frame; anomaly\n")
         onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream
         webSocket.request(1)
         return null
@@ -108,7 +108,7 @@ internal class InboxListener(
     // round observes is unchanged — kill()'s own close() is then a no-op.
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
         inbox.close()
-        log("[ws] ${endOfStream(statusCode, reason)}; ${pulse.describe()} — poisoning the pooled connection\n")
+        log("[ws] ${endOfStream(statusCode, reason)}; ${pulse.describe()}; poisoning the pooled connection\n")
         onAnomaly()
         return null
     }
@@ -136,7 +136,7 @@ internal class InboxListener(
     override fun onError(webSocket: WebSocket, error: Throwable) {
         inbox.close(IOException("websocket error", error))
         log(
-            "[ws] socket failed (${error::class.simpleName}; ${pulse.describe()}) — " +
+            "[ws] socket failed (${error::class.simpleName}; ${pulse.describe()}); " +
                 "poisoning the pooled connection\n",
         )
         onAnomaly()

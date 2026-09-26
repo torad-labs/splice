@@ -1,0 +1,51 @@
+/* The add-model panel: the head, one row per offered model (its name and id, its window, its switch),
+   the add key, and the daemon's answer. The column stretches its children so a refusal wraps inside
+   the panel. Radius 0, tokens only. */
+.myx-amodel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.myx-amodel-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.myx-amodel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.myx-amodel-name {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.myx-amodel-id {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  overflow-wrap: anywhere;
+}
+
+.myx-amodel-window {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.myx-amodel-note {
+  margin: 0;
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}

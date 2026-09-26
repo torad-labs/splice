@@ -64,9 +64,9 @@ internal class CancellationSeal(
         // during connect/backoff/refresh) land HERE, not in a translator's watchdogOutcome —
         // the generic "cancelled" hid them.
         val cancelMsg = if (drive.watchdog.fired != null) {
-            "${provider.key}: upstream stalled (watchdog) — aborted; retry"
+            "${provider.key}: upstream stalled (watchdog), aborted; retry"
         } else {
-            "${provider.key}: turn cancelled — retry"
+            "${provider.key}: turn cancelled; retry"
         }
         // Flat when (not nested if) so the still-connected try/catch stays shallow:
         // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
@@ -103,7 +103,7 @@ internal class CancellationSeal(
                         // disconnect the ping/write path hadn't flagged. Reclassify as a benign
                         // abandon (emitError already sealed on IOException; the set is idempotent),
                         // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
-                        log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}) — client gone\n")
+                        log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}); client gone\n")
                         drive.emitter.abandon()
                         telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
                     }

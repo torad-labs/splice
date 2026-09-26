@@ -126,7 +126,7 @@ internal class CodexCodeModeTurn(
         machine.interrupt(owner, detail)
         log(
             "[code-mode] abandoned record ${owner.id.take(RECORD_ID_LOG_CHARS)} (outer ${owner.outerCallId}): " +
-                "$error — continuing upstream on the client's history",
+                "$error; continuing upstream on the client's history",
         )
     }
 

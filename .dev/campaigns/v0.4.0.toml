@@ -6698,9 +6698,10 @@ verify = "red first: the plan-limit scenario with the reset 5 hours out (run.sh 
 id = "V4-234"
 phase = "release"
 title = "Whether the client waits is decided by the reset signal, never by the upstream's words (CPO triage 2026-09-25). When the upstream names a reset, the frame the client gets carries no phrase Claude Code 2.1.282 reads as stop-waiting, and the upstream's own words go to the daemon log. When it names no reset, the stop passes through unchanged, because waiting cannot fix a spend limit. Today splice relays the upstream text verbatim ([SPLICE-RATE-LIMIT] <message>), so a no-wait phrase in Anthropic's real plan-limit text, which nobody has captured, would end the wait: #290's red arm planted 'Extra usage is required' and the probe went red. splice-lead."
-files = ["integrations/upstream/src/main/kotlin/splice/upstream/retry/", "features/turns/src/main/kotlin/splice/head/", "tools/e2e/docker/plan_limit.ts"]
+files = ["core/src/main/kotlin/splice/core/auth/Credentials.kt", "core/src/main/kotlin/splice/core/auth/ClientAuthProvider.kt", "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt", "integrations/upstream/src/main/kotlin/splice/upstream/retry/PlanHold.kt", "integrations/upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt", "integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryPolicy.kt", "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamAttempt.kt", "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamClient.kt", "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamRequest.kt", "tools/e2e/docker/plan-limit.sh", "tools/e2e/docker/run.sh", "tools/e2e/docker/plan_limit.ts", "core/src/test/kotlin/campaign/v4233/", "integrations/upstream/src/test/kotlin/campaign/v4233/"]
 status = "todo"
 verify = "#290's red arm with 'Extra usage is required' planted goes green when a reset is named, and with no reset named the client stops; CI gate on the train sha."
+# [2026-09-26] amend by=orchestrator: files were ["integrations/upstream/src/main/kotlin/splice/upstream/retry/", "features/turns/src/main/kotlin/splice/head/", "tools/e2e/docker/plan_limit.ts"]
 
 [[items]]
 id = "V4-235"

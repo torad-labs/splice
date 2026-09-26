@@ -40,12 +40,14 @@ public class DoctorFixes(private val doctor: DoctorCommand, private val env: Env
     // The verb's progress lines are its terminal output; what the console reads is the re-run.
     private val install = InstallCommand(TerminalOutput { }, TerminalOutput { })
 
-    public fun run(fix: DoctorFix): DoctorFixOutcome {
+    /** [answers] is the daemon's own (V4-230): the run after the fix reads the daemon from them, as
+     *  GET /api/doctor does. */
+    public fun run(fix: DoctorFix, answers: DaemonAnswers): DoctorFixOutcome {
         val (verb, ran) = when (fix) {
             DoctorFix.INSTALL_ALL ->
                 FIX_RELINK to Cancellables.runCatchingCleanup { install.install(INSTALL_ALL_ARG, env) }
         }
-        val after = doctor.collect(env)
+        val after = doctor.collect(env, answers = answers)
         val report = doctor.reportJson(after, env)
         val remaining = after.sections.flatMap { it.second }.count { it.fixId == fix }
         val refusal = ran.exceptionOrNull()?.let(InstallFailureText::render)

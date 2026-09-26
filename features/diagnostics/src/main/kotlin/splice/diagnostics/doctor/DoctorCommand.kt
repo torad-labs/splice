@@ -15,7 +15,6 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
-import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
 import splice.diagnostics.doctor.report.DOCTOR_USAGE
 import splice.diagnostics.doctor.report.DoctorJsonReport
@@ -48,6 +47,7 @@ public class DoctorCommand(
     private val auth = DoctorAuth(output)
     private val accountText = AccountPoolText()
     private val settings = DaemonSettings(errors)
+    private val loopback = LoopbackDaemon(accountPools)
 
     // ONE DoctorRuntime for the whole run: the daemon section's per-head rows and the runtime
     // section's own rows must read the same instrument, so the head checks receive the collaborator
@@ -192,6 +192,11 @@ public class DoctorCommand(
         withLogs: Boolean = false,
     ): String = reportJson(collect(envReader, live), envReader, withLogs)
 
+    /** The daemon's own report (GET /api/doctor): the same run, reading the daemon from the
+     *  [answers] it took in process rather than from its own port (V4-230). */
+    public fun reportJson(envReader: EnvReader, answers: DaemonAnswers): String =
+        reportJson(collect(envReader, answers = answers), envReader)
+
     /** The same report over a run already collected: DoctorFixes reads the rows that still need its
      *  fix and serves the report of that SAME run, never a second collection that could disagree. */
     internal fun reportJson(run: DoctorRun, envReader: EnvReader, withLogs: Boolean = false): String {
@@ -206,35 +211,38 @@ public class DoctorCommand(
         statePaths = TopologyStatePaths(envReader).current(),
     )
 
-    /** Every section, collected once; both renderings read this. */
-    internal fun collect(envReader: EnvReader, live: Boolean = false): DoctorRun {
+    /** Every section, collected once; both renderings read this. [answers] is the daemon's own, when
+     *  the daemon is the one asking (V4-230); the CLI reads the daemon over loopback. */
+    internal fun collect(envReader: EnvReader, live: Boolean = false, answers: DaemonAnswers? = null): DoctorRun {
         val configPath = TopologyLoader.configPath(envReader)
         val topo = loadTopology(configPath)
+        val reads = answers?.let(::AnsweredDaemon) ?: loopback
         // Resolve the port and probe /health ONCE; both the daemon and auth sections read this snapshot
         // so a busy daemon is contacted a single time and the split-brain check can't silently self-skip.
         val topology = (topo as? DoctorTopology.Parsed)?.topology
         val port = settings.controlPort(topology, envReader)
-        val snapshot = DaemonSnapshot(port, DaemonProbe.healthView(port))
-        val pools = if (snapshot.running) accountPools(port, envReader) else null
+        val snapshot = DaemonSnapshot(port, reads.health(port))
+        val pools = if (snapshot.unanswered == null) reads.accountPools(port, envReader) else null
         val read = (pools as? AccountPoolsRead.Read)?.pools.orEmpty()
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
             "configuration" to guarded { config.configurationChecks(topo, configPath, live) },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
-            "auth" to guarded { auth.authChecks(topo, envReader, snapshot) },
+            "auth" to guarded { auth.authChecks(topo, envReader, snapshot, reads) },
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.
-            "accounts" to guarded { accountChecks(pools) },
+            "accounts" to guarded { accountChecks(pools, snapshot) },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
             // this one reads the runtime instruments (health counters + perf outcome tail).
-            "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader) },
+            "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader, reads) },
         )
         return DoctorRun(topology, sections, read)
     }
 
-    // Null only when the daemon is not running; an unread projection says why, and its remedy when one fits.
-    private fun accountChecks(pools: AccountPoolsRead?): List<DoctorCheck> = when (pools) {
-        null -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "skipped (daemon not running)"))
+    // Null only when /health did not answer, which the snapshot names; an unread projection says why,
+    // and its remedy when one fits.
+    private fun accountChecks(pools: AccountPoolsRead?, snapshot: DaemonSnapshot): List<DoctorCheck> = when (pools) {
+        null -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "skipped (${snapshot.unanswered})"))
         is AccountPoolsRead.Unread -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.WARN, pools.reason, pools.fix))
         is AccountPoolsRead.Read -> if (pools.pools.isEmpty()) {
             listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))

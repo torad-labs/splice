@@ -8,8 +8,6 @@ package splice.diagnostics.doctor
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
-import splice.daemonclient.MgmtKeyFile
-import splice.daemonclient.MgmtKeyRead
 import splice.topology.TopologyStatePaths
 
 /** The doctor runtime section as a constructed collaborator (Kotlin style law, 2026-08-15: main
@@ -22,28 +20,20 @@ internal class DoctorRuntime {
      *  block on. Counters are since-last-restart (G20 resets them); the perf tail is recency-framed
      *  (last N turns), never lifetime totals. Fail-open at every hop: no daemon, no key, or an
      *  unreachable endpoint each degrade to one INFO row, never a crash and never a fabricated OK. */
-    internal fun runtimeChecks(snapshot: DaemonSnapshot, envReader: EnvReader): List<DoctorCheck> {
+    internal fun runtimeChecks(snapshot: DaemonSnapshot, envReader: EnvReader, reads: DaemonReads): List<DoctorCheck> {
         val statePaths = TopologyStatePaths(envReader).current()
-        // Read the key ONCE (review #94, F154): the old guard-and-use double read raced key rotation —
-        // a key emptying between reads threw checkNotNull, and `guarded` printed a FAIL row,
-        // contradicting this section's own contract that an unreadable key degrades to INFO.
-        // DR-174: the mirror of the restart defect. This section's private reader collapsed the
-        // same two states, and then rendered BOTH as "mgmt-key unreadable" — so a fresh box that
-        // has simply never minted a key was told its key could not be read. Still one read (review
-        // #94, F154 above); the shared reader just returns which of the two it found.
-        val read = MgmtKeyFile().read(envReader)
-        val key = (read as? MgmtKeyRead.Present)?.key
-        val skip = when {
-            !snapshot.running -> "skipped (daemon stopped)"
-            read is MgmtKeyRead.Unreadable -> "skipped (mgmt-key unreadable: ${read.reason})"
-            key == null -> "skipped (mgmt-key not minted yet)"
-            else -> null
+        snapshot.unanswered?.let { return listOf(skipped(it)) }
+        // The key is read ONCE, inside the loopback read (review #94, F154: a guard-and-use double read
+        // raced key rotation), and a key never minted is not a key that could not be read (DR-174).
+        return when (val heads = reads.heads(snapshot.port, envReader)) {
+            is DaemonRead.Answered -> heads.value.flatMap { h -> headRuntimeRows(h, statePaths) }
+            is DaemonRead.KeyUnreadable -> listOf(skipped("mgmt-key unreadable: ${heads.reason}"))
+            DaemonRead.KeyAbsent -> listOf(skipped("mgmt-key not minted yet"))
+            DaemonRead.Unreachable -> listOf(skipped("/api/heads unreachable"))
         }
-        if (skip != null) return listOf(DoctorCheck("runtime", CheckStatus.INFO, skip))
-        val heads = DaemonProbe.headsRuntime(snapshot.port, checkNotNull(key))
-            ?: return listOf(DoctorCheck("runtime", CheckStatus.INFO, "skipped (/api/heads unreachable)"))
-        return heads.flatMap { h -> headRuntimeRows(h, statePaths) }
     }
+
+    private fun skipped(why: String) = DoctorCheck("runtime", CheckStatus.INFO, "skipped ($why)")
 
     internal fun headRuntimeRows(
         h: DaemonProbe.HeadRuntime,

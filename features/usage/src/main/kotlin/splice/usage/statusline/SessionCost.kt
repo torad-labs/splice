@@ -15,6 +15,8 @@ import splice.core.model.ModelRates
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.perf.PerfKeys
+import splice.core.perf.PerfSessionTail
+import splice.core.perf.PerfSessionTotal
 import splice.core.perf.PerfSessionTurn
 import splice.usage.perf.HeadSessionPerfSource
 
@@ -35,7 +37,7 @@ internal fun interface SessionCostSource {
 }
 
 /** One session's figure, and whether the true spend may be higher: a turn the head cannot price, or
- *  a session older than the tail the reader holds. */
+ *  a session with rows from before its running total that the tail the reader holds cannot reach. */
 internal data class SessionSpend(val usd: Double, val lowerBound: Boolean)
 
 /** USD for ONE client session, from the tokens its turns already recorded against the rate card
@@ -55,14 +57,29 @@ internal class SessionCost(
 
     override fun usdFor(sessionId: String?, modelId: String?): Double? = spendFor(sessionId, modelId, null)?.usd
 
+    /** V4-244: the session's running total when it holds every row of the session, which is when the
+     *  session began at or after the total did (a blob with no start makes no claim either way, as
+     *  with the tail). Otherwise the session has rows from before the total, and the tail prices it. */
+    override fun spendFor(sessionId: String?, modelId: String?, sessionStartMs: Long?): SessionSpend? {
+        val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
+        val whole = tokens.sessionTotal(session)?.takeIf { sessionStartMs == null || sessionStartMs >= it.fromMs }
+        return if (whole != null) spendOf(whole) else fromTail(tokens.sessionTail(session), modelId, sessionStartMs)
+    }
+
+    /** V4-244: each turn was priced at its own model's card when its row was appended; a turn with no
+     *  card then makes the figure a lower bound, and no priced turn at all is no figure. */
+    private fun spendOf(total: PerfSessionTotal): SessionSpend? {
+        val models = total.models.values
+        if (models.none { it.turns > it.unpricedTurns }) return null
+        return SessionSpend(models.sumOf { it.usd }, lowerBound = models.any { it.unpricedTurns > 0 })
+    }
+
     /** V4-240 review. Each turn is priced at the card of the model it RAN on (finding 4b), so a
      *  session that switched models is not billed at the one the status line asks about; the asked
      *  model prices only a row that recorded none. A turn whose model has no card adds nothing and
      *  makes the figure a lower bound, and so does a session that began before the oldest row of a
      *  tail the reader could not read whole (finding 4c). No priced turn at all is no figure. */
-    override fun spendFor(sessionId: String?, modelId: String?, sessionStartMs: Long?): SessionSpend? {
-        val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
-        val tail = tokens.sessionTail(session)
+    private fun fromTail(tail: PerfSessionTail, modelId: String?, sessionStartMs: Long?): SessionSpend? {
         val asked = modelId?.let(::ratesFor)
         val turns = tail.turns.map { turn -> ratesOf(turn, asked) to bucketsOf(turn.counters) }
             .filterNot { (_, buckets) -> buckets.isEmpty }

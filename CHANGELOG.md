@@ -711,6 +711,14 @@ origin.
   splice keeps on your disk, names each file splice writes, what it holds, who can read it and how
   long it stays, and a test fails the build when the code writes a file the section doesn't name
   (V4-258, V4-260, V4-261, V4-262, V4-285).
+- **A bool setting splice can't read is named, not read as off.** A `trace` value such as `enabled`
+  read as off, so the head ran untraced and its next start deleted its trace history. A bool setting
+  that isn't true/false, yes/no, on/off or 1/0 is now ignored, keeping its default, and `splice
+  doctor` names it; a head whose `trace` value can't be read keeps its trace days. `splice trace
+  --purge` and a start's clean-up name any file they could not delete instead of counting it as
+  deleted, a day file with one damaged character loses only that line, a file named for an
+  impossible date stops no clean-up, and a midnight clean-up the computer slept through runs within
+  10 minutes of waking (V4-286).
 - **A launch no longer puts back a Claude login that was already refreshed away.** Every launch of
   `claude-splice` copied the selected saved login over the head's live one. Claude Code's refresh
   tokens are single-use, so the copy was stale after the first refresh, and signing in with it could

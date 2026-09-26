@@ -702,6 +702,15 @@ origin.
   held the name at that moment: a new team's Chat showed a message an earlier team had sent to its own
   `gpt`. splice now records the session that held the name when the message was sent. A message to a
   name that no session held then, or that two sessions held, belongs to no one (V4-252).
+- **splice keeps less on your disk, and the README lists what it keeps.** `daemon-boot.log` copied
+  every line of `daemon.log` and grew without limit; it now holds only what the daemon writes to
+  stderr itself, such as a startup error. A head's kept files go when their promise ends: an expired
+  compaction answer, a head's code-mode state once code mode is off or the head is removed, and its
+  trace files once trace is off are deleted when the daemon starts. Activity labels, which carry file
+  names, commands and search patterns, are kept for today only instead of 90 days, since today is the
+  only day the Teams page reads them. The README's new section, What splice keeps on your disk, names
+  each file splice writes, what it holds, who can read it and how long it stays, and a test fails the
+  build when the code writes a file the section doesn't name (V4-258, V4-260, V4-261, V4-262).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

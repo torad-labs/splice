@@ -7457,6 +7457,7 @@ verify = "red first: a webhook whose server never answers, at a URL with a secre
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T12:09:18.504Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T12:09:18Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4-295-green -- :features-usage:test :features-usage:detekt :quality-architecture:test --continue (shared checkout; user@1000 MainPID 109200 before and after)" exit=0 tests=379 touched=features/usage/src/main/kotlin/splice/usage/alerts/AlertRoutes.kt,features/usage/src/main/kotlin/splice/usage/alerts/AlertDelivery.kt,features/usage/src/test/kotlin/splice/usage/alerts/AlertDeliveryTest.kt,features/usage/src/test/kotlin/splice/usage/alerts/AlertRoutesTest.kt,.dev/restructure/capabilities.tsv tail="rs failure.message: AlertRoutesTest 2/1 with the secret in the body (MA+MB slot v4-295-mutAB exit 1); MC the class dropped from WebhookFailure: AlertRoutesTest 2/2 and AlertDeliveryTest 4/1, 'a failure reaching 127.0.0.1' names no timeout or refusal (slot v4-295-mutC exit 1). New census row for AlertRoutesTest.kt; gate rules exit 0, census 0 findings; user@1000 MainPID 109200 across all four runs."
 
 [[items]]
 id = "V4-296"

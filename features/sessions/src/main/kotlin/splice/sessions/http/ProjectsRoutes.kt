@@ -11,8 +11,8 @@
 // TODAY IS THE UTC DAY, and the row says where it started (day_start) rather than letting the console
 // guess a boundary. turns_today and cost_today_usd join the perf rows of every head on the 8-character
 // session tag, over the repo's registry sessions and every session its teams' slots ever held; the
-// dollars are null when any counted turn had no rate card (TeamsRoutes' PerfTally), never a partial
-// sum and never zero for "unknown".
+// dollars are null when any counted turn had no rate card, never a partial sum and never zero for
+// "unknown": unlike a team's tally, this row carries no unpriced count to print beside a partial sum.
 //
 // WHAT GOVERNS THE REPO (FEATURES.md 4.14, "its compaction scope and the effective instructions, the
 // statusline roots entry"). `compaction` is core's own answer for this root —
@@ -197,7 +197,7 @@ public class ProjectsRoutes(
                 put("live_sessions", sessions.count { it.availability == SessionAvailability.LIVE })
                 put("teams", repoTeams.count { !it.archived })
                 put("turns_today", tally.turns)
-                put("cost_today_usd", tally.costUsd)
+                put("cost_today_usd", tally.costUsd.takeIf { tally.unpricedTurns == 0L })
                 put("day_start", dayStart)
                 put("last_activity", last?.let(::JsonPrimitive) ?: JsonNull)
                 put("compaction", compactionOf(root))

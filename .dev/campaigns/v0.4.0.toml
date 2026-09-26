@@ -8045,8 +8045,11 @@ id = "V4-332"
 phase = "release"
 title = "A row whose fence is empty, because its deliverable lives outside the repo, can file its receipt and reach done: receipt accepts an empty staging list (--touched -) only for a row with files = [], and still refuses it for any row that fences a file (console, V4-331 2026-09-26: ledger.ts:1347 refused the out-of-repo renders' receipt)"
 files = [".dev/campaigns/ledger.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first: the ledger's own selftest gains a case, an empty-fence row receipting --touched - reaches done, failing on today's ledger.ts (quote the refusal), and its twin, a row that fences a file receipting --touched -, stays refused; green: both cases pass, selftest and campaignCliSelftestCanary green (real ledgers byte-identical), then V4-331's receipt files and it reaches done"
+claimed_by = "console"
+claimed_at = "2026-09-26T22:36:49.997Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T22:36:49Z
 
 [[items]]
 id = "V4-333"

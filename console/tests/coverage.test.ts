@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
-import { TOPOLOGY_CHOICES, TOPOLOGY_SCHEMA, type SchemaNode } from '../src/entities/topology';
+import { RUNTIME_KNOBS, TOPOLOGY_CHOICES, TOPOLOGY_SCHEMA, type SchemaNode } from '../src/entities/topology';
 import { dispositions as baseline } from '../src/shared/coverage/baseline';
 import { checkCoverage, type Disposition, type DispositionSource } from '../src/shared/coverage/checks';
 import type { PageJob } from '../src/shared/coverage/jobs';
@@ -251,4 +251,27 @@ describe('the console reads splice.toml as the daemon parses it', () => {
     const phantom = accepted.filter((path) => !parsed.has(path) && !inOpen(path) && !parsed.has(`${parent(path)}.*`));
     expect({ refused, phantom }).toEqual({ refused: [], phantom: [] });
   });
+
+  test('[defaults] takes every knob Knob.kt lets the global TOML set, and no other (V4-316)', () => {
+    // Knob.kt read here, never copied: each entry from `NAME(` to the next, its key the first string
+    // it passes, and head-only when it says `headOnly = true`, which ConfigService drops from every
+    // global layer ([defaults] among them) and takes from [heads.KEY.overrides] alone.
+    const knobs = knobScopes(read(KNOB_SOURCE));
+    expect(knobs.length, 'every Knob entry parsed').toBe(parseKnobNames(read(KNOB_SOURCE)).length);
+    const global = knobs.filter((knob) => !knob.headOnly).map((knob) => knob.key);
+    const listed = new Set<string>(RUNTIME_KNOBS);
+    const missing = global.filter((key) => !listed.has(key));
+    const extra = [...listed].filter((key) => !global.includes(key));
+    expect({ missing, extra }).toEqual({ missing: [], extra: [] });
+  });
 });
+
+/** Each Knob entry's key and whether only [heads.KEY.overrides] may set it, from Knob.kt's source. */
+function knobScopes(kotlin: string): { key: string; headOnly: boolean }[] {
+  const body = kotlin.replace(/\/\/.*$/gm, '');
+  const starts = [...body.matchAll(/^ {4}[A-Z][A-Z0-9_]*\(/gm)].map((match) => match.index);
+  return starts.map((start, at) => {
+    const entry = body.slice(start, starts[at + 1] ?? body.lastIndexOf('}'));
+    return { key: /"([A-Za-z0-9]+)"/.exec(entry)?.[1] ?? '', headOnly: /\bheadOnly = true\b/.test(entry) };
+  });
+}

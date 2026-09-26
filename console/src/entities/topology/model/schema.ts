@@ -31,13 +31,14 @@ export interface SchemaNode {
 }
 
 /**
- * The 33 runtime knobs, which `[defaults]` accepts wholesale ("any runtime knob", FEATURES 2.3,
- * defined in 2.2).
+ * The 53 runtime knobs `[defaults]` accepts ("any runtime knob", FEATURES 2.3, defined in 2.2): every
+ * Knob.kt entry but the head-only ones (`wireTap`, `trace`), which ConfigService drops from every
+ * global layer and takes from `[heads.KEY.overrides]` alone.
  *
- * DUPLICATED ON PURPOSE, and the duplication is the honest part: the authoritative parse is from
- * `Knob.kt` at test time, which the coverage gate (row M1-04) owns and which fails a knob with no
- * console disposition. This list exists only so `[defaults]` can be key-checked here, and M1-04's
- * gate is what will catch it if a knob is renamed upstream.
+ * LISTED HERE AND PINNED BY A PARITY TEST, both ways (coverage.test.ts, V4-316): the test parses
+ * Knob.kt at test time, so a knob added, renamed or made head-only there turns it red until this list
+ * follows. A list with no such test fell 20 knobs behind (retryBackoff*, mcp*, maxRequestBytes,
+ * supervisorUnit and the rest were refused as unknown in `[defaults]`).
  */
 export const RUNTIME_KNOBS = [
   'port', 'chatgptApiBase', 'codexAuthPath', 'pinnedModel', 'effort', 'summary', 'showReasoning',
@@ -46,6 +47,11 @@ export const RUNTIME_KNOBS = [
   'upstreamRetries', 'upstreamTimeoutMs', 'firstByteTimeoutMs', 'streamIdleMs', 'authCacheMs',
   'debug', 'contextWindowOverride', 'grokPort', 'grokModel', 'xaiApiBase', 'grokAuthPath',
   'controlPort', 'usageWarnPct', 'usageWarnTokens5h', 'statuslineGitRoots',
+  'quotaPollIntervalMs', 'retryBackoffBaseMs', 'retryBackoffCapMs', 'retryBackoffJitterPct',
+  'stallReanchorMs', 'mcpIdleTimeoutMs', 'mcpMaxServers', 'mcpRequestTimeoutMs',
+  'mcpInitializeTimeoutMs', 'maxRequestBytes', 'requestReadTimeoutMs', 'materializationPermits',
+  'supervisorUnit', 'mcpSlice', 'activityRetentionDays', 'activityStoreHeads', 'traceRetentionDays',
+  'traceMaxBodyChars', 'budgetDefaultAction', 'perfArchiveRetentionDays',
 ] as const;
 
 /** The per-million-token rates, per model id (FEATURES 2.3). `cache_write` is optional; the absent

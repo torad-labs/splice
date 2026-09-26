@@ -18,11 +18,14 @@ import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.net.ConnectException
 import java.net.URI
+import java.net.URISyntaxException
 import java.net.http.HttpClient
 import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.net.http.HttpTimeoutException
 import java.time.Duration
+import javax.net.ssl.SSLException
 
 // why: matches `splice add`'s probe budget (AddHttp.PROBE_TIMEOUT_S). This verb asks every provider
 // in turn, so the whole report costs at most this per unreachable one; a remote list is a few KiB
@@ -67,9 +70,21 @@ internal class JdkModelsHttp(private val client: HttpClient = HttpClient.newHttp
     /** A refused or timed-out CONNECTION is the only absence; the JDK wraps it, so the whole cause
      *  chain is walked rather than the top frame alone. */
     private fun classify(failure: Throwable): ModelsAnswer {
-        val detail = SafeFailureText.render(failure)
-        val refused = generateSequence(failure, Throwable::cause)
-            .any { it is ConnectException || it is HttpConnectTimeoutException }
-        return if (refused) ModelsAnswer.NotListening(detail) else ModelsAnswer.Failed(detail)
+        val chain = generateSequence(failure, Throwable::cause).toList()
+        val refused = chain.any { it is ConnectException || it is HttpConnectTimeoutException }
+        return if (refused) {
+            ModelsAnswer.NotListening(SafeFailureText.render(failure))
+        } else {
+            ModelsAnswer.Failed(named(chain) ?: SafeFailureText.render(failure))
+        }
+    }
+
+    /** V4-268: the failures the client names, in splice's words. SafeFailureText withholds all three
+     *  (none is on its allowlist), so a list that was merely slow read "message withheld". */
+    private fun named(chain: List<Throwable>): String? = when {
+        chain.any { it is HttpTimeoutException } -> "no answer within $LIST_TIMEOUT_S s"
+        chain.any { it is SSLException } -> "the TLS connection failed"
+        chain.any { it is URISyntaxException } -> "the URL does not parse"
+        else -> null
     }
 }

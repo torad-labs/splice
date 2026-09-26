@@ -72,9 +72,14 @@ class DoctorClientVerdictTest {
             "XDG_CONFIG_HOME" to Files.createDirectories(tmp.resolve("config")).toString(),
             "SPLICE_STATE_DIR" to state.toString(),
         )
-        val running = DaemonSnapshot(port, DaemonProbe.HealthView("test", 1, 1, 0))
+        val running = DaemonSnapshot(port, DaemonProbe.HealthProbe.Up(DaemonProbe.HealthView("test", 1, 1, 0)))
         return DoctorAuth(TerminalOutput {})
-            .authChecks(DoctorTopology.Parsed(topology), EnvReader { env[it] }, running)
+            .authChecks(
+                DoctorTopology.Parsed(topology),
+                EnvReader { env[it] },
+                running,
+                LoopbackDaemon(JdkAccountPoolRead()),
+            )
     }
 
     /** RED before V4-220: the line was the declaration, OK, whatever the daemon had seen. */

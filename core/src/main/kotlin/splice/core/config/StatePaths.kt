@@ -226,6 +226,9 @@ public class StatePaths(
     /** Hourly token-economics rollup (quota instrument) — additive, not a frozen HUD name. */
     public fun economicsFile(headKey: String): Path = stateDir.resolve("$headKey-economics.json")
 
+    /** Each client session's running total (V4-244, SessionTotals) — additive, not a frozen HUD name. */
+    public fun sessionTotalsFile(headKey: String): Path = stateDir.resolve("$headKey-session-totals.json")
+
     /** The per-session client windows a head learned from status-line posts (ClientWindows): a warm
      *  start across daemon restarts, re-taught by the next post. */
     public fun clientWindowsFile(headKey: String): Path = stateDir.resolve("$headKey-client-windows.json")

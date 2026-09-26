@@ -34,7 +34,10 @@ import splice.core.model.LongContextRates
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
+import splice.core.model.TurnPrice
+import splice.core.perf.PerfModelTotal
 import splice.core.perf.PerfSessionTail
+import splice.core.perf.PerfSessionTotal
 import splice.core.perf.PerfSessionTurn
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.HeadSessionPerfSource
@@ -510,5 +513,127 @@ class SessionCostTest {
         ).replace(ansi, "")
         assertTrue("API est. ≥$0.53" in line, line)
         assertFalse("⚠" in line, "no row was dropped, so no count: $line")
+    }
+
+    // ---- V4-244, the running total ------------------------------------------------------------------
+    //
+    // The tail holds the last 256 KiB of the head's perf log, and 30 of the real claudex log's 59
+    // sessions ran longer, so their figure was a lower bound. The running total, kept as each row is
+    // appended, prices the whole session; the tail stays the answer only for a session that began
+    // before the total did.
+
+    /** Ten cold Opus turns, all priced at append: 10 x 0.525. */
+    private val tenOpusTurns = PerfModelTotal(
+        turns = 10,
+        inTokens = 1_000_000,
+        cachedTokens = 0,
+        cacheWriteTokens = 0,
+        outTokens = 10_000,
+        usd = 5.25,
+        unpricedTurns = 0,
+    )
+
+    /** One uncarded turn: its tokens kept, its dollars unknown. */
+    private val oneSolTurn = PerfModelTotal(1, 100_000, 0, 0, 1_000, usd = 0.0, unpricedTurns = 1)
+
+    /** The session's tail is cut (one Opus turn read, the tail starting at 1500000); beside it, [total]. */
+    private fun withTotal(total: PerfSessionTotal?) = object : HeadSessionPerfSource {
+        override fun sessionTail(sessionId: String): PerfSessionTail {
+            val mine = sessionId == this@SessionCostTest.sessionId
+            val turns = if (mine) listOf(PerfSessionTurn("claude-opus-5-5", coldTurn)) else emptyList()
+            return PerfSessionTail(turns, 1_500_000L)
+        }
+
+        override fun sessionTotal(sessionId: String): PerfSessionTotal? =
+            total.takeIf { sessionId == this@SessionCostTest.sessionId }
+    }
+
+    /** The cut tail above, beside a running total of [models] that began at 1000000. */
+    private fun costWith(models: Map<String, PerfModelTotal>) =
+        SessionCost(withTotal(PerfSessionTotal(1_000_000L, models)), anthropicCatalog())
+
+    private val opusOnly = mapOf("claude-opus-5-5" to tenOpusTurns)
+
+    @Test
+    fun `a session longer than the tail is priced whole from its running total - V4-244`() {
+        val cost = costWith(opusOnly)
+        val spend = cost.spendFor(sessionId, "claude-opus-5-5", 1_200_000L)!!
+        assertEquals(5.25, spend.usd, 1e-12, "all ten turns, not the one the tail still holds")
+        assertFalse(spend.lowerBound, "the total holds every row since the session began")
+        val noStart = cost.spendFor(sessionId, "claude-opus-5-5", null)!!
+        assertEquals(5.25 to false, noStart.usd to noStart.lowerBound, "no start in the blob, no claim")
+    }
+
+    @Test
+    fun `a session whose rows predate the running total keeps the mark - V4-244`() {
+        val cost = costWith(opusOnly)
+        val spend = cost.spendFor(sessionId, "claude-opus-5-5", 900_000L)!!
+        assertTrue(spend.lowerBound, "it began before the total, so rows may be missing from both")
+        assertEquals(0.525, spend.usd, 1e-12, "the tail's own figure, as V4-240 prices it")
+    }
+
+    @Test
+    fun `a turn the total could not price still marks it, and a total of only those is no figure - V4-244`() {
+        val models = mapOf("claude-opus-5-5" to tenOpusTurns, "gpt-6-sol" to oneSolTurn)
+        val mixed = costWith(models).spendFor(sessionId, "gpt-6-sol", 1_200_000L)!!
+        assertEquals(5.25 to true, mixed.usd to mixed.lowerBound)
+        val onlyUncarded = costWith(mapOf("gpt-6-sol" to oneSolTurn)).spendFor(sessionId, "gpt-6-sol", 1_200_000L)
+        assertNull(onlyUncarded, "no priced turn at all is no figure, never zero")
+    }
+
+    /** The total is priced at append by core's TurnPrice; the tail path prices with this class. The
+     *  two must weigh a row the same, long-context tier and cache writes included, or the figure would
+     *  jump when a session crosses from one path to the other. */
+    @Test
+    fun `TurnPrice, which prices the running total, prices each row exactly as the tail path does - V4-244`() {
+        val tiered = ModelRates(
+            input = 2.0,
+            cacheRead = 0.5,
+            output = 6.0,
+            longContext = LongContextRates(overInputTokens = 199_999, input = 4.0, cacheRead = 1.0, output = 12.0),
+        )
+        val grok = ModelCatalog(
+            discoveryPrefix = "claude-grok--",
+            models = listOf(ModelEntry(id = "grok-4.7", label = "Grok 4.7", contextWindow = 500_000, rates = tiered)),
+            defaultContextWindow = 500_000,
+            pinnedModel = "grok-4.7",
+        )
+        val grokRows = listOf(
+            mapOf("in_tokens" to 150_000L, "cached_tokens" to 40_000L, "out_tokens" to 1_000L),
+            mapOf("in_tokens" to 250_000L, "cached_tokens" to 200_000L, "out_tokens" to 3_000L),
+        )
+        val sonnetRows = listOf(
+            mapOf(
+                "in_tokens" to 120_000L,
+                "cached_tokens" to 20_000L,
+                "cache_write_tokens" to 90_000L,
+                "out_tokens" to 700L,
+            ),
+        )
+        val cases = listOf(Triple(grok, "grok-4.7", grokRows), Triple(cacheWritingCatalog(), "sonnet-4-6", sonnetRows))
+        for ((catalog, model, rows) in cases) {
+            val tailPath = SessionCost(tokens(rows), catalog).usdFor(sessionId, model)!!
+            assertEquals(tailPath, rows.sumOf { TurnPrice(catalog).usd(model, it)!! }, 1e-12, model)
+        }
+    }
+
+    @Test
+    fun `a session longer than the tail reads its whole figure on the line, with no mark - V4-244`() {
+        // total_duration_ms 600000 before a clock at 2000000: the session began at 1400000, before the
+        // tail's oldest row at 1500000 but after the total began at 1000000.
+        val renderer = StatuslineRenderer(
+            label = "codex",
+            now = { 2_000_000L },
+            sessionCost = costWith(opusOnly),
+        )
+        val line = renderer.render(
+            """{"model":{"id":"claude-opus-5-5"},"cost":{"total_cost_usd":9.99,"total_duration_ms":600000}}""",
+            null,
+            warnPct = 0,
+            warnTokens5h = 0,
+            sessionId = sessionId,
+        ).replace(ansi, "")
+        assertTrue("API est. $5.25" in line, line)
+        assertFalse("≥" in line, "the whole session is counted: $line")
     }
 }

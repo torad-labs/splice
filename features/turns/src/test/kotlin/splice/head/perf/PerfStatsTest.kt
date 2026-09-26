@@ -6,7 +6,12 @@ package splice.head.perf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
+import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
 import java.nio.file.Files
 
@@ -193,5 +198,40 @@ class PerfStatsTest {
         assertTrue(cut.turns.size in 1 until 400, "the bound cut the file: ${cut.turns.size} rows read")
         assertEquals(readTs.min(), cut.tailStartMs, "the tail starts at the oldest row it read")
         assertEquals(400L, readTs.max())
+    }
+
+    /** V4-244. The tail above cuts a long session; the running total must not. [PerfStats.record] feeds
+     *  it with the very row it appends, so the total is the sum of the session's rows by construction,
+     *  and a session of any length is priced whole. */
+    @Test
+    fun `record feeds each session's running total with the row it appends, past the tail's bound`() {
+        val dir = Files.createTempDirectory("perf-stats")
+        val opus = "claude-opus-5-5"
+        val price = TurnPrice(
+            ModelCatalog(
+                discoveryPrefix = "claude-anthropic--",
+                models = listOf(ModelEntry(opus, contextWindow = 1_000_000, rates = ModelRates(5.00, 0.50, 25.00))),
+                defaultContextWindow = 1_000_000,
+                pinnedModel = opus,
+            ),
+        )
+        var ts = 0L
+        val totals = SessionTotals(dir.resolve("totals.json"), price, { 0L })
+        val stats = PerfStats(dir.resolve("perf.jsonl"), clock = { ++ts }, totals = totals)
+        fun turn(): PerfSnapshot = TurnPerf { 0L }.apply {
+            setCount(PerfKeys.IN_TOKENS, 100_000)
+            setCount(PerfKeys.OUT_TOKENS, 1_000)
+            // about 1 KiB a row, so 400 rows pass the tail's 256 KiB bound
+            (0 until 40).forEach { setCount("pad_%02d".format(it), 1_234_567_890_123L) }
+        }.snapshot()
+
+        repeat(400) { stats.record(PerfRowMeta(opus, "ok", compact = false, session = "a6b15bd7"), turn()) }
+        stats.record(PerfRowMeta(opus, "ok", compact = false), turn())
+
+        val session = "a6b15bd7-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
+        assertTrue(stats.sessionTail(session).turns.size < 400, "the tail holds only part of the session")
+        val total = totals.totalFor(session)!!.models.getValue(opus)
+        assertEquals(400L, total.turns, "every row of the session, and not the one with no session")
+        assertEquals(400 * price.usd(opus, turn().counters)!!, total.usd, 1e-9)
     }
 }

@@ -17,9 +17,8 @@ package splice.diagnostics.doctor
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
 import splice.launch.install.InstallCommand
-import splice.launch.install.InstallRefused
+import splice.launch.install.InstallFailureText
 
 /** One fix's answer: [report] is the `doctor --json` text of the run taken AFTER the fix. */
 public sealed class DoctorFixOutcome {
@@ -41,15 +40,17 @@ public class DoctorFixes(private val doctor: DoctorCommand, private val env: Env
     // The verb's progress lines are its terminal output; what the console reads is the re-run.
     private val install = InstallCommand(TerminalOutput { }, TerminalOutput { })
 
-    public fun run(fix: DoctorFix): DoctorFixOutcome {
+    /** [answers] is the daemon's own (V4-230): the run after the fix reads the daemon from them, as
+     *  GET /api/doctor does. */
+    public fun run(fix: DoctorFix, answers: DaemonAnswers): DoctorFixOutcome {
         val (verb, ran) = when (fix) {
             DoctorFix.INSTALL_ALL ->
                 FIX_RELINK to Cancellables.runCatchingCleanup { install.install(INSTALL_ALL_ARG, env) }
         }
-        val after = doctor.collect(env)
+        val after = doctor.collect(env, answers = answers)
         val report = doctor.reportJson(after, env)
         val remaining = after.sections.flatMap { it.second }.count { it.fixId == fix }
-        val refusal = ran.exceptionOrNull()?.let(::refusalText)
+        val refusal = ran.exceptionOrNull()?.let(InstallFailureText::render)
             ?: "$verb ran, but $remaining doctor row(s) still call for it".takeIf { remaining > 0 }
         return if (refusal == null) {
             DoctorFixOutcome.Applied(fix, report)
@@ -57,11 +58,6 @@ public class DoctorFixes(private val doctor: DoctorCommand, private val env: Env
             DoctorFixOutcome.Refused(fix, refusal, report)
         }
     }
-
-    // InstallRefused is a sentence splice composed from paths, commands and head keys, printed by the
-    // CLI verbatim; anything else goes through the renderer that withholds quoted bytes.
-    private fun refusalText(failure: Throwable): String =
-        (failure as? InstallRefused)?.message ?: SafeFailureText.render(failure)
 }
 
 private const val INSTALL_ALL_ARG = "--all"

@@ -42,6 +42,9 @@ internal class AccountsMount(
     // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.
     private val keyRoutes = KeyRoutes(accountHeads, KeyStoreSource { ports.keys }, log)
 
+    /** The /api/auth body, for the daemon's own doctor (V4-230). */
+    suspend fun authJson(): String = authStatusRoutes.authJson()
+
     /** V4-132: EXPLICIT constant segments (login, switch, accounts/{label}) ahead of the `{action}`
      *  catch-all — Ktor's routing tree scores a literal segment over a parameter, so POST .../login
      *  wins over POST .../{action} regardless of registration order; pinned by a test rather than

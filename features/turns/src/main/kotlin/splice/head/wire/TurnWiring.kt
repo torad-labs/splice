@@ -39,7 +39,11 @@ internal class TurnWiring(
             // input+cache_read double-counts and the context bar/autocompact fire ~2x early (the
             // "compaction ate my quota" class).
             val cached = usage?.cachedTokens ?: 0
-            val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
+            // V4-248: the cache WRITE is its own bucket too (cache_creation_input_tokens), disjoint from
+            // input like the read. Folded into input_tokens it read as a cache that never writes, and
+            // the client priced the write as plain input. Zero on every wire that reports no write.
+            val written = usage?.cacheWriteTokens ?: 0
+            val nonCachedInput = ((usage?.inputTokens ?: 0) - cached - written).coerceAtLeast(0)
             // Per-model context windows are a PROXY concern. Claude Code fixes its window per PROCESS
             // (the launch env: the pinned row's window) for every id except a "[1m]" one, so another
             // row's real window can only be served from this side — by moving the numerator of the
@@ -73,7 +77,12 @@ internal class TurnWiring(
                 )
             }
             hud.buildUsagePayload(
-                TurnUsage(scale(nonCachedInput, scale), usage?.outputTokens ?: 0, 0, scale(cached, scale)),
+                TurnUsage(
+                    scale(nonCachedInput, scale),
+                    usage?.outputTokens ?: 0,
+                    scale(written, scale),
+                    scale(cached, scale),
+                ),
                 clientWindow,
             )
         }

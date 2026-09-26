@@ -7536,3 +7536,11 @@ title = "A per-key read never shows one key's data or failure under another key 
 files = ["console/src/pages/sessions/index.tsx", "console/src/entities/session/api/index.ts", "console/src/entities/session/model/store.ts", "console/src/entities/session/index.ts", "console/src/shared/lib/index.ts", "console/tests/session-edges.test.ts"]
 status = "todo"
 verify = "red first in vitest, quoted: open session A with a hand-off, then B whose edges read fails: B's panel prints A's hand-off; green: B's panel prints B's failure and no hand-off of A's; every per-key fetch named in the row has a disposition in the receipt, and each one marked unsafe gets its own red; console eslint, typecheck and vitest through the gate's console legs"
+
+[[items]]
+id = "V4-305"
+phase = "release"
+title = "Saving a knob in the global view says when it failed or was refused (5-day review, B shard silent-failure, 2026-09-26). saveGlobal is 'void applyConfigPatch(...).finally(...)' (settings/index.tsx:173-176), the shape V4-175 removed from the page's other writes (:226-228): a daemon that is down or answers non-2xx leaves an unhandled rejection and a spinner that clears as if saved, and a 200 whose PatchResult.rejected names the key (shared/api/index.ts:273; nothing in console/src reads .rejected) is dropped too, so a value the daemon refused reads as saved. Print both under the knob the way saveForHead prints its WriteResult: the key's refusal in the daemon's words, or the failed request's message"
+files = ["console/src/pages/settings/index.tsx", "console/tests/settings.test.ts"]
+status = "todo"
+verify = "red first in vitest, quoted: a global save whose PATCH rejects prints nothing; a 200 with rejected {key: reason} prints nothing; green: each prints the daemon's sentence under the knob and the spinner clears; console eslint, typecheck and vitest through the gate's console legs"

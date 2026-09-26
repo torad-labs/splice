@@ -631,6 +631,16 @@ origin.
   `launch shim not found at … (run install.sh)`. The CLI's add and the console's add now print the
   linker's own sentence, as `splice doctor`'s fix already did; any other failure is still withheld
   (V4-255).
+- **`splice add`'s passing checks say what the pass means.** A base URL that answered printed its
+  status beside the green tick, so a codex add read `✓ base url HTTP 403 from …`; it now reads
+  `reachable at …`. A provider that publishes no model list printed
+  `no model list on OPENAI_RESPONSES; 4 row(s) trusted`; it now reads
+  `4 models from splice's catalog; this provider publishes no list to check them against`
+  (V4-266, V4-267).
+- **`splice models` says why it could not ask for a list.** A provider whose list did not arrive
+  printed `could not be asked: failure (message withheld: it may quote file bytes)`. A list that does
+  not arrive within the 10-second budget, a TLS failure and a URL that does not parse now say so;
+  any other failure is still withheld (V4-268).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

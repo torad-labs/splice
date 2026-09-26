@@ -504,8 +504,9 @@ public enum class Knob(
         headOnly = true,
     ),
 
-    // V4-174: how many UTC days of trace files a traced head keeps; older day files are deleted on
-    // the first write of a new day. Today counts as one of the days.
+    // V4-174: how many UTC days of trace files a traced head keeps; a day file is deleted at the UTC
+    // midnight it leaves the window, or at the next start if the daemon was down (V4-273). Today
+    // counts as one of the days.
     TRACE_RETENTION_DAYS(
         "traceRetentionDays",
         KnobKind.NUMBER,

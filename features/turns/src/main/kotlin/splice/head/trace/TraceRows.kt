@@ -1,15 +1,15 @@
 // NEW: V4-174 — the read side of a head's trace files, for `splice trace`: the lines of every
 // retained day, parsed and grouped by turn, oldest first. Reads the SAME day files the daemon's
-// TraceStore writes (StatePaths.traceDir, `<head>-YYYY-MM-DD.jsonl`) through the same ActivityDays,
-// so the CLI needs no daemon — the perf/logs idiom — and can never disagree with the writer about
-// where a head's trace lives. A line this reader cannot place is counted, not fatal: a torn
-// append heals on the next write (JsonlSink) and the operator is told how many were skipped.
+// TraceStore writes (StatePaths.traceDir, `<head>-YYYY-MM-DD.jsonl`) through ActivityDays' own
+// DayFiles, so the CLI needs no daemon — the perf/logs idiom — and can never disagree with the
+// writer about where a head's trace lives. A line this reader cannot place is counted, not fatal:
+// a torn append heals on the next write (JsonlSink) and the operator is told how many were skipped.
 package splice.head.trace
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.storage.ActivityDays
+import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.head.wire.TraceKinds
@@ -32,13 +32,10 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
 
 internal data class TraceRead(val turns: List<TracedTurn>, val skippedLines: Int)
 
-/** Far past any retention a head is configured with: the reader shows everything on disk. */
-private const val EVERY_DAY_ON_DISK = 36_500
-
 internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = true }) {
 
-    /** The head's day store, over everything on disk (retention is the daemon's business). */
-    internal fun days(traceDir: Path, head: String): ActivityDays = ActivityDays(traceDir, head, EVERY_DAY_ON_DISK)
+    /** The head's day files, everything on disk (retention is the daemon's business, V4-273). */
+    internal fun days(traceDir: Path, head: String): DayFiles = DayFiles(traceDir, head)
 
     /** Every turn on disk for [head], oldest first; a turn's records may straddle a UTC midnight,
      *  which is why grouping happens over the whole read rather than per file. */

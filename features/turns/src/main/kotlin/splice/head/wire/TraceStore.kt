@@ -13,7 +13,7 @@
 //
 // DERIVED FROM ActivityDays, not a second file store: UTC day files, the AsyncFileIo lane (a trace
 // append never blocks the turn), JsonlSink's per-row fsync and cross-process lock, and the
-// retention sweep on the first write of a new day. One addition, the owner-only mode.
+// retention sweep at the store's open and at each UTC midnight. One addition, the owner-only mode.
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject

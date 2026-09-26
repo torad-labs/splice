@@ -1,7 +1,8 @@
 // NEW: V4-174 — the one addition the trace store made to ActivityDays: an owner-only mode whose
 // directory is 0700 from creation and re-asserted on every append (a directory the operator
 // recreated by hand is never left at the umask's default), plus `purge`, which deletes every day
-// file whatever its age and names what went. The plain mode is pinned unchanged beside it.
+// file whatever its age and names what went (DayFiles since V4-273: a purge has no window). The
+// plain mode is pinned unchanged beside it.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -72,7 +73,7 @@ class ActivityDaysOwnerOnlyTest {
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
         assertEquals(2, days.lines().count())
 
-        val gone = days.purge()
+        val gone = DayFiles(dir, "kimi").purge()
 
         assertEquals(
             listOf(dir.resolve("kimi-2026-09-18.jsonl"), dir.resolve("kimi-2026-09-19.jsonl")),
@@ -80,7 +81,7 @@ class ActivityDaysOwnerOnlyTest {
         )
         assertEquals(0, days.lines().count())
         assertTrue(Files.list(dir).use { it.toList() }.isEmpty(), "the lock siblings went with the files")
-        assertEquals(emptyList<Path>(), days.purge(), "a second purge has nothing to name")
+        assertEquals(emptyList<Path>(), DayFiles(dir, "kimi").purge(), "a second purge has nothing to name")
     }
 
     /** A umask of 077 would make the plain directory 0700 too; the plain-mode cell must not fail there. */

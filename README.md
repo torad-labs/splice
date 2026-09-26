@@ -332,7 +332,7 @@ does not name.
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.splice/state/activity/activity-<day>.jsonl` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works | Only you | Today (UTC) only: the next day's first label deletes the old day's file | `ActivityStore.kt` |
+| `~/.splice/state/activity/activity-<day>.jsonl` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works | Only you | Today (UTC) only: the day's file is deleted at UTC midnight, or at the next daemon start if splice was stopped | `ActivityStore.kt` |
 | `~/.splice/state/<head>-code-mode.json` | A Codex head's code mode: the model's scripts, tool calls with their arguments and results, script output and the model's reasoning summaries | Only you (0600) | Up to 24 hours per record, 128 records at most. The whole file goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml` | `CodexCodeModeStore.kt` |
 | `~/.splice/state/compactions/<head>/<hash>.json` | The answer of a finished compaction whose client hung up, kept so its retry gets the same bytes | Only you (0600) | Until the retry takes it, 2 hours at most: an expired one goes at the head's next save or the next daemon start, and a head removed from `splice.toml` loses the whole directory at the next start | `CompactionRecordings.kt` |
 | `~/.splice/logs/daemon.log` (and `daemon.log.1`) | The daemon's log. Most lines are about the daemon itself, but some quote short pieces of content: an upstream error body (up to 200 characters), a provider's failure message, a stream frame splice could not read, and the activity labels | Only you | Rotated at 64 MB, one older copy kept | `DaemonBoundary.kt` |
@@ -343,7 +343,7 @@ does not name.
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.splice/state/trace/<head>-<day>.jsonl` | With `trace = true` on a head: every request (credentials removed), each upstream body and response and every frame, which is the whole conversation | Only you | `traceRetentionDays` (default 7), swept on the first write of each new day; `splice trace <head> --purge` deletes all of it now, and the next daemon start deletes it once trace is off or the head leaves `splice.toml` | `HeadTraceStores.kt`, `TraceRows.kt` |
+| `~/.splice/state/trace/<head>-<day>.jsonl` | With `trace = true` on a head: every request (credentials removed), each upstream body and response and every frame, which is the whole conversation | Only you | `traceRetentionDays` (default 7): a day is deleted at the UTC midnight it leaves that window, or at the next daemon start if splice was stopped; `splice trace <head> --purge` deletes all of it now, and the next daemon start deletes it once trace is off or the head leaves `splice.toml` | `HeadTraceStores.kt` |
 | A copy of another head's transcript in `~/.claude-<head>/projects/` | With `isolate = ["projects"]` on a head: resuming a session another head started copies its whole transcript, and its subagent files, into this head's tree | Your umask | Until you delete it | `ResumeAcrossHeads.kt` |
 
 ### Credentials and keys
@@ -371,7 +371,7 @@ None of these holds session content.
 | `~/.splice/state/config.json` | Settings changed at runtime from the console | Only you (0600) | Until changed | `ConfigService.kt` |
 | `~/.splice/state/teams.json` (and `.bak`) | Your teams: their slots, heads, bound sessions and each slot's standing instructions | Only you (0600) | Kept; an archived team is flagged, not deleted. `.bak` is the version before the last write | `TeamStore.kt` |
 | `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily spend budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
-| `~/.splice/state/activity/edges-<day>.jsonl` | Which session sent a message to which, and when; never the message's text | Only you | `activityRetentionDays` (default 90) | `ActivityStore.kt` |
+| `~/.splice/state/activity/edges-<day>.jsonl` | Which session sent a message to which, and when; never the message's text | Only you | `activityRetentionDays` (default 90): a day is deleted at the UTC midnight it leaves that window, or at the next daemon start if splice was stopped | `ActivityStore.kt` |
 | `~/.splice/state/<head>-perf.jsonl` and `perf-archive/` | One row per turn: model, outcome, timings and token counts | Only you | Rolled at 64 MB into the archive, which keeps `perfArchiveRetentionDays` (default 90) | `PerfStats.kt` |
 | `~/.splice/<head>-compact-stats.jsonl` | Per request, a classifier's counts: tool count, prompt length, outcome | Only you | Rolled at 64 MB, one older copy kept | `Compact.kt` |
 | `~/.splice/state/<head>-session-totals.json` | Tokens and dollars per session, by model | Only you (0600) | A session idle 30 days is dropped; 256 sessions at most | `SessionTotals.kt` |

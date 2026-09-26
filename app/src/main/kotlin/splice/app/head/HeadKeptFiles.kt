@@ -10,8 +10,8 @@ package splice.app.head
 
 import splice.core.config.CODE_MODE_STATE_SUFFIX
 import splice.core.config.StatePaths
-import splice.core.storage.ActivityDays
 import splice.core.storage.DayFileStores
+import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -57,8 +57,7 @@ internal class HeadKeptFiles(private val statePaths: StatePaths, private val log
     }
 
     private fun dropTrace(key: String, why: String) {
-        // Retention is not read by purge, which deletes every day of the head whatever its age.
-        val days = ActivityDays(statePaths.traceDir, key, retentionDays = 1, ownerOnly = true).purge()
+        val days = DayFiles(statePaths.traceDir, key).purge()
         if (days.isNotEmpty()) log("[$key] ${days.size} trace day file(s) deleted: $why\n")
     }
 

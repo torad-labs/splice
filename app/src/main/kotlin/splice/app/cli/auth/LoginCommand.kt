@@ -5,6 +5,7 @@
 // (concentration HIGH, 2026-08-19). :app is wall-exempt for println.
 package splice.app.cli.auth
 
+import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
@@ -38,8 +39,9 @@ internal class LoginCommand(
     private val kimi = LoginKimi()
     private val muse = LoginMuse(output)
     private val cliSignIn = CliSignIn()
+    private val claudeLabel = ClaudeLoginLabel(output)
 
-    internal suspend fun login(headArg: String?, label: String? = null): Boolean {
+    internal suspend fun login(headArg: String?, label: String? = null, discard: Boolean = false): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
         val headKey = resolveHeadKey(headArg, topology) ?: return false
         val providerKey = topology.heads[headKey]?.provider
@@ -48,6 +50,15 @@ internal class LoginCommand(
             println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
             return false
         }
+        // V4-276: a Claude head signs in with Claude Code's own /login; --label saves or switches it.
+        return if (provider.auth.kind == CLIENT_AUTH_KIND) {
+            claudeLabel.login(headKey, topology, label, discard)
+        } else {
+            signIn(headKey, provider, topology, label)
+        }
+    }
+
+    private suspend fun signIn(headKey: String, provider: ProviderConfig, topology: Topology, label: String?): Boolean {
         val result = runLoginAttempt(headKey, provider, topology, label)
         if (!result.ok) println("splice: login for '$headKey' did not complete.")
         cliSignIn.writeLoginOutcome(headKey, result.ok, result.account)

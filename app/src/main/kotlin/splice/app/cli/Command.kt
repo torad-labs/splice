@@ -54,9 +54,11 @@ public sealed class Command {
         override fun run(): Int = outcomeExitCode(InstallWiring.command().uninstall(target, EnvReader(System::getenv)))
     }
 
-    /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind. */
-    public data class Login(val head: String?, val label: String? = null) : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head, label) })
+    /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind; on a
+     *  Claude head it saves or switches the head's login, and `--discard` lets a switch drop a login
+     *  saved under no label (V4-276). */
+    public data class Login(val head: String?, val label: String? = null, val discard: Boolean = false) : Command() {
+        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head, label, discard) })
     }
     public data object Setup : Command() {
         override fun run(): Int = outcomeExitCode(runBlocking { SetupCommand().setup() })

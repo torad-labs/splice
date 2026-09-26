@@ -127,9 +127,14 @@ internal class LaunchSpecFactory(
     internal fun headProjectsTrees(): List<Path> =
         topology.heads.map { (key, head) -> configDirOf(key, head.claude.configDir).resolve("projects") }
 
-    /** One head's CLAUDE_CONFIG_DIR: the declared path, else this tree's `~/.claude-<key>` default.
-     *  The kt-state-paths-single-source ignore on this file covers the one literal, and keeping it in
-     *  ONE member is what stops a second spelling appearing when a second caller needs it. */
-    private fun configDirOf(headKey: String, declared: String?): Path =
+    private fun configDirOf(headKey: String, declared: String?): Path = HeadConfigDirs.of(headKey, declared)
+}
+
+/** One head's CLAUDE_CONFIG_DIR: the declared path, else this tree's `~/.claude-<key>` default.
+ *  The kt-state-paths-single-source ignore on this file covers the one literal, and keeping it in
+ *  ONE member is what stops a second spelling appearing when a second caller needs it. V4-276: an
+ *  object, because `splice login <claude-head> --label` is that second caller and has no factory. */
+internal object HeadConfigDirs {
+    fun of(headKey: String, declared: String?): Path =
         Paths.get(TopologyLoader.expandHome(declared ?: "~/.claude-$headKey"))
 }

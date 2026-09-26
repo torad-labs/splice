@@ -23,6 +23,7 @@ internal fun interface CommandFactory {
 // per parse. A map keeps parse() at trivial complexity (no 10-arm `when`, which would trip
 // CyclomaticComplexMethod). The COMMANDS are the sealed type; this is just parsing.
 private const val LABEL_FLAG = "--label"
+private const val DISCARD_FLAG = "--discard"
 
 private val verbs: Map<String, CommandFactory> = mapOf(
     "doctor" to CommandFactory { a -> Command.Doctor(a.drop(1)) },
@@ -31,15 +32,21 @@ private val verbs: Map<String, CommandFactory> = mapOf(
     "init" to CommandFactory { Command.Init },
     "install" to CommandFactory { a -> Command.Install(a.getOrNull(1)) },
     "uninstall" to CommandFactory { a -> Command.Uninstall(a.getOrNull(1)) },
-    // `login <head> [--label <name>]` (v0.4.0, FEATURES.md §11): the value after the flag, wherever it sits.
+    // `login <head> [--label <name>] [--discard]` (v0.4.0, FEATURES.md §11): the value after the flag,
+    // wherever it sits. --discard (V4-276) takes no value and only means something with --label.
     "login" to CommandFactory { a ->
         val flag = a.indexOf(LABEL_FLAG)
         val label = if (flag > 0) a.getOrNull(flag + 1) else null
-        val positional = a.filterIndexed { i, _ -> i > 0 && (flag < 1 || i != flag && i != flag + 1) }
+        val discard = DISCARD_FLAG in a
+        val positional = a.filterIndexed { i, word ->
+            i > 0 && word != DISCARD_FLAG && (flag < 1 || i != flag && i != flag + 1)
+        }
         // A bare --label, a second --label or a second positional is a mistake, not an unlabeled
-        // login: the parse fails and usage prints, nothing is silently dropped.
-        val malformed = flag > 0 && label == null || a.count { it == LABEL_FLAG } > 1 || positional.size > 1
-        if (malformed) null else Command.Login(positional.firstOrNull(), label)
+        // login: the parse fails and usage prints, nothing is silently dropped. So is --discard
+        // without --label, or twice.
+        val malformed = flag > 0 && label == null || a.count { it == LABEL_FLAG } > 1 || positional.size > 1 ||
+            discard && (label == null || a.count { it == DISCARD_FLAG } > 1)
+        if (malformed) null else Command.Login(positional.firstOrNull(), label, discard)
     },
     "setup" to CommandFactory { Command.Setup },
     "add" to CommandFactory { a -> Command.Add(a.drop(1)) },

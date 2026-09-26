@@ -189,11 +189,11 @@ origin.
   /api/claude-head/unwrap` restores both. Every OTHER head's launch is protected too: LaunchService
   now plants the real absolute claude binary instead of the bare `"claude"` string whenever wrap is
   active, because every head shares one `claude`-on-PATH argv[0] and a wrapped `claude` would
-  otherwise resolve straight back to the shim mid-launch. Several of Claude Code's own
-  `.credentials.json` files can be stored under a label; the selected one materializes into
-  `claude-splice`'s config dir at session launch only — no mid-session switch, one login per head at
-  a time; splice never reads the bytes or calls Anthropic with them. `splice doctor` reports the
-  mode.
+  otherwise resolve straight back to the shim mid-launch. `splice login claude-splice --label
+  <name>` keeps several of Claude Code's own logins on `claude-splice` and switches between them,
+  only while no session of that head runs and only after saving the login it replaces (V4-276);
+  splice copies the credential file byte for byte, never reads it, and never calls Anthropic with
+  it. `splice doctor` reports the mode.
 - **Teams: sessions on different heads work one goal from one board (V4-131).** The console's
   Teams page composes a team: a name, a repo, a goal and role slots, each with a role, a head, an
   optional lead flag, its own instructions and a bound session or an open seat. From its next
@@ -711,6 +711,18 @@ origin.
   only day the Teams page reads them. The README's new section, What splice keeps on your disk, names
   each file splice writes, what it holds, who can read it and how long it stays, and a test fails the
   build when the code writes a file the section doesn't name (V4-258, V4-260, V4-261, V4-262).
+- **A launch no longer puts back a Claude login that was already refreshed away.** Every launch of
+  `claude-splice` copied the selected saved login over the head's live one. Claude Code's refresh
+  tokens are single-use, so the copy was stale after the first refresh, and signing in with it could
+  get the login revoked. A launch now never writes the head's credential file. `splice login
+  claude-splice --label <name>` is the only way a saved login goes back, under four rules: the login
+  it replaces is saved first under its own label, nothing changes while a session of the head runs
+  or while splice cannot tell, a login is filed only under the label of its own account (recorded by
+  id and email from the head's `.claude.json`, never a token), and anything splice cannot read stops
+  the switch with the head untouched. A copy that may have been refreshed away is never put back
+  until a live login re-saves it: one whose login left the head unsaved, through a `/login` to
+  another account or a `/logout`, and one saved before splice recorded accounts. `--discard` lets a
+  switch drop a login saved under no label (V4-237, V4-250, V4-276).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

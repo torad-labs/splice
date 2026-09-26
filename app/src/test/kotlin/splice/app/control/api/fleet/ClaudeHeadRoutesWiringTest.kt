@@ -37,7 +37,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.client.ClaudeConfigMaterializer
-import splice.client.ClaudeLogins
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
@@ -252,7 +251,6 @@ class ClaudeHeadRoutesWiringTest {
                 stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json")),
                 materializer = materializer,
             ),
-            claudeLogins = ClaudeLogins(storeDir = home.resolve("claude-logins")),
         )
     }
 }

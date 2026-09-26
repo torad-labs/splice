@@ -124,9 +124,11 @@ public class ClaudeHeadRoutes(
             // FEATURES.md 4.5: "the constraint ... is printed on the strip" — carried here rather
             // than on /api/auth, which ClientAuthProvider (generic to every client-auth head, not
             // Claude-specific) is the wrong layer for a Claude-only sentence; see FINAL REPORT.
+            // V4-276: a switch happens only through `splice login <head> --label`, never at launch.
             put(
                 "constraint",
-                "one login per Claude head at a time, chosen at session launch; no mid-session switch",
+                "one login per Claude head at a time; `splice login <head> --label <name>` saves or switches " +
+                    "it, only while no session of that head is running",
             )
         }
     }.toString()

@@ -183,7 +183,7 @@ If the daemon is already running, finish pending work before a full `splice rest
 
 ### Native Claude
 
-For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice. Claude Code signs in itself; its sign-in passes through splice to Anthropic untouched, and splice keeps a copy only of a login you save under a label (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)). Use Claude Code's own `/login` inside that head.
+For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice. Claude Code signs in itself; its sign-in passes through splice to Anthropic untouched, and splice keeps a copy only of a login you save under a label (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)). Use Claude Code's own `/login` inside that head; `splice login claude-splice --label <name>` keeps several logins and switches between them ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)).
 
 ### The billing word in Claude Code's header
 
@@ -313,6 +313,40 @@ and names the earliest reset across the pool. The status line, `splice status` a
 name the account a head or session is on and the last switch with its reason; the daemon log
 records each switch once under `[<head>]`.
 
+### More than one Claude login on `claude-splice`
+
+`claude-splice` signs in with Claude Code's own `/login`, and its config directory holds one login
+at a time. `splice login claude-splice --label <name>` keeps several:
+
+- **Save.** With a login the label has never seen, it saves the head's live login under `<name>`
+  and selects it. With the label the head already holds, it saves the newer copy over the old.
+- **Switch.** With another saved label, it first saves the head's live login under its own label,
+  then puts `<name>`'s copy in the head. The next session of `claude-splice` signs in with it.
+- **Add an account.** With a new label while the head's login is already saved under another, it
+  saves that one and signs the head out. Start `claude-splice`, `/login` with the new account,
+  exit, and run the same command again.
+
+Claude Code's refresh tokens are single-use: each refresh replaces the one before, and signing
+in with a superseded one can revoke the login. So a launch never copies a saved login into the
+head, and `splice login` changes the head's login only under four rules:
+
+1. **Save before switching.** The login being replaced is saved under its own label first, so
+   every saved copy is its account's newest. If that save fails, nothing is switched.
+2. **Never under a running session.** While any session of `claude-splice` runs, or while splice
+   cannot tell, it changes nothing and names the session.
+3. **Filed by account.** Each label records its account's id and email from the head's
+   `.claude.json`, never a token; splice copies the credential file and never reads it. A login
+   is filed only under the label of its own account. A `/login` to another account inside the head
+   is refused under the selected label, naming both accounts: save it under a new label, or add
+   `--discard` to a switch to drop it.
+4. **Fail closed.** If splice cannot read whose login the head holds, it changes nothing.
+
+A saved copy that may be older than its account's last refresh is never put back. That covers a
+label whose login left the head without being saved first (a `/login` to another account, or a
+`/logout`), and a copy saved before splice recorded accounts. Re-save it from a live login: sign in
+to that account with `/login` in `claude-splice`, then run `splice login claude-splice --label
+<name>`.
+
 ## What splice keeps on your disk
 
 Everything splice writes stays on your machine, under your user account; nothing below is sent
@@ -358,7 +392,7 @@ Each of these is password-equivalent. See [credential locations](#credential-loc
 | `~/.splice/state/mgmt-key` | The management key that opens the control plane | Only you (0600) | Kept; replaced only when missing or unreadable | `MgmtKey.kt` |
 | `~/.splice/state/turn-auth-header` | A launched session's turn key, derived one way from the management key | Only you (0600) | Rewritten when the management key changes | `TurnKey.kt` |
 | `~/.splice/state/dashboard-open.html` | The page `splice dashboard` opens; its link carries the management key | Only you (0600) | Replaced by each `splice dashboard` | `DashboardCommand.kt` |
-| `~/.splice/state/claude-logins/<label>.credentials.json` and `selected` | Claude Code logins saved under a label, and which one is selected. At launch the selected one is copied into `claude-splice`'s config directory as `.credentials.json` | Only you (0600) | Until removed | `ClaudeLogins.kt` |
+| `~/.splice/state/claude-logins/<label>.credentials.json`, `<label>.account.json` and `selected` | Claude Code logins saved with `splice login claude-splice --label`: a byte-for-byte copy of the head's `.credentials.json`, a record of its account's id and email (never a token), and the label the head holds now | Only you (0600) | Until removed | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
 | `<credential file>.lock` and `.login-locks/<label>.lock` | Empty files that keep two refreshes or two labelled sign-ins from overlapping | Your umask | Never removed; always empty | `CredentialLock.kt`, `OAuthLoginReservation.kt` |
 
 ### Settings and statistics
@@ -387,6 +421,7 @@ None of these holds session content.
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
 | `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
+| `~/.claude-claude-splice/.credentials.json`, and the account in its `.claude.json` | Written by `splice login claude-splice --label <name>` only when it switches the head to a saved login: the saved copy, and its account's id and email. Adding an account signs the head out, which deletes the file. Claude Code writes both itself on `/login` | Only you (0600) | Until the next switch, `/login` or `/logout` | `ClaudeLogins.kt`, `ClaudeLoginFiles.kt` |
 | Links in `~/.claude-<head>/` to `~/.claude/` | The config a head shares: agents, commands, skills, hooks, plugins, `CLAUDE.md`, and, when shared, `sessions` and `projects`, whose existing files are merged into `~/.claude` the first time | Links only | Until you change what the head shares | `ClaudeConfigMaterializer.kt`, `SessionRegistryLink.kt`, `ProjectsLink.kt` |
 | `~/.claude-<head>/splice-*-hook.sh` | The sign-in, key-capture and resume hook scripts. They hold the daemon's local address and a path to the turn key's file, never a key | Only you (0700) | Rewritten at each launch | `HookScriptFiles.kt` |
 | `~/.claude-<head>/commands/login.md`, and links to your own commands | The head's `/login` command | Only you (0600) | Rewritten at each launch | `HeadCommandsDir.kt` |

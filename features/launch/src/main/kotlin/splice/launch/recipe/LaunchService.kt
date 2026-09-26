@@ -13,7 +13,6 @@
 package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
-import splice.client.ClaudeLogins
 import splice.client.MaterializeSpec
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.ResumeAcrossHeads
@@ -57,12 +56,6 @@ public class LaunchService(
      *  until wrap is used, at which point it reads null exactly like today. Read PER LAUNCH, never
      *  cached — wrap/unwrap can flip between two requests. */
     private val wrapState: WrapStateRead = wrap,
-    /** V4-129 (FEATURES.md 4.5): the splice-owned Claude head's selected login, materialized into its
-     *  own config dir right before this launch's materialize() — launch-time selection, no mid-
-     *  session switch. Gated on [LaunchSpec.forwardClientAuth] (the STRUCTURAL client-auth signal
-     *  this file already uses elsewhere, never a hardcoded head-key string): every other head is a
-     *  silent no-op, unchanged. */
-    private val claudeLogins: ClaudeLogins = ClaudeLogins(),
 ) {
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
@@ -107,11 +100,11 @@ public class LaunchService(
             headKey = effective.headKey,
         )
         if (wrapped != null) wrapped.materialize(materialize) else materializer.materialize(materialize)
-        // V4-129 (FEATURES.md 4.5): AFTER materialize (so the config dir exists) and BEFORE the
-        // client ever reads it. A no-op on every head but the splice-owned Claude one — see
-        // [claudeLogins]'s KDoc for the gate — and "never on a wrapped default head": through the
-        // wrap the dir is the operator's own ~/.claude, whose credential IS their login.
-        if (effective.forwardClientAuth && wrapped == null) claudeLogins.materializeSelected(effective.trees.own)
+        // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
+        // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
+        // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
+        // Claude Code's own; `splice login <claude-head> --label` (ClaudeLogins.login) is the one
+        // place a stored login is put back, with the head idle and the live one saved first.
         // V4-115 AFTER the materialize, never before: the materializer is what guarantees
         // <configDir>/projects is a REAL head-owned directory (ProjectsLink un-links one an earlier
         // launch pointed elsewhere). Copying first would write through the very link this row removes.

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudeLogins
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig
@@ -13,6 +14,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.oauth.SignInPersistence
 import splice.oauth.kimi.LoginKimi
+import splice.sessions.registry.ProcessEnvironment
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -184,6 +186,104 @@ class LoginCommandTest {
         assertEquals("claude-muse--", head.discoveryPrefix)
         assertEquals(null, head.models)
         muse.catalogFor(head)
+    }
+
+    // ---- V4-276: `splice login <claude-head> --label`, end to end over the real session registry ----
+
+    /** The Claude head runs over [configDir]; claudex, another head of the same provider, on 3105. */
+    private fun claudeHeads(configDir: Path): Topology = TopologyLoader.parse(
+        """
+        [daemon]
+        control_port = 3096
+
+        [providers.anthropic]
+        dialect = "anthropic-passthrough"
+        base_url = "https://api.anthropic.com"
+        auth = { kind = "client" }
+
+        [[providers.anthropic.models]]
+        id = "claude-opus-5-5"
+        label = "Claude Opus 5.5"
+        context_window = 1000000
+
+        [heads.claude-splice]
+        provider = "anthropic"
+        port = 3104
+        discovery_prefix = "claude-splice--"
+        pinned_model = "claude-opus-5-5"
+
+        [heads.claude-splice.claude]
+        config_dir = "$configDir"
+
+        [heads.claudex]
+        provider = "anthropic"
+        port = 3105
+        discovery_prefix = "claudex--"
+        pinned_model = "claude-opus-5-5"
+        """.trimIndent(),
+    )
+
+    /** A running Claude Code session named [name], registered the way Claude Code registers one, whose
+     *  environment (read through a fake /proc) points it at the head on [port]. The pid is this test's
+     *  own, so the registry finds it alive. */
+    private fun session(tmp: Path, name: String, port: Int) {
+        val pid = ProcessHandle.current().pid()
+        val sessions = Files.createDirectories(tmp.resolve("sessions"))
+        // No updatedAt: the registry reads it STALE, alive but quiet, which still counts as running.
+        Files.writeString(
+            sessions.resolve("$pid.json"),
+            """{"pid":$pid,"sessionId":"s-1","name":"$name","kind":"interactive"}""",
+        )
+        val proc = Files.createDirectories(tmp.resolve("proc").resolve(pid.toString()))
+        Files.writeString(proc.resolve("environ"), "SPLICE=1\u0000ANTHROPIC_BASE_URL=http://127.0.0.1:$port\u0000")
+    }
+
+    private fun claudeLabel(tmp: Path, lines: MutableList<String>) = ClaudeLoginLabel(
+        output = { lines += it },
+        logins = ClaudeLogins(storeDir = tmp.resolve("store")),
+        sessionsDir = tmp.resolve("sessions"),
+        processes = ProcessEnvironment(procRoot = tmp.resolve("proc")),
+    )
+
+    private fun signedIn(tmp: Path): Path {
+        val configDir = Files.createDirectories(tmp.resolve("claude-splice"))
+        Files.writeString(configDir.resolve(".credentials.json"), "A-gen1")
+        Files.writeString(
+            configDir.resolve(".claude.json"),
+            """{"oauthAccount":{"accountUuid":"uuid-a","emailAddress":"a@example.com"}}""",
+        )
+        return configDir
+    }
+
+    @Test
+    fun `splice login on the Claude head saves its live login under the label and selects it - V4-276`(
+        @TempDir tmp: Path,
+    ) {
+        val configDir = signedIn(tmp)
+        session(tmp, "a claudex session", port = 3105) // another head's session is not this head's
+        val lines = mutableListOf<String>()
+
+        val ok = claudeLabel(tmp, lines).login("claude-splice", claudeHeads(configDir), "work", discard = false)
+
+        assertTrue(ok, "$lines")
+        assertEquals("A-gen1", Files.readString(tmp.resolve("store/work.credentials.json")))
+        assertEquals("work", ClaudeLogins(storeDir = tmp.resolve("store")).selected())
+        assertTrue(lines.single().contains("'work'"), "$lines")
+    }
+
+    @Test
+    fun `splice login on the Claude head refuses while one of its sessions runs, naming it - V4-276`(
+        @TempDir tmp: Path,
+    ) {
+        val configDir = signedIn(tmp)
+        session(tmp, "fix the parser", port = 3104)
+        val lines = mutableListOf<String>()
+
+        val ok = claudeLabel(tmp, lines).login("claude-splice", claudeHeads(configDir), "work", discard = false)
+
+        assertFalse(ok)
+        assertTrue(lines.single().contains("'fix the parser'"), "$lines")
+        assertFalse(Files.exists(tmp.resolve("store/work.credentials.json")), "nothing was saved")
     }
 }
 

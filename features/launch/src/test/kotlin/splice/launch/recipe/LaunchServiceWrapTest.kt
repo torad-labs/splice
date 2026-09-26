@@ -1,9 +1,9 @@
 // NEW: V4-129 — LaunchService's two new seams. (1) argv[0] must plant the real absolute claude
 // binary instead of the bare string whenever wrap is active — the self-exec hazard is not specific
 // to the wrapped head, it is EVERY head's launch, because they all share the one LaunchService
-// instance and the one bare "claude" default. (2) the splice-owned Claude head's selected login
-// materializes into its OWN config dir at launch, gated on forwardClientAuth (never a hardcoded
-// head-key string) so every other head stays a no-op.
+// instance and the one bare "claude" default. (2) V4-276 (V4-237, V4-250): a launch never writes a
+// head's .credentials.json. V4-129 materialized the selected stored login here, and the rotated
+// refresh token it put back got the login revoked; the pins below keep the live login byte for byte.
 package splice.launch.recipe
 
 import kotlinx.serialization.json.buildJsonObject
@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.client.ClaudeConfigMaterializer
-import splice.client.ClaudeLogins
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapState
 import splice.client.wrap.WrapStateRead
@@ -71,20 +70,16 @@ class LaunchServiceWrapTest {
         )
     }
 
+    // V4-250's verify line: the head's live login is newer than any stored copy, and a launch keeps it.
     @Test
-    fun `the selected Claude login materializes into the client-auth head's own config dir at launch`() {
-        val logins = ClaudeLogins(storeDir = tmp.resolve("claude-logins"))
-        val source = tmp.resolve("source-session").createDirectories()
-        source.resolve(".credentials.json").writeText("""{"accessToken":"the-selected-one"}""")
-        logins.store("work", source)
-        logins.select("work")
+    fun `a launch keeps the client-auth head's live login byte for byte - V4-250`() {
+        val live = tmp.resolve(".claude-claude-splice").createDirectories().resolve(".credentials.json")
+        live.writeText("max-gen2-newer")
 
-        val service = LaunchService(ClaudeConfigMaterializer(tmp), claudeLogins = logins)
+        val service = LaunchService(ClaudeConfigMaterializer(tmp))
         service.launch(spec("claude-splice", forwardClientAuth = true), emptyList(), dangerouslySkipPermissions = false)
 
-        val materialized = tmp.resolve(".claude-claude-splice/.credentials.json")
-        assertTrue(materialized.exists())
-        assertEquals("""{"accessToken":"the-selected-one"}""", materialized.readText())
+        assertEquals("max-gen2-newer", live.readText())
     }
 
     /** V4-129 review. A launch THROUGH the wrapped `claude` runs the client-auth claude-splice head
@@ -94,18 +89,12 @@ class LaunchServiceWrapTest {
     @Test
     fun `a launch through the wrapped claude runs over the vanilla dir and never writes a login into it`() {
         val home = tmp.resolve("wrapped-home").createDirectories()
-        val logins = ClaudeLogins(storeDir = tmp.resolve("claude-logins-wrapped"))
-        val source = tmp.resolve("source-session-wrapped").createDirectories()
-        source.resolve(".credentials.json").writeText("""{"accessToken":"a-splice-stored-login"}""")
-        logins.store("work", source)
-        logins.select("work")
         val stateStore = WrapStateStore(file = tmp.resolve("wrapped-state/claude-head-wrap.json"))
         stateStore.write(WrapState("/opt/claude/2.1.281", "/opt/claude/2.1.281", "/share/splice-launch", "", "", 0L))
         val materializer = ClaudeConfigMaterializer(home)
         val service = LaunchService(
             materializer,
             wrap = WrappedHead(home, stateStore = stateStore, materializer = materializer),
-            claudeLogins = logins,
         )
         val through = service.wrap.launchThrough("claude") ?: error("a wrap state is present: claude must resolve")
 
@@ -130,14 +119,8 @@ class LaunchServiceWrapTest {
     }
 
     @Test
-    fun `a head that forwards no client auth never gets a login materialized`() {
-        val logins = ClaudeLogins(storeDir = tmp.resolve("claude-logins-2"))
-        val source = tmp.resolve("source-session-2").createDirectories()
-        source.resolve(".credentials.json").writeText("""{"accessToken":"should-not-leak"}""")
-        logins.store("work", source)
-        logins.select("work")
-
-        val service = LaunchService(ClaudeConfigMaterializer(tmp), claudeLogins = logins)
+    fun `a head that forwards no client auth never gets a login written`() {
+        val service = LaunchService(ClaudeConfigMaterializer(tmp))
         service.launch(spec("claudex", forwardClientAuth = false), emptyList(), dangerouslySkipPermissions = false)
 
         assertFalse(

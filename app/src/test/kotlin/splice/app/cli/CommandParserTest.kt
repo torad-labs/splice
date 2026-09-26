@@ -21,6 +21,19 @@ class CommandParserTest {
         assertEquals(null, parser.parse(arrayOf("login", "claudex", "extra")), "a second word is refused")
     }
 
+    // V4-276: --discard lets a switch of the Claude head drop a login saved under no label. It is a
+    // flag, never the head, and it means nothing without --label.
+    @Test
+    fun `login carries --discard beside a label, and refuses it alone or twice - V4-276`() {
+        val switch = arrayOf("login", "claude-splice", "--label", "work", "--discard")
+        assertEquals(Command.Login("claude-splice", "work", discard = true), parser.parse(switch))
+        val first = arrayOf("login", "--discard", "claude-splice", "--label", "work")
+        assertEquals(Command.Login("claude-splice", "work", discard = true), parser.parse(first))
+        assertEquals(null, parser.parse(arrayOf("login", "claude-splice", "--discard")), "--discard needs --label")
+        val twice = arrayOf("login", "claude-splice", "--label", "work", "--discard", "--discard")
+        assertEquals(null, parser.parse(twice), "a second --discard is refused")
+    }
+
     // JW-08: `splice logs` is the answer to every remediation that used to end at "daemon.log", a
     // path in a directory doctor printed wrongly for years. LogsCommandTest drives the command
     // object directly, so it stays green even if the VERB is removed from the parse table and the

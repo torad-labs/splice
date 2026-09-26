@@ -7891,6 +7891,7 @@ claimed_by = "console"
 claimed_at = "2026-09-26T19:03:37.909Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T19:03:37Z
 # [2026-09-26] amend by=orchestrator: files were ["features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt"]
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4-324-green -- :features-sessions:detekt :features-sessions:test; cd console && tsc -b && eslint && vitest run (79 files); bun tools/gate rules; bun .dev/restructure/census.ts" exit=0 tests=1613 touched=features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt,features/sessions/src/test/kotlin/splice/sessions/list/SessionsCommandTest.kt,features/sessions/src/test/resources/splice/sessions/list/send-targets.json,console/src/pages/sessions/strip.tsx,console/tests/sessions.test.ts,.dev/restructure/capabilities.tsv tail="c04df; red: CLI printed SendMessage(to=\"build \") for 'build 🚀' (fixture case 0); console kept lone surrogates (cases 4, 5: a\\ufffdb, and no socket fallback); green: SessionsCommandTest 7/7, features-sessions 80, detekt clean, console 1533/1533, rules 75/75, census 0; mutants Kotlin 3/3 (UTF-16 filter, lone surrogate kept, fixture changed), console 3/3 (no Cs, no Cc, fixture changed), all restored"
 
 [[items]]
 id = "V4-325"

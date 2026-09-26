@@ -7833,8 +7833,11 @@ id = "V4-321"
 phase = "release"
 title = "Message a session within FEATURES.md:328's boundary: the session detail gives the copyable SendMessage call, and splice writes to no client socket (V4-247)"
 files = [".dev/campaigns/web-console/FEATURES.md"]
-status = "todo"
+status = "in_flight"
 verify = "FEATURES.md:328 marks the copyable SendMessage instruction 'have': first show where the console already prints it (file:line and a render), or build it on the session detail with Copy; no daemon route, no socket write; console files named at claim"
+claimed_by = "console"
+claimed_at = "2026-09-26T18:31:35.492Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T18:31:35Z
 
 [[items]]
 id = "V4-322"

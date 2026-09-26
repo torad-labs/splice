@@ -6947,8 +6947,11 @@ id = "V4-260"
 phase = "release"
 title = "PRIVACY: kept files go when their promise ends (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). An expired compaction answer is swept only inside that head's next save (CompactionRecordings.kt:52, :87-91), code-mode state stays when its head is removed or code mode is turned off (CodexCodeModeRegistry.kt:24-29), and trace files stay after trace is turned off. Sweep all three at head start and on removal."
 files = ["features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first, one test per store: an expired recording, a removed head's code-mode state and a trace file after trace is off are each gone after the next head start or the removal; CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T06:12:28.947Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T06:12:28Z
 
 [[items]]
 id = "V4-261"

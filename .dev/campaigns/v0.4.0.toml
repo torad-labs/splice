@@ -7640,6 +7640,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T13:49:44.269Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T13:49:44Z
 # [2026-09-26] amend by=orchestrator: files were ["features/turns/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt"]
+# [2026-09-26] ROOT CAUSE (claude-builder, from the failing run's own log v4-293-green.log:138-139): 'pthread_create failed (EAGAIN)' under buildgate's TasksMax=512 (~/.local/bin/buildgate:407, hostshield MANIFEST:36); MidStreamTearContinuesTest.kt:137 starts a platform Thread per connection outside the catch, so the OOME kills the accept thread and the accepted socket is never read or closed (UPSTREAM REQUESTS 0, the 60 s request timeout). A harness defect CI cannot see (no buildgate). SCOPE (orchestrator): the class is fixed, not the instance: the two siblings with the same shape join the fence (UpstreamClientWriteStallTest.kt:285 thread start outside the catch; TurnPathProbeLoopTest.kt:43 socket leaked open). Fix: a prestarted serve pool, a failed dispatch closes the socket and is recorded, stop() shuts the pool down. The verify line's load is native-thread pressure (a hog holding the scope at its ceiling), not CPU/fd
 
 [[items]]
 id = "V4-308"

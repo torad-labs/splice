@@ -107,8 +107,13 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
     private fun shownName(s: SessionRecord): String? = s.name?.let(::clean)?.takeIf { it.isNotBlank() }
 
     /** Registry text is Claude Code's, not ours: no control, format or unprintable character (C0,
-     *  C1, DEL, and the Unicode Cc/Cf/Zl/Zp classes) reaches the terminal, wherever it is printed. */
-    private fun clean(text: String): String = text.filter { Character.getType(it) !in UNPRINTABLE }
+     *  C1, DEL, and the Unicode Cc/Cf/Zl/Zp classes) reaches the terminal, wherever it is printed. Read
+     *  by CODE POINT (V4-324): an emoji is two UTF-16 units and one printable character, and filtering
+     *  units dropped both halves of it, so `build 🚀` was offered as a SendMessage to `build `. Only a
+     *  surrogate standing alone is still SURROGATE here, and it goes. */
+    private fun clean(text: String): String = buildString {
+        text.codePoints().filter { Character.getType(it) !in UNPRINTABLE }.forEach { appendCodePoint(it) }
+    }
 
     private fun quoted(name: String): String = name.replace("\\", "\\\\").replace("\"", "\\\"")
 

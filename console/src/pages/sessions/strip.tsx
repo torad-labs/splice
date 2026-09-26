@@ -182,9 +182,10 @@ export function toneOf(row: SessionRow): Tone {
 }
 
 /** What the registry's text may not carry into a pasted call: control, format, separator, unassigned
- *  and private-use characters, as SessionsCommand.clean drops them. By code point, so a name's emoji
- *  stays whole (the CLI filters UTF-16 units and would drop both halves of one). */
-const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cn}\p{Co}]/gu;
+ *  and private-use characters, and a surrogate standing alone, as SessionsCommand.clean drops them. By
+ *  code point on both sides (V4-324), so a name's emoji stays whole; the two are held to one fixture,
+ *  send-targets.json. */
+const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cn}\p{Co}\p{Cs}]/gu;
 
 /** The SendMessage call that reaches [row] from another session (V4-321), as `splice sessions` prints
  *  it (SessionsCommand.sendLine): live sessions only, since a stale one may never answer; its name when

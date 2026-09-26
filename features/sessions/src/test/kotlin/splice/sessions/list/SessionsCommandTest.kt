@@ -2,6 +2,12 @@ package splice.sessions.list
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -114,6 +120,37 @@ class SessionsCommandTest {
         val socketLine = "SendMessage(to=\"uds:/run/x/31m\\\"q\\\\32.sock\")  "
         assertTrue(out.contains(socketLine), "the socket is cleaned and escaped inside the syntax: $out")
         assertTrue(out.contains("# uds:/run/x/31m\"q\\32.sock"), "the comment shows the cleaned socket: $out")
+    }
+
+    /** V4-324: this send line and the console's copy key (strip.tsx sendCall) are held to ONE fixture
+     *  file, so a name that reaches a session from the terminal reaches it from the console too: an
+     *  emoji stays whole, a lone surrogate and every control or format character go. */
+    @Test
+    fun `the send line is the console's call on the shared fixtures - V4-324`(@TempDir dir: Path) {
+        val fixture = checkNotNull(javaClass.getResource("send-targets.json")) { "send-targets.json" }.readText()
+        val cases = Json.parseToJsonElement(fixture).jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
+        cases.forEachIndexed { at, case ->
+            val sessions = Files.createDirectories(dir.resolve("case-$at"))
+            val registration = buildJsonObject {
+                put("pid", 50 + at)
+                put("updatedAt", now)
+                case["name"]?.jsonPrimitive?.contentOrNull?.let { put("name", it) }
+                case["socket"]?.jsonPrimitive?.contentOrNull?.let { put("messagingSocketPath", it) }
+            }
+            // Claude Code writes the registry with node's JSON.stringify, which escapes a surrogate that
+            // stands alone; one could not be written as UTF-8 at all. Every half is escaped here, and an
+            // escaped pair still decodes to its one character.
+            val text = registration.toString().map { if (it.isSurrogate()) "\\u%04x".format(it.code) else "$it" }
+            Files.writeString(sessions.resolve("${50 + at}.json"), text.joinToString(""))
+            val registry = SessionRegistry(sessions, { SessionRoute.Unknown }, pidAlive = { true }, clock = { now })
+            val out = capture { sessionsCommand().sessions({ null }, registry) { now } }
+            val call = case["call"]?.jsonPrimitive?.contentOrNull
+            if (call == null) {
+                assertFalse(out.contains("SendMessage("), "case $at gives no call: $out")
+            } else {
+                assertTrue(out.contains(call), "case $at: $call in $out")
+            }
+        }
     }
 
     // The row is this JVM, whose route is its own environment's: a splice launch (SPLICE=1) cannot be

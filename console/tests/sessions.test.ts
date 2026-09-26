@@ -12,6 +12,9 @@
 // The boards take their payload as a prop rather than reading the store here,
 // because a static render sees a zustand store's INITIAL state and never its
 // current one; the store-reading default exports are the page the shell mounts.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -481,6 +484,15 @@ describe('a live session gives the SendMessage call that reaches it (V4-321)', (
 
   test("a name is quoted as the CLI quotes it, and the registry's unprintable characters are dropped", () => {
     expect(sendCall(session({ name: 'a"b\\c\u0007' }))).toBe('SendMessage(to="a\\"b\\\\c")');
+  });
+
+  // V4-324: `splice sessions` prints the same call from the same registration. ONE fixture holds both
+  // to it (SessionsCommandTest reads this file too), so an emoji, a lone surrogate or a control character
+  // cannot reach a session from the terminal and not from here, or the other way round.
+  const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'features/sessions/src/test/resources/splice/sessions/list/send-targets.json');
+  const cases = (JSON.parse(readFileSync(fixture, 'utf8')) as { cases: { name: string | null; socket: string | null; call: string | null }[] }).cases;
+  test.each(cases.map((sent, at) => [at, sent] as const))('shared fixture case %i gives the call the CLI prints', (_, sent) => {
+    expect(sendCall(session({ name: sent.name, address: sent.socket === null ? null : `uds:${sent.socket}` }))).toBe(sent.call);
   });
 
   test("the opened session's detail prints the call beside a copy key, and a stale one says it is not live", () => {

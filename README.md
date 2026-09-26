@@ -152,6 +152,8 @@ splice setup                      # write the supported API-key starter and inst
 claude-openrouter                          # Claude Code through OpenRouter on loopback (:3101)
 ```
 
+Any OpenRouter model works, not only the curated ones: add a `[[providers.openrouter.models]]` row with its OpenRouter `id` to `~/.config/splice/splice.toml`, shaped like the ten in [`splice.example.toml`](app/src/main/resources/splice.example.toml), and add the id to the head's `models` list if it declares one, then `splice restart`. Or run `splice add-model` to pick from the curated list.
+
 No export handy? There are two other ways to get the key in — both land in
 `~/.config/splice/keys.toml` (0600), which every later daemon start reads from any shell:
 

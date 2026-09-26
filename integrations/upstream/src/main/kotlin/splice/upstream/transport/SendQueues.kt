@@ -8,6 +8,8 @@
 package splice.upstream.transport
 
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.net.Socket
@@ -125,23 +127,53 @@ internal class SendQueueTable(private val unacked: Map<SocketKey, Long>) {
  * Linux's table, /proc/net/tcp and /proc/net/tcp6: `tx_queue` there is `write_seq - snd_una`, the bytes
  * written that the peer has not acknowledged. Anywhere else (macOS) neither file exists and [read] says
  * null: the watch then bounds the write call alone, as V4-272 did, and never guesses at the kernel.
+ *
+ * V4-292: a table present but unreadable listed nothing and said nothing, so every watched socket fell
+ * back to the write call alone while the boot line said the acknowledged bytes bound it. [read] now says
+ * null when no table read, as when none exists, and [log] hears once when a table stops reading, with
+ * its cause, and once when it reads again.
  */
-internal object ProcNetTcp : SendQueues {
-    private val tables = listOf(Path.of("/proc/net/tcp"), Path.of("/proc/net/tcp6"))
+internal class ProcNetTcp(
+    private val log: LogSink,
+    private val tables: List<Path> = LINUX_TABLES,
+) : SendQueues {
     private val whitespace = Regex("\\s+")
 
+    /** Whether each table read at its last try; a table not yet tried is absent. */
+    private val reading = ConcurrentHashMap<Path, Boolean>()
+
     override fun read(): SendQueueTable? {
-        val readable = tables.filter(Files::isReadable)
-        if (readable.isEmpty()) return null
+        val present = tables.filter(Files::isReadable)
+        if (present.isEmpty()) return null
         val unacked = HashMap<SocketKey, Long>()
-        readable.forEach { table ->
-            val lines = Cancellables.runCatchingCancellable { Files.readAllLines(table) }
-            lines.getOrElse {
-                Cancellables.discard(lines, "a table that cannot be read this tick lists nothing; the next reads it")
-                emptyList()
-            }.drop(1).forEach { line -> row(line)?.let { (key, queued) -> unacked[key] = queued } }
+        val read = present.count { table ->
+            Cancellables.runCatchingCancellable { Files.readAllLines(table) }.fold(
+                onSuccess = { lines ->
+                    noted(table, failure = null)
+                    lines.drop(1).forEach { line -> row(line)?.let { (key, queued) -> unacked[key] = queued } }
+                    true
+                },
+                onFailure = { failure ->
+                    noted(table, failure)
+                    false
+                },
+            )
         }
-        return SendQueueTable(unacked)
+        return if (read == 0) null else SendQueueTable(unacked)
+    }
+
+    /** Logs [table] stopping, with [failure], when it read at its last try or was never tried, and its
+     *  reading again when it did not; a table that keeps reading, or keeps failing, says nothing more. */
+    private fun noted(table: Path, failure: Throwable?) {
+        val readBefore = reading.put(table, failure == null)
+        if (failure != null && readBefore != false) {
+            log(
+                "[upstream] $table could not be read (${SafeFailureText.render(failure)}); a request on a socket " +
+                    "it lists is cut only while its write waits in the kernel, until it reads again (V4-292)\n",
+            )
+        } else if (failure == null && readBefore == false) {
+            log("[upstream] $table reads again; a request the upstream stops acknowledging is cut again (V4-292)\n")
+        }
     }
 
     /** `sl local_address rem_address st tx_queue:rx_queue ...`, addresses in hex words of host byte order. */
@@ -164,6 +196,9 @@ internal object ProcNetTcp : SendQueues {
         return SocketKeys.end(bytes.array(), port)
     }
 }
+
+// why: Linux's send-queue tables, IPv4 and IPv6 (Documentation/networking/proc_net_tcp.rst).
+private val LINUX_TABLES = listOf(Path.of("/proc/net/tcp"), Path.of("/proc/net/tcp6"))
 
 // why: the columns of /proc/net/tcp{,6} (Documentation/networking/proc_net_tcp.rst), counted from 0.
 private const val LOCAL_FIELD = 1

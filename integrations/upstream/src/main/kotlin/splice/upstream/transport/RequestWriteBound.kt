@@ -94,9 +94,10 @@ internal class RequestWriteBound(
 }
 
 /**
- * The one ticker every client's watched requests share, so the kernel's table is read once a tick for
- * all of them and only while one is watched. Its thread is a named virtual one; a tick that fails is the
- * next tick's to redo, never the end of the ticker.
+ * The one ticker every client's watched requests share, so each client's table is read once a tick for
+ * all of its requests (V4-292: each client reads through its own [ProcNetTcp], which logs to its log) and
+ * only while one is watched. Its thread is a named virtual one; a tick that fails is the next tick's to
+ * redo, never the end of the ticker.
  */
 internal class StallWatch(private val tickMs: Long) {
     private val watched: MutableSet<WatchedWrite> = ConcurrentHashMap.newKeySet()
@@ -176,5 +177,5 @@ internal class WatchedWrite(
 private const val TICK_MS = 250L
 
 // FILE SCOPE ON PURPOSE, like UpstreamTransport's nodelayLogged: one ticker for the process, however many
-// heads build a client, so the table is read once a tick for all of them.
+// heads build a client, so each client's table is read once a tick for all of its requests.
 private val sharedWatch = StallWatch(TICK_MS)

@@ -76,11 +76,12 @@ public class UpstreamTransport {
         requestWriteTimeoutMs: Long,
         sockets: UpstreamSockets,
     ): HttpClient {
+        val queues = sockets.queues ?: ProcNetTcp(log)
         if (noDelayGuard.compareAndSet(false, true)) {
             log(
                 "[upstream] tcp_nodelay(client)=set keepalive(client)=${KEEPALIVE_IDLE_S}s/" +
                     "${KEEPALIVE_INTERVAL_S}s/x$KEEPALIVE_PROBES: every upstream socket is armed by " +
-                    "KeepaliveSocketFactory before it connects (V4-141); ${writeBoundLine(sockets.queues)}\n",
+                    "KeepaliveSocketFactory before it connects (V4-141); ${writeBoundLine(queues)}\n",
             )
         }
         // Built ONCE per client, outside the config block: ktor's OkHttp engine re-runs that block
@@ -93,7 +94,7 @@ public class UpstreamTransport {
         val pool = ConnectionPool()
         val ledger = SocketLedger()
         val factory = KeepaliveSocketFactory(ledger = ledger, sendBufferBytes = sockets.sendBufferBytes)
-        val bound = RequestWriteBound(requestWriteTimeoutMs, pool, ledger, sockets.queues)
+        val bound = RequestWriteBound(requestWriteTimeoutMs, pool, ledger, queues)
         return HttpClient(OkHttp) {
             install(HttpTimeout) {
                 connectTimeoutMillis = CONNECT_TIMEOUT_MS
@@ -126,12 +127,14 @@ public class UpstreamTransport {
         }
     }
 
-    /** V4-289: what the once-per-process line says about the request-write bound on this system. */
+    /** V4-289: what the once-per-process line says about the request-write bound on this system. V4-292: a
+     *  table present but unreadable reads as none, so the line names the degraded mode for it too. */
     private fun writeBoundLine(queues: SendQueues): String = if (queues.read() != null) {
         "a request the upstream stops acknowledging is cut at the head's firstByteTimeout (V4-289)"
     } else {
-        "this system has no send-queue table (/proc/net/tcp), so only a write waiting in the kernel is " +
-            "cut at firstByteTimeout, and a request that fits in the socket buffers waits for the turn cap (V4-289)"
+        "the kernel's send-queue table (/proc/net/tcp) cannot be read here, so only a write waiting in the " +
+            "kernel is cut at firstByteTimeout, and a request that fits in the socket buffers waits for the " +
+            "turn cap (V4-289, V4-292)"
     }
 
     /** The one thread source under the upstream client — OkHttp's calls AND ktor's body readers —
@@ -382,8 +385,9 @@ internal class KeepaliveSocketFactory(
 internal class UpstreamSockets(
     val trust: X509TrustManager? = null,
     val sendBufferBytes: Int? = null,
-    /** V4-289: the kernel's send queues; a test hands a missing table to pin the macOS path. */
-    val queues: SendQueues = ProcNetTcp,
+    /** V4-289: the kernel's send queues; a test hands a missing table to pin the macOS path. Null is the
+     *  kernel's own table, read by a [ProcNetTcp] that logs to the client's log (V4-292). */
+    val queues: SendQueues? = null,
 ) {
     fun tlsFactory(trust: X509TrustManager): SSLSocketFactory =
         SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }.socketFactory

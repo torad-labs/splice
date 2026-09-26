@@ -16,12 +16,18 @@ import splice.core.auth.Credentials
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import java.net.UnknownHostException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val DEFAULT_RATE_HOLD_MS = 60_000L
 private const val MAX_MINT_HOLD_MS = 3_600_000L
+
+/** A mint host that does not resolve (RFC 6761 reserves .invalid). */
+private const val HOST = "muse-mint.example.invalid"
+
+private val MALFORMED = MuseMintAttempt.Denied("malformed key response")
 
 class MuseAuthProviderTest {
 
@@ -298,7 +304,8 @@ class MuseAuthProviderTest {
         @TempDir tempDir: Path,
     ) = runTest {
         var nowMs = 0L
-        val deniedFile = authFile(tempDir.resolve("denied"), accessToken = "account-secret")
+        // V4-292: the denial's detail is logged, with the credentials this provider holds masked.
+        val deniedFile = authFile(tempDir.resolve("denied"), accessToken = "account-secret", apiKey = "api-key-secret")
         val logs = mutableListOf<String>()
         val deniedCalls = AtomicInteger()
         val denied = provider(deniedFile, logs, WallClock { nowMs }) { _, _ ->
@@ -314,7 +321,7 @@ class MuseAuthProviderTest {
         val surfaced = (logs + denied.describe().fields.values).joinToString("\n")
         assertFalse(surfaced.contains("account-secret"), surfaced)
         assertFalse(surfaced.contains("api-key-secret"), surfaced)
-        assertTrue(logs.any { it.contains("key mint denied") })
+        assertTrue(logs.any { it.contains("key mint denied (provider echoed <redacted> and <redacted>)") }, "$logs")
 
         val invalidDir = tempDir.resolve("invalid")
         val invalidFile = authFile(invalidDir)
@@ -338,6 +345,43 @@ class MuseAuthProviderTest {
         )
         assertEquals("replacement-key", (invalid.refresh() as Credentials.Bearer).token)
         assertEquals(2, invalidCalls.get())
+    }
+
+    @Test
+    fun `a failed mint, a denial and a lock that cannot be taken each name their cause - V4-292`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val logs = mutableListOf<String>()
+        val unresolved = provider(authFile(tempDir.resolve("dns")), logs) { _, _ -> throw UnknownHostException(HOST) }
+        val denied = provider(authFile(tempDir.resolve("denied")), logs) { _, _ -> MALFORMED }
+        val unlocked = provider(tempDir.resolve("absent").resolve("nested").resolve("muse.json"), logs) { _, _ ->
+            MALFORMED
+        }
+        listOf(unresolved, denied, unlocked).forEach { assertNull(it.refresh()) }
+
+        assertTrue(logs.any { "key mint transport failed (java.net.UnknownHostException: $HOST)" in it }, "$logs")
+        assertTrue(logs.any { "key mint denied (malformed key response)" in it }, "$logs")
+        assertTrue(logs.any { "credential lock unavailable (java.nio.file.NoSuchFileException" in it }, "$logs")
+        assertTrue(logs.none { "account access token missing" in it }, "a failed mint is no missing token: $logs")
+        assertTrue(logs.none { "account-access" in it || "persisted-key" in it || tempDir.toString() in it }, "$logs")
+    }
+
+    @Test
+    fun `an account token rejected while the file's token changes twice says so - V4-292`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val file = authFile(tempDir)
+        val next = mapOf("account-access" to "second-token", "second-token" to "third-token")
+        val logs = mutableListOf<String>()
+        val auth = provider(file, logs) { accessToken, _ ->
+            next[accessToken]?.let { authFile(tempDir, accessToken = it, apiKey = "key-for-$it") }
+            MuseMintAttempt.InvalidAccountToken
+        }
+
+        assertNull(auth.refresh())
+
+        assertTrue(logs.any { "account access token rejected, and the credential file's token changed" in it }, "$logs")
+        assertTrue(logs.none { line -> next.keys.any { it in line } || "third-token" in line }, "$logs")
     }
 
     @Test

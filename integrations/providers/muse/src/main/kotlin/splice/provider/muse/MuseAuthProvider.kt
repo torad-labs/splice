@@ -18,6 +18,7 @@ import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.credentials.AccountCredentialIdentitySource
@@ -75,17 +76,19 @@ public class MuseAuthProvider(
             CredentialLock.withLock(authPath, log = lockLog) {
                 val snapshot = store.read() ?: return@withLock null
                 val suppressed = invalidAccountLatch.isLatched(snapshot.identity) || holds.suppresses(snapshot)
-                if (suppressed) {
-                    null
-                } else {
-                    snapshot.accessToken?.let { exchange(it, snapshot) } ?: run {
+                val accessToken = snapshot.accessToken
+                when {
+                    suppressed -> null
+                    // V4-292: only a missing token says so; a failed exchange ran `?:` into this line too.
+                    accessToken == null -> {
                         log("[muse-auth] account access token missing; sign in again before refreshing")
                         null
                     }
+                    else -> exchange(accessToken, snapshot)
                 }
             }
-        }.getOrElse {
-            log("[muse-auth] credential lock unavailable; refresh skipped")
+        }.getOrElse { failure ->
+            lockLog("[muse-auth] credential lock unavailable (${SafeFailureText.render(failure)}); refresh skipped")
             null
         }
     }
@@ -193,8 +196,8 @@ public class MuseAuthProvider(
         val mint = suspend {
             val attempt = Cancellables.runCatchingCancellable {
                 mintCall(accessToken, MuseMintMode.REFRESH)
-            }.getOrElse {
-                log("[muse-auth] key mint transport failed")
+            }.getOrElse { failure ->
+                log("[muse-auth] key mint transport failed (${SafeFailureText.render(failure)})")
                 store.clearCache()
                 holds.recordRetry(snapshot, DEFAULT_RATE_HOLD_MS)
                 null
@@ -232,7 +235,17 @@ public class MuseAuthProvider(
             }
             allowChangedTokenRetry && currentAccessToken != null ->
                 exchange(currentAccessToken, current, allowChangedTokenRetry = false)
-            else -> null
+            currentAccessToken == null -> {
+                log("[muse-auth] account access token rejected, and the credential file holds none now; sign in again")
+                null
+            }
+            else -> {
+                log(
+                    "[muse-auth] account access token rejected, and the credential file's token changed since; " +
+                        "the next refresh tries the new one",
+                )
+                null
+            }
         }
     }
 
@@ -252,13 +265,20 @@ public class MuseAuthProvider(
             }
             is MuseMintAttempt.Denied -> {
                 holds.recordRetry(snapshot, MAX_MINT_HOLD_MS)
-                log("[muse-auth] key mint denied; retry held for 60 minutes")
+                log("[muse-auth] key mint denied (${masked(attempt.detail, snapshot)}); retry held for 60 minutes")
             }
             else -> Unit
         }
         store.clearCache()
         return null
     }
+
+    /** [detail] with the credentials this provider holds masked. Every denial's text is splice's own
+     *  (MuseOAuth.parseMuseKeyResponse, MuseRefresh's HTTP status), and this keeps one that quotes the
+     *  exchange from carrying the account token or the key into the log (V4-292). */
+    private fun masked(detail: String, snapshot: MuseCredentialSnapshot): String =
+        listOfNotNull(snapshot.accessToken, snapshot.apiKey).filter(String::isNotBlank)
+            .fold(detail) { text, secret -> text.replace(secret, "<redacted>") }
 }
 
 private data class MintFlightResult(

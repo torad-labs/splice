@@ -651,6 +651,10 @@ origin.
   printed `could not be asked: failure (message withheld: it may quote file bytes)`. A list that does
   not arrive within the 10-second budget, a TLS failure and a URL that does not parse now say so;
   any other failure is still withheld (V4-268).
+- **The claude profile prices every model it lists.** Only Opus 5.5 carried a rate card, so a turn on
+  Fable 5.1, Sonnet 5 or Haiku 4.5, Claude Code's own background Haiku calls among them, counted as
+  unpriced. Each now carries its card from Anthropic's pricing page, with cache writes at the 1-hour
+  rate as for Opus 5.5 (V4-270).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

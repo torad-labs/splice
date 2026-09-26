@@ -728,6 +728,13 @@ origin.
   where a stalled write used to hold up every other head's write timeouts too. A slow link that
   keeps taking bytes is never cut. On macOS, where the kernel's send queue can't be read, only a
   write the kernel has accepted nothing of is cut (V4-272, V4-289).
+- **A code-mode record goes 24 hours after its last use, even on a head that is never used again.**
+  Code mode's records keep the model's reasoning summaries in plaintext. They were swept only when
+  the daemon started or another code-mode turn came, and closing an idle script or stopping the head
+  restarted their 24 hours, so a head that ran one script and went idle kept it for as long as the
+  daemon stayed up. splice now checks every 5 minutes while it keeps any record, and neither closing
+  the script nor stopping the head counts as a use. The build check on the README's list of files
+  now also fails when a file the list names gains a write the check has not recorded (V4-287).
 - **A launch no longer puts back a Claude login that was already refreshed away.** Every launch of
   `claude-splice` copied the selected saved login over the head's live one. Claude Code's refresh
   tokens are single-use, so the copy was stale after the first refresh, and signing in with it could

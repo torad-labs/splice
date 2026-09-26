@@ -7774,6 +7774,7 @@ claimed_by = "console"
 claimed_at = "2026-09-26T18:20:37.106Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T18:20:37Z
 # [2026-09-26] RECEIPT cmd="cd console && tsc --noEmit -p . && eslint src tests e2e playwright.config.ts && vitest run (79 files)" exit=0 tests=1514 touched=console/src/entities/topology/model/schema.ts,console/tests/coverage.test.ts tail="01b9fc007; red: missing 20 (quotaPollIntervalMs..perfArchiveRetentionDays), extra 0; green both ways at 53; mutants 4/4 (Knob.kt entry added, knob made head-only, list drops one, parser ignores headOnly)"
+# [2026-09-26] PREMISE CORRECTED (orchestrator, checked): the gap was 20, not 22. The row's 22 (55 minus 33) counted wireTap and trace, the only headOnly = true entries (core/.../config/Knob.kt:491, :507), which ConfigService drops from every global layer (ConfigService.kt:139, :144). RUNTIME_KNOBS stays a list in schema.ts pinned by a parity test that parses Knob.kt at test time, instead of being derived in the bundle. Console's reason holds: a Kotlin-format break would reach the operator's browser instead of CI, and the row's own mutant (a new Knob.kt entry) could not turn it red. Pushed at c6ff8e967 with V4-314, CI run 36262286595
 
 [[items]]
 id = "V4-317"

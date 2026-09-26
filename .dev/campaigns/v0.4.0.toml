@@ -7672,3 +7672,4 @@ title = "plan-limit.sh writes the /launch recipe, turn key included, to $OUT/rec
 files = ["tools/e2e/docker/plan-limit.sh"]
 status = "todo"
 verify = "red first: a plan_recipe run on a scratch $OUT leaves a file under $OUT holding ANTHROPIC_AUTH_TOKEN (grep count); green: 0 files under $OUT hold it, the recipe is under $PRIVATE at mode 600, the two CLAUDE_CODE_RETRY_WATCHDOG checks read it there; bash -n and shellcheck on plan-limit.sh"
+# [2026-09-26] Found by claude-builder in V4-294 (outside its fence): tools/e2e/docker/plan-limit.sh:125-130 (plan_recipe) writes and greps $OUT/recipe-planlimit.json; plan-limit.sh:20 sources lib.sh, which defines PRIVATE since 7a6a5f5f3

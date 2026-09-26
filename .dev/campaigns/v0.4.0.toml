@@ -7839,3 +7839,11 @@ title = "PRODUCT.md states the runtime config as Knob.kt has it: docs/design/PRO
 files = ["docs/design/PRODUCT.md"]
 status = "todo"
 verify = "every count PRODUCT.md:66 states is either checked by a test against Knob.kt or dropped from the sentence; the 'three of them hot' figure is checked against Knob.kt's restartRequired entries before it stays"
+
+[[items]]
+id = "V4-323"
+phase = "release"
+title = "The console's validator takes every share/isolate name the daemon takes: the shipped example's own 'CLAUDE.md' (splice.example.toml:443) reads 'unknown name' today"
+files = ["console/src/entities/topology/model/schema.ts", "console/tests/entities-accounts.test.ts"]
+status = "todo"
+verify = "red first: validating splice.example.toml's [claude] share reports claude.share[6]: unknown name (quoted); green: the daemon's aliases (ClaudeMaterializeTypes.kt:21-29: settings.json/settings, CLAUDE.md/claude_md/claude.md/claudemd, mcps/mcp) and ClaudeSharingDefaults' names pass, pinned by a parity test that reads the Kotlin at test time (V4-316's pattern), and a mutant adding an alias turns it red; a name outside the list is a notice ('matches no known item'), never a refusal, because the daemon matches any other on-disk name as itself (else -> setOf(item)); cd console && vitest"

@@ -7656,7 +7656,10 @@ id = "V4-310"
 phase = "P3"
 title = "The config panel says when a knob change did not reach config.json: PATCH /api/config answers persisted: null and not_persisted naming why (V4-299), and the console's PatchResult still types persisted as a string"
 files = ["console/src/shared/api/index.ts", "console/src/entities/config/api/index.ts", "console/src/pages/settings/index.tsx", "console/src/widgets/knob-form/index.tsx", "console/tests/settings.test.ts", "console/tests/config-patch.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "cd console && bun test tests/config-patch.test.ts: a PATCH answer with persisted null and not_persisted prints that reason beside the knob, and one with persisted prints no warning"
 # [2026-09-26] Filed under P3 by the orchestrator's slip; it is release-milestone work like V4-299 (the ledger has no verb to move a row's phase). Premise at 5923513ce: ConfigRoutes.kt:86-89 puts persisted null plus not_persisted when the write did not land; console/src/shared/api/index.ts:276 types persisted: string and nothing in console/src reads not_persisted, so a knob that did not save reads as saved. Readers of the PATCH answer: console/src/entities/config/api/index.ts, console/src/pages/settings/index.tsx, console/tests/settings.test.ts; the seat names the exact files from its inventory before editing
 # [2026-09-26] amend by=orchestrator: files were ["console/src/shared/api/index.ts", "console/src/widgets/knob-form/index.tsx", "console/tests/config-patch.test.ts"]
+claimed_by = "console"
+claimed_at = "2026-09-26T13:31:31.917Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T13:31:31Z

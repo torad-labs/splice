@@ -7919,5 +7919,8 @@ id = "V4-326"
 phase = "release"
 title = "Gate red on 25e6a0796 from V4-320 (CI run 36266163596): RoleRegistryLawTest finds WrapperLinked (ResumeRecipeRoute.kt:39) sharing (String)->Boolean with no disposition, and consoleWireKeys reads GET /api/sessions/{id}/resume?head=openrouter as 409 'The openrouter command is not linked' because the probe's boot links no wrapper. console, fix forward."
 files = ["quality/architecture/src/test/resources/role-registry.toml", "tools/e2e/probes/console-wire-keys.ts", "tools/e2e/test/console-wire-keys.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red: :quality-architecture:test --tests RoleRegistryLawTest fails with NO DISPOSITION: WrapperLinked (both tests), and the wire-keys probe prints FAIL entities/session/api/index.ts:77 ResumeRecipe ... HTTP 409; green: WrapperLinked is disposed in role-registry.toml with the reason extended to say what it asks (a probe, not an actor), RoleRegistryLawTest passes; the probe's boot links the openrouter head's command where WrapperLinked looks, so ResumeRecipe is CHECKED with its declared slots read (never dispositioned away), and the probe passes; CI gate green on the pushed sha"
+claimed_by = "console"
+claimed_at = "2026-09-26T19:43:25.766Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T19:43:25Z

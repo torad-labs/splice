@@ -6918,8 +6918,11 @@ id = "V4-258"
 phase = "release"
 title = "PRIVACY: daemon-boot.log is bounded while the daemon runs (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). It rolls only at spawn and only past 1 MB (DaemonLaunch.kt:55-70, splice-launch:361), and every daemon.log line is also printed to stderr and lands in it (DaemonBoundary.kt:92), so it grows without limit and duplicates daemon.log. Stop the duplicate or cap the file, in both cold-start paths."
 files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "app/src/main/dist/bin/splice-launch"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a running daemon that logs past the cap leaves daemon-boot.log no larger than the cap, or daemon.log lines no longer appear in it; both launch paths agree; CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T05:35:36.603Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T05:35:36Z
 
 [[items]]
 id = "V4-259"

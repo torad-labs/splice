@@ -7977,3 +7977,4 @@ claimed_by = "splice-lead"
 claimed_at = "2026-09-26T20:10:16.376Z"
 # [2026-09-26] CLAIM: owner=splice-lead at=2026-09-26T20:10:16Z
 # [2026-09-26] RECEIPT cmd="git show 0b03715d2 -- README.md; example rows (splice.example.toml:257-) are the shape ExampleConfigTest parses; AddModelPlan.kt:32-36 roster rule; bun tools/gate title" exit=0 tests=0 touched=README.md tail="0b03715d2: one line in the OpenRouter quick start; the CI gate on the pushed sha is the verdict for the docs lints"
+# [2026-09-26] gate of record: CI gate job run 36270603577 success on 11ba12f30, which contains 0b03715d2 (docs lints included)

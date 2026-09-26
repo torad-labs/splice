@@ -620,6 +620,13 @@ origin.
   attempt carries that attempt's state, and splice rightly ignores it, but it used to do so without a
   word: the pane sat silent until the 300-second timeout. The pane and the tab's page now say the
   sign-in came from an earlier attempt and to finish it in the newest tab.
+- **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
+  systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
+  while it was still shutting down, so the start did nothing and the daemon came back only after the
+  unit's automatic-restart delay, with every head down meanwhile: 46 seconds at the sixth restart,
+  growing toward five minutes. It now asks systemd to restart the unit, which drains in-flight turns
+  the same way, starts the new daemon at once and resets the delay. A daemon the unit isn't running
+  is stopped and started as before.
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

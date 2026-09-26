@@ -23,17 +23,19 @@ import splice.topology.TopologyStatePaths
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
-public class RestartCommand(
+public class RestartCommand internal constructor(
     private val output: TerminalOutput,
     errors: TerminalOutput,
     private val env: EnvReader,
-    jar: RunningJar,
+    private val coldStart: DaemonColdStart,
 ) {
+
+    public constructor(output: TerminalOutput, errors: TerminalOutput, env: EnvReader, jar: RunningJar) :
+        this(output, errors, env, DaemonColdStart(output, errors, env, jar))
 
     // The escalation ladder is a process lifecycle, not a control-plane request — it lives on
     // DaemonStop (the symmetric counterpart of DaemonLaunch), which this verb drives.
     private val daemonStop = DaemonStop(output, errors)
-    private val coldStart = DaemonColdStart(output, errors, env, jar)
 
     /** The control port by the daemon's own TOML < state < env precedence; its corrupt-TOML
      *  diagnostic goes to [errors], because stdout belongs to the verb. */
@@ -60,11 +62,33 @@ public class RestartCommand(
             }
             .getOrNull()
         val port = settings.controlPort(topology, env)
+        coldStart.activeUnit()?.let { unit ->
+            return restartThroughUnit(unit, port, expectedVersion, waitForCompactions)
+        }
         val tomlPorts = topology?.heads?.values?.map { it.port } ?: emptyList()
         if (!stopIfRunning(port, tomlPorts, waitForCompactions)) return false
         val started = coldStart.ensureDaemon(port, expectedVersion)
         if (started) output.line("splice: daemon restarted")
         return started
+    }
+
+    /** V4-243: the daemon is [unit]'s, so systemd restarts it. Stopping it here and then starting the
+     *  unit reached a unit still active in its shutdown tail, a no-op, and the daemon's exit then
+     *  waited out the unit's restart backoff (46 s at the sixth restart, 2026-09-25). systemd's stop
+     *  drains the in-flight turns the way the shutdown route does, so only the compaction wait stays
+     *  here, and it runs only when a daemon answers. */
+    private fun restartThroughUnit(
+        unit: String,
+        port: Int,
+        expectedVersion: String,
+        waitForCompactions: Boolean,
+    ): Boolean {
+        if (waitForCompactions && DaemonProbe.healthVersion(port) != null) {
+            CompactionWait(output, JdkUpgradeInflight(env, port)).await()
+        }
+        val restarted = coldStart.restartUnit(unit, port, expectedVersion)
+        if (restarted) output.line("splice: daemon restarted")
+        return restarted
     }
 
     // The env is the constructor's (the splitBrainChecks / DaemonSettings idiom) so the stop decision

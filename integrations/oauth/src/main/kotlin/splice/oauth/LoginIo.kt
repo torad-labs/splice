@@ -11,10 +11,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.auth.CredentialJson
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 /** Set by the shared Gradle test task. Its presence means "you are inside the suite", and the
@@ -146,7 +149,7 @@ internal class LoginIo(
         }
         val target = Cancellables.runCatchingCancellable {
             if (account == null || account.primary) {
-                writeCredentialFile(path, authJson)
+                writeCredentialFile(path, mergedOntoDisk(path, parsed))
                 path
             } else {
                 persistLabeled(path, account, parsed)
@@ -157,6 +160,28 @@ internal class LoginIo(
         } ?: return false
         output.line("splice: signed in; credentials written to $target")
         return true
+    }
+
+    /** V4-298: the primary file is often the vendor CLI's own (auth.file), so a sign-in merges onto it as a
+     *  refresh does (SH-10). The fields the CLI stores beside ours survive, and each key the sign-in writes
+     *  replaces the old identity's whole, codex's and grok's nested `tokens` object included. A file that
+     *  does not parse is said and replaced; an absent one is the first sign-in. */
+    private fun mergedOntoDisk(path: Path, signedIn: JsonObject): String {
+        val onDisk = Cancellables.runCatchingCancellable {
+            loginJson.parseToJsonElement(Files.readString(path)) as? JsonObject
+        }.fold(
+            onSuccess = { it },
+            onFailure = { failure ->
+                if (failure !is NoSuchFileException) {
+                    output.line(
+                        "splice: $path could not be read (${SafeFailureText.render(failure)}); " +
+                            "the sign-in replaces it whole",
+                    )
+                }
+                null
+            },
+        )
+        return loginJson.encodeToString(JsonObject.serializer(), CredentialJson.mergedCredentialJson(onDisk, signedIn))
     }
 
     private fun persistLabeled(path: Path, account: OAuthLoginAccount, parsed: JsonObject): Path? {

@@ -31,6 +31,7 @@ internal class OAuthAccountWrites(private val json: Json, private val validation
         }
         Files.createDirectories(dir)
         val target = dir.resolve("$label.json")
+        // CREDENTIAL-WRITE-EXEMPT[2026-09-26]: splice's own labeled account file in the pool dir OAuthAccountFiles.poolDir names (<parent>/<kind>/<primary name>/<label>.json), which no vendor CLI reads or writes; a sign-in under a label is that identity's whole record, so there is nothing foreign on disk to keep (V4-298).
         SecureFile.writeAtomic0600(
             target,
             json.encodeToString(JsonObject.serializer(), decorated(kind, label, providerJson)),

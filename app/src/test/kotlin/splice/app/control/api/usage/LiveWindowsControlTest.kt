@@ -150,7 +150,7 @@ class LiveWindowsControlTest {
     private fun put(requested: Topology): JsonObject {
         val file = tmp.resolve("splice.toml")
         if (!Files.exists(file)) Files.writeString(file, FILE)
-        val writer = TopologyWriter(file, parse)
+        val writer = TopologyWriter(file, tmp.resolve("backups"), parse)
         val routes = TopologyRoutes(TopologyWriterSource { writer }, TopologyStale { false })
         val body = buildJsonObject { put("topology", writer.tree(requested)) }.toString()
         return Json.parseToJsonElement(routes.write(body).body).jsonObject

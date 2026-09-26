@@ -12,6 +12,7 @@ package splice.core.util
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import java.io.IOException
+import java.io.UncheckedIOException
 import java.util.concurrent.CancellationException
 
 class CancellablesContractTest {
@@ -57,5 +58,15 @@ class CancellablesContractTest {
     fun `cleanup captures an IO failure like the request-path combinator`() {
         val boom = IOException("broken pipe at flush")
         assertSame(boom, Cancellables.runCatchingCleanup { throw boom }.exceptionOrNull())
+    }
+
+    // V4-284: Files.list reads lazily and throws UncheckedIOException when an entry cannot be read
+    // mid-iteration. It is an I/O failure like any other, and escaping here turned a landed console
+    // write into a 500 and stopped the daemon's start.
+    @Test
+    fun `an IO failure met while iterating a listing is captured too - V4-284`() {
+        val boom = UncheckedIOException(IOException("an entry vanished mid-read"))
+        val result = Cancellables.runCatchingCancellable { throw boom }
+        assertSame(boom, result.exceptionOrNull())
     }
 }

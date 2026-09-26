@@ -77,12 +77,14 @@ import splice.usage.budgets.BUDGETS_FILE
 import splice.usage.budgets.BudgetEnforcement
 import splice.usage.budgets.BudgetStore
 import splice.usage.budgets.HeadPerfHistory
+import java.nio.file.Path
 
 internal object ConsoleWiring {
     internal fun wire(
         srv: ControlServer,
         topology: BootedTopology,
         discovered: HeadDiscoveredModels,
+        configBackups: Path,
         log: LogSink,
     ) {
         // V4-127: the console's three read ports, assigned after construction because a constructor
@@ -107,8 +109,9 @@ internal object ConsoleWiring {
         // V4-128: the writer is the ONLY seam that edits splice.toml, and it is built here because
         // this is the one place that knows the booted file's path. A null path is a daemon booted
         // without a config file: the route declines rather than writing a file nobody asked for.
+        // V4-284: its backups go to splice's own [configBackups], never beside the file.
         srv.ports.topology = topology.path?.let {
-            TopologyWriter(it, TopologyParse(TopologyLoader::parse), discovered = discovered)
+            TopologyWriter(it, configBackups, TopologyParse(TopologyLoader::parse), discovered = discovered)
         }
 
         // V4-132: the login/remove/relabel machinery — :daemon-control depends on :core only, so this is

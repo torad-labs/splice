@@ -62,7 +62,10 @@ class TopologyWriterRoundTripTest {
     lateinit var tmp: Path
 
     private val file by lazy { tmp.resolve("splice.toml").also { Files.writeString(it, BASE) } }
-    private val writer by lazy { TopologyWriter(file, TopologyParse(TopologyLoader::parse), WallClock { NOW }) }
+    private val backupDir by lazy { tmp.resolve("backups") }
+    private val writer by lazy {
+        TopologyWriter(file, backupDir, TopologyParse(TopologyLoader::parse), WallClock { NOW })
+    }
 
     /** Writes the topology [expected] declares and asserts the file became exactly [expected]. */
     private fun lands(expected: String) {
@@ -77,8 +80,9 @@ class TopologyWriterRoundTripTest {
     private fun head(key: String, port: Int): String =
         "\n[heads.$key]\nprovider = \"ex\"\nport = $port\ndiscovery_prefix = \"$key/\"\npinned_model = \"m2\"\n"
 
-    private fun backups(): List<String> = Files.list(tmp).use { paths ->
-        paths.map { it.fileName.toString() }.filter { it.contains(".bak-") }.toList()
+    /** Every backup, in splice's own directory or (never, V4-284) beside the file. */
+    private fun backups(): List<String> = listOf(tmp, backupDir).filter(Files::exists).flatMap { dir ->
+        Files.list(dir).use { paths -> paths.map { it.fileName.toString() }.filter { it.contains(".bak-") }.toList() }
     }
 
     @Test

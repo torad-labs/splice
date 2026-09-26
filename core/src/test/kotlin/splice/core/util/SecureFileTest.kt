@@ -109,4 +109,18 @@ class SecureFileTest {
             assertEquals(FileTightening.Open("its filesystem keeps no POSIX modes"), SecureFile.ownerOnlyFile(file))
         }
     }
+
+    // V4-284 (5): SPLICE_CONFIG=splice.toml is a path with no directory part, so its parent is null and
+    // the write threw a NullPointerException; resolveSibling handled it before V4-275. The file lands in
+    // the working directory, as the relative path says, and is removed here.
+    @Test
+    fun `a bare file name is written in the working directory - V4-284 (5)`() {
+        val bare = Path.of("v4-284-bare-name.tmp")
+        try {
+            SecureFile.writeAtomic0600(bare, "x")
+            assertEquals("x", Files.readString(bare))
+        } finally {
+            Files.deleteIfExists(bare)
+        }
+    }
 }

@@ -14,6 +14,7 @@ package splice.core.util
 
 import kotlinx.serialization.SerializationException
 import java.io.IOException
+import java.io.UncheckedIOException
 import kotlin.coroutines.cancellation.CancellationException
 
 public object Cancellables {
@@ -22,11 +23,16 @@ public object Cancellables {
      * Run [block] as a best-effort local operation, capturing its expected failure modes — I/O and
      * (de)serialization — as [Result]. Anything else (including coroutine cancellation) propagates.
      * Compose at the call site with `.getOrNull()` / `.getOrDefault(x)` / `.getOrElse { e -> … }`.
+     * V4-284: I/O includes [UncheckedIOException], what a lazy `Files.list` throws when an entry cannot
+     * be read partway through; it escaped here, and a listing that failed mid-read answered a landed
+     * console write with a 500 and stopped the daemon's start.
      */
     public inline fun <R> runCatchingCancellable(block: () -> R): Result<R> =
         try {
             Result.success(block())
         } catch (e: IOException) {
+            Result.failure(e)
+        } catch (e: UncheckedIOException) {
             Result.failure(e)
         } catch (e: SerializationException) {
             Result.failure(e)
@@ -52,8 +58,9 @@ public object Cancellables {
         val attempt = runCatching(block)
         val failure = attempt.exceptionOrNull() ?: return attempt
         if (failure is CancellationException) throw failure
-        val cleanupFailure = failure is IOException || failure is SerializationException ||
-            failure is IllegalArgumentException || failure is IllegalStateException
+        val cleanupFailure = failure is IOException || failure is UncheckedIOException ||
+            failure is SerializationException || failure is IllegalArgumentException ||
+            failure is IllegalStateException
         if (!cleanupFailure) throw failure
         return attempt
     }

@@ -90,8 +90,9 @@ class ConsoleWiringPinTest {
      *  port pin still passes, so this is the pin that keeps the others meaningful. */
     @Test
     fun `the control plane runs the console wiring on the server it constructs`() {
+        val call = "ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)"
         assertTrue(
-            controlPlaneSource().contains("ConsoleWiring.wire(srv, topology, modelRosters, log)"),
+            controlPlaneSource().contains(call),
             "ControlPlane must call `ConsoleWiring.wire(srv, topology, modelRosters)` after constructing the " +
                 "ControlServer, or every console port is unwired while the build stays green",
         )

@@ -122,7 +122,9 @@ public object SecureFile {
      * attribute is best-effort (the atomic move still holds).
      */
     public fun writeAtomic0600(path: Path, content: String) {
-        val parent = path.parent
+        // V4-284: absolute first, so a bare name (SPLICE_CONFIG=splice.toml) has the working directory
+        // as its parent instead of null.
+        val parent = path.toAbsolutePath().parent
         Files.createDirectories(parent)
         val tmp = try {
             Files.createTempFile(parent, ".secure", ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY))
@@ -169,4 +171,15 @@ public object SecureFile {
         }
         Channels.newOutputStream(channel).use { it.write(bytes) }
     }
+}
+
+/** V4-284: how a directory's entries are read. A port, so a test can fail a listing partway: Files.list
+ *  reads lazily and throws UncheckedIOException when an entry cannot be read mid-iteration. */
+public fun interface DirectoryListing {
+    public fun list(dir: Path): List<Path>
+}
+
+/** The listing every caller uses in production: the directory's entries, read whole and closed. */
+public object FilesListing : DirectoryListing {
+    override fun list(dir: Path): List<Path> = Files.list(dir).use { it.toList() }
 }

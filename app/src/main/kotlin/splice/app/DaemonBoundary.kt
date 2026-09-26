@@ -5,9 +5,12 @@
 package splice.app
 
 import splice.core.config.StatePaths
+import splice.core.topology.TopologyBackupName
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
+import splice.core.util.DirectoryListing
 import splice.core.util.FileTightening
+import splice.core.util.FilesListing
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -30,7 +33,7 @@ import java.util.concurrent.CancellationException
  * user holds one. `inline` is LOAD-BEARING and must stay: six call sites pass a lambda, and the
  * non-local-return semantics plus the absent allocation are part of the boundary's contract.
  */
-internal class DaemonBoundary {
+internal class DaemonBoundary(private val listing: DirectoryListing = FilesListing) {
 
     internal inline fun <T> runCatchingDaemonBoundary(block: () -> T): Result<T> = try {
         Result.success(block())
@@ -156,16 +159,17 @@ internal class DaemonBoundary {
 
     /** V4-278: splice.toml and every backup of it held owner-only on every start, beside
      *  [secureStateDirs]. V4-275 writes them 0600, but an older splice left them at the umask, and
-     *  they can hold header secrets (extra_headers). A linked config is tightened at its target; the
-     *  backups are the ones the console's writer keeps beside the path splice reads. Returns one line
+     *  they can hold header secrets (extra_headers). A linked config is tightened at its target. The
+     *  backups here are the ones an older splice's console writer left beside the path splice reads,
+     *  and only names in its shape (V4-284: a copy of the operator's own is theirs, whatever its
+     *  mode); the writer now keeps them in the state dir, under [secureStateDirs]. Returns one line
      *  per file whose mode changed, naming the mode it had, and one warning per file still open; a
      *  file that cannot be tightened never stops the start. */
     internal fun secureConfig(configPath: Path): List<String> {
-        val backupPrefix = "${configPath.fileName}.bak-"
         val listed = Cancellables.runCatchingCancellable {
-            Files.list(configPath.toAbsolutePath().parent).use { paths ->
-                paths.filter { it.fileName.toString().startsWith(backupPrefix) }.sorted().toList()
-            }
+            listing.list(configPath.toAbsolutePath().parent)
+                .filter { TopologyBackupName.isBackupOf(configPath, it) }
+                .sorted()
         }
         val backups = listed.getOrElse { failure ->
             return listOfNotNull(configLine(configPath)) +

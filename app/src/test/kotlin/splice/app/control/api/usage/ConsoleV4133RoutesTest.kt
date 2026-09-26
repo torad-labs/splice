@@ -299,6 +299,7 @@ class ConsoleV4133RoutesTest {
             val file = tmp.resolve("splice.toml").also { Files.writeString(it, captureFile) }
             control.ports.topology = TopologyWriter(
                 file,
+                tmp.resolve("backups"),
                 TopologyParse { text ->
                     require(text == captureFile) { "unexpected: $text" }
                     captureTopology

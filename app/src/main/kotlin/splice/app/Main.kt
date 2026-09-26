@@ -10,6 +10,7 @@ import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.LockOutcome
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
@@ -64,9 +65,10 @@ public fun main(args: Array<String>) {
  *  exist before anything that can throw. A constructed collaborator rather than a set of free
  *  functions (Kotlin style law, 2026-08-15); `fun main` above stays top-level because the JVM
  *  entry point must be static, which the law exempts. */
-internal class DaemonProcess(private val args: List<String> = emptyList()) {
-
-    private val boundary = DaemonBoundary()
+internal class DaemonProcess(
+    private val args: List<String> = emptyList(),
+    private val boundary: DaemonBoundary = DaemonBoundary(),
+) {
 
     internal fun runDaemon() {
         armShutdownOwnership()
@@ -85,22 +87,8 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
         val lock = DaemonLock(statePaths.daemonLockFile)
         val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
         val lockWait = DaemonLockWait()
-        when (lockWait.acquire(lock, controlPort)) {
-            LockOutcome.WON -> Unit
-            LockOutcome.PEER_SERVING -> {
-                System.err.println(
-                    "[daemon] another splice daemon serves on :$controlPort; exiting (the winner serves)",
-                )
-                return
-            }
-            LockOutcome.EXPIRED -> {
-                System.err.println(
-                    "[daemon] the daemon lock stayed held for ${lockWait.windowMs()}ms by a process that is not " +
-                        "serving on :$controlPort; exiting. Find that process (`splice doctor`) and retry",
-                )
-                return
-            }
-        }
+        val lost = LostLock(controlPort, lockWait.windowMs())
+        if (lockLost(start, lockWait.acquire(lock, controlPort), lost, TerminalOutput(System.err::println))) return
         val distPath = Paths.get(System.getProperty("user.dir"), "..", "console", "dist", "index.html")
         val log = persistentLogger(statePaths.logsDir)
         // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,
@@ -239,6 +227,23 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         boundary.bootFailureHandler(statePaths)
 
+    /** Whether the start lost the lock to another process; when it did, why it exits goes to [err], then
+     *  what [start] made owner-only before the lock. V4-284: those lines waited for the logger, which
+     *  only a winner makes, so a loser that changed a file's mode never said so. */
+    internal fun lockLost(start: StartState, outcome: LockOutcome, lost: LostLock, err: TerminalOutput): Boolean {
+        val why = when (outcome) {
+            LockOutcome.WON -> return false
+            LockOutcome.PEER_SERVING ->
+                "[daemon] another splice daemon serves on :${lost.controlPort}; exiting (the winner serves)"
+            LockOutcome.EXPIRED ->
+                "[daemon] the daemon lock stayed held for ${lost.windowMs}ms by a process that is not " +
+                    "serving on :${lost.controlPort}; exiting. Find that process (`splice doctor`) and retry"
+        }
+        err.line(why)
+        start.ownerOnlyLines.forEach(err::line)
+        return true
+    }
+
     /** The start up to its lock (V4-280: split out of [runDaemon] so a test drives the steps the start
      *  itself runs; a start that dropped a secure call used to pass every test). [env] is the process's
      *  environment, a test's own map under test. */
@@ -269,6 +274,10 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
 
     internal fun secureConfig(configPath: Path): List<String> = boundary.secureConfig(configPath)
 }
+
+/** What a start that lost the lock says about the winner: the port it serves on, and how long the
+ *  lock was waited for. */
+internal data class LostLock(val controlPort: Int, val windowMs: Long)
 
 /** What the start knows when it takes the lock: the topology it read and where, where its state
  *  lives, and the owner-only step's lines, logged once the logger exists. */

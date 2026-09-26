@@ -9,8 +9,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.daemon.LockOutcome
 import splice.core.config.StatePaths
+import splice.core.terminal.TerminalOutput
+import splice.core.util.DirectoryListing
 import splice.core.util.EnvReader
+import java.io.IOException
+import java.io.UncheckedIOException
 import java.net.URI
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -91,12 +96,14 @@ class DaemonStateDirsTest {
         val config = openFile(home.resolve(".config/splice/splice.toml"))
         val backup = openFile(home.resolve(".config/splice/splice.toml.bak-20260918T120000Z-0123456789ab"))
         val other = openFile(home.resolve(".config/splice/notes.txt"))
+        val own = openFile(home.resolve(".config/splice/splice.toml.bak-2026-09-01"))
 
         val lines = process.secureConfig(config)
 
         assertEquals("rw-------", mode(config))
         assertEquals("rw-------", mode(backup))
         assertEquals("rw-r--r--", mode(other), "a file that is not splice.toml or its backup is left alone")
+        assertEquals("rw-r--r--", mode(own), "V4-284: a copy in no shape of splice's is the operator's")
         assertEquals(2, lines.size, "one line per file whose mode changed: $lines")
         assertTrue(lines.all { "rw-r--r--" in it }, "each line names the mode the file had: $lines")
         assertEquals(emptyList<String>(), process.secureConfig(config), "a second start has nothing to say")
@@ -130,5 +137,42 @@ class DaemonStateDirsTest {
             assertEquals(1, lines.size, "one warning: $lines")
             assertTrue("WARNING" in lines.single() && "splice.toml" in lines.single(), lines.single())
         }
+    }
+
+    /** An open splice.toml under a state dir the config names, and the environment that points at it. */
+    private fun openConfig(tmp: Path): EnvReader {
+        val state = Files.createDirectories(tmp.resolve("state"))
+        val config = tmp.resolve("config/splice.toml")
+        Files.createDirectories(config.parent)
+        Files.writeString(config, "[daemon]\nstate_dir = \"$state\"\n")
+        Files.setPosixFilePermissions(config, PosixFilePermissions.fromString("rw-r--r--"))
+        return EnvReader { if (it == "SPLICE_CONFIG") config.toString() else null }
+    }
+
+    // V4-284 (4): Files.list throws UncheckedIOException when an entry cannot be read partway, which
+    // escaped runCatchingCancellable and killed the start, against "a file that cannot be tightened
+    // never stops the start".
+    @Test
+    fun `a backup listing that fails partway never stops the start - V4-284 (4)`(@TempDir tmp: Path) {
+        val failing = DirectoryListing { throw UncheckedIOException(IOException("an entry vanished mid-read")) }
+
+        val start = DaemonProcess(boundary = DaemonBoundary(failing)).prepare(openConfig(tmp))
+
+        assertTrue(start.ownerOnlyLines.any { "could not be listed" in it }, "${start.ownerOnlyLines}")
+    }
+
+    // V4-284 (6): the owner-only step runs before the lock, so a start that loses the lock has already
+    // changed modes, and it has no daemon.log of its own to say so in.
+    @Test
+    fun `a start that loses the lock still says what it made owner-only - V4-284 (6)`(@TempDir tmp: Path) {
+        val start = process.prepare(openConfig(tmp))
+        val lines = mutableListOf<String>()
+        val err = TerminalOutput { lines += it }
+
+        val lost = process.lockLost(start, LockOutcome.PEER_SERVING, LostLock(3096, 57_000L), err)
+
+        assertTrue(lost)
+        assertTrue(lines.first().contains("another splice daemon serves on :3096"), "$lines")
+        assertTrue(lines.any { "rw-r--r--" in it }, "the mode splice.toml had is said: $lines")
     }
 }

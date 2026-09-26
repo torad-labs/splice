@@ -46,6 +46,7 @@ class TopologyWriterTest {
 
     private fun writer(table: Map<String, Topology>, parse: TopologyParse? = null): TopologyWriter = TopologyWriter(
         file,
+        tmp.resolve("backups"),
         parse ?: TopologyParse { text -> table[text] ?: throw IllegalArgumentException("not a text this test predicted") },
         WallClock { NOW },
     )
@@ -114,6 +115,7 @@ class TopologyWriterTest {
         val roster = head(PORT).copy(models = listOf(HeadModel("m1", "opus"), HeadModel("m9", "sonnet")))
         val served = TopologyWriter(
             file,
+            tmp.resolve("backups"),
             TopologyParse { text -> topology().also { require(text == FILE) { "unpredicted" } } },
             WallClock { NOW },
             discovered = { key -> if (key == "ex") listOf(DiscoveredModel("m9")) else emptyList() },

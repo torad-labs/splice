@@ -105,6 +105,7 @@ class TopologyRoutesTest {
         if (wired) {
             control.ports.topology = TopologyWriter(
                 file,
+                file.resolveSibling("backups"),
                 TopologyParse { text -> texts[text] ?: throw IllegalArgumentException("not a text this test predicted") },
             )
         }

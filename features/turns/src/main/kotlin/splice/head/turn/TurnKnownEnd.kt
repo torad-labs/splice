@@ -10,6 +10,7 @@ import splice.head.HeadHealthCounters
 import splice.head.pipeline.FailurePresenter
 import splice.upstream.Provider
 import splice.upstream.failure.FailureSource
+import splice.upstream.failure.ForeignCredential
 import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.transport.UpstreamAuthMissing
 import splice.upstream.transport.UpstreamFailed
@@ -45,7 +46,11 @@ internal class TurnKnownEnd(
             true
         }
         is UpstreamFailed -> {
-            val failure = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
+            // V4-242: a 401 naming a credential the account did not send is the upstream's failure, never
+            // the user's sign-in (ForeignCredential); the credential it compares is the one sent.
+            val sent = (drive.account?.account?.auth ?: provider.auth).credentials()
+            val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
+            val failure = ForeignCredential.upstreamsOwn(read, e.body, sent)
             val detail = "type=${failure.type.wireName} status=${e.status} msg=${failure.message.take(ERR_SNIPPET)}"
             log(telemetry.errTurn("upstream-failed", drive, detail))
             // V4-59: the code rides OUTSIDE the snippet bound on purpose. Bounding the presented

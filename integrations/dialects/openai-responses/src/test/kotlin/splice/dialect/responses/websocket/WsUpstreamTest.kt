@@ -9,7 +9,8 @@
 //     / IllegalStateException"). A fake that threw synchronously would make the send-failure test
 //     green against code that cannot actually observe a send failure.
 //   * onClose closes the inbox with NO cause; onError closes it WITH an IOException cause. Those are
-//     different shapes, and only the second one ever worked.
+//     different shapes, and only the second one ever worked. (V4-242: onClose now closes it with an
+//     IOException naming the close, so both carry a cause; round() must still return null on either.)
 //   * frames are delivered on the CALLER's thread, exactly as InboxListener.trySend allows — so the
 //     whole suite is deterministic with zero real time and zero threads. runTest's virtual clock is
 //     also the instrument for "did this fall back promptly or burn the whole budget".
@@ -810,7 +811,12 @@ class WsUpstreamInboxListenerTest {
             .onClose(FakeSocket(Fixture()), WebSocket.NORMAL_CLOSURE, "bye")
         val closed = clean.receiveCatching()
         assertTrue(closed.isClosed)
-        assertNull(closed.exceptionOrNull(), "a clean close carries NO cause — this is the shape that used to escape")
+        // V4-242: the close is the cause now, as the error is below, so a torn round carries the peer's
+        // code and reason instead of a bare "stream ended". Still a value from receiveCatching, which is
+        // what keeps it from escaping round() the way a thrown close once did.
+        val closeCause = closed.exceptionOrNull()
+        assertTrue(closeCause is IOException, "a peer's close carries an IOException naming it, got $closeCause")
+        assertEquals("socket closed by the peer (status=1000, bye)", closeCause?.message)
         assertEquals(1, anomalies, "an unpoisoned close leaves the pool holding a socket the server has dropped")
 
         val errored = Channel<JsonObject>(1)
@@ -989,8 +995,10 @@ class WsUpstreamSendBudgetTest {
 @OptIn(ExperimentalCoroutinesApi::class)
 class WsUpstreamCloseDiagnosticsTest {
 
+    // V4-242: a round in flight adds what it had received after the close itself.
     private val closeLine = Regex(
-        "socket stream ended with no close frame \\(status=1006, actor unknown from here\\); " +
+        "socket stream ended with no close frame \\(status=1006, actor unknown from here\\)" +
+            "( after \\d+ events? \\([^)]*\\)| before any event of the round)?; " +
             "ws-[0-9a-f]+ age \\d+s, (idle|mid-round \\d+s in), last frame \\d+s ago, " +
             "(no server ping yet|last server ping \\d+s ago), open=\\d+",
     )
@@ -1008,6 +1016,7 @@ class WsUpstreamCloseDiagnosticsTest {
         val line = closeLineOf(fx)
         assertTrue(closeLine.containsMatchIn(line), "every clause, in order: $line")
         assertTrue("mid-round" in line, "the round had not ended when the server closed: $line")
+        assertTrue("after 1 event (response.created)" in line, "and names what the round had received: $line")
         assertTrue("open=1" in line, "one socket in the registry: $line")
         assertTrue(fx.log.none { "ws-?" in it }, "the factory must wire the connection's OWN pulse, not the default")
         collectTorn(flow)

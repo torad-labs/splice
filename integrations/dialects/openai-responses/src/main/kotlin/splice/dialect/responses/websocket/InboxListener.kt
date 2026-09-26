@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.upstream.transport.BufferCapacity
 import java.io.IOException
@@ -71,7 +72,10 @@ internal class InboxListener(
             .getOrNull()
         if (event == null) {
             onAnomaly()
-        } else if (!inbox.trySend(event).isSuccess) {
+            return
+        }
+        pulse.event(JsonScalars.strOrEmpty(event[FIELD_TYPE]).ifEmpty { UNTYPED })
+        if (!inbox.trySend(event).isSuccess) {
             log("[ws] inbox overflow/closed; anomaly\n")
             onAnomaly()
         }
@@ -104,11 +108,17 @@ internal class InboxListener(
     // the pool's ONLY liveness signal, so a close that does not set it leaves the socket registered
     // and acquire() hands it to the NEXT round, which discovers the corpse on send (daemon.log
     // 2026-08-26: 67 "send failed async (IOException: Output closed)" in 17h, each costing a wasted
-    // frame plus a reconnect). The inbox is closed FIRST in both paths so the cause shape a waiting
-    // round observes is unchanged — kill()'s own close() is then a no-op.
+    // frame plus a reconnect). The inbox is closed FIRST in both paths, so a waiting round observes this
+    // close and never kill()'s, whose own close() is then a no-op.
+    //
+    // V4-242: and closed WITH the close as its cause, the way onError closes it with the error. A round
+    // torn here throws that cause out of its flow, so the close code, the peer's reason and the events
+    // the round had received travel with the tear instead of stopping at this log line: the Codex outage
+    // of 2026-09-25 closed 167 sockets 1011 before any output, and not one word of it reached the client.
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
-        inbox.close()
-        log("[ws] ${endOfStream(statusCode, reason)}; ${pulse.describe()}; poisoning the pooled connection\n")
+        val ended = listOfNotNull(endOfStream(statusCode, reason), pulse.roundSoFar()).joinToString(" ")
+        inbox.close(IOException(ended))
+        log("[ws] $ended; ${pulse.describe()}; poisoning the pooled connection\n")
         onAnomaly()
         return null
     }
@@ -151,3 +161,7 @@ private val wsJson = Json {
 // RFC 6455 §7.4.1 reserves 1006: it is never sent, only synthesised by an endpoint that lost the
 // stream without a close frame. See [InboxListener.endOfStream].
 private const val ABNORMAL_CLOSURE = 1006
+
+// V4-242: the event field the close line names a round's events by, and the name for one without it.
+private const val FIELD_TYPE = "type"
+private const val UNTYPED = "untyped"

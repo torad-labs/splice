@@ -56,6 +56,10 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
      *  inside its own terminal decision the way the chat and passthrough twins do. */
     private var unexpected: RuntimeException? = null
 
+    /** V4-242: the read error that ended the stream, if one did, so the truncated ending can say what
+     *  the upstream did instead of only that the stream stopped. */
+    private var tear: IOException? = null
+
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome =
         if (ctx.dedupeRepeatedSummaryParts) {
             // One lease + lock for the COMPLETE translator round, never the delta hot loop. A
@@ -100,8 +104,9 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
                 .collect { evt -> reducer.onEvent(evt, sink) }
         } catch (e: CancellationException) {
             if (ctx.watchdogFired() == null) throw e
-        } catch (ignored: IOException) {
-            // upstream read error: fall through to the honest terminal decision
+        } catch (torn: IOException) {
+            // upstream read error: fall through to the honest terminal decision, which names it
+            tear = torn
         } catch (ignored: RuntimeException) {
             // V4-116, OPERATOR RULING 2026-09-18 "RETRY DEFAULT IS TOTAL": THE GENERIC FALLTHROUGH.
             // The named arms above are a classifier with only KNOWN cells; SerializationException
@@ -125,7 +130,8 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         latchSweptToolBlocks(state)
         sink.closeAll()
         ResponsesTerminalBackfill().harvestFallback(state)
-        val outcome = ResponsesTerminalDecision(ctx, ResponsesOutcomePayload(ctx)).terminalOutcome(state, runawayGuard)
+        val outcome = ResponsesTerminalDecision(ctx, ResponsesOutcomePayload(ctx))
+            .terminalOutcome(state, runawayGuard, tear)
         captureTurnReasoning(state, outcome)
         return relabelUnrecognised(outcome)
     }

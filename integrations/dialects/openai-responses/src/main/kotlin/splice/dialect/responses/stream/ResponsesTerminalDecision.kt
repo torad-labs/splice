@@ -7,12 +7,17 @@ package splice.dialect.responses.stream
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.util.ERR_SNIPPET
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.WatchdogFired
+import java.io.IOException
 
 private const val MS_PER_S = 1000L
+
+// V4-242: how far down a tear's causes the words are looked for; a transport nests them two or three deep.
+private const val TEAR_CAUSE_DEPTH = 4
 
 internal class ResponsesTerminalDecision(
     private val ctx: StreamTurnContext,
@@ -23,7 +28,11 @@ internal class ResponsesTerminalDecision(
     // late watchdog fire (the watchdog polls the whole enclosing coroutine, which stays suspended
     // on the socket-EOF read AFTER response.completed was already parsed — discarding that turn
     // would retry a successful compaction, the exact quota waste the watchdog exists to prevent).
-    fun terminalOutcome(state: ResponsesTurnState, runawayGuard: String?): TurnOutcome = TerminalStates(
+    fun terminalOutcome(
+        state: ResponsesTurnState,
+        runawayGuard: String?,
+        tear: IOException?,
+    ): TurnOutcome = TerminalStates(
         // NF-06: a tripped runaway valve outranks everything — the buffers were truncated, so
         // neither a late terminal nor a provider error can describe this turn honestly.
         providerFailure = runawayGuard?.let {
@@ -71,7 +80,7 @@ internal class ResponsesTerminalDecision(
     ).terminalPrecedence(
         onFinished = { payload.successOutcome(state) },
         onWatchdog = { watchdogOutcome(it, state) },
-        onUnfinished = { noCompletionOutcome(state) },
+        onUnfinished = { noCompletionOutcome(state, tear) },
     )
 
     // W4-A (L3): the backend REFUSED. OpenAI's refusal channel arrives with status `completed`, so
@@ -125,17 +134,33 @@ internal class ResponsesTerminalDecision(
             null
         }
 
-    private fun noCompletionOutcome(state: ResponsesTurnState): TurnOutcome =
+    // V4-242: a stream that tore says how, in the words of the error that tore it: the deepest cause,
+    // which is the upstream's own close ("socket closed by the peer (status=1011, …) after …") when a
+    // websocket peer ended it. A stream that simply stopped has nothing to add and reads as it did.
+    private fun noCompletionOutcome(state: ResponsesTurnState, tear: IOException?): TurnOutcome =
         if (ctx.clientGone()) {
             TurnOutcome.ClientAbandoned()
         } else {
+            val how = tear?.let(::deepestWords)?.let { "truncated: $it" } ?: "truncated"
             TurnOutcome.Failure(
-                "splice: upstream stream ended without response.completed (truncated); retry",
+                "splice: upstream stream ended without response.completed ($how); retry",
                 partial = payload.partialOrNull(state),
                 cause = FailureCause.UPSTREAM_TRUNCATED,
                 phase = FailurePhase.MID_OUTPUT,
             )
         }
+
+    // A URL in those words keeps its scheme and host only: an HTTP client's timeout text carries the
+    // whole request URL, and a path or query can carry a key (TransportFailureReason, same rule).
+    private fun deepestWords(tear: IOException): String? =
+        generateSequence<Throwable>(tear) { it.cause }
+            .take(TEAR_CAUSE_DEPTH)
+            .mapNotNull { link -> link.message?.trim()?.takeIf { it.isNotEmpty() } }
+            .lastOrNull()
+            ?.replace(urlPastHost, "$1")
+            ?.take(ERR_SNIPPET)
+
+    private val urlPastHost = Regex("""([a-zA-Z][a-zA-Z0-9+.-]*://[^/?#\s,\]]+)[^\s,\]]*""")
 
     // DR-7: an IDLE tear carries the round's salvage; a TOTAL-CAP tear does not, and the split is
     // the whole point. Idle is a STALL DETECTOR — the backend went quiet mid-part, the reasoning

@@ -15,6 +15,7 @@
 package splice.head.turn
 
 import io.ktor.http.HttpStatusCode
+import splice.upstream.failure.ForeignCredential
 import splice.upstream.transport.UpstreamAuthMissing
 import splice.upstream.transport.UpstreamFailed
 import java.util.concurrent.CancellationException
@@ -46,11 +47,15 @@ internal class SealedDrive(
         }
     }
 
-    private fun recordCredentialFailure(drive: TurnDrive, failure: Throwable) {
+    private suspend fun recordCredentialFailure(drive: TurnDrive, failure: Throwable) {
+        val account = drive.account ?: return
         when {
-            failure is UpstreamAuthMissing -> drive.account?.markCredentialMissing()
-            failure is UpstreamFailed && failure.status == HttpStatusCode.Unauthorized.value ->
-                drive.account?.markCredentialUnavailable()
+            failure is UpstreamAuthMissing -> account.markCredentialMissing()
+            // V4-242: a 401 naming a credential the account did not send refused someone else's, so the
+            // account's own stays usable (ForeignCredential; the upstream's 2026-09-25 outage shape).
+            failure is UpstreamFailed && failure.status == HttpStatusCode.Unauthorized.value &&
+                !ForeignCredential.named(failure.body, account.account.auth.credentials()) ->
+                account.markCredentialUnavailable()
         }
     }
 }

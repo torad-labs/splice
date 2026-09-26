@@ -4,6 +4,7 @@
 package splice.head.transport
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
@@ -13,6 +14,7 @@ import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
 import splice.upstream.TurnSignals
 import splice.upstream.WsRoundRunner
+import java.io.IOException
 
 internal class WsRoundDrive(
     private val provider: Provider,
@@ -33,7 +35,17 @@ internal class WsRoundDrive(
         // non-SSE dead-head BODY (an HTML login page arriving where SSE was expected), and a
         // WebSocket round has no body to misread. An empty snippet makes the classifier keep the
         // translator's own verdict, which is the honest answer here.
-        val instrumented = events.onEach { evt ->
+        // V4-242: a round the upstream TORE before any client frame is re-served over SSE too, the same
+        // round a failure terminal sends there, and by the rule SSE's own pre-frame tear follows
+        // (TearAwareEvents.reissuable): an I/O failure, before any client frame, that the watchdog did
+        // not cause. Read as a truncated round instead, a tear was re-anchored on this same transport
+        // five times — every socket of the Codex outage of 2026-09-25 closed 1011 before output — and
+        // the HTTP answer that could have named the cause was never asked. Caught here, upstream of
+        // the translator, because the translator folds an I/O failure into its honest terminal.
+        val instrumented = events.catch { torn ->
+            if (tornBeforeContent(torn, inputs)) throw RoundNeedsSse(tearDetail(torn))
+            throw torn
+        }.onEach { evt ->
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
                 throw RoundNeedsSse(failureDetail(evt))
             }
@@ -96,6 +108,32 @@ internal class WsRoundDrive(
             .take(FAILURE_DETAIL_MAX_CHARS)
     }
 
+    /** V4-242: [torn] is the transport's tear of a round the client has seen nothing of, which neither
+     *  the watchdog, a departed client nor the turn's own cancellation caused. The last two are this
+     *  path's own: the client's message_start is written inside this round's flow (WsRoundDriver's
+     *  ensureStarted), so a dead client's IOException arrives here too, and ClientChannel sets
+     *  clientGone before it throws; and a cancelled turn aborts its round (WsRoundDriver's round job),
+     *  which reads here as a tear the upstream never made. */
+    private fun tornBeforeContent(torn: Throwable, inputs: WsRoundInputs): Boolean =
+        torn is IOException &&
+            !inputs.frameEmittedThisRound() &&
+            inputs.drive.watchdog.fired == null &&
+            !inputs.drive.channel.clientGone.get() &&
+            inputs.turnJob.isActive
+
+    /** The tear in its deepest words, which for a peer's close are the close itself: its code, its
+     *  reason and the events the round had received (InboxListener). One line, clipped like
+     *  [failureDetail]. */
+    private fun tearDetail(torn: Throwable): String =
+        generateSequence(torn) { it.cause }
+            .take(TEAR_CAUSE_DEPTH)
+            .mapNotNull { link -> link.message?.takeIf { it.isNotBlank() } }
+            .lastOrNull()
+            .orEmpty()
+            .ifEmpty { torn::class.simpleName.orEmpty() }
+            .replace(oneLine, " ")
+            .take(FAILURE_DETAIL_MAX_CHARS)
+
     private val oneLine = Regex("\\s+")
 
     /** The loop break for [drive]'s own collection, and nothing else: private to this class, thrown
@@ -119,9 +157,13 @@ internal sealed class WsRoundResult {
     data class Streamed(val outcome: TurnOutcome) : WsRoundResult()
 
     /** The round failed before the client saw any frame, so it is re-served over SSE with the full
-     *  recovery machinery. [detail] is the server's failure terminal (type, code, message). */
+     *  recovery machinery. [detail] is the server's failure terminal (type, code, message), or the
+     *  transport's tear in its deepest words (V4-242). */
     data class NeedsSse(val detail: String) : WsRoundResult()
 }
 
 /** Long enough for a code and a sentence, short enough that one server message stays one line. */
 private const val FAILURE_DETAIL_MAX_CHARS = 240
+
+// V4-242: how far down a tear's causes its words are looked for; the websocket nests them two deep.
+private const val TEAR_CAUSE_DEPTH = 4

@@ -27,6 +27,11 @@ internal class WsPulse(
     private val lastPingAt = AtomicLong(NEVER)
     private val roundStartedAt = AtomicLong(NEVER)
 
+    // V4-242: the event types the round in flight has received, for the close line. Distinct, in the
+    // order they first arrived and capped, because a long round is thousands of deltas of a few types.
+    // Guarded by itself: the listener writes on the socket's thread, the pool resets on the round's.
+    private val roundEvents = RoundEvents()
+
     /** A text frame arrived (any event, terminal or not). */
     internal fun frame() {
         lastFrameAt.set(clock())
@@ -44,12 +49,34 @@ internal class WsPulse(
         return if (ping == NEVER) Long.MAX_VALUE else clock() - ping
     }
 
+    /** V4-242: the round in flight received an event of [type]. */
+    internal fun event(type: String) {
+        roundEvents.add(type)
+    }
+
     internal fun roundStarted() {
+        roundEvents.clear()
         roundStartedAt.set(clock())
     }
 
     internal fun roundEnded() {
         roundStartedAt.set(NEVER)
+        roundEvents.clear()
+    }
+
+    /** V4-242: what the round in flight had received when the socket ended, for the close line and the
+     *  cause the round's tear carries; null on a socket idle between rounds, whose close ended no round.
+     *  The Codex outage of 2026-09-25 closed 167 sockets right after codex.rate_limits and
+     *  codex.response.metadata, and this is the clause that says so. */
+    internal fun roundSoFar(): String? {
+        val (count, types, more) = roundEvents.read()
+        val listed = types.joinToString(", ") + if (more) ", …" else ""
+        return when {
+            count == 1 -> "after 1 event ($listed)"
+            count > 1 -> "after $count events ($listed)"
+            roundStartedAt.get() != NEVER -> "before any event of the round"
+            else -> null
+        }
     }
 
     /** One clause per fact, in the order a reader asks them: which socket, how old, was it working,
@@ -65,7 +92,31 @@ internal class WsPulse(
     }
 
     private fun secs(ms: Long): String = "${ms / MS_PER_S}s"
+
+    /** The round's event count and its first [MAX_EVENT_TYPES] distinct types. */
+    private class RoundEvents {
+        private var count = 0
+        private var more = false
+        private val types = LinkedHashSet<String>()
+
+        fun add(type: String) = synchronized(this) {
+            count += 1
+            if (type in types) return@synchronized
+            if (types.size < MAX_EVENT_TYPES) types += type else more = true
+        }
+
+        fun clear() = synchronized(this) {
+            count = 0
+            more = false
+            types.clear()
+        }
+
+        fun read(): Triple<Int, List<String>, Boolean> = synchronized(this) { Triple(count, types.toList(), more) }
+    }
 }
 
 private const val NEVER = -1L
 private const val MS_PER_S = 1000L
+
+// Enough for a round's lifecycle and its content types; a close line is read by a person.
+private const val MAX_EVENT_TYPES = 8

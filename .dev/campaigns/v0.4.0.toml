@@ -7232,3 +7232,4 @@ verify = "two mutants, each red: runDaemon without the secureStateDirs call, and
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T07:55:58.729Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T07:55:58Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-280 -- :app:test :app:detekt --continue" exit=0 tests=637 touched=app/src/main/kotlin/splice/app/Main.kt,app/src/test/kotlin/splice/app/DaemonStateDirsTest.kt tail=" detekt clean (runDaemon shorter; StartState a data class per UseDataClass); :quality-architecture:test exit 0 (ratchet holds). MUTANT 1 (runDaemon's start without secureStateDirs): exit 1, 'expected: <rwx------> but was: <rwxr-xr-x>'. MUTANT 2 (without secureConfig): exit 1, 'expected: <rw-------> but was: <rw-r--r-->'. Both restored in the same block, sha re-checked before the UseDataClass edit."

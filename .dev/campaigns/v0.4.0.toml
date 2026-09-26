@@ -7334,6 +7334,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T09:37:43.119Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T09:37:43Z
 # [2026-09-26] amend by=unattributed: files were ["core/src/main/kotlin/splice/core/storage/ActivityDays.kt", "app/src/main/kotlin/splice/app/head/HeadKeptFiles.kt", "features/turns/src/main/kotlin/splice/head/trace/TraceCommand.kt", "features/turns/src/main/kotlin/splice/head/trace/TraceRows.kt", "core/src/main/kotlin/splice/core/config/ConfigCoercion.kt", "core/src/main/kotlin/splice/core/config/ConfigService.kt", "core/src/test/kotlin/splice/core/storage/ActivityDaysSweepTest.kt", "core/src/test/kotlin/splice/core/storage/ActivityDaysRolledTest.kt", "features/turns/src/test/kotlin/splice/head/trace/TraceCommandTest.kt", "README.md"]
+# [2026-09-26] fence amended by claude-builder: + ManagedHeadFactory.kt (passes the head's written trace value, so a value that does not read keeps its history, arm 3); + DirectoryEntries.kt (new: one strict listing for DayFiles, DayFileStores and HeadKeptFiles, arm 1/4); + HeadKeptFilesTest.kt (new), KeptFilesLifetimeTest.kt, ConfigHonestyPinsTest.kt (reds for arms 1, 3, 4); + capabilities.tsv (the two new files' census rows).
 
 [[items]]
 id = "V4-287"

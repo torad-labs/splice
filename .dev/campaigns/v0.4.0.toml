@@ -6902,13 +6902,14 @@ id = "V4-257"
 phase = "release"
 title = "PRIVACY: prompt text typed on the command line is never logged (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). ControlAudit.kt:18 (via LaunchRoutes.kt:84) logs the user's claude argv with LogSafe.list: a -p prompt, a plain prompt argument and --append-system-prompt values, 200 chars each, into daemon.log and daemon-boot.log. Log the flags, never a prompt's text."
 files = ["app/src/main/kotlin/splice/app/control/api/ControlAudit.kt", "features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt", "app/src/test/kotlin/splice/app/control/api/**", "integrations/claude-code/src/main/kotlin/splice/client/ClaudeArgv.kt", "integrations/claude-code/src/test/kotlin/splice/client/**", ".dev/restructure/capabilities.tsv"]
-status = "in_flight"
+status = "done"
 verify = "red first: a launch with -p 'PROMPT-A', a positional 'PROMPT-B' and --append-system-prompt 'PROMPT-C' logs a line holding the flags and none of the three texts; CI gate on the train sha."
 # [2026-09-26] amend by=unattributed: files were ["app/src/main/kotlin/splice/app/control/api/ControlAudit.kt", "app/src/main/kotlin/splice/app/control/api/LaunchRoutes.kt"]
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T05:03:32.514Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T05:03:32Z
 # [2026-09-26] amend by=unattributed: files were ["app/src/main/kotlin/splice/app/control/api/ControlAudit.kt", "features/launch/src/main/kotlin/splice/launch/recipe/LaunchRoutes.kt", "app/src/test/kotlin/splice/app/control/api/**", ".dev/restructure/capabilities.tsv"]
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4257 -- :integrations-claude-code:test :integrations-claude-code:detekt :app:test --tests 'splice.app.control.api.*' :app:detekt :quality-architecture:test --continue" exit=0 tests=524 touched=integrations/claude-code/src/main/kotlin/splice/client/ClaudeArgv.kt,integrations/claude-code/src/test/kotlin/splice/client/ClaudeArgvTest.kt,app/src/main/kotlin/splice/app/control/api/ControlAudit.kt,app/src/test/kotlin/splice/app/control/api/ControlAuditTest.kt,.dev/restructure/capabilities.tsv tail="red on the unmodified audit: \"PROMPT-A reached the log: [control] launch claude-splice -> [\\\"claude\\\", \\\"-p\\\", \\\"PROMPT-A\\\", \\\"PROMPT-B\\\", \\\"--append-system-prompt\\\", \\\"PROMPT-C\\\"]\" (ControlAuditTest 7 tests, 3 failed); green on 5466b514c: BUILD SUCCESSFUL, ControlAuditTest 7/0, ClaudeArgvTest 8/0, claude-code 237, app control.api 60, architecture 227, detekt clean on both"
 
 [[items]]
 id = "V4-258"

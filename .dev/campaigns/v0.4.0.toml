@@ -7846,6 +7846,7 @@ verify = "every count PRODUCT.md:66 states is either checked by a test against K
 claimed_by = "console"
 claimed_at = "2026-09-26T18:29:58.472Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T18:29:58Z
+# [2026-09-26] RECEIPT cmd="Knob.kt parse: 55 entries, restartRequired=false 4, headOnly 2; PerfKeys const vals 39; grep PRODUCT.md for counts: none" exit=0 tests=0 touched=docs/design/PRODUCT.md tail="429bdb43b; 33 knobs / three hot / 37 fields all dropped (true today: 55 / 4 / 39); no disclaimer phrases added (ReleaseReadinessLawTest reads PRODUCT.md)"
 
 [[items]]
 id = "V4-323"

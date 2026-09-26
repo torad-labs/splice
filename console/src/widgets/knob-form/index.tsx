@@ -307,7 +307,8 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, fa
   onSave: (key: string, value: ConfigValue) => void;
   /** Per knob: what saving it reaches, when that needs saying. */
   scopeNote?: (knob: KnobDisposition) => string | null;
-  /** Per knob: why its last save did not land, printed under it as a fault. */
+  /** Per knob: why its last save did not land, or landed live but not on disk (V4-310), printed
+   *  under it as a fault. */
   faultOf?: (knob: KnobDisposition) => string | null;
   wording?: Wording;
   /** Saving writes one head's overrides rather than the global PATCH (see KnobForm). */

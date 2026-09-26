@@ -268,13 +268,16 @@ export interface ConfigPatchTarget {
   ok: boolean;
 }
 
-export interface PatchResult {
+interface PatchApplied {
   applied: EffectiveConfig;
   rejected: Record<string, string>;
   restart_required: string[];
   targets: ConfigPatchTarget[];
-  persisted: string;
 }
+
+/** PATCH /api/config's answer. `persisted` names the file the change reached; null means it did not,
+ *  and `not_persisted` says why: the value is live until a restart reads the saved one (V4-299, V4-310). */
+export type PatchResult = PatchApplied & ({ persisted: string } | { persisted: null; not_persisted: string });
 
 export interface RatelimitState {
   limit_tokens: number;

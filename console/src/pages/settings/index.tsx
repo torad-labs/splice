@@ -81,15 +81,15 @@ const POLL_MS = 30000;
 
 /**
  * Save one knob in the global view, and what to print under it: the daemon's refusal of this key,
- * or why the request failed; null when it was applied (V4-305). This was `void
- * applyConfigPatch(...).finally(...)`, the shape V4-175 removed from the page's other writes: a
- * failed PATCH was an unhandled rejection behind a spinner that cleared as if saved, and a 200 whose
- * `rejected` named the key read as saved.
+ * why the value is live but not saved to disk (V4-310), or why the request failed; null when it was
+ * applied and saved (V4-305). This was `void applyConfigPatch(...).finally(...)`, the shape V4-175
+ * removed from the page's other writes: a failed PATCH was an unhandled rejection behind a spinner
+ * that cleared as if saved, and a 200 whose `rejected` named the key read as saved.
  */
 export async function saveGlobalKnob(key: string, value: ConfigValue): Promise<string | null> {
   try {
     const result = await applyConfigPatch({ [key]: value });
-    return result.rejected[key] ?? null;
+    return result.rejected[key] ?? (result.persisted === null ? result.not_persisted : null);
   } catch (err) {
     return err instanceof Error ? err.message : String(err);
   }

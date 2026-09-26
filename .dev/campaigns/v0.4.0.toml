@@ -6791,6 +6791,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T19:31:21.482Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T19:31:21Z
 # [2026-09-26] amend by=orchestrator: files were ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/InboxListener.kt", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorController.kt", "features/turns/src/main/kotlin/splice/head/round/ReanchorRunner.kt", "features/turns/src/main/kotlin/splice/head/pipeline/StreamPromote.kt"]
+# [2026-09-26] fence amended 2026-09-26 by splice-lead on claude-builder's read of the path: InboxListener closes with no cause (InboxListener.kt:110), the translator swallows the tear (ResponsesStreamTranslator.kt:104), WsRoundDrive bypasses to SSE only on a failure EVENT (WsRoundDrive.kt:40), a 401 ends as authentication_error + login hint (TurnKnownEnd.kt:47) and marks the credential unavailable (SealedDrive.kt:52). StreamPromote.kt and ResponsesReanchorController.kt dropped (not on this path). Scope reading: default, the frame names the HTTP answer after a bypass; the WS close is named on the bypass and close lines, and in the frame when the tear itself ends the turn.
 
 [[items]]
 id = "V4-243"

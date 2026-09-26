@@ -38,7 +38,9 @@ public object TransportFailureReason {
     public fun of(e: Throwable, upstreamUrl: String?): String {
         // StreamTornBeforeClient is splice's own wrapper; its text says where, not what.
         val root = if (e is StreamTornBeforeClient) e.cause ?: e else e
-        val chain = generateSequence(root) { it.cause }.take(MAX_CAUSE_DEPTH).toList()
+        val chain = FailureChain.links(root).toList()
+        // V4-307: named before anything else; the IOException OkHttp wraps it in says only "canceled".
+        chain.firstOrNull(FailureChain::refusedThreadStart)?.let { return refusal(it) }
         val where = endpoint(upstreamUrl)
         val named = headline(chain, where)
         val detail = chain.firstNotNullOfOrNull { t -> t.message?.trim()?.takeIf { it.isNotEmpty() } }
@@ -97,6 +99,15 @@ public object TransportFailureReason {
         else -> null
     }
 
+    /** V4-307: [refused] with what it stopped, read from the frame nearest the refusal that names the thread
+     *  it was for; with none of those, the refusal alone. */
+    private fun refusal(refused: Throwable): String {
+        val stopped = refused.stackTrace.firstNotNullOfOrNull { frame ->
+            REFUSAL_STOPS.firstOrNull { (owner, _) -> frame.className.startsWith(owner) }?.second
+        }
+        return if (stopped == null) REFUSED_THREAD_START else "$REFUSED_THREAD_START: $stopped"
+    }
+
     private fun endpoint(url: String?): String {
         val parsed = try {
             url?.let(::URI)
@@ -109,6 +120,24 @@ public object TransportFailureReason {
     }
 
     private const val JDK_NO_RESPONSE = "HTTP/1.1 header parser received no bytes"
+
+    // V4-307: the endpoint is left out of a refused thread start: it did not cause this.
+    private const val REFUSED_THREAD_START =
+        "the host refused splice a new thread (a process or thread limit was reached)"
+
+    // V4-307: what a refused thread start stopped is said with it, and it depends on the thread. Both owners
+    // below count or mark a start before making it and never recover from a refused one, so restarting
+    // splice is the remedy: OkHttp's task runner (TaskRunner.startAnotherThread, okhttp 5.3.2), whose one
+    // upstream task is the pool's reaper; and okio's timeout watchdog (AsyncTimeout.insertIntoQueue, okio
+    // 3.17.0 sets its sentinel, then starts the thread). What still ends a stalled turn runs on no okio
+    // thread: the socket's own read timeout (RealConnection.newCodec sets SO_TIMEOUT), ktor's request
+    // timeout, the request-write watch and the turn watchdog, which cancel the call from their own threads.
+    private val REFUSAL_STOPS = listOf(
+        "okhttp3.internal.concurrent.TaskRunner" to
+            "idle upstream connections are no longer evicted until splice restarts",
+        "okio.AsyncTimeout" to
+            "okio's timeouts stay off until splice restarts; splice's own caps still end a stalled turn",
+    )
 
     // Ktor's HttpTimeout messages: "Connect timeout has expired [url=<request url>, connect_timeout=…]".
     private val KTOR_URL = Regex("""url=[^,\]]*""")

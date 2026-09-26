@@ -93,7 +93,8 @@ public class UpstreamTransport {
         // so a stall evicts only this head's idle connections, and the retry dials a new one.
         val pool = ConnectionPool()
         val ledger = SocketLedger()
-        val factory = KeepaliveSocketFactory(ledger = ledger, sendBufferBytes = sockets.sendBufferBytes)
+        val factory = sockets.factory
+            ?: KeepaliveSocketFactory(ledger = ledger, sendBufferBytes = sockets.sendBufferBytes)
         val bound = RequestWriteBound(requestWriteTimeoutMs, pool, ledger, queues)
         return HttpClient(OkHttp) {
             install(HttpTimeout) {
@@ -116,10 +117,24 @@ public class UpstreamTransport {
                     // (macOS/kqueue, 2026-07-18); OkHttp blocks a virtual thread per call instead,
                     // and the 1000-stream load test is the gate that says it scales.
                     protocols(listOf(Protocol.HTTP_1_1))
+                    // FAST FALLBACK OFF (V4-307). OkHttp's happy-eyeballs connect runs each attempt as a
+                    // task on its process-wide TaskRunner, whose threads start on demand, and
+                    // TaskRunner.startAnotherThread counts a start before making it, with no recovery if
+                    // the start is refused (okhttp 5.3.2, and master; okhttp #7389). One refused start
+                    // ("unable to create native thread") left the count ahead for good: no connect ran
+                    // again in the process, and every later new connection hung to the turn cap
+                    // (UpstreamClientThreadRefusalTest). Off, a connect runs inline on the call's own
+                    // thread. It costs nothing here: fast fallback is also the only thing that puts IPv6
+                    // addresses first (RouteSelector), splice sets no Dns and no
+                    // java.net.preferIPv6Addresses, and the JVM's own order is IPv4 first, so a broken
+                    // IPv6 route is never dialled ahead of a working IPv4 one.
+                    fastFallback(false)
                     socketFactory(factory)
                     sockets.trust?.let { trust -> sslSocketFactory(sockets.tlsFactory(trust), trust) }
                     dispatcher(dispatcher)
                     connectionPool(pool)
+                    // V4-307: first, so a thread refused anywhere below is placed before or after the send.
+                    addInterceptor(RequestSendState())
                     addInterceptor(bound.untimedWrite)
                     addNetworkInterceptor(bound)
                 }
@@ -388,6 +403,9 @@ internal class UpstreamSockets(
     /** V4-289: the kernel's send queues; a test hands a missing table to pin the macOS path. Null is the
      *  kernel's own table, read by a [ProcNetTcp] that logs to the client's log (V4-292). */
     val queues: SendQueues? = null,
+    /** V4-307: a test's own sockets, in place of the counted, keepalive-armed ones, for a fault on a socket's
+     *  reads. Its sockets are not in the client's ledger, so the request-write watch leaves them alone. */
+    val factory: SocketFactory? = null,
 ) {
     fun tlsFactory(trust: X509TrustManager): SSLSocketFactory =
         SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }.socketFactory

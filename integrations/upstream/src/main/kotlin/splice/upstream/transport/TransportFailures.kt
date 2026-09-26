@@ -43,14 +43,26 @@ public fun interface CausePredicate {
  *  retrying that one risks a double token burn, so it needs a distinct log class. */
 internal enum class TransportFailurePhase { CONNECT, POST_SEND }
 
+/** The failure chain both halves read: the verdict below and the name TransportFailureReason gives, so the
+ *  two cannot read different chains. */
+internal object FailureChain {
+    /** [e] and its causes, at most MAX_CAUSE_DEPTH of them. OkHttp hands a Throwable its call thread caught
+     *  over as IOException("canceled due to …") with that Throwable as the cause (RealCall.AsyncCall, 5.3.2:
+     *  initCause), so a refused thread start is a link of this chain. */
+    fun links(e: Throwable): Sequence<Throwable> = generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH)
+
+    /** V4-307: a thread start the host refused, in the JDK's own words (HotSpot, JDK 21). */
+    fun refusedThreadStart(t: Throwable): Boolean =
+        t is OutOfMemoryError && t.message?.startsWith(NATIVE_THREAD_REFUSED) == true
+
+    private const val NATIVE_THREAD_REFUSED = "unable to create native thread"
+}
+
 internal class TransportFailures {
-    /** The cause chain as a bounded sequence — [e] itself, then its causes, at most
-     *  MAX_CAUSE_DEPTH links (Ktor wraps engine exceptions, so the class that decides
-     *  "retryable transport" or "DNS" is never the one thrown). THE walk: every rule below
-     *  reads the chain through this one, lazily, so the bound is written once rather than
-     *  trusted twice and the phase and DNS rules cannot drift apart. */
-    private fun causeChain(e: Throwable): Sequence<Throwable> =
-        generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH)
+    /** The failure's links, bounded ([FailureChain.links]) — Ktor wraps engine exceptions, so the class
+     *  that decides "retryable transport" or "DNS" is never the one thrown. Every rule below reads the
+     *  links through this one, lazily, so the phase and DNS rules cannot drift apart. */
+    private fun causeChain(e: Throwable): Sequence<Throwable> = FailureChain.links(e)
 
     /** Does any link of the chain satisfy [predicate]? The boolean special case of the same
      *  walk [classifyTransport] maps over — the loop used to be written out twice, and the
@@ -78,8 +90,11 @@ internal class TransportFailures {
      *  existing retryable set (G16). */
     internal fun classifyTransport(e: Throwable): TransportFailurePhase? =
         // V4-272: found anywhere in the chain, because ktor wraps it in its own socket timeout, which
-        // alone reads POST_SEND.
-        if (causeChain(e).any { it is RequestWriteStalled }) {
+        // alone reads POST_SEND. V4-307: so is a thread start the host refused before the request was
+        // written whole (RequestSendState). A refusal after that has no phase of its own: the upstream
+        // may hold the whole request, so it keeps the POST_SEND every failure this seam cannot place gets
+        // (rethrowUnlessRetryableTransport), and with it the possible-duplicate label.
+        if (causeChain(e).any { it is RequestWriteStalled || it is RefusedBeforeSend }) {
             TransportFailurePhase.CONNECT
         } else {
             causeChain(e).firstNotNullOfOrNull { transportPhaseOf(it) }

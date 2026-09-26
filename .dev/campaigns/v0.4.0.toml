@@ -7554,8 +7554,11 @@ id = "V4-304"
 phase = "release"
 title = "A per-key read never shows one key's data or failure under another key (5-day review, B shard silent-failure, 2026-09-26; the class V4-301 fixes for capture). The Sessions detail panel renders useSessionEdges' data as the open session's hand-offs (sessions/index.tsx:460, :497) with no check that the payload's session_id (session/model/types.ts:117) is the open one, and never reads the store's error; sessionEdgesStore is one global resource whose setError keeps the old data (shared/lib/index.ts:35), so open A (hand-off to X), then B whose edges read fails or is still in flight: B's panel shows A's hand-off to X, for good if B's read never lands. Fix the class from its source: the entities' per-key fetches are fetchSessionEdges(sessionId), fetchConfig(head), fetchTeamPanels(id, day), fetchProject(id), fetchProjectFiles(id), fetchCapture(head) and fetchPerfTurns(head) (grep 'export async function fetch.*(' console/src/entities, 2026-09-26). Give each a disposition in the receipt: keyed at the store (data and error filed under the key they were read for, one pure read-for-key selector, the pattern V4-301 lands for capture, lifted to shared/lib if it serves more than one entity), or already safe with the file:line that proves it"
 files = ["console/src/pages/sessions/index.tsx", "console/src/entities/session/api/index.ts", "console/src/entities/session/model/store.ts", "console/src/entities/session/index.ts", "console/src/shared/lib/index.ts", "console/tests/session-edges.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first in vitest, quoted: open session A with a hand-off, then B whose edges read fails: B's panel prints A's hand-off; green: B's panel prints B's failure and no hand-off of A's; every per-key fetch named in the row has a disposition in the receipt, and each one marked unsafe gets its own red; console eslint, typecheck and vitest through the gate's console legs"
+claimed_by = "console"
+claimed_at = "2026-09-26T12:18:22.842Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T12:18:22Z
 
 [[items]]
 id = "V4-305"

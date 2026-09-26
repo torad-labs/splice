@@ -692,6 +692,16 @@ origin.
   disk in the middle of the write left the transcript truncated. The new transcript is now written
   beside the old one and moved over it in one atomic step, so an interrupted write leaves the original
   as it was (V4-259).
+- **splice's log no longer keeps the prompt you type on a command line.** Each launch wrote the whole
+  `claude` command line to `daemon.log`, so a prompt given with `-p` or as a plain word, and the text
+  given to `--system-prompt`, `--append-system-prompt`, `--agents` or `--cloud`, stayed in the log.
+  The launch line now keeps every flag and writes each prompt as `<N chars withheld>`. A word splice
+  cannot place, such as one after a flag it does not know or after `--`, is withheld too (V4-257).
+- **A team's Chat files a message under the session it went to.** A message sent to a member by name,
+  such as `gpt`, was matched to a session each time the board was read, so it belonged to whoever
+  held the name at that moment: a new team's Chat showed a message an earlier team had sent to its own
+  `gpt`. splice now records the session that held the name when the message was sent. A message to a
+  name that no session held then, or that two sessions held, belongs to no one (V4-252).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

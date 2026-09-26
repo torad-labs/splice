@@ -31,6 +31,7 @@ import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.sessions.teams.TeamStore
 import splice.sessions.transcript.SentTexts
+import java.nio.file.Files
 import java.nio.file.Path
 
 /** 2026-09-20T10:26:40Z, when the team was bound; its turns follow. */
@@ -83,7 +84,7 @@ class TeamsPartialCostTest {
             Team(
                 name = "storefront",
                 goal = "Keep the storefront API working and tested.",
-                repo = "/tmp/storefront",
+                repo = Files.createDirectories(tmp.resolve("repo")).toString(),
                 slots = listOf(
                     TeamSlot(id = "claude", role = "lead", head = "claude-splice", lead = true),
                     TeamSlot(id = "gpt", role = "reviewer", head = "codex"),

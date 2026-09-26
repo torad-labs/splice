@@ -7993,5 +7993,8 @@ id = "V4-329"
 phase = "release"
 title = "HeadEconomicsSeamTest's rig leaves its @TempDir quiet before JUnit deletes it: a late file write no longer fails teardown with DirectoryNotEmptyException (console, V4-319 green rerun 2026-09-26: 'a turn whose snapshot has no cache-write counter folds as zero', 562/563)"
 files = ["features/turns/src/test/kotlin/splice/head/HeadEconomicsSeamTest.kt"]
-status = "todo"
+status = "in_flight"
 verify = "first name the late writer from the evidence, not the guess: HeadServer.stop() already calls economicsStore.flushNow() (HeadServer.kt:145), after which EconomicsStore's 1 s coalesced flush is a no-op (persist returns on v <= persistedVersion, EconomicsStore.kt persist), so economics.json may not be it; list what lands in the rig's tmp after close() returns. AsyncFileIo.drain() waits only for runnable work, delayed tasks stay delayed (AsyncFileIo.kt:101). red: a rig test that records a turn, calls close(), then observes a write in tmp after close returned, failing on HEAD; green: close() leaves nothing pending for that writer (flushNow for the store that writes late plus AsyncFileIo.drain, or the store's own stop), the red passes, and :features-turns:test under the slot passes whole"
+claimed_by = "console"
+claimed_at = "2026-09-26T21:46:28.256Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T21:46:28Z

@@ -20,6 +20,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 class CheckFailed extends Error {}
+
+/** The longest the head refuses on its own before a turn probes the upstream again: NF-01's clamp,
+ *  MAX_RATE_LIMIT_COOLDOWN_MS in integrations/upstream's RateLimitCooldown.kt. */
+const HEAD_HOLD_CEILING_MS = 120_000;
 function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new CheckFailed(message);
 }
@@ -90,7 +94,11 @@ const verbs: Record<string, (argv: readonly string[]) => Promise<void> | void> =
     const first = await turn(port);
     const second = await turn(port);
     // The third turn must reach the upstream, so it waits out the hold the second one was refused on.
-    const holdUntil = Number(second.headers["anthropic-ratelimit-unified-reset"] ?? "0") * 1000;
+    // V4-233: a spent PLAN window's refusal names the plan's own reset, an hour out on this mock, but
+    // the head lifts its own refusal at NF-01's clamp and the next turn probes the upstream (V4-47),
+    // so the wait is whichever comes first.
+    const namedReset = Number(second.headers["anthropic-ratelimit-unified-reset"] ?? "0") * 1000;
+    const holdUntil = Math.min(namedReset, second.received_ms + HEAD_HOLD_CEILING_MS);
     await Bun.sleep(Math.max(0, holdUntil - Date.now()) + 1_000);
     const third = await turn(port, false);
     writeFileSync(out, JSON.stringify({ first, second, third }, null, 2));

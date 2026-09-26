@@ -25,8 +25,13 @@ PLAN_HEAD_PORT=3107
 PROBE_HEAD_PORT=3108
 # Long enough that the turn meets the limit more than once (splice's retries, its hold, the client's
 # own wait); short enough for CI. The probe's upstream never resets inside the run.
-PLAN_RESET_S=90
+# The turn's upstream resets this long after the turn's first request: 90 s keeps CI short, and
+# `run.sh --plan-reset-s 18000` asks the real question, whether the client outlasts a five-hour window.
+PLAN_RESET_S="${PLAN_RESET_S:-90}"
 PROBE_RESET_S=3600
+# V4-233: once the upstream names its plan window spent, splice sends it nothing more until the reset:
+# the turn's one request reaches the limited upstream, and every later one waits for the reset.
+PLAN_UPSTREAM_MAX="${PLAN_UPSTREAM_MAX:-1}"
 TURN_MOCK_PORT=""
 PROBE_MOCK_PORT=""
 
@@ -39,7 +44,8 @@ start_plan_mocks() {
   MOCK_ANTHROPIC_RESET_S=$PLAN_RESET_S MOCK_ANTHROPIC_LOG="$OUT/upstream-turn.jsonl" \
     nohup bun "$REPO/tools/e2e/docker/mock_anthropic.ts" 0 > "$OUT/mock_anthropic_turn.out" 2> "$OUT/mock_anthropic_turn.err" &
   echo $! > "$OUT/mock_anthropic_turn.pid"
-  MOCK_ANTHROPIC_RESET_S=$PROBE_RESET_S MOCK_ANTHROPIC_LOG="$OUT/upstream-probe.jsonl" \
+  env ${PLAN_PROBE_MESSAGE:+"MOCK_ANTHROPIC_MESSAGE=$PLAN_PROBE_MESSAGE"} \
+    MOCK_ANTHROPIC_RESET_S=$PROBE_RESET_S MOCK_ANTHROPIC_LOG="$OUT/upstream-probe.jsonl" \
     nohup bun "$REPO/tools/e2e/docker/mock_anthropic.ts" 0 > "$OUT/mock_anthropic_probe.out" 2> "$OUT/mock_anthropic_probe.err" &
   echo $! > "$OUT/mock_anthropic_probe.pid"
   for _ in $(seq 1 50); do
@@ -145,7 +151,7 @@ plan_turn() {
   local out rc
   out="$(ANTHROPIC_API_KEY=mock-key DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-    timeout 480 claude-planlimit -p "Say hello." --output-format text </dev/null 2>&1)"
+    timeout $((PLAN_RESET_S + 390)) claude-planlimit -p "Say hello." --output-format text </dev/null 2>&1)"
   rc=$?
   date +%s%3N > "$OUT/turn-end-ms"
   printf '%s\n' "$out" | tail -c 1500
@@ -154,7 +160,8 @@ plan_turn() {
 }
 step "real Claude Code: the turn waits out the plan limit and completes" plan_turn
 step "the turn ended after the upstream's reset" bun "$PLAN_TS" resumed "$OUT/upstream-turn.jsonl" "$(cat "$OUT/turn-end-ms" 2>/dev/null || echo 0)"
-step "upstream timeline while at its limit" bun "$PLAN_TS" upstream "$OUT/upstream-turn.jsonl"
+step "upstream timeline while at its limit: at most $PLAN_UPSTREAM_MAX request before the reset" \
+  bun "$PLAN_TS" upstream "$OUT/upstream-turn.jsonl" "$PLAN_UPSTREAM_MAX"
 
 # The client's own record of what it was told: its transcripts, wherever the head's config dir put them.
 keep_transcripts() {

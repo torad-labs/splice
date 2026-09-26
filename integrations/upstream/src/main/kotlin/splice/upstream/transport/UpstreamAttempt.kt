@@ -18,6 +18,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
+import splice.core.usage.PlanLimit
 import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.CredentialHeaders
@@ -89,5 +90,8 @@ internal sealed class RetryOutcome<out T> {
         val status: Int,
         val text: String,
         val retryAfterMs: Long? = null,
+        /** V4-233: a 429 whose unified headers name a spent plan window, read here because the
+         *  headers die with the response like the body does. Null for every other failure. */
+        val planLimit: PlanLimit? = null,
     ) : RetryOutcome<Nothing>()
 }

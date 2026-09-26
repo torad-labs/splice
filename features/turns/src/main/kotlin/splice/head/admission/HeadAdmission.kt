@@ -12,6 +12,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.perf.OutcomeTag
 import splice.core.perf.TurnPerf
+import splice.core.usage.PlanLimit
 import splice.core.util.WallClock
 import splice.head.ClientAuth
 import splice.head.HeadDeps
@@ -169,7 +170,10 @@ internal class HeadAdmission(
         val armedMs = deps.upstream.rateLimitedForMs
         if (armedMs <= 0L) return false
         val now = wallClock()
-        val retryEpochSeconds = clientRetryEpochSeconds(now, armedMs)
+        // V4-233: a held PLAN window is the upstream's own statement that the plan is spent until an
+        // instant, so that instant is the deadline, and a persistent client sleeps once, until it.
+        val plan = deps.upstream.planHold
+        val retryEpochSeconds = plan?.resetEpochSeconds ?: clientRetryEpochSeconds(now, armedMs)
         val windowResetEpochSeconds =
             deps.upstream.providerResetForMs.takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
         // V4-51's seam: the refusal states `rejected` and carries the plain
@@ -194,7 +198,8 @@ internal class HeadAdmission(
                 trace,
             ),
         )
-        responses.respondRateLimited(call, rateLimitedMessage(armedMs, windowResetEpochSeconds), retryEpochSeconds)
+        val message = rateLimitedMessage(armedMs, windowResetEpochSeconds, plan)
+        responses.respondRateLimited(call, message, retryEpochSeconds)
         return true
     }
 
@@ -229,7 +234,11 @@ internal class HeadAdmission(
      *  horizons matters because they are different facts: a message carrying only the 120s hold
      *  read as "back in two minutes" against an 88-minute window, and one carrying only the window
      *  told the operator to wait 88 minutes for a limit his own re-send cleared in seconds. */
-    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?): String {
+    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?, plan: PlanLimit?): String {
+        if (plan != null) {
+            return "Rate limit exceeded: this plan's ${plan.windowWords} window is used up until " +
+                "${AccountResetText.format(plan.resetEpochSeconds)}. The session waits and resumes after the reset."
+        }
         val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
         val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
             "limited, so it is holding new turns for ${waitS}s. Retry after that."
@@ -249,7 +258,11 @@ internal class HeadAdmission(
      *  Retry-After past 60s and a persistent one sleeps through it, so a 3-day pooled reset on the
      *  wire is the turn dying either way. The real reset is not lost — it rides in the refusal
      *  message and in the perf row — and the client that comes back at the bound meets a re-probe
-     *  that either serves it or re-refuses with a fresh bounded deadline. */
+     *  that either serves it or re-refuses with a fresh bounded deadline.
+     *
+     *  V4-233, the one exception: a PLAN window the upstream named spent (unified status rejected,
+     *  a window claim, a reset) is its own statement, not a burst's stamp, so [refuseIfRateLimited]
+     *  hands the client that reset instead, and every head's client runs persistent (V4-72). */
     private fun clientRetryEpochSeconds(now: Long, holdMs: Long): Long =
         (now + holdMs.coerceIn(0L, MAX_RATE_LIMIT_COOLDOWN_MS)) / MILLIS_PER_SECOND
 

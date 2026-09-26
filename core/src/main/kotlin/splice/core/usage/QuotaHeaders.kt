@@ -76,19 +76,68 @@ public class QuotaHeaders(private val clock: WallClock) {
 
     private fun unifiedWindow(h: QuotaHeaderRead, abbr: String, seconds: Long): QuotaWindow? {
         val utilization = h("$UNIFIED-$abbr-utilization")?.toDoubleOrNull() ?: return null
-        val reset = h("$UNIFIED-$abbr-reset")?.toDoubleOrNull()?.let(::epochSeconds)
+        val reset = h("$UNIFIED-$abbr-reset")?.toDoubleOrNull()?.let(EpochSeconds::of)
         return QuotaWindow(utilization * PERCENT, reset, seconds)
     }
+}
 
-    /** Providers disagree on seconds vs millis; anything past [EPOCH_MILLIS_FLOOR] — the year 5138
-     *  read as seconds, March 1973 read as millis — is millis. The comparison converts for free:
-     *  Kotlin compares a Double against a Long directly, so the shared constant stays one Long and
-     *  no site restates it in its own numeric type. */
-    private fun epochSeconds(value: Double): Long =
-        if (value > EPOCH_MILLIS_FLOOR) (value / MILLIS).toLong() else value.toLong()
+/** V4-233: the upstream's own statement that a PLAN window is spent until a named instant. */
+public data class PlanLimit(val claim: String, val resetEpochSeconds: Long) {
+    /** The claim in words: `five_hour` is "5-hour", `seven_day` "7-day", and a model-scoped
+     *  seven-day claim names its model (`seven_day_opus` is "7-day Opus"). */
+    public val windowWords: String
+        get() = when {
+            claim == FIVE_HOUR_CLAIM -> "5-hour"
+            claim == SEVEN_DAY_CLAIM -> "7-day"
+            claim.startsWith("${SEVEN_DAY_CLAIM}_") ->
+                "7-day " + claim.removePrefix("${SEVEN_DAY_CLAIM}_").split('_').joinToString(" ") { part ->
+                    part.replaceFirstChar { it.uppercaseChar() }
+                }
+            else -> claim
+        }
+}
+
+/** V4-233: Anthropic's unified family names a spent plan window in three members: `-status:
+ *  rejected`, a `-representative-claim` naming the window that refused, and the plain `-reset`.
+ *  That combination is a spent window, not a burst: it clears at the reset and not before, so a
+ *  re-send before it cannot succeed. The claims are the ones the 2.1.282 client knows: `five_hour`,
+ *  and the seven-day family (`seven_day`, `seven_day_opus`, `seven_day_sonnet` and the rest).
+ *  `overage` is a spend bucket, not a window, and every other shape is null, which leaves V4-61's
+ *  handling of a burst 429 alone (muse stamps its window on bursts and sends no unified family).
+ *
+ *  The reset is BOUNDED by the claim's own window: an instant further out than one whole window
+ *  from `nowEpochSeconds` is not one this claim can name, and a malformed one must not hold a head
+ *  past it. A reset already passed names nothing. */
+internal object PlanLimits {
+    fun of(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? {
+        val claim = header("$UNIFIED-representative-claim")
+            ?.takeIf { header("$UNIFIED-status") == QuotaStatus.REJECTED.wire }
+            ?: return null
+        val window = windowSeconds(claim) ?: return null
+        val reset = header("$UNIFIED-reset")?.toDoubleOrNull()?.let(EpochSeconds::of)?.takeIf { it > nowEpochSeconds }
+        return reset?.let { PlanLimit(claim, minOf(it, nowEpochSeconds + window)) }
+    }
+
+    /** How long the window a unified claim names lasts; null for a claim that names no window. */
+    private fun windowSeconds(claim: String): Long? = when {
+        claim == FIVE_HOUR_CLAIM -> FIVE_HOURS_SECONDS
+        claim.startsWith(SEVEN_DAY_CLAIM) -> SEVEN_DAYS_SECONDS
+        else -> null
+    }
+}
+
+/** Providers disagree on seconds vs millis; anything past [EPOCH_MILLIS_FLOOR] — the year 5138
+ *  read as seconds, March 1973 read as millis — is millis. The comparison converts for free:
+ *  Kotlin compares a Double against a Long directly, so the shared constant stays one Long and
+ *  no site restates it in its own numeric type. One reading for the quota windows and the plan
+ *  limit alike, which is why it is its own unit (V4-233). */
+internal object EpochSeconds {
+    fun of(value: Double): Long = if (value > EPOCH_MILLIS_FLOOR) (value / MILLIS).toLong() else value.toLong()
 }
 
 private const val UNIFIED = "anthropic-ratelimit-unified"
+private const val FIVE_HOUR_CLAIM = "five_hour"
+private const val SEVEN_DAY_CLAIM = "seven_day"
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L
 

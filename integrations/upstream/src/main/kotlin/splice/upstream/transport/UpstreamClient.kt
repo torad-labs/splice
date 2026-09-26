@@ -35,6 +35,7 @@
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
+import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.upstream.DnsBackoff
@@ -113,6 +114,14 @@ public class UpstreamClient(
      *  429 body actually named, and it is the only one worth telling a client to come back at. */
     public val providerResetForMs: Long get() = cooldown.providerUnavailableForMs()
 
+    /** V4-233: how long the upstream's named PLAN window stays spent (0 when none is held). */
+    public val planHoldForMs: Long get() = cooldown.planHold.forMs()
+
+    /** V4-233: the held plan window exactly as the upstream named it, or null. The admission plane
+     *  hands its reset to the client instead of the cooldown's lift, because it is the upstream's own
+     *  statement and not a burst's stamp. */
+    public val planHold: PlanLimit? get() = cooldown.planHold.live()
+
     /**
      * Prepare an upstream POST and run [block] with the streaming response. Handles retries
      * and one single-flight 401 refresh. The credentials [ctx] supplies are written onto the
@@ -141,7 +150,7 @@ public class UpstreamClient(
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
+        return retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -219,13 +228,13 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
                     "${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
         }
         if (turnWaitExhausted(ctx)) {
             ctx.onRetry(
                 "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
             )
-            if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
+            if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
             return LoopStep.TurnWaitExhausted
         }
         activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
@@ -263,7 +272,11 @@ public class UpstreamClient(
         // ReturnCount budget of 3 (the transport guard above spends one of them). Behaviour is
         // unchanged: only the Done arm skips `lastErr`, exactly as the early return did.
         return when (outcome) {
-            is RetryOutcome.Done -> LoopStep.Done(outcome.value)
+            is RetryOutcome.Done -> {
+                // V4-233: an answered turn is the upstream saying the plan window is open again.
+                activeCooldown(ctx).planHold.clear()
+                LoopStep.Done(outcome.value)
+            }
             is RetryOutcome.Failed -> {
                 state.lastErr = outcome
                 // RC-4: a one-shot content amendment outranks the normal retry plan — a
@@ -342,10 +355,12 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
                     "attempt ${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
         }
         val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
-        if (!backoffFits(ctx, t0, plannedDelayMs)) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
+        if (!backoffFits(ctx, t0, plannedDelayMs)) {
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
+        }
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
         return LoopStep.Continue
@@ -419,7 +434,7 @@ public class UpstreamClient(
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
+            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
         }
     }
 

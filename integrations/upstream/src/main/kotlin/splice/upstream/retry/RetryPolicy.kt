@@ -22,6 +22,7 @@ import splice.core.turn.FailureCause
 import splice.core.util.ERR_SNIPPET
 import splice.core.wire.HttpStatus
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.RetryNotice
 import splice.upstream.failure.FailureRules
 import splice.upstream.failure.FailureSource
 import splice.upstream.failure.UpstreamFailureClassifier
@@ -56,10 +57,21 @@ internal class RetryRules(private val maxRetries: Int) {
      *  reproduce the limit upstream. Arming here, at the one exit, makes the invariant structural
      *  rather than a property of each planner branch; re-arming an armed horizon is a max() and
      *  costs nothing. The pushback is the header's own value, clamped by arm() exactly as before,
-     *  or the bare-429 default when there was none. */
-    fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown, layers: Int): Nothing {
+     *  or the bare-429 default when there was none.
+     *
+     *  V4-233: a 429 that names a spent PLAN window holds until the reset it named, and arms the
+     *  horizon toward it (still clamped). V4-234: whether the client waits is then decided by that
+     *  reset, never by the upstream's words, so the body the client gets is our sentence naming the
+     *  reset. The upstream's own words are already in the log (planRetry's notice). With no reset
+     *  named, the upstream's text passes through unchanged: waiting cannot fix a spend limit. */
+    fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown, layers: Int, onRetry: RetryNotice): Nothing {
         if (last?.status == HttpStatus.TOO_MANY_REQUESTS) {
-            cooldown.arm(last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+            val limit = last.planLimit
+            val planned = limit?.let { cooldown.planHold.hold(it, onRetry) }
+            cooldown.arm(planned ?: last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+            if (limit != null && planned != null) {
+                throw UpstreamFailed(cooldown.planHold.clientBody(limit), last.status, layers)
+            }
         }
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
@@ -131,6 +143,10 @@ internal class RetryRules(private val maxRetries: Int) {
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
         overflowed(failed) -> "is a context overflow (no retry: the same bytes overflow again)"
         policyRefused(failed) -> "is a content-policy refusal (no retry: the same bytes are refused again)"
+        // V4-233: the upstream named a PLAN window spent until an instant; a re-send before it meets
+        // the same answer. A burst 429 carries no such statement and keeps V4-61's 15s schedule.
+        failed.planLimit != null ->
+            "names its ${failed.planLimit.claim} plan window spent (no retry before the reset it named)"
         else -> null
     }
 

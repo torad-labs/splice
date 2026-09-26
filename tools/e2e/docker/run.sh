@@ -14,6 +14,10 @@
 #                the two shims carry the same version marker, since that upgrade cannot replace the daemon.
 #   --scenario plan-limit  instead of a fresh machine, run tools/e2e/docker/plan-limit.sh: an Anthropic
 #                plan-limit 429 through splice to the real Claude Code, which must wait it out and resume.
+#   --plan-reset-s N  the plan-limit upstream resets N seconds after the turn's first request (default
+#                90, which keeps CI short; a real five-hour window is 18000).
+#   --probe-message TEXT  the plan-limit probe upstream's 429 says TEXT (V4-234: plant a phrase the client
+#                reads as stop-waiting, and the probe step shows whether it reaches the client).
 #   --keep       keep the artifacts scratch dir and print its path
 #   --no-build   reuse the image if it exists (skips docker build); the in-image version check still
 #                fails if that image does not match Versions.kt's tested Claude Code pin.
@@ -24,7 +28,7 @@ TESTED_CLAUDE_CODE="$(sed -nE 's/^public const val TESTED_CLAUDE_CODE: String = 
   "$ROOT/core/src/main/kotlin/splice/core/Versions.kt" | head -1)"
 [ -n "$TESTED_CLAUDE_CODE" ] || { echo "run.sh: TESTED_CLAUDE_CODE is missing or malformed" >&2; exit 2; }
 IMAGE="splice-e2e-fresh:local"
-RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1; UPGRADE_FROM=""; SCENARIO_NAME=""
+RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1; UPGRADE_FROM=""; SCENARIO_NAME=""; PLAN_RESET_S=""; PROBE_MESSAGE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) RELEASE="$2"; shift 2 ;;
@@ -32,12 +36,21 @@ while [ $# -gt 0 ]; do
     --shim) SHIM="$2"; shift 2 ;;
     --upgrade-from) UPGRADE_FROM="$2"; shift 2 ;;
     --scenario) SCENARIO_NAME="$2"; shift 2 ;;
+    --plan-reset-s) PLAN_RESET_S="$2"; shift 2 ;;
+    --probe-message) PROBE_MESSAGE="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "run.sh: unknown arg $1" >&2; exit 2 ;;
   esac
 done
+if [ -n "$PROBE_MESSAGE" ] && [ "$SCENARIO_NAME" != "plan-limit" ]; then
+  echo "run.sh: --probe-message belongs to --scenario plan-limit" >&2; exit 2
+fi
+if [ -n "$PLAN_RESET_S" ]; then
+  [ "$SCENARIO_NAME" = "plan-limit" ] || { echo "run.sh: --plan-reset-s belongs to --scenario plan-limit" >&2; exit 2; }
+  [[ "$PLAN_RESET_S" =~ ^[1-9][0-9]*$ ]] || { echo "run.sh: --plan-reset-s takes whole seconds, got '$PLAN_RESET_S'" >&2; exit 2; }
+fi
 
 command -v docker >/dev/null || { echo "run.sh: docker is required" >&2; exit 2; }
 
@@ -90,6 +103,8 @@ if [ -n "$SCENARIO_NAME" ]; then
     plan-limit) SCENARIO="plan-limit.sh"; RECEIPT_NAME="plan-limit" ;;
     *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit)" >&2; exit 2 ;;
   esac
+  [ -z "$PLAN_RESET_S" ] || MODE_ARGS+=(-e "PLAN_RESET_S=$PLAN_RESET_S")
+  [ -z "$PROBE_MESSAGE" ] || MODE_ARGS+=(-e "PLAN_PROBE_MESSAGE=$PROBE_MESSAGE")
 fi
 if [ -n "$UPGRADE_FROM" ]; then
   FROM_ART="$(mktemp -d "${TMPDIR:-/tmp}/splice-e2e-from.XXXXXX")"

@@ -7363,7 +7363,7 @@ id = "V4-288"
 phase = "release"
 title = "The Teams turn log says when it is short or failed (tonight's review, older code on the V4-249 board, 2026-09-26): the page draws only turns.data.landed and ignores turns.error and the unread heads (console/src/pages/teams/index.tsx:313), a failed read keeps the last good log or 'No turns yet', mergeTurns ignores each head's truncated flag (PerfRoutes.kt:150 sends it), and it cuts the merged list to 2,000 rows across all heads (turns-wire.ts:42) although index.tsx:44-46 says the cap is per head. Past 2,000 fleet turns since local midnight the timeline and 'turns today' silently start partway through the day. Show the error and the unread or truncated heads as a fault on the timeline, and cap per head as the comment says"
 files = ["console/src/pages/teams/index.tsx", "console/src/entities/perf/model/turns-wire.ts", "console/tests/teams-live.test.ts", "console/src/entities/perf/model/types.ts", "console/src/entities/perf/api/index.ts", "console/src/pages/turns/index.tsx", "console/tests/turns.test.ts", "console/tests/daemon-down.test.ts", "console/src/pages/teams/strings.ts", "console/src/widgets/team-board/index.tsx"]
-status = "in_flight"
+status = "done"
 verify = "red first in vitest: a turns read that fails, a head with truncated=true, and 2,001 turns across two heads each render today as a complete day; green: each shows its fault and the per-head cap holds; console eslint, typecheck and vitest through the gate's console legs"
 claimed_by = "console"
 claimed_at = "2026-09-26T10:39:23.326Z"

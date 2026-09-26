@@ -3,6 +3,7 @@
 // place that reads those three fields and says what the board should be: the
 // page renders the answer, the test asserts it without a DOM.
 import type { View } from '@features/views';
+import { clockTitle } from '@shared/lib';
 import { groupSessions, timeline, UNKNOWN_HEAD } from '@entities/session';
 import type { GroupBy, SessionGroup, SessionRow, Timeline } from '@entities/session';
 
@@ -58,6 +59,11 @@ export function windowOf(view: View, now: number, defaultHours = 24, defaultBuck
   const bucketHours = parseHours(view.filter.bucket ?? '') ?? defaultBucketHours;
   const bucketMs = bucketHours * 3_600_000;
   return { from: now - hours * 3_600_000, to: now, bucketMs, hours };
+}
+
+/** A timeline bucket's title: the clock time the bucket starts at. */
+export function titleOf(bucket: { start: number }): string {
+  return clockTitle(bucket.start);
 }
 
 /** One group of the board: the rack view's unit. */

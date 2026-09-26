@@ -112,6 +112,37 @@ export function timeAgo(ts: number, now = Date.now()): string {
   return `${Math.floor(delta / 86_400_000)}d ago`;
 }
 
+// ONE RULE FOR A TIMELINE'S BUCKETS (V4-300, V4-302). Two timelines stepped their buckets from now
+// minus the window and titled each by the hour it began in, so at 14:37 a 15:10 row filed under
+// "14:00". A bucket starts on a clock mark and is titled by its own start, so a title always names
+// a clock time its bucket holds, whatever the bucket size.
+
+/** The first local clock mark of `stepMs` at or after `at`: local midnight plus a whole number of
+ *  steps, so an hour step lands on the hour and a 40-minute one on 00:00, 00:40, 01:20. */
+export function clockMark(at: number, stepMs: number): number {
+  const midnight = new Date(at);
+  midnight.setHours(0, 0, 0, 0);
+  return midnight.getTime() + Math.ceil((at - midnight.getTime()) / stepMs) * stepMs;
+}
+
+/** A timeline's spans from `from` to `to`: every one starts on a clock mark of `stepMs` but the
+ *  first, which starts at `from` itself when that is not one, and the last ends at `to`. */
+export function clockSpans(from: number, to: number, stepMs: number): { start: number; end: number }[] {
+  const spans: { start: number; end: number }[] = [];
+  for (let start = from; start < to;) {
+    const end = Math.min(clockMark(start + 1, stepMs), to);
+    spans.push({ start, end });
+    start = end;
+  }
+  return spans;
+}
+
+/** The title of a timeline span: the local clock time it starts at, HH:MM. */
+export function clockTitle(start: number): string {
+  const at = new Date(start);
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+}
+
 /** Interval runner with immediate first tick; returns a stop function.
  *
  *  A HIDDEN TAB DOES NOT TICK. Nobody reads a page in a background tab, and every poller on it kept

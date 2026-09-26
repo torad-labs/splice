@@ -1,5 +1,6 @@
 // Pure derivations over the session registry: the three groupings the Sessions page ships as saved
 // views (FEATURES.md 4.4) and the timeline bucketer. No rendering, no store, no clock.
+import { clockSpans } from '@shared/lib';
 import { UNKNOWN_HEAD } from './types';
 import type { SessionEdge, SessionRow } from './types';
 
@@ -87,10 +88,8 @@ export function timeline(rows: readonly SessionRow[], options: TimelineOptions):
   const { from, to, bucketMs } = options;
   const field: SessionTimeField = options.by ?? 'started_at';
   if (bucketMs <= 0) throw new Error(`timeline needs a positive bucketMs, got ${bucketMs}`);
-  const buckets: TimelineBucket[] = [];
-  for (let start = from; start < to; start += bucketMs) {
-    buckets.push({ start, end: Math.min(start + bucketMs, to), sessions: [] });
-  }
+  // On the clock (V4-302): stepped from `from`, a bucket began at 14:37 and was read as 14:00.
+  const buckets: TimelineBucket[] = clockSpans(from, to, bucketMs).map((span) => ({ ...span, sessions: [] }));
   const undated: SessionRow[] = [];
   for (const row of rows) {
     const ts = row[field];
@@ -100,8 +99,7 @@ export function timeline(rows: readonly SessionRow[], options: TimelineOptions):
     }
     // A row outside the window belongs to no bucket of THIS window; it is not undated.
     if (ts < from || ts >= to) continue;
-    const bucket = buckets[Math.floor((ts - from) / bucketMs)];
-    if (bucket !== undefined) bucket.sessions.push(row);
+    buckets.find((bucket) => ts >= bucket.start && ts < bucket.end)?.sessions.push(row);
   }
   return { buckets, undated };
 }

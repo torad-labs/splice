@@ -2,6 +2,7 @@
 // rack, or the timeline. A view owns its layout, group and filter (CONTRACTS.md section 3), so
 // this is the one place those three fields are read.
 import type { View } from '@features/views';
+import { clockMark, clockTitle } from '@shared/lib';
 import { groupTurns, timelineOf } from '@entities/perf';
 import type { GroupBy, TurnRow, TurnTimeline } from '@entities/perf';
 
@@ -33,27 +34,22 @@ export interface Window {
   hours: number;
 }
 
-/** The first local clock hour at or after `at`. */
-function hourFrom(at: number): number {
-  const hour = new Date(at);
-  hour.setMinutes(0, 0, 0);
-  return hour.getTime() < at ? hour.getTime() + 3_600_000 : hour.getTime();
-}
-
 /**
  * The window a timeline view asks for, ending NOW, carried in the view's filter so two saved views
  * hold two windows without the page growing a setting of its own. A missing or unparseable word
  * falls back to the default: an empty board because a filter string was typo'd would read to the
  * operator as "nothing happened".
  *
- * It starts on the first clock hour inside those hours, so every bucket starts on the hour its title
- * names and the last one ends now (V4-300: the buckets began at now minus the window, and a
- * 14:37-15:37 bucket was titled 14:00, with a 15:10 turn under it).
+ * It starts on the first clock mark of its bucket size inside those hours (clockMark, the rule the
+ * Sessions timeline buckets by too), so every bucket starts on the clock time its title names and the
+ * last one ends now (V4-300: the buckets began at now minus the window, and a 14:37-15:37 bucket was
+ * titled 14:00, with a 15:10 turn under it).
  */
 export function windowOf(view: View, now: number, defaultHours = 24, defaultBucketHours = 1): Window {
   const hours = parseHours(view.filter.window ?? '') ?? defaultHours;
   const bucketHours = parseHours(view.filter.bucket ?? '') ?? defaultBucketHours;
-  return { from: hourFrom(now - hours * 3_600_000), to: now, bucketMs: bucketHours * 3_600_000, hours };
+  const bucketMs = bucketHours * 3_600_000;
+  return { from: clockMark(now - hours * 3_600_000, bucketMs), to: now, bucketMs, hours };
 }
 
 /**
@@ -109,8 +105,5 @@ export function rowKeyer(): (row: TurnRow) => string {
   };
 }
 
-/** HH:00 of a bucket start: the timeline's own axis label. */
-export function clockOf(start: number): string {
-  const at = new Date(start);
-  return `${String(at.getHours()).padStart(2, '0')}:00`;
-}
+/** A bucket's title: the clock time it starts at (@shared/lib's clockTitle, kept under this page's name). */
+export const clockOf = clockTitle;

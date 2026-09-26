@@ -51,7 +51,7 @@ import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import { H, S, U } from './strings';
-import { groupByOf, groupHref, isLanes, lanesOf, selectionOf } from './select';
+import { groupByOf, groupHref, isLanes, lanesOf, selectionOf, titleOf } from './select';
 import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, projectText, startedText, toneOf } from './strip';
 import type { Handoff, Peer } from './strip';
 import './sessions.css';
@@ -68,8 +68,6 @@ export const DEFAULT_VIEWS: View[] = [
   { id: 'by-team', name: 'By team', layout: 'rack', filter: {}, sort: null, group: 'team', fields: ['name', 'head', 'project', 'life', 'peer'] },
   { id: 'timeline', name: 'Timeline', layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['name', 'head', 'project', 'life', 'peer'] },
 ];
-
-const pad = (value: number): string => String(value).padStart(2, '0');
 
 /** The daemon's availability word, as the board prints it. */
 const AVAILABILITY: Record<SessionRow['availability'], string> = { live: S.live, stale: S.stale, gone: S.gone };
@@ -323,7 +321,7 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
         .filter((bucket) => bucket.sessions.length > 0)
         .map((bucket) => ({
           key: String(bucket.start),
-          title: `${pad(new Date(bucket.start).getHours())}:00`,
+          title: titleOf(bucket),
           count: bucket.sessions.length,
           rows: bucket.sessions,
         })),

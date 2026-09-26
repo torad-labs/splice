@@ -23,7 +23,9 @@ import { DEFAULT_VIEWS, NO_HEAD_WHY, SessionsBoard, noHeadWhy } from '../src/pag
 /** The board view these tests are about: the lanes are the page's default now, the table a view. */
 const BY_HEAD = DEFAULT_VIEWS.filter((view) => view.id === 'by-head')[0];
 import { ProjectsBoard } from '../src/pages/projects';
-import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, windowOf } from '../src/pages/sessions/select';
+import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, titleOf, windowOf } from '../src/pages/sessions/select';
+import { timeline } from '../src/entities/session';
+import type { TimelineBucket } from '../src/entities/session';
 import { fieldsOf, headText, startedText, toneOf } from '../src/pages/sessions/strip';
 import { Conversation } from '../src/widgets/conversation';
 import { FileView } from '../src/widgets/file-view';
@@ -117,11 +119,12 @@ describe('view selection', () => {
     if (selection.kind !== 'timeline') return;
     expect(selection.window.hours).toBe(2);
     expect(selection.window.bucketMs).toBe(HOUR);
-    // Two buckets, and the idle one is PRESENT: a bucket list with holes would
-    // restate the day.
-    expect(selection.timeline.buckets).toHaveLength(2);
-    expect(selection.timeline.buckets[0].sessions).toHaveLength(0);
-    expect(selection.timeline.buckets[1].sessions).toHaveLength(1);
+    // T0 is not on the hour: the partial hour the window opens in, a whole one, and the partial hour
+    // it ends in (V4-302), and the idle ones are PRESENT: a bucket list with holes would restate the day.
+    const { buckets } = selection.timeline;
+    expect(buckets.map((bucket) => bucket.sessions.length)).toEqual([0, 0, 1]);
+    expect([buckets[0].start, buckets[2].end]).toEqual([T0 - 2 * HOUR, T0]);
+    expect(buckets.slice(1).map((bucket) => new Date(bucket.start).getMinutes())).toEqual([0, 0]);
     expect(selection.timeline.undated).toHaveLength(1);
   });
 
@@ -383,3 +386,36 @@ describe('file view', () => {
   });
 });
 
+
+describe('a timeline row is titled by the clock time its span starts at (V4-302)', () => {
+  // windowOf starts the window at now minus N hours and the buckets stepped from there, but each row
+  // was titled with its start's hour digit alone: at 14:37 the bucket spanning 15:37-16:37 read
+  // 15:00, a session started at 15:10 filed under 14:00 and one at 15:40 under 15:00.
+  const at = (day: number, hour: number, minute: number): number => new Date(2026, 8, day, hour, minute, 0).getTime();
+  const clock = (ts: number): string => {
+    const date = new Date(ts);
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
+  /** Each row that holds sessions: its title, and the clock times its sessions started at. */
+  const rowsOf = (buckets: readonly TimelineBucket[]): [string, string[]][] => buckets
+    .filter((bucket) => bucket.sessions.length > 0)
+    .map((bucket) => [titleOf(bucket), bucket.sessions.map((row) => clock(row.started_at ?? 0))]);
+
+  test('at 14:37, sessions started at 15:10 and 15:40 yesterday both file under 15:00', () => {
+    const selection = selectionOf(
+      [session({ session_id: 'a', started_at: at(26, 15, 10) }), session({ session_id: 'b', started_at: at(26, 15, 40) })],
+      view({ layout: 'timeline', filter: { window: '24h', bucket: '1h' } }),
+      at(27, 14, 37),
+    );
+    if (selection.kind !== 'timeline') throw new Error('expected the timeline');
+    expect(rowsOf(selection.timeline.buckets)).toEqual([['15:00', ['15:10', '15:40']]]);
+  });
+
+  test('40-minute buckets start on the clock\'s 40-minute marks, the first titled by its real start', () => {
+    const from = at(26, 14, 37);
+    const { buckets } = timeline([], { from, to: from + 4 * HOUR, bucketMs: 40 * 60_000 });
+    expect(buckets.map(titleOf)).toEqual(buckets.map((bucket) => clock(bucket.start)));
+    expect(buckets.map((bucket) => clock(bucket.start))).toEqual(['14:37', '14:40', '15:20', '16:00', '16:40', '17:20', '18:00']);
+    expect(buckets.at(-1)?.end).toBe(from + 4 * HOUR);
+  });
+});

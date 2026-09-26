@@ -129,15 +129,17 @@ describe('groupSessions', () => {
 
 describe('timeline', () => {
   test('buckets by start time and keeps idle buckets as gaps', () => {
+    // A window opening on a clock hour: every bucket is a whole hour (V4-302 puts buckets on the clock).
+    const noon = new Date(2026, 8, 26, 12, 0, 0).getTime();
     const result = timeline(
-      [session({ started_at: T0 + 60_000 }), session({ started_at: T0 + HOUR + 60_000 })],
-      { from: T0, to: T0 + 3 * HOUR, bucketMs: HOUR },
+      [session({ started_at: noon + 60_000 }), session({ started_at: noon + HOUR + 60_000 })],
+      { from: noon, to: noon + 3 * HOUR, bucketMs: HOUR },
     );
     expect(result.buckets.map((b) => b.sessions.length)).toEqual([1, 1, 0]);
     expect(result.buckets.map((b) => [b.start, b.end])).toEqual([
-      [T0, T0 + HOUR],
-      [T0 + HOUR, T0 + 2 * HOUR],
-      [T0 + 2 * HOUR, T0 + 3 * HOUR],
+      [noon, noon + HOUR],
+      [noon + HOUR, noon + 2 * HOUR],
+      [noon + 2 * HOUR, noon + 3 * HOUR],
     ]);
     expect(result.undated).toEqual([]);
   });

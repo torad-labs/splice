@@ -37,7 +37,8 @@ public interface CompactionRecordings {
 
 /** One owner-only file per key under [dir], named by the key's hash (the key carries a
  *  client-supplied session id, which is never a path). [now] is wall time because the file outlives
- *  the process that wrote it; a file older than [ttlMs] is never served and is swept on the next save. */
+ *  the process that wrote it; a file older than [ttlMs] is never served, and is swept at the head's
+ *  start ([sweep]) and on the next save. */
 public class FileCompactionRecordings(
     private val dir: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
@@ -49,7 +50,7 @@ public class FileCompactionRecordings(
     override fun save(key: String, frames: List<String>) {
         Cancellables.runCatchingCancellable {
             SecureFile.ownerOnlyDirectory(dir)?.let { open -> log("[compaction] $dir is not owner-only: $open\n") }
-            sweep()
+            sweepExpired()
             val file = fileFor(key)
             val text = json.encodeToString(KeptRecording.serializer(), KeptRecording(key, frames))
             SecureFile.writeAtomic0600(file, text)
@@ -84,7 +85,27 @@ public class FileCompactionRecordings(
         }
     }
 
-    private fun sweep() {
+    /** V4-260: the expired answers go at the head's start too; swept only inside the next save, they
+     *  stayed on disk for as long as the head kept no new answer. */
+    public fun sweep() {
+        if (!Files.isDirectory(dir)) return
+        Cancellables.runCatchingCancellable { sweepExpired() }.onFailure { failure ->
+            log("[compaction] could not sweep expired compaction answers (${SafeFailureText.render(failure)})\n")
+        }
+    }
+
+    /** V4-260: every kept answer, and [dir] itself, for a head the topology no longer names. */
+    public fun purge() {
+        if (!Files.isDirectory(dir)) return
+        Cancellables.runCatchingCancellable {
+            Files.newDirectoryStream(dir).use { files -> files.forEach(Files::deleteIfExists) }
+            Files.deleteIfExists(dir)
+        }.onFailure { failure ->
+            log("[compaction] could not remove $dir (${SafeFailureText.render(failure)}); its head is gone\n")
+        }
+    }
+
+    private fun sweepExpired() {
         Files.newDirectoryStream(dir, "*$SUFFIX").use { files ->
             files.filter(::expired).forEach(Files::deleteIfExists)
         }

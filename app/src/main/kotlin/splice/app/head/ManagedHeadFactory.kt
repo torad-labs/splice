@@ -67,11 +67,13 @@ internal class ManagedHeadFactory(
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
     private val accountPools = HeadAccountPools()
     private val traceStores = HeadTraceStores(statePaths)
+    private val keptFiles = HeadKeptFiles(statePaths, log)
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
         val key = ctx.key
         val cfg = ctx.cfg
+        keptFiles.atStart(key, codeMode = ctx.providerCfg.codeModeEnabled, trace = cfg.trace)
         val wired = providerAssembly.buildProvider(ctx)
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary }

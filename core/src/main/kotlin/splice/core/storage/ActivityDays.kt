@@ -149,3 +149,17 @@ public class ActivityDays(
 
     private fun day(epochMs: Long): LocalDate = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate()
 }
+
+/** A day file's name: its store's prefix, then the UTC day. */
+private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl")
+
+/** V4-260: the [ActivityDays] stores that have day files in [dir], by prefix. For the trace dir that
+ *  is every head with trace days on disk, so the days of a head splice.toml no longer names can go. */
+public class DayFileStores(private val dir: Path) {
+    public fun prefixes(): Set<String> =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- no directory yet means no day files; an unreadable one is listed again at the next start
+        Cancellables.runCatchingCancellable { Files.newDirectoryStream(dir).use { it.toList() } }
+            .getOrDefault(emptyList())
+            .mapNotNull { file -> DAY_FILE.matchEntire(file.fileName.toString())?.groupValues?.get(1) }
+            .toSet()
+}

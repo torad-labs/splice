@@ -22,6 +22,7 @@ import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
+import splice.app.head.HeadKeptFiles
 import splice.app.head.HeadProbes
 import splice.app.head.HeadPromptInputs
 import splice.app.head.HeadServerFactory
@@ -184,6 +185,9 @@ public class Daemon(
         // two-plus same-kind heads nothing was seeded, and the unconditional overwrite handed
         // every sibling the first head's (or the default) port/model/base.
         val legacySolo = TopologyKnobLayer(topology).soleLegacyHeadKeys()
+        // V4-260: a head removed from splice.toml leaves no compaction answers, code-mode state or
+        // trace days behind; this start is the first moment it is known to be gone.
+        HeadKeptFiles(statePaths, log).ofRemovedHeads(topology.heads.keys)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.
         controlPlane.modelRosters.resolve(

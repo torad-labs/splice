@@ -49,6 +49,11 @@ internal const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
  *  anyone scripting it set it — but [STATE_DIR_ENV] is the name that will outlive it. */
 internal const val LEGACY_STATE_DIR_ENV: String = "CLAUDEX_STATE_DIR"
 
+/** V4-260: a Codex head's code-mode records (CodexCodeModeStore: the model's scripts, tool calls and
+ *  their results) are `<head key>` plus this, in the state dir. One spelling for the arm that writes
+ *  the file and the sweep that removes it when code mode is off or the head is gone. */
+public const val CODE_MODE_STATE_SUFFIX: String = "-code-mode.json"
+
 private const val STATE_LEAF: String = "state"
 
 // WHY THESE FOUR ARE internal AND NOT public (V4-177, the public-surface ratchet, 2026-09-20).
@@ -239,9 +244,12 @@ public class StatePaths(
      *  discovered model. */
     public fun modelRosterFile(headKey: String): Path = stateDir.resolve("$headKey-models.json")
 
+    /** V4-260: the directory holding every head's [compactionRecordingsDir], one per head key. */
+    public val compactionsDir: Path = stateDir.resolve("compactions")
+
     /** V4-216: a head's finished compaction answers, kept for the client's byte-identical retry
      *  (FileCompactionRecordings), owner-only: each file is a summary of the user's conversation. */
-    public fun compactionRecordingsDir(headKey: String): Path = stateDir.resolve("compactions").resolve(headKey)
+    public fun compactionRecordingsDir(headKey: String): Path = compactionsDir.resolve(headKey)
 
     /** Compact-stats JSONL lives in the ROOT dir (not state/) — legacy layout, kept with the names.
      *  The two legacy names are irregular on purpose (claudex-…, claude-grok-…); overridable per head. */

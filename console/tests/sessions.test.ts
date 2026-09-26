@@ -28,7 +28,7 @@ import { ProjectsBoard } from '../src/pages/projects';
 import { groupByOf, groupHref, isTimeline, parseHours, selectionOf, titleOf, windowOf } from '../src/pages/sessions/select';
 import { timeline } from '../src/entities/session';
 import type { TimelineBucket } from '../src/entities/session';
-import { fieldsOf, headText, startedText, toneOf } from '../src/pages/sessions/strip';
+import { fieldsOf, headText, sendCall, startedText, toneOf } from '../src/pages/sessions/strip';
 import { Conversation } from '../src/widgets/conversation';
 import { FileView } from '../src/widgets/file-view';
 
@@ -464,5 +464,32 @@ describe('a hand-off carries the text its sender handed off (V4-314)', () => {
     const shown = render(h(React.Fragment, null, cell.props.children));
     expect(shown).toContain('HANDED-TEXT-NOT-IN-MARKUP');
     expect(shown).toContain('/home/user/.claude/projects/x/sid-live.jsonl');
+  });
+});
+
+// ── V4-321: messaging a session, within FEATURES.md's boundary ──────────────
+
+describe('a live session gives the SendMessage call that reaches it (V4-321)', () => {
+  // SessionsCommand.sendLine's rule: live only; the name when it has one, else the socket address.
+  test('the call names the session, or its address when it has no name, and a stale one gives none', () => {
+    expect(sendCall(session())).toBe('SendMessage(to="design-builder4")');
+    expect(sendCall(session({ name: null }))).toBe('SendMessage(to="uds:/run/user/1000/cc-socks/100.sock")');
+    expect(sendCall(session({ name: '  ' }))).toBe('SendMessage(to="uds:/run/user/1000/cc-socks/100.sock")');
+    expect(sendCall(session({ availability: 'stale' }))).toBeNull();
+    expect(sendCall(session({ name: null, address: null }))).toBeNull();
+  });
+
+  test("a name is quoted as the CLI quotes it, and the registry's unprintable characters are dropped", () => {
+    expect(sendCall(session({ name: 'a"b\\c\u0007' }))).toBe('SendMessage(to="a\\"b\\\\c")');
+  });
+
+  test("the opened session's detail prints the call beside a copy key, and a stale one says it is not live", () => {
+    const opened = (row: SessionRow) => render(h(SessionsBoard, { payload: payload([row]), view: BY_HEAD, linked: sessionKey(row) }));
+    const live = opened(session()).replaceAll('&quot;', '"');
+    expect(live).toContain('SendMessage(to="design-builder4")');
+    expect(live).toContain('>Copy<');
+    const stale = opened(session({ availability: 'stale' }));
+    expect(stale).not.toContain('SendMessage(');
+    expect(stale).toContain('Not live');
   });
 });

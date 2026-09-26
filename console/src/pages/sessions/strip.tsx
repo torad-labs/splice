@@ -180,3 +180,21 @@ export function toneOf(row: SessionRow): Tone {
   if (row.availability === 'live') return 'ok';
   return row.availability === 'stale' ? 'warn' : 'neutral';
 }
+
+/** What the registry's text may not carry into a pasted call: control, format, separator, unassigned
+ *  and private-use characters, as SessionsCommand.clean drops them. By code point, so a name's emoji
+ *  stays whole (the CLI filters UTF-16 units and would drop both halves of one). */
+const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cn}\p{Co}]/gu;
+
+/** The SendMessage call that reaches [row] from another session (V4-321), as `splice sessions` prints
+ *  it (SessionsCommand.sendLine): live sessions only, since a stale one may never answer; its name when
+ *  it has one, else its socket address; `\` and `"` escaped. Splice writes to no session itself
+ *  (FEATURES.md: no socket writes), so the operator pastes this. */
+export function sendCall(row: SessionRow): string | null {
+  if (row.availability !== 'live') return null;
+  const to = [row.name, row.address]
+    .map((text) => (text ?? '').replace(UNPRINTABLE, ''))
+    .find((text) => text.trim() !== '');
+  if (to === undefined) return null;
+  return `SendMessage(to="${to.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}")`;
+}

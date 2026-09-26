@@ -48,12 +48,12 @@ import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, Lanes, LifetimeBar, PageHeader, Reveal, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
-import { Fault } from '@shared/controls';
+import { Copy, Fault } from '@shared/controls';
 import { readFor, timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import type { Keyed } from '@shared/lib';
 import { H, S, U } from './strings';
 import { groupByOf, groupHref, isLanes, lanesOf, selectionOf, titleOf } from './select';
-import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, projectText, startedText, toneOf } from './strip';
+import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, projectText, sendCall, startedText, toneOf } from './strip';
 import type { Handoff, Peer } from './strip';
 import './sessions.css';
 
@@ -166,6 +166,19 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: re
       rowKey={(edge) => `${edge.from}:${edge.to}:${edge.at}`}
       label={S.handoffs}
     />
+  );
+}
+
+/** The call that messages the opened session from another one (V4-321), with its copy key. Splice
+ *  never writes to a session, so the operator pastes it; a session not live may never answer. */
+function SendCall({ row }: { row: SessionRow }) {
+  const call = sendCall(row);
+  if (call === null) return <Empty text={S.notLive} source={H.notLive} />;
+  return (
+    <div className="myx-sx-send">
+      <code className="myx-sx-call">{call}</code>
+      <Copy value={call} />
+    </div>
   );
 }
 
@@ -480,6 +493,9 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
             <Section title={S.handoffs}>
               {handoffs?.error == null ? null : <Fault message={handoffs.error} />}
               <EdgeRows edges={handoffs?.data ?? null} rows={rows} />
+            </Section>
+            <Section title={S.sendTo} info={{ text: H.sendTo, label: S.sendWhy }}>
+              <SendCall row={open} />
             </Section>
           </DetailPanel>
         )}

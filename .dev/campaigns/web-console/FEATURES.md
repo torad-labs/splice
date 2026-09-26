@@ -415,7 +415,7 @@ expect it; **only here** means no competing console can offer it.
 |---|---|---|---|
 | Session list | Live, stale and gone sessions with pid, name, cwd, head, version, started, last update, status. Headless runs noted as not registrable. | have | v0.4.0 §4 |
 | Session detail | Turns for this session joined by the perf `session` tag, tokens by bucket, estimated cost when rates exist, the account each turn used, compactions. | route | only here |
-| Coordination | The copyable `SendMessage` instruction per live session. No socket writes from splice. | have | v0.4.0 §4 |
+| Coordination | The copyable `SendMessage` instruction per live session: `splice sessions`, and the console's session detail with a copy key (V4-321). No socket writes from splice. | have | v0.4.0 §4 |
 | Head ownership | Which head owns the transcript, and the `<head> -r <id>` command to pull it elsewhere. Explained, not performed. | have | v0.4.0 §12 |
 | Group by head | The session list grouped by the head (provider and model) that launched each session. | have | daemon |
 | Group by repo | The same list grouped by project: the git root of each session's `cwd`, resolved only inside the trusted root set the statusline already uses (`$HOME`, `/tmp`, `statuslineGitRoots`; `StatuslineRenderer.kt:213`), through a cached resolver with the branch cache's TTL and bound (nothing derives a root today; `rev-parse` is new). Worktrees group under their shared repo (`git rev-parse --git-common-dir`) with the worktree shown as a sub-label, so v0.4.0 sessions and main sessions land in one project. A cwd outside the trusted set groups under its cwd with the reason shown. Entry point to the Project page (§4.14). | route | operator 2026-09-17 |

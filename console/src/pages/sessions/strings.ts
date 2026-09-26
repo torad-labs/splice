@@ -53,6 +53,10 @@ export const S = {
   showMessage: 'Show message',
   notRead: 'Not read',
   whyNotRead: 'Why not read',
+  /** The opened session's SendMessage call (V4-321), to paste into another session. */
+  sendTo: 'Send a message',
+  sendWhy: 'About sending',
+  notLive: 'Not live',
   noSessions: 'No sessions',
   noHandoffs: 'No hand-offs',
   noSessionId: 'No session id',
@@ -64,6 +68,8 @@ export const S = {
 export const H = {
   noSessions: 'Start Claude Code through a splice head to see it here.',
   registry: 'Sessions Claude Code registered on this machine.',
+  sendTo: 'Paste into another Claude session; splice never writes to one.',
+  notLive: 'A session that is not live may never answer.',
 } as const;
 
 export const U = {

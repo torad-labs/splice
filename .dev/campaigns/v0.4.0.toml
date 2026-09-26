@@ -7826,3 +7826,11 @@ title = "Message a session within FEATURES.md:328's boundary: the session detail
 files = [".dev/campaigns/web-console/FEATURES.md"]
 status = "todo"
 verify = "FEATURES.md:328 marks the copyable SendMessage instruction 'have': first show where the console already prints it (file:line and a render), or build it on the session detail with Copy; no daemon route, no socket write; console files named at claim"
+
+[[items]]
+id = "V4-322"
+phase = "release"
+title = "PRODUCT.md states the runtime config as Knob.kt has it: docs/design/PRODUCT.md:66 says 33 knobs, three of them hot; Knob.kt has 55 (53 global, 2 head-only)"
+files = ["docs/design/PRODUCT.md"]
+status = "todo"
+verify = "every count PRODUCT.md:66 states is either checked by a test against Knob.kt or dropped from the sentence; the 'three of them hot' figure is checked against Knob.kt's restartRequired entries before it stays"

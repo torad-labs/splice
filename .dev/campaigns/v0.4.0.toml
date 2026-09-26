@@ -7389,3 +7389,11 @@ title = "The Turns page's 24h timeline covers its whole window or says it doesn'
 files = ["console/src/pages/turns/index.tsx", "console/src/entities/perf/api/index.ts", "console/tests/turns.test.ts"]
 status = "todo"
 verify = "red first in vitest: 201 turns inside the last 24h render a 24h timeline that starts at the 201st-newest turn with no mark; green: the window is complete (or its start is marked), the idle-hours meta counts only the covered hours; console eslint, typecheck and vitest through the gate's console legs"
+
+[[items]]
+id = "V4-291"
+phase = "release"
+title = "A bounded setup child dies whole at its deadline (5-day review, E-app shard, 2026-09-26): ChildProcesses.run kills only the process it started (ProcessRig.kt:86-96, process.destroyForcibly()), and ProcessRig.install runs sh -c 'curl ... | sh' (ProcessRig.kt:51), so at INSTALL_TIMEOUT_MS the wizard says rig's installer failed while the orphaned curl and sh keep downloading and running the installer, and both stream-drain futures stay blocked on pipes the orphans still hold. Collect process.descendants() before the kill and destroy the whole tree, for every bounded run (version, install, prepare, describe, nvidia-smi); the deadline message stays true"
+files = ["app/src/main/kotlin/splice/app/cli/setup/ProcessRig.kt", "app/src/test/kotlin/splice/app/cli/setup/ProcessRigTest.kt"]
+status = "todo"
+verify = "red first: a bounded run of sh -c 'sleep 60 | cat' at a 1 s deadline leaves the sleep alive after run() returns (pid quoted from ProcessHandle); green: no descendant survives run(), the drain futures complete, the RigRun still says KILLED_AT_DEADLINE with the same text; :app:test --tests '*ProcessRig*' and :app:detekt through the slot; a mutant that kills only the parent goes red"

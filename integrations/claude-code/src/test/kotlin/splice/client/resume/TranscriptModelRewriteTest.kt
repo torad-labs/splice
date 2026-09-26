@@ -4,9 +4,11 @@ package splice.client.resume
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
+import java.nio.file.CopyOption
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -26,6 +28,32 @@ private const val FABLE_THINKING_ROW = """{"type":"assistant","uuid":"a2","paren
 /** The roster of a head that serves one model: its pinned one. */
 private val SOL_ONLY = listOf("gpt-5.6-sol")
 
+private const val FOREIGN_ROW_ON_SOL = """{"type":"assistant","sessionId":"s1",""" +
+    """"message":{"model":"gpt-5.6-sol","content":[]}}"""
+
+/** A write that puts its first [kept] bytes down and then dies, as a crash or a full disk does. */
+private class DyingWrite(private val kept: Int) : TranscriptFs {
+    override fun write(path: Path, bytes: ByteArray) {
+        Files.write(path, bytes.copyOf(kept))
+        throw IOException("No space left on device")
+    }
+
+    override fun move(source: Path, target: Path, vararg options: CopyOption) {
+        Files.move(source, target, *options)
+    }
+}
+
+/** A write that lands whole, and a swap that is refused. */
+private object RefusedSwap : TranscriptFs {
+    override fun write(path: Path, bytes: ByteArray) {
+        Files.write(path, bytes)
+    }
+
+    override fun move(source: Path, target: Path, vararg options: CopyOption) {
+        throw IOException("move refused")
+    }
+}
+
 class TranscriptModelRewriteTest {
 
     private val rewriter = TranscriptModelRewrite()
@@ -36,6 +64,61 @@ class TranscriptModelRewriteTest {
     }
 
     private fun rows(path: Path): List<String> = Files.readString(path).split("\n")
+
+    private fun names(dir: Path): List<String> = Files.list(dir).use { files ->
+        files.map { it.fileName.toString() }.sorted().toList()
+    }
+
+    // V4-259: the rewrite is a temp file beside the transcript, moved over it in one step. It wrote in
+    // place, so a write that died partway left the user's transcript truncated.
+    @Test
+    fun `a write that dies partway leaves the transcript byte-identical and no temp file behind`(@TempDir dir: Path) {
+        val transcript = write(dir.resolve("s1.jsonl"), USER_ROW, FOREIGN_ROW)
+        val before = Files.readString(transcript)
+
+        val dying = TranscriptModelRewrite(DyingWrite(kept = 10))
+        assertThrows(IOException::class.java) { dying.rewrite(transcript, "gpt-5.6-sol", SOL_ONLY) }
+
+        assertEquals(before, Files.readString(transcript), "the user's transcript is exactly as it was")
+        assertEquals(listOf("s1.jsonl"), names(dir), "no temp file is left beside it")
+    }
+
+    @Test
+    fun `a swap that is refused leaves the transcript byte-identical and no temp file behind`(@TempDir dir: Path) {
+        val transcript = write(dir.resolve("s1.jsonl"), USER_ROW, FOREIGN_ROW)
+        val before = Files.readString(transcript)
+
+        assertThrows(IOException::class.java) {
+            TranscriptModelRewrite(RefusedSwap).rewrite(transcript, "gpt-5.6-sol", SOL_ONLY)
+        }
+
+        assertEquals(before, Files.readString(transcript), "the user's transcript is exactly as it was")
+        assertEquals(listOf("s1.jsonl"), names(dir), "no temp file is left beside it")
+    }
+
+    @Test
+    fun `a rewrite replaces the transcript whole, keeps its permissions and leaves no temp file`(@TempDir dir: Path) {
+        val transcript = write(dir.resolve("s1.jsonl"), USER_ROW, FOREIGN_ROW)
+        Files.setPosixFilePermissions(transcript, PosixFilePermissions.fromString("rw-r-----"))
+
+        assertEquals(1, rewriter.rewrite(transcript, "gpt-5.6-sol", SOL_ONLY))
+
+        assertEquals(listOf(USER_ROW, FOREIGN_ROW_ON_SOL, ""), rows(transcript))
+        assertEquals("rw-r-----", PosixFilePermissions.toString(Files.getPosixFilePermissions(transcript)))
+        assertEquals(listOf("s1.jsonl"), names(dir))
+    }
+
+    @Test
+    fun `a transcript reached through a link is rewritten where the link points, and stays a link`(@TempDir dir: Path) {
+        val real = write(dir.resolve("store").resolve("s1.jsonl"), FOREIGN_ROW)
+        val link = Files.createSymbolicLink(dir.resolve("s1.jsonl"), real)
+
+        assertEquals(1, rewriter.rewrite(link, "gpt-5.6-sol", SOL_ONLY))
+
+        assertTrue(Files.isSymbolicLink(link), "the link is not replaced by a copy")
+        assertEquals(FOREIGN_ROW_ON_SOL, rows(real)[0])
+        assertEquals(listOf("s1.jsonl"), names(real.parent))
+    }
 
     @Test
     fun `assistant rows on another model move, everything else stays byte-identical`(@TempDir dir: Path) {

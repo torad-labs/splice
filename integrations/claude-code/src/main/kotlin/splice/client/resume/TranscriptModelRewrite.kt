@@ -39,9 +39,11 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import java.io.IOException
+import java.nio.file.CopyOption
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 
 /** Claude Code's transcript extension — the one declaration; ResumeAcrossHeads reads it too. */
 internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
@@ -49,7 +51,24 @@ private const val TRANSCRIPT_TYPE = "type"
 private const val TRANSCRIPT_MESSAGE = "message"
 private const val ASSISTANT_TYPE = "assistant"
 
-public class TranscriptModelRewrite {
+/** The two steps of a rewrite a test must fail deterministically: writing the new bytes and the swap. */
+public interface TranscriptFs {
+    public fun write(path: Path, bytes: ByteArray)
+
+    public fun move(source: Path, target: Path, vararg options: CopyOption)
+}
+
+private object ProcessTranscriptFs : TranscriptFs {
+    override fun write(path: Path, bytes: ByteArray) {
+        Files.write(path, bytes)
+    }
+
+    override fun move(source: Path, target: Path, vararg options: CopyOption) {
+        Files.move(source, target, *options)
+    }
+}
+
+public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTranscriptFs) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -94,10 +113,35 @@ public class TranscriptModelRewrite {
             rewritten ?: row
         }
         if (changed == 0) return 0
-        Cancellables.runCatchingCancellable { Files.writeString(file, rows.joinToString("\n")) }
+        Cancellables.runCatchingCancellable { replace(file, rows.joinToString("\n").toByteArray(Charsets.UTF_8)) }
             .exceptionOrNull()
             ?.let { cause -> throw IOException("$file unwritable (${SafeFailureText.render(cause)})") }
         return changed
+    }
+
+    /** V4-259: the new bytes go to a temp file beside the transcript, which is moved over it in one step,
+     *  so a write that dies partway leaves the user's transcript exactly as it was; the temp file goes
+     *  either way. The in-place write this replaced wrote through a link and refused a read-only file,
+     *  and so does this: the file a link names is the one replaced, and a rename, which a read-only file
+     *  does not stop, is not attempted on one. The file's permissions carry over to the new one. */
+    private fun replace(file: Path, bytes: ByteArray) {
+        val target = file.toRealPath()
+        if (!Files.isWritable(target)) throw IOException("$target is read-only")
+        val staged = Files.createTempFile(target.parent, ".${target.fileName}.", ".tmp")
+        Cancellables.runCatchingCancellable {
+            Cancellables.discard(
+                runCatching { Files.setPosixFilePermissions(staged, Files.getPosixFilePermissions(target)) },
+                "no POSIX permissions on this filesystem, so there are none to carry over",
+            )
+            fs.write(staged, bytes)
+            fs.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        }.onFailure {
+            Cancellables.discard(
+                runCatching { Files.deleteIfExists(staged) },
+                "the temp file's cleanup is best-effort; the write failure rethrows",
+            )
+            throw it
+        }
     }
 
     /** The rewritten row, or null when this row is not an assistant row on another model — an

@@ -7664,3 +7664,11 @@ verify = "cd console && bun test tests/config-patch.test.ts: a PATCH answer with
 claimed_by = "console"
 claimed_at = "2026-09-26T13:31:31.917Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T13:31:31Z
+
+[[items]]
+id = "V4-311"
+phase = "release"
+title = "plan-limit.sh writes the /launch recipe, turn key included, to $OUT/recipe-planlimit.json, which run.sh copies into the receipts and e2e-docker.yml uploads; the recipe goes to lib.sh's 0700 $PRIVATE, 0600 from its first byte, as V4-294 did for head_contract"
+files = ["tools/e2e/docker/plan-limit.sh"]
+status = "todo"
+verify = "red first: a plan_recipe run on a scratch $OUT leaves a file under $OUT holding ANTHROPIC_AUTH_TOKEN (grep count); green: 0 files under $OUT hold it, the recipe is under $PRIVATE at mode 600, the two CLAUDE_CODE_RETRY_WATCHDOG checks read it there; bash -n and shellcheck on plan-limit.sh"

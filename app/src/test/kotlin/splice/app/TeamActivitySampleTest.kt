@@ -1,8 +1,7 @@
-// NEW: V4-265 — a bound member's own turns reach its team's Activity. Take 2 of the film
-// (captures/film/team-storefront-2) had four members working for five minutes, and the board read
-// "Nothing sampled today". Claude Code 2.1.282 fires its "Describe your most recent action" side query
-// only from its background-agent runner (AgentSummary), never for a session's own loop, so no member
-// ever sent one. This drives a REAL daemon: a team with a bound session, two ordinary turns from that
+// NEW: V4-265 — a bound member's own turns reach its team's Activity. In a recorded four-member team
+// run, the members worked for five minutes and the board read "Nothing sampled today". Claude Code
+// 2.1.282 fires its "Describe your most recent action" side query only from its background-agent
+// runner (AgentSummary), never for a session's own loop, so no member ever sent one. This drives a REAL daemon: a team with a bound session, two ordinary turns from that
 // session after a tool call, and the team's Activity read over the control plane on the same UTC day.
 package splice.app
 
@@ -40,8 +39,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-/** Take 2's reviewer, the member on codex. */
-private const val MEMBER = "72cb7945-0c23-4dcb-ae42-816fa1d52ddb"
+/** The team's reviewer, the member on codex (an invented session id). */
+private const val MEMBER = "8a2d4e6f-3c5b-4f7a-b812-1e9d0c3b5a02"
 
 /** A member's turn after it ran the tests: the transcript every ordinary request of that session carries. */
 private const val AFTER_A_TOOL_CALL =

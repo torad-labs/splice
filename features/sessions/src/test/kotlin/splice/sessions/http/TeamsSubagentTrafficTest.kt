@@ -1,8 +1,8 @@
 // NEW: V4-263 — a member's subagent traffic is that member's tool traffic, never a team hand-off.
-// Take 2 of the film (captures/film/team-storefront-2/edges-2026-09-26.take2.jsonl) held 16 edges:
-// 13 between the four members, and three from gpt's /code-review subagent, recorded as gpt's session
-// to "code-review" and, for its replies, to "main". The board's Chat listed "gpt -> code-review" and
-// Messages read 16. The edges below are that file's, verbatim.
+// A recorded four-member team run stored 16 edges: 13 between the members, and three from gpt's
+// /code-review subagent, recorded as gpt's session to "code-review" and, for its replies, to "main".
+// The board's Chat listed "gpt -> code-review" and Messages read 16. The edges below have that run's
+// shape and order; their sessions, tool ids and times are invented.
 package splice.sessions.http
 
 import kotlinx.serialization.json.Json
@@ -26,31 +26,34 @@ import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** 2026-09-26T02:50:00Z, inside the UTC day take 2 recorded its edges on. */
-private const val TAKE_2_NOW = 1_790_391_000_000L
-private const val CLAUDE = "018ab973-b700-4eb0-afed-cb160b35f80c"
-private const val GPT = "72cb7945-0c23-4dcb-ae42-816fa1d52ddb"
-private const val GROK = "acce7fa1-88c0-46ce-b970-9f5248215945"
-private const val MUSE = "ea73ec1b-fe3e-46d2-a8ff-6c0f0a82b326"
+/** 2026-09-20T10:40:00Z, inside the UTC day the edges below are on. */
+private const val RUN_NOW = 1_789_900_800_000L
 
-/** Take 2's edge store, line for line: (from, to, at, tool_use id). */
-private val TAKE_2_EDGES = listOf(
-    MessageEdge(CLAUDE, "gpt", 1_790_390_366_722L, "toolu_01NxuqvFhJuWdwqR8wcV6gRW"),
-    MessageEdge(GPT, "claude", 1_790_390_387_147L, "call_6zCbtzRS2hdBrT0lS9uKP8Un"),
-    MessageEdge(GPT, "claude", 1_790_390_423_224L, "call_lSQI8wQQfShYMLpE7P0y6sBI"),
-    MessageEdge(CLAUDE, "gpt", 1_790_390_437_611L, "toolu_01Jn3gpPccRuY2cHgt6rEgUz"),
-    MessageEdge(GPT, "code-review", 1_790_390_441_205L, "call_ayriZGddG7Wtrjfbj518bdTk"),
-    MessageEdge(GPT, "claude", 1_790_390_463_418L, "call_iUgMrzhRKsmqDcQE9NIM3lWl"),
-    MessageEdge(GPT, "claude", 1_790_390_483_807L, "call_lsfgkgQjNCEkbshtvWx7nxru"),
-    MessageEdge(GPT, "claude", 1_790_390_492_895L, "call_jaGH5Byq8wRQ9xIAS3u4nR85"),
-    MessageEdge(GPT, "claude", 1_790_390_501_171L, "call_iiNYNulz6LumbbcGBs0h1FSf"),
-    MessageEdge(CLAUDE, "gpt", 1_790_390_502_263L, "toolu_01Y13KzLD7QiNHi1V3gJSaZx"),
-    MessageEdge(GPT, "main", 1_790_390_515_965L, "call_7patUboL8FVggN4keCDJZfKQ"),
-    MessageEdge(GPT, "main", 1_790_390_536_994L, "call_Ii2WAl65Zxc9AK3gcq2kXTus"),
-    MessageEdge(GPT, "claude", 1_790_390_544_762L, "call_XbNuUk8houbbXOuz6hI0CEd4"),
-    MessageEdge(GPT, "claude", 1_790_390_556_388L, "call_OrfKVUZc9Zcg4TKEa6uKDeV3"),
-    MessageEdge(CLAUDE, "gpt", 1_790_390_568_513L, "toolu_011nxZANh8mQG5wBWRAJ7o5S"),
-    MessageEdge(GPT, "claude", 1_790_390_571_774L, "call_DD6pNOpUPLmegcClDqt02DPj"),
+/** When the run's first edge was stored; the others follow it. */
+private const val RUN_START = 1_789_900_000_000L
+private const val CLAUDE = "5f0c7a2e-1b4d-4c8e-9a61-0d3e2f4b6a01"
+private const val GPT = "8a2d4e6f-3c5b-4f7a-b812-1e9d0c3b5a02"
+private const val GROK = "b3e5f7a9-4d6c-4e8b-8c23-2f0a1d4c6b03"
+private const val MUSE = "c4f6a8b0-5e7d-4f9c-9d34-3a1b2e5d7c04"
+
+/** The run's edge store in its order: (from, to, at, tool_use id). */
+private val RUN_EDGES = listOf(
+    MessageEdge(CLAUDE, "gpt", RUN_START, "toolu_run01"),
+    MessageEdge(GPT, "claude", RUN_START + 20_000L, "call_run02"),
+    MessageEdge(GPT, "claude", RUN_START + 55_000L, "call_run03"),
+    MessageEdge(CLAUDE, "gpt", RUN_START + 70_000L, "toolu_run04"),
+    MessageEdge(GPT, "code-review", RUN_START + 75_000L, "call_run05"),
+    MessageEdge(GPT, "claude", RUN_START + 95_000L, "call_run06"),
+    MessageEdge(GPT, "claude", RUN_START + 115_000L, "call_run07"),
+    MessageEdge(GPT, "claude", RUN_START + 125_000L, "call_run08"),
+    MessageEdge(GPT, "claude", RUN_START + 135_000L, "call_run09"),
+    MessageEdge(CLAUDE, "gpt", RUN_START + 136_000L, "toolu_run10"),
+    MessageEdge(GPT, "main", RUN_START + 150_000L, "call_run11"),
+    MessageEdge(GPT, "main", RUN_START + 170_000L, "call_run12"),
+    MessageEdge(GPT, "claude", RUN_START + 178_000L, "call_run13"),
+    MessageEdge(GPT, "claude", RUN_START + 190_000L, "call_run14"),
+    MessageEdge(CLAUDE, "gpt", RUN_START + 202_000L, "toolu_run15"),
+    MessageEdge(GPT, "claude", RUN_START + 205_000L, "call_run16"),
 )
 
 class TeamsSubagentTrafficTest {
@@ -58,10 +61,10 @@ class TeamsSubagentTrafficTest {
     @TempDir
     lateinit var tmp: Path
 
-    /** Take 2's four members, each registered under its slot's name with its own messaging socket,
-     *  as the film stack's sessions were while the take ran. */
+    /** The run's four members, each registered under its slot's name with its own messaging socket,
+     *  as a team's sessions are while it runs. */
     private fun routes(): Pair<TeamsRoutes, String> {
-        val clock = WallClock { TAKE_2_NOW }
+        val clock = WallClock { RUN_NOW }
         val repo = Files.createDirectories(tmp.resolve("repo"))
         val dir = Files.createDirectories(tmp.resolve("sessions"))
         val members = listOf("claude" to CLAUDE, "gpt" to GPT, "grok" to GROK, "muse" to MUSE)
@@ -69,7 +72,7 @@ class TeamsSubagentTrafficTest {
             val pid = index + 1
             Files.writeString(
                 dir.resolve("$pid.json"),
-                """{"pid":$pid,"sessionId":"$session","cwd":"$repo","updatedAt":$TAKE_2_NOW,""" +
+                """{"pid":$pid,"sessionId":"$session","cwd":"$repo","updatedAt":$RUN_NOW,""" +
                     """"messagingSocketPath":"/run/$pid.sock","name":"$name"}""",
             )
         }
@@ -88,7 +91,7 @@ class TeamsSubagentTrafficTest {
         ).id
         store.bind(id, members.toMap())
         val stores = ActivityStores(tmp.resolve("activity"), 90, "*", clock)
-        TAKE_2_EDGES.forEach(stores.edges::record)
+        RUN_EDGES.forEach(stores.edges::record)
         AsyncFileIo.drain()
         val routes = TeamsRoutes(
             teams = TeamSource { store },
@@ -102,7 +105,7 @@ class TeamsSubagentTrafficTest {
     }
 
     @Test
-    fun `take 2's chat is the 13 hand-offs between members, and gpt's code-review subagent is not one`() {
+    fun `the run's chat is the 13 hand-offs between members, and gpt's code-review subagent is not one`() {
         val (routes, id) = routes()
         val messages = rows(routes.reads.chat(id, null).body, "messages")
         assertEquals(13, messages.size, "Messages reads 13")
@@ -113,7 +116,7 @@ class TeamsSubagentTrafficTest {
     }
 
     @Test
-    fun `take 2's edges route carries no subagent traffic either`() {
+    fun `the run's edges route carries no subagent traffic either`() {
         val (routes, id) = routes()
         val directions = rows(routes.reads.edges(id).body, "edges").map { text(it, "direction") }
         assertEquals(List(13) { "internal" }, directions)

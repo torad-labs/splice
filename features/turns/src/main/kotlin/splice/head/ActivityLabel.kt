@@ -17,7 +17,7 @@
 //
 // V4-265: THE SIDE QUERY IS NOT EVERY SESSION'S. Claude Code 2.1.282 starts that timer (AgentSummary,
 // `xa=30000`) only inside its background-agent runner, so a session's own loop never sends the query.
-// The film's take 2 had four members working for five minutes and recorded no label at all. Every
+// A recorded four-member team run worked for five minutes and recorded no label at all. Every
 // ordinary turn carries the same transcript tail, so [sampleOf] composes the same label from it, and
 // [ActivitySamples] holds it to the client's pace: one sample per session per interval, with the
 // client's own label counting as that session's sample.

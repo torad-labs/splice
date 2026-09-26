@@ -21,7 +21,7 @@ import { Fault, KeyLink } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
 import { Badge, DataTable, Empty } from '@shared/ui';
 import type { Column } from '@shared/ui';
-import { H, S } from './strings';
+import { H, S, U } from './strings';
 
 /** The UTC day the daemon counted (ProjectsRoutes: "TODAY IS THE UTC DAY"), printed as that day
  *  and that zone, so it never reads as the reader's local midnight. */
@@ -34,13 +34,27 @@ export function costText(usd: number | null): string {
   return usd === null ? S.absent : `$${usd.toFixed(2)}`;
 }
 
-/** The opened project's activity, as label and value pairs. Pure, so a test reads them. */
+/** Turns today no card priced (V4-269). An older daemon sends no count and nulls the dollars when
+ *  any turn is unpriced, so a row of its with no figure counts every turn and one with a figure none. */
+export function unpricedTurnsOf(row: ProjectRow): number {
+  return row.unpriced_turns_today ?? (row.cost_today_usd === null ? row.turns_today : 0);
+}
+
+/** "1 turn unpriced", "3 turns unpriced". */
+export function unpricedText(turns: number): string {
+  return `${turns} ${turns === 1 ? U.unpricedOne : U.unpriced}`;
+}
+
+/** The opened project's activity, as label and value pairs. Pure, so a test reads them. A figure
+ *  that leaves turns out counts them beside it; no figure at all is the absence alone. */
 export function detailRowsOf(row: ProjectRow, now = Date.now()): [string, string][] {
+  const unpriced = unpricedTurnsOf(row);
+  const cost = costText(row.cost_today_usd);
   return [
     [S.running, String(row.live_sessions)],
     [S.teams, String(row.teams)],
     [S.turns, String(row.turns_today)],
-    [S.cost, costText(row.cost_today_usd)],
+    [S.cost, row.cost_today_usd === null || unpriced === 0 ? cost : `${cost} · ${unpricedText(unpriced)}`],
     [S.day, dayText(row.day_start)],
     [S.last, row.last_activity === null ? S.absent : timeAgo(row.last_activity, now)],
   ];

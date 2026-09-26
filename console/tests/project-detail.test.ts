@@ -16,6 +16,7 @@ import {
   costText,
   dayText,
   detailRowsOf,
+  unpricedTurnsOf,
 } from '../src/pages/projects/detail';
 
 const h = React.createElement;
@@ -55,6 +56,20 @@ describe('the project detail', () => {
     expect(rows.get('API cost today')).toBe('$12.84');
     expect(rows.get('Last seen')).toBe('–');
     expect(costText(0), 'declared rates that came to nothing are a figure, not an absence').toBe('$0.00');
+  });
+
+  // V4-269: a recorded team run's repo read a dash for the day over one turn on a model with no card.
+  test('a turn no card priced is counted beside the priced dollars, in the singular for one', () => {
+    const one = new Map(detailRowsOf(row({ turns_today: 44, cost_today_usd: 2.5, unpriced_turns_today: 1 }), NOW));
+    expect(one.get('API cost today')).toBe('$2.50 · 1 turn unpriced');
+    const two = new Map(detailRowsOf(row({ turns_today: 44, cost_today_usd: 2.5, unpriced_turns_today: 2 }), NOW));
+    expect(two.get('API cost today')).toBe('$2.50 · 2 turns unpriced');
+  });
+
+  test('a daemon older than V4-269 sends no count: a row with no figure counts every turn, one with a figure none', () => {
+    expect(unpricedTurnsOf(row({ turns_today: 3, cost_today_usd: null }))).toBe(3);
+    expect(unpricedTurnsOf(row({ turns_today: 3, cost_today_usd: 1.5 }))).toBe(0);
+    expect(unpricedTurnsOf(row({ turns_today: 3, cost_today_usd: 1.5, unpriced_turns_today: 1 }))).toBe(1);
   });
 
   test('the day is the UTC day, never the reader\'s local midnight', () => {

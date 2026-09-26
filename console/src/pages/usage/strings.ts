@@ -79,6 +79,7 @@ export const U = {
   cached: 'cached',
   turns: 'turns',
   unpriced: 'turns unpriced',
+  unpricedOne: 'turn unpriced',
   resets: 'Resets',
   /** After a window's reported length: `5h window`, `30d window`. */
   window: 'window',

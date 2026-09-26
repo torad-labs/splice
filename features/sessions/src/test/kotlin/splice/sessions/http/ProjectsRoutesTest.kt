@@ -7,6 +7,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.double
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -67,7 +68,7 @@ class ProjectsRoutesTest {
         assertEquals(
             rig.json(
                 """{"id":"${rig.repo}","root":"${rig.repo}","live_sessions":2,"teams":1,"turns_today":2,""" +
-                    """"day_start":$DAY_START,"last_activity":${AT + 2}}""",
+                    """"unpriced_turns_today":0,"day_start":$DAY_START,"last_activity":${AT + 2}}""",
             ),
             JsonObject(repo - "cost_today_usd" - "compaction" - "statusline_roots"),
             "yesterday's row and the outsider's are not this repo's today; the archived team is not counted",
@@ -77,7 +78,22 @@ class ProjectsRoutesTest {
         val unpriced = rig.head("codex", listOf(rig.row(AT, BUILDER, input = 5)), rates = null)
         val row = rig.json(routes(mapOf("codex" to unpriced)).project(rig.repo.toString()).body)
         assertEquals("null", row.getValue("cost_today_usd").toString(), "no rate card is no dollar figure, never zero")
+        assertEquals("1", row.getValue("unpriced_turns_today").jsonPrimitive.content)
         assertEquals(HttpStatusCode.NotFound, routes(emptyMap()).project("/nowhere").status)
+    }
+
+    // V4-269: a recorded team run's repo read a dash for the day because the lead ran one turn on a
+    // model with no card, while every other turn was priced.
+    @Test
+    fun `a turn with no card is counted beside the priced dollars, never a dash over them`() {
+        rig.team()
+        val codex = rig.head("codex", listOf(rig.row(AT, BUILDER, input = 1_000_000)))
+        val claude = rig.head("claude", listOf(rig.row(AT, LEAD, input = 3)), rates = null)
+        val row = rig.json(routes(mapOf("codex" to codex, "claude" to claude)).project(rig.repo.toString()).body)
+        // 1M input at 1.0 and 10 output at 2.0, per million: the codex turn alone.
+        assertEquals(1.00002, row.getValue("cost_today_usd").jsonPrimitive.doubleOrNull ?: Double.NaN, 1e-9)
+        assertEquals("2", row.getValue("turns_today").jsonPrimitive.content)
+        assertEquals("1", row.getValue("unpriced_turns_today").jsonPrimitive.content)
     }
 
     // FEATURES.md 4.14's "compaction scope and effective instructions, the statusline roots entry":

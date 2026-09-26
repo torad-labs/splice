@@ -71,24 +71,39 @@ public class KeyStore(
     public val path: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
-    // mtime of the corrupt keys.toml version warned about in the CURRENT unreadable episode; null =
-    // no active episode. One line per broken version, not one per read: read() runs on auth paths,
-    // and a corrupt store must not turn the daemon log into a firehose. MTIME_UNREADABLE stands for
-    // "mtime itself unreadable" (an access-indeterminate store) — the old latch INITIALIZED to that
-    // same sentinel value, so exactly those stores had their FIRST warning swallowed (DR-40 redo).
-    // A healthy read (or proven absence) clears the latch, so a later episode — same mtime or no
-    // mtime — warns again. CAS over FileTime (value-equal, no boxed-primitive identity trap), not
-    // volatile check-then-set (DR-40 redo 2, the exact DR-9 race: codex's 64-reader probe logged 29
-    // warnings across 20 versions). One attempt per caller: the winner logs, same-version losers
-    // return, a loser holding a NEWER version logs on its next call.
-    private val warnedCorruptMtime = AtomicReference<FileTime?>(null)
+    private val display = DisplayRead()
+
+    /** What a presence surface may say about one stored key (V4-299). */
+    public sealed class Presence {
+        public data object Stored : Presence()
+
+        public data object Absent : Presence()
+
+        /** The store is there and cannot be read, so the key may still be in it; [why] is the render. */
+        public data class Unreadable(val why: String) : Presence()
+    }
+
+    /** One tolerant read: the entries, and the rendered failure when the store is present but unreadable. */
+    private data class TolerantRead(val entries: Map<String, String>, val unreadable: String?)
 
     /** The key for [envVar], or null when absent/blank/unreadable. Last assignment wins,
      *  comments (#) and blanks are skipped, single or double quotes stripped. */
-    public fun read(envVar: String): String? = entries()[envVar]
+    public fun read(envVar: String): String? = display.read().entries[envVar]
+
+    /** Whether [envVar] is stored, for doctor, status, add and the console (V4-299). [read]'s null
+     *  cannot tell an unreadable store from an absent key, and those surfaces said "no credential" for
+     *  a key still on disk; an unreadable store answers [Presence.Unreadable] with its reason. */
+    public fun presence(envVar: String): Presence {
+        val read = display.read()
+        return when {
+            read.unreadable != null -> Presence.Unreadable(read.unreadable)
+            envVar in read.entries -> Presence.Stored
+            else -> Presence.Absent
+        }
+    }
 
     /** Every configured env-var NAME (never the values — safe for `splice key list`). */
-    public fun names(): Set<String> = entries().keys
+    public fun names(): Set<String> = display.read().entries.keys
 
     /** Insert or replace [envVar] = [value] (0600 atomic write). Preserves sibling entries;
      *  comments are NOT (we are the only writer — hand edits survive only as entries). */
@@ -114,39 +129,56 @@ public class KeyStore(
         removed
     }
 
-    /** Display-path read: tolerant, but no longer SILENT (DR-40) — an unreadable keys.toml used to
-     *  be indistinguishable from an empty one, so readKey reported auth-missing and `splice key
-     *  list` corroborated the misdiagnosis while the operator's keys sat intact in a file one
-     *  parse error away. Corrupt-vs-empty now differ by a daemon-log line, once per file version
-     *  (mtime-gated: read() runs on auth paths and must not firehose the log). Absence is proven by
-     *  the read, never a Files.exists pre-gate (DR-40 redo, class law): only NoSuchFile with no
-     *  NOFOLLOW path entry is the quiet empty — an untraversable parent, an inaccessible symlink
-     *  target, and a dangling link all warn. */
-    private fun entries(): Map<String, String> {
-        val read = Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }
-        val failure = read.exceptionOrNull()
-        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
-            !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
-        if (failure == null || genuinelyAbsent) {
-            warnedCorruptMtime.set(null)
-        } else {
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: MTIME_UNREADABLE only keys the dedup; the warning below is logged either way
-            val mtime = Cancellables.runCatchingCancellable {
-                Files.getLastModifiedTime(path)
-            }.getOrDefault(MTIME_UNREADABLE)
-            val seen = warnedCorruptMtime.get()
-            if (mtime != seen && warnedCorruptMtime.compareAndSet(seen, mtime)) {
-                // Epistemically honest consequence (DR-40, codex): "your keys are still in the
-                // file" is a claim this branch cannot make — for a dangling link the target is
-                // GONE, and through an untraversable parent the state is unknowable.
-                log(
-                    "[keys] $path is UNREADABLE (${SafeFailureText.render(failure)}); treating as empty for " +
-                        "display; the path may still reference operator key state, fix or " +
-                        "remove it (writes abort rather than clobber)\n",
-                )
+    /** The display path's read — [read], [names] and [presence] — with its warning latch: the DR-40
+     *  concern, apart from SH-11's mutation path ([entriesStrict]). */
+    private inner class DisplayRead {
+        // mtime of the corrupt keys.toml version warned about in the CURRENT unreadable episode; null =
+        // no active episode. One line per broken version, not one per read: read() runs on auth paths,
+        // and a corrupt store must not turn the daemon log into a firehose. MTIME_UNREADABLE stands for
+        // "mtime itself unreadable" (an access-indeterminate store) — the old latch INITIALIZED to that
+        // same sentinel value, so exactly those stores had their FIRST warning swallowed (DR-40 redo).
+        // A healthy read (or proven absence) clears the latch, so a later episode — same mtime or no
+        // mtime — warns again. CAS over FileTime (value-equal, no boxed-primitive identity trap), not
+        // volatile check-then-set (DR-40 redo 2, the exact DR-9 race: codex's 64-reader probe logged 29
+        // warnings across 20 versions). One attempt per caller: the winner logs, same-version losers
+        // return, a loser holding a NEWER version logs on its next call.
+        private val warnedCorruptMtime = AtomicReference<FileTime?>(null)
+
+        /** Tolerant, but no longer SILENT (DR-40) — an unreadable keys.toml used to be
+         *  indistinguishable from an empty one, so readKey reported auth-missing and `splice key
+         *  list` corroborated the misdiagnosis while the operator's keys sat intact in a file one
+         *  parse error away. Corrupt-vs-empty now differ by a daemon-log line, once per file version
+         *  (mtime-gated: read() runs on auth paths and must not firehose the log). Absence is proven by
+         *  the read, never a Files.exists pre-gate (DR-40 redo, class law): only NoSuchFile with no
+         *  NOFOLLOW path entry is the quiet empty — an untraversable parent, an inaccessible symlink
+         *  target, and a dangling link all warn. The failure's render rides along for [presence] (V4-299). */
+        fun read(): TolerantRead {
+            val read = Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }
+            val failure = read.exceptionOrNull()
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
+            if (failure == null || genuinelyAbsent) {
+                warnedCorruptMtime.set(null)
+                return TolerantRead(read.getOrDefault(emptyMap()), null)
+            } else {
+                // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: MTIME_UNREADABLE only keys the dedup; the warning below is logged either way
+                val mtime = Cancellables.runCatchingCancellable {
+                    Files.getLastModifiedTime(path)
+                }.getOrDefault(MTIME_UNREADABLE)
+                val seen = warnedCorruptMtime.get()
+                if (mtime != seen && warnedCorruptMtime.compareAndSet(seen, mtime)) {
+                    // Epistemically honest consequence (DR-40, codex): "your keys are still in the
+                    // file" is a claim this branch cannot make — for a dangling link the target is
+                    // GONE, and through an untraversable parent the state is unknowable.
+                    log(
+                        "[keys] $path is UNREADABLE (${SafeFailureText.render(failure)}); treating as empty for " +
+                            "display; the path may still reference operator key state, fix or " +
+                            "remove it (writes abort rather than clobber)\n",
+                    )
+                }
+                return TolerantRead(emptyMap(), SafeFailureText.render(failure))
             }
         }
-        return read.getOrDefault(emptyMap())
     }
 
     /** SH-11: the MUTATION-path read. PROVEN-absent = legitimately empty (safe to write);

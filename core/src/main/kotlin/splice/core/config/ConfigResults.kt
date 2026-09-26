@@ -25,4 +25,7 @@ public data class PatchResult(
     val rejected: Map<String, String>,
     val restartRequired: List<String>,
     val effective: SpliceConfig,
+    /** Why [applied] did not reach config.json, or null when it did or nothing was applied (V4-299). The
+     *  runtime layer holds either way; unsaved, it is gone at the next start. */
+    val notPersisted: String? = null,
 )

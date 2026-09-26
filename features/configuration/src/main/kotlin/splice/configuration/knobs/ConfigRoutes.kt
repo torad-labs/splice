@@ -83,7 +83,10 @@ public class ConfigRoutes(
                 }
                 putJsonArray("restart_required") { result.restartRequired.forEach { add(it) } }
                 putJsonArray("targets") {} // no per-head fanout targets in single-daemon
-                put("persisted", "state/config.json")
+                // V4-299: persisted only when the write landed; otherwise null, and not_persisted says why.
+                val notPersisted = result.notPersisted
+                put("persisted", if (notPersisted == null) "state/config.json" else null)
+                notPersisted?.let { put("not_persisted", it) }
             }.toString(),
             ContentType.Application.Json,
         )

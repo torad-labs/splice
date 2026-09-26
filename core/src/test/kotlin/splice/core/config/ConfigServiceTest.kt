@@ -14,6 +14,7 @@ import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -244,6 +245,26 @@ class ConfigServiceTest {
         // null deletes from runtime and file
         svc.patch(mapOf("effort" to null))
         assertEquals(null, svc.getConfig().effort)
+    }
+
+    // V4-299: a failed write was logged and nothing else, so PATCH /api/config answered "persisted" for a
+    // knob that reverts at the next start.
+    @Test
+    fun `a patch whose write fails still applies and says why it did not persist - V4-299`() {
+        val svc = service()
+        assertNull(svc.patch(mapOf("effort" to "high")).notPersisted, "a write that lands persists")
+        val stateDir = tmp.resolve("state")
+        Files.setPosixFilePermissions(stateDir, PosixFilePermissions.fromString("r-x------"))
+        val result = try {
+            svc.patch(mapOf("effort" to "low"))
+        } finally {
+            Files.setPosixFilePermissions(stateDir, PosixFilePermissions.fromString("rwx------"))
+        }
+
+        assertEquals("low", svc.getConfig().effort, "the runtime layer holds")
+        val why = result.notPersisted.orEmpty()
+        assertTrue("${stateDir.resolve("config.json")} could not be written" in why && "restarts" in why, why)
+        assertTrue(tmp.resolve("state/config.json").readText().contains("\"high\""), "the saved value is unchanged")
     }
 
     @Test

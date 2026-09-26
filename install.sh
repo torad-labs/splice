@@ -151,8 +151,12 @@ JAR_BACKUP="$(mktemp "${SHARE_DIR}/.splice.jar.backup.XXXXXX")"
 SHIM_BACKUP="$(mktemp "${SHARE_DIR}/.splice-launch.backup.XXXXXX")"
 rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 SUMS_TMP=""
+# Set by roll_back when the previous installation could not be put back: the backups are then the
+# only copy of it, so the EXIT trap leaves them for the operator (V4-299).
+KEEP_BACKUPS=0
 cleanup() {
-  rm -f "$JAR_TMP" "$SHIM_TMP" "$JAR_BACKUP" "$SHIM_BACKUP"
+  rm -f "$JAR_TMP" "$SHIM_TMP"
+  [ "$KEEP_BACKUPS" = 1 ] || rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
   [ -z "$SUMS_TMP" ] || rm -f "$SUMS_TMP"
 }
 trap cleanup EXIT
@@ -319,23 +323,45 @@ if [ -f "$SHIM_DST" ]; then
   HAD_SHIM=1
 fi
 
+# restore_previous_artifacts — put the previous jar and shim back, or remove the candidates when there
+# were none. Every move and removal is checked (V4-299): under `set -e` the first failed move ended the
+# script with no line of its own, and the EXIT trap then deleted the backups. Each step that fails is
+# added to RESTORE_BY_HAND, one command per line, and the function returns non-zero.
+RESTORE_BY_HAND=""
 restore_previous_artifacts() {
+  RESTORE_BY_HAND=""
   if [ "$HAD_JAR" = 1 ]; then
-    mv -f "$JAR_BACKUP" "$JAR_DST"
+    mv -f "$JAR_BACKUP" "$JAR_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  mv -f '$JAR_BACKUP' '$JAR_DST'
+"
   else
-    rm -f "$JAR_DST"
+    rm -f "$JAR_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  rm -f '$JAR_DST'
+"
   fi
   if [ "$HAD_SHIM" = 1 ]; then
-    mv -f "$SHIM_BACKUP" "$SHIM_DST"
+    mv -f "$SHIM_BACKUP" "$SHIM_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  mv -f '$SHIM_BACKUP' '$SHIM_DST'
+"
   else
-    rm -f "$SHIM_DST"
+    rm -f "$SHIM_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  rm -f '$SHIM_DST'
+"
   fi
+  [ -z "$RESTORE_BY_HAND" ]
+}
+
+# roll_back <what failed> — restore the previous installation, say which outcome actually happened,
+# and exit 1. A restore that failed keeps the backups and names the commands that finish it by hand.
+roll_back() {
+  if restore_previous_artifacts; then
+    echo "splice: $1; previous installation restored" >&2
+  else
+    KEEP_BACKUPS=1
+    echo "splice: $1; the previous installation could NOT be restored. Finish it by hand:" >&2
+    printf '%s' "$RESTORE_BY_HAND" >&2
+  fi
+  exit 1
 }
 
 if ! mv -f "$JAR_TMP" "$JAR_DST" || ! mv -f "$SHIM_TMP" "$SHIM_DST"; then
-  restore_previous_artifacts
-  echo "splice: failed to commit candidate artifacts; previous installation restored" >&2
-  exit 1
+  roll_back "failed to commit candidate artifacts"
 fi
 
 # run_jar <jar> <args…> — the jar's verbs that touch an install, in THIS script's home and dirs. The
@@ -351,18 +377,14 @@ run_jar() {
 # A CLI/preflight failure rolls the jar and shim back as one installation generation.
 if ! run_jar "$JAR_DST" init ||
   ! SPLICE_JAR="$JAR_DST" run_jar "$JAR_DST" install --all; then
-  restore_previous_artifacts
-  echo "splice: command installation failed; previous jar and shim restored" >&2
-  exit 1
+  roll_back "command installation failed"
 fi
 
 # 4. Fail loudly rather than report success when nothing actually landed. `install --all`
 #    always links the `splice` admin command itself, so its absence means the install failed
 #    (counting arbitrary symlinks would false-pass on unrelated tools already in BIN_DIR).
 if [ ! -L "$BIN_DIR/splice" ] || [ ! -e "$BIN_DIR/splice" ]; then
-  restore_previous_artifacts
-  echo "splice: install failed — $BIN_DIR/splice missing or dangling" >&2
-  exit 1
+  roll_back "install failed — $BIN_DIR/splice missing or dangling"
 fi
 # 4b. Keep a PRISTINE copy of this release under releases/<version>/ for `splice upgrade`: it is
 #     what rollback repoints at, and what the upgrade compares the live launch shim against so a

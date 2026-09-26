@@ -126,9 +126,9 @@ public class ConfigService(
                 }
             }
         }
-        if (applied.isNotEmpty()) persistApplied(applied)
+        val notPersisted = if (applied.isNotEmpty()) persistApplied(applied) else null
         val restartRequired = applied.keys.filter { it in restartRequiredKnobKeys }
-        return PatchResult(applied, rejected, restartRequired, getConfig())
+        return PatchResult(applied, rejected, restartRequired, getConfig(), notPersisted)
     }
 
     private fun mergedRaw(headKey: String? = null): Map<String, Any?> {
@@ -280,9 +280,10 @@ public class ConfigService(
     }
 
     // Best-effort by design (port fidelity): persistence failure must not undo the applied
-    // runtime layer. Env still wins at next boot — the launcher is the boot authority.
-    private fun persistApplied(applied: Map<String, Any?>) {
-        // persistence is best-effort; the runtime layer already applied
+    // runtime layer. Env still wins at next boot — the launcher is the boot authority. A failure is
+    // returned as well as logged, so PATCH /api/config never answers "persisted" for a write that did
+    // not land (V4-299); null means it landed.
+    private fun persistApplied(applied: Map<String, Any?>): String? =
         Cancellables.runCatchingCancellable {
             synchronized(persistLock) {
                 val path = statePaths.configFile
@@ -291,8 +292,15 @@ public class ConfigService(
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
                 fileCache = null
             }
-        }.onFailure { e -> log("[config] failed to persist config to disk: ${SafeFailureText.render(e)}") }
-    }
+        }.fold(
+            onSuccess = { null },
+            onFailure = { e ->
+                val why = SafeFailureText.render(e)
+                log("[config] failed to persist config to disk: $why")
+                "${statePaths.configFile} could not be written ($why); the change is live until the daemon " +
+                    "restarts, which reads the saved value again"
+            },
+        )
 
     /** MUTATION-path read (DR-9, the KeyStore.entriesStrict doctrine): PROVEN-ABSENT = legitimately
      *  empty (safe to seed); UNREADABLE = unknown state — abort THIS persist rather than merge over

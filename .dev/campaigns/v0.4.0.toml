@@ -6917,12 +6917,14 @@ claimed_at = "2026-09-26T05:03:32.514Z"
 id = "V4-258"
 phase = "release"
 title = "PRIVACY: daemon-boot.log is bounded while the daemon runs (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). It rolls only at spawn and only past 1 MB (DaemonLaunch.kt:55-70, splice-launch:361), and every daemon.log line is also printed to stderr and lands in it (DaemonBoundary.kt:92), so it grows without limit and duplicates daemon.log. Stop the duplicate or cap the file, in both cold-start paths."
-files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "app/src/main/dist/bin/splice-launch"]
+files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "app/src/main/dist/bin/splice-launch", "app/src/main/kotlin/splice/app/Main.kt", "app/src/main/kotlin/splice/app/DaemonBoundary.kt", "app/src/test/kotlin/splice/app/DaemonLogWiringTest.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/start/DaemonLaunchTest.kt", "tools/release/src/lib/launcher.ts", "tools/release/test/launcher.test.ts"]
 status = "in_flight"
 verify = "red first: a running daemon that logs past the cap leaves daemon-boot.log no larger than the cap, or daemon.log lines no longer appear in it; both launch paths agree; CI gate on the train sha."
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T05:35:36.603Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T05:35:36Z
+# [2026-09-26] amend by=unattributed: files were ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "app/src/main/dist/bin/splice-launch"]
+# [2026-09-26] fence amended by claude-builder: the fix belongs where the duplicate is made. The daemon copies every daemon.log line to stderr (DaemonBoundary.kt:92), and a live ~/.claude-codex/logs/daemon-boot.log.1 (2.68 MB, past its 1 MB roll) was 15276 of 15280 lines daemon.log duplicates, the rest SLF4J's startup warning. Both launchers pass the daemon --stderr-is-boot-log; the daemon then keeps daemon.log's lines off stderr (Main.kt, DaemonBoundary.kt) except a line whose file write failed. Tests: DaemonLogWiringTest, DaemonLaunchTest, and the release launcher harness (tools/release) for splice-launch.
 
 [[items]]
 id = "V4-259"

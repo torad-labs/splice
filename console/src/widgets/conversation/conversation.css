@@ -1,0 +1,39 @@
+/* A session's conversation (DESIGN.md section 7): where it was read from, then one line per turn
+   with its body behind a reveal. Kit tokens only. */
+
+.myx-cv { display: grid; gap: var(--space-4); min-width: 0; }
+.myx-cv-path { font-family: var(--font-mono); font-size: var(--text-2); overflow-wrap: anywhere; }
+
+.myx-cv-turns { list-style: none; margin: 0; padding: 0; display: grid; }
+.myx-cv-turn { display: grid; gap: var(--space-2); padding-block: var(--space-3); min-width: 0; }
+.myx-cv-turn + .myx-cv-turn { border-top: var(--hair) solid var(--line); }
+
+.myx-cv-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+}
+.myx-cv-index,
+.myx-cv-at,
+.myx-cv-size { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg-subtle); }
+.myx-cv-tool { font-family: var(--font-mono); color: var(--fg); }
+.myx-cv-size { margin-inline-start: auto; }
+
+/* A turn body is text, not a figure. It scrolls inside the panel rather than stretching it. */
+.myx-cv-text {
+  margin: 0;
+  padding: var(--space-4);
+  max-height: 34vh;
+  overflow: auto;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

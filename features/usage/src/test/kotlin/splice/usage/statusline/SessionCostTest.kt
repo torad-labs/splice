@@ -1,0 +1,639 @@
+// V4-37 — one session's spend, and the statusline segment that shows it.
+//
+// THE ROW SHAPE IS THE WHOLE POINT, and getting it wrong is what this row is being redone for.
+// A perf row's `in_tokens` is INCLUSIVE of its `cached_tokens`: ChatUsage sets inputTokens from
+// prompt_tokens (inclusive by the vendor's own definition) and PassthroughUsage.kt:23 spells it out
+// — inputTokens = inputTokens + cacheRead + cacheCreation — after which TurnUsageStamp.kt:48 and :50
+// write both counters straight from that object with NO subtraction. So the cache-miss bucket is the
+// DIFFERENCE, and billing the raw field as a miss while also billing cached_tokens as a read charges
+// the cached prefix twice.
+//
+// The first version of these tests never caught that, because every row they built was DISJOINT —
+// a shape production never writes. This file therefore pins against REAL bytes: `realSessionRows`
+// below are lines copied verbatim out of ~/.claude-codex/state/claude-deepseek-perf.jsonl (session
+// tag 8b5c4f28, the session the operator's report came from) and parsed the way PerfStats.numericFields
+// parses them. On the full 668-row session that file holds, the old arithmetic prices 46.465407 USD
+// against a true 1.420652 — 32.7x — which is the defect. The three rows kept here reproduce it in
+// miniature at 2.66x, and the rest of this file's synthetic rows were rewritten into the inclusive
+// shape so none of them can encode the disjoint fiction again.
+package splice.usage.statusline
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.model.HeadRates
+import splice.core.model.LongContextRates
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
+import splice.core.model.TurnPrice
+import splice.core.perf.PerfModelTotal
+import splice.core.perf.PerfSessionTail
+import splice.core.perf.PerfSessionTotal
+import splice.core.perf.PerfSessionTurn
+import splice.usage.perf.HeadPerfSource
+import splice.usage.perf.HeadSessionPerfSource
+
+class SessionCostTest {
+
+    private val offPeak = ModelRates(input = 0.15, cacheRead = 0.003, output = 0.60)
+    private val resellerMarkup = ModelRates(input = 0.30, cacheRead = 0.006, output = 1.20)
+
+    private val sessionId = "sess-abcdefgh-1234"
+
+    /** The measured 67-turn session (fresh input 305460, cache read 6911360, output 46897), split
+     *  over three turns to prove the total is SUMMED — and written in the INCLUSIVE shape the sink
+     *  actually appends, so each row's `in_tokens` already contains its `cached_tokens` and the
+     *  fresh-input figure is what the subtraction has to recover. */
+    private val measuredTurns = listOf(
+        mapOf("in_tokens" to 2_100_000L, "cached_tokens" to 2_000_000L, "out_tokens" to 15_000L),
+        mapOf("in_tokens" to 2_555_680L, "cached_tokens" to 2_455_680L, "out_tokens" to 16_000L),
+        mapOf("in_tokens" to 2_561_140L, "cached_tokens" to 2_455_680L, "out_tokens" to 15_897L),
+    )
+
+    private fun deepseekCatalog() = ModelCatalog(
+        discoveryPrefix = "claude-deepseek--",
+        models = listOf(
+            ModelEntry(
+                id = "deepseek-flash",
+                label = "DeepSeek V4.1 Flash",
+                contextWindow = 1_000_000,
+                rates = offPeak,
+            ),
+            ModelEntry(id = "deepseek-v4-pro", label = "DeepSeek V4 Pro", contextWindow = 1_000_000),
+        ),
+        defaultContextWindow = 1_000_000,
+        pinnedModel = "deepseek-flash",
+    )
+
+    /** Answers [rows] for the session under test and NOTHING for any other id — the isolation the
+     *  per-session reader must preserve. */
+    private fun tokens(rows: List<Map<String, Long>>, forSession: String = sessionId) =
+        HeadSessionPerfSource { asked ->
+            PerfSessionTail(if (asked == forSession) rows.map { PerfSessionTurn(null, it) } else emptyList(), null)
+        }
+
+    // ---- the REAL rows ------------------------------------------------------------------------
+
+    // Copied byte-for-byte out of the operator's own claude-deepseek-perf.jsonl. Nothing is edited,
+    // reordered or trimmed: the field set, the key spellings and the values are the sink's. The first
+    // row is a COLD turn (cached_tokens 0) on purpose — a subtraction that mishandles the no-cache
+    // case would bill it wrong, and every session starts with one.
+    private val realSessionJsonl = """
+        {"ts":1789614116929,"model":"deepseek-flash","outcome":"ok","compact":false,"session":"8b5c4f28","gate":0,"recv":0,"parse":2,"build":2,"headers":935,"first_frame":936,"first_byte":943,"first_delta":2973,"stream_end":3313,"finish":3313,"total":3313,"inflight":4,"async_io_drops":0,"req_bytes":331923,"upstream_req_bytes":330586,"attempts":1,"write_ms":1,"frames_out":88,"bytes_out":11602,"sse_bytes_in":11533,"events_in":88,"content_frames_out":86,"in_tokens":82225,"out_tokens":113,"cached_tokens":0}
+        {"ts":1789614119703,"model":"deepseek-flash","outcome":"ok","compact":false,"session":"8b5c4f28","gate":0,"recv":1,"parse":2,"build":2,"headers":1336,"first_frame":1336,"first_byte":1349,"first_delta":2337,"stream_end":2596,"finish":2596,"total":2596,"inflight":5,"async_io_drops":0,"req_bytes":448401,"upstream_req_bytes":446708,"attempts":1,"frames_out":75,"bytes_out":10109,"sse_bytes_in":10044,"events_in":75,"content_frames_out":73,"in_tokens":107790,"out_tokens":103,"cached_tokens":82304}
+        {"ts":1789614122263,"model":"deepseek-flash","outcome":"ok","compact":false,"session":"8b5c4f28","gate":0,"recv":0,"parse":2,"build":2,"headers":1261,"first_frame":1261,"first_byte":1261,"first_delta":1640,"stream_end":2334,"finish":2334,"total":2334,"inflight":5,"async_io_drops":0,"req_bytes":453072,"upstream_req_bytes":451373,"attempts":1,"frames_out":170,"bytes_out":22409,"sse_bytes_in":22332,"events_in":170,"content_frames_out":168,"in_tokens":108852,"out_tokens":223,"cached_tokens":107776}
+    """.trimIndent()
+
+    private val realSessionRows: List<JsonObject> = realSessionJsonl.lines().map(::parseRow)
+
+    private fun parseRow(line: String): JsonObject = Json.parseToJsonElement(line).jsonObject
+
+    /** The full client session id. Only the first 8 characters ever reach the file (TurnDrive
+     *  truncates), so the tail is unknowable from the log by construction — which is exactly the
+     *  prefix match the reader performs, reproduced here rather than assumed. */
+    private val realSessionId = "8b5c4f28-9ad1-4c7a-b0e6-2f1c8d3e5a90"
+
+    /** PerfStats.numericFields, reproduced: every top-level primitive that parses as a Long. */
+    private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {
+        row.forEach { (k, v) -> (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) } }
+    }
+
+    /** PerfStats.belongsTo + numericFields over the real rows: the stored tag is a TRUNCATION of the
+     *  id the caller holds, so the filter is `askedId.startsWith(storedTag)`. */
+    private fun realTokens() = HeadSessionPerfSource { asked ->
+        val turns = realSessionRows
+            .filter { row -> (row["session"] as? JsonPrimitive)?.content?.let { asked.startsWith(it) } == true }
+            .map { row -> PerfSessionTurn((row["model"] as? JsonPrimitive)?.content, numericFields(row)) }
+        PerfSessionTail(turns, null)
+    }
+
+    @Test
+    fun `real perf rows carry the cached prefix INSIDE in_tokens, which is what the arithmetic rests on`() {
+        val rows = realTokens().sessionTail(realSessionId).turns.map { it.counters }
+        assertEquals(3, rows.size, "the prefix match must find all three of this session's rows")
+        for (row in rows) {
+            val rawIn = row["in_tokens"]!!
+            val cached = row["cached_tokens"]!!
+            assertTrue(
+                cached <= rawIn,
+                "a production row never reports more cached than input; that is what makes it INCLUSIVE: $row",
+            )
+        }
+        assertTrue(rows.any { it["cached_tokens"] == 0L }, "the cold first turn is kept, not filtered out")
+        assertTrue(rows.any { (it["cached_tokens"] ?: 0L) > 0L }, "and at least one warm turn, or nothing is proven")
+    }
+
+    @Test
+    fun `the operator's own rows price the cached prefix ONCE, not once as a miss and again as a read`() {
+        val cost = SessionCost(realTokens(), deepseekCatalog())
+        // Summed straight off the three rows above:
+        //   in_tokens      82225 + 107790 + 108852 = 298867
+        //   cached_tokens      0 +  82304 + 107776 = 190080
+        //   out_tokens       113 +    103 +    223 =    439
+        // cache MISS = 298867 - 190080 = 108787, because in_tokens already contains the cached part.
+        //   108787 * 0.15   = 16318.05
+        //   190080 * 0.003  =   570.24
+        //      439 * 0.60   =   263.40
+        //                      --------
+        //                      17151.69 / 1e6 = 0.01715169
+        assertEquals(0.01715169, cost.usdFor(realSessionId, "deepseek-flash")!!, 1e-12)
+        // What the pre-redo arithmetic produced on these same bytes: it billed the raw 298867 as a
+        // miss AND the 190080 again as a read.
+        //   298867 * 0.15 = 44830.05, + 570.24 + 263.40 = 45663.69 / 1e6 = 0.04566369
+        // 2.66x here; 32.7x across the full 668-row session (46.465407 against 1.420652), because
+        // the longer the session the larger the cached share of every prompt.
+        assertNotEquals(
+            0.04566369,
+            cost.usdFor(realSessionId, "deepseek-flash")!!,
+            "the cached prefix must not be billed at the cache-MISS rate as well as the read rate",
+        )
+    }
+
+    @Test
+    fun `a row whose cached count exceeds its input floors the miss bucket instead of crediting it`() {
+        // Not a shape the sink writes today, but an older or torn row could carry it, and a negative
+        // miss bucket would SUBTRACT from the operator's bill rather than floor at zero.
+        val impossible = listOf(mapOf("in_tokens" to 1_000L, "cached_tokens" to 9_000L, "out_tokens" to 0L))
+        val cost = SessionCost(tokens(impossible), deepseekCatalog())
+        // 0 miss + 9000 * 0.003 = 27.0 / 1e6
+        assertEquals(0.000027, cost.usdFor(sessionId, "deepseek-flash")!!, 1e-12)
+    }
+
+    @Test
+    fun `the measured session prices off its summed turns, not off one row`() {
+        val cost = SessionCost(tokens(measuredTurns), deepseekCatalog())
+        // in_tokens  2100000 + 2555680 + 2561140 = 7216820  (inclusive of cache)
+        // cached     2000000 + 2455680 + 2455680 = 6911360
+        // miss       7216820 - 6911360           =  305460  <- the report's "fresh input"
+        //  305460 * 0.15   =  45819.0
+        // 6911360 * 0.003  =  20734.08
+        //   46897 * 0.60   =  28138.2      -> 94691.28 / 1e6 = 0.09469128
+        assertEquals(0.09469128, cost.usdFor(sessionId, "deepseek-flash")!!, 1e-9)
+        // Reading a single row instead of the sum would give a third of this; pin that too.
+        val oneTurn = SessionCost(tokens(listOf(measuredTurns[0])), deepseekCatalog())
+        assertNotEquals(
+            cost.usdFor(sessionId, "deepseek-flash"),
+            oneTurn.usdFor(sessionId, "deepseek-flash"),
+            "the total must be the SUM over the session's turns",
+        )
+    }
+
+    @Test
+    fun `two heads on one provider price differently and never leak into each other`() {
+        val catalog = deepseekCatalog()
+        val heads = HeadRates { id -> if (id == "deepseek-flash") resellerMarkup else null }
+        val markedUp = SessionCost(tokens(measuredTurns), catalog, headRates = heads)
+        val atProvider = SessionCost(tokens(measuredTurns), catalog)
+
+        val a = markedUp.usdFor(sessionId, "deepseek-flash")!!
+        val b = atProvider.usdFor(sessionId, "deepseek-flash")!!
+        assertEquals(0.18938256, a, 1e-9, "the head's own card wins")
+        assertEquals(0.09469128, b, 1e-9, "the un-overridden head keeps the provider entry's card")
+        assertEquals(2.0, a / b, 1e-9, "exactly the markup, so neither head's card reached the other")
+    }
+
+    @Test
+    fun `an unknown session, an unrated model, and an empty session all fall back`() {
+        val catalog = deepseekCatalog()
+        val cost = SessionCost(tokens(measuredTurns), catalog)
+        assertNull(
+            cost.usdFor("sess-someone-else", "deepseek-flash"),
+            "another session's rows are never this session's",
+        )
+        assertNull(cost.usdFor(null, "deepseek-flash"), "no session, no per-session number")
+        assertNull(cost.usdFor(sessionId, null), "no model, no card")
+        assertNull(cost.usdFor(sessionId, "deepseek-v4-pro"), "declared with no rates = client fallback")
+        assertNull(SessionCost(tokens(measuredTurns), null).usdFor(sessionId, "deepseek-flash"), "no catalog, no card")
+        val noTurns = SessionCost(tokens(emptyList()), catalog)
+        assertNull(noTurns.usdFor(sessionId, "deepseek-flash"), "a session with no turns renders no cost")
+    }
+
+    @Test
+    fun `a suffixed picker id resolves the card its bare upstream id declares`() {
+        val cost = SessionCost(tokens(measuredTurns), deepseekCatalog())
+        assertEquals(
+            cost.usdFor(sessionId, "deepseek-flash"),
+            cost.usdFor(sessionId, "deepseek-flash[1m]"),
+            "the canonical id is the key, so a tier suffix does not lose the card",
+        )
+    }
+
+    // ---- the segment itself ----------------------------------------------------------------
+
+    private val blob = """
+        {
+          "model": { "id": "deepseek-flash", "display_name": "DeepSeek V4.1 Flash" },
+          "cost": { "total_cost_usd": 3.69 },
+          "context_window": { "context_window_size": 1000000, "used_percentage": 12 }
+        }
+    """.trimIndent()
+
+    // The ESC byte (spelled `\u001b` rather than embedded raw, so it survives an editor) is part of
+    // the pattern on purpose. A regex of `\[[0-9;]*m` alone leaves the ESC
+    // behind, and the cost segment draws `$` and its digits either side of a DIM/RESET pair — so the
+    // leftover ESC sits BETWEEN them and "$0.09" never matches. (StatuslineBarsTest gets away with
+    // the shorter pattern because every token it asserts on is wrapped whole, never split.)
+    private val ansi = Regex("\u001b\\[[0-9;]*m")
+
+    /** The rendered line with the colour codes stripped. The `$` and its digits are drawn either
+     *  side of a DIM/RESET pair, so the raw line never contains the literal "$0.09" — every
+     *  assertion here is against the visible text the operator actually reads. */
+    private fun segment(cost: SessionCostSource?, session: String = sessionId): String =
+        StatuslineRenderer(label = "deepseek", sessionCost = cost)
+            .render(blob, null, warnPct = 0, warnTokens5h = 0, sessionId = session)
+            .replace(ansi, "")
+
+    @Test
+    fun `the segment shows splice's number, not the client's Anthropic-priced one`() {
+        val line = segment(SessionCost(tokens(measuredTurns), deepseekCatalog()))
+        assertTrue("$0.09" in line, line)
+        assertTrue("3.69" !in line, "the client's Anthropic-priced total must not survive: $line")
+    }
+
+    @Test
+    fun `the segment renders the REAL rows at the real rate, cent for cent`() {
+        // 0.01715169 rounded to the two decimals the segment draws. The double-billed figure would
+        // have rendered "$0.05" from the very same bytes.
+        val line = segment(SessionCost(realTokens(), deepseekCatalog()), session = realSessionId)
+        assertTrue("$0.02" in line, line)
+        assertTrue("$0.05" !in line, "the double-billed figure must not survive: $line")
+        assertTrue("3.69" !in line, "and neither must the client's Anthropic-priced total: $line")
+    }
+
+    @Test
+    fun `a head that cannot price the session never shows the client's Anthropic-priced number`() {
+        // V4-240 reversed the fallback on every head whose upstream is not Anthropic: the client's
+        // 3.69 is Anthropic's card applied to DeepSeek's tokens. No source at all says so in words.
+        val noSource = segment(null)
+        assertTrue("no rate card" in noSource && "3.69" !in noSource, noSource)
+        // A rated model with no turns yet shows nothing: never a confident $0.00, never another
+        // session's number, and never the client's.
+        val unpriced = segment(SessionCost(tokens(emptyList()), deepseekCatalog()))
+        assertTrue("$" !in unpriced && "no rate card" !in unpriced, unpriced)
+    }
+
+    @Test
+    fun `rated answers whether the head holds a card for the model, suffixes and all`() {
+        val cost = SessionCost(tokens(measuredTurns), deepseekCatalog())
+        assertTrue(cost.rated("deepseek-flash"))
+        assertTrue(cost.rated("deepseek-flash[1m]"), "a suffixed picker id resolves its bare id's card")
+        assertFalse(cost.rated("deepseek-v4-pro"), "declared with no rates")
+        assertFalse(cost.rated(null))
+        assertFalse(SessionCost(tokens(measuredTurns), null).rated("deepseek-flash"), "no catalog, no card")
+    }
+
+    /** V4-240: a long-context tier bills one REQUEST by its own size, so a session is priced turn by
+     *  turn. Two 150k turns under a 200k tier are two base-rate turns; summed first, they would read
+     *  as one 300k request and bill every token at the tier. */
+    @Test
+    fun `a long-context tier prices each turn by its own size, never the session's sum`() {
+        val tiered = ModelRates(
+            input = 2.0,
+            cacheRead = 0.5,
+            output = 6.0,
+            longContext = LongContextRates(overInputTokens = 199_999, input = 4.0, cacheRead = 1.0, output = 12.0),
+        )
+        val catalog = ModelCatalog(
+            discoveryPrefix = "claude-grok--",
+            models = listOf(ModelEntry(id = "grok-4.7", label = "Grok 4.7", contextWindow = 500_000, rates = tiered)),
+            defaultContextWindow = 500_000,
+            pinnedModel = "grok-4.7",
+        )
+        val small = mapOf("in_tokens" to 150_000L, "out_tokens" to 1_000L)
+        val large = mapOf("in_tokens" to 250_000L, "out_tokens" to 1_000L)
+
+        val twoSmall = SessionCost(tokens(listOf(small, small)), catalog).usdFor(sessionId, "grok-4.7")!!
+        // 2 x (150000 x 2.0 + 1000 x 6.0) / 1e6 = 2 x 0.306
+        assertEquals(0.612, twoSmall, 1e-12, "each 150k turn bills at the base card")
+
+        val mixed = SessionCost(tokens(listOf(small, large)), catalog).usdFor(sessionId, "grok-4.7")!!
+        // 0.306 + (250000 x 4.0 + 1000 x 12.0) / 1e6 = 0.306 + 1.012
+        assertEquals(1.318, mixed, 1e-12, "only the 250k turn bills at the tier, output included")
+    }
+
+    @Test
+    fun `a plain HeadPerfSource is not session-aware, so the route builds no cost source for it`() {
+        // The route bridges with a checked cast: `perf as? HeadSessionPerfSource`. A head whose perf
+        // source is the plain reader — every test double, and any sink that keeps no session column —
+        // misses that cast, so no SessionCost is built and the segment renders the client's number.
+        val plain = HeadPerfSource { listOf(mapOf("in_tokens" to 1_000L)) }
+        assertTrue(plain !is HeadSessionPerfSource, "the sibling interface is what the route looks for")
+    }
+
+    // ---- V4-85: the cache-WRITE bucket -----------------------------------------------------------
+    //
+    // A perf row's `in_tokens` is inclusive of BOTH cache buckets, not just the read: PassthroughUsage
+    // sets inputTokens = inputTokens + cacheRead + cacheCreation. So the cache-MISS bucket is
+    // `in_tokens - cached_tokens - cache_write_tokens`, and until this row there was no
+    // cache_write_tokens counter at all — the written tokens stayed folded inside in_tokens and billed
+    // at the input rate while the declared cache_write rate multiplied a permanently-zero bucket.
+    //
+    // The card below is Anthropic's published Sonnet card, which is the shape that makes the defect
+    // cost money: a cache write is 1.25x input there, so folding it into the miss bucket UNDER-charges,
+    // and any vendor whose write is cheaper than its input would over-charge. Either way the number
+    // is not the one the operator declared.
+
+    private val sonnetCard = ModelRates(input = 3.00, cacheRead = 0.30, output = 15.00, cacheWrite = 3.75)
+
+    private fun cacheWritingCatalog() = ModelCatalog(
+        discoveryPrefix = "claude-anthropic--",
+        models = listOf(
+            ModelEntry(id = "sonnet-4-6", label = "Sonnet 4.6", contextWindow = 200_000, rates = sonnetCard),
+        ),
+        defaultContextWindow = 200_000,
+        pinnedModel = "sonnet-4-6",
+    )
+
+    @Test
+    fun `cache-WRITE tokens bill at the declared cache_write rate, not at the input rate`() {
+        // One turn that wrote a 100k-token cache and read nothing back: in_tokens is inclusive, so the
+        // whole 100k is ALSO the cache_write_tokens count and the miss bucket is empty.
+        //   miss  = 100000 - 0 - 100000 =      0  ->      0 * 3.00  =      0.0
+        //   read  =                          0  ->      0 * 0.30  =      0.0
+        //   write =                     100000  -> 100000 * 3.75  = 375000.0
+        //   out   =                          0  ->      0 * 15.00 =      0.0
+        //                                                           --------
+        //                                              375000.0 / 1e6 =   0.375
+        val wroteCache = listOf(
+            mapOf(
+                "in_tokens" to 100_000L,
+                "cached_tokens" to 0L,
+                "cache_write_tokens" to 100_000L,
+                "out_tokens" to 0L,
+            ),
+        )
+        val cost = SessionCost(tokens(wroteCache), cacheWritingCatalog())
+        assertEquals(0.375, cost.usdFor(sessionId, "sonnet-4-6")!!, 1e-12)
+        // What the pre-V4-85 arithmetic produced on the same row: with no cache_write_tokens counter
+        // the write was invisible, so all 100k sat in the miss bucket at the INPUT rate.
+        //   100000 * 3.00 = 300000.0 / 1e6 = 0.30
+        assertNotEquals(
+            0.30,
+            cost.usdFor(sessionId, "sonnet-4-6")!!,
+            "a cache write must not be billed at the cache-MISS rate",
+        )
+        // And dropping only the subtraction, keeping the bucket, bills the same tokens TWICE:
+        //   100000 * 3.00 + 100000 * 3.75 = 675000.0 / 1e6 = 0.675
+        assertNotEquals(
+            0.675,
+            cost.usdFor(sessionId, "sonnet-4-6")!!,
+            "the written tokens come OUT of the miss bucket; they must not be charged in both",
+        )
+    }
+
+    @Test
+    fun `the miss bucket is input minus BOTH cache buckets, each at its own rate`() {
+        // The production shape: one turn that replayed a cached prefix, wrote a new block, and answered.
+        //   miss  = 250000 - 100000 - 50000 = 100000 -> 100000 * 3.00  = 300000.0
+        //   read  =                           100000 -> 100000 * 0.30  =  30000.0
+        //   write =                            50000 ->  50000 * 3.75  = 187500.0
+        //   out   =                             2000 ->   2000 * 15.00 =  30000.0
+        //                                                                --------
+        //                                                     547500.0 / 1e6 = 0.5475
+        val mixed = listOf(
+            mapOf(
+                "in_tokens" to 250_000L,
+                "cached_tokens" to 100_000L,
+                "cache_write_tokens" to 50_000L,
+                "out_tokens" to 2_000L,
+            ),
+        )
+        val cost = SessionCost(tokens(mixed), cacheWritingCatalog())
+        assertEquals(0.5475, cost.usdFor(sessionId, "sonnet-4-6")!!, 1e-12)
+    }
+
+    @Test
+    fun `a row whose two cache buckets together exceed its input floors the miss bucket`() {
+        // Same defence as the cached-only arm above, now that TWO counters are subtracted: a torn or
+        // older row could carry read + write above its input count, and a negative miss bucket would
+        // CREDIT the operator's bill instead of flooring at zero.
+        //   miss  = 1000 - 900 - 900 = -800 -> floored to 0 ->   0 * 3.00 =    0.0
+        //   read  =                     900                 -> 900 * 0.30 =  270.0
+        //   write =                     900                 -> 900 * 3.75 = 3375.0
+        //                                                                    ------
+        //                                                      3645.0 / 1e6 = 0.003645
+        val impossible = listOf(
+            mapOf("in_tokens" to 1_000L, "cached_tokens" to 900L, "cache_write_tokens" to 900L, "out_tokens" to 0L),
+        )
+        val cost = SessionCost(tokens(impossible), cacheWritingCatalog())
+        assertEquals(0.003645, cost.usdFor(sessionId, "sonnet-4-6")!!, 1e-12)
+    }
+
+    // ---- V4-240 review, findings 4b and 4c ----------------------------------------------------------
+    //
+    // 4b: a session can switch models, and each turn is billed at the card of the model it RAN on. The
+    // figure used to price every row with the model the status line asked about, so a session with
+    // earlier Sonnet turns read at Opus rates. 4c: the reader holds a byte-bounded tail, so a session
+    // older than that tail may have turns it cut, and its figure is then only a lower bound.
+
+    private val sonnetFiveCard = ModelRates(input = 3.00, cacheRead = 0.30, output = 15.00)
+    private val opusCard = ModelRates(input = 5.00, cacheRead = 0.50, output = 25.00)
+
+    private fun anthropicCatalog() = ModelCatalog(
+        discoveryPrefix = "claude-anthropic--",
+        models = listOf(
+            ModelEntry(id = "claude-opus-5-5", label = "Opus 5.5", contextWindow = 1_000_000, rates = opusCard),
+            ModelEntry(id = "claude-sonnet-5", label = "Sonnet 5", contextWindow = 1_000_000, rates = sonnetFiveCard),
+        ),
+        defaultContextWindow = 1_000_000,
+        pinnedModel = "claude-opus-5-5",
+    )
+
+    /** One cold turn: 100000 input tokens, none cached, and 1000 output. */
+    private val coldTurn = mapOf("in_tokens" to 100_000L, "out_tokens" to 1_000L)
+
+    private fun tail(turns: List<PerfSessionTurn>, tailStartMs: Long? = null) = HeadSessionPerfSource { asked ->
+        if (asked == sessionId) PerfSessionTail(turns, tailStartMs) else PerfSessionTail(emptyList(), null)
+    }
+
+    @Test
+    fun `a session that switched models bills each turn at its own model's card - V4-240 review 4b`() {
+        //   the Sonnet turn: 100000 * 3.00 + 1000 * 15.00 = 315000.0 / 1e6 = 0.315
+        //   the Opus turn:   100000 * 5.00 + 1000 * 25.00 = 525000.0 / 1e6 = 0.525
+        //                                                                    -----
+        //                                                                    0.840
+        // Both at the Opus card, the defect, would read 1.05.
+        val turns = listOf(PerfSessionTurn("claude-sonnet-5", coldTurn), PerfSessionTurn("claude-opus-5-5", coldTurn))
+        val spend = SessionCost(tail(turns), anthropicCatalog()).spendFor(sessionId, "claude-opus-5-5", null)!!
+        assertEquals(0.84, spend.usd, 1e-12)
+        assertFalse(spend.lowerBound, "every turn had a card, so the figure is exact")
+    }
+
+    @Test
+    fun `a turn with no card is left out and makes the figure a lower bound - V4-240 review 4b`() {
+        val turns = listOf(
+            PerfSessionTurn("gpt-6-sol", coldTurn),
+            PerfSessionTurn("claude-opus-5-5", coldTurn),
+            // a legacy row that recorded no model is billed at the asked model's card
+            PerfSessionTurn(null, coldTurn),
+        )
+        val spend = SessionCost(tail(turns), anthropicCatalog()).spendFor(sessionId, "claude-opus-5-5", null)!!
+        assertEquals(1.05, spend.usd, 1e-12, "the two Opus-priced turns, 0.525 each; the uncarded one adds nothing")
+        assertTrue(spend.lowerBound, "a turn the head cannot price means the true spend is at least this")
+        val none = SessionCost(tail(listOf(PerfSessionTurn("gpt-6-sol", coldTurn))), anthropicCatalog())
+        assertNull(none.spendFor(sessionId, "claude-opus-5-5", null), "no priced turn at all is no figure, never zero")
+    }
+
+    @Test
+    fun `a session that began before the tail's oldest row is a lower bound - V4-240 review 4c`() {
+        val turns = listOf(PerfSessionTurn("claude-opus-5-5", coldTurn))
+        val cut = SessionCost(tail(turns, tailStartMs = 1_000_000L), anthropicCatalog())
+        assertTrue(cut.spendFor(sessionId, "claude-opus-5-5", 999_999L)!!.lowerBound, "began before the window")
+        assertFalse(cut.spendFor(sessionId, "claude-opus-5-5", 1_000_000L)!!.lowerBound, "began inside the window")
+        assertFalse(cut.spendFor(sessionId, "claude-opus-5-5", null)!!.lowerBound, "no start in the blob, no claim")
+        val whole = SessionCost(tail(turns, tailStartMs = null), anthropicCatalog())
+        assertFalse(whole.spendFor(sessionId, "claude-opus-5-5", 1L)!!.lowerBound, "the read held the whole history")
+    }
+
+    @Test
+    fun `the lower bound reaches the line as the same mark dropped rows use - V4-240 review 4c`() {
+        // total_duration_ms 600000 before a clock at 2000000 puts the session's start at 1400000, before
+        // the tail's oldest row at 1500000; on a non-Anthropic head splice's own figure is what shows.
+        val cutTail = tail(listOf(PerfSessionTurn("claude-opus-5-5", coldTurn)), tailStartMs = 1_500_000L)
+        val renderer = StatuslineRenderer(
+            label = "codex",
+            now = { 2_000_000L },
+            sessionCost = SessionCost(cutTail, anthropicCatalog()),
+        )
+        val line = renderer.render(
+            """{"model":{"id":"claude-opus-5-5"},"cost":{"total_cost_usd":9.99,"total_duration_ms":600000}}""",
+            null,
+            warnPct = 0,
+            warnTokens5h = 0,
+            sessionId = sessionId,
+        ).replace(ansi, "")
+        assertTrue("API est. ≥$0.53" in line, line)
+        assertFalse("⚠" in line, "no row was dropped, so no count: $line")
+    }
+
+    // ---- V4-244, the running total ------------------------------------------------------------------
+    //
+    // The tail holds the last 256 KiB of the head's perf log, and 30 of the real claudex log's 59
+    // sessions ran longer, so their figure was a lower bound. The running total, kept as each row is
+    // appended, prices the whole session; the tail stays the answer only for a session that began
+    // before the total did.
+
+    /** Ten cold Opus turns, all priced at append: 10 x 0.525. */
+    private val tenOpusTurns = PerfModelTotal(
+        turns = 10,
+        inTokens = 1_000_000,
+        cachedTokens = 0,
+        cacheWriteTokens = 0,
+        outTokens = 10_000,
+        usd = 5.25,
+        unpricedTurns = 0,
+    )
+
+    /** One uncarded turn: its tokens kept, its dollars unknown. */
+    private val oneSolTurn = PerfModelTotal(1, 100_000, 0, 0, 1_000, usd = 0.0, unpricedTurns = 1)
+
+    /** The session's tail is cut (one Opus turn read, the tail starting at 1500000); beside it, [total]. */
+    private fun withTotal(total: PerfSessionTotal?) = object : HeadSessionPerfSource {
+        override fun sessionTail(sessionId: String): PerfSessionTail {
+            val mine = sessionId == this@SessionCostTest.sessionId
+            val turns = if (mine) listOf(PerfSessionTurn("claude-opus-5-5", coldTurn)) else emptyList()
+            return PerfSessionTail(turns, 1_500_000L)
+        }
+
+        override fun sessionTotal(sessionId: String): PerfSessionTotal? =
+            total.takeIf { sessionId == this@SessionCostTest.sessionId }
+    }
+
+    /** The cut tail above, beside a running total of [models] that began at 1000000. */
+    private fun costWith(models: Map<String, PerfModelTotal>) =
+        SessionCost(withTotal(PerfSessionTotal(1_000_000L, models)), anthropicCatalog())
+
+    private val opusOnly = mapOf("claude-opus-5-5" to tenOpusTurns)
+
+    @Test
+    fun `a session longer than the tail is priced whole from its running total - V4-244`() {
+        val cost = costWith(opusOnly)
+        val spend = cost.spendFor(sessionId, "claude-opus-5-5", 1_200_000L)!!
+        assertEquals(5.25, spend.usd, 1e-12, "all ten turns, not the one the tail still holds")
+        assertFalse(spend.lowerBound, "the total holds every row since the session began")
+        val noStart = cost.spendFor(sessionId, "claude-opus-5-5", null)!!
+        assertEquals(5.25 to false, noStart.usd to noStart.lowerBound, "no start in the blob, no claim")
+    }
+
+    @Test
+    fun `a session whose rows predate the running total keeps the mark - V4-244`() {
+        val cost = costWith(opusOnly)
+        val spend = cost.spendFor(sessionId, "claude-opus-5-5", 900_000L)!!
+        assertTrue(spend.lowerBound, "it began before the total, so rows may be missing from both")
+        assertEquals(0.525, spend.usd, 1e-12, "the tail's own figure, as V4-240 prices it")
+    }
+
+    @Test
+    fun `a turn the total could not price still marks it, and a total of only those is no figure - V4-244`() {
+        val models = mapOf("claude-opus-5-5" to tenOpusTurns, "gpt-6-sol" to oneSolTurn)
+        val mixed = costWith(models).spendFor(sessionId, "gpt-6-sol", 1_200_000L)!!
+        assertEquals(5.25 to true, mixed.usd to mixed.lowerBound)
+        val onlyUncarded = costWith(mapOf("gpt-6-sol" to oneSolTurn)).spendFor(sessionId, "gpt-6-sol", 1_200_000L)
+        assertNull(onlyUncarded, "no priced turn at all is no figure, never zero")
+    }
+
+    /** The total is priced at append by core's TurnPrice; the tail path prices with this class. The
+     *  two must weigh a row the same, long-context tier and cache writes included, or the figure would
+     *  jump when a session crosses from one path to the other. */
+    @Test
+    fun `TurnPrice, which prices the running total, prices each row exactly as the tail path does - V4-244`() {
+        val tiered = ModelRates(
+            input = 2.0,
+            cacheRead = 0.5,
+            output = 6.0,
+            longContext = LongContextRates(overInputTokens = 199_999, input = 4.0, cacheRead = 1.0, output = 12.0),
+        )
+        val grok = ModelCatalog(
+            discoveryPrefix = "claude-grok--",
+            models = listOf(ModelEntry(id = "grok-4.7", label = "Grok 4.7", contextWindow = 500_000, rates = tiered)),
+            defaultContextWindow = 500_000,
+            pinnedModel = "grok-4.7",
+        )
+        val grokRows = listOf(
+            mapOf("in_tokens" to 150_000L, "cached_tokens" to 40_000L, "out_tokens" to 1_000L),
+            mapOf("in_tokens" to 250_000L, "cached_tokens" to 200_000L, "out_tokens" to 3_000L),
+        )
+        val sonnetRows = listOf(
+            mapOf(
+                "in_tokens" to 120_000L,
+                "cached_tokens" to 20_000L,
+                "cache_write_tokens" to 90_000L,
+                "out_tokens" to 700L,
+            ),
+        )
+        val cases = listOf(Triple(grok, "grok-4.7", grokRows), Triple(cacheWritingCatalog(), "sonnet-4-6", sonnetRows))
+        for ((catalog, model, rows) in cases) {
+            val tailPath = SessionCost(tokens(rows), catalog).usdFor(sessionId, model)!!
+            assertEquals(tailPath, rows.sumOf { TurnPrice(catalog).usd(model, it)!! }, 1e-12, model)
+        }
+    }
+
+    @Test
+    fun `a session longer than the tail reads its whole figure on the line, with no mark - V4-244`() {
+        // total_duration_ms 600000 before a clock at 2000000: the session began at 1400000, before the
+        // tail's oldest row at 1500000 but after the total began at 1000000.
+        val renderer = StatuslineRenderer(
+            label = "codex",
+            now = { 2_000_000L },
+            sessionCost = costWith(opusOnly),
+        )
+        val line = renderer.render(
+            """{"model":{"id":"claude-opus-5-5"},"cost":{"total_cost_usd":9.99,"total_duration_ms":600000}}""",
+            null,
+            warnPct = 0,
+            warnTokens5h = 0,
+            sessionId = sessionId,
+        ).replace(ansi, "")
+        assertTrue("API est. $5.25" in line, line)
+        assertFalse("≥" in line, "the whole session is counted: $line")
+    }
+}

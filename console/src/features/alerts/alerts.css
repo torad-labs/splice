@@ -1,0 +1,4 @@
+/* The alerts panel: the webhook, its save and its test send, on one line. */
+.myx-alert-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.myx-alert-note { margin: var(--space-3) 0 0; font-size: var(--text-2); color: var(--fg-muted); overflow-wrap: anywhere; }
+.myx-alert-failed { color: var(--danger); }

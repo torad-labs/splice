@@ -1,0 +1,167 @@
+// NEW: the finite quirk surface separating codex / xai / openai-platform on this dialect, split out
+// of ResponsesRequestBuilder.kt (2026-08-17, concentration campaign) so the module's most widely
+// consumed type (20 files, 10 outside this module) is not read from inside one of its many
+// consumers. Every member kept its identical name and argument list.
+package splice.dialect.responses
+
+import splice.dialect.responses.request.DefaultEffortVocabulary
+import splice.dialect.responses.tools.ToolDeferralPolicy
+import splice.upstream.EffortVocabulary
+
+/** The finite quirk surface separating codex / xai / openai-platform on this dialect. */
+public data class ResponsesQuirks(
+    val providerTag: String, // rides honest omission markers: "[image omitted by <tag> proxy: ...]"
+    val store: Boolean = false,
+    val cacheKeyStrategy: CacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
+    val effortVocabulary: EffortVocabulary = DefaultEffortVocabulary(),
+    val supportsSummary: Boolean = true,
+    /** Null omits the drop. A vendor whose models reject reasoning.summary sets the pattern
+     *  on its own quirks — a dialect default would hide summary on every id that merely
+     *  contains the fragment (V4-29). */
+    val summaryRejectModelRegex: Regex? = null,
+    /** Null omits the clamp. A vendor whose models 400 on effort=max sets the pattern on
+     *  its own quirks — a dialect default of mini matched google/gemini-2.5-pro (V4-29). */
+    val effortMaxRejectModelRegex: Regex? = null,
+    /** codex-rs parity (read from source 2026-07-19; models.json re-read 2026-09-04 for gpt-6-astra,
+     *  `use_responses_lite: true`): the gpt-5.6 and gpt-6 families are served "responses-lite".
+     *  Lite turns (compaction included): instructions ride as a developer input item (top-level field
+     *  omitted), tools ride as an additional_tools input item (top-level field omitted),
+     *  parallel_tool_calls defaults to false (splice omitting it left the backend default parallel ON
+     *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
+     *  and the lite header named by [responsesLiteHeader] rides. Shape accepted by the live
+     *  backend (direct probe 2026-07-19: 200, correct tool call). Null (the default) means this
+     *  provider does not speak responses-lite; only the provider that owns the ChatGPT marker
+     *  sets both the regex and the header name. */
+    val responsesLiteModelRegex: Regex? = null,
+    /** Header name emitted on lite turns when [responsesLiteModelRegex] matches. Null omits it.
+     *  Travels with the regex so a third-party endpoint cannot inherit a ChatGPT-internal marker. */
+    val responsesLiteHeader: String? = null,
+    /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
+     *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
+    val emitEmptyLiteInstructions: Boolean = false,
+    /** Explicit parallel_tool_calls value for responses-lite. Official Codex construction gates
+     *  model parallel support with !use_responses_lite, so Lite sends false even when metadata
+     *  advertises support (pinned source reviewed 2026-09-05). True was tried live on 2026-09-20: the backend 400s
+     *  every lite turn ("requires `parallel_tool_calls` to be false"), so it is not an option for
+     *  ChatGPT; batching there comes from code mode. JavaScript callback batching is a separate mechanism;
+     *  the client's explicit parallel-disable choice still wins over this knob. */
+    val liteParallelToolCalls: Boolean = false,
+    /** Null omits `text.verbosity` on lite turns. A vendor-measured value (codex-cli 0.145.0
+     *  sends "low") belongs on that vendor's profile — a dialect default would ride to every
+     *  backend that later opts into the lite pair (V4-31). */
+    val liteTextVerbosity: String? = null,
+    /** Off omits the client_metadata block. On sends client=splice plus optional session_id
+     *  and thread_id — no token, no install id, no operator identity. A backend can correlate
+     *  turns of one splice session and knows it is talking to splice rather than Codex.
+     *  That is honest identification, not impersonation, and not a user-privacy leak. The
+     *  measured on-value belongs on the vendor profile that wants it (V4-31). Boolean, not
+     *  Boolean?: false is the omit (`!quirks.sendClientMetadata` in ResponsesClientHints). */
+    val sendClientMetadata: Boolean = false,
+    /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
+     *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
+     *  until an operator opts in, and with it off no WebSocket is ever constructed. */
+    val webSocket: Boolean = false,
+    val emitToolChoice: Boolean = false,
+    /** Passes through a tool's own `strict == true` as `"strict": true`; false (the default,
+     *  and the only value that has ever mattered — Claude Code's ToolDefinition.strict is always
+     *  null) omits the field entirely. Distinct from [forceStrictFalse] below (review 2026-07-24:
+     *  conflating the two silently changed grok's live wire bytes when this feature landed). */
+    val emitStrict: Boolean = false,
+    /** codex-rs parity: hard-sets `strict:false` on EVERY function tool object regardless of the
+     *  tool's own value (responses_api.rs:29-32; OpenCode does the same, marked "Codex parity").
+     *  false (the default) leaves [emitStrict]'s pass-through behavior as the only effect, exactly
+     *  today's behavior. Only CodexProvider sets this true. */
+    val forceStrictFalse: Boolean = false,
+    /** codex-rs parity (tools byte-parity 2026-08-26): run every function tool's input_schema
+     *  through the ToolSchemaNormalize.kt pipeline — sanitize, prune unreachable $defs, compact
+     *  >5KB schemas, drop unknown keywords, alphabetize properties — exactly what codex does before
+     *  ANY tool rides its wire (tools/src/json_schema.rs parse_tool_input_schema). gpt-5.6 never
+     *  sees a verbatim client schema from its own CLI. false (the default) = today's verbatim
+     *  passthrough; only CodexProvider sets this true. */
+    val normalizeToolSchemas: Boolean = false,
+    /** RC-5 (reasoning-cache 2026-07-24): gateway-held reasoning continuity for tool
+     *  round-trips (codex parity — repeated tool calls / duplicated reasoning without it).
+     *  Off restores the pre-cache amnesia behavior exactly. */
+    val reasoningCache: Boolean = true,
+    /** Loop guard (2026-07-26): a stateless circuit breaker for the identical-failed-call
+     *  pathology (measured on the live codex head: the same Edit re-issued 89-101x against the
+     *  harness staleness guard). From the 3rd identical failure the result's output gains an
+     *  escalating directive; success or changed arguments reset. Off restores plain passthrough. */
+    val loopGuard: Boolean = true,
+    /** Deferred tool surface (tool_search) for responses-lite turns. NULL = off, and off is the
+     *  shipped default for every provider — the request is byte-identical to today. */
+    val toolSurface: ToolDeferralPolicy? = null,
+    /** stream_options.reasoning_summary_delivery, sent only when a summary is requested. The
+     *  ChatGPT backend serves ~2.3x more titled summary sections with "sequential_cutoff"
+     *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
+     *  codex-rs sends. null = field omitted (grok/openai-platform). */
+    val summaryDelivery: String? = null,
+    /**
+     * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated
+     * minimum". NULL IS THE DEFAULT AND THE DEFAULT MATTERS: with it, no outbound image is ever
+     * decoded and every non-opted provider's request bytes are identical to before this knob
+     * existed. Set only where a vendor documents and ENFORCES a floor — xAI 400s the whole turn
+     * with code=invalid_image on anything under 8px per edge, which cost six live turns in the
+     * DR-152 soak. Deliberately NOT a TOML overlay: it is a fact about a backend, not an operator
+     * preference, and a wrong value here silently deletes images. See
+     * [splice.core.media.ImageFloor] for why every unknown forwards.
+     */
+    val minImageEdgePx: Int? = null,
+) {
+    // ── TOML overlays ────────────────────────────────────────────────────────
+    // All five were file-level extensions on this type, spread across three files because
+    // ResponsesRequestBuilder.kt used to sit at detekt's per-FILE TooManyFunctions ceiling. Kotlin
+    // main sources carry no top-level functions, so they are members now — and since the receiver
+    // was always a ResponsesQuirks, every call site is unchanged; consumers only drop the import.
+
+    /**
+     * Overlay the TOML `[providers.*.quirks]` primitives onto a provider's base profile so the parsed
+     * table is REAL, not decorative (audit 2026-07-18: five of seven quirks were hard-coded and
+     * ignored). Unset TOML fields keep the base value.
+     */
+    // NB: TOML's effort_ceiling is deliberately NOT an overlay input — the effort LADDER (CODEX/GROK)
+    // already clamps the ceiling per provider; accepting a dead parameter here would just lie.
+    public fun withToml(
+        store: Boolean? = null,
+        cacheKey: String? = null,
+        summaryField: Boolean? = null,
+        toolChoice: Boolean? = null,
+    ): ResponsesQuirks = copy(
+        store = store ?: this.store,
+        cacheKeyStrategy = when (cacheKey) {
+            "session-id" -> CacheKeyStrategy.SESSION_ID
+            "off" -> CacheKeyStrategy.OFF
+            "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
+            else -> this.cacheKeyStrategy
+        },
+        supportsSummary = summaryField ?: this.supportsSummary,
+        emitToolChoice = toolChoice ?: this.emitToolChoice,
+    )
+
+    /** RC-5 overlay, chained after [withToml] (which sits at detekt's complexity ceiling). */
+    public fun withReasoningCacheToml(reasoningCache: Boolean?): ResponsesQuirks =
+        copy(reasoningCache = reasoningCache ?: this.reasoningCache)
+
+    /** parallel_tool_calls overlay (2026-07-31), chained like [withReasoningCacheToml] for the same
+     *  reason. NULLABLE — absent TOML keeps the provider's own default, so the overlay can never stomp
+     *  it. (`summary_field` is non-nullable and DOES stomp `supportsSummary`, which is how that knob
+     *  became unreachable from a provider default; not repeating it here.) */
+    public fun withParallelToolCallsToml(parallelToolCalls: Boolean?): ResponsesQuirks =
+        copy(liteParallelToolCalls = parallelToolCalls ?: this.liteParallelToolCalls)
+
+    /** Overlay the head's TOML `[providers.*.quirks.tool_surface]` table — a DIRECT set, not the
+     *  null-preserves-base merge [withReasoningCacheToml] uses: toolSurface's null means literally
+     *  OFF (the field's own KDoc), and no provider's defaultQuirks() ever presets a non-null base to
+     *  inherit from, so a direct set is both simpler and exactly as correct. Chained (not folded into
+     *  [withToml]) because that function already sits at detekt's complexity ceiling. */
+    public fun withToolSurfaceToml(policy: ToolDeferralPolicy?): ResponsesQuirks =
+        copy(toolSurface = policy)
+
+    /** ws-transport WS-3 overlay, NULLABLE like its siblings — absent TOML keeps the provider default
+     *  (false). A non-nullable field would stomp the provider default; that is exactly how
+     *  supportsSummary became an unreachable dead lever. */
+    public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
+        copy(webSocket = webSocket ?: this.webSocket)
+}
+
+public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, OFF }

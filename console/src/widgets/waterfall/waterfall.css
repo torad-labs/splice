@@ -1,0 +1,23 @@
+/* A turn's timing and the request drawer (docs/design/DESIGN.md section 9). The lanes share one
+   axis, each named on its left and spanned on its right; the drawer is the switch, its state as
+   badges, and the settings as key and value. */
+
+.myx-tw { display: grid; gap: var(--space-5); }
+.myx-tw-lanes { display: grid; gap: var(--space-3); }
+.myx-tw-lane {
+  display: grid;
+  grid-template-columns: calc(9.375 * var(--u)) minmax(0, 1fr) calc(5 * var(--u));
+  align-items: center;
+  column-gap: var(--space-4);
+}
+.myx-tw-name { font-size: var(--text-2); color: var(--fg-muted); }
+.myx-tw-ms {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--fg);
+}
+
+.myx-rd { display: grid; gap: var(--space-4); }
+.myx-rd-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }

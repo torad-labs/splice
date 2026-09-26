@@ -2,35 +2,48 @@
 # Labels must already exist in the repo; the action does not create them.
 gateway:
   - changed-files:
-      - any-glob-to-any-file: 'gateway/**'
+      # LAYOUT-01: :integrations-claude-code is part of the Kotlin gateway even though its module
+      # home is outside gateway/. The label stays a repository label while its path moves.
+      - any-glob-to-any-file:
+          - 'integrations/claude-code/**'
+          - 'core/**'
+          - 'integrations/upstream/**'
+          - 'integrations/dialects/**'
+          - 'integrations/providers/**'
+          - 'integrations/mcp/**'
+          - 'features/**'
+          - 'daemon/**'
+          - 'app/**'
+          - 'quality/architecture/**'
+          - 'quality/compiler-plugin/**'
 
-webui:
+console:
   - changed-files:
-      - any-glob-to-any-file: 'webui/**'
+      - any-glob-to-any-file: 'console/**'
 
 documentation:
   - changed-files:
       - any-glob-to-any-file:
           - '**/*.md'
-          - '.docs/**'
+          - 'docs/**'
 
 ci:
   - changed-files:
       - any-glob-to-any-file:
           - '.github/**'
-          - 'checks/**'
-          - '.rules/**'
+          - 'tools/**'
+          - 'quality/**'
 
 release:
   - changed-files:
       - any-glob-to-any-file:
           - 'install.sh'
-          - 'bin/**'
-          - 'checks/release/**'
+          - 'app/src/main/dist/**'
+          - 'tools/release/**'
 
 dependencies:
   - changed-files:
       - any-glob-to-any-file:
           - 'package.json'
-          - 'package-lock.json'
-          - 'gateway/gradle/**'
+          - 'bun.lock'
+          - 'gradle/**'

@@ -1,0 +1,130 @@
+/* The console shell (docs/design/DESIGN.md section 6): a sidebar of grouped pages on the left, and
+   a page column holding the status strip over the page. Flat grounds and one hairline; every size
+   from the token scales (walls webui-css-tokens-only and webui-css-font-size-scale), every colour
+   from tokens.css (webui-css-no-color-literals). The key gate is shell chrome too, so its rules
+   live here. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-3);
+  line-height: var(--leading);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--bg-active); color: var(--fg); }
+
+a {
+  color: var(--fg);
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: .2em;
+}
+a:hover { text-decoration-color: var(--fg-muted); }
+
+/* One focus ring, everywhere: 2px of the ink itself, offset 2px, so it reads on any ground. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* A press is felt when it lands: 3% into the page at --dur-1, never a bounce. */
+button { transition: transform var(--dur-1) var(--ease-out); }
+button:not(:disabled):active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active { transform: none; }
+}
+
+/* ---------- the shell ---------- */
+.myx-console {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.myx-console-main {
+  display: grid;
+  /* Declared, not implicit: an implicit column grows to its widest content's min-content, so on a
+     phone one unbreakable row pushed the whole page past the window, where the shell clipped it. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.myx-console-page {
+  min-width: 0;
+  overflow: auto;
+  padding: var(--space-6) var(--space-7) var(--space-8);
+}
+
+/* The page uses the screen (ruling 4, 2026-09-25): a 120rem cap left a 1920px island centred in a
+   3840 panel, 70% of it black. Past 3000 a page composes to the width instead, with sections side by
+   side, so no table row runs the full span. */
+
+/* The page column holds its space before a lazily loaded page arrives, and claims nothing. */
+.myx-console-pending { min-height: 100%; }
+
+/* ---------- the key gate ----------
+   The one surface that covers the console: nothing can show until the key is pasted. */
+.myx-modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+}
+
+.myx-modal {
+  width: 100%;
+  max-width: calc(32 * var(--u));
+  max-height: 85vh;
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: var(--bg-raised);
+  color: var(--fg);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-float);
+}
+
+.myx-modal-title {
+  margin: 0;
+  font-size: var(--text-5);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+/* Shown once per visit, so it may arrive: the scrim fades and the panel settles from 98%. */
+.myx-modal-scrim { transition: opacity var(--dur-2) ease; }
+.myx-modal { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
+@starting-style {
+  .myx-modal-scrim { opacity: 0; }
+  .myx-modal { opacity: 0; transform: scale(.98) translateY(var(--space-2)); }
+}
+
+.myx-modal-actions { display: flex; justify-content: end; gap: var(--space-3); }
+
+/* ---------- phone ----------
+   Below 720 the sidebar becomes a row of pages above the status strip, and the page takes the
+   whole width. */
+@media (max-width: 720px) {
+  .myx-console {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .myx-console-page { padding: var(--space-5) var(--space-4) var(--space-7); }
+}

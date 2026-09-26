@@ -2,10 +2,10 @@
 
 ## The invariants (L1 retired; L2–L4 locked)
 
-Structural walls enforce these at write time (`.rules/kotlin-splice/` for the
-gateway, `.rules/rules/` for the webui, orchestrated by
-`.claude/hooks/orchestrator.py`) and permanent tests enforce the behavioral
-half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
+Structural walls enforce these at write time (`quality/rules/kotlin/` for the
+gateway, `quality/rules/console/` for the console, routed at write time by
+`bun tools/gate rules --stdin pretooluse`) and permanent tests enforce the behavioral
+half (the Kotlin module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
 
 1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-OFF (2026-07-15,
@@ -34,17 +34,23 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 
 ## External contracts (must not change)
 
-- State paths byte-identical: `~/.claude-codex/state/*` and
-  `~/.claude-codex/claudex-compact-stats.jsonl` (an out-of-repo HUD reads them).
-- Config dirs keep their names: `~/.claude-codex`, `~/.claude-splice`.
+- State FILENAMES are byte-identical: `<state>/codex-usage.json`,
+  `<state>/codex-ratelimit.json`, `<root>/claudex-compact-stats.jsonl`. The state ROOT is not a
+  frozen contract any more — V4-177 moved it to `~/.splice/state` and adopts a pre-0.4
+  `~/.claude-codex/state` in place when that is the only one on the box. Resolve it through
+  `StatePaths`, never by spelling either root (ast-grep wall: kt-state-paths-single-source).
+- Head CONFIG dirs keep their names, and are a different contract from the state root even where
+  they collide: `~/.claude-<headKey>` — `~/.claude-codex`, `~/.claude-splice`.
 - Ports: claudex 3099, control 3096. `/health` keeps `version`.
 - Discovery prefix `claude-codex--`; the pinned model is excluded from
   `/v1/models` (it rides `ANTHROPIC_CUSTOM_MODEL_OPTION`).
 - Effort precedence (v27): explicit body effort field, then the Claude
   `/effort` picker (`thinking.budget_tokens`), then config/env fallback, then
   `high`. Compact turns inherit the session's own model AND effort (a mismatch on
-  either invalidates the prompt cache and re-reads the whole transcript cold);
-  tools stripped.
+  either invalidates the prompt cache and re-reads the whole transcript cold), and
+  are built EXACTLY like a turn — same tools, same code-mode declaration and
+  guidance (2026-09-21: dropping `splice_exec` on compaction cost the whole
+  transcript's cache on every compaction, `cached_tokens=0`).
 - Mirror wire format: `\n[reasoning summary]\n<text>\n` (`mirrorWireText`).
 - Reasoning replay envelope (`reasoning/replay.mjs`): encrypted reasoning rides
   as a `redacted_thinking` block tagged `splice-reasoning` v1; encode/decode
@@ -56,12 +62,13 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 
 > **Wire contract, Kotlin implementation.** The behaviour below is the contract; the `server/`
 > Node tree that first implemented it was **deleted on 2026-08-10** (P8-CUT). The live sources are
-> `gateway/control/.../ControlServer.kt`, `gateway/gateway/.../wire/SseEmitter.kt` and
-> `gateway/gateway/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
+> `app/.../control/ControlServer.kt`, `features/turns/.../wire/SseEmitter.kt` and
+> `features/turns/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 
-Bearer-guarded (`Authorization: Bearer $(cat ~/.claude-codex/state/mgmt-key)`),
+Bearer-guarded (`Authorization: Bearer <key>`, which `splice dashboard` prints — the state root
+it lives under is install-dependent since V4-177),
 loopback-only, both proxies:
 
 | route | purpose |
@@ -72,14 +79,19 @@ loopback-only, both proxies:
 | GET /mgmt/usage | 5h output-token window + persisted ratelimit headers |
 | GET /mgmt/compact | compact outcomes + shadow-classifier tail |
 | GET /mgmt/auth, POST /mgmt/auth/refresh | token introspection (masked), refresh |
-| GET /mgmt/logs?tail=N | proxy log tail from ~/.claude-codex/logs/ |
+| GET /mgmt/logs?tail=N | proxy log tail from the state root's `logs/` |
 | GET /mgmt/models | catalog, windows, pinned, discovery ids |
 
 Config layering: defaults ← `[defaults]` TOML ← `[heads.<key>.overrides]` TOML ←
 state/config.json ← env ← runtime PATCH. Env is the boot authority (the launcher
-writes it); PATCH wins until restart and persists to the file layer. `port`,
-`grokPort`, `controlPort`, `upstreamTimeoutMs` need a restart; everything else
-hot-applies on the next request.
+writes it); PATCH wins until restart and persists to the file layer.
+
+Which keys need a restart is NOT a hand list here — a hand list is wrong the day a knob is added,
+and this one had been wrong for a long time (V4-109: it named four, while nearly every knob is
+snapshotted at `Daemon.start` and only the hot few apply live). Ask the machine instead:
+`restartRequiredKnobKeys` in `core/.../config/KnobKind.kt`, derived from the `Knob` enum's
+own flag, and the same list on the wire as `restart_required_keys` from `GET /mgmt/config`.
+Everything else hot-applies on the next request.
 
 All heads share ONE `ConfigService` (one JVM — unlike the Node lineage's
 process-per-head), so a knob read via `getConfig()` governs EVERY head. Anything
@@ -89,14 +101,22 @@ timeouts — must be read via `getConfig(headKey)` and set under
 is the flat GLOBAL layer sourced from the topology file. The per-head map is
 `perHeadOverrides`.
 
+Standing system prompts are NOT knobs; they are three topology LAYERS, applied in this order:
+head (`[heads.<key>]` system_prompt / system_prompt_file / system_prompt_mode), project
+(`[projects."<root>"]`, same keys, a relative file resolves against the root) and project-head
+(`[projects."<root>".heads.<key>]`). The project is the deepest configured root containing the
+session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace drops the client's
+field and every earlier layer. No projects table = V4-36's bytes. Resolver:
+`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
+
 ## Control plane (spliced)
 
 > **Wire contract, Kotlin implementation.** Same caveat as above: the control plane is now
-> `gateway/control/src/main/kotlin/splice/control/ControlServer.kt`. The Node
+> `app/src/main/kotlin/splice/app/control/ControlServer.kt`. The Node
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
 The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
-`:3096`, `controlPort`) hosts the single webui at `/` and a bearer-guarded
+`:3096`, `controlPort`) hosts the single console at `/` and a bearer-guarded
 `/api/*` that AGGREGATES every head (same mgmt-key). It reads file-based truth
 (auth, usage, compact) directly so a DOWN head is still visible, and talks to
 RUNNING heads over `/mgmt` for live status + config.
@@ -122,16 +142,16 @@ RUNNING heads over `/mgmt` for live status + config.
 ## Gates
 
 ```
-npm run gate          # all Kotlin/Node/webui/release/OSS checks, ONE PASS/FAIL
+npm run gate          # all Kotlin/Node/console/release/OSS checks, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
-npm run lint -w webui # FSD boundaries — the architecture is lint-enforced
-npm test -w webui     # vitest
-npm run build -w webui# tsc strict + single-file dist (commit dist/index.html)
+npm run lint -w console # FSD boundaries — the architecture is lint-enforced
+npm test -w console   # vitest
+./gradlew :console:build # the single-file bundle, :console:bundle's OUTPUT (never committed)
 ```
 
-The Kotlin gateway tier runs under `./gradlew check` (from `gateway/`, JDK 21): module-law
-(config-time), detekt (`maxIssues:0`), the Konsist arch-tests, every unit test, and the
+The Kotlin gateway tier runs under `./gradlew check` (from the repository root, JDK 21): module-law
+(config-time), detekt (`maxIssues:0`), the Konsist architecture laws (:quality-architecture), every unit test, and the
 1000-stream load test. It runs in CI (`gateway-gradle` job) and inside `npm run gate`. Before this
 existed it was authored but NEVER executed by automation — only the ast-grep walls ran.
 
@@ -140,12 +160,13 @@ Green means all of them. A wall block means fix the code, not the wall — never
 
 ## PR titles are linted; branch commits are not
 
-`.github/workflows/pr-title.yml` enforces Conventional Commits on the **PR title** via a REQUIRED
-check. Allowed types, and this is the complete list:
+The org-injected PR-title gate enforces Conventional Commits on the **PR title** via a REQUIRED
+check. This repo used to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The
+allowed types live once, in `tools/gate/src/lib/conventional.ts`.
 
-    feat  fix  docs  test  build  ci  chore  perf  refactor  revert  release  codex
+    bun tools/gate title "feat(scope): subject"
 
-Scope optional (`fix(walls): ...`). Anything else fails `lint` and blocks the merge.
+Scope optional (`fix(walls): ...`). Anything else fails the org check and blocks the merge.
 
 WHY THIS IS EASY TO GET WRONG THREE TIMES IN A ROW (it happened, 2026-07-28/29): branch commit
 messages are NOT linted, so `harden(walls):` and `verify(x):` write and review fine locally, and the
@@ -162,7 +183,7 @@ and which one is not reliably predictable from the PR (#66 had 3 commits and use
 PRACTICAL RULE, and it costs nothing: make the BRANCH COMMIT SUBJECT use an allowed type too. Then
 whichever source the squash picks, `main` is compliant. Do not rely on the title check alone.
 
-Pick the type from the list above BEFORE opening the PR. `gh pr create --body ...` bypasses
+Pick the type by running that script BEFORE opening the PR. `gh pr create --body ...` bypasses
 `.github/PULL_REQUEST_TEMPLATE.md`, so the template's reminder never reaches an agent — this section
 is the one that does.
 
@@ -182,17 +203,18 @@ this), not the clean snapshot.
 | duplicated JSONL append + tail reader (perf/compact drift; `:perf` reached into `:compact`) | T1 `core/util/JsonlSink.appendLine`/`readTail` + wall `kt-jsonl-sink-single-source` |
 | `runCatching` swallowing cancellation → leaked turn (600% CPU) | T2 wall `kt-no-runcatching-in-coroutine` on the turn/stream path |
 | god class suppressed instead of split | T2 detekt `ForbiddenSuppress` + wall `kt-no-quality-suppress` |
-| config weakened to hide findings | T2 `checks/config-guard.sh` (no baseline, maxIssues:0, walls stay `severity:error`) |
-| the tiers never running | T0 `gateway-gradle` CI job + `bash checks/gate.sh` — everything above actually executes |
+| config weakened to hide findings | T2 `bun tools/gate rules` config guard (no baseline, maxIssues:0, walls stay `severity:error`) |
+| the tiers never running | T0 `gateway-gradle` CI job + `bun tools/gate run` — everything above actually executes |
 
-The gate reads **real** exit codes (`checks/gate.sh` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
+The gate reads **real** exit codes (`bun tools/gate run` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
 exit masked BUILD FAILED twice — never trust one.
 
 ## Compaction doctrine
 
 Detection is a POSITIVE marker only: the verbatim v2.1.207 summarizer prompt
 ("tasked with summarizing conversations"), tools-agnostic — real compaction
-requests carry tools; the builder strips them upstream. Never add size/content
+requests carry tools, and the builder keeps them: a compaction's upstream bytes
+must match the preceding turn's prefix (cache law). Never add size/content
 heuristics (the v13/v24 misfire class). The shadow classifier logs
 `{has_marker, tool_count, sys_len}` on every request; the marker canary test
 pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.
@@ -202,3 +224,29 @@ pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.
 No transcript shrinking. No fake summaries (L4). (Reasoning replay was formerly
 out of scope; as of 2026-07-14 it is supported, and as of 2026-07-15 it is
 default-off for the codex head — see "L1 — RETIRED" above.)
+
+## Retry matrix (generated — do not edit by hand)
+
+<!-- BEGIN retry-matrix (generated by RetryMatrix.table) -->
+| cause | CONNECT | FIRST_BYTE | MID_OUTPUT | TERMINAL |
+|---|---|---|---|---|
+| UPSTREAM_STALLED | L1 L4 | L1 L2 L4 | L3 L4 | — |
+| UPSTREAM_TRUNCATED | L4 | L2 L4 | L3 L4 | — |
+| UPSTREAM_CONN_RESET | L1 L4 | L1 L4 | L4 | — |
+| UPSTREAM_STATUS_5XX | L1 L4 | L1 L2 L4 | L3 L4 | — |
+| UPSTREAM_STATUS_4XX | L1 L4 | L1 L4 | L4 | — |
+| UPSTREAM_REPORTED | L1 L4 | L1 L2 L4 | L3 L4 | — |
+| MODEL_REFUSED | — | — | — | — |
+| CONTENT_FILTERED | — | — | — | — |
+| TOOL_TEAR | — | — | — | — |
+| DIALECT_UNSUPPORTED | — | — | — | — |
+| CODE_MODE_PROTOCOL | — | — | — | — |
+| INTERNAL | L1 L4 | L1 L2 L4 | L3 L4 | — |
+| VENDOR_RATE_LIMITED | L1 L4 | L1 L4 | L4 | — |
+| VENDOR_QUOTA_EXHAUSTED | L4 | L4 | L4 | — |
+| AUTH_MISSING | L4 | L4 | L4 | — |
+| AUTH_REFRESH_FAILED | L4 | L4 | L4 | — |
+| POOL_EXHAUSTED | — | — | — | — |
+| ADMISSION_FULL | — | — | — | — |
+| REQUEST_TOO_LARGE | — | — | — | — |
+<!-- END retry-matrix -->

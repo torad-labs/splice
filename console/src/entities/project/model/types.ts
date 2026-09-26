@@ -1,0 +1,94 @@
+// The project entity, typed from the daemon that serves it: ProjectsRoutes
+// (features/sessions/src/main/kotlin/splice/sessions/http/ProjectsRoutes.kt, V4-131). A project is
+// a git root, the registry sessions' repos plus every team's declared repo, and its id IS that root.
+//
+//   GET /api/projects              {projects: ProjectRow[]}
+//   GET /api/projects/{id}         one ProjectRow, the SAME row the list carries (ProjectView.row);
+//                                  an id that is not a root the daemon has seen is a 404 whose
+//                                  error names it
+//   GET /api/projects/{id}/files   ProjectFilesPayload
+
+/** One repo, as ProjectView.row writes it for both the list and the detail route. */
+export interface ProjectRow {
+  /** The git root, which is also the route's id. */
+  id: string;
+  root: string;
+  /** Live sessions on this repo right now. */
+  live_sessions: number;
+  /** Unarchived teams whose declared repo this is. */
+  teams: number;
+  /** Turns since day_start, joined on the 8-character session tag over the repo's registry sessions
+   *  and every session its teams' slots ever held. */
+  turns_today: number;
+  /** USD today of the turns a declared rate priced, or null when there are turns and none was
+   *  priced: absent rates mean "no dollar figure" (FEATURES.md 2.3), never a cost of zero. */
+  cost_today_usd: number | null;
+  /** Turns today whose model had no rate card, so their dollars are not in cost_today_usd (V4-269).
+   *  Absent from an older daemon, whose dollars were null when any turn was unpriced. */
+  unpriced_turns_today?: number;
+  /** The start of the day those counts cover, epoch ms: the UTC day, sent rather than assumed,
+   *  because the console must not print "today" over a boundary it guessed. */
+  day_start: number;
+  /** Epoch ms of the newest activity on any session in this repo, or null when the repo has none
+   *  registered. Null is a real answer ("no session has touched it"), never a zero timestamp. */
+  last_activity: number | null;
+  /** The compaction rules a compaction in this repo resolves to, in the daemon's precedence (core's
+   *  CompactionInstructions.rulesFor: shadowed rules left out), as GET /api/compaction/instructions
+   *  writes a rule. `[]` means no rule applies here and the client's own instructions stand; `null`
+   *  means the daemon never wired its compaction table, which is a different fact and never `[]`. */
+  compaction: ProjectCompactionRule[] | null;
+  /** One entry per head, because statuslineGitRoots is per-head overridable: the trusted root that
+   *  head's statusline probes this repo under. */
+  statusline_roots: ProjectStatuslineRoot[];
+}
+
+/** A compaction rule as ProjectsRoutes writes it: the {scope, source, chars} of the instructions
+ *  route, typed here because an entity reads only its own wire. */
+export interface ProjectCompactionRule {
+  scope: 'global' | 'model' | 'project' | 'project-model';
+  /** Core's composed label (`global`, `model:<id>`, `project:/abs/path`, ...). Printed, never parsed. */
+  source: string;
+  /** Live length: 0 for an explicit opt-out, null when the rule's file cannot be read. */
+  chars: number | null;
+}
+
+/** Which entry of the trusted set covers the repo (RepoResolver's TrustedRootOrigin.wire). */
+export type TrustedRootEntry = 'home' | 'tmp' | 'statuslineGitRoots';
+
+export interface ProjectStatuslineRoot {
+  head: string;
+  /** The realpath of the covering trusted root; null when the repo lies outside every one, where
+   *  that head's statusline shows no branch for it. */
+  root: string | null;
+  entry: TrustedRootEntry | null;
+}
+
+export interface ProjectsPayload {
+  projects: ProjectRow[];
+}
+
+/** A file the console reads for a project, read-only, path shown (FEATURES.md 4.14). */
+export type ProjectFileKind = 'instructions' | 'memory';
+
+export interface ProjectFile {
+  kind: ProjectFileKind;
+  /** The absolute path that was read, printed by the page: the point of the row is that the
+   *  operator can see exactly which file answered. */
+  path: string;
+  /** The head whose config dir the file came from, or null for the repo's own files. Client memory
+   *  is per head (each head has its own config dir), so one project can answer several times. */
+  head: string | null;
+  text: string;
+}
+
+export interface ProjectFilesPayload {
+  id: string;
+  files: ProjectFile[];
+  /** The directories the reader looked in. FEATURES.md 4.14 requires the empty to name the exact
+   *  directory it searched, so the daemon sends them and the page prints them. */
+  looked_in: string[];
+  /** The client's own per-project memory switch, when the daemon can read it. FEATURES.md 4.14
+   *  names `autoMemoryEnabled` as the thing an empty memory list must blame when it is the reason,
+   *  rather than leaving the operator to guess why the directory was empty. */
+  auto_memory_enabled?: boolean;
+}

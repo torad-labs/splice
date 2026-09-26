@@ -4,8 +4,8 @@ name: release
 #
 #   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
 #     this workflow — GitHub generates the release; nobody runs a release command. The version is
-#     DERIVED from the promoted code (bin/splice-launch's SPLICE_GATEWAY_VERSION, the same marker
-#     accept.sh pins against the jar), and the tag is created by the publish step at the promoted
+#     DERIVED from the promoted code (the launch shim's SPLICE_GATEWAY_VERSION, the same marker
+#     `bun tools/release accept` pins against the jar), and the tag is created by the publish step at the promoted
 #     commit — an artifact of promotion, never a second manual pointer that can disagree (fleet's
 #     release-line pattern, minus changesets: splice's versions are hand-paired in code, so the
 #     bump lands on main via PR). `npm run promote` merely OPENS the promotion PR.
@@ -51,18 +51,26 @@ jobs:
 
       - name: setup java
         # Cache derives from reviewed main code; the attestation chain is the integrity control.
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v5.6.0 # zizmor: ignore[cache-poisoning]
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1 # zizmor: ignore[cache-poisoning]
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
 
       - name: setup node
-        # Cache derives from reviewed main code; the attestation chain is the integrity control.
+        # No `cache:` input, so nothing is cached here; zizmor flags the action by name.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0 # zizmor: ignore[cache-poisoning]
         with:
           node-version: 24
-          cache: npm
+
+      - name: setup bun
+        # The gate's Bun legs and the arch tests spawn `bun`; it comes from this pinned action
+        # (SHA + version, as in ci.yml), not from an npm package. No cache: a release job
+        # downloads its own toolchain.
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          no-cache: true
 
       - name: resolve release version
         id: version
@@ -85,9 +93,9 @@ jobs:
           else
             # Promotion path: the promoted CODE is the version authority — the same shim marker
             # accept.sh compares against the jar, so resolve and accept can never disagree.
-            version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' bin/splice-launch)"
+            version="$(awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
             if [ -z "$version" ]; then
-              echo "release: could not read SPLICE_GATEWAY_VERSION from bin/splice-launch" >&2
+              echo "release: could not read SPLICE_GATEWAY_VERSION from app/src/main/dist/bin/splice-launch" >&2
               exit 1
             fi
             if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
@@ -98,34 +106,49 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "release version: ${version}"
 
+      - name: release notes from the CHANGELOG
+        # V4-198: the release page opens with the version's CHANGELOG section, above GitHub's
+        # generated PR list. A version with no section stops here, before anything is built.
+        env:
+          RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        run: bun tools/release notes "$RESOLVED_VERSION" --out "$RUNNER_TEMP/release-notes.md"
+
       - name: install workspaces
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: repository gates
         run: npm run gate
 
       - name: build exact release jar and compliance reports
-        working-directory: gateway
         run: ./gradlew :app:shadowJar --no-daemon --no-parallel --stacktrace
 
       - name: stage exact release bundle
         # DR-19: thread the resolved version in as the tag so the SemVer + tag/version equality
-        # block runs on the PROMOTION path too (a real pushed tag still wins inside stage.sh via
+        # block runs on the PROMOTION path too (a real pushed tag still wins inside the task via
         # GITHUB_REF_TYPE). Without this, the gate was skipped exactly where releases are cut.
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
-        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" bash checks/release/stage.sh
+        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" ./gradlew :app:stageRelease --no-daemon --no-parallel
 
       - name: accept exact release bundle
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
-        run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bash checks/release/accept.sh
+        run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept
 
       - name: transfer accepted bundle to publisher
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: accepted-release
           path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: transfer the release notes to publisher
+        # Beside the bundle, never in it: dist/ is the enumerated asset set accept verified.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes.md
           if-no-files-found: error
           retention-days: 1
 
@@ -145,6 +168,12 @@ jobs:
         with:
           name: accepted-release
           path: dist
+
+      - name: download the release notes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-notes
+          path: notes
 
       - name: verify transferred checksums
         working-directory: dist
@@ -172,6 +201,8 @@ jobs:
           tag_name: v${{ needs.build.outputs.version }}
           target_commitish: ${{ github.sha }}
           fail_on_unmatched_files: true
+          # The CHANGELOG section first; GitHub's generated notes are appended below it.
+          body_path: notes/release-notes.md
           generate_release_notes: true
           files: |
             dist/splice.jar

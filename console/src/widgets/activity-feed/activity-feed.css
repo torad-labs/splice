@@ -1,0 +1,32 @@
+/* The activity feed: one row per sample, newest first; the detail under the label in the mono face. */
+.myx-feed { display: grid; margin: 0; padding: 0; list-style: none; }
+.myx-feed-row {
+  display: grid;
+  grid-template-columns: calc(5.625 * var(--u)) minmax(calc(7.5 * var(--u)), 30%) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--text-2);
+}
+.myx-feed-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-subtle);
+}
+.myx-feed-member,
+.myx-feed-doing { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.myx-feed-member { color: var(--fg-muted); }
+.myx-feed-doing { color: var(--fg); }
+.myx-feed-detail {
+  grid-column: 3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+}
+.myx-feed-more { margin: var(--space-3) 0 0; font-size: var(--text-2); color: var(--fg-subtle); }

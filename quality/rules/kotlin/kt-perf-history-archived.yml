@@ -1,0 +1,25 @@
+# 2026-09-23 — every production PerfStats and PerfRowsFileSource names the perf archive.
+#
+# V4-133 BUILT the archive and wired it to nothing: PerfStats took an opt-in archiveDir that no
+# construction site passed, so the 64 MB rotate went on discarding the generation before `.1` (the
+# operator's claudex history, 67 MB of it, was one rotation from gone), the perfArchiveRetentionDays
+# knob was inert, and every test was green because the archive's own tests built PerfStats with a
+# directory. That is the shape this wall exists for: a capability proven in isolation and absent in
+# production. The writer (PerfStats, ManagedHeadFactory) and the readers (PerfRowsFileSource, the
+# head's and the `splice perf` CLI's) must each say where the archive is; the value decides whether
+# it is on (the knob's 0 is the writer's off switch), the wall only refuses the call that never asked.
+#
+# Matched on the call's own text, so a nested construction (summarize(PerfRowsFileSource(...))) is
+# caught the same as a bound one, and the class declarations are not calls.
+id: kt-perf-history-archived
+language: kotlin
+severity: error
+message: "Name the perf archive: a production PerfStats or PerfRowsFileSource without statePaths.perfArchiveDir writes history the next rotation discards, or reads history as if the archive did not exist."
+files:
+  - "**/src/main/**/*.kt"
+rule:
+  all:
+    - kind: call_expression
+    - regex: ^(PerfStats|PerfRowsFileSource)\(
+    - not:
+        regex: perfArchiveDir

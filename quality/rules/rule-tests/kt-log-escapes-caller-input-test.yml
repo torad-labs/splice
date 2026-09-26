@@ -1,0 +1,34 @@
+id: kt-log-escapes-caller-input
+valid:
+  # the remedy: every interpolation routed through the escaping helper
+  - 'log("[control] launch ${LogSafe.str(key)} -> ${LogSafe.list(argv)}\n")'
+  - 'log("[control] ${LogSafe.str(message)}\n")'
+  - 'audit.log("[control] head ${LogSafe.str(key)} -> ${LogSafe.str(action)}\n")'
+  # a log line with no interpolation at all has nothing to escape
+  - 'log("[mcp-host] $name: child stderr emitted (content withheld)\n")'
+  - 'log("[control] daemon stopping\n")'
+  # dated allowlist entries, each a value the repo composes itself
+  - 'log("[mcp-host] ${spec.name}: closing pid ${it.pid()} ($reason)\n")'
+  - 'log("[mcp-host] ${spec.name}: hosted as pid ${p.pid()}\n")'
+  - 'log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")'
+  - 'log("[mcp-host] $name: notify failed (${e.message})\n")'
+  # interpolation OUTSIDE a log call is a different concern
+  - 'val line = "[control] launch $key -> $argv"'
+  - 'failPending("hosted MCP server ${spec.name} closed: $reason")'
+invalid:
+  # the census
+  - 'log("[control] launch $key -> $argv\n")'
+  - 'log("[control] head $key -> $action\n")'
+  - 'log("[control] $message\n")'
+  # a receiver'd log sink must not escape
+  - 'deps.log("[control] launch $key -> $argv\n")'
+  # the ${…} spelling of the same hazard
+  - 'log("[control] launch ${key} -> ${argv}\n")'
+  - 'log("[control] body ${call.receiveText()}\n")'
+  # the allowlist is ANCHORED: a longer identifier that merely starts with an allowed one is red
+  - 'log("[mcp-host] $nameFromRequest: notify failed\n")'
+  - 'log("[mcp-host] $reasonGivenByCaller\n")'
+  # ...and an allowlisted expression prefix must not carry an unrelated tail
+  - 'log("[mcp-host] ${spec.name.plus(userSuffix)}: started\n")'
+  # a partially-escaped line is still red for the part that is not escaped
+  - 'log("[control] launch ${LogSafe.str(key)} -> $argv\n")'

@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# claudex — launches Claude Code against the codex head via the splice daemon.
-# The installed version is an argv[0] symlink to splice-launch; this is the in-repo entry.
-# (Was bin/claudex-kt until the 2026-08-10 cutover, when the Node bin/claudex it had to avoid
-#  colliding with was deleted along with server/.)
-exec env SPLICE_HEAD=claudex "$(dirname "$0")/splice-launch" "$@"

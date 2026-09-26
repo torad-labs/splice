@@ -1,0 +1,97 @@
+/* The sessions page: the departure board (docs/design/DESIGN.md section 7). The board takes the
+   page's width; opening a row puts the detail beside it, and the board narrows rather than being
+   covered. Nothing holds a column at rest: the detail is unmounted until a row opens. */
+
+.myx-sx-tally {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-5) var(--space-8);
+  margin-block-end: var(--space-6);
+}
+
+.myx-sx-window { margin: 0; font-size: var(--text-2); color: var(--fg-subtle); }
+
+.myx-sx-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.myx-sx-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(30 * var(--u)), 34%); }
+
+.myx-sx-list { display: grid; gap: var(--space-4); min-width: 0; }
+
+/* The head column's name takes the row's full ink: it is the board's airline. */
+.myx-sx-table .myx-hm-name { color: var(--fg); }
+
+/* the tally: availability as one bar with its figures under it */
+.myx-sx-tally .myx-stack-wrap { flex: 0 1 calc(28 * var(--u)); }
+
+/* the headless group names itself and carries its reason as a tip */
+
+/* a group's way out: an arrow to the head, project or team page */
+.myx-sx-go { display: inline-grid; place-items: center; width: calc(1.875 * var(--u)); height: calc(1.875 * var(--u)); border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
+.myx-sx-go:hover { color: var(--fg); background: var(--bg-hover); }
+
+/* the hand-off: an arrow in the peer's head colour, then the peer's name; it opens the peer */
+.myx-sx-peer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--fg-muted);
+  text-align: start;
+}
+button.myx-sx-peer { cursor: pointer; }
+button.myx-sx-peer:hover { color: var(--fg); }
+.myx-sx-peer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.myx-sx-arrow { flex: none; font-size: var(--text-4); color: var(--hue, var(--head-none)); }
+
+.myx-sx-board-open .myx-panel {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--space-8) * 3);
+}
+
+@media (max-width: 1100px) {
+  .myx-sx-board-open { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* a hand-off's text (V4-314): the message as sent, and the transcript it was read from */
+.myx-sx-said { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+.myx-sx-said-from { display: block; margin-block-start: var(--space-2); font-family: var(--font-mono); overflow-wrap: anywhere; color: var(--fg-subtle); }
+.myx-sx-unread { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--fg-subtle); }
+
+/* the opened session's SendMessage call and its copy key (V4-321) */
+.myx-sx-send { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.myx-sx-call { font-family: var(--font-mono); overflow-wrap: anywhere; color: var(--fg); }
+/* V4-320: the head picker, the command it answers, and what the launch does with the transcript */
+.myx-sx-resume { display: grid; gap: var(--space-3); }
+
+/* the fleet's hand-offs follow the board */
+.myx-sx > .myx-sx-handoffs { margin-block-start: var(--space-7); }
+/* Three short facts a row (who, to whom, when): the table is as wide as they are, where a full-width
+   one left 650 px of nothing between From and To at 2560 (splice-lead, 2026-09-25). */
+.myx-sx-handoffs .myx-dt-wrap { width: fit-content; max-width: 100%; }
+.myx-sx-handoffs .myx-dt th,
+.myx-sx-handoffs .myx-dt td { padding-inline-end: var(--space-7); }
+
+/* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
+   Past 3000 the fleet's hand-offs stand at the right edge, as wide as their table and never past
+   40%, and the lanes take the rest: a fixed share left the fitted table in half an empty column and
+   a fifth of the 3840 frame black (the e2e frame test, 69% drawn). An opened session takes both
+   columns, since its panel sits beside the list. */
+@media (min-width: 3000px) {
+  .myx-sx { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); column-gap: var(--space-7); align-items: start; }
+  .myx-sx > .myx-ph,
+  .myx-sx > .myx-sx-tally { grid-column: 1 / -1; }
+  .myx-sx > .myx-sx-board { grid-column: 1; }
+  .myx-sx > .myx-sx-handoffs { grid-column: 2; margin-block-start: 0; }
+  .myx-sx:has(> .myx-sx-board-open) > .myx-sx-board,
+  .myx-sx:has(> .myx-sx-board-open) > .myx-sx-handoffs { grid-column: 1 / -1; }
+}

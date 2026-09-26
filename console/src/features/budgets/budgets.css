@@ -1,0 +1,6 @@
+/* The budgets panel: a table of heads, each with its daily limit, what passing it does, and save. */
+.myx-bud-usd { display: inline-flex; align-items: center; gap: var(--space-2); }
+.myx-bud-dollar { font-family: var(--font-mono); color: var(--fg-subtle); }
+.myx-bud-save { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-3); }
+.myx-bud-note { font-size: var(--text-2); color: var(--fg-muted); }
+.myx-bud-refusal { display: flex; align-items: center; gap: var(--space-3); margin-block-start: var(--space-3); font-size: var(--text-2); color: var(--danger); }

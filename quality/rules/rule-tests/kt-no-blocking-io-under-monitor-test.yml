@@ -1,0 +1,54 @@
+id: kt-no-blocking-io-under-monitor
+valid:
+  # the remedy: compute outside, publish inside
+  - |
+    fun record(path: Path, key: String) {
+        val digest = sha256Hex(Files.readAllBytes(path))
+        synchronized(lock) { state[key] = digest }
+    }
+  # blocking IO with no monitor at all
+  - |
+    fun read(path: Path): String {
+        return Files.readString(path)
+    }
+  # a monitor with no blocking IO under it — the 109 other synchronized blocks in this tree
+  - |
+    fun windowFor(sessionId: String?): Long? =
+        sessionId?.let { synchronized(lock) { windows[it] } }
+  # dated exemption: `ioLock` exists to serialize the IO it wraps (ClientWindows.persist)
+  - |
+    private fun persist(path: Path) = synchronized(ioLock) {
+        val snapshot = synchronized(lock) { windows.toMap() }
+        Files.writeString(path, snapshot.toString())
+    }
+invalid:
+  # a synthetic reconstruction of the AccountPool.select shape this wall exists to prevent
+  # recurring in the DIRECT form. If this case ever goes green the wall cannot fire at all.
+  - |
+    fun select(sessionId: String): Selection = synchronized(sessions) {
+        val bytes = Files.readAllBytes(authPath)
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        sessions[sessionId] = digest
+        chosen()
+    }
+  # each blocking primitive the rule names, one at a time
+  - 'synchronized(sessions) { Files.readString(path) }'
+  - 'synchronized(sessions) { Files.readAttributes(path, "basic:size") }'
+  - 'synchronized(state) { java.nio.file.Files.exists(path) }'
+  - 'synchronized(state) { stream.readAllBytes() }'
+  - 'synchronized(state) { MessageDigest.getInstance("SHA-256") }'
+  - 'synchronized(state) { java.security.MessageDigest.getInstance("SHA-256") }'
+  # nested deep inside the block, not just at its top level
+  - |
+    synchronized(sessions) {
+        candidates.forEach { candidate ->
+            if (available(candidate)) {
+                results += Files.readAllBytes(candidate.authPath)
+            }
+        }
+    }
+  # the ioLock exemption must not extend to a DIFFERENT monitor taken inside it
+  - |
+    synchronized(ioLock) {
+        synchronized(sessions) { Files.readAllBytes(path) }
+    }

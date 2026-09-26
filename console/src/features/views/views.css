@@ -1,0 +1,74 @@
+/* View tabs: the page's saved views as one segmented control, default first, with the view editor
+   beside it. The current view takes the active ground and full ink. */
+
+.myx-views {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-views-tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  flex-wrap: wrap;
+}
+
+.myx-views-tab {
+  padding: var(--space-1) var(--space-4);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--dur-1) ease, color var(--dur-1) ease;
+}
+.myx-views-tab:hover { color: var(--fg); }
+.myx-views-tab-active,
+.myx-views-tab-active:hover {
+  background: var(--bg-active);
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.myx-views-edit {
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
+  cursor: pointer;
+}
+.myx-views-edit:hover { color: var(--fg); }
+
+.myx-views-panel {
+  flex-basis: 100%;
+  display: flex;
+  align-items: end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) 0;
+}
+
+.myx-views-rename { display: flex; align-items: end; gap: var(--space-3); }
+
+.myx-views-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.myx-views-action {
+  padding: var(--space-1) var(--space-4);
+  background: var(--bg);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg);
+  cursor: pointer;
+}
+.myx-views-action:hover:not(:disabled) { background: var(--bg-hover); }
+.myx-views-action:disabled { color: var(--fg-subtle); cursor: not-allowed; }

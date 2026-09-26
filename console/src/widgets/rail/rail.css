@@ -1,0 +1,154 @@
+/* The sidebar (docs/design/DESIGN.md section 6). A raised column with the page list in four
+   groups; the current page takes the active ground and full ink. No hue: colour here would claim
+   to be a head. */
+
+.myx-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-raised);
+  border-right: var(--hair) solid var(--line);
+}
+
+.myx-side-top {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+}
+
+.myx-side-wordmark {
+  margin: 0;
+  padding-inline: var(--space-3);
+  font-size: var(--text-5);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: -.02em;
+  color: var(--fg);
+}
+
+.myx-side-jump {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: var(--text-2);
+  cursor: pointer;
+  text-align: start;
+}
+.myx-side-jump:hover { border-color: var(--line-strong); color: var(--fg-muted); }
+.myx-side-jump-word { flex: 1; }
+.myx-side-kbd {
+  padding: 0 var(--space-2);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+}
+
+.myx-side-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: var(--space-2) var(--space-4) var(--space-5);
+}
+
+.myx-side-group + .myx-side-group { margin-block-start: var(--space-5); }
+
+.myx-side-group-label {
+  margin: 0 0 var(--space-2);
+  padding-inline: var(--space-3);
+  font-size: var(--text-1);
+  font-weight: 500;
+  color: var(--fg-subtle);
+}
+
+.myx-side-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.myx-side-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  font-size: var(--text-3);
+  text-decoration: none;
+  transition: background-color var(--dur-1) ease, color var(--dur-1) ease;
+}
+.myx-side-link:hover { background: var(--bg-hover); color: var(--fg); }
+.myx-side-link-current,
+.myx-side-link-current:hover {
+  background: var(--bg-active);
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.myx-side-icon {
+  display: inline-flex;
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+}
+.myx-side-icon svg { width: 100%; height: 100%; }
+.myx-side-link-current .myx-side-icon { color: var(--fg); }
+
+.myx-side-foot {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: var(--hair) solid var(--line);
+}
+
+.myx-side-theme {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--text-2);
+  cursor: pointer;
+  text-align: start;
+}
+.myx-side-theme:hover { background: var(--bg-hover); color: var(--fg); }
+
+/* ---------- phone: the pages become one sideways row ---------- */
+@media (max-width: 720px) {
+  .myx-side {
+    flex-direction: row;
+    align-items: center;
+    border-right: 0;
+    border-bottom: var(--hair) solid var(--line);
+  }
+  .myx-side-top { padding: var(--space-3); }
+  .myx-side-jump,
+  .myx-side-foot,
+  .myx-side-group-label { display: none; }
+  .myx-side-nav {
+    display: flex;
+    gap: var(--space-1);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: var(--space-3);
+    scrollbar-width: none;
+  }
+  .myx-side-group + .myx-side-group { margin: 0; }
+  .myx-side-list { display: flex; gap: var(--space-1); }
+  .myx-side-link { white-space: nowrap; }
+}

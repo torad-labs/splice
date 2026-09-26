@@ -1,0 +1,319 @@
+// NEW (DR-90): the per-ATTEMPT zero-event baseline. UpstreamClient invokes the consume lambda once
+// per attempt and REUSES the round's WsRoundInputs across stream reissues (G5) — so a round-scoped
+// events baseline counts attempt 1's parsed frames against a reissued attempt, and the G2
+// zero-event reclassify is skipped exactly when it matters: the reissue came back as a dead-head
+// body (HTML login 200, zero SSE frames). Driven at the SseRoundConsume seam because the reissue
+// itself needs a mid-stream connection RST the in-process mock cannot force (HeadServerReviewTest's
+// torn-stream note); calling consume twice with the same inputs IS the UpstreamClient contract.
+package splice.head.transport
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
+import io.ktor.client.request.setBody
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.buildJsonObject
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.turn.ErrorType
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
+import splice.core.turn.WatchdogBudget
+import splice.core.util.ElapsedClock
+import splice.head.MockChatGptUpstream
+import splice.head.RecordingSink2
+import splice.head.TestResponsesProvider
+import splice.head.admission.admittedSlot
+import splice.head.compact.CompactStats
+import splice.head.perf.PerfStats
+import splice.head.pipeline.TurnPipeline
+import splice.head.round.RunnerSignals
+import splice.head.turn.TurnDrive
+import splice.head.turn.TurnTelemetry
+import splice.head.usage.OutputClamp
+import splice.head.wire.ClientChannel
+import splice.head.wire.ImmediateSseWriter
+import splice.head.wire.TurnTerminal
+import splice.upstream.ClientFrameEmitted
+import splice.upstream.Provider
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.retry.LiveLimit
+import splice.upstream.retry.TurnWatchdog
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamResponse
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.seconds
+
+private class ConsumeFakeAuth : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials = Credentials.Bearer("tok-consume", "acct-consume")
+    override suspend fun refresh(): Credentials = credentials()
+    override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
+}
+
+/** consume() opens the turn and may emit; none of it is under test — the classify verdict is. */
+private class NoopTerminal : TurnTerminal, WireSink by RecordingSink2() {
+    override val hasEnded: Boolean = false
+
+    override suspend fun ensureStarted() = Unit
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
+    override fun abandon() = Unit
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class SseRoundConsumeTest {
+
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO)
+    private lateinit var tmp: Path
+
+    @BeforeAll
+    fun setUp() {
+        tmp = Files.createTempDirectory("sse-consume")
+    }
+
+    @AfterAll
+    fun tearDown() {
+        client.close()
+        mock.stop()
+    }
+
+    private fun provider(): Provider = TestResponsesProvider(
+        tuning = ProviderTuning(
+            key = "codex",
+            label = "claudex",
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-codex--",
+                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                defaultContextWindow = 272_000,
+            ),
+            pinnedModel = "gpt-5.6-sol",
+            auth = ConsumeFakeAuth(),
+            baseUrl = mock.baseUrl,
+            watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+            loginCommand = "claudex login",
+        ),
+        showReasoning = ReasoningDisplay.TEXT,
+        replayReasoning = false,
+        configEffort = "high",
+        configSummary = "detailed",
+    )
+
+    private suspend fun drive(
+        budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+    ): TurnDrive = TurnDrive(
+        requestBody = buildJsonObject { },
+        meta = TurnMeta(
+            compact = false,
+            showReasoning = ReasoningDisplay.TEXT,
+            stream = true,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6-sol",
+            clientMaxTokens = 100,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        emitter = NoopTerminal(),
+        watchdog = TurnWatchdog(budget),
+        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+        pipeline = TurnPipeline(
+            CompactStats(tmp.resolve("compact-dr90.jsonl")),
+            log = {},
+            clampOutput = OutputClamp { it },
+        ),
+        t0 = 0,
+        trace = null,
+        perf = TurnPerf(),
+        turnHeaders = emptyMap(),
+        signals = RunnerSignals(),
+        channel = ClientChannel(
+            ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+            Mutex(),
+            AtomicBoolean(false),
+        ),
+        toolSearch = null,
+    )
+
+    private suspend fun fetch(scenario: String): UpstreamResponse =
+        UpstreamResponse(
+            client.post("${mock.baseUrl}/v1/responses") {
+                setBody("""{"instructions":"SCENARIO:$scenario"}""")
+            },
+        )
+
+    @Test
+    fun `a reissued attempt re-baselines the zero-event count - DR-90`() = runBlocking {
+        val provider = provider()
+        val consume = SseRoundConsume(
+            provider,
+            ZeroEventFailure(provider, log = {}),
+            TurnTelemetry("codex", PerfStats(tmp.resolve("perf-dr90.jsonl")), log = {}, clock = ElapsedClock { 0L }),
+            TearAwareEvents(provider, log = {}),
+        )
+        val drive = drive()
+        val inputs = WsRoundInputs(
+            drive = drive,
+            bodyJson = "{}",
+            sink = RecordingSink2(),
+            scope = this,
+            turnJob = Job(),
+            frameEmittedThisRound = ClientFrameEmitted { false },
+            eventsBase = 0,
+        )
+        try {
+            // Attempt 1: events flow, then the stream ends without a terminal — the shape that
+            // precedes a G5 reissue. Its outcome is not under test; its EVENTS_IN pollution is.
+            val first = consume.consume(inputs, fetch("truncated"))
+            assertTrue(drive.perfCounter(PerfKeys.EVENTS_IN) > 0, "attempt 1 must have parsed events")
+            // Attempt 2 (the reissue, same inputs per the UpstreamClient contract): an HTML login
+            // page with ZERO events. Pre-fix the round-scoped baseline counted attempt 1's events
+            // and the G2 auth diagnosis was skipped — an undiagnosable generic error instead.
+            val second = consume.consume(inputs, fetch("zero_event_auth"))
+            val failure = second as TurnOutcome.Failure
+            assertEquals(ErrorType.AUTHENTICATION, failure.type, "zero-event auth body must classify: $failure")
+            assertTrue(failure.message.contains("claudex login"), "login hint expected: ${failure.message}")
+            // Control: attempt 1's verdict must stay untouched — its round had real events.
+            assertFalse(first is TurnOutcome.Failure && first.type == ErrorType.AUTHENTICATION)
+        } finally {
+            inputs.turnJob.cancel()
+            drive.slot.release()
+        }
+    }
+
+    // DR-7, from codex-splice's review: the HeadServer acceptance arm could not pin this, because
+    // by the time its round stalls it has already emitted thinking — so frameEmittedThisRound() is
+    // true and the G5 branch is unreachable there either way. THIS is the state that separates a
+    // reaped round from a transport tear: the watchdog fires before any client frame.
+    //
+    // Reaping now aborts the body channel, which surfaces as exactly the IOException a real tear
+    // does. Without the watchdog test in TearAwareEvents.reissuable, this round would be rethrown
+    // as StreamTornBeforeClient and silently re-POSTed by the reissue machinery — racing the
+    // salvage-and-continue decision the terminal outcome is about to make, and spending an upstream
+    // request on a backend that has just been observed to be stalled rather than broken.
+    // Dispatchers.Default deliberately: the watchdog poller is a SIBLING coroutine that must sample
+    // while the SSE read is parked, and the default single-threaded runBlocking event loop cannot
+    // run both — the poller's own delay never resumes, so no budget can ever fire in that rig.
+    //
+    // V4-125 MOVED THIS ARM'S REAPER, AND THE DR-7 INVARIANT IS WHY IT STILL EXISTS. Until V4-125 the
+    // pre-content silence was reaped by the 1s first-output TIER, and this arm asserted that the reap
+    // arrived as an outcome rather than a transport tear. The tier is a probe now: a live path is
+    // HELD, so the tier no longer reaps anything here and the case had to move to the wall that does
+    // — the whole-turn cap, which is armed below exactly as TurnDriveFactory arms it in production.
+    // The invariant is untouched, because TearAwareEvents.reissuable gates on `watchdog.fired == null`
+    // and is therefore blind to WHICH sentinel fired: a TotalCap blocks the reissue exactly as an Idle
+    // did. DR-7 predates this row and this arm still proves it.
+    //
+    // The arm got STRONGER rather than merely moved: it now also pins the new behaviour, because
+    // asserting the sentinel is TotalCap and NOT Idle is precisely the claim that the idle tier
+    // probed, held, and left the turn alone.
+    @Test
+    fun `a pre-content idle holds at the tier and the cap ends it - DR-7`() = runBlocking(Dispatchers.Default) {
+        val provider = provider()
+        val consume = SseRoundConsume(
+            provider,
+            ZeroEventFailure(provider, log = {}),
+            TurnTelemetry("codex", PerfStats(tmp.resolve("perf-dr7.jsonl")), log = {}, clock = ElapsedClock { 0L }),
+            TearAwareEvents(provider, log = {}),
+        )
+        // FIRST-OUTPUT is the tier that judges this, not streamIdle — the reverse of what this arm
+        // asserted until 2026-09-01. The scenario's response.created is bytes on the wire, but it
+        // is a HANDSHAKE, not model output: no client frame exists yet, and the watchdog's short
+        // tier applies only once the client has been handed content. Live evidence: 109 codex
+        // compactions in one day died at "180s idle cap" with first_byte at 1-5s and NO first
+        // delta — the model was reasoning silently over a 1.2MB transcript and the handshake had
+        // already flipped the tier. The budgets are far apart so the arm names the tier: a 1s
+        // first-output cap must reap this well inside the 6s mock stall, and a 20s streamIdle would
+        // let the mock hang up first (no Idle sentinel at all).
+        // totalCap 3s: the WALL this arm moved to. It is deliberately well ABOVE the 1s first-output
+        // tier so the probe gets its hold in first — a cap that fired at the same instant the tier
+        // did would race the hold assertion below and flake. Both still land inside the mock's 6s
+        // stall and the 4s deadline, which is what keeps the deadline naming the wall rather than
+        // just asserting that something eventually happened.
+        val drive = drive(WatchdogBudget(1.seconds, 20.seconds, 3.seconds))
+        val turnJob = Job()
+        val inputs = WsRoundInputs(
+            drive = drive,
+            bodyJson = "{}",
+            sink = RecordingSink2(),
+            scope = this,
+            turnJob = turnJob,
+            // A STUB, and named as one: SseRoundDriver wires this to CONTENT_FRAMES_OUT. A constant
+            // false happens to agree with the real probe here (response.created emits no client
+            // frame), so this arm exercises the reissue gate's pre-content branch without observing
+            // that the production wiring reaches the same answer. Pinning the real probe is a
+            // separate arm on a separate seam, not something to smuggle in behind this one.
+            frameEmittedThisRound = ClientFrameEmitted { false },
+            eventsBase = 0,
+        )
+        // Armed exactly as the turn drive arms it in production: the whole-turn wall targets the TURN
+        // job, and this round is parented to it, so the cap's cancel reaches the body channel through
+        // roundJob's completion handler — the same path a real total-cap ending takes.
+        drive.watchdog.launchTotalCap(this, turnJob)
+        try {
+            // The assertion is that this RETURNS. A StreamTornBeforeClient thrown from here is the
+            // regression, and it would fail this test by propagating rather than by an assertEquals.
+            // preparePost/execute, NOT the buffered post the DR-90 arm uses: a buffered request
+            // reads the WHOLE response before consume ever runs, so the round would be handed an
+            // already-complete channel and the stall would be over before the watchdog existed.
+            // (That is not a hypothetical — it is what this arm did until the body streamed.)
+            client.preparePost("${mock.baseUrl}/v1/responses") {
+                setBody("""{"instructions":"SCENARIO:idlepre"}""")
+            }.execute { raw ->
+                val t0 = System.currentTimeMillis()
+                // The assertion is that this RETURNS. A StreamTornBeforeClient thrown from here is
+                // the regression, and it fails this test by propagating rather than by an assert.
+                val outcome = consume.consume(inputs, UpstreamResponse(raw))
+                val tookMs = System.currentTimeMillis() - t0
+                assertTrue(outcome is TurnOutcome.Failure, "a reaped round must report an outcome: $outcome")
+                val fired = drive.watchdog.fired
+                // V4-125, the NEW claim: the sentinel is the wall and never an idle tier. Asserting
+                // NOT-Idle here is exactly the statement that the 1s first-output tier probed this
+                // silence, found the path alive, and left the turn alone.
+                assertTrue(
+                    fired is WatchdogFired.TotalCap,
+                    "only the whole-turn wall may end a turn now — an idle tier holds, never reaps: $fired",
+                )
+                assertTrue(
+                    drive.watchdog.held != null,
+                    "the idle tier must have HELD and recorded it: ${drive.watchdog.held}",
+                )
+                assertTrue(
+                    tookMs < REAP_DEADLINE_MS,
+                    "ended by the 3s whole-turn cap, not by the mock hanging up at 6s ($tookMs ms)",
+                )
+            }
+        } finally {
+            inputs.turnJob.cancel()
+            drive.slot.release()
+        }
+    }
+}
+
+// The mock stalls for 6s, and the arm's streamIdle tier is 20s. An ending driven by the 3s WHOLE-TURN
+// cap must land far inside both — which is what makes this deadline name the WALL rather than just
+// asserting that something eventually happened. Since V4-125 the 1s first-output tier cannot be the
+// one that ends it: a live path is held, not reaped.
+private const val REAP_DEADLINE_MS = 4_000L

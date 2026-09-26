@@ -1,0 +1,13 @@
+{
+  "about": "V4-324: the SendMessage call `splice sessions` prints (SessionsCommand.sendLine) and the console's copy key gives (strip.tsx sendCall) for the same live registration. SessionsCommandTest and console/tests/sessions.test.ts both read this file, so the two cannot drift apart. socket is messagingSocketPath; the address is uds:<socket>.",
+  "cases": [
+    { "name": "build 🚀", "socket": "/run/a.sock", "call": "SendMessage(to=\"build 🚀\")" },
+    { "name": "🦀 crab", "socket": null, "call": "SendMessage(to=\"🦀 crab\")" },
+    { "name": "al\u001b[31mpha\"x", "socket": null, "call": "SendMessage(to=\"al[31mpha\\\"x\")" },
+    { "name": "x‎y z\u0085", "socket": null, "call": "SendMessage(to=\"xyz\")" },
+    { "name": "a\ud800b", "socket": null, "call": "SendMessage(to=\"ab\")" },
+    { "name": "\ud83d", "socket": "/run/b.sock", "call": "SendMessage(to=\"uds:/run/b.sock\")" },
+    { "name": "  ", "socket": "/run/c\"q\\.sock", "call": "SendMessage(to=\"uds:/run/c\\\"q\\\\.sock\")" },
+    { "name": null, "socket": null, "call": null }
+  ]
+}

@@ -1,0 +1,89 @@
+/* Settings: the form surface (docs/design/DESIGN.md section 7). The scope picker, the finder, then
+   the knob rack (widgets/knob-form), and under it the topology and the claude head. */
+
+.myx-settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
+.myx-settings .myx-ph { margin-block-end: 0; }
+.myx-settings .myx-sec + .myx-sec { margin-block-start: 0; }
+
+.myx-settings-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+.myx-settings-section > .myx-sec-head { margin-block-end: 0; }
+
+/* ---------- scope: global, then one button per head wearing its mark ---------- */
+.myx-settings-scope {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  justify-self: start;
+  padding: var(--space-1);
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+}
+.myx-settings-head-option {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-4);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.myx-settings-head-option:hover { color: var(--fg); }
+.myx-settings-head-option-active,
+.myx-settings-head-option-active:hover { background: var(--bg-active); color: var(--fg); font-weight: 500; }
+.myx-settings-head-option .myx-hm-mark { height: var(--space-4); }
+
+.myx-settings-tools {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+.myx-settings-pending { display: flex; align-items: center; gap: var(--space-3); margin: 0; }
+
+.myx-settings-scope-row { display: flex; align-items: center; gap: var(--space-2); }
+.myx-settings-file,
+.myx-settings-result { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin: 0; }
+.myx-settings-label { font-size: var(--text-2); color: var(--fg-muted); }
+.myx-settings-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.myx-settings-note { margin: 0; max-width: 80ch; font-size: var(--text-2); color: var(--fg-muted); }
+.myx-settings-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.myx-settings-actions { display: flex; align-items: center; gap: var(--space-3); }
+.myx-settings-findings { margin: 0; padding-left: var(--space-5); font-size: var(--text-2); color: var(--fg); }
+
+.myx-settings-topology,
+.myx-settings-claude { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* ---------- topology: one table per section of splice.toml ---------- */
+.myx-topo-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+}
+.myx-topo-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 500;
+  color: var(--fg);
+}
+.myx-topo-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4) var(--space-5);
+}
+.myx-topo-flag { display: inline-flex; flex-direction: column; gap: var(--space-2); }
+.myx-topo-key { font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }

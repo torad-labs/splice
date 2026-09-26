@@ -1,0 +1,177 @@
+// PORT-OF: splice/app/Daemon.kt (assembleHead's HeadServer + HeadDeps construction) @ ed5c868 —
+// invariants unchanged: upstream, inferenceToken, forwardClientAuth, the per-head InflightGate,
+// ShadowClassifier and the shared RequestMaterializationGate. `val key = ctx.key` is kept so
+// kt-head-scoped-config-must-be-keyed still covers this head-scoped function.
+package splice.app.head
+
+import splice.app.ConsoleEventPublisher
+import splice.app.provider.ProviderBuild
+import splice.core.budget.NoHeadBudget
+import splice.core.compaction.SessionProject
+import splice.core.config.ConfigService
+import splice.core.config.Knob
+import splice.core.config.MgmtKey
+import splice.core.config.SpliceConfig
+import splice.core.config.TurnKey
+import splice.core.prompt.SystemPromptLayers
+import splice.core.topology.ProjectConfig
+import splice.core.util.LogSink
+import splice.core.version.ClientVersionTracker
+import splice.head.HeadDeps
+import splice.head.HeadServer
+import splice.head.NoHeadEvents
+import splice.head.admission.RequestMaterializationGate
+import splice.head.compact.ShadowClassifier
+import splice.head.compaction.CompactionRecordings
+import splice.head.compaction.CompactionTail
+import splice.head.compaction.SessionProjectLookup
+import splice.head.turn.LiveTurns
+import splice.head.wire.WireTap
+import splice.upstream.Provider
+import splice.upstream.retry.InflightGate
+import java.nio.file.Path
+import java.nio.file.Paths
+
+internal class HeadServerFactory(
+    private val config: ConfigService,
+    private val mgmtKey: MgmtKey,
+    private val log: LogSink,
+    private val compactionTail: CompactionTail = CompactionTail(),
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    /** What every head's system-prompt layers resolve from (V4-160, see [HeadPromptInputs]). */
+    private val prompts: HeadPromptInputs = HeadPromptInputs(),
+    /** V4-134: the daemon's ONE console publisher, which every head reports through. Null only for
+     *  a factory built outside the daemon (tests); Daemon passes ControlPlane's, pinned by
+     *  OneEventBusPinTest, because a head built without it would serve turns the console never hears. */
+    private val console: ConsoleEventPublisher? = null,
+) {
+    private val upstreamFactory = UpstreamFactory()
+
+    // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
+    private val turnKey = TurnKey(mgmtKey)
+
+    private val requestMaterializationGate = RequestMaterializationGate(materializationPermits())
+
+    internal fun headServerFor(
+        ctx: ProviderBuild,
+        provider: Provider,
+        stores: HeadStores,
+        forwardClientAuth: Boolean,
+        compactionRecordings: CompactionRecordings,
+    ): HeadServer {
+        val key = ctx.key
+        val cfg = ctx.cfg
+        val knobs = cfg.asMap()
+        return HeadServer(
+            provider = provider,
+            listenPort = ctx.head.port,
+            deps = HeadDeps(
+                upstream = upstreamFactory.upstreamFor(ctx, cfg, log),
+                inferenceToken = turnKey.get(),
+                operatorToken = mgmtKey.get(),
+                // NO DEFAULTS on these two bundles (V4-105 items 1 and 2): the NULLABILITY is the
+                // feature — a head may legitimately run without economics or quota, and the tests
+                // that decline them say so through ONE testFixtures builder — but a DEFAULT let a
+                // caller that simply forgot get the same head as one that chose.
+                stores = headStores(key, stores, cfg, compactionRecordings),
+                quotaBundle = HeadDeps.HeadQuota(
+                    quota = stores.quota,
+                    accountPool = stores.accountPool,
+                    accountQuotas = stores.accountQuotas,
+                    // V4-133 review: this head's ledger, priced from its own catalog, from the
+                    // publisher's one enforcement over the daemon's budget store. Pinned by
+                    // BudgetWiringPinTest: without it the console's budgets are stored and ignored.
+                    budget = console?.budgets?.forHead(key, ctx.catalog) ?: NoHeadBudget,
+                ),
+                seams = seams(key),
+                policy = HeadDeps.HeadPolicy(
+                    // Per HEAD, resolved once here: its own [heads.KEY] layer plus the V4-124
+                    // project layers for this head. This constructor is where a missing
+                    // system_prompt_file or a relative project root becomes a load-time config
+                    // error rather than a prompt that silently never rides.
+                    systemPrompt = SystemPromptLayers(
+                        head = ctx.head.systemPromptFor(key, prompts.configDir),
+                        projects = prompts.projects,
+                        headKey = key,
+                    ),
+                    forwardClientAuth = forwardClientAuth,
+                    mirrorReasoning = cfg.mirrorReasoning,
+                    progressLine = cfg.progressLine,
+                    maxRequestBytes = (knobs[Knob.MAX_REQUEST_BYTES.key] as Long).toInt(),
+                    requestReadTimeoutMs = knobs[Knob.REQUEST_READ_TIMEOUT_MS.key] as Long,
+                ),
+                // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
+                // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
+                // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
+                // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
+                // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
+                gate = InflightGate(
+                    maxInflight = { config.getConfig(key).maxInflight },
+                    maxQueued = { config.getConfig(key).maxQueued },
+                ),
+                liveTurns = liveTurnsFor(key),
+                compactionTail = compactionTail,
+                log = log,
+            ),
+        )
+    }
+
+    /** The head's stores. Its own function since V4-216 added the compaction recordings, which took
+     *  [headServerFor] past detekt's method-length ceiling. */
+    private fun headStores(
+        key: String,
+        stores: HeadStores,
+        cfg: SpliceConfig,
+        compactionRecordings: CompactionRecordings,
+    ): HeadDeps.HeadStores = HeadDeps.HeadStores(
+        usageStore = stores.usageStore,
+        perfStats = stores.perfStats,
+        economicsStore = stores.economics,
+        compactStats = stores.compactStats,
+        shadow = ShadowClassifier(log = log),
+        clientWindows = stores.clientWindows,
+        // V4-173: the tap exists only for a head whose operator named a count, read
+        // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
+        // every other head's bodies unkept. V4-239: registered, or its old one taken out, in the
+        // console's registry, which GET /api/heads/{head}/wire reads.
+        wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) }.also { console?.wires?.put(key, it) },
+        trace = stores.trace,
+        compactionRecordings = compactionRecordings,
+    )
+
+    /** V4-319: this head's live turns, registered in the console's registry as the head is built, the
+     *  way its wire tap is, so the console's live-turn routes read and stop this head's own turns. */
+    private fun liveTurnsFor(key: String): LiveTurns = LiveTurns().also { console?.liveTurns?.put(key, it) }
+
+    /** The head's shared and per-head seams. Its own function since V4-134 added the console reporter,
+     *  which took [headServerFor] past detekt's method-length ceiling. */
+    private fun seams(key: String): HeadDeps.HeadSeams = HeadDeps.HeadSeams(
+        requestMaterializationGate = requestMaterializationGate,
+        clientVersions = clientVersions,
+        sessionProject = SessionProjectLookup { prompts.sessionProject.projectFor(it) },
+        events = console?.forHead(key) ?: NoHeadEvents,
+        slotInstructions = console?.slots,
+    )
+
+    /** V4-110: the process-shared materialization permit count, read from the GLOBAL knob layer (no
+     *  head key) once at daemon boot. One value bounds every head's concurrent decode/translate. */
+    private fun materializationPermits(): Int {
+        val m = config.getConfig().asMap()
+        return (m[Knob.MATERIALIZATION_PERMITS.key] as Long).toInt()
+    }
+}
+
+/** What a head's system-prompt layers resolve from, one bundle because the three are read together
+ *  and only for the layers. V4-160 took them out of [HeadServerFactory]'s constructor, which reached
+ *  seven subsystems (constructor-width allows six); the defaults are the ones it had. */
+internal data class HeadPromptInputs(
+    /** The topology's directory: a relative `system_prompt_file` under [splice.core.topology.HeadConfig]
+     *  resolves against it, the same rule `[compaction] file =` follows (V4-36). */
+    val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
+    /** V4-124: the topology's `[projects."ROOT"]` tables. Every head gets its own layers from them. */
+    val projects: Map<String, ProjectConfig> = emptyMap(),
+    /** One session-to-cwd resolver for every head's prompt layers. It is consulted only when a
+     *  project is configured, and it keeps its own cache. Daemon passes the one built over every
+     *  head's projects tree (V4-130); the default reads the vanilla tree only. */
+    val sessionProject: SessionProject = SessionProject(),
+)

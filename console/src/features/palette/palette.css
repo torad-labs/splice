@@ -1,0 +1,74 @@
+/* The palette (docs/design/DESIGN.md section 3, principle 6): one list over every page, the saved
+   views of the current page and the two themes. It opens on ⌘K or / with no animation: it is used
+   many times a day, and a keyboard-opened thing that animates feels slow. */
+
+.myx-palette-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+}
+
+.myx-palette {
+  position: fixed;
+  left: 50%;
+  top: 16%;
+  transform: translateX(-50%);
+  width: min(calc(45 * var(--u)), 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-float);
+}
+
+.myx-palette-input {
+  padding: var(--space-5);
+  background: none;
+  border: 0;
+  border-bottom: var(--hair) solid var(--line);
+  outline: none;
+  font: inherit;
+  font-size: var(--text-4);
+  color: var(--fg);
+}
+.myx-palette-input::placeholder { color: var(--fg-subtle); }
+
+.myx-palette-list {
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.myx-palette-group [cmdk-group-heading] {
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  font-size: var(--text-1);
+  font-weight: 500;
+  color: var(--fg-subtle);
+}
+
+.myx-palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-2);
+  font-size: var(--text-3);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.myx-palette-item[data-selected='true'] { background: var(--bg-active); color: var(--fg); }
+.myx-palette-item[aria-disabled='true'] { color: var(--fg-subtle); }
+
+.myx-palette-mark {
+  margin-inline-start: auto;
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+}
+
+.myx-palette-empty {
+  padding: var(--space-4) var(--space-3);
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
+}

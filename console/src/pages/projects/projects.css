@@ -1,0 +1,38 @@
+/* The projects page (docs/design/DESIGN.md section 7): the day's summary, then the repos table,
+   which narrows to put an opened repo beside it rather than being covered. Nothing holds a column
+   at rest: the detail is unmounted until a row opens. */
+
+.myx-px-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.myx-px-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(32.5 * var(--u)), 42%); }
+.myx-px-board-open .myx-panel {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--space-8) * 3);
+}
+
+.myx-px-list { display: grid; gap: var(--space-4); min-width: 0; }
+
+/* the unpriced count under the cost, with its reason behind the mark */
+.myx-px-note { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* the way out to the sessions board */
+.myx-px-go { display: inline-grid; place-items: center; width: calc(1.875 * var(--u)); height: calc(1.875 * var(--u)); border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
+.myx-px-go:hover { color: var(--fg); background: var(--bg-hover); }
+
+/* V4-313: the repo's standing prompt and compaction rule, one field above the other, the sessions the
+   save reaches under them, then the save */
+.myx-px-standing { display: grid; gap: var(--space-4); }
+.myx-px-lines, .myx-px-lines .myx-input-box { width: 100%; }
+.myx-px-lines .myx-input-box { resize: vertical; font-family: var(--font-mono); }
+.myx-px-file, .myx-px-reach { display: grid; gap: var(--space-2); }
+.myx-px-file-path { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.myx-px-when { color: var(--fg-subtle); }
+
+@media (max-width: 1100px) {
+  .myx-px-board-open { grid-template-columns: minmax(0, 1fr); }
+}

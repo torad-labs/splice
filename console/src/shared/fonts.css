@@ -1,0 +1,38 @@
+/* The console's two faces, embedded in the single-file build (docs/design/DESIGN.md section 8):
+   IBM Plex Sans for words, IBM Plex Mono for every figure (times, tokens, percentages, ids) and
+   for code. Latin subsets from fontsource (SIL OFL 1.1, OFL-IBM-Plex.txt beside them); the sans
+   is the variable file, so one rule covers its whole weight axis. url() keeps them under Vite's
+   assetsInlineLimit, so the shipped artifact makes no font request: the console is served offline
+   from the jar. */
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('./fonts/plex-sans-var.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/plex-mono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/plex-mono-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/plex-mono-600.woff2') format('woff2');
+}

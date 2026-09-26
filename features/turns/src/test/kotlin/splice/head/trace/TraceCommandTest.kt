@@ -1,0 +1,345 @@
+// NEW: V4-174 — `splice trace <head>`: reads the head's day files with no daemon, groups records
+// by turn, and prints a table, one turn in full, or the raw lines; `--purge` deletes the files and
+// says what went. The files here are written by the SAME TraceStore the daemon uses, so the verb
+// is tested against the writer's real shape rather than a hand-typed fixture.
+package splice.head.trace
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.config.StatePaths
+import splice.core.perf.PerfSnapshot
+import splice.core.storage.ActivityDays
+import splice.core.terminal.TerminalOutput
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
+import splice.core.util.AsyncFileIo
+import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
+import splice.head.wire.ClientInbound
+import splice.head.wire.TraceStore
+import splice.head.wire.TurnIdMint
+import splice.upstream.sse.WireAttempt
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermissions
+
+private const val DAY_ONE = 1_789_725_600_000L // 2026-09-18T10:00Z
+
+class TraceCommandTest {
+
+    /** A state dir under [tmp]; the configured heads come from [heads], not from a topology file. */
+    private fun env(tmp: Path): EnvReader =
+        EnvReader { name -> if (name == "CLAUDEX_STATE_DIR") tmp.resolve("state").toString() else null }
+
+    /** One configured head, `openrouter`, as app's topology read would report it. */
+    private val heads = TraceHeadSource { TraceHeads.Configured("splice.toml", setOf("openrouter")) }
+
+    private fun meta(session: String) = TurnMeta(
+        compact = false,
+        showReasoning = ReasoningDisplay.TEXT,
+        stream = true,
+        originalModel = "claude-openrouter--m1",
+        upstreamModel = "m1",
+        clientMaxTokens = 8000,
+        effort = "medium",
+        summary = null,
+        budgetTokens = null,
+        sessionId = session,
+    )
+
+    /** Two turns as the daemon would write them: ids turn-1 and turn-2, sessions alpha and beta. */
+    private fun writeTrace(env: EnvReader) {
+        val ids = ArrayDeque(listOf("turn-1", "turn-2"))
+        val store = TraceStore(
+            ActivityDays(StatePaths(envReader = env).traceDir, "openrouter", 7, WallClock { DAY_ONE }, true),
+            "openrouter",
+            maxBodyChars = 1 shl 20,
+            now = WallClock { DAY_ONE },
+            ids = TurnIdMint { ids.removeFirst() },
+        )
+        listOf("alpha-session", "beta-session").forEachIndexed { n, session ->
+            val trace = store.begin(
+                meta(session),
+                ClientInbound("POST", "/v1/messages", mapOf("authorization" to "[redacted]"), """{"client":$n}"""),
+            )
+            trace.responseText("data: {\"n\":$n}\n\n")
+            trace.attempted(
+                WireAttempt(
+                    attempt = 1,
+                    url = "https://openrouter.ai/api/v1/chat/completions",
+                    requestHeaders = mapOf("Authorization" to "[redacted]", "content-type" to "application/json"),
+                    requestBody = """{"upstream":$n}""",
+                    requestEncoding = null,
+                    status = 200,
+                    responseHeaders = mapOf("x-request-id" to "r$n"),
+                    errorText = null,
+                    failure = null,
+                    durationMs = 40,
+                ),
+            )
+            trace.clientFrame("event: message_start\ndata: {}\n\n")
+            trace.finish("ok", PerfSnapshot(mapOf("total" to 120L + n), mapOf("in_tokens" to 3L)))
+        }
+        assertTrue(AsyncFileIo.drain(), "the file lane drained")
+    }
+
+    /** Runs `splice trace [args]` against [source] with each stream recorded, as the terminal would show it. */
+    private fun run(
+        env: EnvReader,
+        vararg args: String,
+        source: TraceHeadSource = heads,
+    ): Triple<Boolean, String, String> {
+        val out = StringBuilder()
+        val err = StringBuilder()
+        val command = TraceCommand(
+            output = TerminalOutput { out.appendLine(it) },
+            errors = TerminalOutput { err.appendLine(it) },
+            heads = source,
+            traceDirs = { StatePaths(envReader = it).traceDir },
+        )
+        return Triple(command.trace(args.toList(), env), out.toString(), err.toString())
+    }
+
+    /** A line the writer did not produce, appended to the day file TraceStore just wrote. The
+     *  glob skips JsonlSink's `.lock` sibling, and names the day file from the directory rather
+     *  than from DAY_ONE's spelling. */
+    private fun appendForeign(env: EnvReader, line: String) {
+        val dir = StatePaths(envReader = env).traceDir
+        val day = Files.newDirectoryStream(dir, "openrouter-*.jsonl").use { it.single() }
+        Files.writeString(day, "$line\n", StandardOpenOption.APPEND)
+    }
+
+    @Test
+    fun `the table lists every turn on disk, oldest first, with its outcome and counts`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+
+        val (ok, out, _) = run(env, "openrouter")
+
+        assertTrue(ok)
+        assertTrue(out.contains("2 of 2 turn(s) on disk"), out)
+        val lines = out.lines().filter { it.contains("turn-") }
+        assertEquals(2, lines.size, out)
+        assertTrue(lines[0].contains("turn-1") && lines[0].contains("session=alpha-se"), lines[0])
+        assertTrue(lines[0].contains("  ok  rounds=1 attempts=1  total=120ms"), lines[0])
+        assertTrue(lines[1].contains("turn-2") && lines[1].contains("total=121ms"), lines[1])
+        assertFalse(out.contains("{\"upstream\""), "bodies are not in the table")
+    }
+
+    @Test
+    fun `--turn prints that turn's records in full - bodies verbatim, headers as redacted`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+
+        val (ok, out, _) = run(env, "openrouter", "--turn", "turn-2")
+
+        assertTrue(ok)
+        assertTrue(out.contains("upstream attempt 1"), out)
+        assertTrue(out.contains("https://openrouter.ai/api/v1/chat/completions"), out)
+        assertTrue(out.contains("  Authorization: [redacted]"), out)
+        assertTrue(out.contains("""{"upstream":1}"""), out)
+        assertTrue(out.contains("data: {\"n\":1}"), out)
+        assertTrue(out.contains("client request") && out.contains("  POST /v1/messages"), out)
+        assertTrue(out.contains("""{"client":1}"""), out)
+        assertTrue(out.contains("event: message_start"), out)
+        assertTrue(out.contains("── outcome") && out.contains("  ok  "), out)
+        assertFalse(out.contains("""{"upstream":0}"""), "the other turn is not printed")
+    }
+
+    @Test
+    fun `--session narrows to that session's turns, --json prints the raw records`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+
+        val (ok, out, _) = run(env, "openrouter", "--session", "beta", "--json")
+
+        assertTrue(ok)
+        val records = out.lines().filter { it.isNotBlank() }
+        assertEquals(2, records.size, out)
+        assertTrue(records.all { it.startsWith("{\"kind\":") && it.contains("\"turn\":\"turn-2\"") }, out)
+    }
+
+    @Test
+    fun `a turn that is not there, and a head that is not configured, each fail in words`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+
+        val (okTurn, _, errTurn) = run(env, "openrouter", "--turn", "turn-9")
+        assertFalse(okTurn)
+        assertTrue(errTurn.contains("no turn turn-9"), errTurn)
+
+        val (okHead, _, errHead) = run(env, "nope")
+        assertFalse(okHead)
+        assertTrue(errHead.contains("no head named 'nope'") && errHead.contains("openrouter"), errHead)
+    }
+
+    @Test
+    fun `an unreadable topology is refused with its path and why, never as an unknown head`(@TempDir tmp: Path) {
+        val failure = IOException("permission denied")
+        val unreadable = TraceHeadSource { TraceHeads.Unreadable("/etc/splice.toml", failure) }
+
+        val (ok, out, err) = run(env(tmp), "openrouter", source = unreadable)
+
+        assertFalse(ok)
+        assertEquals("", out, "a refusal never reaches the stream `--json | jq` reads")
+        assertEquals("splice trace: cannot read /etc/splice.toml: ${SafeFailureText.render(failure)}\n", err)
+    }
+
+    @Test
+    fun `an untraced head prints an empty table with the knob to set`(@TempDir tmp: Path) {
+        val env = env(tmp)
+
+        val (ok, out, _) = run(env, "openrouter")
+
+        assertTrue(ok)
+        assertTrue(out.contains("0 of 0 turn(s)"), out)
+        assertTrue(out.contains("[heads.openrouter.overrides] trace = true"), out)
+    }
+
+    @Test
+    fun `--purge deletes the head's day files and names them, and a second purge has nothing`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        val dayFile = StatePaths(envReader = env).traceDir.resolve("openrouter-2026-09-18.jsonl")
+        assertTrue(Files.exists(dayFile))
+
+        val (ok, out, _) = run(env, "openrouter", "--purge")
+
+        assertTrue(ok)
+        assertTrue(out.contains("purged 1 day file(s) of openrouter"), out)
+        assertTrue(out.contains(dayFile.toString()), out)
+        assertFalse(Files.exists(dayFile))
+        val (_, again, _) = run(env, "openrouter", "--purge")
+        assertTrue(again.contains("nothing to purge"), again)
+    }
+
+    /** [block] with [path] held at [mode], restored to owner rwx after; skipped where the mode does not bind. */
+    private fun <T> withMode(path: Path, mode: String, block: () -> T): T {
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(mode))
+        try {
+            assumeFalse(Files.isWritable(path) && Files.isReadable(path), "root reads and writes whatever the mode")
+            return block()
+        } finally {
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    @Test
+    fun `--purge that cannot delete or cannot list says what stayed and fails - V4-286`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        val traceDir = StatePaths(envReader = env).traceDir
+        val dayFile = traceDir.resolve("openrouter-2026-09-18.jsonl")
+
+        val (keptOk, keptOut, keptErr) = withMode(traceDir, "r-x------") { run(env, "openrouter", "--purge") }
+        assertFalse(keptOk, "a purge that deleted nothing succeeded: $keptOut")
+        assertFalse(keptOut.contains("purged"), keptOut)
+        assertTrue(keptErr.contains("splice trace: could not delete $dayFile"), keptErr)
+
+        val (unlistedOk, unlistedOut, unlistedErr) = withMode(traceDir, "-wx------") {
+            run(env, "openrouter", "--purge")
+        }
+        assertFalse(unlistedOk, "an unlistable trace dir read as nothing to purge: $unlistedOut")
+        assertTrue(unlistedErr.contains("splice trace: cannot list $traceDir"), unlistedErr)
+        assertTrue(Files.exists(dayFile), "neither purge deleted the day")
+    }
+
+    @Test
+    fun `a trace day that cannot be read fails in words, never an empty table naming the knob - V4-286`(
+        @TempDir tmp: Path,
+    ) {
+        val env = env(tmp)
+        writeTrace(env)
+        val dayFile = StatePaths(envReader = env).traceDir.resolve("openrouter-2026-09-18.jsonl")
+
+        val (ok, out, err) = withMode(dayFile, "---------") { run(env, "openrouter") }
+
+        assertFalse(ok, "an unreadable day read as no turns: $out")
+        assertEquals("", out, "a refusal never reaches the stream `--json | jq` reads")
+        assertTrue(err.contains("splice trace: cannot read openrouter's trace under"), err)
+    }
+
+    @Test
+    fun `a character a disk-full append cut short costs one line, never the day's turns - V4-286`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        val day = StatePaths(envReader = env).traceDir.resolve("openrouter-2026-09-18.jsonl")
+        Files.write(day, byteArrayOf(0xE2.toByte(), 0x82.toByte(), '\n'.code.toByte()), StandardOpenOption.APPEND)
+
+        val (ok, out, _) = run(env, "openrouter")
+
+        assertTrue(ok, out)
+        assertTrue(out.contains("2 of 2 turn(s) on disk"), out)
+        assertTrue(out.contains("1 line(s) skipped"), out)
+    }
+
+    @Test
+    fun `a line with a turn id but no kind this reader places is counted, never a turn`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        // TraceStore writes neither of these, which is the point: a torn append that still parses,
+        // and a record kind a newer daemon writes into a file this older CLI reads. Both carry a
+        // turn id, and neither puts a record under it.
+        appendForeign(env, """{"kind":"frame","turn":"turn-3","ts":$DAY_ONE,"session":"gamma-session"}""")
+        appendForeign(env, """{"turn":"turn-4","ts":$DAY_ONE}""")
+
+        val (ok, out, _) = run(env, "openrouter")
+
+        assertTrue(ok, out)
+        assertTrue(out.contains("2 of 2 turn(s) on disk"), out)
+        assertTrue(out.contains("2 line(s) skipped"), out)
+        assertFalse(out.contains("turn-3") || out.contains("turn-4"), "no turn was invented for them: $out")
+    }
+
+    @Test
+    fun `an id only a skipped line named is no turn - --turn and --session say so`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        appendForeign(env, """{"kind":"frame","turn":"turn-3","ts":$DAY_ONE,"session":"gamma-session"}""")
+
+        val (okTurn, _, errTurn) = run(env, "openrouter", "--turn", "turn-3")
+        assertFalse(okTurn)
+        assertTrue(errTurn.contains("no turn turn-3 in openrouter's trace"), errTurn)
+
+        // --session reads EVERY turn's session, so it reaches a recordless turn before the table does.
+        val (okSession, out, _) = run(env, "openrouter", "--session", "gamma")
+        assertTrue(okSession, out)
+        assertTrue(out.contains("0 of 2 turn(s) on disk"), out)
+    }
+
+    @Test
+    fun `a turn holding no records is refused at construction, not at the first column`() {
+        val empty = assertThrows(IllegalArgumentException::class.java) { TracedTurn("turn-0", emptyList(), null) }
+        assertTrue(empty.message.orEmpty().contains("turn-0"), empty.message.orEmpty())
+    }
+
+    @Test
+    fun `argument parsing`() {
+        val command = TraceCommand(TerminalOutput {}, TerminalOutput {}, heads) { StatePaths(envReader = it).traceDir }
+        assertEquals(TraceOpts("kimi"), command.parseTraceArgs(listOf("kimi")))
+        assertEquals(
+            TraceOpts("kimi", last = 3, session = "s1", turn = "t1", json = true, purge = true),
+            command.parseTraceArgs(
+                listOf("--json", "kimi", "--last", "3", "--session", "s1", "--turn", "t1", "--purge"),
+            ),
+        )
+        assertNull(command.parseTraceArgs(emptyList()), "the head is required")
+        assertNull(command.parseTraceArgs(listOf("kimi", "--last")), "--last needs a count")
+        assertNull(command.parseTraceArgs(listOf("kimi", "--last", "0")), "a count is positive")
+        assertNull(command.parseTraceArgs(listOf("kimi", "--turn")), "--turn needs an id")
+        assertNull(command.parseTraceArgs(listOf("kimi", "extra")), "one head only")
+        assertNull(command.parseTraceArgs(listOf("kimi", "--follow")), "no unknown flags")
+        // V4-239 follow-up: a flag after --turn or --session is a flag, never the id it filters on.
+        assertNull(command.parseTraceArgs(listOf("kimi", "--turn", "--help")), "a flag is not a turn id")
+        assertNull(command.parseTraceArgs(listOf("kimi", "--session", "--json")), "a flag is not a session")
+    }
+}

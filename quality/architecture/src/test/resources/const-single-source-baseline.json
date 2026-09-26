@@ -1,0 +1,610 @@
+{
+  "_note": "AUTHORED BY HAND against ConstSingleSourceLawTest, MEASURED never estimated. One entry per duplicated const NAME, keyed '<CLASS> <NAME>' with the sorted files that declare it. COPY = same normalised value in 2+ files; COLLISION = one name, different values. These are the LOW-certainty classes: the 2026-09-17 review established that most of them are file-local names for different wires whose values coincide, and that making one import the other would ADD coupling. So they are held, not failed: --ratchet fails on a group that is NOT here, on a group that has SPREAD to a new file, and on a STALE entry. The high-certainty classes (EQUAL-BY-COMMENT, KNOB-SHADOW, NAMED-SCAR) are STRICT and no entry here can reach them \u2014 a NAMED_SCARS name recorded here is itself an error.\n\n[2026-09-18] Six groups extended or added, all from the console milestone's splits and rows, each under the policy above rather than as an exception to it. CONTENT and MESSAGE gained splice.core.sessions: V4-160 split one transcript reader into several files and each half carried its own copy, so the package now declares each key ONCE, in TranscriptTypes.kt \u2014 the dedupe was done, and what is recorded here is the one remaining declaration a fifth package legitimately needs. ROLE gained splice.control.api and ROLE_ASSISTANT gained splice.gateway.head on the same reading: 'role' and 'assistant' are wire spellings each layer reads off its own wire. REMEMBERED_SESSIONS and SEND_MESSAGE are new entries. REMEMBERED_SESSIONS is 4096 in two independent caches \u2014 the console publisher's session memory and the slot resolver's \u2014 sized by the same reasoning (well above the sessions one daemon serves) and free to move apart; MessageEdges holds a third at the same size under a different name, which is the shape of the thing. SEND_MESSAGE is the literal tool name, read in :core from a transcript record and in :features-turns from a live event; sharing it would make :features-turns depend on a transcript-reader constant to name a tool.\n\n[2026-09-20] V4-133 (console daemon row) added one file to an existing group and one new group, both under the same policy. CONNECT_TIMEOUT_MS gained UpstreamPlaygroundProbe.kt (:app): a fourth independent HttpClient(Java) construction with the same 10s budget as the other three, matching the established per-client convention rather than importing one of the existing private consts across a module boundary. DAY_MS is new: TeamsReads.kt (:daemon-control, team-activity day windows) and PerfStats.kt (:features-turns, perf-archive retention sweep) both need 'one day in epoch millis' for unrelated windows; the two literals were spelled differently (24L*60*60*1000 vs 86_400_000L) and PerfStats.kt's was aligned to TeamsReads.kt's spelling so the group reads as one value (COPY), not two. REDACTED (UpstreamPlaygroundProbe.kt's header echo vs :upstream's HeaderRedaction) was NOT added here: :app already depends on :upstream and HeaderRedaction.REDACTED is public, so the probe now imports it instead of declaring its own \u2014 true single source, no new entry.\n\n[2026-09-25] V4-220 (the console's add-model route) added one group under the same policy. MODELS is new: AddViews.kt (:features-configuration, the key of the models array in /api/add and /api/add-model replies) and DoctorReportShape.kt (:features-diagnostics, the key of a head's models in the doctor report) each spell their own wire's key, and the two wires move independently; importing one from the other would make one feature module depend on the other for a JSON key. The add-model route's unwired text was a second UNWIRED beside AddRoutes.kt's with a different value, so it was renamed ADD_MODEL_UNWIRED, the name every other route gives its own, and no entry was added for it.",
+  "recorded": "2026-09-17",
+  "denominator": 1295,
+  "total": 127,
+  "groups": {
+    "COLLISION CLIENT_ID": [
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+    ],
+    "COLLISION CONNECT_TIMEOUT_MS": [
+      "app/src/main/kotlin/splice/app/probe/UpstreamPlaygroundProbe.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsUpstream.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt"
+    ],
+    "COLLISION CRITICAL_PCT": [
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "core/src/main/kotlin/splice/core/usage/UsageWarn.kt"
+    ],
+    "COLLISION DEFAULT_CAPACITY": [
+      "core/src/main/kotlin/splice/core/model/ClientWindows.kt",
+      "features/turns/src/main/kotlin/splice/head/compaction/CompactionReplay.kt"
+    ],
+    "COLLISION DEFAULT_CLIENT_ID": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+    ],
+    "COLLISION DEFAULT_EXPIRES_IN_S": [
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+    ],
+    "COLLISION DEFAULT_TAIL": [
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogsCommand.kt",
+      "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"
+    ],
+    "COLLISION DIGEST_BYTES": [
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsIdentity.kt"
+    ],
+    "COLLISION FIELD_CALL_ID": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
+    ],
+    "COLLISION FIELD_TYPE": [
+      "core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsIdentity.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRunner.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/CollectingBlocks.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COLLISION HIGH_BUDGET_FLOOR": [
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughEffortLadder.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt"
+    ],
+    "COLLISION LIVE_MAX_TOKENS": [
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
+    ],
+    "COLLISION LOCK_WAIT_MS": [
+      "core/src/main/kotlin/splice/core/config/KeyStore.kt",
+      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+    ],
+    "COLLISION LOG_TAG": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
+    ],
+    "COLLISION LOG_TAIL_BYTES": [
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogFileSource.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportTail.kt"
+    ],
+    "COLLISION MAX_CONVERSATIONS": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ConversationSummaryParts.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt"
+    ],
+    "COLLISION MAX_ENTRIES": [
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ReasoningCache.kt"
+    ],
+    "COLLISION PERCENT": [
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfCommand.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/MuseQuota.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt",
+      "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt"
+    ],
+    "COLLISION PKCE_VERIFIER_BYTES": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokOAuth.kt"
+    ],
+    "COLLISION PROBE_TIMEOUT_MS": [
+      "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonProbe.kt",
+      "app/src/main/kotlin/splice/app/probe/TurnPathProbeLoop.kt",
+      "integrations/daemon-client/src/main/kotlin/splice/daemonclient/ControlPlaneClient.kt",
+      "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonHealth.kt"
+    ],
+    "COLLISION PROBE_TIMEOUT_S": [
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddHttp.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
+      "app/src/main/kotlin/splice/app/provider/JdkLocalHttp.kt"
+    ],
+    "COLLISION REDIRECT_PORT": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+    ],
+    "COLLISION REDIRECT_URI": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+    ],
+    "COLLISION RUNAWAY_GUARD_MESSAGE": [
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt"
+    ],
+    "COLLISION SCOPE": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+    ],
+    "COLLISION SESSION_HEADER": [
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/McpRoutes.kt",
+      "features/turns/src/main/kotlin/splice/head/turn/TurnPreparation.kt"
+    ],
+    "COLLISION STOP_GRACE_MS": [
+      "app/src/main/kotlin/splice/app/control/ControlServer.kt",
+      "features/turns/src/main/kotlin/splice/head/HeadEngine.kt"
+    ],
+    "COLLISION STOP_TIMEOUT_MS": [
+      "app/src/main/kotlin/splice/app/control/ControlServer.kt",
+      "features/turns/src/main/kotlin/splice/head/HeadEngine.kt"
+    ],
+    "COLLISION VERSION": [
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorJsonReport.kt",
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/JsonRpcCodec.kt"
+    ],
+    "COPY API_KEY": [
+      "app/src/main/kotlin/splice/app/auth/SignInPlan.kt",
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt"
+    ],
+    "COPY BASE64_SEPARATOR": [
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputParts.kt"
+    ],
+    "COPY BOLD": [
+      "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
+    ],
+    "COPY BUDGET_HIGH": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+    ],
+    "COPY BUDGET_MAX": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+    ],
+    "COPY BUDGET_MEDIUM": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+    ],
+    "COPY BYTE_MASK": [
+      "core/src/main/kotlin/splice/core/media/ImageBytes.kt",
+      "core/src/main/kotlin/splice/core/util/FormEncoding.kt",
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesStableIds.kt"
+    ],
+    "COPY CONTENT": [
+      "integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptTypes.kt",
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesSystemPrompt.kt"
+    ],
+    "COPY CSI_CUU": [
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
+    ],
+    "COPY CSI_EL": [
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
+    ],
+    "COPY CYAN": [
+      "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
+    ],
+    "COPY DATA_URL_PREFIX": [
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputParts.kt"
+    ],
+    "COPY DAY_MS": [
+      "features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt",
+      "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"
+    ],
+    "COPY DEFAULT_INTERVAL_S": [
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+    ],
+    "COPY DEVICE_CODE_GRANT_TYPE": [
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+    ],
+    "COPY DIM": [
+      "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
+    ],
+    "COPY EXECUTION_CLIENT": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsIdentity.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
+    ],
+    "COPY FIELD_ACCESS_TOKEN": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+    ],
+    "COPY FIELD_ACCOUNT_ID": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt"
+    ],
+    "COPY FIELD_CONTENT": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesHarvest.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputBuilder.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputParts.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolSearchController.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY FIELD_DEFER_LOADING": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
+    ],
+    "COPY FIELD_DESCRIPTION": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchIndex.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY FIELD_EXECUTION": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsIdentity.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
+    ],
+    "COPY FIELD_ID": [
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
+      "core/src/main/kotlin/splice/core/reasoning/Replay.kt"
+    ],
+    "COPY FIELD_INPUT": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY FIELD_LAST_REFRESH": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+    ],
+    "COPY FIELD_NAME": [
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY FIELD_OUTPUT": [
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
+    ],
+    "COPY FIELD_PROPERTIES": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchIndex.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
+    ],
+    "COPY FIELD_REFRESH_TOKEN": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+    ],
+    "COPY FIELD_ROLE": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolSearchController.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY FIELD_SUMMARY": [
+      "core/src/main/kotlin/splice/core/reasoning/Replay.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReasoningKnobs.kt"
+    ],
+    "COPY FIELD_TEXT": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesHarvest.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/CollectingBlocks.kt"
+    ],
+    "COPY FIELD_TOKENS": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+    ],
+    "COPY FIELD_TOOLS": [
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWire.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY FULL_PCT": [
+      "core/src/main/kotlin/splice/core/usage/UsageWarn.kt",
+      "features/turns/src/main/kotlin/splice/head/usage/UsageHud.kt"
+    ],
+    "COPY GREEN": [
+      "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
+    ],
+    "COPY HEADER_THREAD_ID": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRunner.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexRoutingHeaders.kt"
+    ],
+    "COPY HEADS": [
+      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
+    ],
+    "COPY HEX_RADIX": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSchemaDefPrune.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/JsonStringEscaper.kt"
+    ],
+    "COPY HINT_GAP": [
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
+    ],
+    "COPY HTTP_OK": [
+      "integrations/oauth/src/main/kotlin/splice/oauth/OAuthCallbackPage.kt",
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeFetch.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeInflight.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaProbes.kt",
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/McpHost.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalLiveReading.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
+    ],
+    "COPY INACTIVE_PAD": [
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
+    ],
+    "COPY KEY": [
+      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
+      "features/heads/src/main/kotlin/splice/heads/HeadOperations.kt",
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
+    ],
+    "COPY LABEL": [
+      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
+    ],
+    "COPY LOCK_POLL_MS": [
+      "core/src/main/kotlin/splice/core/config/KeyStore.kt",
+      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+    ],
+    "COPY MASK_KEEP": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "integrations/providers/openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt"
+    ],
+    "COPY MAX_LOG_BYTES": [
+      "app/src/main/kotlin/splice/app/DaemonBoundary.kt",
+      "app/src/main/kotlin/splice/app/Main.kt"
+    ],
+    "COPY MAX_RESTARTS": [
+      "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt"
+    ],
+    "COPY MAX_TOTAL_BYTES": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ReasoningCache.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt"
+    ],
+    "COPY MCP_PREFIX": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurface.kt",
+      "features/turns/src/main/kotlin/splice/head/ActivityLabel.kt"
+    ],
+    "COPY MEDIUM": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+    ],
+    "COPY MESSAGE": [
+      "integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptTypes.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
+      "features/turns/src/main/kotlin/splice/head/pipeline/FailureText.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/MessageStart.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt"
+    ],
+    "COPY MILLIS": [
+      "features/usage/src/main/kotlin/splice/usage/quota/CodexQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/MuseQuota.kt",
+      "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt"
+    ],
+    "COPY MILLIS_PER_MINUTE": [
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServers.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt"
+    ],
+    "COPY MILLIS_PER_SECOND": [
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeProcess.kt",
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServer.kt",
+      "features/turns/src/main/kotlin/splice/head/admission/HeadAdmission.kt"
+    ],
+    "COPY MINIMAL": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+    ],
+    "COPY MIN_INTERVAL_S": [
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+    ],
+    "COPY MODEL": [
+      "integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigKeys.kt",
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt"
+    ],
+    "COPY MODELS": [
+      "features/configuration/src/main/kotlin/splice/configuration/add/AddViews.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportShape.kt"
+    ],
+    "COPY MS_PER_MIN": [
+      "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt"
+    ],
+    "COPY MS_PER_MINUTE": [
+      "features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt",
+      "features/usage/src/main/kotlin/splice/usage/perf/PerfSummary.kt"
+    ],
+    "COPY MS_PER_S": [
+      "integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt",
+      "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsPulse.kt",
+      "features/turns/src/main/kotlin/splice/head/turn/TurnProgressLine.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
+    ],
+    "COPY NAME": [
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
+    ],
+    "COPY NANOS_PER_MS": [
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeDaemon.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt"
+    ],
+    "COPY NEWLINE_BYTE": [
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogFileSource.kt",
+      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+    ],
+    "COPY OMITTED": [
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportFiles.kt",
+      "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/SafeNames.kt"
+    ],
+    "COPY PARAMS": [
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/JsonRpcCodec.kt",
+      "integrations/mcp/src/main/kotlin/splice/control/mcp/McpPending.kt"
+    ],
+    "COPY POINTER": [
+      "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
+      "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
+    ],
+    "COPY POLL_INTERVAL_MS": [
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt",
+      "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt"
+    ],
+    "COPY PROACTIVE_WINDOW_MS": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
+    ],
+    "COPY READ_TAIL_BYTES": [
+      "features/turns/src/main/kotlin/splice/head/compact/Compact.kt",
+      "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"
+    ],
+    "COPY RECORD_ID_LOG_CHARS": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurn.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY RED": [
+      "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
+    ],
+    "COPY REFRESH_ERROR_SNIPPET": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt",
+      "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt"
+    ],
+    "COPY REMEMBERED_SESSIONS": [
+      "app/src/main/kotlin/splice/app/ConsoleWiring.kt",
+      "features/sessions/src/main/kotlin/splice/sessions/prompt/SlotInstructions.kt"
+    ],
+    "COPY RESET": [
+      "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
+    ],
+    "COPY RESTART_WINDOW_MS": [
+      "app/src/main/kotlin/splice/app/auth/AuthProbeLoop.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt"
+    ],
+    "COPY ROLE": [
+      "features/sessions/src/main/kotlin/splice/sessions/http/TeamsEconomics.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesSystemPrompt.kt"
+    ],
+    "COPY ROLE_ASSISTANT": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolSearchController.kt",
+      "features/turns/src/main/kotlin/splice/head/ActivityLabel.kt",
+      "features/turns/src/main/kotlin/splice/head/MessageEdges.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY SECONDS_PER_DAY": [
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
+    ],
+    "COPY SECONDS_PER_HOUR": [
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
+    ],
+    "COPY SECONDS_PER_MINUTE": [
+      "features/usage/src/main/kotlin/splice/usage/quota/KimiQuotaProbe.kt",
+      "features/usage/src/main/kotlin/splice/usage/quota/MuseQuota.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
+    ],
+    "COPY SEND_MESSAGE": [
+      "integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptReader.kt",
+      "features/turns/src/main/kotlin/splice/head/MessageEdges.kt"
+    ],
+    "COPY STALE_FLOOR_MS": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
+    ],
+    "COPY SYSTEM": [
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt"
+    ],
+    "COPY TAG_LEN": [
+      "core/src/main/kotlin/splice/core/media/ImageHeaderProbe.kt",
+      "core/src/main/kotlin/splice/core/media/WebpChunks.kt"
+    ],
+    "COPY TEXT": [
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
+    ],
+    "COPY TOKEN_BYTES": [
+      "integrations/oauth/src/main/kotlin/splice/oauth/codex/LoginCodex.kt",
+      "integrations/oauth/src/main/kotlin/splice/oauth/grok/LoginGrok.kt"
+    ],
+    "COPY TTL_MS": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ReasoningCache.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt"
+    ],
+    "COPY TYPE": [
+      "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeFatalFrame.kt",
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/MfjsSanitizer.kt",
+      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
+      "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/MessageStart.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt",
+      "features/turns/src/main/kotlin/splice/head/wire/WireBlockWriter.kt"
+    ],
+    "COPY TYPE_ADDITIONAL_TOOLS": [
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+    ],
+    "COPY TYPE_REASONING": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt"
+    ],
+    "COPY TYPE_TOOL_SEARCH": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
+    ],
+    "COPY TYPE_TOOL_SEARCH_CALL": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesHarvest.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt"
+    ],
+    "COPY TYPE_TOOL_SEARCH_OUTPUT": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt"
+    ],
+    "COPY XHIGH": [
+      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
+      "integrations/providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+    ],
+    "COPY YELLOW": [
+      "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
+      "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
+    ]
+  }
+}

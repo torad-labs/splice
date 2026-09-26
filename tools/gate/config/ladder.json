@@ -1,0 +1,147 @@
+{
+  "about": "The gate ladder: every leg of the gate of record that is not yet a Gradle task of its own. build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts registers one Exec task per row under `gateOfRecord` (entered through `bun tools/gate run`), and tools/gate/test/run.test.ts reads the same rows WITHOUT Gradle to prove each one is a real leg: a unique task, a reason, and an argv whose target exists — it caught two legs still pointing into checks/ on 2026-09-21, after the move. The concentration leg's own routing check retired with the checker it routed; configguard.ts:11-13 records why. A row is data, not code: it is present or absent, and its argv is an array Gradle hands to the process without a shell. `why` is the leg's reason for existing — keep it when you move the leg.",
+  "legs": [
+    {
+      "task": "gateRules",
+      "why": "The ast-grep walls, then RULE ROUTING (the walls prove the routed rules pass and cannot prove they are ALL routed; .rules/kotlin sat unreferenced for a month reporting zero findings), then the CONFIG GUARD (no detekt baseline, maxIssues 0, every rule document severity:error, the dependabot scope, the concentration leg's routing), then the P1 coverage proof.",
+      "command": ["bun", "tools/gate", "rules", "--prove-coverage"]
+    },
+    {
+      "task": "hookTests",
+      "why": "The Claude Code hook's red-green arms: the write-time wall (tools/gate/test/hook.test.ts).",
+      "command": ["npm", "run", "--silent", "test:hooks"]
+    },
+    {
+      "task": "campaignWalls",
+      "why": "Campaign enforcement, BLOCKING half only (C1/C2/C3/C5/C6/C7/C9): a wall that lies, a status that lies, a fence collision, or a broken law are never acceptable. The ADVISORY half (C4 unwalled / C8 unlawed) is the standing worklist, reported without failing under `npm run gate:campaign:strict`. Split 2026-07-26: lumping them together kept the whole check out of the ladder, which meant nothing ran it at all.",
+      "command": ["npm", "run", "--silent", "gate:campaign"]
+    },
+    {
+      "task": "campaignWallsSelftest",
+      "why": "campaign_wall_gate's own C1–C10 red/green fixtures.",
+      "command": ["npm", "run", "--silent", "gate:campaign:selftest"]
+    },
+    {
+      "task": "campaignCliSelftest",
+      "why": "DR-184: the ledger CLI's own suite, which nothing ran — every arm guarding the instrument that owns campaign memory fired only when a session remembered to type it.",
+      "command": ["bash", "tools/gate/test/campaign-cli-selftest.sh"]
+    },
+    {
+      "task": "campaignCliSelftestCanary",
+      "why": "The canary over the CLI selftest: a suite that stopped running would otherwise stay green.",
+      "command": ["bash", "tools/gate/test/campaign-cli-selftest-canary.sh"]
+    },
+    {
+      "task": "oracleReplay",
+      "why": "Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the captured Node oracle. Keeping the replay as a package script without a gate leg left the parity claim entirely opt-in. It depends on :app:shadowJar because it judges the fat jar: without the dependency it ran first, found no jar and BUILT one through a nested gradle inside the gate (measured 2026-09-21).",
+      "command": ["bun", "tools/e2e", "oracle"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
+      "task": "oracleSelftest",
+      "why": "The oracle verb's own net (corpus integrity, graders, argv contract, provenance arms) — added with the port in PR 5 and, until this row, routed by nothing (#170 review).",
+      "command": ["bun", "test", "tools/e2e/test/oracle.test.ts"]
+    },
+    {
+      "task": "e2eHeadsSelftest",
+      "why": "Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head. The live `e2e:heads` lane is billed and stays out of the ladder.",
+      "command": ["bun", "tools/e2e", "heads", "--selftest"]
+    },
+    {
+      "task": "codeModeProbeSelftest",
+      "why": "Budget/oracle canaries are local; the explicit code-mode A/B lane consumes subscription quota.",
+      "command": ["bun", "tools/e2e", "code-mode", "probe", "--selftest"]
+    },
+    {
+      "task": "codeModeStartupReceiptSelftest",
+      "why": "The code-mode startup receipt comparison, red-green proven.",
+      "command": ["bun", "test", "tools/e2e/test/code-mode.test.ts"]
+    },
+    {
+      "task": "codeModeGuidanceSelftest",
+      "why": "The code-mode guidance text's own arms.",
+      "command": ["bun", "tools/e2e", "code-mode", "guidance", "--selftest"]
+    },
+    {
+      "task": "codeModeMockSelftest",
+      "why": "The code-mode mock's own arms.",
+      "command": ["bun", "tools/e2e", "code-mode", "mock", "--selftest"]
+    },
+    {
+      "task": "codeModePackagedMock",
+      "why": "Exercises the fat JAR the build produced, with synthetic auth and loopback-only tools. The receipt goes under app/build/ — never the tree, and a directory `clean` empties, because the mock refuses to overwrite a receipt.",
+      "command": ["bun", "tools/e2e", "code-mode", "mock", "--artifact", "app/build/libs/app-all.jar", "--receipt", "app/build/receipts/code-mode-mock.json"],
+      "dependsOn": [":app:shadowJar"],
+      "creates": "app/build/receipts"
+    },
+    {
+      "task": "consoleWireKeys",
+      "why": "Every key the console's types declare for every `request<T>()` it makes, read against the fat jar booted isolated. The console's types were written against payloads nobody read and its tests were fed fixtures shaped like those types, so on 2026-09-22 five pages were broken against the real daemon (accounts threw, turns 400ed every poll, doctor printed `undefined`) with every unit test green. The probe existed since V4-140 and ran in nothing.",
+      "command": ["bun", "tools/e2e/probes/console-wire-keys.ts", "--boot", "app/build/libs/app-all.jar"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
+      "task": "consoleWireKeysSelftest",
+      "why": "The wire probe proven able to fail on the same jar's real payloads: per checked route, a renamed top-level key, a renamed key inside an array element and an empty payload must each print a FAIL the plain run did not. A probe that stopped reading keys would otherwise stay green.",
+      "command": ["bun", "tools/e2e/probes/console-wire-keys.ts", "--boot", "app/build/libs/app-all.jar", "--selftest"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
+      "task": "consoleWireKeysReplay",
+      "why": "The probe finds its sources from an unrelated cwd and fails an empty replay rather than passing it (tools/e2e/test/console-wire-keys.test.ts), which no row ran.",
+      "command": ["bun", "test", "tools/e2e/test/console-wire-keys.test.ts"]
+    },
+    {
+      "task": "consoleE2e",
+      "why": "Every console page in a real browser against the fat jar's own bundle, booted with a mock upstream, a pooled OAuth account and a driven turn (console/e2e): a page fails on the router's error screen, a read the daemon refused, a console error or a printed `undefined`, and four journeys check the values the stack put there. The wire probe checks keys; only a browser sees a page throw on them. The page set is read from src/pages, so a new page is visited with no edit here.",
+      "command": ["npm", "run", "--silent", "e2e:console"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
+      "task": "dependencyAudit",
+      "why": "bun audit --audit-level=critical over bun.lock, three attempts capped at a minute each (checks/oss/verify-OSS-I.sh until PR 6): the registry's advisory endpoint has hung and answered 503 mid-gate, and a critical advisory must still red all three attempts.",
+      "command": ["bun", "tools/gate", "audit"]
+    },
+    {
+      "task": "noPython",
+      "why": "Operator rule 2026-09-18: this repo has no Python — tooling is bun/TypeScript. The rule drifted every time it was only prose, because nothing failed when a session added another .py. It is a wall now; the dated burn-down list beside this table is the debt and may only shrink. The PreToolUse guard (.claude/settings.json) is `bun tools/gate no-python --guard`, the same library rather than a reimplementation.",
+      "command": ["bun", "tools/gate", "no-python"]
+    },
+    {
+      "task": "typescriptTypecheck",
+      "why": "Nothing in the gate ran tsc: bun executes TypeScript without checking it, so a campaign wall carried 19 errors the gate's own tsconfig reported and no leg read, and 49 of 437 tracked .ts files sat in no program (2026-09-23). Every tracked .ts is now in a program or excused by name, and tools/gate/config/typecheck.json's per-file baseline is the older debt, which may only shrink.",
+      "command": ["bun", "tools/gate", "typecheck"]
+    },
+    {
+      "task": "gateTests",
+      "why": "Every red-green arm of the gate CLI: the slot, the JDK resolver, the title preflight, rule routing, the config guard, the no-python wall (every census RED on its mutation, and the write guard still refusing a synthetic event), the write-time hook, the ledger checks and the coverage proof.",
+      "command": ["bun", "test", "tools/gate"]
+    },
+    {
+      "task": "releaseTests",
+      "why": "The release tooling's own red-green arms, which shipped with no row and so ran in nothing: dist's disposition law (an undispositioned file, a directory and a blank reason each fail BY NAME, with a placeholder-word positive control so the reason check is not vacuous), accept's semantic floor (a zero-byte artifact is EMPTY rather than present, a checksum that is not the file's own fails, the launcher and the jar must agree on a version, and an unmutated bundle passes every leg and still reds on the SBOM), the launch shim's arms measured against the SHIPPED shim (no fake curl survives \u2014 it speaks node:http, so PATH mocks are java and systemctl only), promote's abort paths (mismatched confirmation, EOF, main moving under the prompt, an existing tag, a missing or failing gh, each named rather than a silent exit 1), release.yml's legs (the gated stage command spelled exactly once, a comment decoy that passes a text check and fails this one, the asset list checked in both directions), verify's verb surface and zip's STORED/DEFLATED reads. Hermetic: every fixture is an mkdtemp under the OS temp dir, so the row needs no slot and no jar.",
+      "command": ["bun", "test", "tools/release"]
+    },
+    { "task": "prTitle", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
+    {
+      "task": "census",
+      "why": "Every tracked product path has a capabilities.tsv row with a disposition, the denominator taken from git ls-files rather than from the census. It was run by hand until 2026-09-24 and missed twice: three e2e docker files (train 1) and eight console files (#220), each passing its PR's gate unclaimed.",
+      "command": ["bun", ".dev/restructure/census.ts"]
+    },
+    {
+      "task": "censusSelftest",
+      "why": "The census's own red arms (an unclaimed path, a pending row, a relocate whose source still exists, ...), so the leg above cannot pass because the checker lost its ability to find anything.",
+      "command": ["bun", ".dev/restructure/census.ts", "--selftest"]
+    },
+    {
+      "task": "attribution",
+      "why": "splice is public: no commit HEAD reaches carries a Claude-Session trailer, a claude.ai session URL, a Co-Authored-By for noreply@anthropic.com or a Generated-with-Claude-Code line. The whole history is scanned, not the PR's commits, because a branch cut from the pre-rewrite tip carries the old attributed commits back in; a shallow CI clone is deepened blobless first and an unreadable history fails.",
+      "command": ["bun", "tools/gate", "attribution"]
+    },
+    {
+      "task": "secretScanAllowlist",
+      "why": "Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.",
+      "command": ["bun", "tools/gate", "allowlist", "--check"]
+    }
+  ]
+}

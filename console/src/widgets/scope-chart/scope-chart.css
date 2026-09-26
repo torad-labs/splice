@@ -1,0 +1,60 @@
+/* The charts (docs/design/DESIGN.md section 7). Bars take the colour of whatever binds `--hue`
+   around them: a head's section binds its head, so a head's charts are drawn in its own colour.
+   Kinds of token are told apart by steps of that one colour and named by the legend beside the
+   plot, which prints every total: the shape reads without colour and in a greyscale capture. */
+.myx-schart {
+  display: block;
+  width: 100%;
+  height: calc(var(--space-8) * 2.5);
+  background:
+    repeating-linear-gradient(to bottom, var(--chart-grid) 0 var(--hair), transparent var(--hair) 25%);
+  border-bottom: var(--hair) solid var(--line-strong);
+}
+
+.myx-schart-seg { shape-rendering: crispEdges; fill: var(--hue, var(--series-1)); }
+
+.myx-schart-cached { opacity: .62; }
+.myx-schart-write { opacity: .38; }
+.myx-schart-out { opacity: .22; }
+.myx-schart-request { opacity: .45; }
+.myx-schart-deferred { opacity: .4; }
+
+.myx-schart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin-block-start: var(--space-4);
+}
+
+.myx-schart-key {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+}
+.myx-schart-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.myx-swatch {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  background: var(--hue, var(--series-1));
+}
+.myx-swatch-cached { opacity: .62; }
+.myx-swatch-write { opacity: .38; }
+.myx-swatch-out { opacity: .22; }
+.myx-swatch-request { opacity: .45; }
+.myx-swatch-deferred { opacity: .4; }
+
+.myx-schart-empty {
+  margin: 0;
+  padding: var(--space-2) 0;
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
+}

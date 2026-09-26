@@ -1,0 +1,18 @@
+id: kt-no-vanilla-config-dir
+valid:
+  # the ONE source of the name — every legitimate reader goes through the constant, not a literal
+  - 'val dir = home.resolve(Keys.CLAUDE)'
+  - 'val dir = configDir.resolve(Keys.PROJECTS)'
+  # the state FILE is a different external contract, never the config DIRECTORY
+  - 'val state = home.resolve(".claude.json")'
+  # a head's own config dir is the whole point
+  - 'val dir = home.resolve(".claude-codex")'
+  - 'val sessions = home.resolve(".claude-deepseek/projects")'
+invalid:
+  # the shape a re-introduction takes: a head item resolved off the vanilla literal
+  - 'val projects = home.resolve(".claude").resolve("projects")'
+  - 'val sessions = Paths.get(System.getProperty("user.home"), ".claude", "sessions")'
+  # tilde spelling and a path suffix in one literal
+  - 'val dir = Paths.get("~/.claude/projects")'
+  # a raw string has different delimiters but the identical runtime path (the 2026-07-26 widening lesson)
+  - 'val projects = home.resolve(""".claude""").resolve("projects")'

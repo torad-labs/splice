@@ -1,0 +1,278 @@
+/* ============================================================
+   splice console · tokens (docs/design/DESIGN.md section 8)
+
+   One calm system in two themes on the root element, dark by default:
+     :root, :root[data-theme="dark"]   dark  (the default, whatever the OS says)
+     :root[data-theme="light"]         light
+
+   The chrome is grey: three quiet grounds, one hairline, and the ink itself as the accent, so the
+   primary action is simply the brightest thing on screen. The only hues are data: eight head
+   colours (--head-1..8), each bound to one head wherever it appears, and three status colours
+   that only ever travel with their word. Type is IBM Plex Sans and Plex Mono (shared/fonts.css).
+   Spacing and type sizes never appear as raw numbers in a page sheet: they come from
+   var(--space-N) and var(--text-N) (walls webui-css-tokens-only and webui-css-font-size-scale),
+   colour never leaves this file (webui-css-no-color-literals), and every ink/ground pair below
+   clears WCAG AA in both themes (tests/contrast.test.ts computes them from this file).
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* a hairline is a WIDTH here and a colour below (--line / --line-strong): a rule reads
+     `border-top: var(--hair) solid var(--line)`. */
+  --hair: 1px;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+}
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ---------- SCALE (both themes; `:root` matches under either) ----------
+     Operator ruling 4 (2026-09-25): the 12/13px scale needed a magnifier, on panels 3840 wide at
+     desktop scale 1. Every size is BOUNDED-FLUID between two frames, a 1600px-wide window and a
+     3840px one, linear between and held outside, so the console reads like every other app on the
+     screen it is on: neither the 2.5x of a 40px root nor the 13px island. Type takes its own
+     clamp per step; every other size (space, rows, the sidebar, the marks, a column's width) is a
+     multiple of --u, so type and graphics grow together. All clamps are rem-based, so browser zoom
+     still scales everything. tests/scale.test.ts holds the floors at both frames and fails on any
+     raw rem size outside this file. */
+  --u: clamp(1rem, 0.86608rem + 0.13393vw, 1.1875rem);  /* 16 -> 19 */
+
+  --space-0: 0;
+  --space-1: calc(.125 * var(--u));   /*  2 at 1600 */
+  --space-2: calc(.375 * var(--u));   /*  6 */
+  --space-3: calc(.625 * var(--u));   /* 10 */
+  --space-4: calc(.875 * var(--u));   /* 14 */
+  --space-5: calc(1.25 * var(--u));   /* 20 */
+  --space-6: calc(1.75 * var(--u));   /* 28 */
+  --space-7: calc(2.5 * var(--u));    /* 40 */
+  --space-8: calc(3.5 * var(--u));    /* 56 */
+
+  --text-1: clamp(0.875rem, 0.78572rem + 0.08929vw, 1rem);       /* 14 -> 16  captions, column labels, meta: the floor */
+  --text-2: clamp(1rem, 0.86608rem + 0.13393vw, 1.1875rem);       /* 16 -> 19  table cells, controls */
+  --text-3: clamp(1.0625rem, 0.88393rem + 0.17858vw, 1.3125rem);  /* 17 -> 21  body, nav */
+  --text-4: clamp(1.25rem, 1.07143rem + 0.17858vw, 1.5rem);    /* 20 -> 24  section titles, emphasis */
+  --text-5: clamp(1.5rem, 1.23215rem + 0.26786vw, 1.875rem);   /* 24 -> 30  sub-page titles */
+  --text-6: clamp(2rem, 1.64286rem + 0.35715vw, 2.5rem);      /* 32 -> 40  page titles */
+  --text-7: clamp(2.75rem, 1.85715rem + 0.89286vw, 4rem);      /* 44 -> 64  a number that is the point */
+
+  /* A board row's height and its column names' row, read by the kit's table as minimums. */
+  --row-board: calc(3.5 * var(--u));  /* 56 at 1600 */
+  --row-head: calc(3 * var(--u));     /* 48 */
+  /* A meter's bar: 9px at 1600, 10.7 at 3840. */
+  --meter-h: calc(.5625 * var(--u));
+
+  --leading-tight: 1.25;
+  --leading: 1.5;
+
+  --radius-0: 0;
+  --radius-1: 4px;     /* badges, small marks */
+  --radius-2: 6px;     /* buttons, inputs, tabs */
+  --radius-3: 8px;     /* panels, cards */
+  --radius-full: 999px;
+
+  /* Every UI transition sits under 250ms; nothing a keyboard triggers animates. */
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 240ms;
+  --ease-out: cubic-bezier(.23, 1, .32, 1);
+
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --sidebar-width: calc(17.5 * var(--u)); /* 280 at 1600 */
+
+  /* ---------- GROUND ---------- */
+  --bg: #0b0c0e;          /* the page */
+  --bg-raised: #131418;   /* the sidebar, panels, table heads */
+  --bg-hover: #1a1c20;    /* a row or item under the pointer */
+  --bg-active: #20232a;   /* a selected row, the current page */
+  --line: #23252b;        /* the one hairline */
+  --line-strong: #30333a; /* inputs, a boundary that must hold */
+
+  /* ---------- INK ---------- */
+  --fg: #ededf0;          /* 16.8:1 on --bg */
+  --fg-muted: #bcbfc6;    /* 10.6:1; one step up from #a3a6ae (ruling 4: faint grey was half of it) */
+  --fg-subtle: #a3a6ae;   /*  8.0:1, and 6.5:1 on --bg-active */
+
+  /* ---------- ACCENT: the ink itself ---------- */
+  --accent: #ededf0;
+  --accent-hover: #ffffff;
+  --accent-fg: #0b0c0e;   /* text on an accent fill, 16.8:1 */
+  --accent-soft: rgba(237, 237, 240, .08);
+
+  /* ---------- STATUS (always beside its word) ---------- */
+  --ok: #4fbf87;
+  --warn: #e0a44a;
+  --danger: #f07171;
+  --ok-soft: rgba(79, 191, 135, .14);
+  --warn-soft: rgba(224, 164, 74, .14);
+  --danger-soft: rgba(240, 113, 113, .14);
+
+  /* ---------- HEADS: one hue per provider family (entities/control-status/model/hue.ts) ----------
+     OKLCH L .74 C .135 at hues 255 50 190 345 120 300 225 92: blue xai, orange anthropic, teal
+     openai, pink moonshot, lime local, violet meta, sky deepseek, gold openrouter. Each clears 7.4:1
+     on --bg and --bg-raised. A second head of one family takes -up (L .84), a third -down (L .64),
+     chroma cut only to stay in sRGB; the darkest still clears 5.1:1. */
+  --head-1: #6eadfe;
+  --head-2: #ee8f58;
+  --head-3: #00c5be;
+  --head-4: #e686be;
+  --head-5: #a0b74d;
+  --head-6: #b896f3;
+  --head-7: #1fbcea;
+  --head-8: #c9a732;
+  --head-up-1: #a8cefe;
+  --head-up-2: #ffb891;
+  --head-up-3: #37e6de;
+  --head-up-4: #ffaddb;
+  --head-up-5: #bfd76e;
+  --head-up-6: #d4bdff;
+  --head-up-7: #78d9fe;
+  --head-up-8: #eac758;
+  --head-down-1: #4f8edc;
+  --head-down-2: #cc7038;
+  --head-down-3: #0ba19b;
+  --head-down-4: #c4689f;
+  --head-down-5: #829729;
+  --head-down-6: #9977d1;
+  --head-down-7: #029bc3;
+  --head-down-8: #a88909;
+  --head-none: #62666f;   /* a session no head claims; 3.2:1 on --bg-raised */
+
+  /* ---------- SERIES: kinds that are not heads, in grey steps ---------- */
+  --series-1: #ededf0;
+  --series-2: #a3a6ae;
+  --series-3: #6b6f78;
+  /* the unfilled part of a meter or bar: not a data mark, so it is held to no contrast floor */
+  --track: #24262c;
+  --chart-grid: #1d1f24;
+
+  --focus: #ededf0;
+  --overlay: rgba(4, 5, 6, .66);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, .45), 0 0 0 1px #2a2d33;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --bg-raised: #f7f7f8;
+  --bg-hover: #f1f2f4;
+  --bg-active: #eaecf0;
+  --line: #e4e5e9;
+  --line-strong: #d3d5db;
+
+  --fg: #15161a;          /* 18.1:1 on --bg */
+  --fg-muted: #3c3f47;    /* 10.5:1; one step up from #50535c */
+  --fg-subtle: #50535c;   /*  7.7:1, and 6.5:1 on --bg-active */
+
+  --accent: #15161a;
+  --accent-hover: #000000;
+  --accent-fg: #ffffff;   /* 18.1:1 */
+  --accent-soft: rgba(21, 22, 26, .06);
+
+  --ok: #166b44;
+  --warn: #855304;
+  --danger: #b02f2f;
+  --ok-soft: rgba(22, 107, 68, .12);
+  --warn-soft: rgba(133, 83, 4, .12);
+  --danger-soft: rgba(176, 47, 47, .12);
+
+  /* OKLCH L .54 C .15, same hues: each clears 4.0:1 on --bg and --bg-raised. The siblings step to
+     L .62 (-up, the palest still 3.2:1) and L .44 (-down). */
+  --head-1: #266ec3;
+  --head-2: #b04d00;
+  --head-3: #008882;
+  --head-4: #a84482;
+  --head-5: #647a00;
+  --head-6: #7d56b8;
+  --head-7: #007eaf;
+  --head-8: #8e6900;
+  --head-up-1: #4087de;
+  --head-up-2: #cb6620;
+  --head-up-3: #079a94;
+  --head-up-4: #c35c9b;
+  --head-up-5: #7c9205;
+  --head-up-6: #956ed2;
+  --head-up-7: #0994ba;
+  --head-up-8: #a18304;
+  --head-down-1: #01519f;
+  --head-down-2: #833b01;
+  --head-down-3: #00605c;
+  --head-down-4: #872465;
+  --head-down-5: #4c5a01;
+  --head-down-6: #613897;
+  --head-down-7: #045b74;
+  --head-down-8: #645000;
+  --head-none: #84878f;   /* 3.4:1 on --bg-raised */
+
+  --series-1: #15161a;
+  --series-2: #50535c;
+  --series-3: #84878f;
+  --track: #e4e5e9;
+  --chart-grid: #eceef1;
+
+  --focus: #15161a;
+  --overlay: rgba(20, 22, 26, .32);
+  --shadow-float: 0 12px 32px rgba(20, 22, 26, .14), 0 0 0 1px #e1e3e7;
+}
+
+/* ============================================================
+   THE STRIP-BAY NAMES, KEPT WHILE THE REDESIGN MOVES PAGE BY PAGE.
+   Each old name now points at its nearest new role, so a page not rebuilt yet renders in the new
+   palette instead of the old beige-on-black. This block is deleted when the last page moves, and
+   tests/world.test.ts then fails by name on any sheet still reading one of these.
+   ============================================================ */
+:root {
+  --room: var(--bg);
+  --room-deep: var(--bg-raised);
+  --ink: var(--fg);
+  --ink-mute: var(--fg-muted);
+  --ink-strong: var(--fg);
+  --strip: var(--bg-raised);
+  --strip-ink: var(--fg);
+  --strip-ink-mute: var(--fg-muted);
+  --strip-field: var(--bg-hover);
+  --strip-field-line: var(--line-strong);
+  --hairline: var(--line);
+  --hairline-strong: var(--line-strong);
+  --bay: var(--bg);
+  --bay-slot: transparent;
+  --plate: var(--bg-active);
+  --plate-line: var(--line-strong);
+  --plate-ink-mute: var(--fg-muted);
+  --ghost: var(--bg-hover);
+  --edge-green: var(--ok);
+  --edge-amber: var(--warn);
+  --edge-red: var(--danger);
+  --edge-grey: var(--fg-subtle);
+  --scope: var(--bg-raised);
+  --scope-ink: var(--fg);
+  --scope-grid: var(--chart-grid);
+  --surface-sunk: var(--bg-raised);
+  --line-mute: var(--line);
+  --data-neg: var(--danger);
+  --font-label: var(--font-sans);
+  --font-figure: var(--font-sans);
+  --font-code: var(--font-mono);
+}
+
+/* ============================================================
+   MOTION
+   ============================================================ */
+
+/* A theme switch is a cut: nothing transitions across it. */
+:root[data-theme-cut],
+:root[data-theme-cut] * {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  :root[data-theme] {
+    --dur-1:0ms; --dur-2:0ms; --dur-3:0ms;
+  }
+}

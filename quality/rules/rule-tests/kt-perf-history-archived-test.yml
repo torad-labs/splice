@@ -1,0 +1,9 @@
+id: kt-perf-history-archived
+valid:
+  - 'val stats = PerfStats(statePaths.perfStatsFile(key), archiveDir = statePaths.perfArchiveDir.takeIf { days > 0 }, archiveRetentionDays = days)'
+  - 'val rows = PerfRowsFileSource(statePaths.perfStatsFile(key), statePaths.perfArchiveDir)'
+  - 'class PerfStats(private val file: Path)'
+invalid:
+  - 'val stats = PerfStats(statePaths.perfStatsFile(key))'
+  - 'val rows = PerfRowsFileSource(statePaths.perfStatsFile(key))'
+  - 'summary.summarize(PerfRowsFileSource(statePaths.perfStatsFile(key)), window)'

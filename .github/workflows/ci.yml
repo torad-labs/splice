@@ -20,6 +20,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The world wall (console/tests/world.test.ts) derives its denominator from the BASE branch's
+      # token sheet, and the checkout above brings only the PR merge ref — so `git show main:...`
+      # was `fatal: invalid object name 'main'` and the console leg went red for a reason that had
+      # nothing to do with the code under test. One shallow ref is all the wall needs.
+      - name: fetch the base branch the world wall reads
+        run: git fetch --depth=1 origin main:refs/remotes/origin/main
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -28,15 +34,42 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
+      # Most gate legs are bun scripts (tools/gate/config/ladder.json) and `bun tools/gate run` is the
+      # gate of record's entry from PR 3 — so this job runs bun, and gets it from a pinned action
+      # rather than from the `bun` npm package's postinstall.
+      # BOTH pins are load-bearing: the SHA (resolved from the GitHub API, tag v2.2.0) because a
+      # mutable tag is a supply-chain hole, and bun-version because setup-bun falls back to the
+      # LATEST bun when it cannot resolve one — an unpinned toolchain on the leg whose verdict is
+      # the gate.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
       - name: install workspaces
-        run: npm ci
+        run: bun install --frozen-lockfile
+      # The console's end-to-end leg (consoleE2e, tools/gate/config/ladder.json) drives a real browser.
+      # The binary is the lockfile's @playwright/test, so the browser is the revision that version
+      # was built against; --with-deps adds the shared libraries the runner image lacks, and
+      # --only-shell fetches the headless shell alone, the only chromium a headless run launches.
+      - name: install the console e2e browser
+        run: ./node_modules/.bin/playwright install --with-deps --only-shell chromium
       - name: complete repository gate
         run: npm run gate
+      # Where the gate's minutes went: the profile `bun tools/gate run` asks Gradle for, and every
+      # suite's JUnit report with each test's time. Kept on a red run too, which is when they are read.
+      - name: keep the gate's timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gate-timings
+          path: |
+            build/reports/profile/
+            **/build/test-results/**/*.xml
+          retention-days: 14
+          if-no-files-found: warn
 
   walls-annotate:
     # Annotation-only surface for ast-grep wall violations.
-    # The gate job at checks/gate.sh:70 remains the SOLE pass/fail authority
+    # The gate job (`npm run gate` = `bun tools/gate run`) remains the SOLE pass/fail authority
     # (same checker run twice deliberately). The `|| true` is deliberate:
     # this job exists only to surface violations as PR diff annotations, not
     # to block merges. GitHub caps annotations at roughly 10 error + 10 warning
@@ -47,20 +80,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          node-version: 24
-          cache: npm
+          bun-version: 1.4.2
       - name: install workspaces
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: annotate wall violations
-        run: npx --no-install ast-grep scan --format github || true
+        run: ./node_modules/.bin/ast-grep scan --format github || true
 
   wrapper-validation:
     # Validates the Gradle wrapper checksum on every pull request.
     # This catches a tampered gradle-wrapper.jar arriving via fork PR before
     # any build step executes it. The action discovers wrapper files recursively,
-    # so no path inputs are required (repo has gateway/gradlew + wrapper jar).
+    # so no path inputs are required (repo has gradlew + wrapper jar at the root).
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

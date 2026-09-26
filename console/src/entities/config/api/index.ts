@@ -1,0 +1,34 @@
+import { control } from '@shared/api';
+import type { ConfigValue, PatchResult } from '@shared/api';
+import { markRestartPending } from '../model/restart';
+import { configStore } from '../model/store';
+
+export async function fetchConfig(head?: string): Promise<void> {
+  const key = head ?? null;
+  try {
+    configStore.land(key, await control.config(head));
+  } catch (err) {
+    configStore.fail(key, err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** PATCH /api/config, fanned out to every running head (runtime layer wins
+ * over env), then refresh the layered view. The refresh must read the SAME
+ * view the operator is looking at (review #94, F142): a bare fetchConfig()
+ * repopulated the store with the GLOBAL view while the page's selector still
+ * showed a head, rendering global data under a per-head label. */
+export async function applyConfigPatch(
+  patch: Record<string, ConfigValue>,
+  head?: string,
+): Promise<PatchResult> {
+  const result = await control.patchConfig(patch);
+  // The daemon names which keys it will not read until it restarts; that list is what cocks the
+  // daemon strip, so it is recorded here, from the daemon's answer and never from a hand list.
+  markRestartPending(result.restart_required);
+  await fetchConfig(head);
+  return result;
+}
+
+// JW-04: re-exported through the entity so pages stay inside the boundaries policy
+// (pages -> entities -> shared-api).
+export { fetchTopologyStale, probeTopologyStale } from '@shared/api';

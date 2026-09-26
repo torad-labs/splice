@@ -1,0 +1,141 @@
+// The palette: one list over the thirteen addresses, the two rooms, and the
+// saved views of the page you are standing on. Opened by ctrl+k or `/`, closed
+// by escape or by choosing.
+//
+// It takes the views, the theme and the addresses as props rather than reaching
+// for them: the app layer composes the slices, and a feature cannot import a
+// feature (the boundaries wall).
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Command } from 'cmdk';
+import { useNavigate } from 'react-router';
+import { S } from './strings';
+import './palette.css';
+
+export interface PaletteView {
+  id: string;
+  name: string;
+}
+
+export interface PaletteProps {
+  /** Every page, by its address and the name the sidebar prints. */
+  pages: ReadonlyArray<{ address: string; label: string }>;
+  views: readonly PaletteView[];
+  onSelectView: (id: string) => void;
+  theme: 'dark' | 'light';
+  onTheme: (theme: 'dark' | 'light') => void;
+  /** Held by the caller when something besides the keyboard opens the palette (the sidebar's
+   *  "jump to"); left out, the palette holds its own. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+/** `/` is a jumper only when the operator is not typing into something. */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}
+
+export function Palette({ pages, views, onSelectView, theme, onTheme, open: held, onOpenChange }: PaletteProps) {
+  const [own, setOwn] = useState(false);
+  const open = held ?? own;
+  // One setter for both holders, taking a value or an updater like useState's.
+  const latest = useRef(open);
+  latest.current = open;
+  const setOpen = useCallback((next: boolean | ((shown: boolean) => boolean)) => {
+    const value = typeof next === 'function' ? next(latest.current) : next;
+    setOwn(value);
+    onOpenChange?.(value);
+  }, [onOpenChange]);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setOpen((shown) => !shown);
+        return;
+      }
+      if (event.key === '/' && !isTyping(event.target)) {
+        event.preventDefault();
+        setOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [setOpen]);
+
+  return (
+    <Command.Dialog
+      open={open}
+      onOpenChange={setOpen}
+      label={S.palette}
+      overlayClassName="myx-palette-scrim"
+      contentClassName="myx-palette"
+    >
+      <Command.Input className="myx-palette-input" placeholder={S.placeholder} />
+      <Command.List className="myx-palette-list">
+        <Command.Empty className="myx-palette-empty">{S.noMatch}</Command.Empty>
+
+        <Command.Group className="myx-palette-group" heading={S.pages}>
+          {pages.map((page) => (
+            <Command.Item
+              key={page.address}
+              className="myx-palette-item"
+              value={`${page.label} ${page.address}`}
+              onSelect={() => {
+                setOpen(false);
+                void navigate(`/${page.address}`);
+              }}
+            >
+              {page.label}
+            </Command.Item>
+          ))}
+        </Command.Group>
+
+        {views.length > 0 ? (
+          <Command.Group className="myx-palette-group" heading={S.views}>
+            {views.map((view) => (
+              <Command.Item
+                key={view.id}
+                className="myx-palette-item"
+                value={`view ${view.name}`}
+                onSelect={() => {
+                  setOpen(false);
+                  onSelectView(view.id);
+                }}
+              >
+                {view.name}
+              </Command.Item>
+            ))}
+          </Command.Group>
+        ) : null}
+
+        <Command.Group className="myx-palette-group" heading={S.theme}>
+          <Command.Item
+            className="myx-palette-item"
+            value={S.themeDark}
+            onSelect={() => {
+              setOpen(false);
+              onTheme('dark');
+            }}
+          >
+            {S.themeDark}
+            {theme === 'dark' ? <span className="myx-palette-mark">{S.current}</span> : null}
+          </Command.Item>
+          <Command.Item
+            className="myx-palette-item"
+            value={S.themeLight}
+            onSelect={() => {
+              setOpen(false);
+              onTheme('light');
+            }}
+          >
+            {S.themeLight}
+            {theme === 'light' ? <span className="myx-palette-mark">{S.current}</span> : null}
+          </Command.Item>
+        </Command.Group>
+      </Command.List>
+    </Command.Dialog>
+  );
+}

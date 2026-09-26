@@ -1,0 +1,21 @@
+/* The key gate's contents on kit tokens; the modal and its scrim are the shell's (app.css). */
+.myx-unlock-hint {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-2);
+}
+.myx-unlock-command {
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-active);
+  color: var(--fg);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+}
+.myx-unlock-form { display: grid; gap: var(--space-4); justify-items: start; }
+.myx-unlock-form .myx-input { width: 100%; }
+.myx-unlock-form .myx-input-box { max-width: 100%; }

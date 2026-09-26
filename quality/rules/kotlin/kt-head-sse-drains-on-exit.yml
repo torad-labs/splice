@@ -1,0 +1,33 @@
+# 2026-09-23 — the head answers a stream ONLY through splice.head.wire.SseResponse.
+#
+# Ktor 3.5.2's own streaming bodies (respondTextWriter / respondBytesWriter / respondOutputStream and
+# the WriterContent / ChannelWriterContent / OutputStreamContent they build) run inside the engine's
+# `responseChannel().use { content.writeTo(this) }`. A body that ends by throwing is closed WITH a
+# cause, which is cancel(cause), and a cancelled ByteChannel's reader throws before it takes the bytes
+# already flushed into it. On a loaded host the engine's reader lags, so the frame written last is
+# dropped — and in the head the frame written last before a throw is the cancellation seal's error
+# frame (SealedDrive rethrows after sealing). Measured twice: HeadServerFoldTest NF-03 on CI run
+# 35838271235 (head bytes_out=137, client bodyLen=0) and HeadServerCompactCapTest's compact arm in the
+# local gate on aee915e4 (head bytes_out=568, client got 431, the 137-byte wall frame missing).
+#
+# SseResponse closes the channel CLEAN in a finally before the throw reaches `use`, so the engine's
+# cancel is a no-op and the reader drains everything (SseResponseTest pins it, with Ktor's own writer
+# as the arm that shows the loss). This wall keeps the raw writers from coming back: a new streaming
+# answer in the head written with respondTextWriter would carry the drop with it and pass every test
+# that runs on an idle machine.
+#
+# Matched on the identifier, so the import and the call are each a finding. The one file that may name
+# WriterContent is SseResponse.kt, the wrapper itself. The control plane's two streams
+# (EventsRoute, McpRoutes) are outside this module: they end only when their client or the daemon
+# goes, with no terminal frame for anyone to lose.
+id: kt-head-sse-drains-on-exit
+language: kotlin
+severity: error
+message: "The head streams only through SseResponse — Ktor's raw writers cancel the channel when the body throws and drop the frames the engine has not read yet, the seal's error frame last."
+files:
+  - features/turns/src/main/**/*.kt
+ignores:
+  - features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt
+rule:
+  kind: simple_identifier
+  regex: ^(respondTextWriter|respondBytesWriter|respondOutputStream|WriterContent|ChannelWriterContent|OutputStreamContent)$

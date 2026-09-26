@@ -1,0 +1,173 @@
+// The run sentinel's red proofs. Liveness claims are the easiest thing in this repo to assert
+// vacuously: a probe that can never report HELD reports FREE forever and looks like a passing test.
+// So the control case is asserted FIRST in every arm that matters, and the SIGKILL arm exists
+// because SIGKILL is the designed-for case here — earlyoom is active and buildgate sets
+// `choom -n 800`, which nominates a long gradle run as the first thing to die under pressure.
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, truncateSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { acquireRunSentinel, describeOpenRun, probeRunSentinel, releaseForTests, sentinelPath } from "../src/lib/sentinel.ts";
+
+const workspaces: string[] = [];
+function scratchSentinel(): string {
+  const dir = mkdtempSync(join(tmpdir(), "gate-sentinel-"));
+  workspaces.push(dir);
+  const path = join(dir, "gate-run.lock");
+  process.env.SPLICE_GATE_SENTINEL = path;
+  return path;
+}
+
+/** Whether [pid] is running. Signal 0 delivers nothing; pid 0 would name this process group, so it is refused. */
+function alive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+afterEach(() => {
+  releaseForTests();
+  delete process.env.SPLICE_GATE_SENTINEL;
+  for (const dir of workspaces.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+/** A holder in its own process, so it can be killed. Resolves once it reports it holds the lock. */
+async function holderProcess(path: string): Promise<{ pid: number; kill: (sig: NodeJS.Signals) => void }> {
+  const proc = Bun.spawn(
+    [
+      "bun",
+      "-e",
+      `process.env.SPLICE_GATE_SENTINEL=${JSON.stringify(path)};` +
+        `const { acquireRunSentinel } = await import(${JSON.stringify(join(import.meta.dir, "../src/lib/sentinel.ts"))});` +
+        `if (acquireRunSentinel("cafebabe") !== null) process.exit(3);` +
+        `console.log("HELD"); await new Promise(() => {});`,
+    ],
+    { stdout: "pipe", stderr: "ignore" },
+  );
+  const reader = proc.stdout.getReader();
+  const deadline = Date.now() + 15_000;
+  let seen = "";
+  while (!seen.includes("HELD") && Date.now() < deadline) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    seen += new TextDecoder().decode(value);
+  }
+  expect(seen, "the holder must report HELD before an arm measures it").toContain("HELD");
+  return { pid: proc.pid, kill: (sig) => proc.kill(sig === "SIGKILL" ? 9 : 15) };
+}
+
+describe("the gate run sentinel", () => {
+  test("the path is outside the worktree — a marker inside it would fail the gate's own precondition", () => {
+    delete process.env.SPLICE_GATE_SENTINEL;
+    const path = sentinelPath();
+    expect(path).not.toContain("/mythos/repo");
+    expect(path.endsWith("/splice/gate-run.lock"), `${path} must be splice's own runtime dir`).toBe(true);
+  });
+
+  test("FREE when nothing holds it — the control, without which every HELD below is vacuous", () => {
+    scratchSentinel();
+    expect(probeRunSentinel()).toBeNull();
+  });
+
+  test("HELD while a run is open, and the open run is named", () => {
+    scratchSentinel();
+    expect(probeRunSentinel(), "control: free before we take it").toBeNull();
+    expect(acquireRunSentinel("deadbeef")).toBeNull();
+    const open = probeRunSentinel();
+    expect(open).not.toBeNull();
+    expect(open!.headAtStart).toBe("deadbeef");
+    expect(open!.pid).toBe(process.pid);
+    expect(open!.start).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  // The regression arm for the ordering bug that building this found in its own design. The design
+  // said write-atomically-then-lock (temp + rename). A rename onto the final path replaces the
+  // INODE, so a second run would orphan the holder's lock and acquire the new one — both believing
+  // they held it, which is the single thing the sentinel exists to prevent. Restore that ordering
+  // and this arm goes red.
+  test("a second run does NOT acquire while one is open, and is told what is open", () => {
+    scratchSentinel();
+    expect(acquireRunSentinel("first")).toBeNull();
+    const refused = acquireRunSentinel("second");
+    expect(refused, "the second acquire must be refused, not granted a fresh inode").not.toBeNull();
+    expect(refused!.headAtStart).toBe("first");
+    expect(probeRunSentinel()!.headAtStart, "the first run still owns it").toBe("first");
+  });
+
+  // THE LIFECYCLE ARM, and the shape this suite did not have. Every other arm is a contention or
+  // death scenario — refused, killed, inherited — and each performs at most ONE successful acquire
+  // per path, so none could reach the state a normal day produces: a run finishes, the next starts.
+  // The denominator came from the threat model instead of the lifecycle, and the untested path was
+  // the DESIGNED one. (splice-lead, 2026-09-21)
+  test("the SECOND run of a session is the one reported, not the first", () => {
+    scratchSentinel();
+    expect(acquireRunSentinel("aaaaaaaaaaaa")).toBeNull();
+    releaseForTests();
+    expect(acquireRunSentinel("bbbbbbbbbbbb"), "the path is free again, so B must take it").toBeNull();
+    const open = probeRunSentinel();
+    expect(open!.headAtStart, "a peer must be told the LIVE run, never one that has exited").toBe("bbbbbbbbbbbb");
+    // the field read is what you notice; the record COUNT is the shape that caused it. Asserting
+    // both means a change that makes the reader take the LAST match, rather than fixing the write,
+    // still reds.
+    expect(readFileSync(sentinelPath(), "utf8").match(/^head_at_start=/gm) ?? []).toHaveLength(1);
+  });
+
+  // Liveness may never depend on the metadata being readable. Truncating a held sentinel is the
+  // window the ftruncate opens, and the answer must still be OPEN — with honest "unknown" fields
+  // rather than the `pid 0` a silently-empty record used to report.
+  test("a HELD but unreadable sentinel still reads OPEN, and says unknown rather than pid 0", () => {
+    const path = scratchSentinel();
+    expect(acquireRunSentinel("ccccccccccc")).toBeNull();
+    truncateSync(path, 0);
+    const open = probeRunSentinel();
+    expect(open, "the lock is held, so this must NOT read FREE").not.toBeNull();
+    expect(open!.headAtStart).toBe("unknown");
+    expect(describeOpenRun(open!)).not.toContain("pid 0,");
+  });
+
+  test("a SIGKILLed run releases it — staleness is inexpressible, not merely detectable", async () => {
+    const path = scratchSentinel();
+    expect(probeRunSentinel(), "control: free before the holder starts").toBeNull();
+    const holder = await holderProcess(path);
+    expect(probeRunSentinel(), "while the holder is ALIVE it must read HELD").not.toBeNull();
+    holder.kill("SIGKILL");
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && probeRunSentinel() !== null) await Bun.sleep(50);
+    expect(probeRunSentinel(), "the kernel drops an flock on SIGKILL; no trap can").toBeNull();
+  }, 40_000);
+
+  // The grandchild is unref'd so its parent EXITS while it lives. The first cut let the parent wait on
+  // it: `await proc.exited` took the whole `sleep 20`, the grandchild was gone before the probe, and
+  // the arm passed a holder that handed the sentinel's fd to the grandchild as an extra stdio entry
+  // (splice-lead, 2026-09-25). What keeps the fd out of children today is Bun's spawn, which passes
+  // only stdio: the openSync fd itself is not CLOEXEC. The control is the grandchild alive at the probe.
+  test("the fd does not leak to spawned children — a Gradle daemon must not pin it forever", async () => {
+    const path = scratchSentinel();
+    const proc = Bun.spawn(
+      [
+        "bun",
+        "-e",
+        `process.env.SPLICE_GATE_SENTINEL=${JSON.stringify(path)};` +
+          `const { acquireRunSentinel } = await import(${JSON.stringify(join(import.meta.dir, "../src/lib/sentinel.ts"))});` +
+          `if (acquireRunSentinel("x") !== null) process.exit(3);` +
+          `const child = Bun.spawn(["sleep", "20"], { stdio: ["ignore", "ignore", "ignore"] });` +
+          `child.unref(); console.log(child.pid);`,
+      ],
+      { stdout: "pipe", stderr: "ignore" },
+    );
+    const grandchild = Number((await new Response(proc.stdout).text()).trim());
+    try {
+      expect(await proc.exited, "the holder took the sentinel and exited").toBe(0);
+      expect(alive(grandchild), "control: the grandchild outlives its parent, or this arm proves nothing").toBe(true);
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline && probeRunSentinel() !== null) await Bun.sleep(50);
+      expect(probeRunSentinel(), "the long-lived grandchild must not still be holding it").toBeNull();
+    } finally {
+      if (alive(grandchild)) process.kill(grandchild, "SIGKILL");
+    }
+  }, 40_000);
+});

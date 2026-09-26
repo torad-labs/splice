@@ -1,0 +1,813 @@
+# rule-coverage-exclusions.toml — every source root a routed ast-grep rule does NOT reach, with a
+# date and a written reason.
+#
+# `bun tools/gate rules --prove-coverage` derives the denominator from the source — the Gradle
+# source roots named by settings.gradle.kts and the workspace surfaces named by package.json — and
+# requires every routed rule to reach every one of them. A rule that reaches none of a source root's
+# files, or loses a file inside a root it does cover, fails BY NAME unless a row below says why.
+#
+# That is the point. `ast-grep scan` cannot see a glob that selects nothing: narrowing
+# `gateway/*/src/main/**/*.kt` to `app/src/main/**/*.kt` leaves the scan green while fifteen
+# modules lose enforcement. The rows here are the only way that narrowing can be legitimate, and
+# each one is dated so the narrowing has a history instead of a habit.
+#
+# Row shape:
+#   rule / rules   the routed rule id(s) this disposition speaks for (required)
+#   modules        Gradle module ids or workspace names; omitted means every module
+#   sourceSets     main | test | testFixtures | src; omitted means every source set
+#   files          ast-grep path globs. A row WITH files excuses individual FILES inside a root the
+#                  rule already covers. A row WITHOUT files excuses a WHOLLY lost source root, and
+#                  only a wholly lost one — a partial loss must be spelled file by file, so that
+#                  losing a whole module can never hide behind a broad row.
+#   date           YYYY-MM-DD (required — an undated exclusion is not a disposition)
+#   reason         why (required — a blank reason is an absence wearing a label)
+#
+# A row that excuses nothing is stale and fails too.
+
+# ─── source-set scope ────────────────────────────────────────────────────────────────────────────
+
+[[exclusion]]
+rules = [
+  "kt-cancellation-handler-total", "kt-catch-swallows-cancellation", "kt-control-route-guarded",
+  "kt-dollar-figure-single-source", "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
+  "kt-flow-over-suspend", "kt-force-strict-false-is-literal", "kt-form-encoding-single-source",
+  "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-head-sse-drains-on-exit",
+  "kt-http-status-single-source",
+  "kt-json-scalars-single-source", "kt-jsonl-sink-single-source", "kt-l3-end-turn-literal",
+  "kt-l3-sole-wire-terminals", "kt-log-escapes-caller-input", "kt-no-atomic-in-data-class",
+  "kt-no-blocking-io-under-monitor", "kt-no-companion-objects", "kt-no-coroutine-scope-factory",
+  "kt-no-delay-in-production", "kt-no-exception-as-outcome", "kt-no-extension-functions",
+  "kt-no-global-scope", "kt-no-hardcoded-dispatchers", "kt-no-lambda-seam", "kt-no-lateinit",
+  "kt-no-object-command", "kt-no-println", "kt-no-raw-thread", "kt-no-reflection-in-production",
+  "kt-no-request-body-gzip", "kt-no-runblocking-exported-bridge", "kt-no-runblocking-in-daemon",
+  "kt-no-runcatching-in-coroutine", "kt-no-sealed-interface", "kt-no-secondary-constructor",
+  "kt-no-silent-result-collapse", "kt-no-stream-options-request", "kt-no-system-getenv",
+  "kt-no-todo-throws", "kt-no-top-level-functions", "kt-no-unsafe-bang-bang", "kt-no-unsafe-cast",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-perf-history-archived",
+  "kt-quota-tracker-single-resolution",
+  "kt-secure-file-single-source", "kt-shared-summary-parts-single-source",
+  "kt-state-paths-single-source", "kt-tool-partition-no-transcript",
+  "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone", "kt-ws-frame-without-epoch",
+]
+sourceSets = ["test", "testFixtures"]
+date = "2026-09-20"
+reason = """
+Production-only walls: each grades what the shipped daemon does, and binds src/main by design. Test
+sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test +
+testFixtures) and kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in
+:quality-architecture.
+"""
+
+[[exclusion]]
+rule = "kt-tests-no-wall-clock"
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+A test-determinism law: a test may not wait on the wall clock. Production waiting is governed by
+kt-no-delay-in-production, which binds src/main.
+"""
+
+[[exclusion]]
+rule = "kt-tests-bind-port-zero"
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+A test-determinism law: a test server binds port 0 instead of a port leased and bound later.
+Production binds the port its topology configures, and had 0 lease sites when the rule was written.
+"""
+
+[[exclusion]]
+rule = "kt-no-emdash-cli-text"
+sourceSets = ["test", "testFixtures"]
+date = "2026-09-25"
+reason = """
+A copy gate on the sentences splice prints. A test's assertion messages are read by whoever reads a
+red test, never by the operator in the CLI or the console, so they are not the text this wall grades.
+"""
+
+# ─── module scope ────────────────────────────────────────────────────────────────────────────────
+
+[[exclusion]]
+rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
+modules = [
+  "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+Both walls bind the control/MCP host surface: `guarded(call)` wraps routes, and LogSafe escapes
+operator- and HTTP-supplied values in its audit lines. :integrations-claude-code materializes local
+Claude Code state, declares no routes, and its existing log matches are local filesystem paths rather
+than caller-controlled control-plane records. LAYOUT-01 moved LogSafe itself to :core; its exact
+relocated file is covered by the file-scope disposition below, not this whole-module row.
+"""
+
+[[exclusion]]
+rule = "kt-json-scalars-single-source"
+modules = [
+  "integrations-claude-code", "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat",
+  "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+The wall binds backend JSON scalar reads in provider, control, MCP-host, and app code.
+:integrations-claude-code reads Claude Code's local state rather than backend wire payloads, the
+dialects own typed codecs, and :quality-compiler-plugin has no JSON path. LAYOUT-01 moved LogSafe
+into :core; its exact relocated file is covered by the file-scope disposition below rather than
+excusing :core wholesale.
+"""
+
+[[exclusion]]
+rule = "kt-no-exception-as-outcome"
+modules = [
+  "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat",
+  "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai",
+  "features-turns", "app", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+The sealed-outcome law is pinned where refusal types are DECLARED — :core and :upstream. Every
+other module consumes those sealed hierarchies rather than declaring its own exception-as-outcome.
+"""
+
+[[exclusion]]
+rule = "kt-no-println"
+files = ["app/src/main/kotlin/**/*.kt"]
+date = "2026-09-23"
+reason = """
+The rule's own exemption, quoted from quality/rules/kotlin/kt-no-println.yml: ":app is the
+wiring/entry/CLI layer — a terminal tool legitimately writes to stdout (doctor output, usage).
+Daemon LOGGING still flows through the injected log lambda." LAYOUT-01 moved the control plane into
+app/control, and the wall kept binding it there, so :app is covered in part: this row names the CLI
+and entry files the rule ignores. The proof credits a files row only from the rule's lost-file set,
+so it cannot excuse a finding in app/control.
+"""
+
+[[exclusion]]
+rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
+files = ["app/src/main/kotlin/**/*.kt"]
+date = "2026-09-23"
+reason = """
+These three walls bound daemon/control whole. LAYOUT-01 moved that control plane into app/control and
+the walls moved with it, binding app/src/main/kotlin/splice/app/control whole. The rest of :app keeps
+the 2026-09-22 disposition: it declares no guarded control route, writes no control audit line from
+caller input, and emits no perf-row outcome tag. The proof credits a files row only from each rule's
+lost-file set, so this row cannot excuse a finding in app/control.
+"""
+
+[[exclusion]]
+rule = "kt-no-runblocking-exported-bridge"
+modules = [
+  "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "features-turns", "quality-compiler-plugin",
+  "features-models", "features-sessions",
+]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+The bridge wall grades only :app's Main.kt and cli/ process-entry paths, where runBlocking is allowed.
+Every listed module, including :integrations-claude-code, is outside that boundary; elsewhere the
+companion runBlocking wall bans the call outright, leaving no exported bridge to grade.
+"""
+
+[[exclusion]]
+rule = "kt-no-runcatching-in-coroutine"
+modules = ["integrations-claude-code", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai", "quality-compiler-plugin"]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+The wall binds turn and stream coroutines in :upstream, the dialects, :features-turns, the feature
+route modules, :integrations-mcp, and :app (the control plane lives in app/control since LAYOUT-01). :integrations-claude-code is a local filesystem adapter, the provider
+modules are auth/quirk adapters outside that path, and :quality-compiler-plugin is a compiler plugin.
+LAYOUT-01 moved LogSafe into :core; the exact relocated file is covered by the file-scope disposition
+below instead of excusing the entire core module.
+"""
+
+[[exclusion]]
+rule = "kt-no-silent-result-collapse"
+modules = ["quality-compiler-plugin"]
+sourceSets = ["main"]
+date = "2026-09-24"
+reason = """
+:quality-compiler-plugin is a compiler plugin with no Result path. Every other module is selected:
+:core, :integrations-claude-code and :providers-muse joined on 2026-09-24 (LAYOUT-01 review), and the
+three dialects the same day (v0.4.0 release) at zero findings (the rule's WIDENED 2026-09-24 notes).
+"""
+
+[[exclusion]]
+rule = "kt-no-stream-options-request"
+modules = ["integrations-dialects-openai-chat"]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+The rule's own exemption, quoted from its files: comment: "every main source EXCEPT the chat
+dialect, where include_usage is the documented usage-frame knob — a NEW dialect/provider must not
+reopen the incident."
+"""
+
+[[exclusion]]
+rule = "kt-no-vanilla-config-dir"
+modules = [
+  "core", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "features-turns", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Head isolation (V4-115) is decided in three places only: :integrations-claude-code materializes a
+head's Claude config dir, control/Launch* assembles the per-launch spec, and app's
+LaunchSpecFactory sets CLAUDE_CONFIG_DIR. LAYOUT-01 moved the complete adapter into
+:integrations-claude-code, which the rule covers file-for-file; :core owns no config-dir producer.
+"""
+
+[[exclusion]]
+rule = "kt-outcome-tag-single-source"
+modules = [
+  "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+Perf-row outcome tags are emitted by head, control, and MCP-host paths. :integrations-claude-code,
+upstream, dialect, provider, app, and compiler-plugin sources do not write those rows. LAYOUT-01
+moved LogSafe into :core; its exact relocated file is covered by the file-scope disposition below
+rather than excusing core wholesale.
+"""
+
+[[exclusion]]
+rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
+modules = [
+  "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
+  "integrations-providers-openai", "app", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+These are head-local laws: QuotaTracker selection, sanctioned turn-cleanup flushes, and the paired
+IOException/IllegalStateException catch on the client socket. :integrations-claude-code is a local
+configuration adapter, not a features-turns turn or socket owner.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-mcp"]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+LAYOUT-01 moved the MCP host from daemon/control. These six rules did not select its source files
+there, so the move could not lose their enforcement: they respectively bind refusal declarations,
+the app process entry, Claude Code launch setup, features-turns quota selection, features-turns turn
+cleanup, and features-turns wire sockets. :integrations-mcp owns none of those structures.
+"""
+
+[[exclusion]]
+rule = "kt-head-sse-drains-on-exit"
+modules = [
+  "core", "integrations-upstream", "integrations-http", "integrations-claude-code", "integrations-mcp",
+  "integrations-topology", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
+  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok",
+  "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai",
+  "integrations-codemode", "integrations-oauth", "integrations-daemon-client", "integrations-terminal",
+  "features-sessions", "features-models", "features-heads", "features-accounts", "features-usage",
+  "features-lifecycle", "features-diagnostics", "features-launch", "features-configuration", "features-events",
+  "app", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+A head-local law: the head is the one server whose streams end on a frame written after a throw (the
+cancellation seal's error frame, SealedDrive rethrowing after it), and every head stream is served from
+:features-turns. The control plane's two streams (EventsRoute in :features-events, McpRoutes in
+:integrations-mcp; both lived in daemon-control until LAYOUT-01) end only when their client or the daemon
+goes, with no terminal frame to lose; no other module answers an HTTP stream.
+"""
+
+# ─── file scope: the single declaration site each single-source wall exempts ──────────────────────
+
+[[exclusion]]
+rules = [
+  "kt-control-route-guarded", "kt-json-scalars-single-source", "kt-log-escapes-caller-input",
+  "kt-no-runcatching-in-coroutine", "kt-outcome-tag-single-source",
+]
+modules = ["core"]
+sourceSets = ["main"]
+files = ["core/src/main/**/*.kt"]
+date = "2026-09-22"
+reason = """
+LAYOUT-01 moved LogSafe from daemon/control into core. These five walls selected its former
+control-plane source path, so each now selects its exact core destination. No other core source came
+from those declared path scopes. This file disposition covers the remaining core sources only: the
+coverage proof credits file rows from each rule's lost-file set, so it cannot suppress a finding in
+the selected LogSafe destination. (kt-no-silent-result-collapse was a sixth until 2026-09-24, when it
+began selecting all of core.)
+"""
+
+[[exclusion]]
+rules = ["kt-control-route-guarded", "kt-json-scalars-single-source", "kt-log-escapes-caller-input"]
+modules = ["features-turns"]
+sourceSets = ["main"]
+files = ["features/turns/src/main/**/*.kt"]
+date = "2026-09-23"
+reason = """
+LAYOUT-01 moved four control-plane files into :features-turns: /api/compact (compact/CompactPayloads,
+compact/HeadCompactSource), /api/compaction/instructions (compaction/CompactionInstructionsRoute) and
+the capture switch (wire/CaptureRoutes). These three walls selected them under daemon/control, so each
+now selects their exact destinations. `splice trace` (trace/) came from app/cli/trace, which only
+kt-json-scalars-single-source selected, and that rule selects trace/ too: it reads trace records
+through JsonScalars, not the dialect codecs. The rest of the turn engine keeps the disposition the
+2026-09-22 module rows gave it: its HTTP surface is the head server's, authenticated per head by
+ClientAuth.kt rather than the control plane's guarded(call); its log lines are turn telemetry, not
+audit records of operator input; and it reads JSON through the dialect codecs. The proof credits file
+rows only from each rule's lost-file set, so this row cannot suppress a finding in a selected
+destination.
+"""
+
+[[exclusion]]
+rule = "kt-error-envelope-single-source"
+files = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
+date = "2026-09-20"
+reason = "The sole builder of the Anthropic error envelope — exempt BY PATH so no other file can claim it."
+
+[[exclusion]]
+rule = "kt-dollar-figure-single-source"
+files = ["features/usage/src/main/kotlin/splice/usage/ApiCostText.kt"]
+date = "2026-09-25"
+reason = "The sole spelling site of a dollar figure, which attaches its basis: exempt BY PATH, per the rule's own comment (V4-240)."
+
+[[exclusion]]
+rule = "kt-form-encoding-single-source"
+files = ["core/src/main/kotlin/splice/core/util/FormEncoding.kt"]
+date = "2026-09-20"
+reason = "The sole percent-encoder; every other file calls it."
+
+[[exclusion]]
+rule = "kt-http-status-single-source"
+files = ["core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]
+date = "2026-09-20"
+reason = "The sole declaration site of HTTP status numbers — exempt BY PATH, per the rule's own comment."
+
+[[exclusion]]
+rule = "kt-jsonl-sink-single-source"
+files = ["core/src/main/kotlin/splice/core/util/JsonlSink.kt"]
+date = "2026-09-20"
+reason = "The sole append-only JSONL sink; re-deriving writeString(CREATE, APPEND) elsewhere is what the rule bans."
+
+[[exclusion]]
+rule = "kt-l2-single-mirror-definition"
+files = ["features/turns/src/main/kotlin/**/reasoning/Mirror.kt"]
+date = "2026-09-20"
+reason = "L2: mirrorInto is defined exactly once, and this is that file."
+
+[[exclusion]]
+rules = ["kt-l3-end-turn-literal", "kt-l3-sole-wire-terminals"]
+files = ["features/turns/src/main/kotlin/**/wire/SseEmitter.kt"]
+date = "2026-09-20"
+reason = "L3: SseEmitter is the only file allowed to hold the end_turn / message_stop / message_delta literals."
+
+[[exclusion]]
+rules = ["kt-no-delay-in-production", "kt-no-hardcoded-dispatchers"]
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt"]
+date = "2026-09-20"
+reason = "The process runtime edge — the single main-source file allowed to name the global clock and the global dispatchers."
+
+[[exclusion]]
+rule = "kt-secure-file-single-source"
+files = ["core/src/main/kotlin/splice/core/util/SecureFile.kt"]
+date = "2026-09-20"
+reason = "The sole 0600 atomic-write primitive; re-deriving it is exactly what the wall bans."
+
+[[exclusion]]
+rule = "kt-shared-summary-parts-single-source"
+files = ["core/src/main/kotlin/**/turn/Turn.kt"]
+date = "2026-09-20"
+reason = "TurnMeta's default constructs SharedSummaryParts once per turn; this is that declaration."
+
+[[exclusion]]
+rule = "kt-state-paths-single-source"
+files = [
+  "core/src/main/kotlin/**/config/StatePaths.kt",
+  "app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt",
+  "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpSources.kt",
+]
+date = "2026-09-20"
+reason = """
+The rule's three dated exemptions: StatePaths.kt is the resolver, LaunchSpecFactory carries the
+per-head CLAUDE_CONFIG_DIR contract, and McpSources names `.claude-plugin`, a plugin manifest
+dirname rather than a state root.
+"""
+
+[[exclusion]]
+rule = "kt-quota-tracker-single-resolution"
+files = ["features/turns/src/main/kotlin/splice/head/admission/TurnQuota.kt"]
+date = "2026-09-20"
+reason = "The sole resolver, created by fix row V4-104."
+
+[[exclusion]]
+rule = "kt-no-system-getenv"
+files = ["core/src/main/kotlin/**/config/**"]
+date = "2026-09-20"
+reason = "System.getenv is allowed only inside core/config, which is the layered ConfigService everything else reads."
+
+[[exclusion]]
+rule = "kt-no-vanilla-config-dir"
+files = ["app/src/main/kotlin/**/*.kt"]
+date = "2026-09-23"
+reason = """
+Inside :app the wall binds only the launch seam's CLAUDE_CONFIG_DIR producer, head/LaunchSpecFactory.kt;
+the rest of :app never spells a config dir. The launch seam that was control/Launch*.kt is
+features/launch now (LAYOUT-01), bound whole. :integrations-claude-code needs no row: the wall binds
+its whole main source set, minus its one dated ignore, ClaudeConfigKeys.kt, the single source of the
+vanilla dir's NAME. Losing a whole module still fails: a files-row can never excuse a wholly lost root.
+"""
+
+[[exclusion]]
+rule = "kt-no-vanilla-config-dir"
+files = ["integrations/claude-code/src/main/kotlin/**/ClaudeConfigKeys.kt"]
+date = "2026-09-22"
+reason = """
+Keys.CLAUDE / Keys.CLAUDE_DIR is the rule's one dated ignore and the sole declaration of the vanilla
+dir name. LAYOUT-01 moved that declaration with the Claude Code adapter, while the rule still covers
+the rest of :integrations-claude-code file-for-file.
+"""
+
+[[exclusion]]
+rule = "kt-no-runblocking-in-daemon"
+files = ["app/src/main/kotlin/**/Main.kt", "app/src/main/kotlin/**/cli/**"]
+date = "2026-09-20"
+reason = """
+runBlocking is allowed at process entry — app Main.kt and the CLI tree. That exempted path is not
+unguarded: kt-no-runblocking-exported-bridge grades it, requiring every bridge into it to be private.
+"""
+
+[[exclusion]]
+rule = "kt-no-runblocking-exported-bridge"
+files = ["app/src/main/kotlin/**/*.kt"]
+date = "2026-09-20"
+reason = """
+Inside :app the wall binds the entry path only — Main.kt and cli/** — because that is the only place
+runBlocking may appear at all (kt-no-runblocking-in-daemon bans it everywhere else, so no other file
+can export a bridge to it).
+"""
+
+[[exclusion]]
+rule = "kt-turn-finally-flush-quietly"
+files = ["features/turns/src/main/kotlin/**/*.kt"]
+date = "2026-09-20"
+reason = """
+Inside :features-turns the wall binds head/*.kt, the directory that owns turn cleanup. wire/, reasoning/
+and the compaction files run no turn-finally block, so there is no flush for them to get wrong.
+"""
+
+[[exclusion]]
+rule = "kt-wire-catch-ioexception-alone"
+files = ["features/turns/src/main/kotlin/**/*.kt"]
+date = "2026-09-20"
+reason = """
+Inside :features-turns the wall binds wire/**, the client socket. A CLOSED channel's IllegalStateException
+is only reachable where the socket is written, and that is wire/.
+"""
+
+[[exclusion]]
+rule = "kt-tests-no-wall-clock"
+files = [
+  "integrations/claude-code/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt",
+  "app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt",
+  "features/turns/src/testFixtures/kotlin/splice/head/TestNet.kt",
+  "features/turns/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt",
+]
+date = "2026-09-20"
+reason = """
+The rule's own dated census, reason by reason: a proof of absence has no event to await
+(LoginHookScriptSafetyTest, DaemonStopDeadlineTest); a readiness poll in blocking code has none
+either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double.
+"""
+
+[[exclusion]]
+rule = "kt-head-sse-drains-on-exit"
+files = ["features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt"]
+date = "2026-09-23"
+reason = """
+SseResponse is the wrapper the wall routes every head stream through, so it is the one file that must
+name Ktor's WriterContent: it delegates to it and adds the clean close in a finally.
+"""
+
+# ─── file scope: the console surface ─────────────────────────────────────────────────────────────
+
+[[exclusion]]
+rule = "webui-css-tokens-only"
+files = ["console/src/shared/tokens.css"]
+date = "2026-09-20"
+reason = "The token scales themselves — the one stylesheet allowed to hold raw px/rem values."
+
+[[exclusion]]
+rule = "webui-css-font-size-scale"
+files = ["console/src/shared/tokens.css"]
+date = "2026-09-25"
+reason = "The type scale itself: the one stylesheet that defines the --text-N rungs every other sheet must use."
+
+[[exclusion]]
+rule = "webui-css-no-color-literals"
+files = ["console/src/shared/tokens.css"]
+date = "2026-09-25"
+reason = "The palette itself: the one stylesheet that names colours; every other sheet reads them as tokens."
+
+[[exclusion]]
+rule = "webui-fetch-only-in-api"
+files = ["console/src/shared/api/**", "console/src/entities/*/api/**"]
+date = "2026-09-20"
+reason = "FSD: the api segments ARE the HTTP layer the rule confines fetch to."
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
+  "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-heads"]
+sourceSets = ["main"]
+date = "2026-09-21"
+reason = """
+:features-heads is new: splice.heads.start was EXTRACTED OUT OF daemon/control (ControlServer.kt
+and api/fleet/HeadRoutes.kt). That origin is the denominator for this row, and the module's current
+contents are NOT. An earlier version of this row reasoned from what the 37 lines happen to contain
+today — "declares no refusal type, logs nothing, opens no wire" — which is the §24 defect exactly:
+absence of a violating expression is not a reason a rule stops applying, because the rule exists for
+the line somebody writes tomorrow. The test used here instead: does the rule's declared files: scope
+COVER daemon/control, the place this code came from? If yes, the extraction punched a hole in that
+rule and the remedy is to widen its glob. If no, the rule never reached this code and nothing was
+lost by moving it.
+
+SIX RULES FAILED THAT TEST AND ARE NOT IN THIS ROW. kt-control-route-guarded,
+kt-json-scalars-single-source, kt-log-escapes-caller-input, kt-no-runcatching-in-coroutine,
+kt-no-silent-result-collapse and kt-outcome-tag-single-source all name daemon/control/src/main in
+their files:, so each lost reach when the code moved. All six now carry
+`features/heads/src/main/**/*.kt` in their own files: list — widened at the rule, never excused
+here. kt-log-escapes-caller-input is the one to notice: StartHead.handle reads
+call.parameters["head"] and hands that caller-supplied name to HeadAudit.record, which is the
+forged-audit-line hazard the rule was written for. Excluding it would have retired a live
+protection, not waived a dormant one.
+
+THE SIX BELOW PASS THAT TEST — each names a scope this code was never inside:
+  kt-no-exception-as-outcome          pinned to upstream/, core/, integrations/claude-code/ — the DECLARATION sites
+                                      for refusal types. The extracted code came from
+                                      daemon/control, which this rule has never covered, so no
+                                      declaration left its reach.
+  kt-no-runblocking-exported-bridge   pinned to app/**/Main.kt and app/**/cli/** — the CLI process
+                                      boundary, where a runBlocking bridge is the exported entry.
+                                      :features-heads is a library module with no main().
+  kt-no-vanilla-config-dir            pinned to the LAUNCH SEAM: integrations/claude-code/**, app's
+                                      LaunchSpecFactory.kt, and daemon/control's Launch*.kt. It is
+                                      the one rule here that names daemon/control at all, so it was
+                                      checked by hand: LaunchResponse.kt, LaunchService.kt and
+                                      LaunchTypes.kt are all still at that path and none of them was
+                                      part of this extraction. The seam did not move.
+  kt-quota-tracker-single-resolution  pinned to features/turns — the turn-admission path that owns
+                                      QuotaTracker selection. Extraction source was daemon/control.
+  kt-turn-finally-flush-quietly       pinned to features/turns/**/splice/head/** — the head's TURN
+                                      cleanup. This is splice.heads.start in another module, with
+                                      no turn lifecycle. Extraction source was daemon/control.
+  kt-wire-catch-ioexception-alone     pinned to features/turns/**/wire/** — the head's wire layer.
+                                      Extraction source was daemon/control, and this module opens
+                                      no socket.
+
+WHAT WOULD INVALIDATE THIS ROW: any later move of code INTO :features-heads from upstream/, core/,
+integrations/claude-code/, app/'s CLI, the launch seam, or features/turns. That is a different origin from this one, so
+re-run the test above rather than extending this row — the row is dated to the heads/start
+extraction and covers only it.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-http"]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+JsonReply was extracted from daemon/control/api/sessions. None of these six scopes covered that
+source: they grade refusal declarations, CLI bridges, client-home launching, quota selection,
+turn cleanup, or streaming wire catches. The six rules that DID cover the source were widened to
+integrations/http instead of being excluded. A future extraction from those scoped owners must
+carry its rules too; this row does not authorize losing their coverage.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-usage"]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+The budget and alert slices came from core/budget, core/alert, and control/api/usage. None of these
+five scopes covered any of those sources: their owners are CLI bridges, client-home launching,
+quota selection, turn cleanup, and streaming wire catches. The six control-plane rules follow the
+routes, and kt-no-exception-as-outcome follows the core-owned models into this feature. These
+exclusions preserve the source scope rather than reasoning from whether a violation exists today.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-vanilla-config-dir", "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
+  "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-sessions"]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+The sessions slice came from core/sessions, core/teams, core/activity, core/prompt and
+control/api/sessions. None of these four scopes covered any of those sources: they grade
+client-home launching, quota selection, turn cleanup, and streaming wire catches. Every rule that
+DID select one of those sources was widened to features/sessions instead of being excluded.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-vanilla-config-dir", "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
+  "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-models"]
+sourceSets = ["main"]
+date = "2026-09-22"
+reason = """
+The model-listing slice came from app/cli/models and core/model/UpstreamRoster. None of these four
+scopes covered either source: they grade client-home launching, quota selection, turn cleanup, and
+streaming wire catches. The rules that DID select those sources were widened to features/models,
+except the CLI bridge rule, whose stricter companion kt-no-runblocking-in-daemon now bans runBlocking
+there outright.
+"""
+
+[[exclusion]]
+rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
+modules = ["features-models"]
+sourceSets = ["main"]
+files = ["features/models/src/main/**/*.kt"]
+date = "2026-09-23"
+reason = """
+LAYOUT-01 moved /api/models (roster/ModelsRoute) from daemon/control. These three control-plane walls
+selected it there, so each now selects its exact destination. The model-listing and discovery slices
+keep the 2026-09-22 disposition: they declare no control route, log no caller input, and emit no
+outcome tag. The proof credits file rows only from each rule's lost-file set, so this row cannot
+suppress a finding in the selected ModelsRoute.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-quota-tracker-single-resolution",
+  "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-launch"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The launch recipe, the Claude head's wrap and the resume hook came from daemon/control. None of these
+five scopes selected them there: they grade exceptions as outcomes at refusal-type declaration sites,
+the CLI's runBlocking bridge, quota selection, turn cleanup, and streaming wire catches. Every rule
+that DID select them was widened to features/launch instead, and kt-no-vanilla-config-dir, which bound
+only Launch*.kt, now binds the whole module.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-lifecycle", "features-diagnostics", "features-configuration", "features-events"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The draining restart, the upgrade surface, the doctor route, the playground, the knob and topology
+routes, and the console event bus and stream came from daemon/control. None of these six scopes selected them there: they grade exceptions as
+outcomes in the turn path, the CLI's runBlocking bridge, the head launch seam (features/launch),
+quota selection, turn cleanup, and streaming wire catches. Every rule that DID select them was widened
+to these roots instead of being excluded.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-topology"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The splice.toml loader and its structural preflight came from app/daemon. None of these nine
+scopes selected either file there: they grade control-plane routes, route logging, exceptions as
+outcomes, the CLI's runBlocking bridge, client-home launching, outcome tags, quota selection, turn
+cleanup, and streaming wire catches. Every rule that DID select them was widened to
+integrations/topology instead of being excluded, and kt-no-println now reaches them too.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-codemode"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The GraalJS worker pool (JvmCodeModeRuntime, its worker and frame protocol) came from app/codemode.
+None of these nine scopes selected it there: they grade control-plane routes, route logging,
+exceptions as outcomes, the CLI's runBlocking bridge, client-home launching, outcome tags, quota
+selection, turn cleanup, and streaming wire catches. Every rule that DID select it
+(kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine) was
+widened to integrations/codemode instead, and kt-no-println, which ignored app/codemode, now reaches it.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-oauth"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The OAuth sign-in flows, account files and vendor refresh hops came from app/auth and app/cli/auth.
+Eight of these scopes never selected them there (measured against each rule's files/ignores on the
+old paths): control-plane routes, route logging, exceptions as outcomes, client-home launching,
+outcome tags, quota selection, turn cleanup and streaming wire catches. The ninth,
+kt-no-runblocking-exported-bridge, selected LoginCodex/Grok/Kimi/Muse only because app/cli/** is the
+runBlocking ENTRY exemption; in integrations/oauth they sit under kt-no-runblocking-in-daemon, which
+forbids runBlocking outright — the stricter wall. The rules that did select them
+(kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine) were
+widened to integrations/oauth, and kt-no-println, which ignored app/auth and app/cli, now reaches them.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-terminal"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The prompt toolkit came from app/cli/prompt, and ConsoleConfirm from AdminSupport.confirm in app/cli.
+Eight of these scopes never selected those files there (measured against each rule's files/ignores on
+the old paths): control-plane routes, route logging, exceptions as outcomes, client-home launching,
+outcome tags, quota selection, turn cleanup and streaming wire catches. The ninth,
+kt-no-runblocking-exported-bridge, selected them only because app/cli/** is the runBlocking ENTRY
+exemption; in integrations/terminal they sit under kt-no-runblocking-in-daemon, which forbids
+runBlocking outright — the stricter wall. The rules that did select them
+(kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine) were
+widened to integrations/terminal, and kt-no-println, which ignored app/cli, now reaches them.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["integrations-daemon-client"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The daemon client came from app/daemon/DaemonLock.kt (DaemonProbe), app/cli (ControlPlaneClient, and
+AdminSupport's control-port and management-key reads) and app/cli/daemon (DaemonHealth). Eight of these
+scopes never selected those files there (measured against each rule's files/ignores on the old paths):
+control-plane routes, route logging, exceptions as outcomes, client-home launching, outcome tags, quota
+selection, turn cleanup and streaming wire catches. The ninth, kt-no-runblocking-exported-bridge,
+selected the app/cli ones only because app/cli/** is the runBlocking ENTRY exemption; here they sit under
+kt-no-runblocking-in-daemon, which forbids runBlocking outright — the stricter wall. The rules that did
+select them (kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine)
+were widened to integrations/daemon-client, and kt-no-println, which ignored app/cli and app/daemon, now
+reaches them.
+"""
+
+[[exclusion]]
+rules = [
+  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+]
+modules = ["features-accounts"]
+sourceSets = ["main"]
+date = "2026-09-23"
+reason = """
+The account pool read model and the auth/accounts routes came from daemon/control. None of these six
+scopes selected those files there: they grade exceptions as outcomes in the turn path, the CLI's
+runBlocking bridge, client-home launching (Launch*.kt only), quota selection, turn cleanup, and
+streaming wire catches. Every rule that DID select them was widened to features/accounts instead of
+being excluded, and kt-no-println already reaches the whole root.
+"""

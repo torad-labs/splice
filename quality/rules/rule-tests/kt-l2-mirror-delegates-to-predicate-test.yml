@@ -1,0 +1,43 @@
+id: kt-l2-mirror-delegates-to-predicate
+valid:
+  # The shipped shape: the cascade lives in willMirror and mirrorInto asks it first.
+  - |
+    public suspend fun mirrorInto(
+        sink: WireSink,
+        thinkingText: String?,
+        showReasoning: ReasoningDisplay,
+        compact: Boolean,
+    ): Boolean {
+        if (!willMirror(thinkingText, showReasoning, compact)) return false
+        sink.addTextBlock(mirrorWireText(thinkingText.orEmpty().trim()))
+        return true
+    }
+  # The predicate itself must not be mistaken for a non-delegating mirror.
+  - |
+    public fun willMirror(thinkingText: String?, showReasoning: ReasoningDisplay, compact: Boolean): Boolean {
+        if (compact) return false
+        return showReasoning == ReasoningDisplay.TEXT && thinkingText.orEmpty().trim().length >= MIRROR_MIN_CHARS
+    }
+  # A call site is not a definition.
+  - 'val emitted = mirror.mirrorInto(sink, thinking, meta.showReasoning, meta.compact)'
+invalid:
+  # The regression this exists to prevent: the cascade inlined back into mirrorInto, agreeing with
+  # willMirror today and free to drift from it tomorrow.
+  - |
+    public suspend fun mirrorInto(
+        sink: WireSink,
+        thinkingText: String?,
+        showReasoning: ReasoningDisplay,
+        compact: Boolean,
+    ): Boolean {
+        if (compact) return false
+        val t = thinkingText.orEmpty().trim()
+        if (showReasoning != ReasoningDisplay.TEXT || t.length < MIRROR_MIN_CHARS) return false
+        sink.addTextBlock(mirrorWireText(t))
+        return true
+    }
+  # A mirrorInto that gates on nothing at all.
+  - |
+    suspend fun mirrorInto(sink: WireSink, thinkingText: String?) {
+        sink.addTextBlock(mirrorWireText(thinkingText.orEmpty()))
+    }

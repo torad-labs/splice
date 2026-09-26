@@ -1,0 +1,121 @@
+/* The turns page (docs/design/DESIGN.md section 7): the in-flight set, the window summary, where the
+   loaded turns' time went beside what their prompts cost, and the landed table, which narrows to
+   put an opened turn beside it, the geometry of the sessions board. */
+
+.myx-tn { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
+.myx-tn .myx-ph { margin-block-end: 0; }
+.myx-tn .myx-sec + .myx-sec { margin-block-start: 0; }
+
+/* the figures beside a shape: tabular, end-aligned, the second of a pair quieter */
+.myx-tn-figure {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--fg);
+}
+.myx-tn-quiet { color: var(--fg-subtle); }
+.myx-tn-danger { color: var(--danger); }
+.myx-tn-badges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.myx-tn-slots { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); }
+
+/* each head's gate, a tile per head */
+.myx-tn-gates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(20 * var(--u)), 1fr));
+  gap: var(--space-4);
+}
+.myx-tn-gate {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  font-size: var(--text-2);
+}
+/* the turns the gates count and the daemon does not list */
+.myx-tn-unlisted { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-4) 0 0; }
+
+/* a daemon that lists its live turns puts their table under the tiles */
+.myx-tn-gates + * { margin-block-start: var(--space-5); }
+
+/* a turn's waterfall with its length; a percentile pair; an input split with its total */
+.myx-tn-timing,
+.myx-tn-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(4.6875 * var(--u));
+  align-items: center;
+  column-gap: var(--space-3);
+}
+.myx-tn-spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(4.6875 * var(--u)) calc(4.6875 * var(--u));
+  align-items: center;
+  column-gap: var(--space-3);
+}
+
+/* the idle heads, named once under the summary */
+.myx-tn-idle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-2);
+  color: var(--fg-subtle);
+}
+.myx-tn-idle-name { color: var(--fg-muted); }
+.myx-tn-idle-head { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* where the time went beside what the prompts cost */
+.myx-tn-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-7);
+  align-items: start;
+}
+.myx-tn-stages { display: grid; gap: var(--space-5); }
+.myx-tn-stage-heads { display: grid; gap: var(--space-3); }
+.myx-tn-stage-head {
+  display: grid;
+  grid-template-columns: calc(11.25 * var(--u)) minmax(0, 1fr) calc(4.6875 * var(--u));
+  align-items: center;
+  column-gap: var(--space-4);
+  font-size: var(--text-2);
+}
+
+/* an opened turn's prompt: the split with its figures, then the totals */
+.myx-tn-turn-tokens { display: grid; gap: var(--space-5); }
+
+/* the landed table, and the opened turn beside it */
+.myx-tn-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.myx-tn-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(30 * var(--u)), 34%); }
+.myx-tn-board-open .myx-panel {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--space-8) * 3);
+}
+
+@media (max-width: 1100px) {
+  .myx-tn-pair,
+  .myx-tn-board-open { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- a wide screen composes to its width (ruling 4, 2026-09-25) ----------
+   Past 3000 the landed turns keep a readable measure on the left and the summaries stack beside
+   them: in flight, the last day by head, the time per stage and the tokens. */
+@media (min-width: 3000px) {
+  /* the landed list spans every row down to a last flexible one, which takes its height: spread
+     over the summaries' auto rows instead, it pushed them thousands of pixels apart */
+  .myx-tn { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); grid-template-rows: auto auto auto auto 1fr; align-items: start; }
+  .myx-tn > .myx-ph { grid-column: 1 / -1; }
+  .myx-tn > .myx-tn-board { grid-column: 1; grid-row: 2 / -1; }
+  .myx-tn > :not(.myx-ph, .myx-tn-board) { grid-column: 2; }
+  .myx-tn-pair { grid-template-columns: minmax(0, 1fr); }
+}

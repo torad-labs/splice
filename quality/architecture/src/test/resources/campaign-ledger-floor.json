@@ -1,0 +1,66 @@
+{
+  "bug-sweep.toml": {
+    "lines": 100,
+    "rows": 6
+  },
+  "ci-hardening.toml": {
+    "lines": 166,
+    "rows": 8
+  },
+  "claude-head.toml": {
+    "lines": 265,
+    "rows": 13
+  },
+  "cli-wizard.toml": {
+    "lines": 229,
+    "rows": 10
+  },
+  "drift-repair.toml": {
+    "lines": 3038,
+    "rows": 189
+  },
+  "head-decoupling.toml": {
+    "lines": 1003,
+    "rows": 37
+  },
+  "kotlin-gateway.toml": {
+    "lines": 896,
+    "rows": 43
+  },
+  "oss-release.toml": {
+    "lines": 186,
+    "rows": 13
+  },
+  "proxy-hardening.toml": {
+    "lines": 1099,
+    "rows": 88
+  },
+  "proxy-hardening/walls/law_registry.toml": {
+    "lines": 134,
+    "rows": 0
+  },
+  "proxy-hardening/walls/wall_registry.toml": {
+    "lines": 464,
+    "rows": 88
+  },
+  "reasoning-cache.toml": {
+    "lines": 122,
+    "rows": 6
+  },
+  "repository-layout.toml": {
+    "lines": 15,
+    "rows": 1
+  },
+  "v0.4.0.toml": {
+    "lines": 5995,
+    "rows": 185
+  },
+  "web-console.toml": {
+    "lines": 3915,
+    "rows": 180
+  },
+  "ws-transport.toml": {
+    "lines": 125,
+    "rows": 7
+  }
+}

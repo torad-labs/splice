@@ -1,0 +1,810 @@
+// PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — effort
+// precedence (v27), visibility floor semantics, spark summary quirk, compaction built byte-identical
+// to a turn (2026-09-05), cache-key stability, tool mapping, replay gating, grok ladder clamps,
+// purity/determinism.
+package splice.dialect.responses.request
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.parse.AnthropicParse
+import splice.core.turn.ReasoningDisplayParser
+import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.GrokEffortFixture
+import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.reasoning.InjectPriorReasoning
+import splice.dialect.responses.reasoning.RequestEncryptedReasoning
+import splice.dialect.responses.tools.ToolDeferralPolicy
+
+private val stableIds = ResponsesStableIds()
+
+private val CODEX = ResponsesQuirks(
+    providerTag = "claudex",
+    emitEmptyLiteInstructions = true,
+    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+    summaryRejectModelRegex = Regex("spark", RegexOption.IGNORE_CASE),
+    effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
+)
+private val OPENAI = ResponsesQuirks(providerTag = "openai")
+private val GROK = ResponsesQuirks(
+    providerTag = "claude-grok",
+    cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
+    effortVocabulary = GrokEffortFixture(),
+    supportsSummary = true,
+    summaryRejectModelRegex = null,
+    emitToolChoice = true,
+    emitStrict = true,
+)
+
+private fun opts(
+    compact: Boolean = false,
+    effort: String? = null,
+    summary: String? = null,
+    show: String = "text",
+    replay: Boolean = false,
+    includeEncrypted: Boolean? = null,
+    model: String = "gpt-5.6-sol",
+    sessionId: String? = null,
+) = BuildOptions(
+    compact = compact,
+    originalModel = "claude-codex--$model",
+    upstreamModel = model,
+    configEffort = effort,
+    configSummary = summary,
+    showReasoning = ReasoningDisplayParser.from(show),
+    replayReasoning = InjectPriorReasoning(replay),
+    // Default: include when reasoning is shown (independent of input-replay, and of compact —
+    // ResponsesTurnOptions derives it the same way, so a compaction's request matches a turn's).
+    includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off")),
+    sessionId = sessionId,
+    decodeReasoningEnvelope = { data ->
+        buildJsonObject {
+            put("type", JsonPrimitive("reasoning"))
+            put("decoded", JsonPrimitive(data))
+        }
+    },
+)
+
+private fun build(json: String, quirks: ResponsesQuirks = CODEX, options: BuildOptions = opts()): JsonObject {
+    val parsed = AnthropicParse.parseAnthropicBody(json)
+    return ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options).req
+}
+
+class ResponsesRequestBuilderTest {
+
+    @Test
+    fun `effort precedence - body beats budget beats config, ultracode maps to max`() {
+        val budgetBody = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
+            "messages":[{"role":"user","content":"x"}]}"""
+        // budget 32k -> xhigh (beats config low)
+        var req = build(budgetBody, options = opts(effort = "low"))
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // explicit body field beats the budget
+        req = build(
+            """{"model":"m","effort":"ultracode","thinking":{"type":"enabled","budget_tokens":2000},
+                "messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // nothing anywhere -> high
+        req = build("""{"model":"m","messages":[{"role":"user","content":"x"}]}""")
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `grok ladder reaches xhigh on the top budget rung and the ultracode alias`() {
+        // Grok 4.6 adds the xhigh rung (xAI docs 2026-08: native on 4.6+; older groks clamp it
+        // to high upstream), so the ladder emits it model-blind — a stale gate would silently
+        // cap every future grok at high. Before this the GROK ladder topped out at high and the
+        // ultracode alias clamped to high.
+        var req = build(
+            """{"model":"grok-4.6","thinking":{"type":"enabled","budget_tokens":64000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.6"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        req = build(
+            """{"model":"grok-4.6","effort":"ultracode","thinking":{"type":"enabled","budget_tokens":2000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.6"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `visibility floor lifts none-minimal to low but never a deliberate pick`() {
+        var req = build(
+            """{"model":"m","effort":"minimal","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(show = "text"),
+        )
+        assertEquals("low", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
+        req = build(
+            """{"model":"m","effort":"medium","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(show = "text", summary = "concise"),
+        )
+        assertEquals("medium", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // configSummary is operator-controlled — concise stays concise when TOML/env says so.
+        assertEquals("concise", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `request-level weak summary is floored to detailed when reasoning is visible`() {
+        // The MODEL/Claude Code asking for concise must not defeat operator-visible reasoning
+        // (v27 fold); an operator-set concise still wins (pinned in the visibility-floor test).
+        val req = build(
+            """{"model":"m","reasoning":{"summary":"concise"},"messages":[{"role":"user","content":"x"}]}""",
+            options = opts(show = "text"),
+        )
+        assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
+    }
+
+    // stream_options.reasoning_summary_delivery (2026-07-19): rides ONLY with a codex-style
+    // summaryDelivery quirk AND an actual summary request — grok/default quirks omit the field.
+    @Test
+    fun `summary delivery rides with the quirk and an actual summary, never otherwise`() {
+        val body = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
+            "messages":[{"role":"user","content":"x"}]}"""
+        val withDelivery = CODEX.copy(summaryDelivery = "sequential_cutoff")
+        var req = build(body, quirks = withDelivery)
+        assertEquals(
+            "sequential_cutoff",
+            req["stream_options"]?.jsonObject?.get("reasoning_summary_delivery")?.jsonPrimitive?.content,
+        )
+        // no quirk -> omitted (grok/openai-platform)
+        req = build(body, quirks = GROK)
+        assertNull(req["stream_options"])
+        // quirk set but no summary requested (disabled thinking) -> omitted, codex-rs parity
+        val disabled = """{"model":"m","thinking":{"type":"disabled"},
+            "messages":[{"role":"user","content":"x"}]}"""
+        req = build(disabled, quirks = withDelivery)
+        assertNull(req["stream_options"])
+    }
+
+    @Test
+    fun `disabled thinking emits no reasoning block on codex`() {
+        val req = build(
+            """{"model":"m","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertNull(req["reasoning"])
+    }
+
+    // codex-rs responses-lite parity for the gpt-5.6 family (shape read from codex-rs source and
+    // accepted by the live backend 2026-07-19): instructions+tools move INTO input, parallel tool
+    // calls forced off, reasoning context spans the session.
+    @Test
+    fun `gpt-5-6 lite shape - instructions and tools ride as input items`() {
+        val tooled = """{"model":"m","system":"harness prompt",
+            "tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        val req = build(tooled, options = opts(model = "gpt-5.6-sol"))
+        // "" and not omitted: codex's ResponsesApiRequest.instructions is a non-optional String,
+        // so its lite requests carry the empty string (client.rs:874; tools byte-parity 2026-08-26).
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content)
+        assertNull(req["tools"])
+        // codex-rs parity (client.rs:896): tools ride as additional_tools, so the backend needs an
+        // explicit tool_choice:"auto" to enable function-calling — omitting it left the model
+        // improvising tool calls (stuck/looping turns). Emitted even though codex leaves emitToolChoice off.
+        assertEquals("auto", req["tool_choice"]?.jsonPrimitive?.content)
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("additional_tools", input[0]["type"]?.jsonPrimitive?.content)
+        assertEquals("developer", input[0]["role"]?.jsonPrimitive?.content)
+        assertEquals("Task", input[0]["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("developer", input[1]["role"]?.jsonPrimitive?.content)
+        assertEquals("harness prompt", input[1]["content"]?.jsonPrimitive?.content)
+        assertEquals("x", input[2]["content"]?.jsonPrimitive?.content)
+    }
+
+    // gpt-6-astra (codex models.json 2026-09-04: use_responses_lite true, same shape as the 5.6
+    // family). The live /models listing shows it to this account at client_version 0.153.0.
+    @Test
+    fun `gpt-6-astra rides the lite shape like the 5-6 family`() {
+        val req = build(
+            """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-6-astra"),
+        )
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content)
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
+        assertEquals("developer", req["input"]!!.jsonArray[0].jsonObject["role"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `gpt-5-6 lite without tools - developer instructions only, no additional_tools item`() {
+        val req = build(
+            """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.6-luna"),
+        )
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content) // lite parity: "", not omitted
+        // the backend REQUIRES an explicit false whenever the lite header rides, tools or not
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("developer", input[0]["role"]?.jsonPrimitive?.content)
+        assertEquals("harness prompt", input[0]["content"]?.jsonPrimitive?.content)
+        assertFalse(input.any { it["type"]?.jsonPrimitive?.content == "additional_tools" })
+    }
+
+    @Test
+    fun `non-lite models keep the normal shape - instructions and tools top-level, no context`() {
+        val tooled = """{"model":"m","system":"harness prompt",
+            "tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        val req = build(tooled, options = opts(model = "gpt-5.5"))
+        assertEquals("harness prompt", req["instructions"]?.jsonPrimitive?.content)
+        assertEquals("Task", req["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
+        // non-lite codex keeps its proven shape: top-level tools auto-enable calling, so tool_choice
+        // stays omitted (the lite tool_choice fix must not perturb this path).
+        assertNull(req["tool_choice"])
+        assertNull(req["parallel_tool_calls"])
+        assertNull(req["reasoning"]?.jsonObject?.get("context"))
+        assertFalse(
+            req["input"]!!.jsonArray.any {
+                it.jsonObject["type"]?.jsonPrimitive?.content == "additional_tools"
+            },
+        )
+    }
+
+    @Test
+    fun `mini clamps effort max to xhigh, other models keep max`() {
+        val maxBody = """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}"""
+        var req = build(maxBody, options = opts(model = "gpt-5.4-mini"))
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        req = build(maxBody, options = opts(model = "gpt-5.6-sol"))
+        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // the 64k budget tier maps to max — the real-world trigger — and clamps on mini too
+        req = build(
+            """{"model":"m","thinking":{"type":"enabled","budget_tokens":64000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.4-mini"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `google gemini-2_5-pro keeps effort max on an OpenAI-shaped profile`() {
+        val req = build(
+            """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}""",
+            quirks = OPENAI,
+            options = opts(model = "google/gemini-2.5-pro"),
+        )
+        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    // CACHE LAW (2026-07-20, made total 2026-09-05): compaction MUST run on the session's own
+    // model AND effort, or the warm prompt-cache prefix is invalidated and the whole transcript
+    // re-reads cold (the "compaction ate my subscription" bug). No compact-model override and no
+    // effort pin exist on any provider: both inherit the session.
+    @Test
+    fun `compact inherits the session model and effort - the cache law`() {
+        val body = """{"model":"m","system":"base","messages":[{"role":"user","content":"go"}]}"""
+        val req = build(body, options = opts(compact = true, effort = "high", model = "gpt-5.6-sol"))
+        // model is the session's own upstream model — never swapped for a compaction run
+        assertEquals("gpt-5.6-sol", req["model"]?.jsonPrimitive?.content)
+        // effort is inherited from the session (config "high"), never pinned lower
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    // The whole law in one assertion. OpenAI's prompt cache is an exact-prefix match, so every
+    // compact-only reshaping this builder used to do (directive appended to instructions, tools
+    // stripped, tool results folded to user text, images dropped, lite shape off, cached
+    // reasoning left out) moved the prefix from token zero and every compaction read the whole
+    // transcript cold (perf rows 2026-09-05: compact cached_tokens=0 on every model). The
+    // compaction's request bytes must therefore equal the session turn's for the same body.
+    @Test
+    fun `compaction is built byte-identical to a turn`() {
+        val body = """{"model":"m","system":"base system",
+            "thinking":{"type":"enabled","budget_tokens":16000},
+            "tools":[{"name":"run","input_schema":{"type":"object"}},{"name":"read","input_schema":{"type":"object"}}],
+            "messages":[
+              {"role":"user","content":"start"},
+              {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{"c":1}}]},
+              {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"t1","content":[
+                  {"type":"text","text":"result body"},
+                  {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}]},
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}},
+                {"type":"text","text":"Your task is to create a detailed summary of the conversation so far."}
+              ]}]}"""
+        for (model in listOf("gpt-5.6-sol", "gpt-5.4-mini")) {
+            val turn = build(body, options = opts(model = model)).toString()
+            val compaction = build(body, options = opts(compact = true, model = model)).toString()
+            assertEquals(turn, compaction, "compaction must share the turn's prefix on $model")
+            assertTrue(compaction.contains("function_call_output"), "tool results ride as themselves: $compaction")
+            assertTrue(compaction.contains("input_image"), "images ride: $compaction")
+            assertFalse(compaction.contains("COMPACT MODE"), "no directive anywhere: $compaction")
+        }
+    }
+
+    @Test
+    fun `spark rejects the summary field`() {
+        val req = build(
+            """{"model":"m","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.3-codex-spark"),
+        )
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertNull(req["reasoning"]?.jsonObject?.get("summary"))
+    }
+
+    @Test
+    fun `tool_use and tool_result map to function_call items - images ride follow-up`() {
+        val req = build(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"run","input":{"c":1}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t9","content":[
+                    {"type":"text","text":"out"},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}
+                ]}]}
+            ]}""",
+        )
+        val inputs = req["input"]!!.jsonArray.map { it.jsonObject }
+        val call = inputs.first { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertEquals("t9", call["call_id"]?.jsonPrimitive?.content)
+        assertEquals("""{"c":1}""", call["arguments"]?.jsonPrimitive?.content)
+        val output = inputs.first { it["type"]?.jsonPrimitive?.content == "function_call_output" }
+        assertEquals("out", output["output"]?.jsonPrimitive?.content)
+        val follower = inputs.last()
+        assertTrue(follower.toString().contains("images from tool_result t9"))
+        assertTrue(follower.toString().contains("data:image/png;base64,aGk="))
+    }
+
+    @Test
+    fun `include and input-replay are independent knobs`() {
+        val body = """{"model":"m","messages":[{"role":"assistant","content":[
+            {"type":"redacted_thinking","data":"ZW52ZWxvcGU="}]},
+            {"role":"user","content":"next"}]}"""
+        // include ON, replay OFF (the deep-reasoning default): fetch handle, do not inject prior.
+        val includeOnly = build(body, options = opts(replay = false, includeEncrypted = true))
+        assertTrue(includeOnly["include"].toString().contains("reasoning.encrypted_content"))
+        assertFalse(includeOnly["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
+        // NB: no stream_options on Responses — the ChatGPT backend 400s "Unknown parameter"
+        // on stream_options.include_usage (verified live 2026-07-18); usage rides response.completed.
+        assertNull(includeOnly["stream_options"])
+        // both ON: inject prior redacted_thinking into input AND request new encrypted handle.
+        val both = build(body, options = opts(replay = true, includeEncrypted = true))
+        assertTrue(both["include"].toString().contains("reasoning.encrypted_content"))
+        assertTrue(both["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
+        // both OFF: neither include nor inject.
+        val off = build(body, options = opts(replay = false, includeEncrypted = false))
+        assertNull(off["include"])
+        assertFalse(off["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
+    }
+
+    @Test
+    fun `cache key - stable sha prefix on codex, session id on grok, null without seed`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"first message"}]}"""
+        val a = build(body)["prompt_cache_key"]?.jsonPrimitive?.content
+        val b = build(body)["prompt_cache_key"]?.jsonPrimitive?.content
+        assertEquals(a, b)
+        assertTrue(a!!.startsWith("splice-") && a.length == "splice-".length + 32)
+        val parsed = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[]}""")
+        assertNull(stableIds.stablePromptCacheKey(parsed.typed))
+        val grokReq = build(body, quirks = GROK, options = opts(sessionId = "sess-1"))
+        assertEquals("claude-grok:sess-1", grokReq["prompt_cache_key"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `grok ladder passes xhigh through (upstream clamps pre-4_6), emits tool_choice, floors disabled to low`() {
+        // 2026-08-13: the clamp moved UPSTREAM. xhigh is native on grok-4.6+; xAI documents
+        // treating it as high on older models, and this provider only ever talks to api.x.ai,
+        // so the ladder emits it model-blind instead of keeping a client-side gate that would
+        // silently cap every future grok at high.
+        val req = build(
+            """{"model":"grok-4.5","effort":"xhigh","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"any"},"messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.5"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // Full reasoning visibility: detailed summary is requested so the stream fills the
+        // thinking channel (xAI's public form of "full" reasoning text).
+        assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
+        assertEquals("required", req["tool_choice"]?.jsonPrimitive?.content)
+        assertEquals(true, req["parallel_tool_calls"]?.jsonPrimitive?.content?.toBoolean())
+        // disabled thinking does NOT disable grok reasoning — the default chain applies
+        // (Node grok source: budget skipped, config||high; the low-floor is only for
+        // out-of-ladder values)
+        val disabled = build(
+            """{"model":"grok-4.5","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.5"),
+        )
+        assertEquals("high", disabled["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `purity - identical inputs build identical requests, store false, stream true`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"same"}]}"""
+        assertEquals(build(body).toString(), build(body).toString())
+        val req = build(body)
+        assertEquals("false", req["store"]?.jsonPrimitive?.content)
+        assertEquals("true", req["stream"]?.jsonPrimitive?.content)
+    }
+
+    // grok used to pin compaction effort to `low` (Node grok/translate-request.mjs:141). The pin
+    // moved the reasoning off the session's and cold-read the transcript on every compaction;
+    // no provider pins any more (2026-09-05).
+    @Test
+    fun `grok compaction inherits the session effort like every provider`() {
+        val body = """{"model":"grok-4.5","thinking":{"type":"enabled","budget_tokens":50000},
+            "messages":[{"role":"user","content":"summarize"}]}"""
+        val turn = build(body, quirks = GROK, options = opts(model = "grok-4.5"))
+        val compaction = build(body, quirks = GROK, options = opts(compact = true, model = "grok-4.5"))
+        assertEquals(turn["reasoning"], compaction["reasoning"])
+        assertFalse(compaction["reasoning"]!!.jsonObject["effort"]?.jsonPrimitive?.content == "low")
+    }
+
+    @Test
+    fun `a malformed reasoning field (bare string) does not crash the builder`() {
+        // Node's optional chaining degrades to defaults; the Kotlin port must not throw on
+        // `?.jsonObject` (safe cast instead). This would otherwise be an uncaught 500 in HeadServer.
+        val body = """{"model":"gpt-5.6-sol","reasoning":"high","metadata":"x","output_config":"y",
+            "messages":[{"role":"user","content":"hi"}]}"""
+        val req = build(body) // must not throw
+        assertTrue(req.containsKey("reasoning")) // falls back to config/default effort
+    }
+
+    @Test
+    fun `compact instructions are the session's system prompt verbatim`() {
+        val body = """{"model":"gpt-5.4-mini","system":"base system",
+            "messages":[{"role":"user","content":"go"}]}"""
+        val req = build(body, options = opts(compact = true, model = "gpt-5.4-mini"))
+        assertEquals("base system", req["instructions"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `image with empty media_type falls back to image-png like Node`() {
+        val body = """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":[
+            {"type":"image","source":{"type":"base64","media_type":"","data":"aGk="}}]}]}"""
+        val req = build(body)
+        assertTrue(req.toString().contains("data:image/png;base64,aGk="))
+    }
+}
+
+// RC-3 walls (reasoning-cache 2026-07-24): cache hits inject the turn's reasoning ONCE,
+// immediately before its FIRST function_call; misses are byte-identical to today; the rs_ id
+// appears at most once per request even when the legacy client-replay path carries it too.
+private fun cacheOpts(
+    replay: Boolean = false,
+    lookup: (String) -> List<String>? = { null },
+) = BuildOptions(
+    compact = false,
+    originalModel = "claude-codex--gpt-5.6-sol",
+    upstreamModel = "gpt-5.6-sol",
+    configEffort = null,
+    configSummary = null,
+    showReasoning = ReasoningDisplayParser.from("text"),
+    replayReasoning = InjectPriorReasoning(replay),
+    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    sessionId = null,
+    decodeReasoningEnvelope = { data ->
+        buildJsonObject {
+            put("type", JsonPrimitive("reasoning"))
+            put("id", JsonPrimitive("rs_$data"))
+            put("encrypted_content", JsonPrimitive(data))
+        }
+    },
+    reasoningLookup = lookup,
+)
+
+// RC-5 overlay wall (review 2026-07-24: the knob had no round-trip proof — this repo already
+// shipped five decorative quirks once, the 2026-07-18 withToml audit): a real TOML value must
+// reach ResponsesQuirks.reasoningCache through the chained overlay, and null must preserve it.
+class ReasoningCacheTomlOverlayTest {
+
+    @Test
+    fun `the overlay applies an explicit value and null keeps the base`() {
+        val base = ResponsesQuirks(providerTag = "t")
+        assertTrue(base.reasoningCache, "default is ON")
+        assertEquals(false, base.withReasoningCacheToml(false).reasoningCache)
+        assertEquals(true, base.withReasoningCacheToml(null).reasoningCache, "null preserves the base")
+        assertEquals(
+            false,
+            base.withReasoningCacheToml(false).withReasoningCacheToml(null).reasoningCache,
+            "null preserves an applied override",
+        )
+    }
+}
+
+/** A pre-cache caller: identical fields, but the reasoningLookup PARAMETER is never passed —
+ *  the class default carries it, which is exactly what an unwired call site looks like. */
+private fun preCacheOpts() = BuildOptions(
+    compact = false,
+    originalModel = "claude-codex--gpt-5.6-sol",
+    upstreamModel = "gpt-5.6-sol",
+    configEffort = null,
+    configSummary = null,
+    showReasoning = ReasoningDisplayParser.from("text"),
+    replayReasoning = InjectPriorReasoning(false),
+    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    sessionId = null,
+    decodeReasoningEnvelope = { null },
+)
+
+private const val TOOL_TURN_BODY = """{"model":"m","messages":[
+    {"role":"user","content":"do the thing"},
+    {"role":"assistant","content":[
+        {"type":"tool_use","id":"call_abc","name":"run","input":{"x":1}}]},
+    {"role":"user","content":[
+        {"type":"tool_result","tool_use_id":"call_abc","content":[{"type":"text","text":"ok"}]}]}
+]}"""
+
+class ReasoningInjectionTest {
+
+    private fun items(req: JsonObject) = req["input"]!!.jsonArray.map { it.jsonObject }
+
+    @Test
+    fun `a cache hit injects the turn's reasoning immediately before its function_call`() {
+        val req = build(
+            TOOL_TURN_BODY,
+            options = cacheOpts(lookup = { id -> if (id == "call_abc") listOf("env1") else null }),
+        )
+        val input = items(req)
+        val fcIdx = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertTrue(fcIdx > 0, "function_call present")
+        assertEquals("reasoning", input[fcIdx - 1]["type"]?.jsonPrimitive?.content)
+        assertEquals("rs_env1", input[fcIdx - 1]["id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `one turn's entry injects once even with two tool_use blocks`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"call_a","name":"run","input":{}},
+                {"type":"tool_use","id":"call_b","name":"run","input":{}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call_a","content":[{"type":"text","text":"1"}]},
+                {"type":"tool_result","tool_use_id":"call_b","content":[{"type":"text","text":"2"}]}]}
+        ]}"""
+        val req = build(body, options = cacheOpts(lookup = { listOf("env1") }))
+        val input = items(req)
+        val reasonings = input.filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+        assertEquals(1, reasonings.size, "inject-once per turn")
+        val firstFc = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertEquals("reasoning", input[firstFc - 1]["type"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a cache miss is byte-identical to a build that never heard of the cache`() {
+        // review 2026-07-24: comparing cacheOpts(lookup = { null }) against cacheOpts() compared
+        // two identical no-ops (cacheOpts' own default is { null } too). The compat claim is
+        // against a PRE-CACHE caller: BuildOptions constructed without the reasoningLookup
+        // parameter at all, so the class default carries the unwired side.
+        val miss = build(TOOL_TURN_BODY, options = cacheOpts(lookup = { null }))
+        val unwired = build(TOOL_TURN_BODY, options = preCacheOpts())
+        assertEquals(unwired.toString(), miss.toString())
+    }
+
+    @Test
+    fun `cache and legacy client replay never duplicate an rs_ id`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[
+                {"type":"redacted_thinking","data":"env1"},
+                {"type":"tool_use","id":"call_abc","name":"run","input":{}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call_abc","content":[{"type":"text","text":"ok"}]}]}
+        ]}"""
+        val req = build(body, options = cacheOpts(replay = true, lookup = { listOf("env1") }))
+        val reasonings = items(req).filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+        assertEquals(1, reasonings.size, "rs_env1 must appear exactly once across both paths")
+    }
+}
+
+// Tool-surface deferral walls (ToolSurface.kt / ResponsesRequestBuilder's toolSearchControllerFor).
+// The three EXISTING lite-shape tests above (`gpt-5-6 lite shape...`, `...without tools...`,
+// `non-lite models keep the normal shape...`) stay green UNMODIFIED — that green is the second
+// default-off proof (deferral off never perturbs the lite/non-lite shape they pin).
+private val MCP_TOOLS_JSON = (1..12).joinToString(",") {
+    """{"name":"mcp__exa__tool_$it","input_schema":{"type":"object"}}"""
+}
+
+private fun toolSurfaceBody() = """{"model":"m",
+    "tools":[{"name":"Read","input_schema":{"type":"object"}},$MCP_TOOLS_JSON],
+    "messages":[{"role":"user","content":"x"}]}"""
+
+// N+1 of toolSurfaceBody(): the same tools, plus a prior turn's tool_use/tool_result of [toolName].
+private fun toolSurfaceBodyWithHistory(toolName: String) = """{"model":"m",
+    "tools":[{"name":"Read","input_schema":{"type":"object"}},$MCP_TOOLS_JSON],
+    "messages":[
+        {"role":"user","content":"x"},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call_x","name":"$toolName","input":{}}]},
+        {"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"call_x","content":[{"type":"text","text":"ok"}]}]}
+    ]}"""
+
+class ToolSurfaceRequestTest {
+
+    private val quirksOn = CODEX.copy(toolSurface = ToolDeferralPolicy(minDeferred = 4))
+
+    @Test
+    fun `deferral on - deferred names absent, tool_search last, other fields unchanged`() {
+        val req = build(toolSurfaceBody(), quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val toolsArr = req["input"]!!.jsonArray[0].jsonObject["tools"]!!.jsonArray
+        val kinds = toolsArr.map { t ->
+            t.jsonObject["name"]?.jsonPrimitive?.content ?: t.jsonObject["type"]?.jsonPrimitive?.content
+        }
+        assertFalse(kinds.any { it?.startsWith("mcp__") == true }, "deferred tools never ride the request")
+        assertEquals("tool_search", kinds.last())
+        assertEquals("auto", req["tool_choice"]?.jsonPrimitive?.content)
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `BuiltRequest toolSearch is non-null exactly when the partition deferred something`() {
+        val parsedOn = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
+        val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
+        assertTrue(builtOn.toolSearch != null)
+
+        val parsedOff = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
+        val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
+        assertNull(builtOff.toolSearch)
+    }
+
+    @Test
+    fun `TurnMeta stamps tools eager and deferred, null when deferral is off`() {
+        val parsedOn = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
+        val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
+        assertEquals(1, builtOn.meta.toolsEager)
+        assertEquals(12, builtOn.meta.toolsDeferred)
+
+        val parsedOff = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
+        val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
+        assertNull(builtOff.meta.toolsEager)
+        assertNull(builtOff.meta.toolsDeferred)
+    }
+
+    // Declaration-replay walls (cache-prefix stability, 2026-07-25): ToolSurface.kt's transcript-
+    // warm promotion busted the cached prefix (the R2 wall moved additional_tools' bytes the FIRST
+    // time a deferred tool was actually used); these pin its replacement — the tool's schema is
+    // re-declared IN HISTORY, immediately before its function_call, and additional_tools never moves.
+
+    @Test
+    fun `additional_tools bytes are identical whether or not history already used a deferred tool`() {
+        val cold = build(toolSurfaceBody(), quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val warm = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        assertEquals(cold["input"]!!.jsonArray[0].toString(), warm["input"]!!.jsonArray[0].toString())
+    }
+
+    @Test
+    fun `turn N+1 (adds a tool_use plus tool_result of a deferred tool) keeps input(0) byte-identical to turn N`() {
+        val turnN = build(toolSurfaceBody(), quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val turnNPlus1 = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        assertEquals(turnN["input"]!!.jsonArray[0].toString(), turnNPlus1["input"]!!.jsonArray[0].toString())
+    }
+
+    @Test
+    fun `declaration replay - full schema, positioned immediately before the function_call`() {
+        val req = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        val fcIdx = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertTrue(fcIdx >= 2, "reasoning-free turn: call then output must precede the function_call")
+        val call = input[fcIdx - 2]
+        val output = input[fcIdx - 1]
+        assertEquals("tool_search_call", call["type"]?.jsonPrimitive?.content)
+        // REGRESSION (PR #48 shipped this as a stringified JSON → upstream 400 "input[N].arguments:
+        // expected an object, but got a string"): the Responses API types tool_search_call.arguments
+        // as an OBJECT (codex-rs models.rs:888 `arguments: serde_json::Value`), unlike function_call.
+        assertTrue(call["arguments"] is JsonObject, "tool_search_call.arguments must be a JSON object, not a string")
+        assertEquals("mcp__exa__tool_5", call["arguments"]!!.jsonObject["query"]?.jsonPrimitive?.content)
+        assertEquals("tool_search_output", output["type"]?.jsonPrimitive?.content)
+        assertEquals(call["call_id"]?.jsonPrimitive?.content, output["call_id"]?.jsonPrimitive?.content)
+        val tools = output["tools"]!!.jsonArray
+        assertEquals(1, tools.size)
+        assertEquals("mcp__exa__tool_5", tools[0].jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("true", tools[0].jsonObject["defer_loading"]?.jsonPrimitive?.content)
+        // nothing else in the input carries a second declaration of this tool
+        assertEquals(1, input.count { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
+    }
+
+    @Test
+    fun `declaration replay is deterministic - identical JSON across repeated builds`() {
+        val body = toolSurfaceBodyWithHistory("mcp__exa__tool_5")
+        val a = build(body, quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val b = build(body, quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        assertEquals(a.toString(), b.toString())
+    }
+
+    @Test
+    fun `a transcript tool_use naming a tool absent from body-tools does not crash or emit a declaration`() {
+        val req = build(
+            toolSurfaceBodyWithHistory("mcp__exa__ghost"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        ) // must not throw
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_output" })
+        val call = input.first { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertEquals(
+            "mcp__exa__ghost",
+            call["name"]?.jsonPrimitive?.content,
+            "the call rides bare, like an eager tool's",
+        )
+    }
+
+    @Test
+    fun `deferral off - a warm deferred-shaped tool_use still emits no declaration`() {
+        val req = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = CODEX,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_output" })
+    }
+
+    @Test
+    fun `parallel_tool_calls always rides on lite turns and its VALUE is an overlay knob`() {
+        val toolless = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        val tooled = """{"model":"m","tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        fun ptc(json: String, q: ResponsesQuirks) =
+            build(json, quirks = q, options = opts(model = "gpt-5.6-sol"))["parallel_tool_calls"]
+
+        // The field must be PRESENT on every lite turn — the backend 400s a lite request without
+        // it (live error 2026-07-19, toolless turn), so "omit when false" is not an option.
+        assertEquals(JsonPrimitive(false), ptc(tooled, CODEX), "default is unchanged: sequential")
+        // Absent TOML must keep the provider's own default, never stomp it (the summary_field trap).
+        assertEquals(JsonPrimitive(false), ptc(tooled, CODEX.withParallelToolCallsToml(null)))
+        // ...and an explicit TOML true must actually REACH THE WIRE on a tooled turn. A knob that
+        // unit-tests green and no-ops in the daemon is the failure mode this assertion exists for.
+        assertEquals(JsonPrimitive(true), ptc(tooled, CODEX.withParallelToolCallsToml(true)))
+        assertEquals(JsonPrimitive(false), ptc(tooled, CODEX.withParallelToolCallsToml(false)))
+        // Knob on, TOOLLESS turn: stays false — nothing to parallelize, and explicit-true-
+        // without-tools is an untested combination upstream (review of #71 round 2).
+        assertEquals(JsonPrimitive(false), ptc(toolless, CODEX.withParallelToolCallsToml(true)))
+    }
+
+    @Test
+    fun `the client's explicit disable_parallel_tool_use beats the operator knob`() {
+        // review of #71 round 2: with the knob on, the lite branch used to short-circuit before
+        // reading tool_choice — the gateway silently overrode a request the client asked to
+        // serialize (the recorded 30-50-parallel-Task-spray shape).
+        val serial = """{"model":"m","tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "tool_choice":{"type":"auto","disable_parallel_tool_use":true},
+            "messages":[{"role":"user","content":"x"}]}"""
+        val req = build(serial, quirks = CODEX.withParallelToolCallsToml(true), options = opts(model = "gpt-5.6-sol"))
+        assertEquals(JsonPrimitive(false), req["parallel_tool_calls"])
+    }
+
+    @Test
+    fun `the parallel_tool_calls knob does not touch non-lite turns and rides compaction like a turn`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        val on = CODEX.withParallelToolCallsToml(true)
+        // Non-lite model: the lite branch never runs, so the knob is inert and the field stays
+        // omitted (backend default) exactly as before.
+        assertNull(build(body, quirks = on, options = opts(model = "gpt-5.4-mini"))["parallel_tool_calls"])
+        // A compaction on a lite model IS lite (lite is a property of the model, 2026-09-05), so it
+        // carries exactly what the session turn carries.
+        assertEquals(
+            build(body, quirks = on, options = opts(model = "gpt-5.6-sol"))["parallel_tool_calls"],
+            build(body, quirks = on, options = opts(compact = true, model = "gpt-5.6-sol"))["parallel_tool_calls"],
+        )
+    }
+}

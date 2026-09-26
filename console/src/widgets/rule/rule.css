@@ -1,0 +1,64 @@
+/* The status strip (docs/design/DESIGN.md section 6): one quiet line over every page. Cells flow
+   left to right and wrap on a narrow window; the clocks keep the right edge. Figures are in the
+   mono face so a ticking clock or countdown never shifts the words after it. */
+
+.myx-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-6);
+  row-gap: var(--space-2);
+  min-height: var(--space-8);
+  padding: var(--space-3) var(--space-7);
+  border-bottom: var(--hair) solid var(--line);
+  background: var(--bg);
+  font-size: var(--text-2);
+  color: var(--fg-muted);
+}
+
+.myx-rule-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.myx-rule-clocks { margin-inline-start: auto; }
+
+/* a glyph stands for a word the strip does not print: the limit, the countdown, the daemon's state */
+.myx-rule-glyph { flex: none; font-size: var(--text-4); color: var(--fg-subtle); }
+.myx-rule-state { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--fg); }
+.myx-rule-state svg { flex: none; font-size: var(--text-4); }
+.myx-rule-health-ok .myx-rule-state svg { color: var(--ok); }
+.myx-rule-health-warn .myx-rule-state svg { color: var(--warn); }
+.myx-rule-health-danger .myx-rule-state svg { color: var(--danger); }
+.myx-rule-health-neutral .myx-rule-state svg { color: var(--fg-subtle); }
+.myx-rule-meter { display: inline-flex; width: calc(5 * var(--u)); }
+.myx-rule-reset { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono); color: var(--fg-muted); }
+
+.myx-rule-word { color: var(--fg-subtle); }
+.myx-rule-absent { color: var(--fg-subtle); }
+.myx-rule-account,
+.myx-rule-period { color: var(--fg-muted); }
+
+.myx-rule-figure {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.myx-rule-pct-warn { color: var(--warn); }
+.myx-rule-pct-danger { color: var(--danger); }
+
+.myx-rule .myx-hm-name { color: var(--fg); }
+/* A state word is the colorblind fallback for its dot, so in the strip it prints in the full ink
+   while the labels around it stay quiet (tests/primitives.test.ts holds it). */
+.myx-rule .myx-badge-quiet { color: var(--fg); }
+
+@media (max-width: 720px) {
+  .myx-rule { padding: var(--space-3) var(--space-4); column-gap: var(--space-5); }
+  .myx-rule-clocks { margin-inline-start: 0; }
+}

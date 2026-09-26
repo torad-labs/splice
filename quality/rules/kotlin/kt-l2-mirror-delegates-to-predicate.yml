@@ -1,0 +1,37 @@
+# Invariant L2 / CX-09 (Kotlin) — mirrorInto DELEGATES to willMirror; it never re-derives the gate.
+#
+# kt-l2-single-mirror-definition makes a second mirrorInto unwritable. This rule makes the ONE
+# mirrorInto keep asking the ONE predicate, which is the other half of the same invariant and the
+# half CX-09's wall held before its retirement (restructure PR 6 §2.7).
+#
+# WHY IT MATTERS. willMirror is the mirror's gate cascade exposed as a pure predicate, and the
+# empty-turn honesty check in StreamHonesty asks it before declaring a turn an error. If mirrorInto
+# stops calling it and inlines the cascade again, the two copies can drift: someone tightens the
+# mirror, the honesty check keeps the old answer, and a turn that nothing will put content on the
+# wire for ships as a clean EMPTY success — the L3 violation CX-09 exists to close, back with every
+# test still green. A second copy that AGREES today is not yet a defect; it is the seed of one, so
+# the structural rule is what stops it, not a behavioural assertion that can only see divergence.
+#
+# The match is kind+has for the same reason the single-definition rule is: the real declaration is
+# `public suspend fun mirrorInto(...)`, and a bare `fun mirrorInto($$$P)` pattern never sees a
+# modifier-bearing declaration at all.
+#
+# The reach is the source-set shape, not a module directory — a second, non-delegating mirrorInto
+# written anywhere reds here as well as on the single-definition rule.
+id: kt-l2-mirror-delegates-to-predicate
+language: kotlin
+severity: error
+message: "L2/CX-09: mirrorInto must delegate to willMirror — a second copy of the gate cascade re-opens the band between the mirror floor and the promote floor, silently."
+files:
+  - "**/src/*/kotlin/**/*.kt"
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        kind: simple_identifier
+        regex: ^mirrorInto$
+    - not:
+        has:
+          stopBy: end
+          kind: simple_identifier
+          regex: ^willMirror$

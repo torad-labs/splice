@@ -1,0 +1,187 @@
+/* The controls (docs/design/DESIGN.md section 9): a key is a button, a field is an input with its
+   label above, a flag is a switch that prints its state word, a choice is a box whose options print
+   in flow under it, and a fault is a note carrying the daemon's own words. Flat grounds, one
+   hairline, the ink as the only accent; values in the mono face so they line up. */
+
+/* ---------- key ---------- */
+.myx-key {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  font: inherit;
+  font-size: var(--text-2);
+  font-weight: 500;
+  line-height: var(--leading);
+  cursor: pointer;
+  transition: background-color var(--dur-1) ease, border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
+}
+a.myx-key { text-decoration: none; }
+.myx-key:hover { background: var(--bg-hover); }
+.myx-key[disabled] { cursor: not-allowed; color: var(--fg-subtle); background: var(--bg); }
+
+/* The cocked half of a two-step key: it says "armed" in warn beside its label. */
+.myx-key-armed { border-color: var(--warn); background: var(--warn-soft); }
+.myx-key-armed .myx-edge { color: var(--warn); }
+
+/* A key whose request is out prints that it is working; there is no spinner. */
+.myx-key-working { cursor: progress; }
+.myx-key-busy { font-size: var(--text-1); font-weight: 400; color: var(--fg-subtle); }
+.myx-key-label { white-space: nowrap; }
+
+/* A confirm's two keys sit side by side, and the hold keeps them together. */
+.myx-confirm-hold { display: inline-flex; }
+.myx-confirm { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* ---------- field ---------- */
+.myx-input { display: inline-flex; flex-direction: column; gap: var(--space-2); max-width: 100%; }
+.myx-input-label { font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
+/* named for a screen reader, drawn nowhere */
+.myx-input-label-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.myx-input-box {
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  line-height: var(--leading);
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--dur-1) ease;
+}
+.myx-input-box:hover { border-color: var(--fg-subtle); }
+.myx-input-box:focus-visible { border-color: var(--focus); }
+.myx-input-box::placeholder { color: var(--fg-subtle); }
+.myx-input-box[disabled] { color: var(--fg-subtle); background: var(--bg-raised); cursor: not-allowed; }
+/* An invalid field says why in words beside it; the box only repeats it. */
+.myx-input-invalid .myx-input-box { border-color: var(--danger); }
+
+/* ---------- blank: the rows a loading list will hold, as quiet bars ----------
+   No border, no mark, no rule, so nothing on a bar reads as a row that lost its words. A bar is a
+   table row's height, so the page keeps its shape when the rows land, and it breathes while the
+   read is out; under reduced motion it holds still. */
+.myx-blank { display: flex; flex-direction: column; gap: var(--space-2); }
+.myx-blank-row {
+  display: block;
+  height: var(--row-board);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  animation: myx-blank-breathe 1.6s ease-in-out infinite alternate;
+}
+@keyframes myx-blank-breathe { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .myx-blank-row { animation: none; }
+}
+
+/* ---------- fault: one line, a danger mark and the daemon's words ---------- */
+.myx-fault {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--danger-soft);
+  border: var(--hair) solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius-2);
+  color: var(--fg);
+  font-size: var(--text-2);
+}
+.myx-fault-icon { flex: none; margin-block-start: var(--space-1); font-size: var(--text-4); color: var(--danger); }
+.myx-fault-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-5);
+}
+.myx-fault-message {
+  line-height: var(--leading);
+  color: var(--fg);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.myx-fault-held {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--fg-muted);
+}
+.myx-fault > .myx-key { flex: none; }
+
+/* ---------- choice ---------- */
+.myx-choice { display: inline-flex; flex-direction: column; gap: var(--space-2); align-items: stretch; }
+.myx-choice-label { font-size: var(--text-2); font-weight: 500; color: var(--fg-muted); }
+.myx-choice-box {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-2);
+  font: inherit;
+  font-size: var(--text-2);
+  line-height: var(--leading);
+  text-align: start;
+  cursor: pointer;
+}
+.myx-choice-box:hover { border-color: var(--fg-subtle); }
+.myx-choice-box[disabled] { color: var(--fg-subtle); cursor: not-allowed; }
+.myx-choice-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.myx-choice-state { font-size: var(--text-1); color: var(--fg-subtle); white-space: nowrap; }
+
+/* The options print in flow under the box, never as a floating layer that could be clipped. */
+.myx-choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--bg-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+}
+.myx-choice-option-line { display: flex; }
+.myx-choice-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  color: var(--fg-muted);
+  border: 0;
+  border-radius: var(--radius-1);
+  font: inherit;
+  font-size: var(--text-2);
+  text-align: start;
+  cursor: pointer;
+}
+.myx-choice-option:hover,
+.myx-choice-active { background: var(--bg-hover); color: var(--fg); }
+.myx-choice-chosen { color: var(--fg); font-weight: 500; }
+
+/* ---------- the focus ring, inside the box ----------
+   A control can stand flush against a scroller's edge (a table, the log rail, the knob rack), where
+   a ring drawn outside its box loses the side past the edge (S9: the capture key kept 0 of 24 rows
+   of its left side). These draw theirs inside, in the ink, so no ground can clip or swallow it. */
+.myx-key:focus-visible,
+.myx-input-box:focus-visible,
+.myx-choice-box:focus-visible,
+.myx-choice-option:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
+/* ---------- flag: a switch that prints its state ---------- */
+.myx-flag { gap: var(--space-2); }

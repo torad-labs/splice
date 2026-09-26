@@ -1,0 +1,149 @@
+// The coverage wall's denominator, parsed from the source of record at test
+// time and never hand-listed. A hand list cannot fail for anything missing from
+// itself, so the only honest denominator is the file the daemon itself reads.
+//
+// Parse methods (recorded on the M1-04 ledger note, printed by the wall):
+//   knobs     gateway/.../config/Knob.kt      `^    [A-Z][A-Z0-9_]*\(`        45 today
+//   topology  core/src/test/resources/topology-fields.tsv, Topology's serializer walked and pinned by
+//             TopologyFieldsManifestTest (V4-312): every field's dotted path; the wall counts the leaves
+//   routes    .dev/campaigns/web-console/FEATURES.md sections 2.1 and 6, first column,
+//             backticked spans, normalized by the CONTRACTS.md section 4 rule  52 distinct today
+//   verbs     app/.../cli/CommandParser.kt's verb table, `"<verb>" to CommandFactory`  21 today
+//   served    every tracked src/main/kotlin file's `get("/api/...")` / `route.put("/api/...")`
+//             registrations (M4-06): what the daemon SERVES, whatever the plan says  58 today
+
+/** Knob.kt: every enum entry, i.e. each `NAME(` at entry indentation. */
+export function parseKnobNames(source: string): string[] {
+  const names = [...source.matchAll(/^ {4}([A-Z][A-Z0-9_]*)\(/gm)].map((match) => match[1]);
+  return [...new Set(names)].sort();
+}
+
+/** One field of splice.toml as the manifest lists it: its dotted path (`*` a free key, `[]` an array of
+ *  tables) and the values it takes when it is an enum, empty otherwise. */
+export interface TopologyField {
+  readonly path: string;
+  readonly values: readonly string[];
+}
+
+/** The manifest's lines, less its `#` header. */
+export function parseTopologyManifest(tsv: string): TopologyField[] {
+  return tsv
+    .split('\n')
+    .filter((line) => line.trim() !== '' && !line.startsWith('#'))
+    .map((line) => {
+      const [path = '', values = ''] = line.split('\t');
+      return { path, values: values === '' ? [] : values.split(',') };
+    });
+}
+
+/** The fields that hold a value, which a disposition names: every path no other path extends. A table
+ *  (`daemon`, `providers.*.quirks`) is where its fields sit, not a value of its own. */
+export function topologyLeaves(fields: readonly TopologyField[]): string[] {
+  const paths = fields.map((field) => field.path);
+  return paths.filter((path) => !paths.some((other) => other.startsWith(`${path}.`) || other.startsWith(`${path}[`))).sort();
+}
+
+/** The first column of every table row in a section slice. */
+function firstColumn(section: string): string[] {
+  return section
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) => line.split('|')[1]);
+}
+
+/** The lines of one section, from its heading to the next heading of its level. */
+function sectionOf(markdown: string, heading: RegExp, stop: RegExp): string {
+  const lines = markdown.split('\n');
+  const from = lines.findIndex((line) => heading.test(line));
+  if (from === -1) throw new Error(`FEATURES.md: no heading matching ${String(heading)}`);
+  const to = lines.findIndex((line, index) => index > from && stop.test(line));
+  return lines.slice(from, to === -1 ? lines.length : to).join('\n');
+}
+
+const ROUTE_SECTIONS: ReadonlyArray<{ heading: RegExp; stop: RegExp }> = [
+  { heading: /^### 2\.1 /, stop: /^### / },
+  { heading: /^## 6\. /, stop: /^## / },
+];
+
+/** Every backticked span of the route tables' first column, unnormalized. */
+export function parseRouteSpans(markdown: string): string[] {
+  const spans: string[] = [];
+  for (const { heading, stop } of ROUTE_SECTIONS) {
+    for (const cell of firstColumn(sectionOf(markdown, heading, stop))) {
+      for (const match of cell.matchAll(/`([^`]+)`/g)) spans.push(match[1]);
+    }
+  }
+  return spans;
+}
+
+const METHOD_PREFIX = /^[A-Z]+(?:\/[A-Z]+)*\s+/;
+
+/** A `{a,b}` group expands to one item per alternate; `{head}` stays literal. */
+function expandAlternates(path: string): string[] {
+  const group = /\{([^{}]*,[^{}]*)\}/.exec(path);
+  if (group === null) return [path];
+  const [whole, inner] = [group[0], group[1]];
+  const before = path.slice(0, group.index);
+  const after = path.slice(group.index + whole.length);
+  return inner.split(',').flatMap((alternate) => expandAlternates(`${before}${alternate}${after}`));
+}
+
+/**
+ * CONTRACTS.md section 4, one rule: strip the method prefix and any `?query`,
+ * expand `{a,b}` alternates, drop a span that does not start with `/`.
+ *
+ * `GET/PUT /api/teams` is "one item per method", and every method strips to the
+ * same path, so the method prefix simply goes. The query is dropped BEFORE the
+ * alternates expand: `?window=1h,24h,7d` is a query, not an alternation.
+ */
+export function normalizeRoute(span: string): string[] {
+  const path = span.replace(METHOD_PREFIX, '').split('?')[0].trim();
+  if (!path.startsWith('/')) return [];
+  return expandAlternates(path);
+}
+
+export function parseRouteNames(markdown: string): string[] {
+  return [...new Set(parseRouteSpans(markdown).flatMap(normalizeRoute))].sort();
+}
+
+/** The CLI's verb table (V4-219): each `"<verb>" to CommandFactory` entry of the `verbs` map. */
+export const CLI_SOURCE = 'app/src/main/kotlin/splice/app/cli/CommandParser.kt';
+
+export function parseCliVerbs(kotlin: string): string[] {
+  const table = /private val verbs[^=]*= mapOf\(([\s\S]*?)\n\)/.exec(kotlin)?.[1] ?? '';
+  return [...new Set([...table.matchAll(/^\s+"([a-z][a-z-]*)" to CommandFactory/gm)].map((match) => match[1]))].sort();
+}
+
+/** The runtime knob enum — the denominator for `kind: 'knob'`. */
+export const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';
+
+/** Every field splice.toml parses (V4-312), walked from Topology's serializer. It replaced a grep of
+ *  seven sources for `@SerialName`, which never counted a field named by its property ([projects], every
+ *  [compaction] key), and counted enum values as if they were keys. */
+export const TOPOLOGY_MANIFEST = 'core/src/test/resources/topology-fields.tsv';
+
+export const FEATURES_SOURCE = '.dev/campaigns/web-console/FEATURES.md';
+
+/** A main Kotlin source: the only place a route the daemon serves is registered. */
+export const KOTLIN_MAIN = /\/src\/main\/kotlin\/.+\.kt$/;
+
+/**
+ * Every /api route one Kotlin source REGISTERS: `get("/api/...")` inside the routing block and
+ * `route.put("/api/...")` in the feature installers (ControlServer.kt), one entry per path however
+ * many methods it takes. Placeholders stay as Ktor writes them (`{head}`, `{action}`).
+ */
+export function parseServedRoutes(kotlin: string): string[] {
+  const paths = [...kotlin.matchAll(/^\s*(?:route\.)?(?:get|put|post|patch|delete)\("(\/api\/[^"]+)"/gm)].map((match) => match[1]);
+  return [...new Set(paths)].sort();
+}
+
+/** Whether a disposition's name is covered by a registered path: a `{param}` segment of the
+ *  registration stands for any one segment, so `/api/heads/{head}/{action}` serves
+ *  `/api/heads/{head}/restart`. */
+export function servedBy(registration: string, name: string): boolean {
+  const pattern = registration
+    .split('/')
+    .map((segment) => (/^\{[^}]+\}$/.test(segment) ? '[^/]+' : segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    .join('/');
+  return new RegExp(`^${pattern}$`).test(name);
+}

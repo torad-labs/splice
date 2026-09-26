@@ -1,0 +1,45 @@
+/* The account actions. The buttons and fields are the console's Key and Input (@shared/controls),
+   which carry their own look; this sheet lays them out and sets the words around them. */
+
+.myx-acct-form,
+.myx-acct-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.myx-acct-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+/* A field and its key: the key stands level with the box, under the field's label. */
+.myx-acct-row-field { align-items: flex-end; }
+
+.myx-acct-note {
+  margin: 0;
+  font-size: var(--text-1);
+  color: var(--fg-muted);
+}
+
+.myx-acct-ticket {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* A login code is an id, and every id is in the mono face (docs/design/DESIGN.md section 4). */
+.myx-acct-code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-5);
+  color: var(--fg);
+}
+
+.myx-acct-link {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--fg);
+}

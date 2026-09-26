@@ -1,0 +1,83 @@
+// Two jobs in one slice: the management-key gate (initSession/unlock, the shell calls these) and
+// the Claude Code session registry with the message edges between its sessions (the Sessions page
+// calls those).
+import { bindUnauthorized, currentKey, request, storeKey } from '@shared/api';
+import { poll } from '@shared/lib';
+import { boardEdgesStore, sessionEdgesStore, sessionRegistryStore, sessionStore } from '../model/store';
+import type { BoardEdgesPayload, ResumeRecipe, SessionEdgesPayload, SessionsPayload } from '../model/types';
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Wire the 401 signal from the mgmt client into session state (app mount). A 401 while a key is
+ *  held is that key refused, and the gate says so: without it a wrong paste re-opened the same
+ *  empty modal and read as if nothing had been tried. */
+export function initSession(): void {
+  bindUnauthorized(() => sessionStore.setState({ locked: true, refused: Boolean(currentKey()) }));
+  sessionStore.setState({ hasKey: Boolean(currentKey()), locked: !currentKey() });
+}
+
+/** Store the pasted management key and unlock; pollers retry on their next tick. A new attempt
+ *  clears the refusal until the daemon answers it. */
+export function unlock(key: string): void {
+  storeKey(key);
+  sessionStore.setState({ locked: false, hasKey: Boolean(key.trim()), refused: false });
+}
+
+/** GET /api/sessions — the registry, re-read daemon-side on every request because Claude Code
+ *  rewrites the files as sessions come and go, which is why this polls faster than the catalog. */
+export async function fetchSessions(): Promise<void> {
+  sessionRegistryStore.startLoading();
+  try {
+    sessionRegistryStore.setData(await request<SessionsPayload>('/api/sessions'));
+  } catch (err) {
+    sessionRegistryStore.setError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+export function startSessionsPolling(intervalMs = 5000): () => void {
+  return poll(fetchSessions, intervalMs);
+}
+
+/**
+ * One session's message edges. Read when a session is opened, never polled: a hand-off is history
+ * once it happened, and the transcript beside it is what a reader actually watches. The route is
+ * served (V4-130), so a failure is reported as one, never as "not built".
+ */
+export async function fetchSessionEdges(sessionId: string): Promise<void> {
+  try {
+    sessionEdgesStore.land(
+      sessionId,
+      await request<SessionEdgesPayload>(`/api/sessions/${encodeURIComponent(sessionId)}/edges`),
+    );
+  } catch (err) {
+    sessionEdgesStore.fail(sessionId, messageOf(err));
+  }
+}
+
+/**
+ * Every registry session's edges in one read (GET /api/sessions/edges), so the board's peer column
+ * prints for every row rather than one request per row. An unwired edge store is the daemon's named
+ * 503, which the page prints: unwatched is not the same as no hand-offs.
+ */
+export async function fetchBoardEdges(): Promise<void> {
+  boardEdgesStore.startLoading();
+  try {
+    boardEdgesStore.setData(await request<BoardEdgesPayload>('/api/sessions/edges'));
+  } catch (err) {
+    boardEdgesStore.setError(messageOf(err));
+  }
+}
+
+/** What resuming a session on a head does (V4-320), read when the operator picks the head and never
+ *  polled: the answer is the one pick's. It rejects with the daemon's sentence, which for a head whose
+ *  command is not linked names the install that fixes it. */
+export function fetchResumeRecipe(sessionId: string, head: string): Promise<ResumeRecipe> {
+  return request<ResumeRecipe>(`/api/sessions/${encodeURIComponent(sessionId)}/resume?head=${encodeURIComponent(head)}`);
+}
+
+/** The board's edges at the registry's own cadence, so a row and its peer come from the same tick. */
+export function startBoardEdgesPolling(intervalMs = 5000): () => void {
+  return poll(fetchBoardEdges, intervalMs);
+}

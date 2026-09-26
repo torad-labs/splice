@@ -1,0 +1,42 @@
+id: kt-cancellation-handler-total
+valid:
+  # the remedy: a total *Quietly variant. Compliant BY CONSTRUCTION — the matcher keys on the bare
+  # verb, and `closeQuietly(` is not `close(`.
+  - 'continuation.invokeOnCancellation { closeQuietly() }'
+  - 'continuation.invokeOnCancellation { channel.closeQuietly() }'
+  - 'cont.invokeOnCancellation { drive.channel.flushQuietly() }'
+  # the two green handlers already in tree: bounded, non-throwing bookkeeping
+  - 'cont.invokeOnCancellation { future.removeListener(listener) }'
+  - |
+    cont.invokeOnCancellation {
+        synchronized(lock) { if (!waiter.resumed) queue.remove(waiter) }
+    }
+  # a longer name that merely starts with a flagged verb is not the flagged verb
+  - 'continuation.invokeOnCancellation { destroyLater() }'
+  # close() OUTSIDE a cancellation handler is this rule's business not at all
+  - |
+    override fun close() {
+        closeStream(output)
+        process.destroyForcibly()
+    }
+  - 'runtime.use { it.start(call) }'
+invalid:
+  # the census
+  - 'continuation.invokeOnCancellation { close() }'
+  # a receiver does not change the shape
+  - 'continuation.invokeOnCancellation { channel.close() }'
+  - 'cont.invokeOnCancellation { process.destroyForcibly() }'
+  # the blocking half of the scar
+  - 'continuation.invokeOnCancellation { process.waitFor(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS) }'
+  - 'continuation.invokeOnCancellation { pool.awaitTermination(5, TimeUnit.SECONDS) }'
+  - 'continuation.invokeOnCancellation { worker.join() }'
+  # nested inside a multi-statement handler, not just as the sole expression
+  - |
+    continuation.invokeOnCancellation {
+        log("cancelled")
+        if (started) {
+            channel.close()
+        }
+    }
+  # a receiverless registration must not escape
+  - 'invokeOnCancellation { close() }'

@@ -1,36 +1,45 @@
 {
   "name": "splice",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.4.0",
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "npm@11.13.0",
+  "packageManager": "bun@1.4.2",
   "workspaces": [
-    "webui"
+    "console"
   ],
   "scripts": {
-    "gate": "bash checks/gate.sh",
-    "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests && ast-grep test --config .rules/kotlin/ast-grep/sgconfig.yml --skip-snapshot-tests",
-    "gate:concentration": "python3 checks/concentration.py --ratchet --max-ratio 1.8",
-    "gate:campaign": "python3 .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py",
-    "gate:campaign:census": "python3 .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --no-run",
-    "gate:campaign:selftest": "python3 .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --selftest",
-    "test:hooks": "python3 .claude/hooks/tests/test_orchestrator.py",
-    "oss:verify": "bash checks/oss/run.sh",
-    "e2e:heads": "bash checks/e2e/heads-e2e.sh",
-    "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
-    "e2e:heads:selftest": "bash checks/e2e/heads-e2e-selftest.sh",
-    "e2e:docker": "bash checks/e2e/docker/run.sh",
-    "oracle:capture": "node .dev/campaigns/proxy-hardening/oracle/capture.mjs",
-    "oracle:check": "node .dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
-    "oracle:replay": "node .dev/campaigns/proxy-hardening/oracle/replay.mjs",
-    "gate:campaign:strict": "python3 .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --strict",
-    "promote": "bash checks/promote.sh"
+    "gate": "bun tools/gate run",
+    "gate:no-python": "bun tools/gate no-python && bun test tools/gate/test/no-python.test.ts",
+    "gate:rules": "bun tools/gate rules --prove-coverage",
+    "gate:audit": "bun tools/gate audit",
+    "gate:campaign": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts",
+    "gate:campaign:census": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --no-run",
+    "gate:campaign:selftest": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --selftest",
+    "test:hooks": "bun test tools/gate/test/hook.test.ts",
+    "e2e:heads": "bun tools/e2e heads",
+    "e2e:heads:wire": "bun tools/e2e heads --tier 1",
+    "e2e:heads:selftest": "bun tools/e2e heads --selftest",
+    "e2e:docker": "bash tools/e2e/docker/run.sh",
+    "e2e:console": "bun run --cwd console e2e",
+    "oracle:capture": "bun tools/e2e oracle capture",
+    "oracle:check": "bun tools/e2e oracle check",
+    "oracle:replay": "bun tools/e2e oracle",
+    "gate:campaign:strict": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --strict",
+    "release:accept": "bun tools/release accept",
+    "release:verify": "bun tools/release verify",
+    "promote": "bun tools/release promote"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.45.2"
+    "@ast-grep/cli": "0.45.2",
+    "@types/bun": "^1.3.9",
+    "typescript": "^5.9.3"
   },
+  "trustedDependencies": [
+    "@ast-grep/cli",
+    "unrs-resolver"
+  ],
   "overrides": {
     "handlebars": "4.7.9"
   }

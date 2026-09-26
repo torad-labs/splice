@@ -1,0 +1,50 @@
+/* The file view: one row per file, its kind, path and head on a line, its contents behind a reveal
+   under them. */
+.myx-fv { display: grid; margin: 0; padding: 0; list-style: none; }
+.myx-fv-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--text-2);
+}
+.myx-fv-head { color: var(--fg-muted); white-space: nowrap; }
+.myx-fv-text-cell { grid-column: 1 / -1; min-width: 0; }
+
+/* A PATH IDENTIFIES BY ITS TAIL, SO IT CLIPS AT ITS START. Two files in one repo share every byte
+   but the last segment (`.../atlas/repo/CLAUDE.md`, `.../atlas/repo/AGENTS.md`), so clipping from
+   the right printed two different files as one string. `direction: rtl` on the clipping box moves
+   the overflow and its ellipsis to the start; `direction: ltr` on the text keeps the path itself
+   in reading order. `unicode-bidi: plaintext` does not work here: it takes the direction from the
+   path's first letter and puts the ellipsis back on the tail. */
+.myx-fv-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.myx-fv-path-text { direction: ltr; unicode-bidi: embed; }
+
+/* The contents are read, not measured: the code face, wrapped, and scrolled rather than stretching
+   the column. */
+.myx-fv-text {
+  margin: 0;
+  padding: var(--space-4);
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -1,0 +1,188 @@
+// NEW: V4-169 (2026-09-19) — the ONE place a transcript's assistant rows are moved onto a head's
+// model. Extracted from ResumeAcrossHeads (V4-115), where it ran only on a COPY, because the shared
+// transcript tree (V4-168) gave it two more callers that both rewrite IN PLACE: the `-r SESSION_ID`
+// launch on a head that already sees the session through the shared tree, and the SessionStart
+// resume hook, which is the only moment the daemon learns which session the picker or `-c` chose.
+//
+// WHY IT EXISTS. Claude Code restores a resumed session's model from the transcript and refuses one
+// the head does not serve — "Session model <X> could not be restored", reason "is not in the
+// availableModels allowlist" (verified in the 2.1.257 binary, V4-115). The allowlist is the head's
+// own roster, written by the materializer, and it is RIGHT: another head's id does not belong in it.
+// So the transcript is what moves, and only the rows that name a model — `message.model` of
+// `type: assistant` rows — in the transcript itself and in every jsonl under its `<id>/` subdir.
+//
+// A row that moves loses its THINKING with its model. A thinking block is signed by the model that
+// wrote it (or carries splice's `splice-synth-v1` stand-in when a head like Kimi signs nothing), and
+// once the row claims the pinned model Claude Code replays that signature to an upstream that verifies
+// it: Anthropic refuses the whole request, "Invalid signature in thinking block", on every turn.
+// Claude Code strips thinking and retries on that error only when it arrives as an HTTP 400, and a
+// head's stream has already answered 200, so the retag is the last moment the block is known to be
+// foreign. A row that held only thinking keeps its place (its uuid is the next row's parentUuid) with
+// the text block Claude Code itself writes when that recovery strips a message bare (kcr in 2.1.281,
+// xmr in 2.1.282, wwr in 2.1.283, the same bytes), a shape it already loads, merges by message.id and
+// replays.
+//
+// Rows are re-encoded only when they change, so history this head did not touch stays
+// byte-identical; an unparseable line is history too and is never dropped. A read or write failure
+// throws: half-rewritten history is precisely what leaves a resumed session on a model the head
+// cannot serve, and each caller decides what a failure means for its own outcome.
+package splice.client.resume
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import splice.client.Keys
+import splice.client.transcript.CONTENT
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.file.CopyOption
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+
+/** Claude Code's transcript extension — the one declaration; ResumeAcrossHeads reads it too. */
+internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
+private const val TRANSCRIPT_TYPE = "type"
+private const val TRANSCRIPT_MESSAGE = "message"
+private const val ASSISTANT_TYPE = "assistant"
+
+/** The two steps of a rewrite a test must fail deterministically: writing the new bytes and the swap. */
+public interface TranscriptFs {
+    public fun write(path: Path, bytes: ByteArray)
+
+    public fun move(source: Path, target: Path, vararg options: CopyOption)
+}
+
+private object ProcessTranscriptFs : TranscriptFs {
+    /** The bytes are forced to disk before this returns: a rename can reach the disk before the data
+     *  it names, so a crash after an unforced move could leave an empty transcript in the original's place. */
+    override fun write(path: Path, bytes: ByteArray) {
+        FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING).use { channel ->
+            val buffer = ByteBuffer.wrap(bytes)
+            while (buffer.hasRemaining()) channel.write(buffer)
+            channel.force(true)
+        }
+    }
+
+    override fun move(source: Path, target: Path, vararg options: CopyOption) {
+        Files.move(source, target, *options)
+    }
+}
+
+public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTranscriptFs) {
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    /** The blocks a signature rides on — the two Claude Code's own strip removes (aEt/Tcr). */
+    private val thinkingTypes = setOf("thinking", "redacted_thinking")
+
+    /** Claude Code's stand-in for a message its signature recovery leaves empty: kcr() in 2.1.281,
+     *  xmr() in 2.1.282 and wwr() in 2.1.283, byte for byte. */
+    private val thinkingRemoved =
+        json.parseToJsonElement("""{"type":"text","text":"[Thinking removed]","citations":[]}""")
+
+    /** Rewrite to [pinnedModel], without its thinking blocks (see the header), every assistant row
+     *  whose `message.model` the head does NOT serve, in [transcript] and in every jsonl under its
+     *  sibling `<id>/` subdir (the subagent transcripts and tool results Claude Code keeps beside
+     *  it). A row on a model in [served] — the head's roster,
+     *  the same list its `availableModels` allowlist is written from — is restored by Claude Code as
+     *  it is, so it stays (v0.4.0 review: claude-splice's tree is the operator's main
+     *  ~/.claude/projects, and moving its opus rows onto fable rewrote history for nothing). Returns
+     *  the number of rows changed; throws [IOException] on the first file that could not be read or
+     *  written. */
+    public fun rewrite(transcript: Path, pinnedModel: String, served: Collection<String>): Int {
+        val kept = served.toSet() + pinnedModel
+        var rewritten = rewriteFile(transcript, pinnedModel, kept)
+        val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
+        if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) {
+            jsonlUnder(subdir).forEach { file -> rewritten += rewriteFile(file, pinnedModel, kept) }
+        }
+        return rewritten
+    }
+
+    private fun jsonlUnder(dir: Path): List<Path> = Files.walk(dir).use { stream ->
+        stream.filter { it.fileName.toString().endsWith(TRANSCRIPT_SUFFIX) && Files.isRegularFile(it) }.toList()
+    }
+
+    private fun rewriteFile(file: Path, pinnedModel: String, kept: Set<String>): Int {
+        val text = Cancellables.runCatchingCancellable { Files.readString(file) }
+            .getOrElse { cause -> throw IOException("$file unreadable (${SafeFailureText.render(cause)})") }
+        var changed = 0
+        val rows = text.split("\n").map { row ->
+            val rewritten = rewriteRow(row, pinnedModel, kept)
+            if (rewritten != null) changed += 1
+            rewritten ?: row
+        }
+        if (changed == 0) return 0
+        Cancellables.runCatchingCancellable { replace(file, rows.joinToString("\n").toByteArray(Charsets.UTF_8)) }
+            .exceptionOrNull()
+            ?.let { cause -> throw IOException("$file unwritable (${SafeFailureText.render(cause)})") }
+        return changed
+    }
+
+    /** V4-259: the new bytes go to a temp file beside the transcript, which is moved over it in one step,
+     *  so a write that dies partway leaves the user's transcript exactly as it was; the temp file goes
+     *  either way. The in-place write this replaced wrote through a link and refused a read-only file,
+     *  and so does this: the file a link names is the one replaced, and a rename, which a read-only file
+     *  does not stop, is not attempted on one. The file's permissions carry over to the new one. */
+    private fun replace(file: Path, bytes: ByteArray) {
+        val target = file.toRealPath()
+        if (!Files.isWritable(target)) throw IOException("$target is read-only")
+        val staged = Files.createTempFile(target.parent, ".${target.fileName}.", ".tmp")
+        Cancellables.runCatchingCancellable {
+            Cancellables.discard(
+                runCatching { Files.setPosixFilePermissions(staged, Files.getPosixFilePermissions(target)) },
+                "no POSIX permissions on this filesystem, so there are none to carry over",
+            )
+            fs.write(staged, bytes)
+            fs.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        }.onFailure {
+            Cancellables.discard(
+                runCatching { Files.deleteIfExists(staged) },
+                "the temp file's cleanup is best-effort; the write failure rethrows",
+            )
+            throw it
+        }
+    }
+
+    /** The rewritten row, or null when this row is not an assistant row on another model — an
+     *  unparseable line included: a transcript is history, and history is never silently dropped. */
+    private fun rewriteRow(row: String, pinnedModel: String, kept: Set<String>): String? {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-169): an unparseable line is kept verbatim BY DESIGN (see the KDoc); null here means "leave this row alone", never a swallowed failure.
+        val obj = Cancellables.runCatchingCancellable { json.parseToJsonElement(row).jsonObject }
+            .getOrNull() ?: return null
+        val message = assistantMessage(obj)
+        if (message == null || JsonScalars.str(message, Keys.MODEL) in kept) return null
+        val fixedMessage = JsonObject(
+            message.toMutableMap().apply {
+                put(Keys.MODEL, JsonPrimitive(pinnedModel))
+                withoutThinking(message[CONTENT])?.let { put(CONTENT, it) }
+            },
+        )
+        return json.encodeToString(
+            JsonObject.serializer(),
+            JsonObject(obj.toMutableMap().apply { put(TRANSCRIPT_MESSAGE, fixedMessage) }),
+        )
+    }
+
+    /** [content] without its thinking blocks, or null when it holds none (or is not a block list) and
+     *  stays exactly as it is. Emptied, it becomes [thinkingRemoved]: the row is never dropped. */
+    private fun withoutThinking(content: JsonElement?): JsonArray? {
+        val blocks = content as? JsonArray ?: return null
+        val kept = blocks.filterNot { block -> JsonScalars.str(block as? JsonObject, TRANSCRIPT_TYPE) in thinkingTypes }
+        if (kept.size == blocks.size) return null
+        return JsonArray(kept.ifEmpty { listOf(thinkingRemoved) })
+    }
+
+    private fun assistantMessage(row: JsonObject): JsonObject? =
+        if (JsonScalars.str(row, TRANSCRIPT_TYPE) == ASSISTANT_TYPE) row[TRANSCRIPT_MESSAGE] as? JsonObject else null
+}

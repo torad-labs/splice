@@ -1,0 +1,24 @@
+/* The accounts page: figures, the pools table, the Claude logins and the api keys, with one detail
+   panel beside them. Spacing, type size and colour only through the token sheet. */
+
+.myx-ac { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
+.myx-ac .myx-ph { margin-block-end: 0; }
+.myx-ac .myx-stats { margin-block-end: 0; }
+
+.myx-ac-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
+.myx-ac-main .myx-sec + .myx-sec { margin-block-start: 0; }
+
+.myx-ac-help { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: 0; }
+
+.myx-ac-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.myx-ac-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(27.5 * var(--u)), 32%); }
+.myx-ac-board-open .myx-panel { position: sticky; top: 0; }
+
+@media (max-width: 1100px) {
+  .myx-ac-board-open { grid-template-columns: minmax(0, 1fr); }
+}

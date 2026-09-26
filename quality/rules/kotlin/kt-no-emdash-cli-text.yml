@@ -1,0 +1,33 @@
+# Copy gate for the text splice's diagnostics print (V4-219, 2026-09-25): zero em-dashes in the
+# sentences `splice doctor`, `splice logs` and `splice wire` write, the same locked decision
+# webui-no-emdash-ui-text.yml enforces on the console. Doctor's details reach the console verbatim
+# (Doctor, Needs you), so an em-dash here printed in the UI past the console's own wall; and the
+# CLI prints the same sentences. Split the clause, or use a colon, a semicolon or a comma.
+#
+# Both spellings are matched: the character itself, and the `\u2014` escape, which parses INSIDE
+# string_content on tree-sitter-kotlin (measured on ast-grep 0.45: `"x \u2014 y"` is one
+# string_content node), so an escape would otherwise be a silent way around the wall. Comments are
+# free.
+#
+# V4-219 scoped it to the diagnostics module, where these sentences are authored. Strings doctor
+# QUOTES from other modules (SafeFailureText, the topology's messages) were rewritten in the same
+# pass.
+# V4-238 (2026-09-25) widened it module by module as each came clean, starting with the paths a new
+# user's first run prints (app, splice add, launch, the Claude Code heads, sign-in and the providers
+# the add path signs into), then every other main source set, build-logic's gate text included. Two
+# em dashes are not sentences: the RetryMatrix table's empty cell is built from its code point, and
+# the clause boundary UpstreamFailureClassifier reads in vendor prose is the regex escape \x{2014}.
+# Tests stay out (their exclusion in rule-coverage-exclusions.toml).
+# V4-253 (2026-09-26): the report's fix separator, built from its code point and carved out here as
+# the one em-dash on the wire, is gone: `splice doctor --json` carries a check's fix in its own key.
+id: kt-no-emdash-cli-text
+language: kotlin
+severity: error
+message: "Zero em-dashes in text splice prints or sends (locked copy gate): rewrite the sentence."
+note: |
+  Split the clause, or use a colon, a semicolon or a comma.
+files:
+  - "**/src/main/**/*.kt"
+rule:
+  kind: string_content
+  regex: "—|\\x5Cu2014"

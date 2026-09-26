@@ -1,0 +1,326 @@
+// NEW: bundled JavaScript worker yields privileged operations to permission-checked client tools.
+package splice.codemode
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import org.graalvm.polyglot.Context
+import org.graalvm.polyglot.HostAccess
+import org.graalvm.polyglot.PolyglotAccess
+import org.graalvm.polyglot.Value
+import org.graalvm.polyglot.io.IOAccess
+import org.graalvm.polyglot.proxy.ProxyExecutable
+import org.graalvm.polyglot.proxy.ProxyObject
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.failure.CodeModeInfrastructureCategory
+import splice.upstream.failure.CodeModeInfrastructureClass
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.IOException
+
+private const val EXECUTION_FAILURE: String = "Code execution failed"
+
+/** Bytes kept free under the worker text ceiling for the truncation marker. */
+private const val TRUNCATION_RESERVE: Int = 64
+private const val MAX_CELL_LOG_BYTES: Int = CodeModeWire.maxTextBytes - TRUNCATION_RESERVE
+private const val IDLE_FAILURE: String = "Code execution paused without a tool call"
+private const val TOOL_FAILURE: String = "Tool is not allowed"
+private const val ARGUMENT_FAILURE: String = "Tool arguments must be a serializable object"
+private const val CALL_LIMIT_FAILURE: String = "Code-mode tool call limit exceeded"
+
+/** The isolated child-JVM entry point; its stdout is exclusively length-prefixed JSON protocol. */
+internal object CodeModeWorker {
+    @JvmStatic
+    fun main(args: Array<String>) {
+        DataInputStream(System.`in`.buffered()).use { input ->
+            DataOutputStream(System.out.buffered()).use { output ->
+                runWorker(input, output)
+            }
+        }
+    }
+
+    private fun runWorker(input: DataInputStream, output: DataOutputStream) {
+        try {
+            runSession(input, output)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: IOException) {
+            CodeModeWire.write(
+                output,
+                CodeModeFatalFrame.create(CodeModeInfrastructureCategory.PROTOCOL, CodeModeInfrastructureClass.IO),
+            )
+        } catch (_: RuntimeException) {
+            CodeModeWire.write(
+                output,
+                CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME),
+            )
+        }
+    }
+
+    private fun runSession(input: DataInputStream, output: DataOutputStream) {
+        WorkerSession().use { session ->
+            // V4-226: ready once this JVM and its JavaScript engine are up, so the parent's advance
+            // deadline times the script alone; a start has its own budget on the parent's side.
+            CodeModeWire.write(output, CodeModeWire.readyFrame())
+            var reply = session.start(CodeModeFrames.parseStart(CodeModeWire.read(input)))
+            while (true) {
+                CodeModeWire.write(output, toFrame(reply))
+                if (reply.calls == null) return
+                reply = session.advance(CodeModeFrames.parseResults(CodeModeWire.read(input)))
+            }
+        }
+    }
+
+    private fun toFrame(reply: WorkerReply): JsonObject = reply.calls?.let(CodeModeWire::callsFrame)
+        ?: CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
+}
+
+/** One cell's JavaScript engine. It is built before the start frame arrives (the expensive half of a
+ *  worker's start), and [start] runs the cell's source in it. */
+internal class WorkerSession : AutoCloseable {
+    private val context: Context = Context.newBuilder("js")
+        .allowHostAccess(HostAccess.NONE)
+        .allowHostClassLookup { false }
+        .allowPolyglotAccess(PolyglotAccess.NONE)
+        .allowIO(IOAccess.NONE)
+        .allowCreateThread(false)
+        .allowCreateProcess(false)
+        .allowNativeAccess(false)
+        .option("engine.WarnInterpreterOnly", "false")
+        .build()
+
+    // The launcher is compiled and taken once through a whole cell here, a tool call, its settle and
+    // the completion, before the worker says ready, because a cold engine's FIRST run is the worker's
+    // start, not the script's: 1.4-1.9 s from a built context to a script's first yield, against
+    // 21-25 ms for the next session in the same JVM (three fresh JVMs, 2026-09-25). Charged to the
+    // script, it spent that much of the advance deadline on an idle box and more on a loaded one (gate
+    // run 36180689372). The run is self-contained: its state lives in the launcher's closure and a
+    // bridge nothing else holds.
+    private val launcher: Value = context.eval("js", LAUNCHER).also { launcher ->
+        val warmUp = launcher.execute(
+            "await tools.call(\"warm\", {}); return 1;",
+            "[\"warm\"]",
+            WorkerBridge(setOf("warm")).host,
+        )
+        warmUp.getMember("settle").execute("1", "{}", false)
+    }
+    private var bridge: WorkerBridge? = null
+    private var settle: Value? = null
+    private var pendingCalls: List<CodeModeCall> = emptyList()
+
+    fun start(start: WorkerStart): WorkerReply {
+        val bridge = WorkerBridge(start.tools).also { this.bridge = it }
+        val toolsJson = CodeModeJson.codec.encodeToString(
+            JsonArray.serializer(),
+            buildJsonArray { start.tools.sorted().forEach(::add) },
+        )
+        val control = launcher.execute(start.source, toolsJson, bridge.host)
+        settle = control.getMember("settle")
+        return reply()
+    }
+
+    fun advance(results: List<CodeModeResult>): WorkerReply {
+        CodeModeFrames.validateResultSet(pendingCalls, results)
+        val bridge = checkNotNull(bridge)
+        bridge.clearCalls()
+        results.forEach { result ->
+            checkNotNull(settle).execute(result.id, result.output, result.isError)
+        }
+        return reply()
+    }
+
+    override fun close() {
+        context.close(true)
+    }
+
+    private fun reply(): WorkerReply {
+        val bridge = checkNotNull(bridge)
+        val calls = bridge.calls()
+        if (calls.isNotEmpty()) {
+            pendingCalls = calls
+            return WorkerReply(calls = calls, output = null, error = null)
+        }
+        bridge.completion()?.let { completion ->
+            return WorkerReply(calls = null, output = completion.output, error = completion.error)
+        }
+        return WorkerReply(calls = null, output = "", error = IDLE_FAILURE)
+    }
+}
+
+internal class WorkerBridge(private val allowedTools: Set<String>) {
+    private val outboundCalls: MutableList<CodeModeCall> = mutableListOf()
+    private val logs: StringBuilder = StringBuilder()
+    private var truncatedChars: Int = 0
+    private var callCount: Int = 0
+    private var completion: WorkerCompletion? = null
+
+    val host: ProxyObject = ProxyObject.fromMap(
+        mapOf(
+            "call" to ProxyExecutable { values ->
+                recordCall(values.single().asString())
+                null
+            },
+            "log" to ProxyExecutable { values ->
+                appendLog(values.single().asString())
+                null
+            },
+            "complete" to ProxyExecutable { values ->
+                complete(values[0].asString(), values[1].asBoolean())
+                null
+            },
+        ),
+    )
+
+    fun calls(): List<CodeModeCall> = outboundCalls.toList()
+
+    fun clearCalls() {
+        outboundCalls.clear()
+    }
+
+    fun completion(): WorkerCompletion? = completion
+
+    private fun recordCall(raw: String) {
+        if (outboundCalls.size >= CodeModeWire.maxCallsPerBatch || callCount >= CodeModeWire.maxCallsPerCell) {
+            throw IllegalStateException(CALL_LIMIT_FAILURE)
+        }
+        val call = parseCall(raw)
+        if (call.name !in allowedTools) throw IllegalArgumentException(TOOL_FAILURE)
+        callCount += 1
+        outboundCalls.add(call)
+    }
+
+    /** Output past the text ceiling is cut behind a marker, never fatal: a cell that already ran its
+     *  calls must not lose them to a verbose console.log (a four-call cell on 2026-09-20 did). */
+    private fun appendLog(value: String) {
+        val separator = if (logs.isEmpty()) "" else "\n"
+        val room = MAX_CELL_LOG_BYTES - logs.toString().encodeToByteArray().size - separator.length
+        val kept = fitBytes(value, room.coerceAtLeast(0))
+        truncatedChars += value.length - kept.length
+        if (kept.isNotEmpty()) logs.append(separator).append(kept)
+    }
+
+    /** A failure carries its reason and the evidence logged before it; the model used to see only
+     *  "Code execution failed" and rerun every call directly. */
+    private fun complete(value: String, failed: Boolean) {
+        completion = if (failed) {
+            WorkerCompletion(output = "", error = failureMessage(value))
+        } else {
+            WorkerCompletion(output = finalOutput(value), error = null)
+        }
+    }
+
+    private fun failureMessage(reason: String): String {
+        val evidence = logsWithMarker()
+        val detail = buildString {
+            append(EXECUTION_FAILURE)
+            if (reason.isNotBlank()) append(": ").append(reason)
+            if (evidence.isNotEmpty()) append("\nOutput before the failure:\n").append(evidence)
+        }
+        return fitBytes(detail, CodeModeWire.maxTextBytes)
+    }
+
+    private fun finalOutput(value: String): String {
+        val output = listOf(logsWithMarker(), value).filter(String::isNotEmpty).joinToString("\n")
+        return fitBytes(output, CodeModeWire.maxTextBytes)
+    }
+
+    private fun logsWithMarker(): String =
+        if (truncatedChars == 0) logs.toString() else "$logs\n[truncated $truncatedChars chars]"
+
+    /** The longest prefix of [value] that fits [bytes] of UTF-8, cut on a code point boundary. */
+    private fun fitBytes(value: String, bytes: Int): String {
+        if (value.encodeToByteArray().size <= bytes) return value
+        var used = 0
+        var index = 0
+        while (index < value.length) {
+            val width = if (value[index].isHighSurrogate() && index + 1 < value.length) 2 else 1
+            val size = value.substring(index, index + width).encodeToByteArray().size
+            if (used + size > bytes) break
+            used += size
+            index += width
+        }
+        return value.substring(0, index)
+    }
+
+    private fun parseCall(raw: String): CodeModeCall {
+        val frame = requireNotNull(CodeModeJson.codec.parseToJsonElement(raw) as? JsonObject) {
+            ARGUMENT_FAILURE
+        }
+        require(frame.keys == setOf("id", "name", "arguments")) { ARGUMENT_FAILURE }
+        val id = requireNotNull(
+            (frame["id"] as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content,
+        ) { ARGUMENT_FAILURE }
+        val name = requireNotNull(
+            (frame["name"] as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content,
+        ) { ARGUMENT_FAILURE }
+        val arguments = requireNotNull(frame["arguments"] as? JsonObject) { ARGUMENT_FAILURE }
+        CodeModeFrames.requireText(id, "call id")
+        return CodeModeCall(id, name, arguments)
+    }
+}
+
+internal data class WorkerCompletion(val output: String, val error: String?)
+
+private const val LAUNCHER: String = """
+(source, toolsJson, host) => {
+  const allowed = new Set(JSON.parse(toolsJson));
+  const pending = new Map();
+  let sequence = 0;
+  const tools = Object.freeze({
+    call(name, args) {
+      return new Promise((resolve, reject) => {
+        if (typeof name !== "string" || !allowed.has(name)) {
+          reject(new Error("Tool is not allowed"));
+          return;
+        }
+        if (args === null || Array.isArray(args) || typeof args !== "object") {
+          reject(new Error("Tool arguments must be a serializable object"));
+          return;
+        }
+        try {
+          const encoded = JSON.stringify(args);
+          if (typeof encoded !== "string") throw new Error("Tool arguments must be a serializable object");
+          const id = String(++sequence);
+          pending.set(id, {resolve, reject});
+          host.call(JSON.stringify({id, name, arguments: JSON.parse(encoded)}));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+  });
+  const console = Object.freeze({
+    log(...values) {
+      host.log(values.map(value => String(value)).join(" "));
+    }
+  });
+  // A SyntaxError message carries the offending source line; only its first line (position and
+  // reason) is reported. A rejected tool call keeps its whole error text.
+  const describe = error => {
+    if (!error || error.message === undefined) return String(error);
+    const message = error instanceof SyntaxError ? String(error.message).split("\n")[0] : String(error.message);
+    return String(error.name || "Error") + ": " + message;
+  };
+  try {
+    const program = new Function("tools", "console", "\"use strict\"; return (async () => {\n" + source + "\n})()");
+    Promise.resolve(program(tools, console)).then(
+      value => host.complete(value === undefined ? "" : String(value), false),
+      error => host.complete(describe(error), true)
+    );
+  } catch (error) {
+    host.complete(describe(error), true);
+  }
+  return Object.freeze({
+    settle(id, output, isError) {
+      const callback = pending.get(id);
+      if (!callback) throw new Error("Unknown code-mode call id");
+      pending.delete(id);
+      if (isError) callback.reject(new Error(output)); else callback.resolve(output);
+    }
+  });
+}
+"""

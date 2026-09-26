@@ -1,0 +1,56 @@
+/* The fleet page: figures, the heads table, and one detail panel beside it once a head is opened.
+   Spacing, type size and colour only through the token sheet. */
+
+.myx-fl { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
+.myx-fl .myx-ph { margin-block-end: 0; }
+.myx-fl .myx-stats { margin-block-end: 0; }
+
+.myx-fl-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); min-width: 0; }
+.myx-fl-main .myx-sec + .myx-sec { margin-block-start: 0; }
+
+/* A figure beside its shape (a sparkline's median, an unlimited gate's count), in tabular numerals
+   so a column of them lines up. */
+.myx-fl-figure {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.myx-fl-slots { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; }
+
+.myx-fl-lat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+/* The line shrinks to its track and the figure keeps the width of the widest one it prints
+   ("999ms", "59.9s"), so a line never draws into its value (Hitstop, 2026-09-25: claude-grok's ran
+   over the 9 of 986ms). */
+.myx-fl-lat .myx-spark { min-width: 0; }
+.myx-fl-lat .myx-fl-figure { min-width: 5ch; text-align: end; }
+
+.myx-fl-cause,
+.myx-fl-keys,
+.myx-fl-next { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.myx-fl-cause { margin: 0; font-size: var(--text-2); color: var(--fg); }
+.myx-fl-command { font-family: var(--font-mono); font-size: var(--text-2); }
+
+.myx-fl-life { display: grid; gap: var(--space-3); min-width: 0; }
+.myx-fl-turns { display: grid; gap: var(--space-3); min-width: 0; }
+.myx-fl-turn-model { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+
+.myx-fl-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.myx-fl-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(30 * var(--u)), 34%); }
+.myx-fl-board-open .myx-panel { position: sticky; top: 0; }
+
+@media (max-width: 1100px) {
+  .myx-fl-board-open { grid-template-columns: minmax(0, 1fr); }
+}

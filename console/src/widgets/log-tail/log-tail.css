@@ -1,0 +1,151 @@
+/* The log stream (docs/design/DESIGN.md section 7): the file and the follow switch on a bar, the
+   column names once, then one line per row in the mono face: the time, the head with its mark when
+   the tail carries several, and the message with its key=value pairs split into quiet keys and full
+   values. A marked line carries its level as a dot and a word; an error line takes a faint tint. */
+
+.myx-lt {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.myx-lt-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-raised);
+  border-bottom: var(--hair) solid var(--line);
+}
+/* The tailed head's band: the wash and the edge a head's run takes on the sessions board. The bar
+   already names the head, so the stream needs no head column to carry its colour. */
+.myx-lt-hued .myx-lt-bar {
+  background: color-mix(in srgb, var(--hue) 9%, var(--bg-raised));
+  box-shadow: inset var(--space-2) 0 0 var(--hue);
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+}
+.myx-lt-bar .myx-hm-mark { display: none; }
+.myx-lt-bar .myx-hm-name { font-size: var(--text-2); font-weight: 600; color: var(--fg); }
+
+.myx-lt-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.myx-lt-line {
+  display: grid;
+  grid-template-columns: calc(9.5 * var(--u)) minmax(0, 1fr);
+  column-gap: var(--space-5);
+  padding: var(--space-1) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  line-height: var(--leading);
+  color: var(--fg);
+}
+.myx-lt-line.myx-lt-tagged { grid-template-columns: calc(9.5 * var(--u)) calc(12 * var(--u)) minmax(0, 1fr); }
+.myx-lt-cols {
+  padding-block: var(--space-2);
+  border-bottom: var(--hair) solid var(--line);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--fg-subtle);
+}
+
+/* A wrapped line cut by the top of the tail keeps its time in view for as long as any of it shows,
+   so no row reads as missing its when; the message scrolls with its words. Sticky needs the cell
+   to be shorter than its row, hence start, not the grid's stretch. */
+.myx-lt-time { color: var(--fg-subtle); white-space: nowrap; }
+.myx-lt-row .myx-lt-time { position: sticky; top: 0; align-self: start; }
+.myx-lt-head { min-width: 0; font-family: var(--font-sans); font-size: var(--text-2); }
+.myx-lt-text { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.myx-lt-text .myx-badge { margin-inline-end: var(--space-3); font-family: var(--font-sans); }
+
+.myx-lt-key { color: var(--fg-subtle); }
+.myx-lt-value { color: var(--fg); }
+
+.myx-lt-danger { background: var(--danger-soft); }
+.myx-lt-warn { background: var(--warn-soft); }
+
+.myx-lt-scroll {
+  position: relative;
+  height: calc(100vh - var(--space-8) * 6);
+  min-height: calc(var(--space-8) * 6);
+  overflow-y: auto;
+}
+/* Only the alpha of a mask counts: the rows fade to nothing over the top step once scrolled. */
+.myx-lt-scrolled { mask-image: linear-gradient(to bottom, transparent, var(--fg) var(--space-6)); }
+.myx-lt-inner { position: relative; width: 100%; }
+.myx-lt-row { position: absolute; left: 0; right: 0; }
+.myx-lt-row:hover .myx-lt-line { background: var(--bg-hover); }
+
+/* A perf line, drawn (perf-line.tsx): the disclosure, the model, the turn's waterfall against the
+   slowest turn in the tail, its length, then the cache hit and the tokens in and out as bars against
+   the tail's largest. The daemon's own line opens under it. */
+.myx-lt-perf { display: grid; row-gap: var(--space-2); white-space: normal; }
+.myx-lt-perf-row {
+  display: grid;
+  grid-template-columns: var(--space-6) minmax(calc(6 * var(--u)), calc(11 * var(--u))) minmax(calc(6 * var(--u)), 1fr) calc(4.5 * var(--u)) calc(8.75 * var(--u)) calc(7.25 * var(--u)) calc(7.75 * var(--u));
+  grid-template-areas: 'toggle model wf ms hit in out';
+  align-items: center;
+  column-gap: var(--space-4);
+}
+.myx-lt-toggle { grid-area: toggle; }
+.myx-lt-model { grid-area: model; }
+.myx-lt-wf { grid-area: wf; min-width: 0; }
+.myx-lt-figure { grid-area: ms; }
+.myx-lt-hit { grid-area: hit; min-width: 0; }
+.myx-lt-in { grid-area: in; min-width: 0; }
+.myx-lt-out { grid-area: out; min-width: 0; }
+
+.myx-lt-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: var(--space-6);
+  height: var(--space-5);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-2);
+  color: var(--fg-subtle);
+  cursor: pointer;
+}
+.myx-lt-toggle:hover { background: var(--bg-active); color: var(--fg); }
+.myx-lt-toggle svg { transition: transform var(--dur-1) var(--ease-out); }
+.myx-lt-open .myx-lt-toggle svg { transform: rotate(90deg); }
+
+.myx-lt-model { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.myx-lt-model .myx-badge { flex: none; font-family: var(--font-sans); }
+.myx-lt-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.myx-lt-figure { text-align: end; font-variant-numeric: tabular-nums; color: var(--fg); }
+.myx-lt-perf .myx-meter-figure { min-width: 0; font-size: var(--text-1); color: var(--fg); }
+.myx-lt-unit { color: var(--fg-subtle); }
+
+.myx-lt-raw {
+  padding-inline-start: calc(var(--space-6) + var(--space-4));
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.myx-lt-raw-line { display: block; }
+
+
+@media (max-width: 900px) {
+  .myx-lt-bar { flex-wrap: wrap; }
+  .myx-lt-bar .myx-legend { order: 1; flex-basis: 100%; }
+  .myx-lt-perf-row {
+    grid-template-columns: var(--space-6) repeat(3, minmax(0, 1fr));
+    grid-template-areas: 'toggle model model ms' '. wf wf wf' '. hit in out';
+    row-gap: var(--space-2);
+  }
+}

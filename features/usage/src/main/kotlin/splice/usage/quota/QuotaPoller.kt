@@ -1,0 +1,142 @@
+// NEW: keeps a head's quota windows fresh from its provider's usage endpoint: one probe at boot,
+// then one every few minutes for the daemon's life. Runs on the daemon's own probe scope so
+// Daemon.stop() ends it with everything else. A failing endpoint is logged once, then silence
+// until it recovers — the bars simply keep the last snapshot.
+package splice.usage.quota
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import splice.core.usage.QuotaSnapshot
+import splice.core.util.Cancellables
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Where a fresh snapshot goes: app binds it to the head's QuotaTracker (features/turns), so the poller
+ *  records without reaching into another capability. */
+public fun interface QuotaSnapshotSink {
+    public fun record(snapshot: QuotaSnapshot)
+}
+
+public class QuotaPoller(
+    private val scope: CoroutineScope,
+    private val head: String,
+    private val probe: QuotaProbe,
+    private val sink: QuotaSnapshotSink,
+    private val log: LogSink,
+    private val intervalMs: Long = QUOTA_POLL_INTERVAL_MS,
+    private val ticker: Ticker = ProcessTicker(),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+) {
+    private val failureLogged = AtomicBoolean(false)
+    private val firstLogged = AtomicBoolean(false)
+    private val lifecycle = Any()
+
+    @Volatile private var job: Job? = null
+
+    @Volatile private var stopped = false
+    private val restartTimes = ArrayDeque<Long>()
+
+    public fun start(): Job {
+        synchronized(lifecycle) {
+            val existing = job
+            if (existing != null) return existing
+            stopped = false
+            return launchSupervised()
+        }
+    }
+
+    public fun stop() {
+        synchronized(lifecycle) {
+            stopped = true
+            job?.cancel()
+            job = null
+        }
+    }
+
+    private fun launchSupervised(): Job {
+        val launched = scope.launch {
+            while (isActive) {
+                pollOnce()
+                if (!ticker.awaitTick(intervalMs)) return@launch
+            }
+        }
+        job = launched
+        launched.invokeOnCompletion { cause -> superviseCompletion(launched, cause) }
+        return launched
+    }
+
+    private fun superviseCompletion(launched: Job, cause: Throwable?) {
+        if (cause == null || cause is kotlinx.coroutines.CancellationException) return
+        val n = synchronized(lifecycle) {
+            if (stopped || job !== launched) return
+            recordRestart()
+        }
+        // Every value in a quota log line goes through LogSafe (kt-log-escapes-caller-input): the failure
+        // text and the vendor's plan name arrive from outside, and a newline in either would forge a line.
+        val why = SafeFailureText.render(cause)
+        if (n <= MAX_RESTARTS) {
+            val restarts = "$n/$MAX_RESTARTS"
+            log(
+                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)}; " +
+                    "restarting (${LogSafe.str(restarts)})\n",
+            )
+            synchronized(lifecycle) {
+                if (!stopped && job === launched) launchSupervised()
+            }
+        } else {
+            val budget = "$MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m"
+            log(
+                "[${LogSafe.str(head)}][quota] loop died: ${LogSafe.str(why)}; restart budget exhausted " +
+                    "(${LogSafe.str(budget)}); probe permanently down\n",
+            )
+        }
+    }
+
+    private fun recordRestart(): Int = synchronized(restartTimes) {
+        val now = clock()
+        while (restartTimes.isNotEmpty() && now - restartTimes.first() > RESTART_WINDOW_MS) {
+            restartTimes.removeFirst()
+        }
+        restartTimes.addLast(now)
+        restartTimes.size
+    }
+
+    internal suspend fun pollOnce() {
+        Cancellables.runCatchingBestEffort { probe.probe() }
+            .onSuccess { snapshot -> snapshot?.let(::accept) }
+            .onFailure { failure ->
+                if (failureLogged.compareAndSet(false, true)) {
+                    // A refusal carries only its status, safe to say; any other failure may quote a body (V4-296).
+                    val refused = failure as? QuotaEndpointRefused
+                    val why = refused?.let { "HTTP ${it.status}" } ?: SafeFailureText.render(failure)
+                    log(
+                        "[${LogSafe.str(head)}][quota] usage probe failed (${LogSafe.str(why)}); " +
+                            "bars keep the last snapshot until it is 15 minutes old\n",
+                    )
+                }
+            }
+    }
+
+    private fun accept(snapshot: QuotaSnapshot) {
+        sink.record(snapshot)
+        failureLogged.set(false)
+        if (firstLogged.compareAndSet(false, true)) {
+            val five = snapshot.fiveHour?.let { "5h ${it.usedPercent.toInt()}%" } ?: "5h n/a"
+            val seven = snapshot.sevenDay?.let { "7d ${it.usedPercent.toInt()}%" } ?: "7d n/a"
+            val plan = snapshot.plan?.let { " (plan $it)" }.orEmpty()
+            log("[${LogSafe.str(head)}][quota] ${LogSafe.str(five)}, ${LogSafe.str(seven)}${LogSafe.str(plan)}\n")
+        }
+    }
+}
+
+internal const val QUOTA_POLL_INTERVAL_MS: Long = 5 * 60 * 1000L
+private const val MAX_RESTARTS = 5
+private const val RESTART_WINDOW_MS = 600_000L
+private const val MS_PER_MIN = 60_000L

@@ -1,0 +1,13 @@
+id: webui-css-no-color-literals
+valid:
+  - '.myx-panel { color: var(--fg); background: var(--bg-raised); }'
+  - '.myx-panel { background: color-mix(in srgb, var(--accent) 14%, transparent); }'
+  - '.myx-panel { color: currentColor; border-color: transparent; }'
+  - '#main { color: var(--fg); }'
+invalid:
+  - '.myx-panel { color: #fff; }'
+  - '.myx-panel { background: rgba(1, 2, 3, .4); }'
+  - '.myx-panel { border: 1px solid hsl(0 0% 50%); }'
+  - '.myx-panel { color: oklch(0.5 0.1 200); }'
+  - '.myx-panel { box-shadow: 0 0 0 1px RGB(0, 0, 0); }'
+  - '.myx-panel { background: color-mix(in srgb, #0b0c0e 50%, transparent); }'

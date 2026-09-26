@@ -1,0 +1,631 @@
+/* Instrument primitives. Tokens only: spacing from --space-*, sizes from
+   --text-*, radii locked to --radius-1 (instruments) / --radius-0 (wells).
+   Hairline dividers over cards; depth by surface tier, never shadow. */
+
+
+
+/* The pill, metric and ink-tone rules left with StatusPill and Metric (M3-04). */
+
+/* The .myx-btn rules left with their last hand-written sites (the console redesign, 2026-09-25): a
+   button is a Key and a link that looks like one is a KeyLink (shared/controls). */
+
+
+
+/* The error, skeleton, stale and meter rules left with ErrorNote, SkeletonRows, Stale and
+   MeterBar (M3-04); no other file wrote any of their classes. */
+
+/* THE PAGE HEAD, one for every address (2026-09-23, console design pass). Twelve pages each wrote
+   their own: two title sizes and two weights, three alignments, four titles that kept the browser's
+   h1 margin and three pages that padded themselves inside the shell's own padding, so the title
+   jumped 30px down and 25px right between addresses. A page's head is its title and its view tabs,
+   on one baseline, at one place. */
+.myx-page-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.myx-page-title {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink-strong);
+}
+
+/* ============================================================
+   THE STRIP BAY (v0.4.0). Strips on a rack: opaque paper, black ink, a
+   colored holder edge carrying attention, radius 0 everywhere. Color tokens
+   come from the contract sheet (row M1-01); they resolve at runtime, so this
+   file names them before they exist rather than inventing local fallbacks.
+   ============================================================ */
+
+/* --- HolderEdge: the only place attention is a color, always with a label --- */
+/* The legacy holder edge prints as the new status mark: a round dot and its word, the dot in the
+   status colour (docs/design/DESIGN.md section 5: a round dot is status, never a head). */
+.myx-edge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.myx-edge-mark {
+  flex: none;
+  width: calc(.5 * var(--u));
+  height: calc(.5 * var(--u));
+  border-radius: var(--radius-full);
+  background: var(--fg-subtle);
+}
+.myx-edge-green .myx-edge-mark { background: var(--ok); }
+.myx-edge-amber .myx-edge-mark { background: var(--warn); }
+.myx-edge-red   .myx-edge-mark { background: var(--danger); }
+.myx-edge-grey  .myx-edge-mark { background: var(--fg-subtle); }
+.myx-edge-label { font-size: var(--text-1); color: inherit; }
+
+/* --- Strip: the one row module. The edge column holds a holder edge whose
+   mark is inset until the strip is selected, when it runs the full height. --- */
+.myx-strip {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  /* A strip is as long as its fields and no longer (m1 design review B6: the strip stretched to
+     its container while its fields took only their own ch, so every rack ended in a slab of bare
+     paper - 128px on fleet, 398px on accounts, 807px on doctor). A printed strip is cut to its
+     content; past the last field the rack's own floor shows, and the rack scrolls (B7). */
+  width: max-content;
+  max-width: none;
+  background: var(--strip);
+  color: var(--strip-ink);
+  /* ---- E-1 · THE THREE-PART HOLDER EDGE (M1-24) ------------------------------
+     The comp's paper does not meet the room in one step. Cross-section across the team
+     strip's left edge at comp y=90 (material-spec.md, measured): room `#0C1010` | **1px
+     `#030402` outline, darker than the room** | **1px `#73716A` shade** | **1px `#E8E2D1`
+     lip, brighter than the paper body** | an 8px ramp 204 to 213 | body. The build crossed
+     it in one step. Per-pixel edge energy across that boundary: comp 256, build 204, over
+     88,920px of boundary. This is on every piece of paper in the frame, which is why it is
+     the single largest entry in the deficit.
+
+     Three tones need three rings, and a border cannot hold three, so the ORDER is carried
+     by nesting them: the border is the shade, the lip is an inset ring on the paper's own
+     edge, and the outline is an outer ring past the border box. Outside to inside that
+     paints outline | shade | lip | ramp | body, which is the comp's 157/158/159/160+.
+     The border stays --hair wide, so nothing about the strip's geometry or its field
+     origins moves.
+
+     WHY THE LIP IS THE BORDER AND NOT AN INSET RING. It was an inset ring first, and it
+     rendered invisible on every racked strip: an inset box-shadow paints above the element's
+     own background but BELOW its children, and `.myx-board .myx-sfield` is an opaque plate of
+     the same paper -- so the first field covered the lip and the ramp on all four sides and
+     the build showed only a dark outline. Measured on the comp at builder-strip-2, the strip
+     is lit on ALL FOUR of its edges: top y304 L232, bottom y366 L232, left x616 L225, all
+     against a paper body of 217 to 227. The border is the one ring a child cannot cover. It
+     was already --hair wide as the shade, so moving the lip there costs nothing in layout:
+     the field origins, the strip's box and every measured position are untouched.
+
+     LAW 26, and why none of the three is a hex here. Each ring is written as a mix against
+     THE PLANE IT SITS ON, so its direction is a property of the expression rather than a
+     value that could be carried into the other theme by accident: the outline is the room
+     toward black, the shade is the paper toward its own ink, the lip is the paper toward
+     white. Every fraction below is the comp's measurement solved against the dark plane --
+     the arithmetic is in each line, and re-solving it against a moved plane is a one-line
+     exercise rather than a re-sampling. The lip is the one of the three the light plane
+     cannot carry at this strength (light paper at L 245.8 has 9.2 L of headroom and the
+     comp's lip is +13.0); that is a plane problem and not a lip problem -- L-4's second
+     constraint, `--strip` in light at L <= 242, is routed in this row's note. */
+  /* the lip: comp L 226.0 = 0.76 x 216.7 (paper) + 0.24 x 255 */
+  border: var(--hair) solid color-mix(in srgb, var(--strip) 76%, white);
+  box-shadow:
+    /* the ramp: the comp climbs 204 to 213 over the 8px inside the lip. An inset shadow with
+       no offset paints all four sides, which is what a seated card does. The spec's 5% renders
+       only 3 L of that 9 L climb once the blur spreads it, so it is corrected here to 10%: the
+       comp's edge pixel is 204 against a 217 body, and 0.90 x 217 = 195 at the boundary role
+       of a blur's half-coverage, settling to 217 by --space-2. */
+    inset 0 0 var(--space-2) color-mix(in srgb, transparent 90%, black),
+    /* the shade: comp L 112.9 = 0.52 x 216.7 */
+    0 0 0 var(--hair) color-mix(in srgb, var(--strip) 52%, black),
+    /* the outline: comp L 3.6 against a room of 13.4 -- the darkest tone in the frame, and it
+       sits on the BAY, so the bay is the ground it is measured against.
+       ONE FRACTION CANNOT HOLD IT, and that is arithmetic rather than taste. color-mix is linear
+       in its ground, so `ground x p` holds the RATIO and an alpha over the ground holds the same
+       ratio: the dark room is already near-black, where 25 percent and 90 percent are the same
+       three levels of ink, and the light room is not. Reading the rendered crossing in both
+       themes (the orchestrator's scan, anchored on the render): dark bay 17 -> outline 3, a delta
+       of -14; light bay 166 -> outline 60, a delta of -106. 7.5x more aggressive relative to what
+       surrounds it, which is the over-articulated rack M1-24's own ruling names. So the magnitude
+       is stated per theme, both of them as mixes against the same ground, and the two fractions
+       ARE the two measured magnitudes: 0.25 x 12.15 = 3.0 dark, 0.87 x 174.6 = 151.9 light, both
+       about -14 from the bay they are drawn on. Nothing here is a filter and nothing is a hex. */
+    0 0 0 calc(var(--hair) * 2)
+      light-dark(
+        color-mix(in srgb, var(--bay) 25%, black),
+        color-mix(in srgb, var(--bay) 87%, black)
+      );
+  border-radius: 0;
+}
+/* ---- E-5 · THE HOLDER PIN (M1-24) ------------------------------------------
+   The mark a STATELESS strip prints where an edged one prints its colour bar. The comp's
+   team-header pin measures 14px across at the L<100 threshold with a solid core of 8-9px,
+   darkest pixel `#0A080A`; its centre sits 6px right of the strip's left edge and 10px below
+   the strip's top — and the same mark is at the header's RIGHT end, and one at each end of
+   the footer strip. It is ink printed on the paper, so it takes the paper's own ink:
+   --strip-ink measures one step from the comp's `#0A080A`, below the threshold that matters
+   on a 9px dot, so this entry needs no token at all.
+
+   WHY IT IS DRAWN ON EVERY STRIP RATHER THAN ONLY THE STATELESS ONES. The stateless case
+   cannot be named from here: Strip's Edge vocabulary is 'green' | 'amber' | 'red' | 'grey'
+   (shared/ui/types.ts) and has no member for "no state", so a modifier would have to be a
+   prop on shared/ui/strip.tsx, which this row's fence does not hold. It does not need one.
+   The mark is 16px wide at inset-inline-start 0 and full height (the rule below), it is
+   painted after this pseudo-element because it is a real child and both are positioned, and
+   it is opaque in every state -- so an edged strip covers its own pin and only a strip whose
+   mark draws nothing shows one. The geometry that follows is therefore a property of the
+   paper and not of the state, which is what makes it a world rule. */
+.myx-strip::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: var(--space-1);
+  inset-block-start: var(--space-2);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--strip-ink);
+  pointer-events: none;
+}
+/* THE FOCUS RING IS DRAWN INSIDE THE STRIP (S9). Outside it, 1px off the border, it was clipped by
+   the rack: `.myx-bay-rows` scrolls (overflow-x auto, overflow-y hidden) and a strip starts flush at
+   its left edge and, in a compact rack, runs to its right one, so both sides went and the 4px gap
+   let the next strip paint over the bottom. Measured on turns: of the four sides only the top
+   survived, a 2px line. Inset on the strip itself it is still lost on the left, because the holder
+   mark is absolutely positioned and a positioned child paints after its parent's outline (2 of 34
+   rows of the left side carried the full ring). So the ring is an outline on a last child that
+   sits over the padding box: it paints over the mark, the pin and the fields, and nothing outside
+   the strip can clip it. It stands one --hair in from the padding box, two from the border edge,
+   because a packed rack (the turns list, zero gap) paints the next strip's two outer rings over
+   this one's last two rows: flush with the padding box the bottom side kept 2 of 1997 columns. A
+   z-index cannot lift it there, since every virtual row is its own stacking context. */
+.myx-strip:focus-visible { outline: none; }
+.myx-strip:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: var(--hair);
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+.myx-strip-fields {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+}
+/* THE EDGE COLUMN HAS A WIDTH OF ITS OWN (m1 design review B1, the operator's "things
+   overlapping" and the reason the racks stagger). It used to be a bare flex item, so the column
+   was as wide as the label's text - and the label is data. Measured down one bay before this
+   rule: first field at 397, 394, 407, 394, 407, 401, 401, 394 px, four origins in one rack.
+   The column is now the mark plus a fixed 8ch budget for the label; where the label is longer it
+   clips, and the field origin is identical on every strip in the bay. The budget is the m1
+   review's state vocabulary (ok / warn / stale / struck, all of which fit) plus a little; the
+   pages that pass a datum here are printing the word twice (B10) and the contract needs this ch
+   count, not its word count. `flex: 0 0 auto` is half the fix: the column must not grow, and it
+   must not shrink when the strip is wide. */
+.myx-strip > .myx-edge {
+  /* static, so the mark below positions against the strip itself and the edge box is free to sit
+     its word on the value row rather than centred on the whole strip (2026-09-23, console design
+     pass: the word floated between a strip's label row and its value row on every page). */
+  position: static;
+  align-self: stretch;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  padding-block-end: calc(var(--sfield-pad-end, var(--space-4)) + var(--space-1));
+  padding-inline-end: var(--space-2);
+  /* The mark is absolute at the strip's edge; the word stands a --space-2 clear of it (it touched
+     the mark on every strip). */
+  padding-inline-start: calc(var(--space-4) + var(--space-2));
+}
+/* THE MARK IS THE STRIP'S FULL HEIGHT, in every state (measured: the green mark spans rows
+   208..270 of a strip at 208..269; the grey marks of the two strips below it span their strips the
+   same way). The 2px inset this rule used to carry was our invention, not the comp's, and it meant
+   the edge only looked like an edge when the strip was selected. */
+.myx-strip > .myx-edge .myx-edge-mark {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 0;
+  width: var(--space-4);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+.myx-strip > .myx-edge .myx-edge-label {
+  color: var(--strip-ink);
+  /* The fixed budget the column is built on (B1). It clips rather than pushing the fields. */
+  /* 8ch holds every state word the pages print (unknown, signed in, pinned, hosted) whole: at 6ch
+     `unknown` printed as `unkn...` on accounts and doctor, and `signed in` broke onto two lines. */
+  width: 8ch;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.myx-strip-struck { color: var(--strip-ink-mute); }
+.myx-strip-struck > .myx-edge .myx-edge-label { color: var(--strip-ink-mute); }
+.myx-strip[aria-disabled='true'] { cursor: not-allowed; }
+/* The strike: one hairline across the strip at mid height. It rides over the
+   field grid (it is a verdict on the whole row) and takes no pointer events so
+   the strip underneath still reads as one target. */
+.myx-strip-strike {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 50%;
+  border-top: var(--hair) solid var(--strip-ink);
+  pointer-events: none;
+}
+
+/* --- StripField: a fixed boxed cell. ch width keeps the field grid aligned
+   column to column; the value clips with an ellipsis and never wraps. --- */
+.myx-sfield {
+  display: flex;
+  flex-direction: column;
+  /* The label sits 4px above its divider and the value 4px below it; the box's own floor is
+     deeper than its ceiling (measured on the comp's cell: strip top 208, label ink 216, divider
+     229, value ink 241, strip bottom 269 - so 21px of label above the line and 40px of value
+     below it). --space-2 --space-3 --space-4 is that shape: 4 + a 16.8 label line + the divider
+     = 21.8 above, and 4 + a 24px value line + 12 = 40 below. */
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--sfield-pad-end, var(--space-4));
+  background: var(--strip-field);
+  border-inline-end: var(--hair) solid var(--strip-field-line);
+  min-width: 0;
+  /* The width is a ch COUNT declared on this box, so `ch` must resolve against the value's own
+     face and size, not the page's (found by M2-01 when --text-3 grew and every field clipped);
+     and a ch count must never shrink: as a flex item the default flex-shrink squeezed nine
+     columns at once below their declared widths instead of letting the bay scroll. */
+  /* CODE: the ch ANCHOR: a field's declared width in ch must mean the same in every rack, so this box keeps the 0.6em advance even though it displays nothing itself. */
+  font-family: var(--font-code);
+  font-size: var(--text-3);
+  flex: 0 0 auto;
+}
+/* The label row, and the rule under it. The comp draws that rule across the WHOLE strip - measured
+   at row y=229 it runs x 172..549, past every cell's own padding and through the vertical
+   dividers - so the label's box is widened by its own padding into a full-width rule, and the text
+   is put back where it was. The line's ink is the comp's (95,93,86), which is --strip-ink-mute;
+   the strip's outer box line is the paler --strip-field-line. */
+.myx-sfield-label {
+  font-family: var(--font-label);
+  /* THE LADDER'S FLOOR, AND THE COMP IS BELOW IT (M1-64). The comp's strip profile, read off its own
+     pixels: the label's ink band spans 6 rows of the lead-strip plate (y218..223, against its value's
+     11 at y243..253) and 8 rows of lead-strip-2's (plate rows 7..14, against its value's 12 at rows
+     33..44). Six to eight rows is a cap near 6px, about 8.6px in Archivo, and this label rendered at
+     14px -- a 10px cap, half again too big. That is the truncation: `context l…` and `scratchp…` are
+     field labels with no room.
+     THE COMP'S SIZE IS NOT REACHABLE FROM THE LADDER, AND DOES NOT NEED TO BE. 8.6px is the retired
+     sheet's `--text-0` (.54rem), which sits in tokens.css's "rungs the new ladder does not cover"
+     section -- outside the two world blocks -- so section 1 does not sanction it and the world wall
+     (tests/world.test.ts) fails any file that uses it. Measured at the sanctioned floor instead: at
+     --text-1 every one of the 79 field labels fits (0 clipped, against 4 at the old 14px: `context
+     left`, `window`, `tokens out`, `context left`), and the label's cap is 9 against the comp's 6-8.
+     The floor clears the defect, so no rung has to be added below it.
+     THIS BINDING WAS DEAD WHEN IT WAS FIRST WRITTEN, and the capture caught it: board.css's
+     `.myx-board .myx-sfield-label` carried its own `font-size: var(--text-2)` at (0,2,0), so it won
+     over this rule at (0,1,0) and the label kept rendering at 14px while this line claimed the
+     opposite. Two rules binding one role, the more specific one silently deciding, is the defect
+     class this row is about -- the size now lives here alone and the board's rule carries only what
+     is genuinely the board's (weight, the pinned line box, the rule's ink). */
+  font-size: var(--text-1);
+  /* THE WEIGHT IS THE ROLE'S, NOT THE BOARD'S (M1-90), AND THIS DISAGREES WITH A SENTENCE IN THE
+     COMMENT ABOVE -- deliberately, with the reasoning left where the next seat meets both.
+
+     WHAT M1-64 SAID: "the size now lives here alone and the board's rule carries only what is
+     genuinely the board's (weight, the pinned line box, the rule's ink)". That sentence's SUBJECT is
+     the size; the parenthetical describes what happened to be left in board.css afterwards. Two of
+     the three it lists are geometric facts about the board's plate that M1-64 measured and that are
+     still there: the pinned line box, which puts the comp's rule at plate row 19-20, and the rule's
+     ink, which is the comp's mute hairlines. THE WEIGHT IS NOT THE SAME KIND OF THING. Nothing about
+     the board's plate requires a bold label, it was never measured by any row, and this row measured
+     it and reads the opposite.
+
+     THE READING, on the comp of record with the method calibrated the way M1-89's was: the comp
+     records a weight class for two of its own text regions and both are REGULAR (bay-deepseek-label
+     stemW 0.1241, chat-label stemW 0.1270), and those measure 31.1 and 26.7 percent ink density.
+     The strip values, which carry no record, measure 20.7 and 25.4. The strip LABEL band measures
+     18.2 -- THE LIGHTEST TEXT ON THE COMP'S OWN STRIPS. Ink density is the size-robust signal here
+     and the stem is not: at a 12px label the modal stem quantises to 1px exactly as the 16px value's
+     does, so the stem cannot rank the two, while a small size renders with proportionally THICKER
+     hinted stems and therefore reads denser than its weight warrants -- so a light reading at 12px
+     is stronger evidence of lightness than the same reading at 16px.
+
+     THE COST, measured across pages because labels render everywhere: 784 labels over ten pages,
+     0px of overflow at 400 and 0px at 600, and label box widths, field widths and strip heights
+     identical at both weights (the columns are the comp's fixed percentages, so a weight cannot move
+     them). THE COST HAS NO VOTE HERE, which is why the comp reading decides it: 400. */
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--strip-ink-mute);
+  white-space: nowrap;
+  /* A label never runs into its neighbour (m1 review B20: "window" and "last turn" printed as
+     `windowlast turn` in the deepseek bay). It clips inside its own cell like the value does. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-inline: calc(-1 * var(--space-3));
+  padding-inline: var(--space-3);
+  border-bottom: var(--hair) solid var(--strip-ink-mute);
+}
+.myx-sfield-value {
+  font-size: var(--text-3);
+  /* THE ROLE'S WEIGHT, BOUND HERE SO IT IS A DECISION RATHER THAN A DEFAULT (M1-89). This rule set
+     no weight, so the role took the browser's 400 while the board's own rule set 600 -- one role,
+     two weights, the same shape M1-85 closed one property over. 400 WINS ON TWO INDEPENDENT READINGS:
+
+     THE COMP, measured off team-board-a with the method CALIBRATED against its own recorded regions.
+     The comp records a stem width and a weight class for some of its text, and for two of them it
+     says regular: bay-deepseek-label (stemW 0.1241, cap 10.9) and chat-label (stemW 0.1270, cap 9.8).
+     Measured with the method below, those read a 2px modal stem at 31.1 and 26.7 percent ink density.
+     The comp's strip VALUES -- which carry no type record at all, because its strip cells are
+     'control' regions -- read a 1px modal stem at 20.7 and 25.4 percent. So the thing this role
+     renders measures AT OR BELOW the comp's own regular weight on both signals, never above it: the
+     recording supports 400 and gives no support to 600. It is not a comp constant and is not offered
+     as one -- the comp never measured this role -- but it is a reading of the comp of record, taken
+     the same way for the reference regions and for the strips.
+
+     THE COST, measured before the change on the board at 1536 with fixture=hero: at 600 the strip's
+     value cells clip 10 of 99 with 85px of total overflow and a 17px worst cell; at 400 they clip 5
+     of 99 with 32px and 13px. The bold weight was costing half again the truncation, which is the
+     operator's original complaint in miniature.
+
+     The method, for whoever re-measures: rows whose dark count exceeds the window's own structural
+     floor by a margin give the text band; the modal length of horizontal dark runs up to 6px in that
+     band gives the stem, and dark pixels over band area gives the density. */
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--strip-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* FIGURE: a strip field marked as a figure. */
+.myx-sfield-figure { font-family: var(--font-figure); }
+/* No tabular-nums here: .myx-sfield-figure is a modifier ON .myx-sfield-value (see the :not()
+   below), which already sets it, so a marked figure is tabular either way. */
+.myx-sfield-value:not(.myx-sfield-figure) { font-family: var(--font-label); }
+
+/* --- Bay: a titled group of rows (docs/design/DESIGN.md section 6). The heading, its count and its
+   actions sit on the page's own ground, like a Section's; the rows follow. It draws no ground of its
+   own, so what stands on its head (a HolderEdge) reads against the room. --- */
+.myx-bay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.myx-bay-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--space-7);
+}
+.myx-bay-label {
+  font-size: var(--text-3);
+  font-weight: 600;
+  color: var(--fg);
+}
+.myx-bay-count {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
+  font-size: var(--text-1);
+  font-weight: 500;
+  line-height: var(--leading);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.myx-bay-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+/* The rack's column names, printed once (B9). It starts where the cells start - past the edge
+   column, whose width is the mark plus the label's 8ch budget - and the font on this row is the
+   LABEL face at --text-1 on purpose, so that 8ch resolves to the same width the edge column
+   budgets. The children are the page's own boxes, at the same ch widths as the cells. */
+.myx-bay-fields {
+  display: flex;
+  align-items: center;
+  /* clipped to the bay and scrolled with the rack by Bay (M3-03): the names live outside the rows'
+     scroller, so without this a rack wider than its bay printed them past the bay's edge */
+  overflow: hidden;
+  padding-inline-start: calc(var(--space-4) + var(--space-2) + var(--space-8) + var(--space-2));
+  font-size: var(--text-1);
+  color: var(--fg-subtle);
+}
+.myx-bay-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* The rack scrolls (m1 review B7): strips keep fixed field widths in ch units and scroll inside
+     their bay, so this is the box that moves. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* THE COMPACT RACK: the comp's activity bay. A rack of homogeneous rows prints its column names on
+   the FIRST slip only and packs the rest a floor's breadth apart, so N heads read as N lines of one
+   instrument instead of N cards each repeating the same nine labels. Bay sets it when a page asks
+   for `compact` or passes `fields` (names printed once above the rows). */
+.myx-bay-compact .myx-bay-rows { gap: var(--space-2); }
+/* a compact rack is one table, so its slips run the bay's width; a rack wider than its bay still
+   scrolls, because this is a floor and not a width */
+.myx-bay-compact .myx-bay-rows > .myx-strip { min-width: 100%; }
+/* "after the first strip", not "after the first child": a rack may lead with a fault line (turns
+   names a head it could not read above its rows), and the first STRIP still carries the names. */
+.myx-bay-compact .myx-bay-rows > .myx-strip ~ .myx-strip .myx-sfield-label { display: none; }
+.myx-bay-compact .myx-bay-rows > .myx-strip ~ .myx-strip,
+.myx-strip:not(:has(.myx-sfield-label)) {
+  --sfield-pad-end: var(--space-2);
+}
+
+/* --- ScopeInset: a recessed chart frame with its own ground and grid. --- */
+.myx-scope {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  background: var(--bg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-3);
+}
+.myx-scope-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) 0;
+}
+.myx-scope-title { font-size: var(--text-2); font-weight: 500; color: var(--fg); }
+.myx-scope-basis { font-size: var(--text-1); color: var(--fg-subtle); }
+.myx-scope-body { padding: var(--space-4) var(--space-5) var(--space-5); }
+
+/* --- FieldBox: a knob with its provenance and its hot/restart verdict. --- */
+.myx-fbox {
+  display: flex;
+  flex-direction: column;
+  /* The comp's box rhythm: a printed label 4px above its value's line (the same gap the strip cell
+     carries), then the provenance and the hot/restart word under it. */
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+}
+.myx-fbox-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink);
+}
+.myx-fbox-input {
+  /* FIGURE: a printed field's value: a config value lines up with every other one. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  color: var(--strip-ink);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: var(--space-1) var(--space-0);
+}
+.myx-fbox-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-fbox-prov {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}
+.myx-fbox-hot {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}
+.myx-fbox-editable .myx-fbox-input { border-bottom: var(--hair) solid var(--strip-field-line); }
+
+/* Reveal and Empty are styled in kit.css. */
+
+/* --- Figure: value, unit and basis, all as text, all at the sentence's own size. ---
+   ONE SIZE (m1 design review B5): this rule used to be the retired Metric's ladder token for
+   token - value --text-6, unit --text-2, basis --text-1 - which is the hero-metric template the
+   craft floor refuses and the brief's anti-goals refuse by name ("the KPI-tile dashboard of the
+   category"). A 23px rung inside a 14px rule cell is what made the top of every page look
+   broken, and the comp shows the rule's own figure at the rule's own size: "nearest window
+   claudex acct-a 5h 74% resets 16:40" is one size of one face. What marks a number as a figure
+   here is the tabular figure face, not a size jump; a page that wants a headline number sets
+   that size on its own container. */
+.myx-fig {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.myx-fig-value {
+  /* FIGURE: the Figure primitive's own value. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-strong);
+}
+
+/* FIGURE ON A STRIP (M1-77). Figure renders on --room 56 times and passes; it renders on --strip
+   once and fails - the logs page's `.myx-lt-head`, where a figure's value printed --ink-strong
+   #EAE8D9 on strip paper #DED9C6 at 1.15:1 in dark, and its unit printed --ink-mute at 1.98:1. The
+   light room passed both at 16.85 and 8.85, which is why neither instrument saw it: the defect is
+   the dark plane only, and a token swap on the class would have moved it rather than removed it
+   (M1-52 measured that shape: their first cut moved `.myx-head-key` from 1.07 to 1.06).
+   So the rules are PLANE-SCOPED: the strip already has its own ink vocabulary - --strip-ink and
+   --strip-ink-mute, the latter recorded as the comp's #6B685B darkened one step - and these
+   rules print it. The room case above is untouched, which is what keeps the other 56 renders. The
+   basis joined them when a Fault began printing a `stale` figure on its strip (2026-09-24): its
+   word was --ink-mute on strip paper, the unit's defect again. */
+.myx-strip .myx-fig-value { color: var(--strip-ink); }
+.myx-strip .myx-fig-unit { color: var(--strip-ink-mute); }
+.myx-strip .myx-fig-basis { color: var(--strip-ink-mute); }
+.myx-fig-unit {
+  /* FIGURE: the unit beside a figure; it sits on the figure's baseline. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: inherit;
+  color: var(--ink-mute);
+}
+.myx-fig-basis {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  /* The comp shows no bare Figure, so the floor decides and the strip already answered it: a
+     --text-6 value at a 2px gap runs into its basis word (M2-10 measured $12.84estimated in a
+     strip and moved that gap to --space-2). The same two sizes are adjacent here. */
+  margin-inline-start: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-edge-mark { transition: none; }
+  .myx-strip > .myx-edge .myx-edge-mark { transition: none; }
+}
+
+/* ---------- THE SWELL ON A PHONE (M3-03) ----------
+   A page's detail column (the aside a strip swells into) carries `myx-swell` on seven pages. On a
+   desktop it is a grid track beside the bays and every page sheet lays it out; below 720 there is
+   no second column to swell into -- at 1120 the pages already drop it under the bays, which on a
+   phone puts the opened detail a whole rack's scroll away from the strip that opened it. So on a
+   phone the opened detail IS the screen: fixed over the frame, on the room's ground, scrolling on
+   its own, and arriving with the same --dur-2 swell the column uses. It paints over the rule by
+   document order, but NOT over the rail: on a phone the rail is `order: 2` in the shell's grid
+   (app.css), grid items paint in order-modified document order, and the bottom strip was drawn
+   over the swell's last 70 pixels (seen in the 390 captures of fleet and turns). So the swell takes
+   the one stack step it needs, z-index 1, and only while it covers the screen.
+   OPEN IS "NOT aria-hidden=true", which is how all seven asides say it: six print
+   aria-hidden={closed} and turns omits the attribute when open. It is the same expression that
+   gates the content, so the swell cannot cover the screen with an empty column.
+   The close key is printed on every page but shown only here: on a desktop the strip that opened
+   the detail is still on screen and toggles it; under a full-screen swell it is not. */
+.myx-swell-close { display: none; }
+@media (max-width: 720px) {
+  .myx-swell:not([aria-hidden='true']) {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-3);
+    z-index: 1;
+    overflow: auto;
+    background: var(--room);
+    animation: myx-swell-screen var(--dur-2) var(--ease-out) both;
+  }
+  .myx-swell-close { display: inline-flex; align-self: flex-end; }
+}
+@keyframes myx-swell-screen {
+  from { opacity: 0; transform: translateY(var(--space-3)); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .myx-swell:not([aria-hidden='true']) { animation: none; }
+}

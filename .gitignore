@@ -11,20 +11,29 @@ __pycache__/
 
 # generated release bundle and local validation tools
 /dist/
+# the console bundle is :console:bundle's output (PR 4), never committed
+/console/dist/
+/console/build/
+/console/e2e/.results/
+# the console tools' regenerable review output (snapshot, theme): bytes that may hold live daemon data
+/console/.review/
 /.cache/
 
-# gradle (gateway/)
-gateway/.gradle/
-gateway/**/.gradle/
-gateway/**/build/
-gateway/.kotlin/
-gateway/build-logic/.kotlin/
+# gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts
+# them, so the module build outputs are ignored at ANY depth — one rule, not one per module)
+.gradle/
+.kotlin/
+build/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/
+# per-tool agent configs and release-media workspaces that live beside the repo, never in it
+.agents/
+.codex/
+dev/media/
 
 # #924 Phase 1: live contract receipts are per-run artifacts, not source
-checks/e2e/receipts/
+tools/e2e/receipts/
 
 # secrets / credential stores (OSS-A defensive baseline)
 .env
@@ -63,9 +72,14 @@ credentials.json
 .claude/state/walls-grant.json
 .claude/tmp/
 
+# gradle slot lock + holder (bun tools/gate slot)
+/.gradle-slot.lock*
+# A host build wrapper's per-project lock. The gradle slot (tools/gate/src/lib/slot.ts) runs gradle through whatever
+# memory-containment wrapper the box provides, when it provides one, and such a wrapper drops its
+# lock beside the tree it builds — the repository root, where the build is rooted. A machine
+# artifact, never source, and the pattern is the SHAPE rather than one tool's name so a box with a
+# differently-named wrapper needs no edit to this file.
+.*-build.lock
 # per-machine agent tooling installs: skills and hook mirrors for the other seats
 /.agents/
 /.codex/
-
-# the host build semaphore's lock, written beside the gradle tree
-.hostshield-build.lock

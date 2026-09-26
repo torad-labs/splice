@@ -1,0 +1,22 @@
+/* The team chat: one row per hand-off, its time, who wrote to whom, and the text behind a reveal. */
+.myx-chat { display: grid; margin: 0; padding: 0; list-style: none; }
+.myx-chat-row {
+  display: grid;
+  grid-template-columns: calc(4.375 * var(--u)) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-4);
+  row-gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--text-2);
+}
+.myx-chat-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-subtle);
+}
+.myx-chat-route { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--fg); }
+.myx-chat-party { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.myx-chat-arrow { flex: none; color: var(--fg-subtle); }
+.myx-chat-text { grid-column: 2; min-width: 0; }
+.myx-chat-words { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }

@@ -1,0 +1,604 @@
+// PORT-OF: the mock upstream from server/test/codex-proxy.test.mjs @ pre-public-port-baseline, 1:1 — scenario
+// picked from a SCENARIO:<name> tag in body.instructions; /oauth/token counts refreshes;
+// 'refresh' 401s on the old token; every streaming scenario's event sequence is verbatim
+// (incl. the nonstream_tool mid-codepoint ✓ split and the prefill silent-then-stream shape).
+// ADDED (named change, P2-MOCK slot): count_tokens has NO scenario here — the Kotlin router
+// gives it a dedicated cheap handler; the old Node behavior (forwarding it as a real turn)
+// is documented in the ledger, not reproduced.
+package splice.head
+
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import splice.core.util.Cancellables
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+
+/** Bound for the test mock's zstd decode — far above any fixture request. */
+private const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
+
+// DR-7 foldstall: comfortably past the acceptance head's 1s streamIdle, short enough that a
+// wrongly-unreaped turn still fails the test in seconds rather than hanging the suite.
+private const val STALL_SLEEP_MS = 6_000L
+
+// The two summary sections the "foldsummary" scenario streams (both over the 20-char dedup floor):
+// section A is re-titled verbatim by the continuation round, B only ever arrives in round 2.
+const val SUMMARY_SECTION_A: String = "**Analyzing CLI exit and async error handling**"
+const val SUMMARY_SECTION_B: String = "**Deploying the hardened fleet build**"
+
+// NF-01 quota429 scenario: the HTTP status a real ChatGPT quota rejection carries.
+const val RATE_LIMITED_STATUS: Int = 429
+
+class MockChatGptUpstream(
+    /** V4-111: the one wall-clock seam in this double. A METHOD REFERENCE to the real sleeper, not
+     *  a call to it, so the default behaviour is unchanged while the shape stays an injected port a
+     *  test can replace with virtual time — a direct call would make every paced scenario
+     *  un-drivable and put the file permanently on the kt-tests-no-wall-clock allowlist. */
+    private val pacer: (Long) -> Unit = Thread::sleep,
+) {
+    val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
+    val upstreamAccountIds = CopyOnWriteArrayList<Pair<String, String?>>()
+    val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
+    val abortedScenarios = CopyOnWriteArrayList<String>()
+    val refreshCalls = AtomicInteger(0)
+
+    // The "hold" scenario blocks after its first delta until the test releases this latch — a
+    // deterministic replacement for the timer-based "idle" hold when a test must occupy a slot and
+    // then free it on command (review 2026-07-23).
+    @Volatile var holdRelease = java.util.concurrent.CountDownLatch(1)
+        private set
+
+    /** Arm a fresh hold latch — tests that use SCENARIO:hold call this first, then countDown. */
+    fun resetHold() {
+        holdRelease = java.util.concurrent.CountDownLatch(1)
+    }
+
+    // SEPARATE latch from [holdRelease] on purpose: "holdstart" blocks BEFORE any event while
+    // "hold" blocks AFTER its first delta, and sharing one latch let whichever test armed it last
+    // release the other's upstream mid-assertion (observed as a cross-test failure in the
+    // stop-drain case). One latch per scenario keeps the two independent.
+    @Volatile var startHoldRelease = java.util.concurrent.CountDownLatch(1)
+        private set
+
+    /** Arm a fresh start-hold latch — tests that use SCENARIO:holdstart call this, then countDown. */
+    fun resetStartHold() {
+        startHoldRelease = java.util.concurrent.CountDownLatch(1)
+    }
+
+    fun releaseHold() {
+        holdRelease.countDown()
+    }
+
+    private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    private val pool = Executors.newCachedThreadPool()
+
+    val port: Int get() = server.address.port
+    val baseUrl: String get() = "http://127.0.0.1:$port"
+
+    init {
+        server.executor = pool
+        server.createContext("/oauth/token") { ex ->
+            refreshCalls.incrementAndGet()
+            val body = """{"access_token":"tok-new","refresh_token":"refresh-2","id_token":"id-2"}"""
+            ex.sendResponseHeaders(200, body.length.toLong())
+            ex.responseBody.use { it.write(body.toByteArray()) }
+        }
+        server.createContext("/") { ex -> handle(ex) }
+        server.start()
+    }
+
+    fun stop() {
+        server.stop(0)
+        pool.shutdownNow()
+    }
+
+    private fun capacityStatus(scenario: String): Int? = when (scenario) {
+        "overload_503" -> 503
+        "overload_once" -> if (upstreamBodies.count { it.first == scenario } == 1) 503 else null
+        "overload_403" -> 403
+        else -> null
+    }
+
+    private fun sse(ex: HttpExchange, json: String) {
+        ex.responseBody.write("data: $json\n\n".toByteArray())
+        ex.responseBody.flush()
+    }
+
+    private fun handle(ex: HttpExchange) {
+        // CX-03: the real ChatGPT endpoint accepts `content-encoding: zstd` (codex-cli 0.145.0
+        // sends it), and splice now does the same on the codex head. A mock that only reads
+        // plaintext would silently fall through to the "basic" scenario below on every compressed
+        // request — which is exactly what happened when zstd first landed: one test failed and the
+        // rest passed for the wrong reason. Decode like the real upstream.
+        val rawBytes = ex.requestBody.readBytes()
+        val raw = if (ex.requestHeaders.getFirst("Content-Encoding")?.contains("zstd") == true) {
+            com.github.luben.zstd.Zstd.decompress(rawBytes, MAX_DECOMPRESSED_BYTES).decodeToString()
+        } else {
+            rawBytes.decodeToString()
+        }
+        val body = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        // FALSE-GREEN GENERATOR, closed (review 2026-08-12). When the mock cannot read the request
+        // it used to fall through to the `?: "basic"` default below and serve the HAPPY PATH: that
+        // is how the zstd change made `authfail` silently receive a success stream and its sibling
+        // "pass" for the wrong reason. `?: "basic"` is a legitimate default for a parseable body
+        // with no SCENARIO marker; it is never a legitimate answer to "I could not decode this".
+        if (body == null) {
+            val err = """{"error":{"message":"mock could not parse the request body"}}"""
+            ex.sendResponseHeaders(400, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+        // responses-lite turns carry instructions as a developer input item, not the top-level
+        // field — scan the whole raw body so scenarios ride either shape.
+        val scenario = Regex("SCENARIO:(\\w+)").find(raw)?.groupValues?.get(1) ?: "basic"
+        val auth = ex.requestHeaders.getFirst("Authorization")
+        upstreamAuths.add(scenario to auth)
+        upstreamAccountIds.add(scenario to ex.requestHeaders.getFirst("ChatGPT-Account-ID"))
+        upstreamBodies.add(scenario to raw)
+
+        if (scenario == "refresh" && auth == "Bearer tok-old") {
+            val err = """{"error":{"message":"token expired"}}"""
+            ex.sendResponseHeaders(401, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+
+        // The ChatGPT backend's capacity signal in its PRE-STREAM shape (PR #115 classifies the code
+        // by shape): "overload_503" never clears, so the head retries and then surfaces OVERLOADED;
+        // "overload_once" clears on the second POST, so the head's own retry completes the turn;
+        // "overload_403" wears the same code on a 4xx, which must stay a deterministic client error.
+        // The POST count in [upstreamBodies] is the retry proof — never the verdict alone.
+        capacityStatus(scenario)?.let { status ->
+            val err = """{"error":{"code":"server_is_overloaded","message":"The engine is currently overloaded, please try again later"}}"""
+            ex.sendResponseHeaders(status, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+
+        // Unconditional 401 (unlike "refresh" above, fires regardless of the Authorization header)
+        // so the request exhausts UpstreamClient's one single-flight refresh and terminates in a
+        // real UpstreamFailed(status=401) — the G19 login-hint path.
+        if (scenario == "authfail") {
+            val err = """{"error":{"message":"invalid_api_key: Unauthorized"}}"""
+            ex.sendResponseHeaders(401, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+
+        if (scenario == "tear") {
+            // 200 committed, then a PARTIAL frame and an early socket drop: promising more bytes
+            // (fixed Content-Length) than we deliver makes the client's read fail with a premature
+            // EOF (IOException) BEFORE any complete client frame — the StreamTornBeforeClient path.
+            ex.responseHeaders.add("Content-Type", "text/event-stream")
+            ex.sendResponseHeaders(200, 4096)
+            val torn = runCatching {
+                ex.responseBody.write("data: {\"type\":\"resp".toByteArray())
+                ex.responseBody.flush()
+            }
+            Cancellables.discard(torn, "tear: drop mid-frame")
+            ex.close()
+            return
+        }
+        if (scenario == "stall") {
+            // ADDED (named change, NF-03): sleep past a tiny totalCap BEFORE response headers —
+            // the connect/headers window no stream-scoped poller ever covered. The turn must be
+            // reaped by the whole-turn cap poller while this thread is still sleeping.
+            pacer(3_000)
+        }
+        if (scenario == "quota429") {
+            // ADDED (named change, NF-01): a hard 429 with a sub-ceiling Retry-After — arms the
+            // UpstreamClient's shared head-wide cooldown so restart-clears-it is testable.
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.responseHeaders.add("Retry-After", "60")
+            val body429 = """{"detail":"Rate limit exceeded","resets_in_seconds":60}""".toByteArray()
+            ex.sendResponseHeaders(RATE_LIMITED_STATUS, body429.size.toLong())
+            ex.responseBody.use { it.write(body429) }
+            ex.close()
+            return
+        }
+        if (scenario == "ratelimit") {
+            // Upstream token-budget headers TurnDriver.persistRateLimit harvests into UsageStore.
+            ex.responseHeaders.add("x-ratelimit-limit-tokens", "5000")
+            ex.responseHeaders.add("x-ratelimit-remaining-tokens", "1200")
+            ex.responseHeaders.add("x-ratelimit-reset-tokens", "6m0s")
+        }
+        ex.responseHeaders.add("Content-Type", "text/event-stream")
+        ex.sendResponseHeaders(200, 0)
+        try {
+            streamScenario(scenario, ex, body)
+        } catch (abort: IOException) {
+            // a broken pipe mid-stream is the drip/hold scenarios' EXPECTED client-abort exit
+            // DR-7 adds foldstall: the head's idle watchdog reaps the stalled round, so this
+            // server thread wakes from its sleep onto a socket the head already hung up.
+            val expected = scenario == "drip" || scenario == "hold" ||
+                scenario == "foldstall" || scenario == "idlepre"
+            if (expected) abortedScenarios.add(scenario)
+            check(expected) {
+                "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}"
+            }
+        } finally {
+            Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+            Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
+        }
+    }
+
+    // Reasoning-continuation fold scenarios (codex 518n-2). A round is a CONTINUATION when its input
+    // carries a replayed reasoning item; "fold" then serves a clean round, "foldcap" always truncates
+    // so the head hits its continuation cap.
+    private fun isContinuationRound(body: JsonObject?): Boolean =
+        body?.get("input")?.jsonArray?.any {
+            (it as? JsonObject)?.get("type")?.jsonPrimitive?.content == "reasoning"
+        } ?: false
+
+    // sequential_cutoff realism (2026-08-26 codex-parity port): the live backend streams summary
+    // DELTAS and then a reasoning_summary_text.done carrying the COMPLETE part text under the
+    // item's id. Cutoff-mode heads render ONLY the done events, so every reasoning scenario here
+    // sends both — which also pins that dropping the deltas loses no text.
+    private fun foldTruncatedRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_trunc","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round one."}""",
+        )
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_trunc","encrypted_content":"ENC-TRUNC"}}""",
+        )
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"TENTATIVE ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+        )
+    }
+
+    // DR-7: round 1 streams REAL reasoning and then goes silent forever — a mid-part stall, not a
+    // truncation. The head has seen bytes (so the watchdog is on its streamIdle tier) and holds a
+    // partial summary, which is exactly the state the old code threw away: the watchdog cancelled
+    // the whole turn, the outcome carried no partial, and both continuation gates vetoed on
+    // watchdogFired. The sleep outlives the head's idle cap; the write that follows it lands on a
+    // socket the head has already hung up, which is the expected IOException above.
+    private fun foldStalledRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_stall"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_stall","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round one."}""",
+        )
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_stall","encrypted_content":"ENC-STALL"}}""",
+        )
+        pacer(STALL_SLEEP_MS)
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"NEVER REACHES THE CLIENT"}""")
+    }
+
+    private fun foldCleanRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round two."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round two."}""",
+        )
+        sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rf","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":150,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":800}}}}""",
+        )
+    }
+
+    // ADDED (2026-07-26, turn-scoped summary dedup): a fold whose CONTINUATION round re-titles the
+    // round-1 summary section verbatim before adding a new one — exactly what sequential_cutoff does
+    // when a continuation re-requests the detailed summary over already-summarized reasoning.
+    private fun foldSummaryTruncatedRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_trunc","output_index":0,""" +
+                """"summary_index":0,"text":"$SUMMARY_SECTION_A"}""",
+        )
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_trunc","encrypted_content":"ENC-TRUNC"}}""",
+        )
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"TENTATIVE ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+        )
+    }
+
+    private fun foldSummaryCleanRound(ex: HttpExchange) {
+        // output_index restarts at 0 for the continuation round, as the real backend does.
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean2"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean2","output_index":0,""" +
+                """"summary_index":0,"text":"$SUMMARY_SECTION_A"}""",
+        )
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_B"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean2","output_index":0,""" +
+                """"summary_index":1,"text":"$SUMMARY_SECTION_B"}""",
+        )
+        sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rf","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":150,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":800}}}}""",
+        )
+    }
+
+    private fun streamScenario(scenario: String, ex: HttpExchange, body: JsonObject?) {
+        when (scenario) {
+            "fold" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldTruncatedRound(ex)
+            "foldsummary" ->
+                if (isContinuationRound(body)) foldSummaryCleanRound(ex) else foldSummaryTruncatedRound(ex)
+            "foldcap" -> foldTruncatedRound(ex)
+            "foldstall" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldStalledRound(ex)
+            // DR-7: an acknowledgement, then silence — the PRE-CONTENT stall. "Pre-content" means
+            // no CLIENT FRAME has been emitted (the state G5's reissue path claims); it does NOT
+            // mean no event and not no byte, and an earlier version of this comment said both.
+            // The distinction matters because response.created IS bytes on the wire but NOT a
+            // client frame, so the watchdog keeps its first-output tier (firstByteTimeout) through
+            // the stall — bytes touch the slot, frames pick the tier (Watchdog.kt, 2026-09-01). See
+            // the arm in SseRoundConsumeTest, whose budgets are split to prove which tier fires.
+            "idlepre" -> {
+                // The backend ACKNOWLEDGES and then goes quiet: response.created carries no
+                // content, so the round reaches its stall having emitted nothing to the client —
+                // the pre-content state the G5 reissue path claims. A scenario that only slept
+                // would be untestable, because the client blocks on headers and the stall would
+                // land before the head had a stream to watch at all; and a bare SSE comment ends
+                // the round instantly as a dead-head body rather than stalling it.
+                sse(ex, """{"type":"response.created","response":{"id":"rs_idle"}}""")
+                pacer(STALL_SLEEP_MS)
+            }
+            "multipart" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_mp"}}""")
+                sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
+                sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Part one."}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_mp","output_index":0,""" +
+                        """"summary_index":0,"text":"Part one."}""",
+                )
+                sse(ex, """{"type":"response.reasoning_summary_part.done","output_index":0}""")
+                sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
+                sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Part two."}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_mp","output_index":0,""" +
+                        """"summary_index":1,"text":"Part two."}""",
+                )
+                sse(ex, """{"type":"response.reasoning_summary_part.done","output_index":0}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"Answer text."}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":10,"output_tokens":5}}}""",
+                )
+                ex.responseBody.write("data: [DONE]\n\n".toByteArray())
+            }
+            "toolcall" -> {
+                sse(
+                    ex,
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"function_call","call_id":"call_abc","name":"get_thing"}}""",
+                )
+                sse(ex, """{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"a\":"}""")
+                sse(ex, """{"type":"response.function_call_arguments.delta","output_index":0,"delta":"1}"}""")
+                sse(ex, """{"type":"response.function_call_arguments.done","output_index":0}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"r2","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":4,"output_tokens":2}}}""",
+                )
+            }
+            "failed" -> sse(
+                ex,
+                """{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom upstream"}}}""",
+            )
+            // The capacity signal in its IN-STREAM shape — the 2026-09-01 20:56 compaction death.
+            "overload_sse" -> sse(
+                ex,
+                """{"type":"response.failed","response":{"error":{"code":"server_is_overloaded",""" +
+                    """"message":"The engine is currently overloaded, please try again later"}}}""",
+            )
+            "overflow_sse" -> sse(
+                ex,
+                """{"type":"response.failed","response":{"error":{"code":"invalid_request_error",""" +
+                    """"message":"Your input exceeds the context window of this model. Please reduce the length."}}}""",
+            )
+            "oversized_sse" -> {
+                ex.responseBody.write("data: ".toByteArray())
+                ex.responseBody.write("x".repeat(1024 * 1024 + 1).toByteArray())
+            }
+            "truncated" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial answer"}""")
+                // no response.completed
+            }
+            "idle" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial"}""")
+                pacer(5_000)
+            }
+            // Models the codex reasoning phase: upstream commits 200 + headers, then emits NOTHING
+            // content-bearing until released. The client must still see the turn open immediately
+            // (message_start + ping) — that window measured p50 2840ms of frozen screen before
+            // message_start moved to upstream-handoff.
+            "holdstart" -> {
+                startHoldRelease.await()
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"late"}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"rhs","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                )
+            }
+            "hold" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"held"}""")
+                holdRelease.await() // block until the test releases, then finish cleanly
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"rhold","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                )
+            }
+            "zero_event_auth" -> {
+                ex.responseBody.write(
+                    "<html><body>401 Unauthorized: your session token has expired, please sign in again.</body></html>"
+                        .toByteArray(),
+                )
+            }
+            "zero_event_empty" -> {
+                // deliberately nothing written — a true stall, not a diagnosable auth-shaped body
+            }
+            "prefill" -> {
+                pacer(1_500) // silent past streamIdle — governed by firstByteTimeout
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(
+                    ex,
+                    """{"type":"response.output_text.delta","output_index":0,"delta":"summary after slow prefill"}""",
+                )
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"usage":{"input_tokens":1000,"output_tokens":5}}}""",
+                )
+            }
+            "drip" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                while (true) {
+                    sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"drip "}""")
+                    pacer(40)
+                }
+            }
+            "bigout" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"short summary"}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"rbig","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":500,"output_tokens":200000}}}""",
+                )
+            }
+            "nonstream_tool" -> {
+                val evt = """{"type":"response.completed","response":{"id":"r3","status":"completed","output":[""" +
+                    """{"type":"reasoning","summary":[{"type":"summary_text","text":"Because reasons that are long enough to mirror."}]},""" +
+                    """{"type":"message","content":[{"type":"output_text","text":"héllo — ✓ done"}]},""" +
+                    """{"type":"function_call","call_id":"call_xyz","name":"fn_x","arguments":"{\"q\":\"z\"}"}""" +
+                    """],"usage":{"input_tokens":3,"output_tokens":2}}}"""
+                val buf = "data: $evt\n\n".toByteArray()
+                val check = "✓".toByteArray()
+                val at = buf.toList()
+                    .windowed(check.size)
+                    .indexOfFirst { it == check.toList() } + 1
+                ex.responseBody.write(buf.copyOfRange(0, at)) // split INSIDE the 3-byte ✓
+                ex.responseBody.flush()
+                pacer(20)
+                ex.responseBody.write(buf.copyOfRange(at, buf.size))
+            }
+            "compactish" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_cp"}}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.delta","output_index":0,""" +
+                        """"delta":"Goal: port the proxy. Decisions: split modules. Next: tests."}""",
+                )
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_cp","output_index":0,""" +
+                        """"summary_index":0,"text":"Goal: port the proxy. Decisions: split modules. Next: tests."}""",
+                )
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"rc","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":9,"output_tokens":3}}}""",
+                )
+            }
+            "replaystream" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.delta","output_index":0,""" +
+                        """"delta":"Long enough reasoning summary to mirror into text."}""",
+                )
+                sse(
+                    ex,
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_stream","encrypted_content":"ENC-STREAM"}}""",
+                )
+                sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"answer"}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"rrs","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":7,"output_tokens":4}}}""",
+                )
+            }
+            "malformed_sse" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                ex.responseBody.write("data: {not-json}\n\n".toByteArray())
+                ex.responseBody.flush()
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"ok after auth"}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"r5","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                )
+            }
+            else -> { // basic / refresh-after-refresh
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"ok after auth"}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"r4","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                )
+            }
+        }
+    }
+}

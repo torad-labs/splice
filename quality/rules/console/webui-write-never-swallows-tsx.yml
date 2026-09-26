@@ -1,0 +1,39 @@
+# A write says how it ended: tsx variant of webui-write-never-swallows (Marlin, 2026-09-25). That
+# rule reads .ts, where every write is sent; a component cannot send one (webui-fetch-only-in-api-tsx)
+# but can CALL one and throw its answer away, and a handler that catches a write's failure into
+# null, false or nothing prints the same silence the api segments were cured of. So in a .tsx: no
+# catch block answers null, false or undefined, and no promise's catch does either.
+#
+# One shape is exempt by construction: a chain that starts at a dynamic import(). Every page loads
+# its DEV-only fixture that way, and a fixture that fails to load leaves no sample marker, which is
+# the answer (compaction, logs, mcp, models, projects, sessions, settings, teams, turns, usage).
+id: webui-write-never-swallows-tsx
+language: tsx
+severity: error
+message: "A write's failure is shown, never caught into null, false or nothing."
+note: |
+  A write answers a WriteResult (shared/lib): print it with `writeNote(result, ...)`, which reads
+  only `applied` as success and prints the reason on `failed`. A catch that must stay prints the
+  failure (setFault(err.message)) instead of answering nothing.
+files:
+  - console/src/**/*.tsx
+rule:
+  any:
+    - all:
+        - any:
+            - pattern: return null
+            - pattern: return false
+            - pattern: return undefined
+        - inside:
+            kind: catch_clause
+            stopBy: end
+    - all:
+        - any:
+            - pattern: $P.catch(() => null)
+            - pattern: $P.catch(() => false)
+            - pattern: $P.catch(() => undefined)
+            - pattern: $P.catch(() => {})
+        - not:
+            has:
+              pattern: import($$$A)
+              stopBy: end

@@ -43,9 +43,16 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          # console/dist/index.html is the single-file bundle: every dependency's minified code
+          # inline, and CodeQL read it as ours — two "high" alerts on 2026-09-20 were react-router's
+          # redirect-protocol allowlist and style-mod's `&` selector nesting (#5, #8). Since PR 4 the
+          # bundle is no longer committed (:console:bundle builds it), so this only matters when a
+          # local build left one behind; console/src stays scanned.
+          config: |
+            paths-ignore:
+              - console/dist
       - name: build Kotlin
         if: matrix.language == 'java-kotlin'
-        working-directory: gateway
         run: ./gradlew classes --no-daemon --stacktrace
       - name: analyze
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0

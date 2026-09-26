@@ -234,11 +234,9 @@ describe('turns, sessions and team seats', () => {
 });
 
 describe('the doctor', () => {
-  const SEP = ` ${String.fromCharCode(0x2014)} fix: `;
-
   test('a failing check is danger with its own remedy to copy; warn is warn; ok and info are quiet', () => {
     const checks: DoctorCheck[] = [
-      { id: 'wrapper/claudex', status: 'fail', detail: `not linked${SEP}splice install --all` },
+      { id: 'wrapper/claudex', status: 'fail', detail: 'not linked', fix: 'splice install --all' },
       { id: 'daemon/disk', status: 'warn', detail: 'disk 91% full' },
       { id: 'daemon/port', status: 'ok', detail: 'fine' },
       { id: 'daemon/jvm', status: 'info', detail: 'jvm 21' },
@@ -253,7 +251,7 @@ describe('the doctor', () => {
   });
 
   test('a remedy the report masked is printed with why, never offered to copy (Marlin, 2026-09-25)', () => {
-    const checks: DoctorCheck[] = [{ id: 'installation/PATH', status: 'fail', detail: `~/.local/bin is not on PATH${SEP}add to your shell rc: export PATH="<redacted:path>"` }];
+    const checks: DoctorCheck[] = [{ id: 'installation/PATH', status: 'fail', detail: '~/.local/bin is not on PATH', fix: 'add to your shell rc: export PATH="<redacted:path>"' }];
     const [need] = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW).needs;
     expect(need.fix).toEqual({ kind: 'masked', command: 'add to your shell rc: export PATH="<redacted:path>"' });
     const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
@@ -263,7 +261,7 @@ describe('the doctor', () => {
 
   test('a fix the daemon can run itself is run from the item, its command printed beside the key', () => {
     // V4-220 item 4: the wrapper rows carry fix_id install_all, which POST /api/doctor/fix/{id} runs.
-    const checks: DoctorCheck[] = [{ id: 'installation/wrapper', status: 'fail', detail: `'claudex' missing${SEP}splice install --all`, fix_id: 'install_all' }];
+    const checks: DoctorCheck[] = [{ id: 'installation/wrapper', status: 'fail', detail: "'claudex' missing", fix: 'splice install --all', fix_id: 'install_all' }];
     const [need] = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW).needs;
     expect(need.fix).toEqual({ kind: 'doctor-fix', id: 'install_all', command: 'splice install --all', masked: false });
     const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
@@ -273,7 +271,7 @@ describe('the doctor', () => {
   });
 
   test('a head\'s sign-in check is said once, on the head', () => {
-    const checks: DoctorCheck[] = [{ id: 'auth/claudex', status: 'fail', detail: `not signed in${SEP}claudex login` }];
+    const checks: DoctorCheck[] = [{ id: 'auth/claudex', status: 'fail', detail: 'not signed in', fix: 'claudex login' }];
     const out = needsOf(quiet({
       doctor: read(doctor(checks)),
       auth: read({ claudex: { kind: 'chatgpt-oauth', login: 'x', present: false } }),

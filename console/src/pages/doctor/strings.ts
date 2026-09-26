@@ -1,8 +1,7 @@
 // Every word this page prints. S: labels, three words or fewer, sentence case. H: help, one
 // sentence of twelve words or fewer, shown on hover or focus.
 //
-// A check's id, its finding and its fix are the daemon's words, printed as data; the daemon's own
-// em-dash separator never reaches the page (checkFix and checkFinding split on it).
+// A check's id, its finding and its fix are the daemon's words, printed as data.
 export const S = {
   title: 'Doctor',
   about: 'About doctor',

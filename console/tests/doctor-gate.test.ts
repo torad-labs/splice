@@ -25,11 +25,8 @@ import { ABSENT } from '../src/shared/lib';
 
 const h = React.createElement;
 
-/** The daemon's own separator: a space, U+2014, then " fix: " (DoctorReportShape.kt:59). */
-const SEP = ` ${String.fromCharCode(0x2014)} fix: `;
-
-function check(id: string, status: DoctorCheck['status'], detail: string): DoctorCheck {
-  return { id, status, detail };
+function check(id: string, status: DoctorCheck['status'], detail: string, fix?: string): DoctorCheck {
+  return fix === undefined ? { id, status, detail } : { id, status, detail, fix };
 }
 
 /** A report whose every string is distinctive, so its absence from the markup means something. */
@@ -75,14 +72,14 @@ const DETAIL_SECRET = 'PLANTEDDETAILSECRET0002';
 describe('a refused report prints nothing of itself', () => {
   const ids = ['auth/planted-codex', 'env/planted-proxy', 'daemon/planted-port'];
   const planted = report([
-    check(ids[0] ?? '', 'fail', `the codex key was rejected${SEP}export OPENAI_API_KEY=${FIX_SECRET}`),
+    check(ids[0] ?? '', 'fail', 'the codex key was rejected', `export OPENAI_API_KEY=${FIX_SECRET}`),
     check(ids[1] ?? '', 'warn', `Authorization: Bearer ${DETAIL_SECRET} was found in the environment`),
     check(ids[2] ?? '', 'ok', 'control plane is listening on 3096'),
   ]);
   // The same report with both secrets gone: the control that proves the leaves below are printed
   // when the gate passes, so their absence from the refused render is the gate's doing.
   const clean = report([
-    check(ids[0] ?? '', 'fail', `the codex key was rejected${SEP}splice login planted-codex`),
+    check(ids[0] ?? '', 'fail', 'the codex key was rejected', 'splice login planted-codex'),
     check(ids[1] ?? '', 'warn', 'a proxy variable was found in the environment'),
     check(ids[2] ?? '', 'ok', 'control plane is listening on 3096'),
   ]);
@@ -139,7 +136,7 @@ describe('a refused report prints nothing of itself', () => {
 
   test('the refusal names where and which shape, never what', () => {
     const where = leaksIn(planted).map((leak) => `${leak.kind} at ${leak.where}`);
-    expect(where).toEqual(expect.arrayContaining(['key-value at checks[0].detail', 'bearer at checks[1].detail']));
+    expect(where).toEqual(expect.arrayContaining(['key-value at checks[0].fix', 'bearer at checks[1].detail']));
     const out = board(planted);
     for (const line of where) expect(out).toContain(line);
   });
@@ -147,14 +144,15 @@ describe('a refused report prints nothing of itself', () => {
 
 describe('the CLI\'s own mask is not a leak', () => {
   // The stack's api-key head, exactly as the daemon serves it: the verdict's sentence and fix
-  // (DoctorAuthVerdict.kt:18-20), the fix riding in the detail (DoctorReportShape.kt:59), and the
-  // CLI's key=value pass masking the fix's `…` (DoctorRedaction.kt:65). This is checks[28].detail on
-  // the e2e stack, which the console refused as `key-value`.
-  const STACK_DETAIL = `CONSOLE_E2E_NO_SUCH_KEY is not set${SEP}export CONSOLE_E2E_NO_SUCH_KEY=<redacted>   then: splice restart`;
+  // (DoctorAuthVerdict.kt:18-20), the fix in its own key (DoctorReportShape.checks), and the CLI's
+  // key=value pass masking the fix's `…` (DoctorRedaction.kt:65). This was checks[28].detail on the
+  // e2e stack, which the console refused as `key-value`.
+  const STACK_DETAIL = 'CONSOLE_E2E_NO_SUCH_KEY is not set';
+  const STACK_FIX = 'export CONSOLE_E2E_NO_SUCH_KEY=<redacted>   then: splice restart';
 
   test('the stack\'s masked check passes the gate', () => {
-    expect(leaksInText(STACK_DETAIL)).toEqual([]);
-    expect(isRedacted(report([check('auth/e2e-openrouter', 'fail', STACK_DETAIL)]))).toBe(true);
+    expect(leaksInText(STACK_FIX)).toEqual([]);
+    expect(isRedacted(report([check('auth/e2e-openrouter', 'fail', STACK_DETAIL, STACK_FIX)]))).toBe(true);
   });
 
   test('every form the CLI writes its mask in passes', () => {
@@ -176,7 +174,7 @@ describe('the CLI\'s own mask is not a leak', () => {
     // Written flush against the mask, so it rides inside the greedy match the mask excused.
     expect(leaksInText('A_KEY=<redacted>"B_TOKEN=hunter2')).toContain('key-value');
     expect(leaksInText('Bearer <redacted> then Bearer abc123')).toContain('bearer');
-    expect(isRedacted(report([check('auth/e2e-openrouter', 'fail', `${STACK_DETAIL} OPENAI_API_KEY=hunter2`)]))).toBe(false);
+    expect(isRedacted(report([check('auth/e2e-openrouter', 'fail', STACK_DETAIL, `${STACK_FIX} OPENAI_API_KEY=hunter2`)]))).toBe(false);
   });
 
   test('only the exact mask is excused', () => {
@@ -188,7 +186,7 @@ describe('the CLI\'s own mask is not a leak', () => {
   });
 
   test('the masked report renders its checks, not a refusal', () => {
-    const out = board(report([check('auth/e2e-openrouter', 'fail', STACK_DETAIL)]));
+    const out = board(report([check('auth/e2e-openrouter', 'fail', STACK_DETAIL, STACK_FIX)]));
     expect(out).not.toContain(S.refused);
     expect(out).toContain('auth/e2e-openrouter');
   });

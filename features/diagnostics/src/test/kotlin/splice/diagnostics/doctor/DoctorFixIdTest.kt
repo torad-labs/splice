@@ -10,7 +10,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
@@ -32,16 +31,15 @@ class DoctorFixIdTest {
     @Test
     fun `the PATH fix survives the report's redaction and pastes as written`() {
         val underHome = home.resolve(".local").resolve("bin")
-        assertTrue(
-            pathFixDetail(underHome, env = emptyMap())
-                .endsWith("fix: add to your shell rc: export PATH=\"\$HOME/.local/bin:\$PATH\""),
-            pathFixDetail(underHome, env = emptyMap()),
+        assertEquals(
+            "add to your shell rc: export PATH=\"\$HOME/.local/bin:\$PATH\"",
+            pathFix(underHome, env = emptyMap()),
         )
         // A bin dir outside home (SPLICE_BIN_DIR) is splice's own directory to the redaction, but
         // only when the quote ends the path: `/opt/splice/bin:$PATH` was one foreign token.
         val outside = Paths.get("/opt/splice/bin")
-        val detail = pathFixDetail(outside, env = mapOf("SPLICE_BIN_DIR" to outside.toString()))
-        assertTrue(detail.endsWith("fix: add to your shell rc: export PATH=\"/opt/splice/bin\":\"\$PATH\""), detail)
+        val fix = pathFix(outside, env = mapOf("SPLICE_BIN_DIR" to outside.toString()))
+        assertEquals("add to your shell rc: export PATH=\"/opt/splice/bin\":\"\$PATH\"", fix)
     }
 
     /** RED before item 4: `install it: https:<redacted:path>`. Every prerequisite's fix, taken from the
@@ -49,10 +47,8 @@ class DoctorFixIdTest {
     @Test
     fun `every prerequisite fix reaches the report as written, links included`() {
         val rows = binaries.map { DoctorCheck(it.name, CheckStatus.FAIL, it.missingDetail, it.fix) }
-        val details = checks(rows, env = emptyMap()).map { it.getValue("detail").jsonPrimitive.content }
-        binaries.zip(details).forEach { (spec, detail) ->
-            assertTrue(detail.endsWith("fix: ${spec.fix}"), "${spec.name}: $detail")
-        }
+        val fixes = checks(rows, env = emptyMap()).map { it.getValue("fix").jsonPrimitive.content }
+        binaries.zip(fixes).forEach { (spec, fix) -> assertEquals(spec.fix, fix, spec.name) }
     }
 
     @Test
@@ -74,10 +70,10 @@ class DoctorFixIdTest {
         )
     }
 
-    private fun pathFixDetail(bin: Path, env: Map<String, String>): String {
+    private fun pathFix(bin: Path, env: Map<String, String>): String {
         val onlyUsrBin = EnvReader { name -> if (name == "PATH") "/usr/bin" else null }
         val row = DoctorPathCheck(DoctorTestPorts.probes()).check(bin, onlyUsrBin)
-        return checks(listOf(row), env).single().getValue("detail").jsonPrimitive.content
+        return checks(listOf(row), env).single().getValue("fix").jsonPrimitive.content
     }
 
     private fun checks(rows: List<DoctorCheck>, env: Map<String, String>): List<JsonObject> {

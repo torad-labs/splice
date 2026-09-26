@@ -528,13 +528,12 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   // The tip opened inside the panel's scroll box, which cut it at the panel's left edge, and in Needs
   // you's last column, where the window cut it (2026-09-25 renders). The stack's own masked fix went
   // with V4-220's `splice key set`, and the daemon still masks a value or a path it does not know in
-  // any other fix, so the report carries one here, in the daemon's own detail shape.
+  // any other fix, so the report carries one here, in the daemon's own check shape.
   const masked = 'CONSOLE_E2E_MASKED=<redacted>';
   await page.route('**/api/doctor', async (route) => {
     const response = await route.fetch();
-    const body = await response.json() as { checks: { id: string; status: string; detail: string }[] };
-    const fix = ` ${String.fromCharCode(0x2014)} fix: export ${masked}`;
-    body.checks.push({ id: 'configuration/e2e-masked', status: 'warn', detail: `a value doctor masks${fix}` });
+    const body = await response.json() as { checks: { id: string; status: string; detail: string; fix?: string | null }[] };
+    body.checks.push({ id: 'configuration/e2e-masked', status: 'warn', detail: 'a value doctor masks', fix: `export ${masked}` });
     await route.fulfill({ response, json: body });
   });
   const faults = await open(page, 'doctor');

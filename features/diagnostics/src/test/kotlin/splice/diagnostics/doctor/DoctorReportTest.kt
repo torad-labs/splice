@@ -43,6 +43,8 @@ class DoctorReportTest {
         "sess-identifier-1234",
     )
 
+    private val emDash = Char(0x2014).toString()
+
     private val toml = """
         [daemon]
         control_port = 3999
@@ -160,13 +162,14 @@ class DoctorReportTest {
         )
         val out = report(env, withLogs = false, run = failing)
         val check = out.getValue("checks").jsonArray.single().jsonObject
-        assertEquals(setOf("id", "status", "detail", "fix_id"), check.keys, "schema 1: a check is exactly these four")
+        val five = setOf("id", "status", "detail", "fix", "fix_id")
+        assertEquals(five, check.keys, "schema 1: a check is exactly these five")
         assertEquals(JsonNull, check.getValue("fix_id"), "a login is the operator's to run: no fix id")
         assertEquals("auth/codex", check.getValue("id").jsonPrimitive.content)
         assertEquals("fail", check.getValue("status").jsonPrimitive.content)
         val detail = check.getValue("detail").jsonPrimitive.content
-        assertTrue(detail.startsWith("token at ~/.config/splice/auth/codex.json expired"), detail)
-        assertTrue(detail.endsWith("fix: splice login codex"), "the fix rides inside the detail: $detail")
+        assertEquals("token at ~/.config/splice/auth/codex.json expired", detail)
+        assertEquals("splice login codex", check.getValue("fix").jsonPrimitive.content, "the fix is a key of its own")
         val quiet = captureStdout {
             DoctorJsonReport(
                 envReader = { env[it] },
@@ -208,6 +211,20 @@ class DoctorReportTest {
         assertFalse(Files.readString(out).contains("real-private"), "a private project name leaked into --out")
         secrets.filterNot { it.startsWith("/home/operator") }
             .forEach { assertFalse(Files.readString(out).contains(it), "$it leaked into --out") }
+    }
+
+    /** RED before V4-253: a check's fix rode inside its detail behind " U+2014 fix: ", so the JSON users paste
+     *  into issues carried an em dash on every check with a remedy (23 of 90 on the installed 0.4.0). */
+    @Test
+    fun `the --json text carries no em dash, and a check's fix is a key of its own`() {
+        val env = plant()
+        val (_, printed) = captureStdout { DoctorTestPorts.doctor().doctor(listOf("--json")) { env[it] } }
+        val checks = Json.parseToJsonElement(printed).jsonObject.getValue("checks").jsonArray.map { it.jsonObject }
+        val dashed = checks.filter { it.toString().contains(emDash) }.map { it.getValue("id").jsonPrimitive.content }
+        assertFalse(printed.contains(emDash) || printed.contains("\\u2014"), "U+2014 in the --json text, in $dashed")
+        val fixed = checks.filter { (it["fix"] ?: JsonNull) != JsonNull }
+        assertTrue(fixed.isNotEmpty(), "no check carried a fix, so a text without the separator proves nothing")
+        fixed.forEach { assertFalse(it.getValue("detail").jsonPrimitive.content.contains("fix:"), "$it") }
     }
 
     @Test
@@ -334,9 +351,8 @@ class DoctorReportTest {
         val check = out.getValue("checks").jsonArray.first().jsonObject
         assertEquals("configuration/<omitted>", check.getValue("id").jsonPrimitive.content, "a prose check name")
         val detail = check.getValue("detail").jsonPrimitive.content
-        val expected = "prefix '<omitted>' of head <head-1> is not a token — fix: rename it in " +
-            "~/.config/splice/splice.toml"
-        assertEquals(expected, detail)
+        assertEquals("prefix '<omitted>' of head <head-1> is not a token", detail)
+        assertEquals("rename it in ~/.config/splice/splice.toml", check.getValue("fix").jsonPrimitive.content)
     }
 
     private fun prosePool() = HeadAccountPoolView(

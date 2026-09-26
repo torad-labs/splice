@@ -253,12 +253,11 @@ describe('pending routes', () => {
 // ── doctor ───────────────────────────────────────────────────────────────────
 
 describe('doctor', () => {
-  const EM = String.fromCharCode(0x2014);
-
-  test('reads the section and the remedy the report buries in the detail', () => {
+  test('reads the section and the remedy the report carries beside the detail', () => {
     expect(checkSection({ id: 'daemon/port', status: 'ok', detail: 'x' })).toBe('daemon');
     expect(checkSection({ id: 'bare', status: 'ok', detail: 'x' })).toBe('bare');
-    expect(checkFix({ id: 'a/b', status: 'fail', detail: `no daemon ${EM} fix: splice restart` })).toBe('splice restart');
+    expect(checkFix({ id: 'a/b', status: 'fail', detail: 'no daemon', fix: 'splice restart' })).toBe('splice restart');
+    expect(checkFix({ id: 'a/b', status: 'ok', detail: 'all good', fix: null })).toBeNull();
     expect(checkFix({ id: 'a/b', status: 'ok', detail: 'all good' })).toBeNull();
   });
 

@@ -31,12 +31,6 @@ import splice.diagnostics.doctor.DoctorCheck
 private const val CONTEXT_WINDOW = "context_window"
 private const val MODELS = "models"
 
-/** The wire contract between a check's detail and its fix: the console splits on it
- *  (entities/doctor FIX_SEPARATOR) and never prints it. Spelled by code point because the doctor's
- *  text carries no em-dash (quality/rules/kotlin/kt-no-emdash-cli-text.yml), and this is not text. */
-private const val EM_DASH = 0x2014
-private val FIX_SEPARATOR = " ${Char(EM_DASH)} fix: "
-
 /** V4-127 §6: the oldest file a state-directory scan found, and how long it has been there. The
  *  MEASUREMENT is not this file's job — every shaper here takes values and returns JSON — so
  *  DoctorStateDirScan walks the directory and hands the result in. [ageMs] is an age rather than a timestamp for
@@ -80,12 +74,13 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("unreadable_entries", usage.unreadable)
     }
 
-    /** Exactly {id, status, detail, fix_id} (schema 1): the fix sentence rides inside the detail, and
-     *  `fix_id` names the fix the daemon can run itself (POST /api/doctor/fix/{id}), null on every
-     *  row whose remedy is the operator's own. An added key is not a breaking change, so the schema
-     *  stays 1. A check's name and detail are the doctor's own sentences, but they quote config
-     *  values — so every unsafe operator-authored value is scrubbed to its alias or <omitted> before
-     *  the shape pass. */
+    /** Exactly {id, status, detail, fix, fix_id} (schema 1): `fix` is the check's remedy, null when it
+     *  has none, and `fix_id` names the fix the daemon can run itself (POST /api/doctor/fix/{id}), null
+     *  on every row whose remedy is the operator's own. V4-253: the fix rode inside the detail behind
+     *  an em-dash separator, so the JSON users paste into issues carried U+2014 on every check with a
+     *  remedy. An added key is not a breaking change, so the schema stays 1. A check's name, detail
+     *  and fix are the doctor's own sentences, but they quote config values — so every unsafe
+     *  operator-authored value is scrubbed to its alias or <omitted> before the shape pass. */
     fun checks(sections: List<Pair<String, List<DoctorCheck>>>): JsonArray =
         buildJsonArray {
             sections.forEach { (section, checks) ->
@@ -94,7 +89,8 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                         buildJsonObject {
                             put("id", safe("$section/${c.name}"))
                             put("status", c.status.name.lowercase())
-                            put("detail", safe(c.fix?.let { "${c.detail}$FIX_SEPARATOR$it" } ?: c.detail))
+                            put("detail", safe(c.detail))
+                            put("fix", c.fix?.let(::safe))
                             put("fix_id", c.fixId?.wire)
                         },
                     )

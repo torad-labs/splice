@@ -13,13 +13,14 @@ export interface DoctorCheck {
   /** "<section>/<name>", e.g. "daemon/port". The page groups by the part before the slash. */
   id: string;
   status: DoctorStatus;
-  /**
-   * The check's sentence. A check with a remedy carries it INSIDE this string, appended by the
-   * shape pass (DoctorReportShape.kt:59); there is no separate fix field to read, so a page that
-   * offers "copy the command" has to take the tail after the separator, and a check without one has
-   * no remedy to offer.
-   */
+  /** The check's sentence: what it found. Its remedy, when it has one, is [fix]. */
   detail: string;
+  /**
+   * The command or step that clears the check (DoctorReportShape.checks), null when it offers none.
+   * V4-253: it rode inside [detail] behind an em-dash separator until then, so the JSON users paste
+   * into issues carried U+2014 on every check with a remedy.
+   */
+  fix?: string | null;
   /**
    * The fix the daemon can run itself for this check (V4-220 item 4, DoctorReportShape.kt:84):
    * POST /api/doctor/fix/{fix_id} runs it and answers with doctor re-run. Null, or absent from a
@@ -55,25 +56,16 @@ export interface DoctorPayload {
 
 export type DoctorSlice = DoctorPayload | PendingRoute;
 
-/**
- * The separator the daemon builds between a check's detail and its fix: a space, U+2014 EM DASH,
- * then " fix: " (DoctorReportShape.kt:59). Assembled from its code point rather than typed, so this
- * parser cannot be confused with the copy gate that bans em-dashes from UI text, and so the byte
- * that must match the daemon's is named once.
- */
-const FIX_SEPARATOR = ` ${String.fromCharCode(0x2014)} fix: `;
-
 /** The check id's section, or the whole id when it carries no slash. */
 export function checkSection(check: DoctorCheck): string {
   const slash = check.id.indexOf('/');
   return slash === -1 ? check.id : check.id.slice(0, slash);
 }
 
-/** The remedy command carried inside a check's detail, or null when the check offers none. Null,
- *  not an empty string: "no remedy" and "a remedy that is empty" are different sentences. */
+/** The check's remedy, or null when it offers none. Null, not an empty string: "no remedy" and "a
+ *  remedy that is empty" are different sentences. */
 export function checkFix(check: DoctorCheck): string | null {
-  const at = check.detail.indexOf(FIX_SEPARATOR);
-  return at === -1 ? null : check.detail.slice(at + FIX_SEPARATOR.length);
+  return check.fix ?? null;
 }
 
 /** Whether a check wants the operator: warn and fail do, ok and info do not. Doctor and Needs you
@@ -92,10 +84,9 @@ export function fixMasked(fix: string): boolean {
   return /<redacted(?::[a-z-]+)?>/.test(fix);
 }
 
-/** What the check found: its detail without the remedy, which a page prints on its own line. */
+/** What the check found, which a page prints on its own line apart from the remedy. */
 export function checkFinding(check: DoctorCheck): string {
-  const at = check.detail.indexOf(FIX_SEPARATOR);
-  return at === -1 ? check.detail : check.detail.slice(0, at);
+  return check.detail;
 }
 
 /** One row of the checks rack: a check, or several that say the same thing about different heads. */

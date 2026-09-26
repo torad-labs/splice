@@ -3,8 +3,6 @@ valid:
   - |
     // comments may use an em-dash — rules gate the printed text only
     val detail = "splice.toml changed since the daemon booted, so the running topology is stale"
-  # the report's fix separator: built from its code point, never spelled in a string
-  - 'private val FIX_SEPARATOR = " ${Char(0x2014)} fix: "'
   - 'val detail = "every account is out ($at): $detail"'
   # V4-238: a regex's clause boundary is read, not written; it names the character with the regex escape
   - 'val re = Regex("[^.,;:!?\\x{2014}\\n]{0,2000}?retry")'

@@ -9,8 +9,6 @@
 // NOT a credential, so the redaction gate is exercised without being tripped.
 import type { DoctorPayload } from '@entities/doctor';
 
-const SEP = ` ${String.fromCharCode(0x2014)} fix: `;
-
 const FIXTURE_NOW = '2026-09-18T07:45:00Z';
 
 const DEMO_REPORT: DoctorPayload = {
@@ -24,12 +22,12 @@ const DEMO_REPORT: DoctorPayload = {
   checks: [
     { id: 'daemon/port', status: 'ok', detail: 'control plane is listening on 3096' },
     { id: 'daemon/topology', status: 'ok', detail: 'the booted splice.toml matches the file on disk' },
-    { id: 'heads/running', status: 'warn', detail: `2 of 7 heads are stopped${SEP}splice heads --start` },
+    { id: 'heads/running', status: 'warn', detail: '2 of 7 heads are stopped', fix: 'splice heads --start' },
     { id: 'heads/version', status: 'ok', detail: 'every running head is on 0.4.0' },
     { id: 'auth/codex', status: 'ok', detail: 'the Codex credential refreshes normally' },
-    { id: 'auth/grok', status: 'fail', detail: `the Grok refresh latch is set${SEP}splice login claude-grok` },
+    { id: 'auth/grok', status: 'fail', detail: 'the Grok refresh latch is set', fix: 'splice login claude-grok' },
     { id: 'mcp/hosted', status: 'info', detail: '3 of 10 servers are hosted; the rest declare a transport splice cannot share' },
-    { id: 'perf/perf-files', status: 'warn', detail: `claudex-perf.jsonl.1 is a rolled generation at 67 MB${SEP}splice doctor --json` },
+    { id: 'perf/perf-files', status: 'warn', detail: 'claudex-perf.jsonl.1 is a rolled generation at 67 MB', fix: 'splice doctor --json' },
     { id: 'env/path', status: 'info', detail: 'claude on PATH resolves to the versioned binary under ~/.local/share/claude' },
     { id: 'logs/tail', status: 'ok', detail: 'the daemon log tail holds 1200 lines' },
   ],

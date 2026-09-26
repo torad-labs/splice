@@ -49,9 +49,6 @@ import { statOf } from './lib/markup';
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
 
-/** The daemon's own separator: a space, U+2014, then " fix: " (DoctorReportShape.kt:59). */
-const SEP = ` ${String.fromCharCode(0x2014)} fix: `;
-
 /** One check as the checks table's row, rendered by the board from a report holding only it. */
 function rowOf(one: DoctorCheck): string {
   const payload: DoctorPayload = {
@@ -71,8 +68,8 @@ function rowOf(one: DoctorCheck): string {
   return table.split('<tr').filter((row) => row.includes('<td')).join('');
 }
 
-function check(id: string, status: DoctorCheck['status'], detail: string): DoctorCheck {
-  return { id, status, detail };
+function check(id: string, status: DoctorCheck['status'], detail: string, fix?: string): DoctorCheck {
+  return fix === undefined ? { id, status, detail } : { id, status, detail, fix };
 }
 
 describe('the doctor report is gated on redaction', () => {
@@ -121,10 +118,10 @@ describe('the doctor report is gated on redaction', () => {
 });
 
 describe('every failing check carries its fix', () => {
-  const failing = check('daemon/port', 'fail', `port 3096 is held${SEP}splice doctor --json`);
+  const failing = check('daemon/port', 'fail', 'port 3096 is held', 'splice doctor --json');
   const plain = check('env/path', 'info', 'claude on PATH resolves to the versioned binary');
 
-  test('the remedy is the tail after the daemon separator', () => {
+  test('the remedy is the report\'s fix key', () => {
     expect(checkFix(failing)).toBe('splice doctor --json');
   });
 
@@ -160,8 +157,8 @@ describe('every failing check carries its fix', () => {
     // the first screen of the rack.
     const fix = 'set system_prompt_mode = "append"';
     const rows = collapseChecks([
-      check('configuration/system-prompt:claudex', 'warn', `head 'claudex' replaces${SEP}${fix}`),
-      check('configuration/system-prompt:bonsai', 'warn', `head 'bonsai' replaces${SEP}${fix}`),
+      check('configuration/system-prompt:claudex', 'warn', `head 'claudex' replaces`, fix),
+      check('configuration/system-prompt:bonsai', 'warn', `head 'bonsai' replaces`, fix),
       check('configuration/topology', 'ok', 'fine'),
     ]);
     expect(rows.map((row) => [row.label, row.members.length])).toEqual([
@@ -174,9 +171,9 @@ describe('every failing check carries its fix', () => {
     // Live 2026-09-24: eleven `installation/wrapper` checks, one per launcher. Keyed by id alone,
     // ten were overwritten and the rack showed 1 row for 11 checks (walkthrough B1).
     const checks = [
-      check('installation/wrapper', 'fail', `'claudex' missing${SEP}splice install`),
-      check('installation/wrapper', 'fail', `'claude-grok' missing${SEP}splice install`),
-      check('installation/wrapper', 'fail', `'claude-kimi' missing${SEP}splice install`),
+      check('installation/wrapper', 'fail', `'claudex' missing`, 'splice install'),
+      check('installation/wrapper', 'fail', `'claude-grok' missing`, 'splice install'),
+      check('installation/wrapper', 'fail', `'claude-kimi' missing`, 'splice install'),
       check('installation/wrapper', 'ok', `'splice' present`),
     ];
     const rows = collapseChecks(checks);
@@ -190,9 +187,9 @@ describe('every failing check carries its fix', () => {
   test('a row carries the fix the daemon can run itself, and the detail offers it beside the copy', () => {
     // V4-220 item 4: `fix_id` names a fix POST /api/doctor/fix/{id} runs (install_all today).
     const [wrappers, port] = collapseChecks([
-      { ...check('installation/wrapper', 'fail', `'claudex' missing${SEP}splice install --all`), fix_id: 'install_all' },
-      { ...check('installation/wrapper', 'fail', `'claude-grok' missing${SEP}splice install --all`), fix_id: 'install_all' },
-      check('daemon/port', 'warn', `taken${SEP}lsof -iTCP:3099 -sTCP:LISTEN`),
+      { ...check('installation/wrapper', 'fail', `'claudex' missing`, 'splice install --all'), fix_id: 'install_all' },
+      { ...check('installation/wrapper', 'fail', `'claude-grok' missing`, 'splice install --all'), fix_id: 'install_all' },
+      check('daemon/port', 'warn', 'taken', 'lsof -iTCP:3099 -sTCP:LISTEN'),
     ]);
     expect([wrappers.fixId, port.fixId]).toEqual(['install_all', null]);
     const offered = renderToStaticMarkup(React.createElement(FixLine, { fix: wrappers.fix, fixId: wrappers.fixId }));
@@ -204,10 +201,10 @@ describe('every failing check carries its fix', () => {
 
   test('checks whose fixes differ stay their own rows', () => {
     const rows = collapseChecks([
-      check('configuration/local:a', 'warn', `down${SEP}start it`),
-      check('configuration/local:b', 'fail', `down${SEP}start it`),
-      check('configuration/wire-tap:a', 'warn', `on${SEP}remove overrides.wireTap from [heads.a]`),
-      check('configuration/wire-tap:b', 'warn', `on${SEP}remove overrides.wireTap from [heads.b]`),
+      check('configuration/local:a', 'warn', 'down', 'start it'),
+      check('configuration/local:b', 'fail', 'down', 'start it'),
+      check('configuration/wire-tap:a', 'warn', 'on', 'remove overrides.wireTap from [heads.a]'),
+      check('configuration/wire-tap:b', 'warn', 'on', 'remove overrides.wireTap from [heads.b]'),
     ]);
     expect(rows).toHaveLength(4);
   });
@@ -269,7 +266,7 @@ describe('every failing check carries its fix', () => {
       check('configuration/b', 'ok', 'fine'),
       check('runtime/c', 'warn', 'w'),
       check('alpha/one', 'ok', 'fine'),
-      check('zeta/two', 'fail', `broken${SEP}splice restart`),
+      check('zeta/two', 'fail', 'broken', 'splice restart'),
     ];
     const order = groupChecks(checks, { sort: { field: 'status' } }).flatMap((group) => group.checks.map((one) => one.id));
     expect(order).toEqual(['zeta/two', 'configuration/a', 'runtime/c', 'alpha/one', 'configuration/b']);

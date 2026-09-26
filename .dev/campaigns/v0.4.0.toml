@@ -7695,9 +7695,10 @@ claimed_at = "2026-09-26T13:36:31.304Z"
 id = "V4-312"
 phase = "release"
 title = "The console's topology wall counts every serialized field of splice.toml, not only the @SerialName ones (console, V4-220 closeout 2026-09-26): denominator.ts:8 parses @SerialName values only, so a field named by its property (Topology.kt:37-44 daemon, claude, compaction, defaults, providers, heads, projects; CompactionScope.kt:9-27) is never counted and baseline.ts:152 records CompactionScope contributing none; a new [compaction] or [projects] field ships with no console answer and the wall stays green. The denominator comes from the serializer's own descriptor, dumped by a Kotlin test into a checked-in manifest the wall reads"
-files = ["console/src/shared/coverage/denominator.ts", "console/src/shared/coverage/baseline.ts", "console/tests/coverage.test.ts", ".dev/restructure/capabilities.tsv"]
+files = ["console/src/shared/coverage/denominator.ts", "console/src/shared/coverage/baseline.ts", "console/tests/coverage.test.ts", ".dev/restructure/capabilities.tsv", "console/src/pages/settings/coverage.ts", "console/src/entities/topology/model/schema.ts", "core/src/test/kotlin/splice/core/topology/TopologyFieldsManifestTest.kt", "core/src/test/resources/topology-fields.tsv"]
 status = "todo"
 verify = "red first: with the manifest in place, the wall names every topology element it has no disposition for (quoted); a Kotlin test that walks Topology.serializer().descriptor (recursively through the table types) fails BY NAME when the checked-in manifest omits or adds an element; a mutant that adds a field to CompactionScope reds both; cd console && bun test tests/coverage.test.ts; the module's detekt and test"
+# [2026-09-26] amend by=orchestrator: files were ["console/src/shared/coverage/denominator.ts", "console/src/shared/coverage/baseline.ts", "console/tests/coverage.test.ts", ".dev/restructure/capabilities.tsv"]
 
 [[items]]
 id = "V4-313"

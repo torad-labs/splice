@@ -82,6 +82,8 @@ export interface Stack {
   configFile: string;
   /** The repository's real path, which is the project id /api/projects reports. */
   repo: string;
+  /** The peer session's address, so a journey can send it a hand-off of its own. */
+  peerAddress: string;
   stop: () => Promise<void>;
 }
 
@@ -295,6 +297,21 @@ async function postTurn(headPort: number, key: string, body: unknown, headers: R
   }
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * How long a journey waits so that the next [spanMs] fall inside one UTC day: 0, or until just past
+ * the coming 00:00 UTC when it is nearer than that. The daemon's day-scoped reads (a team's chat and
+ * timeline, a project's turns today) turn at UTC midnight, so a journey that makes its own facts
+ * and reads them back as today's must do both on one UTC day. A gate run that straddled midnight
+ * read an empty chat (train 23, run 36202675360). The stack and the daemon share this machine's
+ * clock.
+ */
+export function utcDayWait(spanMs: number, now = Date.now()): number {
+  const left = DAY_MS - (now % DAY_MS);
+  return left > spanMs ? 0 : left + 1_000;
+}
+
 /** One plain turn through a head. Exported: a journey drives its own turn after a console write.
  *  With `sessionId` the turn carries the client's session header, so its perf row is tagged to it. */
 export async function driveOneTurn(headPort: number, key: string, sessionId?: string): Promise<void> {
@@ -313,9 +330,10 @@ export async function driveOneTurn(headPort: number, key: string, sessionId?: st
 
 /** The sender's turn after its SendMessage call: the call is the last assistant message of the
  *  history, which is exactly where MessageEdges looks for it, and the session header names the
- *  sender. The daemon records the edge; the text of the message never leaves the request. */
-async function sendHandOff(headPort: number, key: string, toAddress: string): Promise<void> {
-  const call = 'toolu_console_e2e_handoff';
+ *  sender. The daemon records the edge; the text of the message never leaves the request. The
+ *  daemon keeps one edge per tool_use id, so a journey's own hand-off names its own [call].
+ *  Exported: a journey that reads a day's hand-offs sends one inside its own day. */
+export async function sendHandOff(headPort: number, key: string, toAddress: string, call = 'toolu_console_e2e_handoff'): Promise<void> {
   await postTurn(
     headPort,
     key,
@@ -444,7 +462,7 @@ export async function startStack(): Promise<Stack> {
       const body = (await read('/api/sessions/edges')) as { sessions?: Record<string, unknown[]> } | null;
       return (body?.sessions?.[STACK.sender.id]?.length ?? 0) > 0 ? true : null;
     });
-    return { base, key, oauthPort: ports.oauth, configFile, repo, stop };
+    return { base, key, oauthPort: ports.oauth, configFile, repo, peerAddress, stop };
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     const detail = `${why}\n-- upstream requests: ${upstream.join(', ') || 'none'}\n-- daemon log tail:\n${tail(log)}`;

@@ -136,10 +136,12 @@ public class TeamReads internal constructor(
         return start until start + DAY_MS
     }
 
-    /** [from, to) when both are epoch millis, from before to and at most [LONGEST_DAY_MS] apart; null
-     *  otherwise, and null beside a [day] too, since a range and a date could only disagree. */
+    /** [from, to) when both are epoch millis, from not negative and before to, at most [LONGEST_DAY_MS]
+     *  apart; null otherwise, and null beside a [day] too, since a range and a date could only disagree.
+     *  A negative from is refused as PerfRoutes refuses a negative since, and it keeps the width from
+     *  overflowing (V4-285: from=Long.MIN_VALUE, to=Long.MAX_VALUE wrapped to -1 and read every edge). */
     private fun ownDay(day: String?, from: String?, to: String?): LongRange? {
-        val start = from?.toLongOrNull()
+        val start = from?.toLongOrNull()?.takeIf { it >= 0 }
         val end = to?.toLongOrNull()
         val valid = day == null && start != null && end != null && end > start && end - start <= LONGEST_DAY_MS
         return if (valid) start until end else null
@@ -149,8 +151,8 @@ public class TeamReads internal constructor(
         if (from == null && to == null) {
             "day is a UTC date, YYYY-MM-DD: $day"
         } else {
-            "from and to are one day's bounds in epoch milliseconds, from before to and at most 25 hours apart, " +
-                "never beside day: from=$from to=$to day=$day"
+            "from and to are one day's bounds in epoch milliseconds, from not negative and before to and at most " +
+                "25 hours apart, never beside day: from=$from to=$to day=$day"
         }
 
     /** Why [daily] had nothing to answer, first cause first. */

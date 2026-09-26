@@ -119,18 +119,20 @@ class ActivityStoresTest {
     }
 
     @Test
-    fun `a label is kept only for the day the Teams page's Activity reads, and that day's edge keeps the knob's`() {
+    fun `a label is kept for today and yesterday, the UTC days a local day spans, and its edge keeps the knob's`() {
         var now = DAY_ONE
         val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { now })
         stores.activity.label("s-1", "codex", "Running npm test", now)
         stores.edges.record(MessageEdge("s-1", "uds:/run/a.sock", now, "toolu_1"))
         await({ stores.activity.rows("s-1") }, 1)
         now = DAY_ONE + DAY_MS
-        assertEquals(emptyList<ActivityRow>(), stores.activity.rows("s-1"), "yesterday's label is read by no view")
+        assertEquals(1, stores.activity.rows("s-1").size, "yesterday's label is in a local day that began then")
+        now = DAY_ONE + 2 * DAY_MS
+        assertEquals(emptyList<ActivityRow>(), stores.activity.rows("s-1"), "the day before is in no local day today")
         assertEquals(1, stores.edges.edges().size, "an edge keeps the activityRetentionDays window")
         stores.activity.label("s-1", "codex", "Reading README.md", now)
         await({ stores.activity.rows("s-1") }, 1)
-        assertFalse(Files.exists(dir.resolve("activity-2026-09-18.jsonl")), "the next day's first label deletes it")
+        assertFalse(Files.exists(dir.resolve("activity-2026-09-18.jsonl")), "the first label two days on deletes it")
         assertFalse(Files.exists(dir.resolve("activity-2026-09-18.jsonl.lock")), "and its lock sidecar")
         assertTrue(Files.exists(dir.resolve("edges-2026-09-18.jsonl")), "the edges' day file stays")
     }

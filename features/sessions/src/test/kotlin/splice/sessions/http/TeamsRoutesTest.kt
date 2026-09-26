@@ -45,14 +45,33 @@ class TeamsRoutesTest {
         SentTexts("/t/$session.jsonl", found, ids - "toolu_a")
     }
 
-    private fun routes(wired: Boolean = true, heads: Map<String, SessionHead> = emptyMap()) = TeamsRoutes(
-        teams = TeamSource { rig.store.takeIf { wired } },
+    private fun routes(
+        wired: Boolean = true,
+        heads: Map<String, SessionHead> = emptyMap(),
+        on: TeamRig = rig,
+    ) = TeamsRoutes(
+        teams = TeamSource { on.store.takeIf { wired } },
         heads = heads,
-        registry = rig.registry,
-        activity = ActivitySource { rig.stores.takeIf { wired } },
+        registry = on.registry,
+        activity = ActivitySource { on.stores.takeIf { wired } },
         texts = texts,
         clock = WallClock { AT },
     )
+
+    /** V4-285: Sep 18 in Chicago (CDT) runs 05:00Z on the 18th to 05:00Z on the 19th. A viewer reads it at
+     *  20:00 CDT, 01:00Z on the 19th, and its 10:00 CDT rows went into the 18th's UTC day file. */
+    private val localFrom = DAY_START + 5 * HOUR
+    private val morning = localFrom + 10 * HOUR
+    private val evening = localFrom + 20 * HOUR
+
+    /** [write] at 10:00 and at 20:00 CDT with [on]'s store clock at each, as a live daemon's would be. */
+    private fun morningAndEvening(on: TeamRig, write: (Long) -> Unit) {
+        for (at in listOf(morning, evening)) {
+            on.now = at
+            write(at)
+            AsyncFileIo.drain()
+        }
+    }
 
     private fun idOf(body: String) = rig.json(body).getValue("id").jsonPrimitive.content
 
@@ -258,11 +277,43 @@ class TeamsRoutesTest {
             val bad = routes().reads.chat(id, day, start, end)
             assertEquals(HttpStatusCode.BadRequest, bad.status, "day=$day from=$start to=$end")
             assertEquals(
-                """{"error":"from and to are one day's bounds in epoch milliseconds, from before to and at most """ +
-                    """25 hours apart, never beside day: from=$start to=$end day=$day"}""",
+                """{"error":"from and to are one day's bounds in epoch milliseconds, from not negative and before """ +
+                    """to and at most 25 hours apart, never beside day: from=$start to=$end day=$day"}""",
                 bad.body,
             )
         }
+    }
+
+    @Test
+    fun `a local day read after UTC midnight keeps the labels its morning wrote - V4-285`() {
+        val id = rig.team().id
+        morningAndEvening(rig) { at -> rig.stores.activity.label(LEAD, "claude", "at $at", at) }
+
+        val read = routes().reads.activity(id, null, localFrom.toString(), (localFrom + DAY).toString())
+        val entries = rig.column(rig.json(read.body), "entries", "at")
+        assertEquals(listOf(morning, evening).map(Long::toString), entries, "the whole local day: ${read.body}")
+    }
+
+    @Test
+    fun `a local day read after UTC midnight keeps its morning's edges at a one-day edge window - V4-285`() {
+        val oneDay = TeamRig(tmp.resolve("one-day"), retentionDays = 1)
+        val id = oneDay.team().id
+        morningAndEvening(oneDay) { at -> oneDay.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", at, "t$at")) }
+
+        val read = routes(on = oneDay).reads.chat(id, null, localFrom.toString(), (localFrom + DAY).toString())
+        val messages = oneDay.column(oneDay.json(read.body), "messages", "at")
+        assertEquals(listOf(morning, evening).map(Long::toString), messages, "activityRetentionDays = 1: ${read.body}")
+    }
+
+    @Test
+    fun `a range whose width overflows the 25-hour cap is refused, as any negative from is - V4-285`() {
+        val id = rig.team().id
+        val (min, max) = Long.MIN_VALUE.toString() to Long.MAX_VALUE.toString()
+        for (read in listOf(routes().reads.chat(id, null, min, max), routes().reads.activity(id, null, min, max))) {
+            assertEquals(HttpStatusCode.BadRequest, read.status, "from=$min to=$max: ${read.body}")
+        }
+        val before = routes().reads.chat(id, null, "-1", (DAY - 1).toString())
+        assertEquals(HttpStatusCode.BadRequest, before.status, "a negative from: ${before.body}")
     }
 
     @Test

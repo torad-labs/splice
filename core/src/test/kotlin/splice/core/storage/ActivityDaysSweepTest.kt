@@ -30,9 +30,9 @@ class ActivityDaysSweepTest {
     @TempDir
     lateinit var tmp: Path
 
-    /** The three stores ActivityDays keeps: activity labels (today only), message edges (the
-     *  activityRetentionDays default) and a head's trace days (the traceRetentionDays default). */
-    private val stores = listOf("labels" to 1, "edges" to 90, "kimi" to 7)
+    /** The three stores ActivityDays keeps: activity labels (today and yesterday, V4-285), message edges
+     *  (the activityRetentionDays default) and a head's trace days (the traceRetentionDays default). */
+    private val stores = listOf("labels" to 2, "edges" to 90, "kimi" to 7)
 
     private fun seed(dir: Path, prefix: String, day: LocalDate, vararg siblings: String): Path {
         Files.createDirectories(dir)

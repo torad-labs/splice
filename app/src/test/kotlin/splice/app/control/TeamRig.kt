@@ -29,7 +29,11 @@ const val OLD_BUILDER: String = "d4d4d4d4-0000-4000-8000-000000000004"
 class TeamRig(val tmp: Path) {
     val repo: Path = Files.createDirectories(tmp.resolve("repo"))
     val store: TeamStore = TeamStore(tmp.resolve("state/teams.json"), WallClock { AT })
-    val stores: ActivityStores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { AT })
+
+    /** The activity stores' clock, [AT] until a test moves it across a UTC midnight (V4-285): a store
+     *  writes each row into the day file its clock names, so a pinned clock puts every row in one. */
+    var now: Long = AT
+    val stores: ActivityStores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { now })
     val registry: SessionRegistry
 
     init {

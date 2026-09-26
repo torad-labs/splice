@@ -16,7 +16,7 @@
 // UTC DAYS, so a file's name does not depend on the daemon host's timezone or move under a DST change.
 //
 // RETENTION deletes whole day files older than the store's window (message edges: the
-// activityRetentionDays knob, default 90; activity labels: today only, V4-261; a head's trace days:
+// activityRetentionDays knob, default 90; activity labels: today and yesterday, V4-285; a head's trace days:
 // traceRetentionDays), WITH JsonlSink's two siblings of that file: its cross-process `.lock` and a
 // rolled `.1` generation. Leaving them would leak one lock file per store per day forever. Reads
 // ignore files older than the window too, so an unswept file never re-enters a view.

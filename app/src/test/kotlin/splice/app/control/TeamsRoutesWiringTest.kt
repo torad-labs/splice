@@ -124,18 +124,22 @@ class TeamsRoutesWiringTest {
 
     /** RED before V4-249: the day was a UTC date, so in Chicago the board turned over at 19:00 CDT and a
      *  read of the evening lost everything before UTC midnight. The console now sends its local day's
-     *  bounds, and both halves come back. */
+     *  bounds, and both halves come back. V4-285: the rows straddle UTC midnight with the stores' clock
+     *  moved across it, as a live daemon's is, so each half lands in its own UTC day file. */
     @Test
     fun `a range read returns a local day that spans two UTC dates, both halves`() {
         val from = 1_789_621_200_000L // 2026-09-17T05:00Z: midnight of Sep 17 in Chicago (CDT)
         val to = from + 24 * HOUR_MS
-        val beforeUtcMidnight = from + 13 * HOUR_MS // 18:00 CDT, 23:00Z on the 17th
-        val afterUtcMidnight = from + 15 * HOUR_MS // 20:00 CDT, 01:00Z on the 18th
+        val beforeUtcMidnight = from + 18 * HOUR_MS // 18:00 CDT, 23:00Z on the 17th
+        val afterUtcMidnight = from + 20 * HOUR_MS // 20:00 CDT, 01:00Z on the 18th
         val team = rig.team()
+        rig.now = beforeUtcMidnight
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", beforeUtcMidnight, "toolu_a"))
+        rig.stores.activity.label(LEAD, "claude", "Evening", beforeUtcMidnight)
+        AsyncFileIo.drain()
+        rig.now = afterUtcMidnight
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", afterUtcMidnight, "toolu_b"))
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", to, "toolu_c"))
-        rig.stores.activity.label(LEAD, "claude", "Evening", beforeUtcMidnight)
         rig.stores.activity.label(LEAD, "claude", "Night", afterUtcMidnight)
         AsyncFileIo.drain()
         val both = listOf(beforeUtcMidnight, afterUtcMidnight).map(Long::toString)

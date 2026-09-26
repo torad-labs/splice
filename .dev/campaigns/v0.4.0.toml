@@ -8079,8 +8079,11 @@ id = "V4-334"
 phase = "release"
 title = "GPT's reasoning survives a daemon restart and an idle pause: the Responses reasoning cache is kept on disk per conversation (owner-only), with no 30-minute idle expiry before compaction, so every earlier step's encrypted reasoning is replayed as codex-rs replays it (history.rs:944-960). Measured 2026-09-26: 0/634, 0/389 and 0/14 pre-restart tool steps carried reasoning in three live claudex histories after the 5:34 PM CT restart (ten restarts that day); ReasoningCache.kt:48 is an in-memory LinkedHashMap and :239 a 30-minute TTL, whose own header names the result 'tool-amnesia … repeated identical tool calls'"
 files = ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesParts.kt", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/reasoning/", "core/src/main/kotlin/splice/core/config/StatePaths.kt", "app/src/main/kotlin/splice/app/head/HeadStores.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a test that records a round's reasoning, rebuilds the cache as a restarted daemon would (new instance over the same state dir), and asserts the next request injects it, failing on today's tree; a second red for a 31-minute idle gap; green: both pass, the store is owner-only and bounded by conversation compaction rather than wall time, corrupt or missing files degrade to today's no-injection with a log line; live: restart the daemon mid claudex session and count reasoning items before each pre-restart function_call in the next wire body (today 0/634)"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T23:06:20.510Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T23:06:20Z
 
 [[items]]
 id = "V4-335"

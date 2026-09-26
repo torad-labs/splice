@@ -7,9 +7,10 @@
 import { useEffect, useState } from 'react';
 import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { budgetFor, putBudgets, startBudgetsPolling, useBudgets } from '@entities/budget';
-import type { Budget, BudgetAction } from '@entities/budget';
-import { Input, Key } from '@shared/controls';
+import type { Budget, BudgetAction, BudgetsSlice } from '@entities/budget';
+import { Fault, Input, Key } from '@shared/controls';
 import { writeNote } from '@shared/lib';
+import type { Resource } from '@shared/lib';
 import { DataTable, Empty, Section, Segmented } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import { H, S } from './strings';
@@ -64,8 +65,11 @@ const ACTIONS: readonly { value: BudgetAction; label: string }[] = [
   { value: 'block', label: S.block },
 ];
 
-export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
-  const budgets = useBudgets((state) => state);
+/** `state` is the test seam: a static render only ever sees a store's initial state, so a test hands
+ *  the read in. The page passes nothing and the panel reads the store. */
+export function BudgetsPanel({ heads, state }: { heads: readonly string[]; state?: Resource<BudgetsSlice> }) {
+  const stored = useBudgets((held) => held);
+  const budgets = state ?? stored;
   const hueOf = useHues();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -160,6 +164,11 @@ export function BudgetsPanel({ heads }: { heads: readonly string[] }) {
 
   return (
     <Section title={S.title} info={{ text: H.about, label: S.about }} className="myx-bud">
+      {/* Either one leaves the list below empty, and neither is "no budgets": a failed read, and a
+          file the daemon cannot parse, which runs every head with none (V4-308). A save is the
+          recovery the daemon names, so the list stays. */}
+      {budgets.error === null ? null : <Fault message={budgets.error} lastRead={budgets.lastUpdated} />}
+      {payload?.unreadable == null ? null : <Fault message={payload.unreadable} />}
       <DataTable
         columns={columns}
         rows={rows}

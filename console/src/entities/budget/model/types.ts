@@ -21,6 +21,10 @@ export interface Budget {
 
 export interface BudgetsPayload {
   budgets: Budget[];
+  /** Why `budgets` is empty when budgets.json does not parse, in the daemon's words, and every head
+   *  runs with no budget, block and warn alike (V4-296, BudgetRoutes.kt); null when it parsed, and
+   *  absent from a daemon older than V4-296. */
+  unreadable?: string | null;
 }
 
 export type BudgetsSlice = BudgetsPayload | PendingRoute;

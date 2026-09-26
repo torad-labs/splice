@@ -64,6 +64,10 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -93,6 +97,10 @@ private enum class Act {
 }
 
 private const val TEAR_DELIVERY_PAUSE_MS = 250L
+
+/** V4-307: the fake upstream's serve threads, all started with it. A HOLD serve outlives its arm by up to
+ *  HOLD_MS while the next arms connect, so eight leave room for that overlap. */
+private const val SERVE_THREADS = 8
 
 // One more tear than PassthroughReanchorController's continuation budget, so the turn runs the
 // whole re-anchor loop out and finishes with the honest failure instead of recovering.
@@ -127,32 +135,67 @@ private class TearingAnthropicUpstream {
     val baseUrl: String = "http://127.0.0.1:${server.localPort}"
     val requestBodies = CopyOnWriteArrayList<String>()
 
+    /** V4-307: connections accepted since the arm's reset, and every connection this upstream could not
+     *  serve with the reason, so a request that never arrived names the side that starved. */
+    val accepted = AtomicInteger()
+    val faults = CopyOnWriteArrayList<String>()
+
+    // V4-307: every thread this upstream serves on is started here, before the first arm, never one per
+    // connection. A local build scope can cap its tasks (512 here) across every JVM of a
+    // parallel ladder, and a thread started per connection hit that cap: "Failed to start the native
+    // thread for java.lang.Thread "Thread-225"" (pthread_create EAGAIN, V4-293 green run 1). Its
+    // OutOfMemoryError left the accept loop, the connection just accepted was never read or closed, and
+    // the refused-tear arm waited out the client's 60 s request timeout with UPSTREAM REQUESTS 0.
+    private val pool = ThreadPoolExecutor(
+        SERVE_THREADS,
+        SERVE_THREADS,
+        0L,
+        TimeUnit.MILLISECONDS,
+        SynchronousQueue(),
+        { task -> Thread(task, "tearing-upstream-serve").apply { isDaemon = true } },
+    ).apply { val _ = prestartAllCoreThreads() }
+
     @Volatile
     var acts: List<Act> = listOf(Act.FULL)
 
     fun start() {
         Thread {
             while (!server.isClosed) {
-                val socket = runCatching { server.accept() }.getOrNull() ?: return@Thread
-                Thread { serve(socket) }.apply { isDaemon = true }.start()
+                val socket = runCatching { server.accept() }.getOrElse { why ->
+                    if (!server.isClosed) faults.add("accept loop ended: $why")
+                    return@Thread
+                }
+                val connection = accepted.incrementAndGet()
+                // A full pool refuses the connection by name rather than queueing it behind a HOLD serve.
+                val dispatched = runCatching { pool.execute { serveRecorded(socket, connection) } }
+                dispatched.exceptionOrNull()?.let { why ->
+                    faults.add("connection $connection refused: $why")
+                    val _ = runCatching { socket.close() }
+                }
             }
         }.apply { isDaemon = true }.start()
     }
 
     fun stop() {
         val _ = runCatching { server.close() }
+        val _ = pool.shutdownNow()
+    }
+
+    /** Never throws: a pool thread that ended on a failure would be replaced by a newly started one. */
+    private fun serveRecorded(socket: Socket, connection: Int) {
+        val served = runCatching { socket.use { serve(it) } }
+        served.exceptionOrNull()?.let { why -> faults.add("connection $connection not served: $why") }
     }
 
     private fun serve(socket: Socket) {
         socket.tcpNoDelay = true
-        val body = runCatching { readRequest(socket.getInputStream()) }.getOrNull() ?: return
+        val body = readRequest(socket.getInputStream())
         val index = requestBodies.size
         requestBodies.add(body)
         val act = acts.getOrElse(index) { acts.last() }
         val out = socket.getOutputStream()
         // A client that hung up mid-response is the case under test; the socket closes regardless.
         val _ = runCatching { respond(socket, out, act) }
-        val _ = runCatching { socket.close() }
     }
 
     private fun respond(socket: Socket, out: OutputStream, act: Act) {
@@ -420,6 +463,7 @@ class MidStreamTearContinuesTest {
 
     private fun reset(vararg acts: Act) {
         upstream.requestBodies.clear()
+        upstream.accepted.set(0)
         journal.clear()
         upstream.acts = acts.toList()
     }
@@ -428,7 +472,8 @@ class MidStreamTearContinuesTest {
         haystack.split(needle).size - 1
 
     private fun diagnostics(received: String): String =
-        "\nCLIENT RECEIVED:\n$received\nUPSTREAM REQUESTS: ${upstream.requestBodies.size}\nJOURNAL:\n" +
+        "\nCLIENT RECEIVED:\n$received\nUPSTREAM ACCEPTED: ${upstream.accepted.get()}\n" +
+            "UPSTREAM REQUESTS: ${upstream.requestBodies.size}\nUPSTREAM FAULTS: ${upstream.faults}\nJOURNAL:\n" +
             journal.joinToString("")
 
     // ARM 1 — the operator's measured failure. Two content frames reach the client, the upstream

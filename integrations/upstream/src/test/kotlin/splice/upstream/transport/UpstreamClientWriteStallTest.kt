@@ -35,6 +35,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.KeyStore
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
@@ -60,6 +63,9 @@ private const val WARM_MS = 300L
 private const val HOLD_MS = 3 * WRITE_TIMEOUT_MS / 2
 
 private const val SMALL_WINDOW = 4096
+
+/** V4-307: the upstream's serve threads, all started with it; the pooled-retry arm opens the most, three. */
+private const val SERVE_THREADS = 4
 private val BIG_BODY = "{\"pad\":\"" + "x".repeat(16 shl 20) + "\"}"
 
 /** V4-289: a request that fits in the kernel's buffers, so its write returns before the upstream has it. */
@@ -276,14 +282,33 @@ private class Upstream(private val first: List<Serving>, private val then: Servi
     val accepted = AtomicInteger()
     val port: Int get() = server.localPort
 
+    /** V4-307: each connection this upstream could not serve, and why; [close] fails the test on any. */
+    private val faults = CopyOnWriteArrayList<String>()
+
+    // V4-307: every thread this upstream serves on is started with it, never one per connection. A thread
+    // started per connection at a full build scope (one capped at 512 tasks) throws OutOfMemoryError, which
+    // left this accept loop: the retry's connection was never accepted, and the arms read that as the
+    // client never dialing one.
+    private val pool = ThreadPoolExecutor(
+        SERVE_THREADS,
+        SERVE_THREADS,
+        0L,
+        TimeUnit.MILLISECONDS,
+        SynchronousQueue(),
+        { task -> Thread(task, "v4272-upstream-conn").apply { isDaemon = true } },
+    ).apply { val _ = prestartAllCoreThreads() }
+
     init {
         val _ = thread(isDaemon = true, name = "v4272-upstream") {
             while (true) {
                 val socket = runCatching { server.accept() }.getOrNull() ?: break
-                val serving = first.getOrElse(accepted.getAndIncrement()) { then }
+                val connection = accepted.getAndIncrement()
+                val serving = first.getOrElse(connection) { then }
                 sockets += socket
-                val _ = thread(isDaemon = true, name = "v4272-upstream-conn") {
-                    val _ = runCatching { serve(socket, serving) }
+                val dispatched = runCatching { pool.execute { val _ = runCatching { serve(socket, serving) } } }
+                dispatched.exceptionOrNull()?.let { why ->
+                    faults += "connection $connection refused: $why"
+                    val _ = runCatching { socket.close() }
                 }
             }
         }
@@ -327,6 +352,8 @@ private class Upstream(private val first: List<Serving>, private val then: Servi
     override fun close() {
         server.close()
         sockets.forEach { val _ = runCatching { it.close() } }
+        val _ = pool.shutdownNow()
+        check(faults.isEmpty()) { "the upstream could not serve every connection: $faults" }
     }
 }
 

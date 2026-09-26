@@ -32,26 +32,23 @@ class TurnPathProbeLoopTest {
         Cancellables.discard(runCatching { it.close() }, "turn-probe test server teardown")
     }
 
-    /** A server that answers every request with an HTTP error — alive, just unhappy. */
+    /** A server that answers every request with an HTTP error — alive, just unhappy.
+     *
+     *  V4-307: it answers on its accept thread. A thread started per connection could be refused at a
+     *  full build scope (one capped at 512 tasks); runCatching kept the loop alive but left that socket
+     *  open and unanswered, which the probe reads as exactly the wedge this server exists NOT to be. */
     private fun answeringServer(): Int {
         val ss = ServerSocket(0, 8, java.net.InetAddress.getLoopbackAddress()).also(sockets::add)
         thread(isDaemon = true) {
             while (!ss.isClosed) {
                 Cancellables.discard(
                     runCatching {
-                        val c = ss.accept()
-                        thread(isDaemon = true) {
-                            Cancellables.discard(
-                                runCatching {
-                                    c.getInputStream().read(ByteArray(1024)) // drain a little
-                                    c.getOutputStream().write(
-                                        "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
-                                    )
-                                    c.close()
-                                },
-                                "turn-probe test connection teardown",
+                        ss.accept().use { c ->
+                            c.getInputStream().read(ByteArray(1024)) // drain a little
+                            c.getOutputStream().write(
+                                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
                             )
-                        }.name = "turn-probe-answer"
+                        }
                     },
                     "turn-probe test accept loop",
                 )

@@ -68,6 +68,15 @@ tasks.withType<Test>().configureEach {
     // per-connection state, so the 1000-stream CEILING test needs the extra heap. Real load is tens
     // of streams (far under 1g either way); this only funds the stress ceiling.
     maxHeapSize = "2g"
+    // FOUR PROCESSORS FOR EVERY TEST JVM (V4-307). A local build can run in one scope capped at 512
+    // tasks, shared by every test JVM of a --parallel ladder, and each JVM sizes its CPU-sized
+    // pools (virtual-thread carriers, Netty event loops, coroutine workers) to the host's 32 cores and
+    // grows them by starting native threads as work arrives. At a full scope that start fails:
+    // UpstreamClientWriteStallTest's loop lost a carrier ("Failed to start the native thread for
+    // java.lang.Thread "ForkJoinPool-1-worker-11"", pthread_create EAGAIN), and the request-write watch
+    // riding on it never cut the stalled write. features-turns carried this bound alone since its
+    // 1000-stream load gate hit the same EAGAIN; one module bounded was a class left open.
+    jvmArgs("-XX:ActiveProcessorCount=4")
     // HERMETIC HOME. splice resolves its key store and credential files from SPLICE_CONFIG, then
     // XDG_CONFIG_HOME, then $HOME/.config (KeyStorePath.defaultPath, whose own comment already
     // promises "test rigs stay hermetic"). Nothing pointed those at the rig, so any test asserting

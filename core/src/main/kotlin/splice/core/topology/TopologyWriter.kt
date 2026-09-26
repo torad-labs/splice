@@ -142,13 +142,18 @@ public class TopologyWriter(
     /** Every backup past the newest [BACKUPS_KEPT]. One that cannot be deleted now goes at a later
      *  edit; the write it follows has already landed. */
     private fun dropOldBackups() {
-        val backups =
-            // ast-grep-ignore: kt-no-silent-result-collapse -- a directory that cannot be listed now keeps its backups until a later edit lists it; the write has landed
-            Cancellables.runCatchingCancellable {
-                Files.list(path.toAbsolutePath().parent).use { paths ->
-                    paths.filter { it.fileName.toString().startsWith(backupPrefix) }.toList()
-                }
-            }.getOrDefault(emptyList())
+        val listed = Cancellables.runCatchingCancellable {
+            Files.list(path.toAbsolutePath().parent).use { paths ->
+                paths.filter { it.fileName.toString().startsWith(backupPrefix) }.toList()
+            }
+        }
+        val backups = listed.getOrElse {
+            Cancellables.discard(
+                listed,
+                "a directory that cannot be listed now keeps its backups until a later edit lists it",
+            )
+            return
+        }
         backups.sortedByDescending { it.fileName.toString() }.drop(BACKUPS_KEPT).forEach { old ->
             Cancellables.discard(
                 Cancellables.runCatchingCancellable { Files.deleteIfExists(old) },

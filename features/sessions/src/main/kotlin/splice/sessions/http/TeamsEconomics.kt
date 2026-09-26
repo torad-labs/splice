@@ -115,11 +115,15 @@ internal fun interface TallyLabel {
 }
 
 /** Turns, token buckets and dollars over perf rows, each row priced against its own head's catalog
- *  with the SessionCost arithmetic. Dollars are null while any counted turn had no rate card. */
+ *  with the SessionCost arithmetic. A turn whose model has no rate card adds no dollars and is counted
+ *  in [unpricedTurns] instead: V4-221's rule, the console's costOf. */
 internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     var turns: Long = 0L
         private set
-    private var unpriced = 0L
+
+    /** Counted turns whose model had no rate card, so their dollars are not in [costUsd]. */
+    var unpricedTurns: Long = 0L
+        private set
     private var input = 0L
     private var cacheRead = 0L
     private var cacheWrite = 0L
@@ -136,8 +140,9 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     var lastOutcome: String? = null
         private set
 
-    /** The priced total, or null while any counted turn had no rate card. */
-    val costUsd: Double? get() = usd.takeIf { unpriced == 0L }
+    /** The priced turns' dollars, or null when there are turns and none was priced. V4-264: one turn
+     *  on a model with no card (the client's haiku call) left take 3's lead with no figure at all. */
+    val costUsd: Double? get() = usd.takeUnless { turns > 0L && unpricedTurns == turns }
 
     fun add(row: SessionPerfRow, catalog: ModelCatalog?) {
         val cached = row.fields[PerfKeys.CACHED_TOKENS] ?: 0L
@@ -158,7 +163,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         if (previousLastAt == null || row.ts >= previousLastAt) lastOutcome = row.outcome
         lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
         val rates = rates(row.model, catalog)
-        if (rates == null) unpriced += 1 else usd += cost.of(buckets, rates)
+        if (rates == null) unpricedTurns += 1 else usd += cost.of(buckets, rates)
     }
 
     fun json(label: TallyLabel): JsonObject = buildJsonObject {
@@ -174,7 +179,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
             },
         )
         put("cost_usd", costUsd)
-        put("unpriced_turns", unpriced)
+        put("unpriced_turns", unpricedTurns)
         put("last_turn_at_epoch_millis", lastAt)
     }
 

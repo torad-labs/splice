@@ -341,16 +341,36 @@ describe('the cost per role', () => {
     expect(html).toContain(`since ${oldest.getFullYear()}-${two(oldest.getMonth() + 1)}-${two(oldest.getDate())} ${two(oldest.getHours())}:${two(oldest.getMinutes())}`);
   });
 
-  test('cache reads and writes count as tokens in, and one unpriced role unprices the total', () => {
-    const cached = {
-      ...economics,
-      roles: [{ ...economics.roles[0], tokens: { input: 10, cache_read: 1000, cache_write: 100, output: 5 } }, { ...economics.roles[1], cost_usd: null }],
-    };
-    const table = costTable(cached, sampleBoard.team.slots);
-    expect(table.rows[0].input).toBe(1110);
-    expect(table.total.cost).toBeNull();
-    const stats = render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, economics: cached } }));
-    expect(stats).toContain('Unpriced');
+  test('cache reads and writes count as tokens in', () => {
+    const cached = { ...economics, roles: [{ ...economics.roles[0], tokens: { input: 10, cache_read: 1000, cache_write: 100, output: 5 } }, economics.roles[1]] };
+    expect(costTable(cached, sampleBoard.team.slots).rows[0].input).toBe(1110);
+  });
+
+  // V4-264: a recorded team run's lead ran one turn on a model with no card, and the tile read "Unpriced" for a
+  // team whose other turns were all priced. The priced dollars are the figure; the rest are counted.
+  test("an unpriced role's turns are counted beside the priced total, never a dash", () => {
+    const [lead, builder] = economics.roles;
+    const partly = { ...economics, roles: [lead, { ...builder, cost_usd: null, unpriced_turns: builder.turns }] };
+    const table = costTable(partly, sampleBoard.team.slots);
+    expect(table.total.cost).toBeCloseTo(lead.cost_usd ?? Number.NaN, 6);
+    expect(table.total.unpriced).toBe(builder.turns);
+    const stats = render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, economics: partly } }));
+    expect(stats).toContain(`${builder.turns} turns unpriced`);
+    expect(stats).not.toContain('Unpriced');
+  });
+
+  test('one unpriced turn is counted in the singular', () => {
+    const [lead, builder] = economics.roles;
+    const one = { ...economics, roles: [{ ...lead, unpriced_turns: 1 }, builder] };
+    const stats = render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, economics: one } }));
+    expect(stats).toContain('1 turn unpriced');
+    expect(stats).not.toContain('1 turns unpriced');
+  });
+
+  test('a team with turns and not one priced reads Unpriced', () => {
+    const none = { ...economics, roles: economics.roles.map((role) => ({ ...role, cost_usd: null, unpriced_turns: role.turns })) };
+    expect(costTable(none, sampleBoard.team.slots).total.cost).toBeNull();
+    expect(render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, economics: none } }))).toContain('Unpriced');
   });
 
   test('an economics read that failed prints the reason, not an empty table', () => {

@@ -173,9 +173,12 @@ export interface RoleCost {
   role: string;
   input: number;
   output: number;
-  /** USD, or null when a turn in the row had no rate card: a partial sum would be a wrong number. */
+  /** USD of the row's priced turns, or null when it has turns and none was priced: V4-221's rule
+   *  (derive.ts costOf), so one turn on a model with no card never hides the rest (V4-264). */
   cost: number | null;
   turns: number;
+  /** Turns whose model had no rate card, so their dollars are not in [cost]. */
+  unpriced: number;
 }
 
 export interface CostTable {
@@ -201,17 +204,20 @@ export function costTable(economics: TeamEconomicsPayload, slots: readonly TeamS
     output: tally.tokens.output,
     cost: tally.cost_usd,
     turns: tally.turns,
+    unpriced: tally.unpriced_turns,
   }));
-  const total = rows.reduce<RoleCost>(
-    (sum, row) => ({
+  const sum = rows.reduce<RoleCost>(
+    (acc, row) => ({
       role: '',
-      input: sum.input + row.input,
-      output: sum.output + row.output,
-      cost: sum.cost === null || row.cost === null ? null : sum.cost + row.cost,
-      turns: sum.turns + row.turns,
+      input: acc.input + row.input,
+      output: acc.output + row.output,
+      cost: (acc.cost ?? 0) + (row.cost ?? 0),
+      turns: acc.turns + row.turns,
+      unpriced: acc.unpriced + row.unpriced,
     }),
-    { role: '', input: 0, output: 0, cost: 0, turns: 0 },
+    { role: '', input: 0, output: 0, cost: 0, turns: 0, unpriced: 0 },
   );
+  const total = { ...sum, cost: sum.turns > 0 && sum.unpriced >= sum.turns ? null : sum.cost };
   const unseen = rows
     .map((row) => row.role)
     .filter((role) => !slots.some((slot) => slot.role === role && economics.heads_read.includes(slot.head)));

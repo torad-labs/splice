@@ -661,6 +661,10 @@ origin.
   worked in their own sessions read `Nothing sampled today`. splice now samples each session's
   latest tool call from its own turns, at most once every 30 seconds, and the client's answer to its
   own query counts as the sample when one comes (V4-265).
+- **A team's API cost is a figure when some of its turns have no rate card.** One turn on a model
+  with no card, such as Claude Code's background haiku calls, nulled that member's dollars and the
+  team's total, and the tile read `Unpriced`. The cost is now the priced turns' dollars, with
+  `1 turn unpriced` beside it, and reads `Unpriced` only when no turn was priced (V4-264).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

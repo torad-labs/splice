@@ -31,19 +31,13 @@ splice puts Claude Code in front of the backend you choose.
 
 Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Claude Code. Use `claude-grok`, `claude-kimi` or `claude-muse` for those subscriptions, or connect an API backend such as OpenRouter. You keep Claude Code itself: its tools, permission checks and terminal, your hooks, skills and settings, and a session's history when you resume it on another head (`claude-grok -r`). Each head can have its own system prompt, and each provider its own tool handling; splice connects it all to the backend you choose.
 
-The gateway runs locally on your machine. Model requests still go to the chosen provider—this is not local model inference. Subscription connections are **unofficial**; API-key connections use ordinary pay-per-token access.
-
-## Not affiliated
-
-> [!IMPORTANT]
-> splice is an independent, personal project. It is **not affiliated with, endorsed by, or sponsored by** Anthropic, OpenAI, xAI, Moonshot, Meta, or OpenRouter. All product names and trademarks belong to their respective owners.
-> Anthropic identifies routing Claude Code to non-Claude models through a custom gateway as **unsupported**. splice is exactly that kind of gateway; use it with that in mind, at your own risk. No warranty: see [License](#license), and [why you might not want splice](#why-you-might-not-want-splice).
+The gateway runs locally on your machine. Model requests still go to the chosen provider—this is not local model inference. Subscription connections run on the plan you already pay for; API-key connections use ordinary pay-per-token access.
 
 ## Why it exists
 
 Choosing a different model shouldn't mean rebuilding your coding workflow around a different client. splice lets you keep Claude Code while working across backends—and makes those sessions useful together.
 
-- **Use the subscriptions you already pay for.** Connect ChatGPT, Grok or Kimi through dedicated commands, or choose a pay-per-token API route. [Provider support](#provider-support) spells out the differences and the risks.
+- **Use the subscriptions you already pay for.** Connect ChatGPT, Grok or Kimi through dedicated commands, or choose a pay-per-token API route. [Provider support](#provider-support) spells out the differences.
 - **Let different models work together.** A ChatGPT-backed session can find and message a Grok-backed session using Claude Code's own agent tools. [Shared session discovery](#heads-that-see-each-other) is enabled by default, with isolation available when you need it.
 - **Spend less time recovering long sessions.** More reliable compaction means fewer interruptions and less repeated work. If the client disconnects, an identical compaction retry can pick up the work already underway. [How recovery works](#long-session-reliability).
 - **See usage without leaving the session.** Provider-reported plan usage appears in Claude Code's status line. The [dashboard](#manage-your-sessions) brings connection status, usage warnings, configuration and logs together.
@@ -173,8 +167,6 @@ An explicit `OPENROUTER_API_KEY` in the daemon's environment always wins over th
 
 ### Subscription setup: ChatGPT, Grok, Kimi or Muse
 
-These routes are **unofficial**. They reuse each vendor's own CLI OAuth client identity, which no vendor documents for third-party use. That reuse may violate terms of service, and a vendor could block it or change it without notice. Use these routes at your own risk.
-
 1. Copy the matching provider and head from [`app/src/main/resources/splice.example.toml`](app/src/main/resources/splice.example.toml) into `~/.config/splice/splice.toml`.
 2. Run `splice install --all` to install the wrapper commands.
 3. Sign in with `claudex login`, `claude-grok login`, `claude-kimi login` or `claude-muse login`, then launch that same command without `login`.
@@ -297,10 +289,8 @@ in `splice status` or in `splice doctor`. Inside a head, `/login` signs in the p
 `/login --label <name>` adds an account the same way; a `/login` while an earlier sign-in is still
 waiting for its browser cancels that one and starts over.
 
-The pool is yours to fill: every account in it must be one you own and are entitled to use under
-that provider's terms, and a pool does not lift a plan's limits, it only lets a session continue
-on another account you hold while one is exhausted. Sharing accounts, or pooling to get past
-limits a business plan sets, is between you and the provider; splice does not arbitrate it.
+A pool does not lift a plan's limits: it lets a session continue on another account you hold while
+one is exhausted.
 
 Selection is sticky per session and decided only between turns. A session keeps the account it
 last used until the provider reports that account exhausted (a window at 100 %, or a 429 whose
@@ -366,7 +356,7 @@ does not name.
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.splice/state/activity/activity-<day>.jsonl` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works | Only you | Today (UTC) only: the day's file is deleted at UTC midnight, or at the next daemon start if splice was stopped | `ActivityStore.kt` |
+| `~/.splice/state/activity/activity-<day>.jsonl` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works | Only you | Today and yesterday (UTC), so the Teams page can show your whole local day: a day's file is deleted at the second UTC midnight after it, or at the next daemon start if splice was stopped | `ActivityStore.kt` |
 | `~/.splice/state/<head>-code-mode.json` | A Codex head's code mode: the model's scripts, tool calls with their arguments and results, script output and the model's reasoning summaries | Only you (0600) | Up to 24 hours per record, 128 records at most. The whole file goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml` | `CodexCodeModeStore.kt` |
 | `~/.splice/state/compactions/<head>/<hash>.json` | The answer of a finished compaction whose client hung up, kept so its retry gets the same bytes | Only you (0600) | Until the retry takes it, 2 hours at most: an expired one goes at the head's next save or the next daemon start, and a head removed from `splice.toml` loses the whole directory at the next start | `CompactionRecordings.kt` |
 | `~/.splice/logs/daemon.log` (and `daemon.log.1`) | The daemon's log. Most lines are about the daemon itself, but some quote short pieces of content: an upstream error body (up to 200 characters), a provider's failure message, a stream frame splice could not read, and the activity labels | Only you | Rotated at 64 MB, one older copy kept | `DaemonBoundary.kt` |
@@ -406,7 +396,7 @@ None of these holds session content.
 | `~/.splice/state/config.json` | Settings changed at runtime from the console | Only you (0600) | Until changed | `ConfigService.kt` |
 | `~/.splice/state/teams.json` (and `.bak`) | Your teams: their slots, heads, bound sessions and each slot's standing instructions | Only you (0600) | Kept; an archived team is flagged, not deleted. `.bak` is the version before the last write | `TeamStore.kt` |
 | `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily spend budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
-| `~/.splice/state/activity/edges-<day>.jsonl` | Which session sent a message to which, and when; never the message's text | Only you | `activityRetentionDays` (default 90): a day is deleted at the UTC midnight it leaves that window, or at the next daemon start if splice was stopped | `ActivityStore.kt` |
+| `~/.splice/state/activity/edges-<day>.jsonl` | Which session sent a message to which, and when; never the message's text | Only you | `activityRetentionDays` (default 90, at least 2): a day is deleted at the UTC midnight it leaves that window, or at the next daemon start if splice was stopped | `ActivityStore.kt` |
 | `~/.splice/state/<head>-perf.jsonl` and `perf-archive/` | One row per turn: model, outcome, timings and token counts | Only you | Rolled at 64 MB into the archive, which keeps `perfArchiveRetentionDays` (default 90) | `PerfStats.kt` |
 | `~/.splice/<head>-compact-stats.jsonl` | Per request, a classifier's counts: tool count, prompt length, outcome | Only you | Rolled at 64 MB, one older copy kept | `Compact.kt` |
 | `~/.splice/state/<head>-session-totals.json` | Tokens and dollars per session, by model | Only you (0600) | A session idle 30 days is dropped; 256 sessions at most | `SessionTotals.kt` |
@@ -450,13 +440,13 @@ can run rig's installer.
 | Claude (`claude-splice`) | `client` (Claude Code native login) | **Primary** — Anthropic passthrough; Claude Code signs in itself, and splice keeps a copy only of a login you save under a label |
 | OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported** — pay-per-token, any OpenAI-compatible vendor |
 | Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported** — pay-per-token Anthropic base |
-| codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for; unofficial, at your own risk |
-| grok (xAI) | `grok-oauth` | **Primary** — unofficial, at your own risk |
-| kimi (Moonshot) | `kimi-oauth` | **Primary** — unofficial, at your own risk |
-| muse (Meta) | `muse-oauth` | **Primary** — unofficial, at your own risk |
+| codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for |
+| grok (xAI) | `grok-oauth` | **Primary** |
+| kimi (Moonshot) | `kimi-oauth` | **Primary** |
+| muse (Meta) | `muse-oauth` | **Primary** |
 | Local runtimes (Ollama, LM Studio, vLLM) | `api-key` on a loopback `base_url` | **Supported** — user-managed; rows validated against what the runtime serves |
 
-The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for. They are also **unofficial**: they authenticate by reusing the public OAuth client identity of each vendor's own CLI, not a documented third-party integration, and a vendor could object or break them at any time. Use them at your own risk. The **api-key** routes are ordinary pay-per-token API access with none of that ambiguity, and make the best zero-config starter.
+The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for, signing in the way each vendor's own CLI does. The **api-key** routes are ordinary pay-per-token API access and make the best zero-config starter.
 
 ### Local models
 
@@ -525,9 +515,8 @@ it on a head you drive yourself. Two heads with different prompts never leak int
 ### Code mode for ChatGPT
 
 Code mode is **on by default** for Claudex-compatible providers (`auth.kind = "chatgpt-oauth"`,
-`dialect = "openai-responses"`), including custom head names, and exclusive to them. It rides the
-same unofficial ChatGPT OAuth route and carries the same terms caveat: use it at your own risk. To
-turn it off, in the provider's existing quirks section:
+`dialect = "openai-responses"`), including custom head names, and exclusive to them. To turn it
+off, in the provider's existing quirks section:
 
 ```toml
 [providers.codex.quirks]
@@ -548,11 +537,10 @@ A single tool result larger than the runner's 64 KiB text frame is truncated at 
 
 Reasons to walk away:
 
-- **An unsupported gateway.** Anthropic identifies this class of tool as unsupported, and a Claude Code update can break splice at any time. The version handshake makes the break loud instead of corrupting a session mid-turn.
-- **Legally unsettled OAuth.** The Codex, Grok, and Kimi routes reuse each vendor's own CLI OAuth client identity. No vendor documents that reuse; it may violate terms of service, and a vendor could cut it off without notice. The primary routes are also the biggest risk.
+- **Claude Code can move under it.** A Claude Code update can break splice at any time. The version handshake makes the break loud instead of corrupting a session mid-turn.
 - **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
 - **A JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving.
-- **A one-person project.** No warranty, no SLA. The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. It is still one person.
+- **A one-person project.** The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. It is still one person.
 
 ## Compatibility
 

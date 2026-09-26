@@ -653,9 +653,8 @@ Proposed scope:
 - Terms, verified 2026-09-13: the ChatGPT Terms of Use forbid sharing an account or making it
   available to someone else, not holding several personal subscriptions; the OpenAI Services
   Agreement for business and API customers (§3.3(i)) forbids configuring the service "to avoid
-  Usage Limits". The README's unofficial-route warning gains one sentence saying that the
-  pool only holds accounts the operator owns, each on its own subscription, and that using it
-  to work past a business plan's limits is on the operator.
+  Usage Limits". The README states none of this as a warning: the operator ruled out
+  disclaimers on 2026-09-26.
 
 **Boundary:** switching is between accounts of ONE provider. Cross-provider failover, which
 changes model, reasoning, cache and protocol semantics under a session, stays a deferred

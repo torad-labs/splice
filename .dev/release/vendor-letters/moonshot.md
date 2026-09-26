@@ -15,8 +15,7 @@ user configures it to. On that route it also calls
 `https://api.kimi.com/coding/v1/usages` on a five-minute poll per signed-in
 account (the default) to show users their own allowance, and a user may sign in
 more than one of their own accounts, which splice switches between when one
-runs out; its README requires every account to be one the user owns and is
-entitled to use under the provider's terms. Two questions:
+runs out. Two questions:
 
 1. May a third-party open-source client reuse the Kimi CLI OAuth client
    identity for the user's own subscription?
@@ -26,7 +25,6 @@ entitled to use under the provider's terms. Two questions:
 Project: splice — https://github.com/torad-labs/splice (MIT, personal open-source project)
 Maintainer: Marcos Paulo Souza Damasceno <marcospaulo.s.d@gmail.com>
 
-splice is not affiliated with or endorsed by your company. The integration in
-question ships labeled EXPERIMENTAL, with the credential file documented as
+The integration in question documents its credential file as
 password-equivalent. We will promptly implement whatever outcome you indicate,
 including disabling or removing the route.

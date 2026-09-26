@@ -31,7 +31,5 @@ We use "Muse" and "Meta" descriptively only.
 Project: splice — https://github.com/torad-labs/splice (MIT, personal open-source project)
 Maintainer: Marcos Paulo Souza Damasceno <marcospaulo.s.d@gmail.com>
 
-splice is not affiliated with or endorsed by Meta. The Muse route ships labeled
-unofficial and at the user's own risk, with the credential file documented as
-password-equivalent. We will promptly implement whatever outcome you indicate,
+The Muse route documents its credential file as password-equivalent. We will promptly implement whatever outcome you indicate,
 including disabling or removing the route.

@@ -51,6 +51,10 @@ import java.util.concurrent.TimeUnit
 private const val WORKFLOWS = ".github/workflows"
 private const val INSTALL = "install.sh"
 private const val README = "README.md"
+private const val CHANGELOG = "CHANGELOG.md"
+private const val PRODUCT_BRIEF = "docs/design/PRODUCT.md"
+private const val CONSOLE_SRC = "console/src/"
+private const val MAIN_SOURCE = "/src/main/"
 private const val EXAMPLE_TOML = "app/src/main/resources/splice.example.toml"
 private const val NOTICES = "THIRD_PARTY_NOTICES.md"
 private const val RELEASE_WORKFLOW = ".github/workflows/release.yml"
@@ -89,6 +93,29 @@ private val HEALTH_FILES = listOf(
     ".github/PULL_REQUEST_TEMPLATE.md",
 )
 
+// Operator ruling, 2026-09-26: no disclaimer anywhere splice speaks to the people who use it. The
+// three rules `no-disclaimer` replaced REQUIRED "not affiliated", "at your own risk" and "unofficial"
+// in the README, so every session that took them out went red here and put them back.
+private val DISCLAIMERS = listOf(
+    "unofficial",
+    "own risk",
+    "not affiliated",
+    "endorsed by",
+    "sponsored by",
+    "no warranty",
+    "legally unsettled",
+)
+private val DISCLAIMER_FILES = listOf(README, CHANGELOG, EXAMPLE_TOML, PRODUCT_BRIEF, INSTALL)
+private val CONSOLE_TEXT = listOf(".ts", ".tsx")
+
+/** "[rel]:[line] carries '[phrase]'" for the first line holding one of [DISCLAIMERS], ignoring case. */
+private fun disclaimerIn(rel: String, text: String): String? =
+    text.lines().withIndex().firstNotNullOfOrNull { (index, line) ->
+        DISCLAIMERS.firstOrNull { line.contains(it, ignoreCase = true) }?.let {
+            "$rel:${index + 1} carries '$it': ${line.trim()} (no disclaimer anywhere: take the line out)"
+        }
+    }
+
 /** What the rules read: the checkout root, git's index, and every Kotlin file of the mapped modules. */
 internal class ReleaseRepo(val root: File, val tracked: List<String>, val kotlinFiles: List<File>) {
     private fun text(rel: String): String? = File(root, rel).takeIf { it.isFile }?.readText()
@@ -119,6 +146,15 @@ internal class ReleaseRepo(val root: File, val tracked: List<String>, val kotlin
         return "$rel carries $what outside the ${allowed.size} line(s) this repo has decided to allow " +
             "[${allowed.joinToString("; ")}] — ${offenders.joinToString("; ")}. Rewording an allowed line is " +
             "re-deciding that swallow: change the line and this list in the same commit."
+    }
+
+    fun carriesNoDisclaimer(rel: String): String? = disclaimerIn(rel, text(rel) ?: return missing(rel))
+
+    /** The first tracked file under [prefix] ending in one of [extensions] that [check] rejects; none is RED. */
+    fun eachTracked(prefix: String, extensions: List<String>, check: (String, String) -> String?): String? {
+        val files = tracked.filter { rel -> rel.startsWith(prefix) && extensions.any { rel.endsWith(it) } }
+        if (files.isEmpty()) return "no tracked sources under $prefix — the denominator is empty"
+        return files.firstNotNullOfOrNull { rel -> text(rel)?.let { check(rel, it) } }
     }
 
     fun matches(rel: String, pattern: Regex, what: String): String? {
@@ -278,10 +314,14 @@ internal object ReleaseReadiness {
     private fun readmeRules(): List<Rule> = listOf(
         Rule("readme-no-encrypted-cot") { repo -> repo.lacks(README, ENCRYPTED_COT, ignoreCase = true) },
         Rule("readme-no-legacy-login") { repo -> repo.lacks(README, "bin/claudex login") },
-        Rule("readme-not-affiliated") { repo -> repo.contains(README, "not affiliated", ignoreCase = true) },
         Rule("readme-names-shim") { repo -> repo.contains(README, "splice-launch") },
-        Rule("readme-at-your-own-risk") { repo -> repo.contains(README, "at your own risk", ignoreCase = true) },
-        Rule("readme-unofficial") { repo -> repo.contains(README, "unofficial", ignoreCase = true) },
+        // The files people read, every main source set (what the CLI and daemon print) and the console.
+        // Tests stay out: a test that proves a line is gone has to name it.
+        Rule("no-disclaimer") { repo ->
+            DISCLAIMER_FILES.firstNotNullOfOrNull { repo.carriesNoDisclaimer(it) }
+                ?: repo.eachKotlin { rel, text -> if (MAIN_SOURCE in rel) disclaimerIn(rel, text) else null }
+                ?: repo.eachTracked(CONSOLE_SRC, CONSOLE_TEXT, ::disclaimerIn)
+        },
         Rule("example-no-encrypted-cot") { repo -> repo.lacks(EXAMPLE_TOML, ENCRYPTED_COT, ignoreCase = true) },
         Rule("example-password-equivalent") { repo ->
             repo.contains(EXAMPLE_TOML, "password-equivalent", ignoreCase = true)
@@ -339,6 +379,9 @@ private const val INSTALL_HOME = "run_jar() {\n  $INSTALL_RUN_JAR\n}\n" +
 // not trip its own port and sleep rules.
 private const val A_FIXED_PORT = 39_100
 private const val A_SLEEP_MS = 1100
+private const val CONSOLE_STRINGS = "console/src/pages/home/strings.ts"
+private const val SETUP_TEST = "app/src/test/kotlin/splice/app/cli/setup/SetupCommandTest.kt"
+private const val SETUP_MAIN = "app/src/main/kotlin/splice/app/cli/setup/SetupSignIn.kt"
 
 /** A synthetic checkout: every file it writes is "tracked", every .kt it writes is a Kotlin source. */
 private class Tree(val root: File) {
@@ -372,11 +415,12 @@ private class Tree(val root: File) {
         file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS + INSTALL_HOME)
         file(GATE_LADDER, "gateOfRecord { dependsOn($INCLUDED_BUILD_TEST) }\n")
         file("${BUILD_LOGIC_TESTS}splice/discovery/TestDiscoveryTest.kt", "class TestDiscoveryTest\n")
-        file(
-            README,
-            "splice is not affiliated with anyone. Each head runs the splice-launch shim.\n" +
-                "The unofficial routes are used at your own risk.\n",
-        )
+        file(README, "Each head runs the splice-launch shim.\n")
+        file(CHANGELOG, "# Changelog\n")
+        file(PRODUCT_BRIEF, "# Product\n")
+        file(CONSOLE_STRINGS, "export const title = 'splice';\n")
+        // On the green side on purpose: a test that proves the line is gone names it, and stays legal.
+        file(SETUP_TEST, "val gone = \"Unofficial; use at your own risk.\"\n")
         file(EXAMPLE_TOML, "# every key here is password-equivalent\n")
         file(TOPOLOGY_LOADER, "// Experimental examples remain opt-in\n")
         packaging()
@@ -434,7 +478,8 @@ private fun repositoryMutations(): List<Mutation> = listOf(
     // THE MISSING-FILE BRANCH of each reader (PR 6 review). `contains`, `lacks`, `matches` and
     // `onlyOn` all answer `missing(rel)` when the file is not there, and nothing proved it: a rule
     // whose subject is DELETED must fail, never pass for want of anything to read.
-    Mutation("no README at all", "readme-not-affiliated", "is missing") { delete(README) },
+    Mutation("no README at all", "readme-names-shim", "is missing") { delete(README) },
+    Mutation("no CHANGELOG to read for disclaimers", "no-disclaimer", "CHANGELOG.md is missing") { delete(CHANGELOG) },
     Mutation("no README to read for encrypted CoT", "readme-no-encrypted-cot", "is missing") { delete(README) },
     Mutation("no PROVENANCE at all", "provenance", "is missing") { delete(PROVENANCE) },
     Mutation("no install.sh at all", "install-no-or-true", "is missing") { delete(INSTALL) },
@@ -511,17 +556,17 @@ private fun readmeMutations(): List<Mutation> = listOf(
     Mutation("README with the legacy login", "readme-no-legacy-login", "bin/claudex login") {
         append(README, "run bin/claudex login\n")
     },
-    Mutation("README without the affiliation notice", "readme-not-affiliated", "not affiliated") {
-        file(README, "splice-launch, unofficial, at your own risk\n")
-    },
     Mutation("README not naming the shim", "readme-names-shim", "splice-launch") {
-        file(README, "not affiliated, unofficial, at your own risk\n")
+        file(README, "splice runs locally\n")
     },
-    Mutation("README without the risk notice", "readme-at-your-own-risk", "at your own risk") {
-        file(README, "not affiliated, unofficial, splice-launch\n")
+    Mutation("a main source printing a disclaimer", "no-disclaimer", "$SETUP_MAIN:1 carries 'unofficial'") {
+        file(SETUP_MAIN, "val line = \"Unofficial; use at your own risk.\"\n")
     },
-    Mutation("README without unofficial", "readme-unofficial", "unofficial") {
-        file(README, "not affiliated, splice-launch, at your own risk\n")
+    Mutation("a console string carrying a disclaimer", "no-disclaimer", "$CONSOLE_STRINGS:2 carries 'not affiliated'") {
+        append(CONSOLE_STRINGS, "export const notice = 'Not affiliated with OpenAI';\n")
+    },
+    Mutation("no console sources at all", "no-disclaimer", "denominator is empty") {
+        files.filter { it.startsWith(CONSOLE_SRC) }.forEach { delete(it) }
     },
     Mutation("the example config mentioning encrypted CoT", "example-no-encrypted-cot", ENCRYPTED_COT) {
         append(EXAMPLE_TOML, "# encrypted CoT replay\n")
@@ -532,7 +577,14 @@ private fun readmeMutations(): List<Mutation> = listOf(
     Mutation("TopologyLoader without experimental", "topology-loader-experimental", "TopologyLoader.kt") {
         file(TOPOLOGY_LOADER, "// plain\n")
     },
-)
+) + DISCLAIMERS.map { phrase ->
+    // Upper-cased, so each phrase is proven matched whatever its case.
+    Mutation("README carrying '$phrase'", "no-disclaimer", "$README:2 carries '$phrase'") {
+        append(README, "splice is ${phrase.uppercase()}.\n")
+    }
+} + DISCLAIMER_FILES.map { rel ->
+    Mutation("$rel carrying a disclaimer", "no-disclaimer", "$rel:") { append(rel, "Use it at your own risk.\n") }
+}
 
 private fun packagingMutations(): List<Mutation> = listOf(
     Mutation("a wrapper without a checksum", "wrapper-checksum", "gradle-wrapper.properties") {

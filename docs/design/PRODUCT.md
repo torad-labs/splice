@@ -38,8 +38,7 @@ team. splice sits between one human's coding agent and the subscriptions that hu
 inversion is the claim no gateway console can copy: the console can show the turn that is in
 flight right now, tie cache hits and cost to the session on screen, explain what compaction did
 and with which instructions, show which login a head is on and why it switched, and show for every
-knob which layer decided its value. The OAuth heads reuse vendor CLI identities and are
-unsupported by those vendors; the console carries that honesty without shouting it.
+knob which layer decided its value.
 
 ## Operating Context
 
@@ -97,8 +96,8 @@ topology editor or the forms are the primary settings surface.
 
 ## Brand Commitments
 
-- Name: splice, always lowercase, wordmark "splice". Not affiliated with, endorsed by, or
-  sponsored by Anthropic, OpenAI, xAI, Moonshot, Meta or OpenRouter; product names are theirs.
+- Name: splice, always lowercase, wordmark "splice". No disclaimer lines anywhere: no affiliation
+  notice, no risk or support-status caveat (operator, 2026-09-26).
 - Voice: terse, lowercase, data-first. It never shouts; the loudest thing on screen is a real
   warning. Functional labels only. Zero em-dashes in UI text (locked copy gate). Absent data reads
   "n/a" or states its reason, never a dash placeholder.

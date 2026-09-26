@@ -62,9 +62,7 @@ internal class SetupSignIn(
         println(
             palette.paint(
                 palette.quiet,
-                "  Subscription heads reuse each vendor CLI's public OAuth client identity, signed in " +
-                    "separately for splice (its own credential file, any account). " +
-                    "Unofficial; use at your own risk.",
+                "  Each subscription head signs in separately for splice (its own credential file, any account).",
             ),
         )
         var ok = true

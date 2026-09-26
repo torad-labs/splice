@@ -434,9 +434,8 @@ There is **no `telemetry` verb today.** The CLI is `setup`, `add`, `upgrade`, `s
 3. **Sign-in.** Every OAuth head with no credential yet is walked, each asking
    `Sign in to <command> now? [Y/n]` with default yes. Declining prints
    `skipped — sign in later with: <command> login`. With nothing pending it prints
-   `✓ wrapper installed. Set OPENROUTER_API_KEY before launching.` A dim paragraph first warns
-   that subscription heads reuse each vendor CLI's public OAuth client identity and are
-   unofficial.
+   `✓ wrapper installed. Set OPENROUTER_API_KEY before launching.` A dim line first says each
+   subscription head signs in separately for splice, with its own credential file.
 4. **You're set.**
 5. **The four next steps**, as an aligned block: `Launch`, `Dashboard`, `Status`, `Checkup`, each
    command in cyan, `Checkup` carrying `— anything wrong prints its fix`.

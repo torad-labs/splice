@@ -100,9 +100,8 @@ origin.
 - **A restart waits for turns in flight, but only for 45 s.** A turn still streaming after that
   is cut, and Claude Code does not retry a turn cut after its text began. `splice upgrade` waits
   until every head is idle unless you pass `--now`.
-- **Anthropic treats routing Claude Code through a custom gateway as unsupported.** splice is
-  tested against Claude Code 2.1.283. When a session runs a newer one, doctor, `splice status`
-  and the status line say so once.
+- **splice is tested against Claude Code 2.1.283.** When a session runs a newer one, doctor,
+  `splice status` and the status line say so once.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any
   other service. It does not mean Anthropic is billing you: each head uses the plan, key or GPU you
@@ -707,10 +706,11 @@ origin.
   stderr itself, such as a startup error. A head's kept files go when their promise ends: an expired
   compaction answer, a head's code-mode state once code mode is off or the head is removed, and its
   trace files once trace is off are deleted when the daemon starts. Activity labels, which carry file
-  names, commands and search patterns, are kept for today only instead of 90 days, since today is the
-  only day the Teams page reads them. The README's new section, What splice keeps on your disk, names
-  each file splice writes, what it holds, who can read it and how long it stays, and a test fails the
-  build when the code writes a file the section doesn't name (V4-258, V4-260, V4-261, V4-262).
+  names, commands and search patterns, are kept for today and yesterday (UTC) instead of 90 days, the
+  two UTC days any viewer's local day on the Teams page can span. The README's new section, What
+  splice keeps on your disk, names each file splice writes, what it holds, who can read it and how
+  long it stays, and a test fails the build when the code writes a file the section doesn't name
+  (V4-258, V4-260, V4-261, V4-262, V4-285).
 - **A launch no longer puts back a Claude login that was already refreshed away.** Every launch of
   `claude-splice` copied the selected saved login over the head's live one. Claude Code's refresh
   tokens are single-use, so the copy was stale after the first refresh, and signing in with it could
@@ -1506,9 +1506,8 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.1/install
 ### Changed
 
 - The ChatGPT, Grok, and Kimi subscription routes are now presented as what they are: the
-  primary routes splice was built for — unofficial, at your own risk — rather than
-  "experimental" afterthoughts. The API-key routes remain the zero-config starter. The
-  OSS posture check now pins the risk language instead of the word "experimental".
+  primary routes splice was built for, rather than "experimental" afterthoughts. The API-key
+  routes remain the zero-config starter.
 - Public reasoning language now describes provider-generated summaries without implying access to
   raw, private, or exact chain-of-thought.
 - Reasoning replay now ships off. Measurement showed that replay encouraged reuse of thin prior

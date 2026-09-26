@@ -175,8 +175,9 @@ class SetupCommandTest {
         assertFalse("chatgpt-oauth" in topology)
     }
 
+    // Operator ruling, 2026-09-26: no disclaimer anywhere. The walk says where the sign-in lands, nothing more.
     @Test
-    fun `sign-in walk still prints the unofficial-OAuth warning`(@TempDir home: Path) {
+    fun `sign-in walk names its own credential file and prints no disclaimer`(@TempDir home: Path) {
         val log = captureStdout {
             withHome(home) {
                 seedShim(home)
@@ -192,7 +193,8 @@ class SetupCommandTest {
                 }
             }
         }
-        assertTrue("Unofficial; use at your own risk" in log, log)
+        assertFalse(log.contains("unofficial", ignoreCase = true), log)
+        assertFalse(log.contains("own risk", ignoreCase = true), log)
         assertTrue("own credential file" in log, log)
     }
 

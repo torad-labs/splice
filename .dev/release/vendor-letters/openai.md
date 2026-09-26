@@ -35,7 +35,6 @@ generic third-party client like ours. Three questions:
 Project: splice — https://github.com/torad-labs/splice (MIT, personal open-source project)
 Maintainer: Marcos Paulo Souza Damasceno <marcospaulo.s.d@gmail.com>
 
-splice is not affiliated with or endorsed by your company. The integration in
-question ships labeled EXPERIMENTAL, with the credential file documented as
+The integration in question documents its credential file as
 password-equivalent. We will promptly implement whatever outcome you indicate,
 including disabling or removing the route.

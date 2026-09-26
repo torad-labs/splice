@@ -6,8 +6,7 @@
 # extra_windows, window_rules, default_context_window, a head's context_window) with no restart.
 #
 # The OAuth sections below are what splice was built for — Claude Code on your ChatGPT, Grok,
-# Kimi, or Muse subscription. They are unofficial: they reuse each vendor CLI's public OAuth client
-# identity, which no vendor documents for third parties. Use them at your own risk.
+# Kimi, or Muse subscription.
 # A new OpenAI-compatible API-key vendor is otherwise pure TOML: base URL, key env, and models.
 
 [daemon]

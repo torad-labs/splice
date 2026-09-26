@@ -234,6 +234,93 @@ export interface CaptureWire {
   restart_required: boolean;
 }
 
+/** One traced turn as GET /api/heads/{head}/trace lists it (V4-239, TraceRoute.summary): the line
+ *  `splice trace` prints, as fields. An open turn has no record closing it yet: `outcome` is null and
+ *  its rounds and attempts are the attempts on disk. */
+export interface TracedTurnWire {
+  id: string;
+  /** Epoch milliseconds of the turn's first record. */
+  ts: number;
+  session: string | null;
+  model: string;
+  compact: boolean;
+  open: boolean;
+  outcome: string | null;
+  rounds: number | null;
+  attempts: number | null;
+  total_ms: number | null;
+}
+
+/** GET /api/heads/{head}/trace: the newest turns on disk, oldest first, and no body. `files` is
+ *  where they are (`<dir>/<head>-YYYY-MM-DD.jsonl`), `on_disk` how many turns all the files hold. */
+export interface TraceListWire {
+  head: string;
+  files: string;
+  on_disk: number;
+  skipped_lines: number;
+  turns: TracedTurnWire[];
+}
+
+/** A request or response side of a traced record, as the TraceStore wrote it: headers redacted by
+ *  name when written, the body exact up to the cap (`truncated` says it was cut). */
+export interface TraceSide {
+  method?: string;
+  path?: string;
+  status?: number | string;
+  stream?: boolean;
+  encoding?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  /** A response's text, where a request carries `body`. */
+  text?: string;
+  truncated?: boolean;
+}
+
+/** One record of a traced turn: an upstream attempt, or the turn record that closes it. */
+export interface TraceRecord {
+  kind: 'attempt' | 'turn';
+  turn: string;
+  ts: number;
+  attempt?: number;
+  round?: number;
+  transport?: string;
+  url?: string;
+  durationMs?: number;
+  failure?: string;
+  request?: TraceSide;
+  response?: TraceSide;
+  client?: TraceSide;
+  answer?: TraceSide;
+  outcome?: string;
+}
+
+/** GET /api/heads/{head}/trace?turn=ID: that turn's summary and its records as written. */
+export interface TraceTurnWire {
+  head: string;
+  turn: TracedTurnWire;
+  records: TraceRecord[];
+}
+
+/** One upstream request body a head sent, as its wire tap kept it (WireTap.json). */
+export interface WireRecordWire {
+  ts: number;
+  session?: string;
+  model: string;
+  compact: boolean;
+  body: string;
+}
+
+/** GET /api/heads/{head}/wire (V4-239): what `splice wire` prints, the tap's last `keep` bodies. */
+export interface WireTapWire {
+  key: string;
+  keep: number;
+  records: WireRecordWire[];
+}
+
+/** A wire read: the tap's bodies, or the daemon's sentence saying the tap is off (a 409), which is a
+ *  state the drawer prints and never an empty list. */
+export type WireRead = { tap: WireTapWire } | { off: string };
+
 /** One head's capture as the console holds it: what runs, what this console last wrote, and the
  *  daemon's own words when it refused a write. Built by model/capture.ts, never by hand. */
 export interface CaptureState {

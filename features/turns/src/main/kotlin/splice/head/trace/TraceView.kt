@@ -6,7 +6,6 @@ package splice.head.trace
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.perf.PerfKeys
 import splice.core.terminal.BOLD
 import splice.core.terminal.DIM
 import splice.core.terminal.RESET
@@ -74,22 +73,18 @@ internal class TraceView(private val output: TerminalOutput) {
     }
 
     private fun line(turn: TracedTurn): String {
-        val first = turn.first
         val ts = Instant.ofEpochMilli(turn.ts)
         val session = turn.session?.take(SESSION_COLUMN_CHARS) ?: "-"
-        val model = JsonScalars.strOrEmpty(first["model"])
-        val compact = if (JsonScalars.str(first, "compact") == "true") " compact" else ""
-        return "$ts  ${turn.id}  session=$session  model=$model$compact  ${ending(turn)}"
+        val compact = if (turn.compact) " compact" else ""
+        return "$ts  ${turn.id}  session=$session  model=${turn.model}$compact  ${ending(turn)}"
     }
 
     /** The outcome columns: from the turn record when the turn has ended, else what the attempts say. */
     private fun ending(turn: TracedTurn): String {
         val open = turn.attempts.size
-        val record = turn.turn ?: return "(open)  rounds=$open attempts=$open  total=-ms"
-        val marks = record["perf"]?.jsonObject?.get("marks")?.jsonObject
-        val total = marks?.let { JsonScalars.str(it, PerfKeys.TOTAL) } ?: "-"
-        return "${JsonScalars.strOrEmpty(record["outcome"])}  rounds=${JsonScalars.strOrEmpty(record["rounds"])} " +
-            "attempts=${JsonScalars.strOrEmpty(record["attempts"])}  total=${total}ms"
+        val ending = turn.ending ?: return "(open)  rounds=$open attempts=$open  total=-ms"
+        val total = ending.totalMs ?: "-"
+        return "${ending.outcome}  rounds=${ending.rounds} attempts=${ending.attempts}  total=${total}ms"
     }
 
     private fun printAttempt(attempt: JsonObject) {

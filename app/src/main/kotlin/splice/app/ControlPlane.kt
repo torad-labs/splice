@@ -221,7 +221,7 @@ internal class ControlPlane(
      *  OneEventBusPinTest fails if the route's bus and a head's are ever different instances. V4-130/
      *  V4-131: the SAME stores/team store the heads already write through. V4-133:
      *  [ConsoleWiring.wireV4133] carries the same hazard for the budget/alert stores and the
-     *  playground probe. */
+     *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
     private fun wireConsolePorts(srv: ControlServer) {
         srv.ports.compaction = compactionInstructions
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
@@ -229,6 +229,7 @@ internal class ControlPlane(
         srv.ports.activity = console.stores
         srv.ports.teams = teams
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
+        ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
     }
 
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */

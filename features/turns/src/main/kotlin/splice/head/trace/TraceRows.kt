@@ -9,6 +9,7 @@ package splice.head.trace
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.perf.PerfKeys
 import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -29,9 +30,33 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
     val first: JsonObject get() = turn ?: attempts.first()
     val ts: Long get() = JsonScalars.long(first, "ts") ?: 0L
     val session: String? get() = JsonScalars.str(first, "session")
+    val model: String get() = JsonScalars.strOrEmpty(first["model"])
+    val compact: Boolean get() = JsonScalars.str(first, "compact") == "true"
+
+    /** How the turn ended, off its turn record; null while it is open. The verb's table and the
+     *  console's list read the same columns from here (V4-239). */
+    val ending: TurnEnding? get() = turn?.let { record ->
+        val marks = record["perf"]?.jsonObject?.get("marks")?.jsonObject
+        TurnEnding(
+            outcome = JsonScalars.strOrEmpty(record["outcome"]),
+            rounds = JsonScalars.strOrEmpty(record["rounds"]),
+            attempts = JsonScalars.strOrEmpty(record["attempts"]),
+            totalMs = marks?.let { JsonScalars.str(it, PerfKeys.TOTAL) },
+        )
+    }
 }
 
-internal data class TraceRead(val turns: List<TracedTurn>, val skippedLines: Int)
+/** A turn record's closing columns, as the record wrote them; [totalMs] is null when its perf carried
+ *  no total. */
+internal data class TurnEnding(val outcome: String, val rounds: String, val attempts: String, val totalMs: String?)
+
+internal data class TraceRead(val turns: List<TracedTurn>, val skippedLines: Int) {
+    /** The turns a reader asked for, oldest first: those of sessions starting with [session], and the
+     *  one whose id is [turn]; null asks for every one. */
+    fun selected(session: String?, turn: String?): List<TracedTurn> = turns
+        .filter { session == null || it.session?.startsWith(session) == true }
+        .filter { turn == null || it.id == turn }
+}
 
 internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = true }) {
 

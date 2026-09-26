@@ -21,3 +21,9 @@
 @media (max-width: 1100px) {
   .myx-md-board-open { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Compare (V4-239): one block per provider, its declared rows, the rest behind a reveal. */
+.myx-md-compare { display: grid; gap: var(--space-5); justify-items: start; }
+.myx-md-ups { display: grid; gap: var(--space-6); inline-size: 100%; }
+.myx-md-up { display: grid; gap: var(--space-3); }
+.myx-md-up-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }

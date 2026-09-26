@@ -69,6 +69,42 @@ export interface ModelsPayload {
   heads: HeadCatalog[];
 }
 
+/** How a model stands against its provider's published list (V4-239, UpstreamModelsRoute.verdict):
+ *  a declared row that is served, caps a larger ceiling, overruns it or is gone, and a served model
+ *  no row declares, discovered into the picker or kept out of it. */
+export type RosterVerdict = 'served' | 'capped' | 'over-ceiling' | 'unserved' | 'new' | 'excluded';
+
+/** One row of the comparison: a declared model, or a served one no row declares. */
+export interface UpstreamRow {
+  id: string;
+  verdict: RosterVerdict;
+  declared_window: number | null;
+  upstream_window: number | null;
+  /** The verb's own diagnostic for the row, or "" when it has none. */
+  note: string;
+}
+
+/** One provider's side of `splice models`. `url` is where it was asked, with no user info, query or
+ *  fragment: the answer carries no credential. `reason` says why an unpublished or unreadable
+ *  roster has no rows. `agrees` is the verb's exit: the list was read and no declared row needs a
+ *  decision. */
+export interface UpstreamProvider {
+  key: string;
+  dialect: string;
+  url: string;
+  roster: 'published' | 'unpublished' | 'unreadable';
+  reason?: string;
+  agrees: boolean;
+  rows: UpstreamRow[];
+}
+
+/** GET /api/models/upstream[?provider=KEY]: what `splice models` prints, every provider asked now. */
+export interface UpstreamModelsPayload {
+  /** The splice.toml the daemon booted from. */
+  path: string;
+  providers: UpstreamProvider[];
+}
+
 // PendingRoute moved to @shared/api (CONTRACTS.md 8): the shape and its `pendingOf` mapping are now
 // one definition every slice imports, instead of a copy per data row.
 

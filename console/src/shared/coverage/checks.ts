@@ -70,8 +70,10 @@ function viaCovers(declared: Disposition, effective: ReadonlyMap<string, Disposi
 
 /**
  * A CLI verb's answer, V4-220. An editable verb names a page action that is built (its job action
- * carries no row) and a route that covers it; a read-only verb names the route its page reads. A
- * pending verb whose page action is built is answered, and is marked so, as a served route is.
+ * carries no row) and a route that covers it; a read-only verb names the route its page reads, and
+ * when it names an action too, that action must be built (V4-239): a covered verb whose page still
+ * waits on a row claims an answer nobody can reach. A pending verb whose page action is built is
+ * answered, and is marked so, as a served route is.
  */
 function verbProblems(
   declared: Disposition,
@@ -85,7 +87,7 @@ function verbProblems(
   const problems: CoverageProblem[] = [];
   const needsAction = declared.disposition === 'editable' || declared.action !== undefined;
   if (needsAction && action === undefined) problems.push('verb without action');
-  if (declared.disposition === 'editable' && action?.row !== undefined) problems.push('verb action not built');
+  if (action?.row !== undefined) problems.push('verb action not built');
   if (!viaCovers(declared, effective, served)) problems.push('verb via uncovered route');
   return problems;
 }

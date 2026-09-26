@@ -26,8 +26,6 @@ export const S = {
   /** What runs where it differs from the switch, as badges. */
   captureOn: 'Recording bodies',
   atRestart: 'Restart to apply',
-  /** Where captured bodies are read: the daemon's CLI, since no route serves one. */
-  readWith: 'Read bodies',
   about: 'About capture',
 } as const;
 

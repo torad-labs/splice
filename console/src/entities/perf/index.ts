@@ -8,6 +8,9 @@ export {
   fetchPerfSummary,
   fetchPerfTurns,
   putCapture,
+  readTrace,
+  readTraceTurn,
+  readWire,
   refetchPerfTurns,
   startPerfSummaryPolling,
   startPerfTurnsPolling,
@@ -30,10 +33,18 @@ export type {
   PerfTurnsHeadWire,
   PerfTurnsWire,
   PerfWindowLabel,
+  TraceListWire,
+  TraceRecord,
+  TraceSide,
+  TracedTurnWire,
+  TraceTurnWire,
   TurnRow,
   TurnRowWire,
   TurnsState,
   UnreadHead,
+  WireRead,
+  WireRecordWire,
+  WireTapWire,
 } from './model/types';
 export { mergeTurns } from './model/turns-wire';
 export type { MergedTurns } from './model/turns-wire';

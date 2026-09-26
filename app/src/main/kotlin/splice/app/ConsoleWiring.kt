@@ -56,6 +56,7 @@ import splice.events.bus.ConsoleEvent
 import splice.events.bus.EventBus
 import splice.head.HeadEvents
 import splice.head.HeadLifecycle
+import splice.head.wire.WireTaps
 import splice.lifecycle.upgrade.ConsoleUpgradeStatus
 import splice.lifecycle.upgrade.UpgradeStatus
 import splice.sessions.activity.ALL_HEADS
@@ -142,6 +143,22 @@ internal object ConsoleWiring {
         srv.ports.playground = playground
     }
 
+    /** V4-239: what `splice models`, `splice trace` and `splice wire` print, as the console reads it.
+     *  The comparison reads the file this daemon booted from (none booted, none to compare: the route
+     *  answers its named 503); the trace dir is the one every head's TraceStore writes under
+     *  [statePaths]; the wire taps are [console]'s, the registry HeadServerFactory fills as it builds
+     *  each head, so the route and the heads cannot hold different registries. */
+    internal fun wireVerbReads(
+        srv: ControlServer,
+        topology: BootedTopology,
+        statePaths: StatePaths,
+        console: ConsoleEventPublisher,
+    ) {
+        srv.ports.upstreamModels = topology.path?.let { ModelsWiring.reporter(it) }
+        srv.ports.traceDir = statePaths.traceDir
+        srv.ports.wires = console.wires
+    }
+
     /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory, with
      *  the two knobs read once (both restartRequired). A retention below one day would keep nothing,
      *  including today, so it is read as one. */
@@ -219,6 +236,11 @@ internal class ConsoleEventPublisher(
     /** The bus GET /api/events streams from. ControlPlane assigns this exact instance to the
      *  ControlServer; nothing else constructs one for production. */
     internal val bus: EventBus = EventBus()
+
+    /** V4-239: every head's wire tap, registered by HeadServerFactory as it builds the head and read by
+     *  GET /api/heads/{head}/wire. Here for the reason [slots] is: this is the one console object every
+     *  head's factory already receives. */
+    internal val wires: WireTaps = WireTaps()
 
     /** Session id -> the head its latest turn ran on, in least-recently-used order. */
     private val sessionHeads = LinkedHashMap<String, String>()

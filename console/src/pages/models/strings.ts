@@ -36,6 +36,31 @@ export const S = {
   close: 'Close',
   /** The header key and the panel it opens: `splice add-model` (V4-220). */
   addModels: 'Add models',
+  /** The header key and the panel it opens: `splice models` (V4-239). */
+  compare: 'Compare',
+  compareAgain: 'Compare again',
+  providerLists: 'Provider lists',
+  aboutCompare: 'About compare',
+  provider: 'Provider',
+  verdict: 'Verdict',
+  declaredWindow: 'Declared window',
+  providerWindow: 'Provider window',
+  note: 'Note',
+  agrees: 'Agrees',
+  needsDecision: 'Needs a decision',
+  noList: 'No list',
+  unreadable: 'Unreadable',
+  undeclared: 'Undeclared models',
+  noProviders: 'No providers',
+  /** A row's standing against the provider's list, as `splice models` sorts it. */
+  verdictName: {
+    served: 'Served',
+    capped: 'Capped',
+    'over-ceiling': 'Over ceiling',
+    unserved: 'Unserved',
+    new: 'Discovered',
+    excluded: 'Kept out',
+  },
   noModels: 'No models',
   noHeads: 'No heads',
   catalogPending: 'Catalog unavailable',
@@ -64,6 +89,8 @@ export const H = {
   tiers: 'A grey tier has no model; set its slot in splice.toml.',
   pending: 'This splice version does not serve the model catalog.',
   noHeads: 'Heads declared in splice.toml appear here with their models.',
+  compare: 'Asks each provider for its model list now, with the stored credential.',
+  noProviders: 'Providers declared in splice.toml are compared here.',
 } as const;
 
 export const U = {

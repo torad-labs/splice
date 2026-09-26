@@ -3,7 +3,7 @@
 import { pendingOf as sharedPendingOf, request } from '@shared/api';
 import { poll } from '@shared/lib';
 import { modelsStore } from '../model/store';
-import type { ModelsPayload } from '../model/types';
+import type { ModelsPayload, UpstreamModelsPayload } from '../model/types';
 
 /** The v0.4.0 item that will serve GET /api/models. */
 export const PENDING_MODELS = 'V4-127';
@@ -26,4 +26,12 @@ export async function fetchModels(): Promise<void> {
 
 export function startModelsPolling(intervalMs = 30000): () => void {
   return poll(fetchModels, intervalMs);
+}
+
+/** GET /api/models/upstream (V4-239): each provider's published list against splice.toml, asked of
+ *  the providers on every call, so it runs when the operator presses Compare and never on a poll. It
+ *  returns to the caller and fills no store; a refusal rejects with the daemon's sentence. */
+export async function readUpstreamModels(provider?: string): Promise<UpstreamModelsPayload> {
+  const query = provider === undefined ? '' : `?provider=${encodeURIComponent(provider)}`;
+  return request<UpstreamModelsPayload>(`/api/models/upstream${query}`);
 }

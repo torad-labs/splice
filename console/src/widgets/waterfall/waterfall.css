@@ -21,4 +21,3 @@
 
 .myx-rd { display: grid; gap: var(--space-4); }
 .myx-rd-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-.myx-rd-cmd { font-family: var(--font-mono); font-size: var(--text-2); color: var(--fg); }

@@ -1,0 +1,28 @@
+/* The capture read (V4-239): two keys, the trace's turns, one turn's records and the wire tap's
+   bodies, each body in a scrolling block behind its reveal. Spacing, type size and colour only
+   through the token sheet. */
+
+.myx-cr { display: grid; gap: var(--space-4); }
+.myx-cr-keys { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.myx-cr-list,
+.myx-cr-turn { display: grid; gap: var(--space-3); }
+.myx-cr-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.myx-cr-count { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-muted); }
+.myx-cr-path { font-family: var(--font-mono); font-size: var(--text-1); overflow-wrap: anywhere; }
+.myx-cr-off { font-size: var(--text-2); color: var(--fg-muted); }
+.myx-cr-records { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.myx-cr-record { display: grid; gap: var(--space-2); }
+.myx-cr-body {
+  margin: 0;
+  padding: var(--space-4);
+  max-height: 34vh;
+  overflow: auto;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

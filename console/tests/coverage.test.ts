@@ -133,6 +133,11 @@ describe('coverage wall', () => {
     // A pending verb whose page action is built is answered: the manifest must say so.
     expect(check({ kind: 'verb', name: 'k', disposition: 'pending', where: 'V4-1', action: 'Do x' }))
       .toEqual([{ name: 'k', problem: 'pending but built' }]);
+    // V4-239: a read-only verb that names its action claims the page shows it, so an action still a
+    // row's to build fails as the editable one does; a read-only verb through a built action passes.
+    expect(check({ kind: 'verb', name: 'l', disposition: 'read-only', action: 'Do y', via: '/api/r' }))
+      .toEqual([{ name: 'l', problem: 'verb action not built' }]);
+    expect(check({ kind: 'verb', name: 'm', disposition: 'read-only', action: 'Do x', via: '/api/r' })).toEqual([]);
   });
 
   test('every enumerated key carries a disposition, and none is pending for a route the daemon serves', () => {

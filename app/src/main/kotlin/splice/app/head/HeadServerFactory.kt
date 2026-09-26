@@ -72,7 +72,7 @@ internal class HeadServerFactory(
                 // feature — a head may legitimately run without economics or quota, and the tests
                 // that decline them say so through ONE testFixtures builder — but a DEFAULT let a
                 // caller that simply forgot get the same head as one that chose.
-                stores = headStores(stores, cfg, compactionRecordings),
+                stores = headStores(key, stores, cfg, compactionRecordings),
                 quotaBundle = HeadDeps.HeadQuota(
                     quota = stores.quota,
                     accountPool = stores.accountPool,
@@ -117,6 +117,7 @@ internal class HeadServerFactory(
     /** The head's stores. Its own function since V4-216 added the compaction recordings, which took
      *  [headServerFor] past detekt's method-length ceiling. */
     private fun headStores(
+        key: String,
         stores: HeadStores,
         cfg: SpliceConfig,
         compactionRecordings: CompactionRecordings,
@@ -129,8 +130,9 @@ internal class HeadServerFactory(
         clientWindows = stores.clientWindows,
         // V4-173: the tap exists only for a head whose operator named a count, read
         // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
-        // every other head's bodies unkept.
-        wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) },
+        // every other head's bodies unkept. V4-239: registered, or its old one taken out, in the
+        // console's registry, which GET /api/heads/{head}/wire reads.
+        wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) }.also { console?.wires?.put(key, it) },
         trace = stores.trace,
         compactionRecordings = compactionRecordings,
     )

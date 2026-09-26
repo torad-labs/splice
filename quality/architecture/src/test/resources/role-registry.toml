@@ -477,3 +477,13 @@ names = [
     "WorkerFrameIo",
 ]
 reason = """A config read and a process round trip. GlobalMcpServers (integrations/mcp McpHost.kt) reads the operator's global `mcpServers` object as it is on disk now, each time the MCP host acquires a hosted server (HostedServers.acquire) or reports its status (McpStatus.json), with no deadline around it. WorkerFrameIo (integrations/codemode WorkerChannel.kt, V4-226) is the blocking framed I/O one code-mode deadline covers: a frame written to the worker process and its reply read back, or the ready frame alone at a start. WorkerChannel.within runs it on the IO dispatcher and destroys the worker when the deadline passes. Wired the wrong way round, a slow disk read would be timed against a worker's deadline and kill a healthy worker, and the MCP host would block on a worker's pipe, so they stay two roles."""
+
+# ── 2 names, () -> Path? ──────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Path?"
+dated = "2026-09-26"
+names = [
+    "RunningJar",
+    "TraceDirPort",
+]
+reason = """Two paths whose null means different things and that no caller may substitute. RunningJar (core/config) is the jar this process runs from, null when it runs from classes: doctor's install probes, status's jar line and the cold start that relaunches the same build read it. TraceDirPort (features/turns TraceRoute.kt, V4-239) is the directory every head's TraceStore writes day files under, null when the control plane was never handed it, which GET /api/heads/{head}/trace answers with a named 503. Wired the wrong way round, the trace route would list the jar's directory as a trace dir and the cold start would relaunch a directory, so they stay two roles."""

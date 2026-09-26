@@ -206,11 +206,17 @@ describe('the request drawer', () => {
     expect(out).not.toContain(CAPTURE_ON);
   });
 
-  test('capture running says so, and names the CLI as where bodies are read, since no route serves one', () => {
+  test('capture running says so, and offers the trace and wire reads (V4-239), which read nothing until pressed', () => {
     const out = render(h(RequestDrawer, { capture: state({ running: wire({ enabled: true }) }), onSwitch: () => undefined }));
     expect(out).toContain(CAPTURE_ON);
-    expect(out).toContain('>Read bodies<');
-    expect(out).toContain('splice trace e2e-codex');
+    expect(out).toContain('>Read trace<');
+    expect(out).toContain('>Upstream bodies<');
+    expect(out).not.toContain('splice trace e2e-codex');
+  });
+
+  test('capture off still offers the trace read: the days it recorded stay on disk until retention', () => {
+    const out = render(h(RequestDrawer, { capture: state(), onSwitch: () => undefined }));
+    expect(out).toContain('>Read trace<');
   });
 
   test('a refusal prints the daemon\'s sentence verbatim', () => {

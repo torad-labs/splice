@@ -147,6 +147,36 @@ class ConsoleWiringPinTest {
         )
     }
 
+    /** V4-239: the verbs' three reads. Each port is assigned after construction like every port above,
+     *  so deleting a line leaves its route answering a named 503 forever; and the wire registry must be
+     *  the ONE the heads register their taps in, or the route reads every head's tap as off while the
+     *  heads keep bodies nobody can see. */
+    @Test
+    fun `the control plane wires the models, trace and wire reads to what the heads write`() {
+        val wiring = consoleWiringSource()
+        listOf(
+            "srv.ports.upstreamModels = topology.path?.let { ModelsWiring.reporter(it) }" to
+                "/api/models/upstream answers a named 503 on a daemon that booted from a file",
+            "srv.ports.traceDir = statePaths.traceDir" to
+                "/api/heads/{head}/trace answers a named 503 while the heads write day files",
+            "srv.ports.wires = console.wires" to
+                "/api/heads/{head}/wire reads a registry no head registers in",
+        ).forEach { (line, harm) ->
+            assertTrue(wiring.contains(line), "ConsoleWiring must assign `$line`, or $harm")
+        }
+        assertTrue(
+            controlPlaneSource().contains("ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)"),
+            "ControlPlane must call `ConsoleWiring.wireVerbReads`, or all three reads are unwired while the " +
+                "build stays green",
+        )
+        assertTrue(
+            source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt")
+                .contains(".also { console?.wires?.put(key, it) }"),
+            "HeadServerFactory must register each head's tap (or its absence) in the console's registry as it " +
+                "builds the head",
+        )
+    }
+
     /** The roster is a MAP so an absent key and a present-key-null stay different facts — a head the
      *  wiring never named versus a head whose operator declared no tiers. Collapsing them is what a
      *  per-head nullable list would have done, and the page exists to show the second. */

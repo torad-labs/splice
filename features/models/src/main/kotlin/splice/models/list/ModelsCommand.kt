@@ -4,7 +4,6 @@ package splice.models.list
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepthProbe
 import splice.core.terminal.TerminalOutput
-import splice.core.topology.DialectWires
 import splice.core.util.EnvReader
 
 // why: long model identifiers extend the column rather than being truncated.
@@ -17,20 +16,14 @@ private const val WINDOW_PAD = 9
 private const val NEW_SHOWN = 8
 private const val ALL_FLAG = "--all"
 
-/** A new upstream model is news, not a configuration fault. */
-private val FAULTS = setOf(RosterVerdict.OVER_CEILING, RosterVerdict.UNSERVED)
-
-/** The verdicts of a served model no row declares: discovered into the picker, or kept out of it. */
-private val UNDECLARED = setOf(RosterVerdict.NEW, RosterVerdict.EXCLUDED)
-
-/** Compare configured model rows with their providers, reporting every declared row. */
+/** Compare configured model rows with their providers, reporting every declared row. The comparison
+ *  is [ModelsReporter]'s, the same one GET /api/models/upstream serves; this renders it as text. */
 public class ModelsCommand(
-    private val configuration: ModelConfigurationSource,
+    configuration: ModelConfigurationSource,
     credentials: ModelCredentialSource,
     private val output: TerminalOutput,
 ) {
-    private val probe = ModelsProbe(credentials = credentials)
-    private val diff = RosterDiff()
+    private val reporter = ModelsReporter(configuration, credentials)
 
     /** True when every provider that answered agrees with splice.toml. */
     public fun models(args: List<String>, env: EnvReader): Boolean {
@@ -38,16 +31,18 @@ public class ModelsCommand(
         // with no TERM gets the plain text, byte for byte.
         val report = Report(CliPalette(ColorDepthProbe(env).depth()))
         val wanted = args.firstOrNull { !it.startsWith("-") }
-        val topology = configuration.load()
-        val providers = topology.providers.filterKeys { wanted == null || it == wanted }
-        if (providers.isEmpty()) {
-            output.line("splice: no provider '$wanted' in ${topology.path}")
-            output.line("  ${report.quiet("declared:")} ${topology.providers.keys.joinToString(", ")}")
-            return false
+        return when (val compared = reporter.report(wanted, env)) {
+            is ModelsReport.NoSuchProvider -> {
+                output.line("splice: no provider '${compared.wanted}' in ${compared.path}")
+                output.line("  ${report.quiet("declared:")} ${compared.declared.joinToString(", ")}")
+                false
+            }
+            is ModelsReport.Compared -> {
+                report.header()
+                val all = args.contains(ALL_FLAG)
+                compared.providers.map { report.provider(it, all) }.all { it }
+            }
         }
-        report.header()
-        val all = args.contains(ALL_FLAG)
-        return providers.map { (key, provider) -> report.provider(probe.probe(key, provider, env), all) }.all { it }
     }
 
     /** One command's rendering, in one palette. Each verdict's tone names its state: served rows are
@@ -72,23 +67,23 @@ public class ModelsCommand(
             )
         }
 
-        fun provider(probed: ProbedProvider, all: Boolean): Boolean {
-            val dialect = DialectWires.name(probed.provider.dialect)
+        fun provider(reported: ProviderReport, all: Boolean): Boolean {
             output.line("")
-            output.line("  ${strong(probed.key)} ${quiet("$dialect · ${probed.url}")}")
-            val provider = probed.provider
-            return when (val roster = probed.roster) {
+            output.line("  ${strong(reported.key)} ${quiet("${reported.dialect} · ${reported.url}")}")
+            return when (val roster = reported.roster) {
                 is UpstreamRoster.Unpublished -> true.also { output.line("    ${quiet("–")} ${roster.reason}") }
                 is UpstreamRoster.Unreadable -> false.also { output.line("    ${dead("✗")} ${roster.detail}") }
-                is UpstreamRoster.Published ->
-                    rows(diff.of(provider.models, roster.models, provider.isLocal, provider.discovery), all)
+                is UpstreamRoster.Published -> {
+                    rows(reported.rows, all)
+                    reported.agrees
+                }
             }
         }
 
         /** Every declared row, then the displayed undeclared rows — discovered ones first, then those kept
          *  out — and an explicit remainder count. */
-        private fun rows(rows: List<RosterRow>, all: Boolean): Boolean {
-            val (undeclared, declared) = rows.partition { it.verdict in UNDECLARED }
+        private fun rows(rows: List<RosterRow>, all: Boolean) {
+            val (undeclared, declared) = rows.partition { it.verdict in rosterUndeclared }
             val ordered = undeclared.sortedBy { it.verdict == RosterVerdict.EXCLUDED }
             val shown = if (all) ordered else ordered.take(NEW_SHOWN)
             (declared + shown).forEach(::line)
@@ -97,14 +92,13 @@ public class ModelsCommand(
                 output.line("    ${glyph(RosterVerdict.NEW)} ${quiet(more)}")
             }
             val discovered = undeclared.count { it.verdict == RosterVerdict.NEW }
-            val faults = declared.count { it.verdict in FAULTS }
+            val faults = declared.count { it.verdict in rosterFaults }
             output.line(
                 "    " + quiet(
                     "${declared.size} declared · $discovered discovered · ${undeclared.size - discovered} kept out · " +
                         "$faults need a decision",
                 ),
             )
-            return faults == 0
         }
 
         /** Undeclared rows share the legend; declared rows retain their specific diagnostic. */

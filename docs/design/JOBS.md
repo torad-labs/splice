@@ -88,7 +88,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 
 - Open a model
 - Add a model
-- Compare the declared models with what each provider publishes (V4-239)
+- Compare the declared models with what each provider publishes
 
 ## needs-you
 
@@ -162,8 +162,8 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Open a turn's waterfall
 - Turn a head's request capture on or off
 - Start a stopped head
-- Read a head's captured request bodies (V4-239)
-- Read a head's request and response trace (V4-239)
+- Read the request bodies a head sent upstream
+- Read a head's request and response trace
 
 ## usage
 

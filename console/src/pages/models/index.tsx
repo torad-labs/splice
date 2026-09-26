@@ -17,13 +17,14 @@ import { AddModels } from '@features/add-model';
 import { useViews, ViewTabs } from '@features/views';
 import { Blank, Fault, Key } from '@shared/controls';
 import { ABSENT, fmtInt, fmtTokens, ratio } from '@shared/lib';
-import { Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Section, Stat, StatRow } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import {
   byProvider, columnMax, DEFAULT_VIEWS, entriesOf, findModel, hasRates, headWindows, rateText, tierText, tiersFilled, windowFromText,
 } from './model';
 import type { ColumnMax, HeadWindows, ModelEntry, OpenedModel } from './model';
 import { H, S, U } from './strings';
+import { UpstreamCompare } from './upstream';
 import './models.css';
 
 const PAGE_ID = 'models';
@@ -149,8 +150,10 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const hueOf = useHues();
   const [open, setOpen] = useState<OpenedModel | null>(null);
-  // The add-model panel takes the detail's place: opening one closes the other.
+  // The add-model and compare panels take the detail's place: opening one closes the others.
   const [adding, setAdding] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  const panel = adding || comparing;
 
   const heads = catalog === null || 'pending' in catalog ? [] : catalog.heads;
   const found = catalog === null ? null : findModel(catalog, open);
@@ -180,7 +183,7 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
       <>
         <Figures heads={heads} max={max} />
         <Section title={S.models} info={{ text: H.rates, label: S.aboutRates }}>
-          <div className={opened === null && !adding ? 'myx-md-board' : 'myx-md-board myx-md-board-open'}>
+          <div className={opened === null && !panel ? 'myx-md-board' : 'myx-md-board myx-md-board-open'}>
             <DataTable
               columns={columnsOf(max, !byHead, heads.some((head) => entriesOf(head).some((entry) => hasRates(entry.model))))}
               groups={groups}
@@ -188,6 +191,7 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
               label={S.models}
               onOpen={(entry) => {
                 setAdding(false);
+                setComparing(false);
                 setOpen(opened?.key === entry.key ? null : { head: entry.head.head, id: entry.model.id });
               }}
               openLabel={(entry) => `${S.openModel} ${entry.model.id}`}
@@ -201,8 +205,20 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
                 <AddModels />
               </DetailPanel>
             )}
+            {/* `splice models` (V4-239): each provider's published list, read when Compare is pressed. */}
+            {!comparing ? null : (
+              <DetailPanel
+                title={S.providerLists}
+                label={S.providerLists}
+                status={<InfoTip text={H.compare} label={S.aboutCompare} />}
+                onClose={() => setComparing(false)}
+                closeLabel={S.close}
+              >
+                <UpstreamCompare />
+              </DetailPanel>
+            )}
             {/* Unmounted at rest: no track and no empty panel until a model is opened. */}
-            {opened === null || adding ? null : (
+            {opened === null || panel ? null : (
               <DetailPanel
                 title={opened.model.id}
                 label={S.detail}
@@ -228,10 +244,21 @@ export function ModelsBoard({ catalog, topology = null, sample }: {
             {heads.length === 0 ? null : (
               <Key onClick={() => {
                 setOpen(null);
+                setComparing(false);
                 setAdding(true);
               }}
               >
                 {S.addModels}
+              </Key>
+            )}
+            {heads.length === 0 ? null : (
+              <Key onClick={() => {
+                setOpen(null);
+                setAdding(false);
+                setComparing(true);
+              }}
+              >
+                {S.compare}
               </Key>
             )}
             {sample === undefined ? null : <Badge tone="neutral">{S.sample}</Badge>}

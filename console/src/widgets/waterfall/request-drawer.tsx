@@ -1,5 +1,4 @@
-// The request drawer: a head's body-capture switch, and what the console can say about a turn's
-// bodies.
+// The request drawer: a head's body-capture switch, and what the head recorded, read on demand.
 //
 // It lives here, beside the waterfall, because it is part of a turn's detail and the turns page
 // renders it beside the perf row (FEATURES.md 4.9); the logs page opens the same drawer for the head
@@ -7,12 +6,15 @@
 // the operator did not ask for, and the console says when it is on).
 //
 // WHAT THE DAEMON SERVES, AND SO WHAT THIS PRINTS. GET/PUT /api/heads/{head}/capture carry the
-// head's trace SETTINGS and nothing else (CaptureRoutes.captureJson): no route serves a captured
-// body, so the drawer never frames one. A write lands in splice.toml and runs after the daemon's
-// next restart, which the drawer prints beside the running value rather than flipping the switch
-// to a state the daemon is not in. Each state is a badge (the 2026-09-25 voice ruling).
+// head's trace SETTINGS and nothing else (CaptureRoutes.captureJson). A write lands in splice.toml
+// and runs after the daemon's next restart, which the drawer prints beside the running value rather
+// than flipping the switch to a state the daemon is not in. Each state is a badge (the 2026-09-25
+// voice ruling). What the head recorded is read only when the operator asks (V4-239, the
+// capture-read feature): GET /api/heads/{head}/trace for its trace files, which serves a body only
+// for the one turn opened, and GET /api/heads/{head}/wire for its wire tap.
 import { captureView } from '@entities/perf';
 import type { CaptureState } from '@entities/perf';
+import { CaptureRead } from '@features/capture-read';
 import { Fault, Flag } from '@shared/controls';
 import { fmtInt } from '@shared/lib';
 import { Badge, InfoTip, KeyValue } from '@shared/ui';
@@ -60,13 +62,12 @@ export function RequestDrawer({ capture, error = null, onSwitch }: {
         rows={[
           [S.retention, `${settings.retention_days} ${U.days}`],
           [S.bodyCap, `${fmtInt(settings.max_body_chars)} ${U.chars}`],
-          // Bodies exist only while capture runs, and they stay on the operator's disk: the daemon's
-          // own pointer for reading them is its CLI (DoctorTraceChecks), because no route serves one.
-          ...(view.running ? [[S.readWith, <code key="cmd" className="myx-rd-cmd">{`splice trace ${settings.head}`}</code>] as const] : []),
         ]}
       />
       {capture.refused === null ? null : <Fault message={capture.refused} />}
       {error === null ? null : <Fault message={error} />}
+      {/* Keyed by head: one head's reads never show under another's (V4-301). */}
+      <CaptureRead key={settings.head} head={settings.head} capturing={view.running} />
     </div>
   );
 }

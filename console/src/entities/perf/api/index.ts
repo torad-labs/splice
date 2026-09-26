@@ -2,7 +2,7 @@
 // rendering. The client helper
 // carries the management key, the 401 lockout and the error envelope (CONTRACTS.md 8), so nothing
 // here re-implements any of them.
-import { pendingOf as routePendingOf, request } from '@shared/api';
+import { MgmtError, pendingOf as routePendingOf, request } from '@shared/api';
 import type { HeadsPayload } from '@shared/api';
 import { poll, readFor } from '@shared/lib';
 import { afterRead, afterWrite } from '../model/capture';
@@ -16,6 +16,10 @@ import type {
   PerfSummaryPayload,
   PerfTurnsWire,
   PerfWindowLabel,
+  TraceListWire,
+  TraceTurnWire,
+  WireRead,
+  WireTapWire,
 } from '../model/types';
 
 /** The v0.4.0 item that will serve GET /api/perf/turns. */
@@ -175,5 +179,32 @@ export async function putCapture(head: string, enabled: boolean): Promise<void> 
     // failed read is reported beside it rather than hidden behind a stale switch.
     if (mine !== null) captureStore.land(head, afterWrite(mine, write, mine.running));
     captureStore.fail(head, messageOf(err));
+  }
+}
+
+// V4-239: what `splice trace` and `splice wire` print, read when the operator asks and never polled.
+// Each returns to its caller and holds nothing in a store: the reads carry the user's conversation,
+// so they live as long as the drawer that asked. A refusal rejects with the daemon's sentence.
+
+const headPath = (head: string, leaf: string): string => `/api/heads/${encodeURIComponent(head)}/${leaf}`;
+
+/** GET /api/heads/{head}/trace: the newest turns on the head's trace files, with no body. */
+export async function readTrace(head: string): Promise<TraceListWire> {
+  return request<TraceListWire>(headPath(head, 'trace'));
+}
+
+/** GET /api/heads/{head}/trace?turn=ID: one turn's records, bodies included. */
+export async function readTraceTurn(head: string, turn: string): Promise<TraceTurnWire> {
+  return request<TraceTurnWire>(`${headPath(head, 'trace')}?turn=${encodeURIComponent(turn)}`);
+}
+
+/** GET /api/heads/{head}/wire: the head's kept upstream bodies, or the daemon's sentence that its tap
+ *  is off (409), which is a state and not a failure. */
+export async function readWire(head: string): Promise<WireRead> {
+  try {
+    return { tap: await request<WireTapWire>(headPath(head, 'wire')) };
+  } catch (err) {
+    if (err instanceof MgmtError && err.status === 409) return { off: err.message };
+    throw err;
   }
 }

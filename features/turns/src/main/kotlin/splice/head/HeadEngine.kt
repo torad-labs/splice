@@ -33,6 +33,7 @@ import io.ktor.server.sse.SSE
 import io.netty.channel.socket.SocketChannelConfig
 import splice.core.util.LogSink
 import splice.head.admission.HeadAdmission
+import splice.head.wire.WIRE_TAP_OFF
 import splice.upstream.Provider
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -52,10 +53,6 @@ private const val RUNNING_LIMIT = 2048
 // (review 2026-07-22); 60s already carries 6x headroom over the default-10s load-test
 // truncations (52/1000 stream tails).
 private const val WRITE_TIMEOUT_S = 60
-
-/** V4-173: the 404 body of GET /wire on a head whose tap is off. */
-private const val WIRE_TAP_OFF =
-    """{"error":"wire tap is off for head KEY: set [heads.KEY.overrides] wireTap = N (bodies to keep) and restart"}"""
 
 /** The head's Ktor/Netty listener: POST /v1/messages EXACTLY, POST /v1/messages/count_tokens,
  *  GET /v1/models (discovery-wrapped) and GET /health {ok,port,version}. */

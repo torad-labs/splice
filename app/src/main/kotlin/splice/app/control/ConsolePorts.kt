@@ -12,14 +12,17 @@ import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.events.bus.EventBus
+import splice.head.wire.WireTaps
 import splice.lifecycle.restart.DaemonSupervised
 import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeStatus
+import splice.models.list.ModelsReporter
 import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
 import splice.sessions.teams.TeamStore
 import splice.usage.alerts.AlertStore
 import splice.usage.budgets.BudgetStore
+import java.nio.file.Path
 
 /** The console's injected ports: everything the daemon wires into [ControlServer] AFTER it is
  *  constructed, held in one place because they are one idea repeated nine times.
@@ -143,4 +146,16 @@ public class ConsolePorts {
     /** V4-220 item 3: `splice add` as the console runs it, behind /api/add. Assigned by ConsoleWiring;
      *  null answers every add route with a named 503, never an empty profile list. */
     public var add: AddConsole? = null
+
+    /** V4-239: `splice models`' comparison, behind GET /api/models/upstream, over the same splice.toml
+     *  and stored credentials the verb reads. Null answers a named 503, never a roster with no rows. */
+    public var upstreamModels: ModelsReporter? = null
+
+    /** V4-239: the trace directory every head's TraceStore writes, behind GET /api/heads/{head}/trace.
+     *  Null answers a named 503, never "no turns traced". */
+    public var traceDir: Path? = null
+
+    /** V4-239: the daemon's ONE wire-tap registry, the one HeadServerFactory registers each head's tap
+     *  in, behind GET /api/heads/{head}/wire. Null answers a named 503, never "the tap is off". */
+    public var wires: WireTaps? = null
 }

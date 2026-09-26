@@ -15,8 +15,9 @@ import java.nio.file.Path
 internal const val TRACE_USAGE =
     "usage: splice trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]"
 
-// why: a screenful of turns when no --last is given; the whole day is a jq job, not a table
-private const val DEFAULT_LAST = 20
+// why: a screenful of turns when no --last is given; the whole day is a jq job, not a table. The
+// console's list takes the same default (TraceRoute).
+internal const val DEFAULT_LAST = 20
 
 internal data class TraceOpts(
     val head: String,
@@ -51,9 +52,7 @@ public class TraceCommand(
             .getOrElse { failure ->
                 return fail("cannot read ${opts.head}'s trace under $traceDir: ${SafeFailureText.render(failure)}")
             }
-        val selected = read.turns
-            .filter { opts.session == null || it.session?.startsWith(opts.session) == true }
-            .filter { opts.turn == null || it.id == opts.turn }
+        val selected = read.selected(opts.session, opts.turn)
         return when {
             opts.turn != null && selected.isEmpty() -> fail("no turn ${opts.turn} in ${opts.head}'s trace")
             opts.json -> view.printJson(selected.takeLast(opts.last))

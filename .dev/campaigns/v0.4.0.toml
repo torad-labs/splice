@@ -7215,3 +7215,11 @@ title = "A symlinked splice.toml stays a link when splice edits it (console, 202
 files = ["core/src/main/kotlin/splice/core/topology/TopologyWriter.kt", "features/configuration/src/main/kotlin/splice/configuration/add/AddWrite.kt", "core/src/test/kotlin/splice/core/topology/TopologyWriterOwnerOnlyTest.kt", "features/configuration/src/test/kotlin/splice/configuration/add/AddWriteOwnerOnlyTest.kt"]
 status = "todo"
 verify = "red first: a console edit and a splice add through a symlinked splice.toml leave the path a regular file today; green: the path is still the same link, its target holds the new content at 0600, and the backup sits beside the link, not the target; bun tools/gate slot V4-279 -- :core:test :core:detekt :features-configuration:test :features-configuration:detekt --continue"
+
+[[items]]
+id = "V4-280"
+phase = "release"
+title = "A daemon start that stops holding its files owner-only fails a test (console, 2026-09-26): secureStateDirs and secureConfig are tested only by calling DaemonProcess directly, so a refactor of Main.runDaemon that drops either call leaves every store and splice.toml at the umask while every test stays green. A test drives the start path itself and finds a 0644 state dir and a 0644 splice.toml tightened"
+files = ["app/src/main/kotlin/splice/app/Main.kt", "app/src/test/kotlin/splice/app/DaemonStateDirsTest.kt"]
+status = "todo"
+verify = "two mutants, each red: runDaemon without the secureStateDirs call, and runDaemon without the secureConfig call; green: bun tools/gate slot V4-280 -- :app:test :app:detekt --continue"

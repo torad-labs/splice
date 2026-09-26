@@ -7899,3 +7899,4 @@ verify = "red: org-secret-scan run 36263173459 on ad9b6bb8e, job supplementary, 
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T19:28:56.456Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T19:28:56Z
+# [2026-09-26] RECEIPT cmd="bash scratch/step.sh (org-secret-scan supplementary step, verbatim) over git ls-files and over git diff 7b39c446..HEAD plus the allowlist files; bun tools/gate allowlist --write && --check" exit=0 tests=9 touched=.github/secret-scan-allow.toml,.github/secret-scan-allow.txt tail="lay of the step (verbatim from run 36263173459): PR diff scope and whole tree, 1 finding, UpstreamModelsRouteTest.kt:80. GREEN: both scopes clean with the regenerated allowlist (allowlist --check exit 0); the new line suppresses exactly 1 of the tree's 15 raw hits. PLANTS: other password, other user, credential appended, credential prefixed, other userinfo URL all caught; the exact fixture exempt."

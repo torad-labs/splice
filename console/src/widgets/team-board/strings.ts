@@ -97,4 +97,5 @@ export const U = {
   without: 'without',
   /** After the count of turns a cost figure leaves out: their model had no rate card. */
   unpriced: 'turns unpriced',
+  unpricedOne: 'turn unpriced',
 } as const;

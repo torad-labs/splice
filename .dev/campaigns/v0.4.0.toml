@@ -8046,3 +8046,11 @@ title = "A row whose fence is empty, because its deliverable lives outside the r
 files = [".dev/campaigns/ledger.ts"]
 status = "todo"
 verify = "red first: the ledger's own selftest gains a case, an empty-fence row receipting --touched - reaches done, failing on today's ledger.ts (quote the refusal), and its twin, a row that fences a file receipting --touched -, stays refused; green: both cases pass, selftest and campaignCliSelftestCanary green (real ledgers byte-identical), then V4-331's receipt files and it reaches done"
+
+[[items]]
+id = "V4-333"
+phase = "release"
+title = "The console reads cleanly in the operator's look (V4-331's renders, 2026-09-26): Needs you shows one stopped head as ONE item, not three (mockchat2 'Not running', daemon/heads 'still converging', daemon/head mockchat2 ':54791 not listening'; needs-you/model.ts:277-283 folds only a head's auth/<head> check into its head), the docs row carries no stray '..' after its Sessions button, and a Sessions lane card is never clipped at the right edge at 1536px (billing-api's 'Live' cut)"
+files = ["console/src/pages/needs-you/", "console/src/pages/sessions/", "console/tests/"]
+status = "todo"
+verify = "red first: a needs-you model test with one stopped head yields 3 items on today's tree (quoted) and 1 after, the head's item keeping its Start fix and naming what the doctor checks said; a render or DOM test for the Sessions row finds no text node '..' beside the button; the lane layout keeps every card inside the lanes' box at 1536px (a layout test or an agent-browser frame at 1536x1024 from V4-331's seed); console tsc, eslint and vitest green; the operator-look renders re-shot from V4-331's seed.py"

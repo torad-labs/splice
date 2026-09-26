@@ -6624,8 +6624,11 @@ id = "V4-227"
 phase = "release"
 title = "A launch with no API key names splice key set, and no user-facing line asks for a restart it does not need (CPO triage 2026-09-25 of the V4-224 follow-up). A launch with no key tells the user to run 'splice key set <ENV_NAME>', which takes effect on the next request with no restart (KeyCommand.kt:66-67); export-and-restart stays as the second option for keys kept in the environment. Same class: the paste-a-key hook stores the key with 'splice key set --stdin' and then runs 'nohup splice restart &' (LoginHookScripts.kt:352-356), dropping every head's in-flight turns and announcing a restart for nothing; it stores the key and stops. Sweep the other user-facing 'splice restart' lines (CliSignIn.kt:40, AddCommand.kt:121 and :127, the doctor's FIX_RESTART) and keep only those that need a restart, each with its reason."
 files = ["features/launch/src/main/kotlin/splice/launch/recipe/LaunchResponse.kt", "integrations/claude-code/src/main/kotlin/splice/client/login/LoginHookScripts.kt", "app/src/main/kotlin/splice/app/cli/auth/CliSignIn.kt", "features/configuration/src/main/kotlin/splice/configuration/add/AddCommand.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorAuthVerdict.kt", "app/src/main/kotlin/splice/app/cli/auth/KeyCommand.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a test that the missing-key warning names splice key set; then on a live daemon: splice key set, the next launch serves a turn, the daemon's pid is unchanged and the warning no longer prints. If the warning keeps printing until a restart (KeyCommand's 'restart refreshes status'), that is the bug to fix, not the wording. CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T20:38:12.713Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T20:38:12Z
 
 [[items]]
 id = "V4-228"

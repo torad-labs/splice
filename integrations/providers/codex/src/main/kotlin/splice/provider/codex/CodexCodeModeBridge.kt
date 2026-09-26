@@ -58,8 +58,16 @@ public data class CodeModeBridgeConfig(
     val cellEvictionFloor: Duration = 2.minutes,
 )
 
-/** Codex-only protocol bridge. It schedules client tools but never executes them. */
-public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
+// why: how often a head's code-mode records are swept with no turn (V4-287). A record goes within
+// this long of its ttl, and a parked cell within this long of cellIdleTimeout (30 min).
+private val SWEEP_INTERVAL: Duration = 5.minutes
+
+/** Codex-only protocol bridge. It schedules client tools but never executes them. [sweepInterval] is
+ *  how often its records are swept on a timer (V4-287), shorter only in a test. */
+public class CodexCodeModeBridge(
+    private val config: CodeModeBridgeConfig,
+    sweepInterval: Duration = SWEEP_INTERVAL,
+) {
     public data class Turn(
         val sessionId: String,
         val conversationKey: String,
@@ -77,7 +85,7 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
 
     private val json = Json { encodeDefaults = true }
     private val wire = CodexCodeModeWire(json, config.log)
-    private val registry = CodexCodeModeRegistry(config, json)
+    private val registry = CodexCodeModeRegistry(config, json, sweepInterval)
     private val validation = CodexCodeModeValidation(config)
     private val machine = CodexCodeModeMachine(config, registry, validation)
     private val run = CodeModeRuntimeRun(config.runtimes)
@@ -90,6 +98,7 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
         require(config.ttl.isPositive()) { "code-mode ttl must be positive" }
         require(config.cellIdleTimeout.isPositive()) { "code-mode cellIdleTimeout must be positive" }
         require(config.cellEvictionFloor.isPositive()) { "code-mode cellEvictionFloor must be positive" }
+        require(sweepInterval.isPositive()) { "code-mode sweepInterval must be positive" }
         require(config.maxSourceChars > 0) { "code-mode maxSourceChars must be positive" }
         require(config.maxOutputChars > 0) { "code-mode maxOutputChars must be positive" }
         require(config.maxCalls > 0) { "code-mode maxCalls must be positive" }

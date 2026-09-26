@@ -350,14 +350,16 @@ credential is written 0600. splice also writes into the Claude Code config direc
 "Your umask" means the file gets your account's default permissions, usually readable by other
 local accounts unless its directory prevents it. The last column names the source file that writes
 it; a check in the build (`DiskWritesLawTest`) fails when any source file writes a file this section
-does not name.
+does not name, and when a file it names gains a write the check has not recorded, so each new write is
+read against its row. It reads Kotlin sources, so it misses a write through a library handed a path,
+a shell redirect to an unquoted or literal path, reflection, and files written by programs splice starts.
 
 ### Content from your sessions, kept with nothing turned on
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
 | `~/.splice/state/activity/activity-<day>.jsonl` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works | Only you | Today and yesterday (UTC), so the Teams page can show your whole local day: a day's file is deleted at the second UTC midnight after it (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped | `ActivityStore.kt` |
-| `~/.splice/state/<head>-code-mode.json` | A Codex head's code mode: the model's scripts, tool calls with their arguments and results, script output and the model's reasoning summaries | Only you (0600) | Up to 24 hours per record, 128 records at most. The whole file goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml` | `CodexCodeModeStore.kt` |
+| `~/.splice/state/<head>-code-mode.json` | A Codex head's code mode: the model's scripts, tool calls with their arguments and results, script output and the model's reasoning summaries | Only you (0600) | 24 hours after a record's last use, checked every 5 minutes whether or not the head is used again, 128 records at most. The whole file goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml` | `CodexCodeModeStore.kt` |
 | `~/.splice/state/compactions/<head>/<hash>.json` | The answer of a finished compaction whose client hung up, kept so its retry gets the same bytes | Only you (0600) | Until the retry takes it, 2 hours at most: an expired one goes at the head's next save or the next daemon start, and a head removed from `splice.toml` loses the whole directory at the next start | `CompactionRecordings.kt` |
 | `~/.splice/logs/daemon.log` (and `daemon.log.1`) | The daemon's log. Most lines are about the daemon itself, but some quote short pieces of content: an upstream error body (up to 200 characters), a provider's failure message, a stream frame splice could not read, and the activity labels | Only you | Rotated at 64 MB, one older copy kept | `DaemonBoundary.kt` |
 | `~/.splice/logs/daemon-boot.log` (and `.1`) | The JVM's own output when splice starts the daemon itself (`splice dashboard`, `splice restart` or a launch's cold start): lines from before the logger exists, a boot crash's message and stack, JVM warnings, and any line `daemon.log` could not take. Under `splice.service` it is not written; that output goes to the systemd journal | Only you | Rolled at the next start once past 1 MB, one older copy kept | `DaemonLaunch.kt`, `splice-launch` |

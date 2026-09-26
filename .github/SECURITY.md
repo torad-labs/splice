@@ -58,5 +58,6 @@ other's envelopes; staleness eviction is deliberately unscoped, which can only o
 miss), never cross-inject. Set `quirks = { reasoning_cache = false }` to disable.
 
 Code mode is separate from this cache: its records keep the model's reasoning summaries in
-plaintext on disk for up to 24 hours. [What splice keeps on your disk](../README.md#what-splice-keeps-on-your-disk)
+plaintext on disk until 24 hours after the record's last use, checked every 5 minutes whether or not
+the head is used again. [What splice keeps on your disk](../README.md#what-splice-keeps-on-your-disk)
 lists every file splice writes, what it holds and how long it stays.

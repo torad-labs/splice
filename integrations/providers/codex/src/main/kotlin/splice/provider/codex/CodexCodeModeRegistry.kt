@@ -1,4 +1,10 @@
 // NEW: retains bounded code-mode records, live cells, expiry markers, and stop generations.
+//
+// V4-287: while it keeps any record, the registry sweeps every [sweepInterval] on a timer
+// ([CodeModeTimedSweep]), so a record goes within one interval of its ttl whether or not another turn comes. The timer
+// stops once no record is kept, and the next record, or a daemon start that finds records on disk,
+// starts it again. A head stop does not stop it: the bridge and its records outlive the stop
+// (Provider.onHeadStop), and so does the promise that the records go.
 package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
@@ -6,10 +12,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
+import kotlin.time.Duration
 
 internal class CodexCodeModeRegistry(
     private val config: CodeModeBridgeConfig,
     json: Json,
+    private val sweepInterval: Duration,
 ) {
     private val monitor = Any()
     private val store = CodexCodeModeStore(config.stateFile, json)
@@ -20,11 +28,20 @@ internal class CodexCodeModeRegistry(
     private val admissions = mutableMapOf<String, Long>()
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history)
     private var generation = 0L
+    private val timed = CodeModeTimedSweep(
+        monitor,
+        sweeper,
+        records,
+        { store.save(records, history.entries) },
+        config,
+        sweepInterval,
+    )
 
     init {
         synchronized(monitor) {
             val changed = sweeper.sweep() or history.trim(records, config.clock.millis())
             if (changed) store.save(records, history.entries)
+            timed.arm()
         }
     }
 
@@ -81,6 +98,7 @@ internal class CodexCodeModeRegistry(
         history.entries.clear()
         history.entries.addAll(candidateHistory.entries)
         admissions[record.id] = generation
+        timed.arm()
         true
     }
 
@@ -134,14 +152,14 @@ internal class CodexCodeModeRegistry(
             }
         }
 
+    /** Every live cell closes and its record is lost. The records keep their updatedAt, the time of
+     *  their last use: a head stop is not a use (V4-287: a stop 23 hours on kept a record ~47 hours). */
     fun onHeadStop() = synchronized(monitor) {
         generation++
-        val now = config.clock.millis()
         records.filterNot(CodeModeRecord::terminal).forEach { record ->
             cells.remove(record.id)?.close()
             record.phase = CodeModePhase.LOST
             record.error = "completed client call ids=${record.results.keys}; source was not rerun"
-            record.updatedAt = now
         }
         cells.values.forEach(CodeModeCell::close)
         cells.clear()

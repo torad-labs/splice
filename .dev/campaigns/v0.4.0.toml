@@ -219,6 +219,7 @@
 # 2026-09-26 INSTALL train 25: 77d400c1a built from a detached worktree, CI gate run 36204593569 success on that sha, jar sha256 b9e07281aa041df3eb25efe65411c4eb1cf9663866c7e1ceae735fcc8eeafac3 equals /proc/2126008/fd/4, backup splice.jar.bak-20260925-pre-77d400c1a. Restarted with 'systemctl --user restart splice.service' instead of splice restart (repo CLAUDE.md install step 5), because splice restart waits out the unit's restart backoff until V4-243 lands; NRestarts 0 after it.
 # 2026-09-26 Train 27 (train/v040-27 off 795a82b6d) carries #301 (V4-230, doctor reads its own daemon in process; gate run 36207661469 on f97ee5525), #337 (V4-244, the session figure exact for any length; run 36206745462 on 4567743ba), #340 (V4-255, V4-266, V4-267, V4-268; run 36214883614 on 962b7e8e2) and #342 (V4-248, the prompt-cache write reaches the client; run 36214599321 on c81508ae8). All four merged clean. Held back: V4-263 and V4-265, whose test fixtures carry take 2's session and tool ids and go back to console to be made synthetic before anything is pushed; #341 (V4-243) re-gates on e1d851cf4. splice-lead.
 # 2026-09-26 Train 27 landed: feat/v0.4.0 fast-forwarded 795a82b6d..d199dfb3a on CI gate run 36216076506 (headSha d199dfb3a, success); #301, #337, #340 and #342 closed as merged, and the local line took the train as 6760134b0. Train 28 is forming: #341 (V4-243, re-gating on bf0410ea6 after feat was merged into it: the ()->String group now lists ten names), #345 (V4-263), #346 (V4-265), #347 (V4-264), #349 (V4-269, stacked on #347) and #350 (their changelog). #345 and #346 each carry their synthetic fixture in one commit, so no pushed commit holds a take's session or tool ids. splice-lead.
+# 2026-09-26 INSTALL train 27: d199dfb3a built from a detached worktree (bun install --frozen-lockfile first: a fresh tree has no node_modules and :console:typecheck names that remedy), CI gate run 36216076506 success on that sha, jar sha256 9a3141e4f07b61fb9025e6eefb5db5db91ad2d9fcbb0b286ddb0924aed0f0587 equals /proc/2979366/fd/4, backup splice.jar.bak-20260926-pre-d199dfb3a. Restarted with 'systemctl --user restart splice.service' instead of splice restart (repo CLAUDE.md install step 5), because splice restart waits out the unit's restart backoff until V4-243 (#341) lands; NRestarts 0 after it. splice-lead.
 [campaign]
 id = "v0.4.0"
 title = "splice 0.4.0 — everything but the console: setup, drift warning, perf/sessions data, upgrade, doctor --json, compaction instructions, shared MCP hosting, local models, account pools, code-mode graduation"
@@ -6631,6 +6632,7 @@ files = ["features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/", "app
 status = "todo"
 verify = "red first: a test that holds the daemon's /health past the probe window reads the daemon as not running through /api/doctor today, and running after; the CLI path keeps its probe; CI gate on the train sha."
 # [2026-09-26] Marlin accepted #301 (dispatch 4b205f79, 2026-09-26): 20 fresh loads showed 0 false items at 2db45e638 (jar 14d513a1) under live traffic, the same stack showed 3 of 6 false at 62adef350, and the four in-process read files are byte-identical at the head f97ee5525 (gate run 36207661469). Rides train 27.
+# [2026-09-26] Landed in train 27 as #301 (f97ee5525, gate run 36207661469 success): feat/v0.4.0 fast-forwarded to d199dfb3a on CI gate run 36216076506 (headSha d199dfb3a, success). splice-lead.
 
 [[items]]
 id = "V4-231"
@@ -6759,6 +6761,7 @@ title = "The status line's session figure is exact for a session of any length (
 files = ["features/usage/src/main/kotlin/splice/usage/statusline/SessionCost.kt", "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt", "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"]
 status = "todo"
 verify = "red first: a session with more rows than the tail holds prints a lower bound today; green after: the same session prints its exact total with no mark, a session whose rows predate the total keeps the mark, and the per-row pricing matches V4-240's; CI gate on the train sha."
+# [2026-09-26] Landed in train 27 as #337 (4567743ba, gate run 36206745462 success): feat/v0.4.0 fast-forwarded to d199dfb3a on CI gate run 36216076506 (headSha d199dfb3a, success). splice-lead.
 
 [[items]]
 id = "V4-245"
@@ -6797,6 +6800,7 @@ status = "in_flight"
 verify = "red first: ClientCacheWriteTest fails on the base with the write read as input, 3 of 3; green after, the scaled row keeping its factor on all three buckets; the oracle replay unchanged (its fixtures are Responses turns, which report no write); CI gate on the train sha."
 # [2026-09-26] Red first on 77d400c1a: bun tools/gate slot v4248red2 -- :features-turns:test --tests splice.head.usage.ClientCacheWriteTest, exit 1, 3 of 3 FAILED: 'expected: <4> but was: <16584>' (a turn that writes the prefix), 'expected: <4> but was: <52>' (a turn that reads the prefix and writes its tail), 'expected: <20480> but was: <51200>' (a 500k row scaled by 256k/500k).
 # [2026-09-26] origin fix/v4-248-client-cache-write at c81508ae8: ClientCacheWriteTest (3 tests: write only, read plus write, scaled grok-4.6[500k]) green in a local gradle run. No PR or CI gate yet; rides train 27.
+# [2026-09-26] Landed in train 27 as #342 (c81508ae8, gate run 36214599321 success): feat/v0.4.0 fast-forwarded to d199dfb3a on CI gate run 36216076506 (headSha d199dfb3a, success). splice-lead.
 
 [[items]]
 id = "V4-249"
@@ -6859,6 +6863,7 @@ verify = "red first: a test where the install throws InstallRefused(\"launch shi
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T02:59:30.243Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T02:59:30Z
+# [2026-09-26] Landed in train 27 as #340 (962b7e8e2, gate run 36214883614 success): feat/v0.4.0 fast-forwarded to d199dfb3a on CI gate run 36216076506 (headSha d199dfb3a, success). splice-lead.
 
 [[items]]
 id = "V4-256"
@@ -7011,7 +7016,8 @@ claimed_at = "2026-09-26T04:03:28.555Z"
 id = "V4-270"
 phase = "release"
 title = "The claude profile prices every model it lists (splice-website, 2026-09-26). AddProfileCatalog's claude profile carries a rate card only for claude-opus-5-5 (V4-240); claude-fable-5-1, claude-sonnet-5 and claude-haiku-4-5 have none. Claude Code takes its small-fast turns on Haiku 4.5, so a default claude-splice install shows '1 turn unpriced' on a team's cost (V4-264) and the projects page (V4-269) after any such turn, and every turn on /model sonnet or fable is unpriced. FIX: each listed model carries its API card from Anthropic's published pricing page (platform.claude.com/docs/en/about-claude/pricing, read date cited in the comment as V4-240 does), with the same cache-write convention as Opus 5.5 (the 1-hour write rate, because this profile forwards a subscriber login and Claude Code asks for the 1-hour cache on it). The example config follows if it carries rates. The price comes from the page, never from memory."
-files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "features/configuration/src/test/kotlin/**", "app/src/main/resources/splice.example.toml", "app/src/test/kotlin/splice/app/ExampleConfigTest.kt", ".dev/restructure/capabilities.tsv", "CHANGELOG.md"]
+files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "features/configuration/src/test/kotlin/**", "app/src/main/resources/splice.example.toml", "app/src/test/kotlin/splice/app/ExampleConfigTest.kt", ".dev/restructure/capabilities.tsv"]
 status = "todo"
 verify = "red first: a test that every model in the claude profile carries rates fails today naming claude-fable-5-1, claude-sonnet-5 and claude-haiku-4-5; green after, with each rate pinned to the pricing page's figure and its read date; a team tally with one Haiku turn prices it (no unpriced count); CI gate on the train sha."
 # [2026-09-26] amend by=unattributed: files were ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "app/src/main/resources/splice.example.toml", "app/src/test/kotlin/splice/app/ExampleConfigTest.kt"]
+# [2026-09-26] amend by=unattributed: files were ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "features/configuration/src/test/kotlin/**", "app/src/main/resources/splice.example.toml", "app/src/test/kotlin/splice/app/ExampleConfigTest.kt", ".dev/restructure/capabilities.tsv", "CHANGELOG.md"]

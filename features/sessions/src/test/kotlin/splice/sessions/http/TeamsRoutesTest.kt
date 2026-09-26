@@ -6,6 +6,7 @@ package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -18,9 +19,14 @@ import splice.core.util.WallClock
 import splice.sessions.activity.MessageEdge
 import splice.sessions.query.SessionHead
 import splice.sessions.transcript.SentTexts
+import java.nio.file.Files
 import java.nio.file.Path
 
 private const val DAY = 86_400_000L
+
+/** A session outside the team and the registry. */
+private const val STRANGER = "e5e5e5e5-0000-4000-8000-000000000005"
+
 private const val B1 = """[{"id":"b1","role":"builder","head":"codex"}]"""
 
 class TeamsRoutesTest {
@@ -129,10 +135,10 @@ class TeamsRoutesTest {
     }
 
     @Test
-    fun `edges are the members' own, directed internal, out and in, a name resolved to its address`() {
+    fun `edges are the members' own, directed internal, out and in, a stored name reported as its session's address`() {
         val id = rig.team().id
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", AT, "toolu_a"))
-        rig.stores.edges.record(MessageEdge(OLD_BUILDER, "lead", AT + 1, "toolu_b"))
+        rig.stores.edges.record(MessageEdge(OLD_BUILDER, "lead", AT + 1, "toolu_b", LEAD))
         rig.stores.edges.record(MessageEdge(BUILDER, "uds:/run/3.sock", AT + 2, "toolu_c"))
         rig.stores.edges.record(MessageEdge(OUTSIDER, "uds:/run/1.sock", AT + 3, "toolu_d"))
         rig.stores.edges.record(MessageEdge(OUTSIDER, "someone", AT + 4, "toolu_e"))
@@ -155,11 +161,43 @@ class TeamsRoutesTest {
     }
 
     @Test
+    fun `a name is the session that held it when the edge was stored, never whoever holds it at read`() {
+        val id = rig.team().id
+        // Rows as the store wrote them: the name the call named, and the one live session that held it
+        // then, if any. The registry has LEAD holding "lead" now.
+        val row = { from: String, to: String, at: Long, tool: String, held: String? ->
+            val holder = held?.let { ""","to_session":"$it"""" } ?: ""
+            """{"from":"$from","to":"$to","at":$at,"id":"$tool"$holder}"""
+        }
+        val stored = listOf(
+            row(OUTSIDER, "lead", AT, "toolu_a", BUILDER),
+            row(OUTSIDER, "lead", AT + 1, "toolu_b", STRANGER),
+            row(BUILDER, "lead", AT + 2, "toolu_c", null),
+            row(LEAD, "gpt", AT + 3, "toolu_d", STRANGER),
+            row(LEAD, "code-review", AT + 4, "toolu_e", null),
+            row(LEAD, "main", AT + 5, "toolu_f", null),
+            row(LEAD, "uds:/run/2.sock", AT + 6, "toolu_g", null),
+        )
+        Files.write(Files.createDirectories(tmp.resolve("activity")).resolve("edges-2026-09-18.jsonl"), stored)
+        val edges = rig.json(routes().reads.edges(id).body).getValue("edges").jsonArray.map { it.jsonObject }
+        val fields = listOf("from", "to", "direction", "from_slot", "to_slot")
+        assertEquals(
+            listOf(
+                listOf(OUTSIDER, "uds:/run/2.sock", "in", null, "b1"),
+                listOf(LEAD, "gpt", "out", "lead", null),
+                listOf(LEAD, "uds:/run/2.sock", "internal", "lead", "b1"),
+            ),
+            edges.map { edge -> fields.map { edge.getValue(it).jsonPrimitive.contentOrNull } },
+            "the name reached BUILDER, reported at its address; a non-member's is out; one nobody held, none",
+        )
+    }
+
+    @Test
     fun `chat is one UTC day of team edges with each text or the reason it has none`() {
         val id = rig.team().id
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", AT, "toolu_a"))
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", AT + 1, "toolu_b"))
-        rig.stores.edges.record(MessageEdge(BUILDER, "lead", AT - DAY, "toolu_y"))
+        rig.stores.edges.record(MessageEdge(BUILDER, "lead", AT - DAY, "toolu_y", LEAD))
         AsyncFileIo.drain()
         val chat = rig.json(routes().reads.chat(id, null).body)
         assertEquals(DAY_START.toString(), chat.getValue("day_start_epoch_millis").jsonPrimitive.content)

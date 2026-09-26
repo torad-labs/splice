@@ -19,7 +19,7 @@ private const val DIRECTION_IN = "in"
 /** What ends an address's scheme (`uds:`): a SendMessage `to` without one is a bare name. */
 private const val ADDRESS_SCHEME_END = ':'
 
-/** One team edge: the stored edge with its `to` resolved, its direction, and the slots at each end. */
+/** One team edge: the stored edge as [Addresses.reported], its direction, and the slots at each end. */
 internal class TeamEdge(
     val edge: MessageEdge,
     val direction: String,
@@ -59,16 +59,13 @@ internal class TeamEdge(
 }
 
 /** A team's members: every session its slots ever held, and the addresses the registry knows for
- *  them, so an edge's `to` (an address or a session name) is matched to a slot. */
+ *  them, so an edge's recipient (the session stored with a name, or an address) is matched to a slot. */
 internal class Members(team: Team, private val records: List<SessionRecord>) {
     val slotOfSession: Map<String, TeamSlot> = team.slots
         .flatMap { slot -> (slot.sessionsHistory + listOfNotNull(slot.session)).map { it to slot } }
         .distinctBy { it.first }
         .toMap()
-    private val addressOfName: Map<String, String> = records
-        .mapNotNull { record -> record.name?.let { name -> record.address?.let { name to it } } }
-        .distinctBy { it.first }
-        .toMap()
+    private val addresses = Addresses(records)
     private val slotOfAddress: Map<String, TeamSlot> = records
         .mapNotNull { record ->
             val slot = record.sessionId?.let(slotOfSession::get)
@@ -80,18 +77,25 @@ internal class Members(team: Team, private val records: List<SessionRecord>) {
     fun headOf(session: String): String? =
         records.firstOrNull { it.sessionId == session }?.head ?: slotOfSession[session]?.head
 
-    /** The edges touching a member, oldest first, `to` resolved to an address where the registry knows
-     *  the name. An edge between two non-members is not the team's. Neither is a call to no session: a
-     *  member's subagent is addressed by a bare name ("code-review") and answers its parent as "main",
-     *  and that traffic is the member's own tool work, never a hand-off (V4-263). A session is a member,
-     *  or an address, which carries its scheme (`uds:`, SessionRegistry.kt's `address`). */
+    /** The edges touching a member, oldest first, each as [Addresses.reported]. An edge between two
+     *  non-members is not the team's. A name reached the session that held it when the edge was stored,
+     *  never whoever holds it now (V4-252): a board read after the name moved still files the call where
+     *  it went. A name no session held then is a call to no session: a member's subagent is addressed by
+     *  a bare name ("code-review") and answers its parent as "main", and that traffic is the member's own
+     *  tool work, never a hand-off (V4-263). An address carries its scheme (`uds:`, SessionRegistry.kt's
+     *  `address`) and reaches the member the registry holds it for. */
     fun edges(all: List<MessageEdge>): List<TeamEdge> = all.mapNotNull { stored ->
-        val edge = stored.copy(to = addressOfName[stored.to] ?: stored.to)
+        val edge = addresses.reported(stored)
         val from = slotOfSession[edge.from]
-        val to = slotOfAddress[edge.to] ?: slotOfSession[edge.to]
-        if (to == null && ADDRESS_SCHEME_END !in edge.to) return@mapNotNull null
+        val held = edge.toSession
+        val to = if (held != null) slotOfSession[held] else slotOfAddress[edge.to] ?: slotOfSession[edge.to]
+        if (to == null && reachedNoSession(edge)) return@mapNotNull null
         direction(from, to)?.let { TeamEdge(edge, it, from, to, headOf(edge.from)) }
     }.sortedBy { it.edge.at }
+
+    /** A call to a name no session held when it was stored: an address carries its scheme. */
+    private fun reachedNoSession(edge: MessageEdge): Boolean =
+        edge.toSession == null && ADDRESS_SCHEME_END !in edge.to
 
     private fun direction(from: TeamSlot?, to: TeamSlot?): String? = when {
         from != null && to != null -> DIRECTION_INTERNAL

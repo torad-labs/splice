@@ -36,24 +36,25 @@ private const val GPT = "8a2d4e6f-3c5b-4f7a-b812-1e9d0c3b5a02"
 private const val GROK = "b3e5f7a9-4d6c-4e8b-8c23-2f0a1d4c6b03"
 private const val MUSE = "c4f6a8b0-5e7d-4f9c-9d34-3a1b2e5d7c04"
 
-/** The run's edge store in its order: (from, to, at, tool_use id). */
+/** The run's edge store in its order: (from, to, at, tool_use id, the session that held the name then).
+ *  The subagent's names were held by no session. */
 private val RUN_EDGES = listOf(
-    MessageEdge(CLAUDE, "gpt", RUN_START, "toolu_run01"),
-    MessageEdge(GPT, "claude", RUN_START + 20_000L, "call_run02"),
-    MessageEdge(GPT, "claude", RUN_START + 55_000L, "call_run03"),
-    MessageEdge(CLAUDE, "gpt", RUN_START + 70_000L, "toolu_run04"),
+    MessageEdge(CLAUDE, "gpt", RUN_START, "toolu_run01", GPT),
+    MessageEdge(GPT, "claude", RUN_START + 20_000L, "call_run02", CLAUDE),
+    MessageEdge(GPT, "claude", RUN_START + 55_000L, "call_run03", CLAUDE),
+    MessageEdge(CLAUDE, "gpt", RUN_START + 70_000L, "toolu_run04", GPT),
     MessageEdge(GPT, "code-review", RUN_START + 75_000L, "call_run05"),
-    MessageEdge(GPT, "claude", RUN_START + 95_000L, "call_run06"),
-    MessageEdge(GPT, "claude", RUN_START + 115_000L, "call_run07"),
-    MessageEdge(GPT, "claude", RUN_START + 125_000L, "call_run08"),
-    MessageEdge(GPT, "claude", RUN_START + 135_000L, "call_run09"),
-    MessageEdge(CLAUDE, "gpt", RUN_START + 136_000L, "toolu_run10"),
+    MessageEdge(GPT, "claude", RUN_START + 95_000L, "call_run06", CLAUDE),
+    MessageEdge(GPT, "claude", RUN_START + 115_000L, "call_run07", CLAUDE),
+    MessageEdge(GPT, "claude", RUN_START + 125_000L, "call_run08", CLAUDE),
+    MessageEdge(GPT, "claude", RUN_START + 135_000L, "call_run09", CLAUDE),
+    MessageEdge(CLAUDE, "gpt", RUN_START + 136_000L, "toolu_run10", GPT),
     MessageEdge(GPT, "main", RUN_START + 150_000L, "call_run11"),
     MessageEdge(GPT, "main", RUN_START + 170_000L, "call_run12"),
-    MessageEdge(GPT, "claude", RUN_START + 178_000L, "call_run13"),
-    MessageEdge(GPT, "claude", RUN_START + 190_000L, "call_run14"),
-    MessageEdge(CLAUDE, "gpt", RUN_START + 202_000L, "toolu_run15"),
-    MessageEdge(GPT, "claude", RUN_START + 205_000L, "call_run16"),
+    MessageEdge(GPT, "claude", RUN_START + 178_000L, "call_run13", CLAUDE),
+    MessageEdge(GPT, "claude", RUN_START + 190_000L, "call_run14", CLAUDE),
+    MessageEdge(CLAUDE, "gpt", RUN_START + 202_000L, "toolu_run15", GPT),
+    MessageEdge(GPT, "claude", RUN_START + 205_000L, "call_run16", CLAUDE),
 )
 
 class TeamsSubagentTrafficTest {

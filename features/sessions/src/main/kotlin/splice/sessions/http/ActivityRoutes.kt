@@ -3,10 +3,12 @@
 // keyed by session id, empty arrays included), and the `edges` summary on every /api/sessions row.
 //
 // THE EDGE STORE HOLDS ONLY WHAT THE SENDER DID (MessageEdgeStore): from, the `to` its SendMessage
-// named, when. Direction is derived HERE, per asked session: `out` when the session sent it, `in` when
-// its `to` names the session. A `to` can be the session's address (`uds:<socket>`) or its name, so a
-// name is resolved to the address the registry holds for it before matching, and the edge reports
-// that address; a name the registry does not know is reported verbatim and matches nobody's `in`.
+// named, when, and for a name the session that held it then. Direction is derived HERE, per asked
+// session: `out` when the session sent it, `in` when it reached the session. A `to` can be the
+// session's address (`uds:<socket>`) or its name. A name reached the session stored with it and no
+// other, whoever holds the name now (V4-252, MessageEdgeStore), and the edge reports that session's
+// address while the registry knows it; a name stored with no session is reported verbatim and is
+// nobody's `in`.
 //
 // UNWIRED STORES ARE NOT EMPTY STORES. A control plane built without the stores (tests, tools) answers
 // the two edges routes with a named 503, and leaves the `edges` key off the session rows rather than
@@ -71,13 +73,21 @@ public class ActivityRoutes(private val registry: SessionSource, private val sou
         JsonReply(HttpStatusCode.ServiceUnavailable, buildJsonObject { put("error", EDGES_UNWIRED) }.toString())
 }
 
-/** The edge store read once, with every `to` resolved to an address where the registry knows the name. */
-internal class EdgeIndex(edges: List<MessageEdge>, records: List<SessionRecord>) {
-    private val addressOfName: Map<String, String> = records
-        .mapNotNull { record -> record.name?.let { name -> record.address?.let { name to it } } }
-        .distinctBy { it.first }
+/** Each registry session's address, by session id: where a reader reports a stored name's session. */
+internal class Addresses(records: List<SessionRecord>) {
+    private val ofSession: Map<String, String> = records
+        .mapNotNull { record -> record.sessionId?.let { id -> record.address?.let { id to it } } }
         .toMap()
-    private val resolved = edges.map { it.copy(to = addressOfName[it.to] ?: it.to) }
+
+    /** [edge] as a reader reports it: a name stored with the session that held it reports that session's
+     *  address where the registry knows it. A session's address is its own; a name is not (V4-252). */
+    fun reported(edge: MessageEdge): MessageEdge =
+        edge.toSession?.let(ofSession::get)?.let { edge.copy(to = it) } ?: edge
+}
+
+/** The edge store read once, each edge as [Addresses.reported] against the registry. */
+internal class EdgeIndex(edges: List<MessageEdge>, records: List<SessionRecord>) {
+    private val reported = Addresses(records).let { addresses -> edges.map(addresses::reported) }
 
     /** The edges [sessionId] sent or received, oldest first, each with its direction. */
     fun edgesOf(sessionId: String, address: String?): JsonArray = buildJsonArray {
@@ -103,12 +113,15 @@ internal class EdgeIndex(edges: List<MessageEdge>, records: List<SessionRecord>)
         }
     }
 
-    /** A session's own send is `out` even when it addressed itself: the send is the observed fact. */
+    /** A session's own send is `out` even when it addressed itself: the send is the observed fact. A
+     *  name's edge is `in` for the session stored with it alone, even where that session's address has
+     *  since passed to another (a reused pid's socket). */
     private fun mine(sessionId: String, address: String?): List<Pair<MessageEdge, String>> =
-        resolved.mapNotNull { edge ->
+        reported.mapNotNull { edge ->
             when {
                 edge.from == sessionId -> edge to OUT
-                address != null && edge.to == address -> edge to IN
+                edge.toSession == sessionId -> edge to IN
+                edge.toSession == null && address != null && edge.to == address -> edge to IN
                 else -> null
             }
         }

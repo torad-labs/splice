@@ -48,6 +48,29 @@ class ActivityStoresTest {
     }
 
     @Test
+    fun `a name's edge keeps the session that held it across a restart, and an address row stores none`() {
+        val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { DAY_ONE })
+        stores.edges.record(MessageEdge("s-1", "beta", DAY_ONE, "toolu_1", "s-2"))
+        stores.edges.record(MessageEdge("s-1", "uds:/run/a.sock", DAY_ONE + 5, "toolu_2"))
+        assertEquals(
+            listOf(
+                """{"from":"s-1","to":"beta","at":$DAY_ONE,"id":"toolu_1","to_session":"s-2"}""",
+                """{"from":"s-1","to":"uds:/run/a.sock","at":${DAY_ONE + 5},"id":"toolu_2"}""",
+            ),
+            await({ Files.readAllLines(dir.resolve("edges-2026-09-18.jsonl")) }, 2),
+            "the key is what a later read attributes by; an address row keeps its shape",
+        )
+        val restarted = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { DAY_ONE + 9 })
+        assertEquals(
+            listOf(
+                MessageEdge("s-1", "beta", DAY_ONE, "toolu_1", "s-2"),
+                MessageEdge("s-1", "uds:/run/a.sock", DAY_ONE + 5, "toolu_2"),
+            ),
+            restarted.edges.edges(),
+        )
+    }
+
+    @Test
     fun `labels and upstream rows are kept per session, only for the heads the switch names`() {
         val stores = ActivityStores(
             dir,

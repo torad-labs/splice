@@ -4,13 +4,21 @@
 // through ActivityDays.
 //
 // ONLY THE SENDER IS OBSERVED. A received edge is the same edge seen from the other end: the reader
-// derives direction `in` by matching an edge's `to` against the asked session's address, so one
-// observation serves both sessions and the two ends can never disagree.
+// derives direction `in` by matching an edge's stored session, or its `to` address, against the asked
+// session, so one observation serves both sessions and the two ends can never disagree.
 //
 // THE TOOL-USE ID RIDES IN THE ROW so reads de-duplicate by it. The observer's in-memory de-dupe
 // (MessageEdges) cannot survive a daemon restart, and a restart is exactly when a retried request can
 // carry a call the store already holds; the id makes that second row harmless rather than a second
 // edge.
+//
+// A NAME IS RESOLVED WHEN THE EDGE IS STORED (V4-252). A SendMessage `to` is an address (`uds:<socket>`)
+// or a session's name, and a name moves: a later session can take it. A reader that resolved a stored
+// name through the live registry filed the call under whoever held the name at read time, so a fresh
+// team's board showed a rehearsal's message to its 'gpt'. The row carries `to_session`, the one live
+// session that held the name when it was stored, and readers attribute a name by it alone. A name no
+// live session held then, or more than one did, stores none and is attributed to no one. So is every
+// name row stored before V4-252, which carries none. An address row stores none and reads as before.
 package splice.sessions.activity
 
 import kotlinx.serialization.json.Json
@@ -21,13 +29,33 @@ import kotlinx.serialization.json.put
 import splice.core.storage.ActivityDays
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionSource
 
 /** The day-file prefix edges are written under. */
 internal const val EDGES_PREFIX: String = "edges"
 
 /** One observed SendMessage. [from] is the sending session id, [to] the address or name the call
- *  named, [at] epoch ms of the observation, [id] the tool_use id that makes the row unique. */
-public data class MessageEdge(val from: String, val to: String, val at: Long, val id: String)
+ *  named, [at] epoch ms of the observation, [id] the tool_use id that makes the row unique, and
+ *  [toSession] the session that held the name [to] when the edge was stored, null for an address. */
+public data class MessageEdge(
+    val from: String,
+    val to: String,
+    val at: Long,
+    val id: String,
+    val toSession: String? = null,
+)
+
+/** The session a SendMessage name reaches as its edge is stored, read from [sessions]. */
+public class NameHolders(private val sessions: SessionSource) {
+    /** The one live registration holding [name]; null when none does, or more than one. A GONE
+     *  registration holds nothing. */
+    public fun sessionOf(name: String): String? = sessions.read()
+        .filter { it.name == name && it.availability != SessionAvailability.GONE }
+        .mapNotNull { it.sessionId }
+        .distinct()
+        .singleOrNull()
+}
 
 public class MessageEdgeStore(private val days: ActivityDays) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -39,6 +67,7 @@ public class MessageEdgeStore(private val days: ActivityDays) {
                 put("to", edge.to)
                 put("at", edge.at)
                 put("id", edge.id)
+                if (edge.toSession != null) put("to_session", edge.toSession)
             }.toString(),
         )
     }
@@ -64,6 +93,6 @@ public class MessageEdgeStore(private val days: ActivityDays) {
         val id = JsonScalars.str(row, "id")
         if (from == null || to == null) return null
         if (at == null || id == null) return null
-        return MessageEdge(from, to, at, id)
+        return MessageEdge(from, to, at, id, JsonScalars.str(row, "to_session"))
     }
 }

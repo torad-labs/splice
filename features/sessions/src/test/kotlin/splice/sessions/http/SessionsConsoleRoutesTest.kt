@@ -64,11 +64,11 @@ class SessionsConsoleRoutesTest {
         )
     }
 
-    /** alpha -> beta by address, beta -> "lead" by name (alpha's), gamma -> a name nobody holds. */
+    /** alpha -> beta by address, beta -> "lead" by name (alpha held it then), gamma -> a name nobody held. */
     private fun stores(): ActivityStores {
         val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { NOW })
         stores.edges.record(MessageEdge(ALPHA, "uds:/run/b.sock", NOW - 30, "toolu_1"))
-        stores.edges.record(MessageEdge(BETA, "lead", NOW - 20, "toolu_2"))
+        stores.edges.record(MessageEdge(BETA, "lead", NOW - 20, "toolu_2", ALPHA))
         stores.edges.record(MessageEdge(GAMMA, "nobody", NOW - 10, "toolu_3"))
         // The single-threaded file lane: draining it puts every queued row on disk.
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
@@ -84,8 +84,7 @@ class SessionsConsoleRoutesTest {
             activity = ActivitySource { stores },
             vanilla = tmp.resolve(".claude"),
         )
-        val rows = json(routes.sessionsJson())["sessions"]!!.jsonArray.map { it.jsonObject }
-            .associateBy { it["session_id"]!!.jsonPrimitive.content }
+        val rows = rowsOf(routes)
         val repo = tmp.toRealPath().resolve("work/repo").toString()
         assertEquals(json("""{"root":"$repo"}"""), rows.getValue(ALPHA)["repo"])
         assertEquals(
@@ -101,7 +100,7 @@ class SessionsConsoleRoutesTest {
     }
 
     @Test
-    fun `edges resolve names to addresses and take their direction from the asked session`() {
+    fun `edges report a stored name at its session's address and take their direction from the asked session`() {
         val stores = stores()
         val routes = SessionsRoutes(
             registry(),
@@ -126,9 +125,39 @@ class SessionsConsoleRoutesTest {
             board.getValue(GAMMA).jsonArray.map {
                 "${it.jsonObject["direction"]!!.jsonPrimitive.content} ${it.jsonObject["to"]!!.jsonPrimitive.content}"
             },
-            "a name the registry does not hold is reported verbatim and received by nobody",
+            "a name no session held when it was stored is reported verbatim and received by nobody",
         )
     }
+
+    @Test
+    fun `a name is received by the session that held it when stored, never by whoever holds it now`() {
+        // Alpha holds "lead" now. Beta held it when gamma's first call was stored; the second is a row
+        // from before names were stored with their session, and is nobody's.
+        val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { NOW })
+        stores.edges.record(MessageEdge(GAMMA, "lead", NOW - 5, "toolu_4", BETA))
+        stores.edges.record(MessageEdge(GAMMA, "lead", NOW - 4, "toolu_5"))
+        assertTrue(AsyncFileIo.drain(), "the file lane drained")
+        val routes = SessionsRoutes(
+            registry(),
+            TestTranscripts(),
+            activity = ActivitySource { stores },
+            vanilla = tmp.resolve(".claude"),
+        )
+        val rows = rowsOf(routes)
+        assertEquals(json("""{"sent":0,"received":1,"last_at":${NOW - 5}}"""), rows.getValue(BETA)["edges"])
+        assertEquals(json("""{"sent":0,"received":0,"last_at":null}"""), rows.getValue(ALPHA)["edges"])
+        assertEquals(
+            json(
+                """{"session_id":"$BETA","edges":[""" +
+                    """{"from":"$GAMMA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"in"}]}""",
+            ),
+            json(routes.edgeRoutes.edges(BETA).body),
+        )
+    }
+
+    private fun rowsOf(routes: SessionsRoutes): Map<String, JsonObject> =
+        json(routes.sessionsJson())["sessions"]!!.jsonArray.map { it.jsonObject }
+            .associateBy { it["session_id"]!!.jsonPrimitive.content }
 
     @Test
     fun `unwired stores answer the edges routes with a named 503 and leave the row summary off`() {

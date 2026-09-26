@@ -5,11 +5,15 @@
 // the head trees SessionProject's headless fallback searches before its vanilla default: every served
 // head's projects tree, each a whole path.
 //
-// THE WIRING PINS. Three production lines join these pieces and the compiler checks none of them,
+// THE WIRING PINS. Four production lines join these pieces and the compiler checks none of them,
 // because each has a default so tests can build the classes bare: ControlPlane hands the route the
-// publisher's stores (checked behaviourally on a real ControlPlane, the OneEventBusPinTest idiom), and
-// Daemon builds ONE SessionProject over the head trees and hands it to HeadServerFactory (pinned on the
-// source text, the ConsoleWiringPinTest idiom).
+// publisher's stores and the publisher its name holders over the daemon's session registry (both
+// checked behaviourally on a real ControlPlane, the OneEventBusPinTest idiom), and Daemon builds ONE
+// SessionProject over the head trees and hands it to HeadServerFactory (pinned on the source text,
+// the ConsoleWiringPinTest idiom).
+//
+// V4-252: a SendMessage name is stored with the one live session that held it then, so a board read
+// after the name moved files the call where it went (MessageEdgeStore's header).
 package splice.app
 
 import kotlinx.coroutines.runBlocking
@@ -40,6 +44,9 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 private const val NOW = 1_789_725_600_000L
+
+/** A pid above Linux's pid_max ceiling (2^22): no process holds it, so its registration is GONE. */
+private const val NO_PID = 99_999_999L
 
 class ConsoleActivityPublishTest {
 
@@ -79,6 +86,61 @@ class ConsoleActivityPublishTest {
             Files.readAllLines(tmp.resolve("activity/activity-2026-09-18.jsonl")).size,
             "the two sessionless facts wrote no row at all",
         )
+    }
+
+    /** Registers [session] under [name] on [pid] in the Claude Code registry of the home [paths] lives
+     *  under, where ConsoleWiring reads it. */
+    private fun register(paths: StatePaths, session: String, name: String, pid: Long) {
+        val dir = Files.createDirectories(checkNotNull(paths.rootDir.parent).resolve(".claude/sessions"))
+        Files.writeString(
+            dir.resolve("$session.json"),
+            """{"pid":$pid,"sessionId":"$session","name":"$name","updatedAt":${System.currentTimeMillis()}}""",
+        )
+    }
+
+    @Test
+    fun `a SendMessage name is stored with the one live session holding it, and keeps it after the name moves`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("home/.splice/state"))
+        val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { NOW })
+        val names = ConsoleWiring.nameHolders(paths)
+        val codex = ConsoleEventPublisher(stores, WallClock { NOW }, names = names).forHead("codex")
+        val live = ProcessHandle.current().pid()
+        register(paths, "s-gpt-a", "gpt", live)
+        register(paths, "s-twin-1", "twin", live)
+        register(paths, "s-twin-2", "twin", live)
+        codex.messageSent("s-lead", "gpt", "toolu_1")
+        codex.messageSent("s-lead", "twin", "toolu_2")
+        codex.messageSent("s-lead", "nobody", "toolu_3")
+        codex.messageSent("s-lead", "uds:/run/peer.sock", "toolu_4")
+        register(paths, "s-gpt-a", "gpt", NO_PID)
+        register(paths, "s-gpt-b", "gpt", live)
+        codex.messageSent("s-lead", "gpt", "toolu_5")
+        assertEquals(
+            listOf("s-gpt-a", null, null, null, "s-gpt-b"),
+            await({ stores.edges.edges() }, 5).map { it.toSession },
+            "two holders, none, or an address store no session; a's ended registration holds the name no more",
+        )
+    }
+
+    @Test
+    fun `the control plane's publisher resolves a name against the daemon's own registry`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("home/.splice/state"))
+        register(paths, "s-gpt", "gpt", ProcessHandle.current().pid())
+        val plane = ControlPlane(
+            paths,
+            ConfigService(paths),
+            MgmtKey(paths),
+            DashboardPage { "<!doctype html>" },
+            { },
+            { },
+        )
+        try {
+            plane.console.forHead("codex").messageSent("s-lead", "gpt", "toolu_1")
+            val stores = checkNotNull(plane.console.stores) { "the daemon's publisher must own the stores" }
+            assertEquals(listOf("s-gpt"), await({ stores.edges.edges() }, 1).map { it.toSession })
+        } finally {
+            plane.cancelProbes()
+        }
     }
 
     @Test

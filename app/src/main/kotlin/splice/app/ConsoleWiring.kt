@@ -61,6 +61,7 @@ import splice.lifecycle.upgrade.UpgradeStatus
 import splice.sessions.activity.ALL_HEADS
 import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
+import splice.sessions.activity.NameHolders
 import splice.sessions.prompt.SessionAddress
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.RouteOfPid
@@ -179,9 +180,17 @@ internal object ConsoleWiring {
     /** V4-131: a session id to its SendMessage address, from the same registry /api/sessions reads (the
      *  home the state dir lives under, as ControlPlane.start derives it), for the slot text's lead line. */
     internal fun sessionAddress(statePaths: StatePaths): SessionAddress {
-        val home = statePaths.rootDir.parent ?: statePaths.rootDir
-        val registry = SessionRegistry(home.resolve(".claude").resolve("sessions"), RouteOfPid { SessionRoute.Unknown })
+        val registry = sessionRegistry(statePaths)
         return SessionAddress { session -> registry.read().firstOrNull { it.sessionId == session }?.address }
+    }
+
+    /** V4-252: a SendMessage name to the session holding it, over the same registry, asked as its edge
+     *  is stored. */
+    internal fun nameHolders(statePaths: StatePaths): NameHolders = NameHolders(sessionRegistry(statePaths))
+
+    private fun sessionRegistry(statePaths: StatePaths): SessionRegistry {
+        val home = statePaths.rootDir.parent ?: statePaths.rootDir
+        return SessionRegistry(home.resolve(".claude").resolve("sessions"), RouteOfPid { SessionRoute.Unknown })
     }
 }
 
@@ -200,6 +209,9 @@ internal class ConsoleEventPublisher(
     /** V4-133 review: the budgets the console saves, enforced. Each head's ledger comes from here for
      *  the same reason [slots] does. Null (tests, tools) builds every head with no budget. */
     internal val budgets: BudgetEnforcement? = null,
+    /** V4-252: who holds a SendMessage name as its edge is stored, so the edge keeps the session that
+     *  held it then. Null (tests, tools) stores every name with none. */
+    internal val names: NameHolders? = null,
 ) {
     /** The bus GET /api/events streams from. ControlPlane assigns this exact instance to the
      *  ControlServer; nothing else constructs one for production. */
@@ -242,7 +254,7 @@ internal class ConsoleEventPublisher(
 
         override fun messageSent(session: String, to: String, toolUseId: String) {
             val at = clock()
-            stores?.edges?.record(MessageEdge(session, to, at, toolUseId))
+            stores?.edges?.record(MessageEdge(session, to, at, toolUseId, names?.sessionOf(to)))
             bus.publish { seq -> ConsoleEvent.EdgeEvent(seq, session, to, at) }
         }
 

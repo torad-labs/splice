@@ -6922,11 +6922,13 @@ id = "V4-263"
 phase = "release"
 title = "BOARD: a member's subagent traffic is that member's tool traffic, never a team hand-off (take 2's board.webm at Sep 25 9:42:01 and 9:43:19 PM CT (Marlin, 2026-09-26); the release highlight says the board shows hand-offs, activity and cost per role). Chat listed 'gpt -> code-review' at 9:40 PM CT and 'Messages 16 today' counted 16 where 13 went between members: the edge store records gpt's /code-review subagent's replies as gpt's session to 'main' (captures/film/team-storefront-2/edges-2026-09-26.take2.jsonl lines 11-12). Keep them out of Chat and the Messages count."
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/TeamsEdges.kt", "features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt"]
-status = "in_flight"
+status = "done"
 verify = "red first on take 2's edge store shape: Chat lists the 13 member-to-member messages and Messages reads 13; CI gate on the train sha."
 claimed_by = "console"
 claimed_at = "2026-09-26T03:21:24.740Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T03:21:24Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot console-v4263 -- :features-sessions:test :features-sessions:detekt" exit=0 tests=67 touched=features/sessions/src/main/kotlin/splice/sessions/http/TeamsEdges.kt,features/sessions/src/test/kotlin/splice/sessions/http/TeamsSubagentTrafficTest.kt,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL; red first on take 2's 16 edges: Messages expected 13, was 16; the address clause's mutant is caught by TeamsRoutesTest's out edge"
+# [2026-09-26] Trace: Members.edges (TeamsEdges.kt) kept every edge with a member at either end, so gpt's calls to its /code-review subagent (to 'code-review') and the subagent's replies (to 'main') reached Chat as direction out. Fix: a call to no session is the sender's tool work; a session is a member or an address (a scheme, uds:). Both Chat and the edges route drop it; a member's message to a real outside session keeps its out edge.
 
 [[items]]
 id = "V4-264"

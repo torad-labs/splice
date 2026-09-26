@@ -359,6 +359,14 @@ describe('the cost per role', () => {
     expect(stats).not.toContain('Unpriced');
   });
 
+  test('one unpriced turn is counted in the singular', () => {
+    const [lead, builder] = economics.roles;
+    const one = { ...economics, roles: [{ ...lead, unpriced_turns: 1 }, builder] };
+    const stats = render(createElement(TeamStats, { board: sampleBoard, data: { ...sampleData, economics: one } }));
+    expect(stats).toContain('1 turn unpriced');
+    expect(stats).not.toContain('1 turns unpriced');
+  });
+
   test('a team with turns and not one priced reads Unpriced', () => {
     const none = { ...economics, roles: economics.roles.map((role) => ({ ...role, cost_usd: null, unpriced_turns: role.turns })) };
     expect(costTable(none, sampleBoard.team.slots).total.cost).toBeNull();

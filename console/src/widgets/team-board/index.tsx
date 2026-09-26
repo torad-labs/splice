@@ -123,7 +123,7 @@ export function TeamStats({ board, data }: { board: TeamPayload; data: TeamViewD
     .join(' · ');
   // The cost is the priced turns' dollars, and it counts the turns no card priced (V4-264).
   const costSub = table === null ? '' : table.total.cost === null ? S.unpriced
-    : [table.total.unpriced > 0 ? `${fmtInt(table.total.unpriced)} ${U.unpriced}` : null, without]
+    : [table.total.unpriced > 0 ? `${fmtInt(table.total.unpriced)} ${table.total.unpriced === 1 ? U.unpricedOne : U.unpriced}` : null, without]
       .filter((part) => part !== null)
       .join(' · ');
   return (

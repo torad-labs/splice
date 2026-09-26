@@ -6992,3 +6992,14 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T03:13:49.865Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T03:13:49Z
 # [2026-09-26] RECEIPT cmd="bun tools/gate slot v4266 -- :features-configuration:test :features-models:test :features-configuration:detekt :features-models:detekt :app:test --tests splice.app.control.api.fleet.AddBackendRouteTest --tests splice.app.cli.setup.SetupLocalModelTest --tests splice.app.AddWrapperRefusalTest :quality-architecture:test" exit=0 tests=372 touched=features/models/src/main/kotlin/splice/models/list/ModelsHttp.kt,features/models/src/test/kotlin/splice/models/list/ModelsHttpTest.kt,CHANGELOG.md,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL in 41s (committed as 962b7e8e2 with V4-266 and V4-267)"
+
+[[items]]
+id = "V4-269"
+phase = "release"
+title = "PROJECTS AND USAGE: a card-less turn is counted beside the priced dollars on every cost figure (found in V4-264). A project row's cost_today_usd was all-or-nothing, so a recorded team run's repo read a dash for the lead's one claude-haiku-4-5 turn while every other turn was priced; the row carries no count to print beside a partial sum. The Usage page prints '1 turns unpriced' for a single turn (pages/usage/index.tsx:325)."
+files = ["features/sessions/src/main/kotlin/splice/sessions/http/ProjectsRoutes.kt", "console/src/entities/project/model/types.ts", "console/src/pages/projects/index.tsx", "console/src/pages/projects/detail.tsx", "console/src/pages/projects/strings.ts", "console/src/pages/usage/index.tsx", "console/src/pages/usage/strings.ts"]
+status = "in_flight"
+verify = "red first: a repo with one priced and one card-less turn reads the priced dollars and unpriced_turns_today 1; the projects summary and detail count '1 turn unpriced'; the Usage page says '1 turn unpriced' for one turn; CI gate on the train sha."
+claimed_by = "console"
+claimed_at = "2026-09-26T04:03:28.555Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T04:03:28Z

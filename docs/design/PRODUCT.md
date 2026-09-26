@@ -63,11 +63,12 @@ knob which layer decided its value.
 ## Capabilities and Constraints
 
 Confirmed capabilities the console must cover (details and file citations in the inventory):
-head lifecycle with a gate snapshot and live turns; layered runtime config (33 knobs, three of
-them hot, the rest applied on restart) with default, TOML, per-head override, state file, env and
-runtime layers; the topology surface (daemon, claude sharing, compaction scopes, providers with
-dialect, auth kind, quirks, models, windows and rates, heads with slots, overrides, system prompt
-and rates); per-turn telemetry with 37 fields per turn; usage and plan windows per provider;
+head lifecycle with a gate snapshot and live turns; layered runtime config (every `Knob.kt` entry:
+a few read live, the rest applied on restart, and the head-only ones set only in a head's
+overrides) with default, TOML, per-head override, state file, env and runtime layers; the topology
+surface (daemon, claude sharing, compaction scopes, providers with dialect, auth kind, quirks,
+models, windows and rates, heads with slots, overrides, system prompt and rates); per-turn
+telemetry, every `PerfKeys` field per turn; usage and plan windows per provider;
 hourly token economics; account pools with automatic switching; the Claude Code sessions
 registry; shared MCP hosting; compaction outcomes and instructions; code mode; the doctor report
 and upgrade status.

@@ -81,10 +81,16 @@ async function expectWholeTip(trigger: Locator, where: string, subject?: Locator
   const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
   await expect(tip, `${where}: the tip did not open`).toBeVisible();
   if (subject !== undefined) {
-    const [a, b] = [await tip.boundingBox(), await subject.boundingBox()];
-    const overlaps = a !== null && b !== null
-      && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    expect(overlaps, `${where}: the open tip covers the text it explains`).toBe(false);
+    // Both boxes from one layout: two reads apart compare one layout's tip with the next one's text
+    // when a poll re-flows the page between them (fired once, CI run 36194751483, on a console that
+    // passed it in five other runs). Polled, because the claim is what the operator reads once the
+    // page settles, not one frame of a re-flow.
+    const text = await subject.elementHandle();
+    const covers = (): Promise<boolean> => tip.evaluate((body: HTMLElement, under: Element) => {
+      const [a, b] = [body.getBoundingClientRect(), under.getBoundingClientRect()];
+      return body.matches(':popover-open') && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    }, text);
+    await expect.poll(covers, { message: `${where}: the open tip covers the text it explains` }).toBe(false);
   }
   const seen = await tip.evaluate((body: HTMLElement) => {
     body.style.pointerEvents = 'auto';
@@ -544,6 +550,26 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   const why = item.getByRole('button', { name: 'Why no copy', exact: true });
   await expectWholeTip(why, 'needs you, last column');
   expect(faults.pageErrors, 'a page threw').toEqual([]);
+});
+
+test('a tip opened from the keyboard stays on its mark when the page moves under it without a scroll', async ({ page }) => {
+  // The body is fixed in the top layer, and it was placed once, when it opened: a page that moved
+  // without scrolling (a poll re-flowing a table, a fault landing above) left it where the mark had
+  // been. A pointer closes it as the mark slides away; keyboard focus does not, so it stayed there,
+  // over whatever moved under it. Here the move is forced.
+  const faults = await open(page, 'doctor');
+  const mark = page.locator('main').getByRole('button', { name: 'About doctor', exact: true });
+  await mark.focus();
+  const tip = page.locator(`[id="${await mark.getAttribute('aria-describedby')}"]`);
+  await expect(tip, 'the tip did not open').toBeVisible();
+  const offset = async (): Promise<number | null> => {
+    const [at, body] = [await mark.boundingBox(), await tip.boundingBox()];
+    return at === null || body === null ? null : Math.round(body.y - at.y);
+  };
+  const placed = await offset();
+  await page.locator('main .myx-dc').evaluate((board: HTMLElement) => { board.style.paddingTop = '120px'; });
+  await expect.poll(offset, 'the tip stayed where its mark had been').toBe(placed);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });
 
 test('Needs you opens each item on its page, and a link to another item opens it on the page already up', async ({ page }) => {

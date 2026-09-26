@@ -119,11 +119,15 @@ public class TraceCommand(
         else -> if (opts.head.isEmpty() && !arg.startsWith("-")) opts.copy(head = arg) else null
     }
 
+    /** A session or turn value is an id: a blank one, or a flag (`--turn --help`), is refused rather
+     *  than filtered on, so a flag is never read as the id it was meant to follow. */
     private fun applyValue(opts: TraceOpts, flag: String, value: String): TraceOpts? = when (flag) {
         "--last" -> value.toIntOrNull()?.takeIf { it > 0 }?.let { opts.copy(last = it) }
-        "--session" -> opts.copy(session = value).takeIf { value.isNotBlank() }
-        else -> opts.copy(turn = value).takeIf { value.isNotBlank() }
+        "--session" -> opts.copy(session = value).takeIf { isId(value) }
+        else -> opts.copy(turn = value).takeIf { isId(value) }
     }
+
+    private fun isId(value: String): Boolean = value.isNotBlank() && !value.startsWith("--")
 }
 
 private val VALUE_FLAGS = setOf("--last", "--session", "--turn")

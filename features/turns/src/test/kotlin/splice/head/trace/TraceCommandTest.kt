@@ -338,5 +338,8 @@ class TraceCommandTest {
         assertNull(command.parseTraceArgs(listOf("kimi", "--turn")), "--turn needs an id")
         assertNull(command.parseTraceArgs(listOf("kimi", "extra")), "one head only")
         assertNull(command.parseTraceArgs(listOf("kimi", "--follow")), "no unknown flags")
+        // V4-239 follow-up: a flag after --turn or --session is a flag, never the id it filters on.
+        assertNull(command.parseTraceArgs(listOf("kimi", "--turn", "--help")), "a flag is not a turn id")
+        assertNull(command.parseTraceArgs(listOf("kimi", "--session", "--json")), "a flag is not a session")
     }
 }

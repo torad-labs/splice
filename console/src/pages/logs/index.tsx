@@ -19,7 +19,8 @@ import type { CaptureCell } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
 import { captureFor, fetchCapture, putCapture, useCapture } from '@entities/perf';
 import { HeadMark } from '@entities/control-status';
-import { cx } from '@shared/lib';
+import { cx, readFor } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
 import { Badge, Empty, PageHeader, Section, Segmented } from '@shared/ui';
 import { Choice, Fault, Input } from '@shared/controls';
 import { LogTail } from '@widgets/log-tail';
@@ -189,6 +190,15 @@ interface Fixture {
   payload: LogsPayload;
 }
 
+/** What the board prints: the fixture's payload, else the log read for THIS head, its own failure and
+ *  when it landed (V4-304). */
+export function logShown(store: Keyed<string, LogsPayload>, head: string | null, fixture: LogsPayload | null): { payload: LogsPayload | null; error: string | null; lastRead: number | null } {
+  if (fixture !== null) return { payload: fixture, error: null, lastRead: null };
+  if (head === null) return { payload: null, error: null, lastRead: null };
+  const read = readFor(store, head);
+  return { payload: read.data, error: read.error, lastRead: read.lastUpdated };
+}
+
 /** One fixture, as ONE value: the name it was asked for and the bytes that arrived. The capture
  *  marker is set from this and from nothing else, so a name with no module can never leave a
  *  marker behind - a marker that survives a failed import says the opposite of the truth (law 23:
@@ -273,7 +283,8 @@ export default function LogsPage() {
     };
   }, [name]);
 
-  const payload = fixture?.payload ?? store.data;
+  const shown = logShown(store, head, fixture?.payload ?? null);
+  const payload = shown.payload;
 
   // The cursor is what makes follow mode and the "N new lines" count honest: it says which lines
   // of this payload the reader has already seen. The count is what arrived SINCE the reader paused,
@@ -308,11 +319,11 @@ export default function LogsPage() {
       head={head ?? ''}
       tail={tail}
       heads={heads}
-      capture={capture.data}
+      capture={capture}
       {...(head === null ? {} : { onCaptureSwitch: (enabled: boolean) => void putCapture(head, enabled) })}
       locked={false}
-      error={fixture === null ? store.error : null}
-      lastRead={store.lastUpdated}
+      error={shown.error}
+      lastRead={shown.lastRead}
       sample={sample?.name}
       onFilter={setFilter}
       onFollow={(next) => {

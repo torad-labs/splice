@@ -5,11 +5,12 @@
 // prints a switch position, a sentence or a body the daemon did not report.
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { captureFor, captureView, fetchCapture, putCapture } from '../src/entities/perf';
 import type { CaptureState, CaptureWire } from '../src/entities/perf';
 import { afterRead, afterWrite } from '../src/entities/perf/model/capture';
 import { captureStore } from '../src/entities/perf/model/store';
+import { readFor } from '../src/shared/lib';
 import { CAPTURE_AT_RESTART, CAPTURE_ON, RequestDrawer } from '../src/widgets/waterfall';
 import { LogsBoard } from '../src/pages/logs';
 
@@ -83,7 +84,7 @@ describe('capture reads and writes', () => {
     const calls = stub(wire(), { status: 200, body: wire() });
     await fetchCapture('e2e-codex');
     expect(calls).toEqual([{ method: 'GET', url: '/api/heads/e2e-codex/capture', body: null }]);
-    expect(captureStore.get().data?.state).toEqual(state());
+    expect(readFor(captureStore.get(), 'e2e-codex').data).toEqual(state());
   });
 
   test('a write PUTs the switch, then re-reads, and the store takes the re-read as what runs', async () => {
@@ -92,7 +93,7 @@ describe('capture reads and writes', () => {
     await putCapture('e2e-codex', true);
     expect(calls.map((call) => call.method)).toEqual(['GET', 'PUT', 'GET']);
     expect(JSON.parse(calls[1].body ?? '')).toEqual({ enabled: true });
-    expect(captureStore.get().data?.state).toEqual(state({ written: wire({ enabled: true }) }));
+    expect(readFor(captureStore.get(), 'e2e-codex').data).toEqual(state({ written: wire({ enabled: true }) }));
   });
 
   // Its own head: the store is the module's one store, and the write above is held for e2e-codex by
@@ -102,7 +103,7 @@ describe('capture reads and writes', () => {
     stub(wire({ head: 'refusing' }), { status: 400, body: { error: reason } });
     await fetchCapture('refusing');
     await putCapture('refusing', true);
-    expect(captureStore.get().data?.state).toEqual(state({ running: wire({ head: 'refusing' }), refused: reason }));
+    expect(readFor(captureStore.get(), 'refusing').data).toEqual(state({ running: wire({ head: 'refusing' }), refused: reason }));
   });
 });
 
@@ -113,7 +114,9 @@ describe("one head's capture failure is that head's alone (V4-301)", () => {
   // flight, and for good if it never landed. The logs page reads the same store.
   const ALPHA_DOWN = 'alpha: the trace store is unreadable';
   const BETA_DOWN = 'beta: the trace store is unreadable';
-  beforeEach(() => captureStore.setData({ state: null, failures: new Map() }));
+  // The store is the module's one store and keeps each head's failure until that head is read, so a
+  // head no test before it touched is what a fresh state looks like: alpha and beta are first read
+  // here, and each test asserts only on reads it made itself or on a head not yet failed.
   afterEach(() => vi.unstubAllGlobals());
 
   /** A daemon answering each head's capture route: its settings, a failure in the daemon's words,
@@ -129,13 +132,13 @@ describe("one head's capture failure is that head's alone (V4-301)", () => {
       return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
     });
   }
-  const view = (head: string) => captureFor(captureStore.get().data, head);
+  const view = (head: string) => captureFor(captureStore.get(), head);
   const logsDrawer = (head: string): string => render(h(LogsBoard, {
     payload: { key: head, path: '/home/user/.splice/logs/daemon.log', lines: [] },
     filter: { head: null, level: null, substring: '' },
     follow: true, appended: 0, reset: false, tags: [], levels: [], head, tail: 200,
     heads: [{ key: 'alpha', label: 'alpha' }, { key: 'beta', label: 'beta' }],
-    capture: captureStore.get().data,
+    capture: captureStore.get(),
   }));
 
   test("head A's failed read never reads as head B's error while B's read is in flight", async () => {

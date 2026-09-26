@@ -1,16 +1,14 @@
-import { captureStore, perfStore, perfSummaryStore, perfTurnsStore } from './model/store';
+import { captureStore, perfSummaryStore, perfTurnsStore } from './model/store';
 
 export { captureFor } from './model/store';
 export type { CaptureCell, HeadCapture } from './model/store';
 
 export {
   fetchCapture,
-  fetchPerf,
   fetchPerfSummary,
   fetchPerfTurns,
   putCapture,
   refetchPerfTurns,
-  startPerfPolling,
   startPerfSummaryPolling,
   startPerfTurnsPolling,
   PENDING_TURNS,
@@ -26,8 +24,6 @@ export type {
   InflightTurn,
   MarkKey,
   PendingRoute,
-  PerfHeadStages,
-  PerfPayload,
   PerfStats,
   PerfSummaryHead,
   PerfSummaryPayload,
@@ -42,7 +38,6 @@ export type {
 export { mergeTurns } from './model/turns-wire';
 export type { MergedTurns } from './model/turns-wire';
 export { LIVE_KINDS } from './model/live';
-export const usePerf = perfStore.use;
 export const usePerfSummary = perfSummaryStore.use;
 export const usePerfTurns = perfTurnsStore.use;
 export const useCapture = captureStore.use;

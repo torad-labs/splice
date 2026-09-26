@@ -49,7 +49,8 @@ import { FileView } from '@widgets/file-view';
 import { Badge, DataTable, DetailPanel, Empty, Lanes, LifetimeBar, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { timeAgo, useLinkedId, useOpen } from '@shared/lib';
+import { readFor, timeAgo, useLinkedId, useOpen } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
 import { H, S, U } from './strings';
 import { groupByOf, groupHref, isLanes, lanesOf, selectionOf, titleOf } from './select';
 import { baseOf, boardFields, FIELD_LABEL, fieldsOf, fleetHandoffs, headText, peerOf, projectKeyOf, projectText, startedText, toneOf } from './strip';
@@ -189,8 +190,8 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
   view?: View;
   /** The session a link asks to open (`?open=<session key>`), read by the page. */
   linked?: string | null;
-  /** The OPENED session's edges, for its hand-offs bay. */
-  edges?: SessionEdgesPayload | null;
+  /** The session edges reads, by session id: the OPENED session's are its hand-offs bay. */
+  edges?: Keyed<string, SessionEdgesPayload> | null;
   /** Every session's edges (GET /api/sessions/edges), for the peer column of every row. */
   boardEdges?: BoardEdgesPayload | null;
   /** A board edges read that failed, in the daemon's words. */
@@ -217,6 +218,8 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
   useEffect(() => {
     if (open?.session_id != null) void fetchSessionEdges(open.session_id);
   }, [open?.session_id]);
+
+  const handoffs = open?.session_id == null || edges === null ? null : readFor(edges, open.session_id);
 
   const peerFor = (row: SessionRow): Peer | null => {
     if (boardEdges === null || row.session_id === null) return null;
@@ -455,7 +458,8 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
               )}
             </Section>
             <Section title={S.handoffs}>
-              <EdgeRows edges={edges} rows={rows} />
+              {handoffs?.error == null ? null : <Fault message={handoffs.error} />}
+              <EdgeRows edges={handoffs?.data ?? null} rows={rows} />
             </Section>
           </DetailPanel>
         )}
@@ -532,7 +536,7 @@ export default function SessionsPage() {
     <SessionsBoard
       payload={fixture ?? registry.data}
       linked={linked}
-      edges={edges.data}
+      edges={edges}
       // Live edges never join a sample's rows: a capture's peers would be another board's.
       boardEdges={fixture === null ? boardEdges.data : null}
       edgesError={fixture === null ? boardEdges.error : null}

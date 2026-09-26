@@ -10,6 +10,8 @@ import { useEffect } from 'react';
 import { loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
 import type { TranscriptRole, TranscriptSlice } from '@entities/transcript';
 import { Fault, Key } from '@shared/controls';
+import { readFor } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
 import { Badge, Empty, KeyValue, Reveal } from '@shared/ui';
 import { H, S, U } from './strings';
 import './conversation.css';
@@ -24,6 +26,14 @@ function atClock(epochMs: number): string {
 
 const ROLE: Record<TranscriptRole, string> = { user: S.user, assistant: S.assistant, system: S.system, tool: S.tool };
 
+/** What the conversation prints: the handed-in slice, else the read made for THIS session and its
+ *  own failure (V4-304). */
+export function transcriptShown(state: Keyed<string, TranscriptSlice>, sessionId: string, slice?: TranscriptSlice): { data: TranscriptSlice | null; error: string | null } {
+  if (slice !== undefined) return { data: slice, error: null };
+  const { data, error } = readFor(state, sessionId);
+  return { data, error };
+}
+
 /**
  * `slice` is the fixture and test seam (CONTRACTS.md section 4): a capture or a test hands the
  * loaded transcript straight in, so nothing has to reach the store. When it is provided this reads
@@ -36,8 +46,9 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
     if (slice === undefined) void loadTranscript(sessionId);
   }, [sessionId, slice]);
 
-  if (slice === undefined && state.error !== null) return <Fault message={state.error} />;
-  const data = slice ?? state.data;
+  const shown = transcriptShown(state, sessionId, slice);
+  if (shown.error !== null) return <Fault message={shown.error} />;
+  const data = shown.data;
   if (data === null) return null;
   // No file on disk is the daemon's answer, with where it looked: not a fault and not a missing route.
   if ('missing' in data) {

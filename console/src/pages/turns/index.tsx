@@ -610,7 +610,7 @@ export default function TurnsPage() {
       inflight={fixture !== null ? fixture.inflight : inflightFrom(heads.data ?? [])}
       landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed, unread: [], truncated: [] } : turns.data}
       summary={fixture !== null ? fixture.summary : summary.data}
-      capture={capture.data}
+      capture={capture}
       locked={locked}
       error={fixture === null ? turns.error : null}
       lastRead={turns.lastUpdated}

@@ -10,9 +10,9 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchBoardEdges, latestPeer, peerLabel } from '../src/entities/session';
+import { fetchBoardEdges, fetchSessionEdges, latestPeer, peerLabel, sessionKey } from '../src/entities/session';
 import type { SessionEdge, SessionRow } from '../src/entities/session';
-import { boardEdgesStore } from '../src/entities/session/model/store';
+import { boardEdgesStore, sessionEdgesStore } from '../src/entities/session/model/store';
 import { DEFAULT_VIEWS, SessionsBoard } from '../src/pages/sessions';
 
 /** The board view these tests are about: the lanes are the page's default now, the table a view. */
@@ -111,5 +111,53 @@ describe('the board-wide edges', () => {
     );
     expect(out).toContain('the activity stores are not wired into this control plane');
     expect(out).toContain('>–<');
+  });
+});
+
+// V4-304: one store held the last session's edges read, and the opened panel printed its data
+// whoever it belonged to and never its error. Open A with a hand-off, then B whose read fails, and
+// B's panel printed A's hand-off as B's, with no word of B's failure.
+describe('an opened session\'s hand-offs', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Only A's edge goes to this address, so it can print nowhere but a panel showing A's edges. */
+  const A_ONLY = 'uds:/tmp/s/only-a-sent-here.sock';
+  const REFUSED = 'the edge store is not wired into this control plane';
+
+  function daemon(): void {
+    vi.stubGlobal('fetch', (input: unknown): Promise<Response> => {
+      const url = String(input);
+      const answer = url.includes(SENDER.session_id ?? '')
+        ? { status: 200, body: { session_id: SENDER.session_id, edges: [{ ...OUT, to: A_ONLY }] } }
+        : { status: 503, body: { error: REFUSED } };
+      return Promise.resolve(new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } }));
+    });
+  }
+
+  const panelOf = (open: SessionRow): string => renderToStaticMarkup(
+    h(SessionsBoard, {
+      view: BY_HEAD,
+      payload: { note: 'headless runs never register', sessions: [SENDER, PEER] },
+      linked: sessionKey(open),
+      edges: sessionEdgesStore.get(),
+    }),
+  );
+
+  test('print the opened session\'s failed read, and never the hand-off of the session read before it', async () => {
+    daemon();
+    await fetchSessionEdges(SENDER.session_id ?? '');
+    await fetchSessionEdges(PEER.session_id ?? '');
+    const panel = panelOf(PEER);
+    expect(panel).toContain(REFUSED);
+    expect(panel).not.toContain(A_ONLY);
+  });
+
+  test('print the session read before it its own hand-off, and not the failure of the other one', async () => {
+    daemon();
+    await fetchSessionEdges(SENDER.session_id ?? '');
+    await fetchSessionEdges(PEER.session_id ?? '');
+    const panel = panelOf(SENDER);
+    expect(panel).toContain(A_ONLY);
+    expect(panel).not.toContain(REFUSED);
   });
 });

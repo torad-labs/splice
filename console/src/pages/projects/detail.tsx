@@ -18,7 +18,8 @@ import { startProjectPolling, useProject } from '@entities/project';
 import type { ProjectCompactionRule, ProjectRow, ProjectStatuslineRoot, TrustedRootEntry } from '@entities/project';
 import { CompactionRules } from '@widgets/compaction-rule';
 import { Fault, KeyLink } from '@shared/controls';
-import { timeAgo } from '@shared/lib';
+import { readFor, timeAgo } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
 import { Badge, DataTable, Empty } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import { H, S, U } from './strings';
@@ -62,17 +63,25 @@ export function detailRowsOf(row: ProjectRow, now = Date.now()): [string, string
 
 /** The opened project's row: the sample's own when a fixture fed the page (nothing is read), else
  *  the detail route's answer for THIS id, polled while it is open, else the list's row for it. */
-export function useOpenProject(open: ProjectRow | null, sample: boolean): {
-  row: ProjectRow | null;
-  error: string | null;
-  lastRead: number | null;
-} {
+export function useOpenProject(open: ProjectRow | null, sample: boolean): OpenProject {
   const state = useProject((s) => s);
   const id = open?.id ?? null;
   useEffect(() => (id === null || sample ? undefined : startProjectPolling(id)), [id, sample]);
+  return openProjectOf(state, open, sample);
+}
+
+export interface OpenProject {
+  row: ProjectRow | null;
+  error: string | null;
+  lastRead: number | null;
+}
+
+/** The opened project as its detail prints it: the detail read made for THIS id, else the list's row,
+ *  with that read's own failure and when it landed (V4-304). */
+export function openProjectOf(state: Keyed<string, ProjectRow>, open: ProjectRow | null, sample: boolean): OpenProject {
   if (open === null || sample) return { row: open, error: null, lastRead: null };
-  const read = state.data !== null && state.data.id === open.id ? state.data : null;
-  return { row: read ?? open, error: state.error, lastRead: state.lastUpdated };
+  const read = readFor(state, open.id);
+  return { row: read.data ?? open, error: read.error, lastRead: read.lastUpdated };
 }
 
 /** Something is running in the repo now, or nothing is. */

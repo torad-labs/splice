@@ -1,6 +1,5 @@
 // The payload contracts of the performance entity. Every field below is named after the daemon
 // code that serves it, never after a screen:
-//   GET /api/perf         -> PerfPayload         (splice/control/api/PerfPayloads.kt:58-76)
 //   GET /api/perf/summary -> PerfSummaryPayload  (splice/control/api/PerfSummary.kt:65-80)
 //   GET /api/perf/turns   -> PerfTurnsWire       (V4-127, PerfRoutes.kt), merged into TurnRow[]
 // The numeric field names are the PerfKeys catalogue (core/perf/PerfKeys.kt), so a mark renamed
@@ -14,24 +13,6 @@ export interface PerfStats {
   p50: number;
   p95: number;
   max: number;
-}
-
-/** GET /api/perf?tail=N — one row per head of per-field percentiles over its last N turns. */
-export interface PerfHeadStages {
-  key: string;
-  label: string;
-  /** Rows the head contributed; a head with no rows reports 0 and no stage fields. */
-  count: number;
-  /** Field name -> stats. Fields seen in the tail only: marks in pipeline order first, then the
-   *  counters alphabetically. A field absent from a row contributes nothing, never a zero. */
-  stages: Record<string, PerfStats>;
-}
-
-export interface PerfPayload {
-  /** The daemon echoes the TAIL COUNT here, not a time window (PerfPayloads.perfJson puts
-   *  `window` = tailN). Named as the wire names it; the entity never reads it as a duration. */
-  window: number;
-  heads: PerfHeadStages[];
 }
 
 /** The three windows the summary route accepts. An unknown label is a 400, never a fallback. */

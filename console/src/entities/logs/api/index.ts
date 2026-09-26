@@ -27,12 +27,12 @@ export function currentLogTail(): number {
 }
 
 export async function fetchLogs(): Promise<void> {
-  if (currentHead === null) return;
-  logsStore.startLoading();
+  const head = currentHead;
+  if (head === null) return;
   try {
-    logsStore.setData(await control.logs(currentHead, tailSize));
+    logsStore.land(head, await control.logs(head, tailSize));
   } catch (err) {
-    logsStore.setError(err instanceof Error ? err.message : String(err));
+    logsStore.fail(head, err instanceof Error ? err.message : String(err));
   }
 }
 

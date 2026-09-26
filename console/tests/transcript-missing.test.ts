@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { PENDING_TRANSCRIPT, loadTranscript } from '../src/entities/transcript';
 import { transcriptStore } from '../src/entities/transcript/model/store';
+import { readFor } from '../src/shared/lib';
 
 const answer = (status: number, body: unknown) =>
   vi.stubGlobal('fetch', () => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })));
@@ -18,22 +19,22 @@ describe('the transcript read', () => {
   test("the daemon's no-transcript answer is its own state, with where it looked", async () => {
     answer(404, { error: 'no transcript for this session id', searched: ['/home/x/.claude/projects'] });
     await loadTranscript('s-1');
-    expect(transcriptStore.get().data).toEqual({ missing: ['/home/x/.claude/projects'] });
-    expect(transcriptStore.get().error).toBeNull();
+    expect(readFor(transcriptStore.get(), 's-1').data).toEqual({ missing: ['/home/x/.claude/projects'] });
+    expect(readFor(transcriptStore.get(), 's-1').error).toBeNull();
   });
 
   test('the answer is its structure: reworded, it is still missing; without `searched`, it is not', async () => {
     answer(404, { error: 'the daemon rewrote this sentence', searched: [] });
     await loadTranscript('s-3');
-    expect(transcriptStore.get().data).toEqual({ missing: [] });
+    expect(readFor(transcriptStore.get(), 's-3').data).toEqual({ missing: [] });
     answer(404, { error: 'no transcript for this session id' });
     await loadTranscript('s-4');
-    expect(transcriptStore.get().data).toEqual({ pending: PENDING_TRANSCRIPT });
+    expect(readFor(transcriptStore.get(), 's-4').data).toEqual({ pending: PENDING_TRANSCRIPT });
   });
 
   test('a 404 from a daemon with no such route is still the pending route', async () => {
     answer(404, { error: 'unknown route' });
     await loadTranscript('s-2');
-    expect(transcriptStore.get().data).toEqual({ pending: PENDING_TRANSCRIPT });
+    expect(readFor(transcriptStore.get(), 's-2').data).toEqual({ pending: PENDING_TRANSCRIPT });
   });
 });

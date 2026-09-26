@@ -4,11 +4,11 @@ import { markRestartPending } from '../model/restart';
 import { configStore } from '../model/store';
 
 export async function fetchConfig(head?: string): Promise<void> {
-  configStore.startLoading();
+  const key = head ?? null;
   try {
-    configStore.setData(await control.config(head));
+    configStore.land(key, await control.config(head));
   } catch (err) {
-    configStore.setError(err instanceof Error ? err.message : String(err));
+    configStore.fail(key, err instanceof Error ? err.message : String(err));
   }
 }
 

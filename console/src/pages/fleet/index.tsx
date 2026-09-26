@@ -33,9 +33,10 @@ import { limitText, limitTone, nearestLimit } from '@features/nearest-limit';
 import type { NearestLimit } from '@features/nearest-limit';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
+import type { AuthPayload, ConfigPayload, HeadStatus, UsagePayload } from '@shared/api';
 import { Blank, Confirm, Copy, Fault, Key, KeyLink } from '@shared/controls';
-import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo, useLinkedId, useOpen } from '@shared/lib';
+import { ABSENT, fmtInt, fmtMs, poll, ratio, readFor, timeAgo, useLinkedId, useOpen } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
 import {
   Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow, Tip,
 } from '@shared/ui';
@@ -358,6 +359,8 @@ export interface FleetSources {
   lastTs: ReadonlyMap<string, number | null>;
   /** The settings the opened head overrides. */
   overrides: readonly KnobDisposition[];
+  /** The opened head's config read that failed, in the daemon's words: its overrides are unknown. */
+  overridesError?: string | null;
 }
 
 export function FleetBoard({ heads, error = null, lastRead = null, sources, openKey, onOpen, adding = false, onAdd = () => undefined, nowMs }: {
@@ -471,7 +474,8 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
               <DaemonRestart />
             </Section>
             {/* The count is the state: a head that overrides nothing is a 0, not a box saying so. */}
-            <Section title={S.knobs} count={sources.overrides.length}>
+            <Section title={S.knobs} {...(sources.overridesError == null ? { count: sources.overrides.length } : {})}>
+              {sources.overridesError == null ? null : <Fault message={sources.overridesError} />}
               {sources.overrides.map((knob) => <KnobReadout key={knob.key} knob={knob} />)}
             </Section>
             <Section title={S.pool}>
@@ -484,6 +488,14 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
       </div>
     </div>
   );
+}
+
+/** The settings the opened head overrides, from the config read made for THAT head, and that read's
+ *  failure (V4-304). */
+export function overridesOf(config: Keyed<string | null, ConfigPayload>, openKey: string | null): { knobs: KnobDisposition[]; error: string | null } {
+  if (openKey === null) return { knobs: [], error: null };
+  const { data, error } = readFor(config, openKey);
+  return { knobs: data === null ? [] : knobDispositions(data, openKey).filter((knob) => knob.provenance === 'head override'), error };
 }
 
 export function FleetPage() {
@@ -534,9 +546,7 @@ export function FleetPage() {
   const topology = topologyResource.data;
   const models = modelsResource.data;
   const turns = turnsResource.data;
-  const overrides = openKey === null || configResource.data === null
-    ? []
-    : knobDispositions(configResource.data, openKey).filter((knob) => knob.provenance === 'head override');
+  const overrides = overridesOf(configResource, openKey);
 
   return (
     <FleetBoard
@@ -555,7 +565,8 @@ export function FleetPage() {
         topologyStale,
         landed: turns !== null && 'landed' in turns ? turns.landed : [],
         lastTs: new Map((summaryResource.data?.heads ?? []).flatMap((row) => (row.last_ts === undefined ? [] : [[row.key, row.last_ts] as const]))),
-        overrides,
+        overrides: overrides.knobs,
+        overridesError: overrides.error,
       }}
       openKey={openKey}
       onOpen={(key) => {

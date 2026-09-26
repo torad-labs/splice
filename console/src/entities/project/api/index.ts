@@ -27,11 +27,10 @@ export function startProjectsPolling(intervalMs = 15000): () => void {
 /** One project's own row (GET /api/projects/{id}): the counts the daemon computes for that root
  *  alone, read fresh while its detail is open. */
 export async function fetchProject(id: string): Promise<void> {
-  projectStore.startLoading();
   try {
-    projectStore.setData(await request<ProjectRow>(`/api/projects/${encodeURIComponent(id)}`));
+    projectStore.land(id, await request<ProjectRow>(`/api/projects/${encodeURIComponent(id)}`));
   } catch (err) {
-    projectStore.setError(messageOf(err));
+    projectStore.fail(id, messageOf(err));
   }
 }
 
@@ -43,12 +42,9 @@ export function startProjectPolling(id: string, intervalMs = 15000): () => void 
 /** One project's instruction and memory files: read when its page opens, never polled, because a
  *  repo's CLAUDE.md does not change under the console often enough to justify a timer. */
 export async function fetchProjectFiles(id: string): Promise<void> {
-  projectFilesStore.startLoading();
   try {
-    projectFilesStore.setData(
-      await request<ProjectFilesPayload>(`/api/projects/${encodeURIComponent(id)}/files`),
-    );
+    projectFilesStore.land(id, await request<ProjectFilesPayload>(`/api/projects/${encodeURIComponent(id)}/files`));
   } catch (err) {
-    projectFilesStore.setError(messageOf(err));
+    projectFilesStore.fail(id, messageOf(err));
   }
 }

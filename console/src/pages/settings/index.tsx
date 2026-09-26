@@ -41,7 +41,8 @@ import type { TopologyWriteResult } from '@entities/topology';
 import { HeadAddForm, HeadEditRow, headRows } from '@features/head-edit';
 import { useViews, ViewTabs } from '@features/views';
 import { HeadMark } from '@entities/control-status';
-import { cx } from '@shared/lib';
+import { cx, readFor } from '@shared/lib';
+import type { Keyed, KeyedRead } from '@shared/lib';
 import type { ClaudeHeadPayload } from '@entities/claude-head';
 import { Badge, Bay, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
 import { Blank, Fault, Input } from '@shared/controls';
@@ -113,6 +114,12 @@ export function draftAfterKnobSave(
   return saved ? withHeadOverride(draft, head, key, override) : draft;
 }
 
+/** The config the page shows: the read made for the selected head, `global` being every head's view,
+ *  with that read's own failure and when it landed (V4-304). */
+export function viewedConfig(config: Keyed<string | null, ConfigPayload>, head: string): KeyedRead<ConfigPayload> {
+  return readFor(config, head === 'global' ? null : head);
+}
+
 export function SettingsPage() {
   const { search } = useLocation();
   const views = useViews(PAGE_ID, DEFAULT_VIEWS);
@@ -174,7 +181,8 @@ export function SettingsPage() {
     }).catch(() => undefined);
   }, [search]);
 
-  const configPayload = fixture === null ? config.data : fixture.config;
+  const viewed = viewedConfig(config, head);
+  const configPayload = fixture === null ? viewed.data : fixture.config;
 
   const topologyState = topology.data;
   const loaded =
@@ -282,7 +290,7 @@ export function SettingsPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
 
-      {config.error === null ? null : <Fault message={config.error} lastRead={sample === null ? config.lastUpdated : null} />}
+      {viewed.error === null ? null : <Fault message={viewed.error} lastRead={sample === null ? viewed.lastUpdated : null} />}
       {topology.error === null ? null : <Fault message={topology.error} lastRead={sample === null ? topology.lastUpdated : null} />}
       {claude.error === null ? null : <Fault message={claude.error} lastRead={sample === null ? claude.lastUpdated : null} />}
       {claudeFault === null ? null : <Fault message={claudeFault} />}

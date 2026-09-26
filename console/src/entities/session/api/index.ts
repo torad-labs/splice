@@ -46,13 +46,13 @@ export function startSessionsPolling(intervalMs = 5000): () => void {
  * served (V4-130), so a failure is reported as one, never as "not built".
  */
 export async function fetchSessionEdges(sessionId: string): Promise<void> {
-  sessionEdgesStore.startLoading();
   try {
-    sessionEdgesStore.setData(
+    sessionEdgesStore.land(
+      sessionId,
       await request<SessionEdgesPayload>(`/api/sessions/${encodeURIComponent(sessionId)}/edges`),
     );
   } catch (err) {
-    sessionEdgesStore.setError(messageOf(err));
+    sessionEdgesStore.fail(sessionId, messageOf(err));
   }
 }
 

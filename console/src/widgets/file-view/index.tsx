@@ -8,6 +8,8 @@ import { HeadMark } from '@entities/control-status';
 import { fetchProjectFiles, useProjectFiles } from '@entities/project';
 import type { ProjectFilesPayload } from '@entities/project';
 import { Fault } from '@shared/controls';
+import { readFor } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
 import { Badge, Empty, Reveal } from '@shared/ui';
 import { H, S } from './strings';
 import './file-view.css';
@@ -24,6 +26,14 @@ function lookedIn(data: ProjectFilesPayload): string {
  * reach the store and the shipped build never carries it. When it is provided
  * this reads nothing.
  */
+/** What the view prints: the fixture's files when one is handed in, else the read made for THIS
+ *  project and its own failure (V4-304). */
+export function filesShown(state: Keyed<string, ProjectFilesPayload>, projectId: string, files?: ProjectFilesPayload): { data: ProjectFilesPayload | null; error: string | null } {
+  if (files !== undefined) return { data: files, error: null };
+  const { data, error } = readFor(state, projectId);
+  return { data, error };
+}
+
 export function FileView({ projectId, files }: { projectId: string; files?: ProjectFilesPayload }) {
   const state = useProjectFiles((s) => s);
 
@@ -31,9 +41,10 @@ export function FileView({ projectId, files }: { projectId: string; files?: Proj
     if (files === undefined) void fetchProjectFiles(projectId);
   }, [projectId, files]);
 
-  if (files === undefined && state.error !== null) return <Fault message={state.error} />;
-  const data = files ?? state.data;
-  if (data === undefined || data === null) return null;
+  const shown = filesShown(state, projectId, files);
+  if (shown.error !== null) return <Fault message={shown.error} />;
+  const data = shown.data;
+  if (data === null) return null;
   if (data.files.length === 0) {
     // FEATURES.md 4.14: the empty names the setting when the client's memory is off, and always
     // names the directories the reader looked in.

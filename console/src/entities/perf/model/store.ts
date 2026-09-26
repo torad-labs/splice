@@ -1,9 +1,7 @@
-import { createResource } from '@shared/lib';
+import { createKeyed, createResource, readFor } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
 import type { PendingRoute } from '@shared/api';
-import type { CaptureState, PerfPayload, PerfSummaryPayload, TurnsState } from './types';
-
-/** Per-field percentiles per head (GET /api/perf). */
-export const perfStore = createResource<PerfPayload>();
+import type { CaptureState, PerfSummaryPayload, TurnsState } from './types';
 
 /** Windowed summaries per head (GET /api/perf/summary). */
 export const perfSummaryStore = createResource<PerfSummaryPayload>();
@@ -14,18 +12,15 @@ export const perfSummaryStore = createResource<PerfSummaryPayload>();
 export const perfTurnsStore = createResource<TurnsState | PendingRoute>();
 
 /**
- * The body capture the console holds (GET/PUT /api/heads/{head}/capture): the last head read, with
- * what runs and what this console wrote for it, and each head whose last capture read or write
- * failed, in the daemon's words. Failures are kept by head because every reader asks for ONE head:
- * the store's one error printed under whichever head's drawer was open, while that head's own read
- * was in flight, and for good if it never landed (V4-301).
+ * The body capture the console holds (GET/PUT /api/heads/{head}/capture), by head: the last head
+ * read, with what runs and what this console wrote for it, and each head whose last capture read or
+ * write failed, in the daemon's words. Kept by head because every reader asks for ONE head: the
+ * store's one error printed under whichever head's drawer was open, while that head's own read was
+ * in flight, and for good if it never landed (V4-301). The cell every per-key read now uses (V4-304).
  */
-export interface CaptureCell {
-  state: CaptureState | null;
-  failures: ReadonlyMap<string, string>;
-}
+export type CaptureCell = Keyed<string, CaptureState>;
 
-export const captureStore = createResource<CaptureCell>();
+export const captureStore = createKeyed<string, CaptureState>();
 
 /** One head's capture, as a drawer prints it. */
 export interface HeadCapture {
@@ -37,8 +32,6 @@ export interface HeadCapture {
  *  one view both the turns and the logs page read, so neither gates at its call site. */
 export function captureFor(cell: CaptureCell | null, head: string | null): HeadCapture {
   if (cell === null || head === null) return { capture: null, error: null };
-  return {
-    capture: cell.state !== null && cell.state.running.head === head ? cell.state : null,
-    error: cell.failures.get(head) ?? null,
-  };
+  const { data, error } = readFor(cell, head);
+  return { capture: data, error };
 }

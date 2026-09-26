@@ -15,6 +15,7 @@ import {
 import { sessionRegistryStore } from '../src/entities/session/model/store';
 import { advanceCursor, loadTranscript, openCursor, PENDING_TRANSCRIPT } from '../src/entities/transcript';
 import { transcriptStore } from '../src/entities/transcript/model/store';
+import { readFor } from '../src/shared/lib';
 import type { TranscriptPage } from '../src/entities/transcript';
 import { checkFix, checkSection, fetchDoctor, isRedacted, leaksIn, leaksInText } from '../src/entities/doctor';
 import { doctorStore } from '../src/entities/doctor/model/store';
@@ -207,7 +208,7 @@ describe('pending routes', () => {
   test('each unbuilt route resolves its store to the item that will serve it', async () => {
     stubRoutes({});
     await loadTranscript('s1');
-    expect(transcriptStore.get().data).toEqual({ pending: PENDING_TRANSCRIPT });
+    expect(readFor(transcriptStore.get(), 's1').data).toEqual({ pending: PENDING_TRANSCRIPT });
     await fetchDoctor();
     expect(doctorStore.get().data).toEqual({ pending: 'V4-127' });
     await fetchBudgets();

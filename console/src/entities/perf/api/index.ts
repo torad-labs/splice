@@ -4,16 +4,15 @@
 // here re-implements any of them.
 import { pendingOf as routePendingOf, request } from '@shared/api';
 import type { HeadsPayload } from '@shared/api';
-import { poll } from '@shared/lib';
+import { poll, readFor } from '@shared/lib';
 import { afterRead, afterWrite } from '../model/capture';
 import type { CaptureWriteResult } from '../model/capture';
 import { inflightFrom } from '../model/derive';
 import { mergeTurns } from '../model/turns-wire';
-import { captureStore, perfStore, perfSummaryStore, perfTurnsStore } from '../model/store';
-import type { CaptureCell } from '../model/store';
+import { captureStore, perfSummaryStore, perfTurnsStore } from '../model/store';
 import type {
+  CaptureState,
   CaptureWire,
-  PerfPayload,
   PerfSummaryPayload,
   PerfTurnsWire,
   PerfWindowLabel,
@@ -26,15 +25,6 @@ const DEFAULT_TAIL = 200;
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-export async function fetchPerf(tail = DEFAULT_TAIL): Promise<void> {
-  perfStore.startLoading();
-  try {
-    perfStore.setData(await request<PerfPayload>(`/api/perf?tail=${tail}`));
-  } catch (err) {
-    perfStore.setError(messageOf(err));
-  }
 }
 
 export async function fetchPerfSummary(label: PerfWindowLabel = '24h'): Promise<void> {
@@ -131,10 +121,6 @@ export async function refetchPerfTurns(): Promise<void> {
   await fetchPerfTurns(lastAsk.head, lastAsk.n);
 }
 
-export function startPerfPolling(intervalMs = 5000): () => void {
-  return poll(fetchPerf, intervalMs);
-}
-
 export function startPerfSummaryPolling(label: PerfWindowLabel = '24h', intervalMs = 15000): () => void {
   return poll(() => fetchPerfSummary(label), intervalMs);
 }
@@ -143,18 +129,9 @@ export function startPerfTurnsPolling(head?: string, intervalMs = 5000): () => v
   return poll(() => fetchPerfTurns(head), intervalMs);
 }
 
-const NO_CAPTURE: CaptureCell = { state: null, failures: new Map() };
-
-function captureCell(): CaptureCell {
-  return captureStore.get().data ?? NO_CAPTURE;
-}
-
-/** The failures with `head`'s set to `message`, or cleared by a null one. */
-function failedAs(failures: ReadonlyMap<string, string>, head: string, message: string | null): ReadonlyMap<string, string> {
-  const next = new Map(failures);
-  if (message === null) next.delete(head);
-  else next.set(head, message);
-  return next;
+/** What the console holds for `head`, or null when the last capture read was another head's. */
+function captureOf(head: string): CaptureState | null {
+  return readFor(captureStore.get(), head).data;
 }
 
 /**
@@ -163,14 +140,11 @@ function failedAs(failures: ReadonlyMap<string, string>, head: string, message: 
  * restart. The route takes no turn: it serves settings, never a body (CaptureRoutes.read).
  */
 export async function fetchCapture(head: string): Promise<void> {
-  captureStore.startLoading();
   try {
     const read = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`);
-    const cell = captureCell();
-    captureStore.setData({ state: afterRead(cell.state, read), failures: failedAs(cell.failures, head, null) });
+    captureStore.land(head, afterRead(captureOf(head), read));
   } catch (err) {
-    const cell = captureCell();
-    captureStore.setData({ ...cell, failures: failedAs(cell.failures, head, messageOf(err)) });
+    captureStore.fail(head, messageOf(err));
   }
 }
 
@@ -181,9 +155,8 @@ export async function fetchCapture(head: string): Promise<void> {
  * read as capture on. A refusal is kept in the daemon's own words.
  */
 export async function putCapture(head: string, enabled: boolean): Promise<void> {
-  const previous = captureCell();
-  const mine = previous.state !== null && previous.state.running.head === head ? previous.state : null;
-  if (mine !== null) captureStore.setData({ ...previous, state: { ...mine, writing: true } });
+  const mine = captureOf(head);
+  if (mine !== null) captureStore.land(head, { ...mine, writing: true });
   let write: CaptureWriteResult;
   try {
     const answer = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`, {
@@ -196,14 +169,11 @@ export async function putCapture(head: string, enabled: boolean): Promise<void> 
   }
   try {
     const reread = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`);
-    captureStore.setData({ state: afterWrite(mine, write, reread), failures: failedAs(captureCell().failures, head, null) });
+    captureStore.land(head, afterWrite(mine, write, reread));
   } catch (err) {
     // The write's outcome is still known when the re-read fails; what runs is the last read, and the
     // failed read is reported beside it rather than hidden behind a stale switch.
-    const cell = captureCell();
-    captureStore.setData({
-      state: mine !== null ? afterWrite(mine, write, mine.running) : cell.state,
-      failures: failedAs(cell.failures, head, messageOf(err)),
-    });
+    if (mine !== null) captureStore.land(head, afterWrite(mine, write, mine.running));
+    captureStore.fail(head, messageOf(err));
   }
 }

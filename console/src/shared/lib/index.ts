@@ -37,6 +37,60 @@ export function createResource<T>(): ResourceStore<T> {
   };
 }
 
+/**
+ * A read made for one key at a time (one session's edges, one project's files, one head's config),
+ * held so that a reader asking for one key can never be handed another's. A resource holds ONE data
+ * and ONE error whoever they were read for: the panel of session B printed A's hand-offs while B's
+ * read was in flight, and for good when it failed, and A's failure printed under B (V4-301, V4-304).
+ * Here the last read that landed carries its key, and every key whose last read failed keeps its own
+ * failure until a read of it lands. There is no top-level `data` or `error`: `readFor` with a key is
+ * the only way to one.
+ */
+export interface Keyed<K, T> {
+  /** The last read that landed, the key it was read for, and when. */
+  last: { key: K; data: T; at: number } | null;
+  /** Each key whose last read failed, in the daemon's words. */
+  failures: ReadonlyMap<K, string>;
+}
+
+export interface KeyedStore<K, T> {
+  use: <U>(selector: (cell: Keyed<K, T>) => U) => U;
+  get: () => Keyed<K, T>;
+  /** A read of `key` landed: it is the last one, and `key` has no failure. */
+  land: (key: K, data: T) => void;
+  /** A read of `key` failed: the last read stands, for the key it was read for. */
+  fail: (key: K, message: string) => void;
+}
+
+export function createKeyed<K, T>(): KeyedStore<K, T> {
+  const useStore = create<Keyed<K, T>>(() => ({ last: null, failures: new Map<K, string>() }));
+  const failedAs = (key: K, message: string | null): ReadonlyMap<K, string> => {
+    const next = new Map(useStore.getState().failures);
+    if (message === null) next.delete(key);
+    else next.set(key, message);
+    return next;
+  };
+  return {
+    use: (selector) => useStore(selector),
+    get: () => useStore.getState(),
+    land: (key, data) => useStore.setState({ last: { key, data, at: Date.now() }, failures: failedAs(key, null) }),
+    fail: (key, message) => useStore.setState({ failures: failedAs(key, message) }),
+  };
+}
+
+/** One key's read as a view prints it: its data and when that landed, each null when the last read
+ *  that landed was another key's, and its own failure. */
+export interface KeyedRead<T> {
+  data: T | null;
+  error: string | null;
+  lastUpdated: number | null;
+}
+
+export function readFor<K, T>(cell: Keyed<K, T>, key: K): KeyedRead<T> {
+  const mine = cell.last !== null && cell.last.key === key ? cell.last : null;
+  return { data: mine?.data ?? null, error: cell.failures.get(key) ?? null, lastUpdated: mine?.at ?? null };
+}
+
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
 }

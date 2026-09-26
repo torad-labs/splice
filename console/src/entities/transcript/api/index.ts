@@ -18,25 +18,26 @@ export function searchedOf(err: unknown): string[] | null {
   return Array.isArray(searched) ? searched.filter((dir): dir is string => typeof dir === 'string') : null;
 }
 
-/** The loaded state, or null when nothing is loaded yet, the route is pending or there is no file. */
-function loadedState(): TranscriptState | null {
-  const data = transcriptStore.get().data;
-  if (data === null || 'pending' in data || 'missing' in data) return null;
-  return data;
+/** The last loaded state and the session it was read for, or null when nothing is loaded yet, the
+ *  route is pending or there is no file. */
+function loaded(): { sessionId: string; state: TranscriptState } | null {
+  const last = transcriptStore.get().last;
+  if (last === null || 'pending' in last.data || 'missing' in last.data) return null;
+  return { sessionId: last.key, state: last.data };
 }
 
-function resolveFailure(err: unknown): void {
+function resolveFailure(sessionId: string, err: unknown): void {
   const searched = searchedOf(err);
   if (searched !== null) {
-    transcriptStore.setData({ missing: searched });
+    transcriptStore.land(sessionId, { missing: searched });
     return;
   }
   const pending = pendingOf(err, PENDING_TRANSCRIPT);
   if (pending !== null) {
-    transcriptStore.setData(pending);
+    transcriptStore.land(sessionId, pending);
     return;
   }
-  transcriptStore.setError(err instanceof Error ? err.message : String(err));
+  transcriptStore.fail(sessionId, err instanceof Error ? err.message : String(err));
 }
 
 /** The cursor travels as a query token; the daemon mints it and the console never parses it. */
@@ -48,18 +49,17 @@ function pagePath(sessionId: string, cursor: string | null): string {
 /** The FIRST page of a session's transcript. Always starts at the beginning: a transcript is read
  *  from the top, and a re-read after a failure must not resume mid-conversation. */
 export async function loadTranscript(sessionId: string): Promise<void> {
-  transcriptStore.startLoading();
   try {
     const page = await request<TranscriptPage>(pagePath(sessionId, null));
     const { cursor } = advanceCursor(openCursor(sessionId), page);
-    transcriptStore.setData({
+    transcriptStore.land(sessionId, {
       sessionId: page.session_id,
       path: page.path,
       messages: page.messages,
       cursor,
     });
   } catch (err) {
-    resolveFailure(err);
+    resolveFailure(sessionId, err);
   }
 }
 
@@ -69,24 +69,25 @@ export async function loadTranscript(sessionId: string): Promise<void> {
  * belongs to ONE conversation and this never starts a second one behind the reader's back.
  */
 export async function loadMoreTranscript(): Promise<void> {
-  const state = loadedState();
-  if (state === null) return;
+  const held = loaded();
+  if (held === null) return;
+  const { sessionId, state } = held;
   const token = state.cursor.next;
   if (state.cursor.pages === 0 || token === null) return;
   try {
     const page = await request<TranscriptPage>(pagePath(state.sessionId, token));
     const { cursor, reset } = advanceCursor(state.cursor, page);
     if (reset) {
-      transcriptStore.setData({ sessionId: page.session_id, path: page.path, messages: page.messages, cursor });
+      transcriptStore.land(sessionId, { sessionId: page.session_id, path: page.path, messages: page.messages, cursor });
       return;
     }
-    transcriptStore.setData({
+    transcriptStore.land(sessionId, {
       sessionId: state.sessionId,
       path: page.path,
       messages: [...state.messages, ...page.messages],
       cursor,
     });
   } catch (err) {
-    resolveFailure(err);
+    resolveFailure(sessionId, err);
   }
 }

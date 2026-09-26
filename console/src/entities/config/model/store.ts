@@ -1,8 +1,11 @@
-import { createResource } from '@shared/lib';
+import { createKeyed } from '@shared/lib';
 import type { ConfigPayload, ConfigValue, EffectiveConfig } from '@shared/api';
 import type { KnobDisposition, Provenance } from './types';
 
-export const configStore = createResource<ConfigPayload>();
+/** The config views read, by head, null being the global view (GET /api/config[?head=]): a head's
+ *  view holds that head's values, and settings, the fleet and the MCP page each ask for their own
+ *  (V4-304). */
+export const configStore = createKeyed<string | null, ConfigPayload>();
 
 export interface DiffEntry {
   key: string;

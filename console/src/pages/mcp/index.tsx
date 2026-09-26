@@ -16,7 +16,9 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { knobLabel } from '@widgets/knob-form';
 import { Blank, Fault, KeyLink } from '@shared/controls';
-import { ABSENT, fmtInt, ratio, timeAgo } from '@shared/lib';
+import { ABSENT, fmtInt, ratio, readFor, timeAgo } from '@shared/lib';
+import type { Keyed } from '@shared/lib';
+import type { ConfigPayload } from '@shared/api';
 import {
   Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow,
 } from '@shared/ui';
@@ -208,9 +210,11 @@ function LimitsSection({ limits }: { limits: readonly HostLimit[] }) {
  * static render only ever sees a zustand store's initial state, so a board that read the store
  * could not be rendered from data by a test or a capture.
  */
-export function McpBoard({ payload, limits = [], view = null, sample }: {
+export function McpBoard({ payload, limits = [], limitsError = null, view = null, sample }: {
   payload: McpPayload | null;
   limits?: readonly HostLimit[];
+  /** The config read the limits come from failed, in the daemon's words: the limits are unknown. */
+  limitsError?: string | null;
   /** The active saved view; null is name order. */
   view?: Pick<View, 'group' | 'sort'> | null;
   /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
@@ -231,9 +235,17 @@ export function McpBoard({ payload, limits = [], view = null, sample }: {
   return (
     <div className="myx-mcp" {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}>
       {body}
+      {limitsError === null ? null : <Fault message={limitsError} />}
       {limits.length === 0 ? null : <LimitsSection limits={limits} />}
     </div>
   );
+}
+
+/** The four host limits, from the GLOBAL config read (a head's view holds that head's values), and
+ *  that read's failure (V4-304). */
+export function limitsOf(config: Keyed<string | null, ConfigPayload>): { limits: HostLimit[]; error: string | null } {
+  const { data, error } = readFor(config, null);
+  return { limits: data === null ? [] : hostLimits(knobDispositions(data)), error };
 }
 
 export function McpPage() {
@@ -265,7 +277,7 @@ export function McpPage() {
     }).catch(() => undefined);
   }, [search]);
 
-  const limits = hostLimits(config.data === null ? [] : knobDispositions(config.data));
+  const limits = limitsOf(config);
 
   return (
     <>
@@ -279,7 +291,8 @@ export function McpPage() {
       {mcp.error === null ? null : <Fault message={mcp.error} lastRead={sample === null ? mcp.lastUpdated : null} />}
       <McpBoard
         payload={sample === null ? mcp.data : sample.payload}
-        limits={config.data === null ? [] : limits}
+        limits={limits.limits}
+        limitsError={limits.error}
         view={active}
         {...(sample === null ? {} : { sample: sample.name })}
       />

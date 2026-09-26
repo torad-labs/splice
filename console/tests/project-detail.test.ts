@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchProject } from '../src/entities/project';
 import type { ProjectRow } from '../src/entities/project';
 import { projectStore } from '../src/entities/project/model/store';
+import { readFor } from '../src/shared/lib';
 import { H, S } from '../src/pages/projects/strings';
 import {
   ProjectCompaction,
@@ -146,12 +147,12 @@ describe('the project detail read', () => {
     const urls = stub(200, row());
     await fetchProject(row().id);
     expect(urls).toEqual([`/api/projects/${encodeURIComponent(row().id)}`]);
-    expect(projectStore.get().data).toEqual(row());
+    expect(readFor(projectStore.get(), row().id).data).toEqual(row());
   });
 
   test('a root the daemon has not seen is its 404 sentence, never a pending row', async () => {
     stub(404, { error: 'not a project root splice has seen: /nope' });
     await fetchProject('/nope');
-    expect(projectStore.get().error).toBe('not a project root splice has seen: /nope');
+    expect(readFor(projectStore.get(), '/nope').error).toBe('not a project root splice has seen: /nope');
   });
 });

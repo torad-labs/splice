@@ -7158,8 +7158,11 @@ id = "V4-274"
 phase = "release"
 title = "After a resume on another head the status line reads the new head's context, never the old head's last turn (splice-website, take-resume-3, 2026-09-26): claudex's status line read '87k/272k · 32%' right after 'claudex -r' of a claude-splice session and '20k/272k · 8%' after the first GPT turn, while that GPT request was 97 KB (daemon.log:174); a user who resumes on another head sees the context appear to shrink."
 files = ["features/usage/src/main/kotlin/splice/usage/statusline/**", "features/usage/src/test/kotlin/splice/usage/statusline/**"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a statusline body for a session whose last assistant usage came from another head's model draws that usage as the new head's context; green: until the new head reports a turn it draws no context figure (or the new head's measured one); CI gate on the pushed sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T08:10:36.053Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T08:10:36Z
 
 [[items]]
 id = "V4-275"

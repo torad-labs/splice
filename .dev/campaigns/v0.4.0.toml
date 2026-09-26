@@ -7250,3 +7250,11 @@ files = ["integrations/upstream/src/test/kotlin/splice/upstream/failure/Upstream
 status = "done"
 verify = "red first: the old offset with a 1 s pause between the two clock reads fails with 'resets in 6d 3h' every run; green: the mid-hour offset passes with the same pause; bun tools/gate slot V4-281 -- :integrations-upstream:test --continue"
 # [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-281 -- :integrations-upstream:test :integrations-upstream:detekt --continue" exit=0 tests=338 touched=integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailureClassifierTest.kt tail="fix 1ceb0c54b. red: the old offset with Thread.sleep(1_000) between the clock reads fails 'resets in 6d 3h' (CI's exact text); green: the mid-hour offset passes with the same pause, and the module passes 338/338, detekt clean"
+
+[[items]]
+id = "V4-282"
+phase = "release"
+title = "splice's Claude Code conformance suite, a gate leg (rig-lead with the operator's goal, 2026-09-26: 'I want splice and Rig to be reference as the best way to serve this model'). Every message class a Claude Code session depends on reaches a fake upstream intact through every dialect (anthropic passthrough, openai-chat, openai-responses) and every system_prompt_mode (replace, strip, append): background-subagent task notifications, SessionStart hook context, cross-session messages, the date line and <total_tokens> notices (mid-conversation role=system), tool calls whose input_schema is free-form (passed through unchanged, ChatWireMapper.kt:240), and reasoning blocks. No provider quota, no private data: synthetic request bodies shaped on Claude Code 2.1.283's, one corpus shared with rig-lead's head-side half (its fake upstream and live checks). V4-277 is the defect this leg would have caught"
+files = ["tools/e2e/src/commands/conformance.ts", "tools/e2e/test/conformance.test.ts", "fixtures/conformance/", "tools/gate/config/ladder.json"]
+status = "todo"
+verify = "red first: restoring V4-277's filterNot in ChatSystemPrompt reds the suite by name (the message class, the dialect and the mode); every class x dialect x mode cell is asserted, with a census that fails when a dialect or mode has no row; green: the leg runs in gateOfRecord with no network; CI gate on the pushed sha"

@@ -7248,3 +7248,4 @@ title = "The quota-429 reset test cannot straddle a second (CI run 36228211391 o
 files = ["integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailureClassifierTest.kt"]
 status = "todo"
 verify = "red first: the old offset with a 1 s pause between the two clock reads fails with 'resets in 6d 3h' every run; green: the mid-hour offset passes with the same pause; bun tools/gate slot V4-281 -- :integrations-upstream:test --continue"
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-281 -- :integrations-upstream:test :integrations-upstream:detekt --continue" exit=0 tests=338 touched=integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailureClassifierTest.kt tail="fix 1ceb0c54b. red: the old offset with Thread.sleep(1_000) between the clock reads fails 'resets in 6d 3h' (CI's exact text); green: the mid-hour offset passes with the same pause, and the module passes 338/338, detekt clean"

@@ -6629,6 +6629,7 @@ verify = "red first: a test that the missing-key warning names splice key set; t
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T20:38:12.713Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T20:38:12Z
+# [2026-09-26] RECEIPT cmd="CI gate run 36186735346 on a1e1fa015 (PR #296, merged 679bb5c3a into train 20); locally :features-launch:test :integrations-claude-code:test :features-configuration:test and the app auth+example tests, detekt, walls, census" exit=0 tests=397 touched=.dev/restructure/capabilities.tsv,app/src/main/kotlin/splice/app/cli/auth/KeyCommand.kt,features/configuration/src/main/kotlin/splice/configuration/add/AddCommand.kt,features/launch/src/main/kotlin/splice/launch/recipe/LaunchResponse.kt,features/launch/src/test/kotlin/splice/launch/recipe/LaunchKeyWarningTest.kt,integrations/claude-code/src/main/kotlin/splice/client/login/LoginHookScripts.kt,integrations/claude-code/src/test/kotlin/splice/client/login/KeyCaptureNoRestartTest.kt tail="Live: scratch daemon on that sha's jar, pid 3128622 throughout; before the key the launch warning named 'splice key set FAKE_API_KEY' and the turn got 401; after 'splice key set FAKE_API_KEY --stdin' the warning was null and the turn returned 200 with key_ok=True, no restart. Kept restarts: CliSignIn (a labeled account joins its pool at head assembly) and AddCommand (splice.toml is read at start)."
 
 [[items]]
 id = "V4-228"

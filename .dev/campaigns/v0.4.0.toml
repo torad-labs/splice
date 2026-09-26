@@ -7678,3 +7678,4 @@ verify = "red first: a plan_recipe run on a scratch $OUT leaves a file under $OU
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T13:36:31.304Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T13:36:31Z
+# [2026-09-26] RECEIPT cmd="bash scratch plan_recipe harness (lib.sh sourced, plan-limit.sh's PLAN_RECIPE + plan_recipe eval'd, OUT/HOME scratch, curl_mgmt stubbed); bash -n + shellcheck -x plan-limit.sh" exit=0 tests=0 touched=tools/e2e/docker/plan-limit.sh tail="r $OUT; $HOME/.e2e-private/recipe-planlimit.json mode 600; plan_recipe rc=0 with both CLAUDE_CODE_RETRY_WATCHDOG checks reading $PLAN_RECIPE; keep_transcripts' -newer reads $PLAN_RECIPE too; bash -n ok; shellcheck exit 0 (pre-existing SC2015 at :107 grouped, SC2034 unread TURN_END_MS removed). MUTANT: write back to $OUT => OUT 1 file and the watchdog grep fails (rc=1), restored sha ebc53dc0 MATCH."

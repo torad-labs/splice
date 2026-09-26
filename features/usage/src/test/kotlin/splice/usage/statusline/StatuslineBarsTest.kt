@@ -90,9 +90,12 @@ class StatuslineBarsTest {
 
     @Test
     fun `rate_limits in the blob become the 5h and 7d bars, with effort and spend beside the model`() {
-        val line = render(
+        // Drawn at a fixed now before both resets: a window past its reset draws nothing (V4-327).
+        val line = renderAt(
+            1_788_000_000_000L,
             """{"model":{"id":"grok-4.6","display_name":"Grok 4.6"},"effort":{"level":"high"},"cost":{"total_cost_usd":61.44},
                 "rate_limits":{"five_hour":{"used_percentage":14,"resets_at":1788010000},"seven_day":{"used_percentage":42.4,"resets_at":1788500000}}}""",
+            null,
         )
         assertTrue("Grok 4.6·high" in line, "effort rides beside the model: $line")
         // V4-240: a grok head with no card for the model says so; the blob's 61.44 is Anthropic's price.

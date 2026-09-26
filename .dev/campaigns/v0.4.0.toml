@@ -7847,6 +7847,7 @@ claimed_at = "2026-09-26T18:31:35.492Z"
 # [2026-09-26] RECEIPT cmd="cd console && tsc --noEmit -p . && eslint src tests e2e playwright.config.ts && vitest run (79 files); bun tools/gate rules" exit=0 tests=1519 touched=console/src/pages/sessions/index.tsx,console/src/pages/sessions/strip.tsx,console/src/pages/sessions/strings.ts,console/src/pages/sessions/coverage.ts,console/src/pages/sessions/sessions.css,console/tests/sessions.test.ts,docs/design/JOBS.md,.dev/campaigns/web-console/FEATURES.md tail="f3ea64dce; red: sendCall not a function, detail lacked SendMessage(to=\"design-builder4\"); green 33/33; mutants 5/5; no route, no socket write"
 # [2026-09-26] amend by=orchestrator: files were [".dev/campaigns/web-console/FEATURES.md"]
 # [2026-09-26] FENCE RECORDED AFTER THE FACT (orchestrator): console asked for the 7 console files and built f3ea64dce before the amendment landed. No live row held any of them (V4-314 was done), so nothing collided, but a seat edits outside its fence only after the amendment
+# [2026-09-26] INSTALLED ad9b6bb8e (V4-315, V4-321, V4-322, V4-323 plus ledger) after CI gate run 36263173447 passed on that exact sha. Jar built from a clean detached worktree through the gate slot in 57 s, sha256 f2808a6e480d066c56255fa9b93c35d76c03d75292009cfb511cc8d1bc876a24; backup ~/.local/share/splice/splice.jar.bak-20260926-1357-pre-ad9b6bb8e; gated restart (8102 silent, Vast lists no rig-glm53, 1:57:27 PM CT); pid 3655074 since 1:57:43 PM CT; the open jar /proc/3655074/fd/4 has the same sha256
 
 [[items]]
 id = "V4-322"

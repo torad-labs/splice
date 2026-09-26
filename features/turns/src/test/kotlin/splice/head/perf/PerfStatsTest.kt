@@ -163,4 +163,35 @@ class PerfStatsTest {
         val tmp = Files.createTempDirectory("perf-stats")
         assertTrue(PerfStats(tmp.resolve("absent.jsonl")).tailNumeric(5).isEmpty())
     }
+
+    /** V4-240 review, findings 4b and 4c, at the reader. The cost segment prices each turn at the model
+     *  it ran on, so the model rides with the counters; and the reader holds a byte-bounded tail, so it
+     *  names where that tail starts, but ONLY when the read did not reach the start of the history. A
+     *  session always begins before its first row is written, so a start reported for a file read
+     *  whole would mark every fresh session's figure `≥` over nothing cut. */
+    @Test
+    fun `sessionTail carries each turn's model, and the tail's start only when history was cut`() {
+        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+        val session = "a6b15bd7"
+        fun row(ts: Long, model: String, pad: Int = 0) =
+            "{\"ts\":$ts,\"model\":\"$model\",\"outcome\":\"ok\",\"compact\":false," +
+                "\"session\":\"$session\",\"in_tokens\":10,\"pad\":\"${"x".repeat(pad)}\"}\n"
+
+        Files.writeString(file, row(100L, "claude-sonnet-5") + row(200L, "claude-opus-5-5"))
+        val whole = PerfStats(file).sessionTail("$session-full-client-id")
+        assertEquals(listOf("claude-sonnet-5", "claude-opus-5-5"), whole.turns.map { it.model })
+        assertEquals(null, whole.tailStartMs, "the read held the whole history: nothing older to miss")
+
+        Files.writeString(file.resolveSibling("perf.jsonl.1"), row(50L, "claude-sonnet-5"))
+        assertEquals(100L, PerfStats(file).sessionTail(session).tailStartMs, "a rolled generation holds older rows")
+        Files.delete(file.resolveSibling("perf.jsonl.1"))
+
+        // 400 rows of about 1 KiB each: past the 256 KiB bound, so the read starts mid-file.
+        Files.writeString(file, (1L..400L).joinToString("") { ts -> row(ts, "claude-opus-5-5", pad = 900) })
+        val cut = PerfStats(file).sessionTail(session)
+        val readTs = cut.turns.map { it.counters.getValue("ts") }
+        assertTrue(cut.turns.size in 1 until 400, "the bound cut the file: ${cut.turns.size} rows read")
+        assertEquals(readTs.min(), cut.tailStartMs, "the tail starts at the oldest row it read")
+        assertEquals(400L, readTs.max())
+    }
 }

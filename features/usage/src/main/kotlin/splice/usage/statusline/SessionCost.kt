@@ -15,6 +15,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.perf.PerfKeys
+import splice.core.perf.PerfSessionTurn
 import splice.usage.perf.HeadSessionPerfSource
 
 /** What the statusline's cost segment asks for: this session's spend, or null when splice has no
@@ -25,7 +26,17 @@ internal fun interface SessionCostSource {
     /** V4-240: whether [modelId] has a rate card on this head at all, so a head that cannot price it
      *  says so in words rather than showing a figure Claude Code priced with Anthropic's card. */
     fun rated(modelId: String?): Boolean = false
+
+    /** V4-240 review: [usdFor] with whether it is only a LOWER BOUND, which the segment marks `≥`.
+     *  [sessionStartMs] is when the client session began (its blob's `cost.total_duration_ms`
+     *  before now), or null when the blob does not say. A source that cannot tell answers exact. */
+    fun spendFor(sessionId: String?, modelId: String?, sessionStartMs: Long?): SessionSpend? =
+        usdFor(sessionId, modelId)?.let { SessionSpend(it, lowerBound = false) }
 }
+
+/** One session's figure, and whether the true spend may be higher: a turn the head cannot price, or
+ *  a session older than the tail the reader holds. */
+internal data class SessionSpend(val usd: Double, val lowerBound: Boolean)
 
 /** USD for ONE client session, from the tokens its turns already recorded against the rate card
  *  that turn's model declares.
@@ -42,10 +53,24 @@ internal class SessionCost(
     private val arithmetic: TokenCost = TokenCost(),
 ) : SessionCostSource {
 
-    override fun usdFor(sessionId: String?, modelId: String?): Double? {
+    override fun usdFor(sessionId: String?, modelId: String?): Double? = spendFor(sessionId, modelId, null)?.usd
+
+    /** V4-240 review. Each turn is priced at the card of the model it RAN on (finding 4b), so a
+     *  session that switched models is not billed at the one the status line asks about; the asked
+     *  model prices only a row that recorded none. A turn whose model has no card adds nothing and
+     *  makes the figure a lower bound, and so does a session that began before the oldest row of a
+     *  tail the reader could not read whole (finding 4c). No priced turn at all is no figure. */
+    override fun spendFor(sessionId: String?, modelId: String?, sessionStartMs: Long?): SessionSpend? {
         val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
-        val rates = modelId?.let(::ratesFor) ?: return null
-        return turnsOf(session).takeIf { it.isNotEmpty() }?.sumOf { turn -> arithmetic.of(turn, rates) }
+        val tail = tokens.sessionTail(session)
+        val asked = modelId?.let(::ratesFor)
+        val turns = tail.turns.map { turn -> ratesOf(turn, asked) to bucketsOf(turn.counters) }
+            .filterNot { (_, buckets) -> buckets.isEmpty }
+        val priced = turns.mapNotNull { (rates, buckets) -> rates?.let { arithmetic.of(buckets, it) } }
+        if (priced.isEmpty()) return null
+        val tailStart = tail.tailStartMs
+        val cut = tailStart != null && sessionStartMs != null && sessionStartMs < tailStart
+        return SessionSpend(priced.sum(), lowerBound = priced.size < turns.size || cut)
     }
 
     override fun rated(modelId: String?): Boolean = modelId?.let(::ratesFor) != null
@@ -63,14 +88,17 @@ internal class SessionCost(
         return c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates
     }
 
-    /** This session's rows as billing buckets, one per turn. Each perf row is ONE turn's own
+    /** The card [turn] is billed at: its own model's, or [asked]'s for a row that recorded none. */
+    private fun ratesOf(turn: PerfSessionTurn, asked: ModelRates?): ModelRates? {
+        val model = turn.model ?: return asked
+        return ratesFor(model)
+    }
+
+    /** One turn's row as billing buckets. Each perf row is ONE turn's own
      *  contribution — in_tokens is that turn's final round, out_tokens its output across rounds — so
      *  the session total is the sum of their prices, which is the same arithmetic the operator's
      *  67-turn figure was taken with. V4-240: priced turn by turn, never summed first, because a
      *  long-context tier bills one REQUEST by its own size (TokenCost). An empty turn adds nothing. */
-    private fun turnsOf(sessionId: String): List<TokenBuckets> =
-        tokens.tailNumericFor(sessionId).map(::bucketsOf).filterNot { it.isEmpty }
-
     private fun bucketsOf(row: Map<String, Long>): TokenBuckets {
         // V4-37 redo: IN_TOKENS is INCLUSIVE of the cached portion, so the cache-miss bucket is
         // the difference, never the raw field. Both dialects that write it agree, and by

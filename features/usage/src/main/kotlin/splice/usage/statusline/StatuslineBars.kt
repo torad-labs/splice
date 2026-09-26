@@ -24,7 +24,10 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
 
     /** [computed] is splice's OWN figure for this session (V4-37). It wins when present, because the
      *  client's `total_cost_usd` is priced with an ANTHROPIC card whatever head it is really talking
-     *  to — the 20x error the operator reported.
+     *  to — the 20x error the operator reported. Except where that card IS the head's
+     *  ([CostFallback.clientPriced]): there Claude Code's figure is priced at the upstream's own card,
+     *  turn by turn at each turn's model, from the session's start, so it shows whenever the blob
+     *  carries one and splice's shows only when it does not (V4-240 review, finding 4a).
      *
      *  V4-240: every figure carries its basis, `API est.` (ApiCostText), because none of them is a
      *  charge. And the client's own figure is shown only where [fallback] says the head's upstream IS
@@ -47,23 +50,31 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
      *  exists to remove.
      *
      *  Reading, left to right: `≥` on the money is the direction (the true spend is AT LEAST this),
-     *  `⚠N` is the magnitude (N rows the reader could not read). */
+     *  `⚠N` is the magnitude (N rows the reader could not read). [lowerBound] draws the same `≥`
+     *  with no count (V4-240 review): a turn on a model with no card, or a session older than the
+     *  perf tail the reader holds. */
     fun costSegment(
         root: JsonObject,
         computed: Double? = null,
         droppedRows: Long = 0L,
         fallback: CostFallback = CostFallback(rated = false, clientPriced = true),
+        lowerBound: Boolean = false,
     ): String? {
         val ours = computed?.takeIf { it > 0.0 }
         val client = num((root["cost"] as? JsonObject)?.get("total_cost_usd"))?.takeIf { it > 0.0 }
         return when {
-            ours != null && droppedRows > 0L ->
-                ApiCostText.short(ours, DIM, RESET, "$YELLOW≥$RESET") + " $YELLOW⚠$droppedRows$RESET"
-            ours != null -> ApiCostText.short(ours, DIM, RESET)
-            fallback.rated -> null
-            !fallback.clientPriced -> DIM + ApiCostText.NO_RATE_CARD + RESET
-            else -> client?.let { ApiCostText.short(it, DIM, RESET) }
+            fallback.clientPriced && client != null -> ApiCostText.short(client, DIM, RESET)
+            ours != null -> ownFigure(ours, droppedRows, lowerBound)
+            fallback.rated || fallback.clientPriced -> null
+            else -> DIM + ApiCostText.NO_RATE_CARD + RESET
         }
+    }
+
+    /** splice's own figure, `≥` when it may be low, with `⚠N` only when rows were dropped. */
+    private fun ownFigure(usd: Double, droppedRows: Long, lowerBound: Boolean): String {
+        if (!lowerBound && droppedRows <= 0L) return ApiCostText.short(usd, DIM, RESET)
+        val count = if (droppedRows > 0L) " $YELLOW⚠$droppedRows$RESET" else ""
+        return ApiCostText.short(usd, DIM, RESET, "$YELLOW≥$RESET") + count
     }
 
     /** [quotaFirst]: the line is pooled, so the tracked windows are the SELECTED account's and win;

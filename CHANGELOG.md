@@ -552,13 +552,18 @@ origin.
   "an estimated $2.50 in API cost". Claude Code prices its own `total_cost_usd` at Anthropic's card
   whatever head it talks to, so that figure now shows only on a head whose upstream is Anthropic; on
   any other head a model splice cannot price shows `no rate card`, where it used to show Anthropic's
-  price under GPT-6-Sol. `splice add` writes the vendors' published API cards for gpt-6-sol,
-  grok-4.7, muse-spark-1.3 and claude-opus-5-5, each citing its source and date. A card can carry a
-  long-context tier (`long_context_over_input_tokens` with `long_context_input`,
-  `long_context_cache_read`, `long_context_output` and optionally `long_context_cache_write`) that
-  bills a request over the line at the higher card, and a session is priced turn by turn, so each
-  request pays its own tier. The `kt-dollar-figure-single-source` wall keeps any other source from
-  gluing a `$` to an amount (V4-240).
+  price under GPT-6-Sol. On a head whose upstream is Anthropic, Claude Code's figure wins over
+  splice's own whenever it has one, because it is priced at that upstream's card from the session's
+  start. splice's own figure prices each turn at the card of the model that turn ran on, not the
+  model the session is on now, and reads `≥` when a turn's model has no card or the session began
+  before the oldest perf row splice still reads. `splice add` writes the vendors' published API
+  cards for gpt-6-sol, grok-4.7, muse-spark-1.3 and claude-opus-5-5, each citing its source and
+  date. A card can carry a long-context tier (`long_context_over_input_tokens` with
+  `long_context_input`, `long_context_cache_read`, `long_context_output` and optionally
+  `long_context_cache_write`) that bills a request over the line at the higher card, and a session
+  is priced turn by turn, so each request pays its own tier. The `kt-dollar-figure-single-source`
+  wall keeps any other source from gluing a `$` to an amount, in any of its spellings:
+  `"$$amount"`, `"\$" + amount` and `"\$%.2f"` (V4-240).
 - **Installing a release needs no GitHub account.** `install.sh` and `splice upgrade` used to stop
   unless the GitHub CLI was installed and signed in. Now every asset is still checked against the
   release's `sha256sums.txt`, and a mismatch still refuses. The build-provenance attestation is

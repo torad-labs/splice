@@ -8,8 +8,10 @@
 #   "\$$amount", "\$${amount}"   an escaped dollar right before an interpolation (tree-sitter-kotlin
 #                                  keeps both in ONE string_content, measured on ast-grep 0.45)
 #   "\$0.85"                      an escaped dollar before a decimal literal
-#   "$" + amount, amount + "$"    a lone dollar as an operand of `+`
-#   "$%.2f"                       a dollar before a format spec
+#   "$" + amount, amount + "$"    a lone dollar as an operand of `+`, escaped ("\$" + amount) or not
+#   "$%.2f", "\$%.2f"             a dollar before a format spec, escaped or not
+#   "$$usd", "$${amount(usd)}"    a literal dollar right before a template (V4-240 review, finding 3:
+#                                  these four escaped spellings walked past the first version)
 #
 # CENSUS that seeded it (2026-09-25, every string_literal in **/src/main/**/*.kt): two surfaces printed
 # a figure, StatuslineBars.kt ("$DIM\$$RESET" + "%.2f") and BudgetText.kt ("$" + amount); both call
@@ -36,8 +38,10 @@ rule:
     - kind: string_content
       regex: '\\\$(\$|[0-9]+\.[0-9])'
     - kind: string_literal
-      regex: '^"\$"$'
+      regex: '^"\\?\$"$'
       inside:
         kind: additive_expression
     - kind: string_literal
-      regex: '^"\$%'
+      regex: '^"\\?\$%'
+    - kind: string_literal
+      regex: '(^"|[^\\])\$\$[A-Za-z_{]'

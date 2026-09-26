@@ -838,9 +838,11 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   const members = page.getByRole('table', { name: 'Members' });
   await expect(members).toContainText(STACK.sender.name, { timeout: 15_000 });
   await expect(members).toContainText(STACK.peer.name);
-  // Activity was READ for this team: the stack runs no client to answer a label query, so it is
-  // empty, never unreadable.
-  await expect(main).toContainText('Nothing sampled today');
+  // Activity was READ for this team, and it holds the sender's own turn as a sample (V4-265): the
+  // hand-off turn's transcript ends in its SendMessage call. The stack runs no client to answer a
+  // label query, so the sample is splice's reading of the turn, never the client's.
+  const samples = page.locator('.myx-feed-row').filter({ hasText: STACK.sender.name });
+  await expect(samples.filter({ hasText: 'Messaging a peer session' }).first()).toBeVisible({ timeout: 15_000 });
 
   // The daemon joined the sender's tagged turn to its slot: its seat counts it and the cost per role
   // prices it under the lead role, and the peer's seat has none. The panels are re-read every 10 s.

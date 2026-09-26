@@ -656,6 +656,11 @@ origin.
   messages: a team of four whose reviewer ran `/code-review` read 16 messages for 13 hand-offs. A
   call to a name that is neither a member nor a session address is now the member's own tool work
   (V4-263).
+- **A team's Activity shows what its members are doing.** Claude Code 2.1.282 sends its 30-second
+  "describe your most recent action" query only from background agents, so a team whose members
+  worked in their own sessions read `Nothing sampled today`. splice now samples each session's
+  latest tool call from its own turns, at most once every 30 seconds, and the client's answer to its
+  own query counts as the sample when one comes (V4-265).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

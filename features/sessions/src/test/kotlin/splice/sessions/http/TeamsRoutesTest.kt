@@ -197,8 +197,9 @@ class TeamsRoutesTest {
         rig.stores.activity.label(OUTSIDER, "codex", "Elsewhere", AT)
         rig.stores.activity.label(LEAD, "claude", "Yesterday", AT - DAY)
         AsyncFileIo.drain()
-        val note = "labels are samples: one per activity side query the client sends, " +
-            "about every 30 seconds while a session works; a gap is a session that sent none"
+        val note = "labels are samples: at most one per session every 30 seconds, " +
+            "from its latest tool call while it works or from its client's own activity query; a gap is a session " +
+            "that called no tool"
         val first = """{"at":$AT,"session":"$OLD_BUILDER","slot":"b1","head":"codex",""" +
             """"label":"Running tests","detail":"row V4-131"}"""
         val second = """{"at":${AT + 1},"session":"$LEAD","slot":"lead","head":"claude",""" +

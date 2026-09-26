@@ -35,7 +35,7 @@ import {
 } from '../src/pages/fleet/model';
 import { poolOf, selectedExcluded } from '../src/entities/account';
 import { dispositions } from '../src/pages/fleet/coverage';
-import { ADD_COMMAND, AddHead, CauseLine, FleetBoard } from '../src/pages/fleet';
+import { AddKey, CauseLine, FleetBoard } from '../src/pages/fleet';
 import type { FleetSources } from '../src/pages/fleet';
 import { H, S } from '../src/pages/fleet/strings';
 import { ACCOUNT_WORDS } from '../src/widgets/account-table';
@@ -787,12 +787,22 @@ describe('the coverage manifest', () => {
 });
 
 describe('how a head joins the fleet', () => {
-  test('the page names the command that adds one, with a copy key, and no route', () => {
-    const markup = renderToStaticMarkup(React.createElement(AddHead));
-    expect(ADD_COMMAND).toBe('splice add');
-    expect(markup).toContain(`>${ADD_COMMAND}<`);
-    expect(markup).toContain('>Copy<');
-    expect(markup).not.toContain('/api/');
+  test('the header\'s key opens the add in the detail panel, and a head\'s detail never shares it', () => {
+    // V4-220 item 3: `splice add` over /api/add replaced the command the page printed to copy.
+    expect(renderToStaticMarkup(React.createElement(AddKey, { onAdd: () => undefined }))).toContain(`>${S.addBackend}<`);
+    const rest = board([head()]);
+    expect(rest).toContain(`>${S.addBackend}<`);
+    expect(rest).not.toContain(`aria-label="${S.addBackend}"`);
+    const adding = render(h(FleetBoard, { heads: [head()], sources: NO_SOURCES, openKey: null, onOpen: () => undefined, adding: true, nowMs: BOARD_NOW }));
+    expect(adding).toContain(`<aside class="myx-panel" aria-label="${S.addBackend}"`);
+    expect(adding).toContain('myx-fl-board-open');
+    // The narrowed board drops the identity columns for the add as for a head's detail: at 1600 the
+    // full set squeezed the head's name to nothing under an overprinted "Provider" (2026-09-25 render).
+    expect(rest).toContain(`>${S.provider}<`);
+    expect(adding).not.toContain(`>${S.provider}<`);
+    const both = render(h(FleetBoard, { heads: [head()], sources: NO_SOURCES, openKey: head().key, onOpen: () => undefined, adding: true, nowMs: BOARD_NOW }));
+    expect(both).not.toContain(`aria-label="${S.addBackend}"`);
+    expect(both).toContain(`aria-label="${S.detail}"`);
   });
 
   test('the empty fleet does not send the operator to a topology editor that cannot add a head', () => {

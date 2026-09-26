@@ -7,7 +7,7 @@
 // an account is ready while the pool still cannot take it.
 //
 // Pure and DOM-free so the whole flow is tested without a renderer.
-import type { LoginStartPayload, LoginStatusPayload } from '@entities/auth';
+import type { LoginStatusPayload } from '@entities/auth';
 import { H, S } from './strings';
 
 export type LoginStep =
@@ -15,10 +15,12 @@ export type LoginStep =
   | 'idle'
   /** The label is accepted, the request is in flight. */
   | 'starting'
-  /** The daemon returned a code or a link and the operator is finishing it elsewhere. */
+  /** The daemon runs the login: starting it, or holding out a code or a link for the operator. */
   | 'awaiting'
-  /** The credential landed. It may still need a head restart before the pool takes it. */
+  /** The credential is on disk; the daemon is restarting the head so its pool takes the account. */
   | 'landed'
+  /** The head restarted with the account in its pool. */
+  | 'live'
   /** The daemon refused, or the login failed. */
   | 'failed'
   /** The route is not built yet: the page prints the row instead of a form. */
@@ -28,9 +30,7 @@ export interface LoginFlowState {
   step: LoginStep;
   /** The label being requested. Kept across a failure so a retry does not retype it. */
   label: string;
-  /** What the daemon returned for the operator to finish the login with. */
-  start: LoginStartPayload | null;
-  /** The latest status, once one has arrived. */
+  /** The login as the daemon last reported it: the start's answer, then each poll's. */
   status: LoginStatusPayload | null;
   /** The daemon's own words on a failure, or the row id when the route is missing. */
   note: string | null;
@@ -39,7 +39,6 @@ export interface LoginFlowState {
 export const IDLE: LoginFlowState = {
   step: 'idle',
   label: '',
-  start: null,
   status: null,
   note: null,
 };
@@ -47,7 +46,7 @@ export const IDLE: LoginFlowState = {
 export type LoginEvent =
   | { kind: 'label'; value: string }
   | { kind: 'start' }
-  | { kind: 'started'; payload: LoginStartPayload }
+  /** The start's answer and every poll's: the same view of one login (LoginRoutes.kt). */
   | { kind: 'status'; payload: LoginStatusPayload }
   | { kind: 'pending'; row: string }
   | { kind: 'failed'; note: string }
@@ -60,25 +59,34 @@ export function canStart(state: LoginFlowState): boolean {
   return state.step === 'idle' || state.step === 'failed';
 }
 
+/** Whether the login is still moving, so the page keeps polling it: until the head is live with
+ *  the account, or the login failed. */
+export function polling(state: LoginFlowState): boolean {
+  return state.status !== null && (state.step === 'awaiting' || state.step === 'landed');
+}
+
 export function next(state: LoginFlowState, event: LoginEvent): LoginFlowState {
   switch (event.kind) {
     case 'label':
       return { ...state, label: event.value };
     case 'start':
       if (!canStart(state)) return state;
-      return { ...state, step: 'starting', note: null, start: null, status: null };
-    case 'started':
-      return { ...state, step: 'awaiting', start: event.payload, note: null };
+      return { ...state, step: 'starting', note: null, status: null };
     case 'status': {
-      const { state: reported } = event.payload;
-      if (reported === 'landed') return { ...state, step: 'landed', status: event.payload, note: null };
-      if (reported === 'failed') {
-        return { ...state, step: 'failed', status: event.payload, note: event.payload.note ?? null };
+      const status = event.payload;
+      switch (status.state) {
+        case 'failed':
+          return { ...state, step: 'failed', status, note: status.failure_reason };
+        case 'signed_in':
+          return { ...state, step: 'landed', status, note: null };
+        case 'live_after_restart':
+          return { ...state, step: 'live', status, note: null };
+        default:
+          return { ...state, step: 'awaiting', status, note: null };
       }
-      return { ...state, step: 'awaiting', status: event.payload };
     }
     case 'pending':
-      return { ...state, step: 'pending', note: event.row, start: null, status: null };
+      return { ...state, step: 'pending', note: event.row, status: null };
     case 'failed':
       return { ...state, step: 'failed', note: event.note };
     case 'reset':
@@ -103,13 +111,14 @@ export const LOGIN_PENDING_EMPTY = {
  *  each step is testable, and so no step can silently lose its sentence. */
 export function stepMessage(state: LoginFlowState): string | null {
   switch (state.step) {
-    case 'awaiting': {
-      const restart = state.status?.restart_required === true;
-      if (state.start?.flow === 'device') return H.device;
-      return restart ? H.afterRestart : H.waiting;
-    }
+    case 'awaiting':
+      if (state.status?.user_code != null) return H.device;
+      if (state.status?.browser_url != null) return H.browser;
+      return H.waiting;
     case 'landed':
-      return state.status?.restart_required === true ? H.afterRestart : H.added;
+      return H.afterRestart;
+    case 'live':
+      return H.added;
     case 'failed':
       // the daemon's own words where it sent any: they say what failed
       return state.note ?? H.failed;

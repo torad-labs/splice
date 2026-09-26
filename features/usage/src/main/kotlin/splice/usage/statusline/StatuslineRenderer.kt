@@ -129,14 +129,16 @@ internal class StatuslineRenderer(
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
         }
         val modelId = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
+        val spend = sessionCost?.spendFor(sessionId, modelId, blob.sessionStartMs(root, now()))
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
             bars.costSegment(
                 root,
-                sessionCost?.usdFor(sessionId, modelId),
+                spend?.usd,
                 perfSkips?.skippedRowCount() ?: 0L,
                 CostFallback(rated = sessionCost?.rated(modelId) ?: false, clientPriced = anthropicUpstream),
+                lowerBound = spend?.lowerBound == true,
             ),
         ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
@@ -313,6 +315,11 @@ private class StatuslineJson {
     fun str(element: JsonElement?): String? = JsonScalars.str(element)?.takeIf { it.isNotEmpty() }
 
     fun num(element: JsonElement?): Long? = JsonScalars.str(element)?.toDoubleOrNull()?.toLong()
+
+    /** When the client session began: its `cost.total_duration_ms` before [nowMs], or null when the
+     *  blob does not carry it (V4-240 review, finding 4c). */
+    fun sessionStartMs(root: JsonObject, nowMs: Long): Long? =
+        num(obj(root, "cost")?.get("total_duration_ms"))?.let { nowMs - it }
 }
 
 // StatuslineRenderer's companion constants at their sanctioned file-scope home. The ANSI values

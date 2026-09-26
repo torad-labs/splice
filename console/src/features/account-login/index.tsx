@@ -7,11 +7,11 @@
 // on, because a dialog over the page is ruled out.
 import { useEffect, useReducer, useState } from 'react';
 import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount, unpinAccount } from '@entities/auth';
-import type { LoginStartPayload } from '@entities/auth';
+import type { LoginView } from '@entities/auth';
 import { Empty, Reveal } from '@shared/ui';
 import { poll } from '@shared/lib';
 import { Confirm, Copy, Input, Key } from '@shared/controls';
-import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
+import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, polling, stepMessage } from './model';
 import type { LoginEvent } from './model';
 import { fetchAccounts } from '@entities/account';
 import { H, S } from './strings';
@@ -35,7 +35,7 @@ async function beginLogin(
       dispatch({ kind: 'pending', row: outcome.pending });
       return;
     }
-    if (outcome.action === LOGIN_START) dispatch({ kind: 'started', payload: outcome.result });
+    if (outcome.action === LOGIN_START) dispatch({ kind: 'status', payload: outcome.result });
   } catch (err) {
     dispatch({ kind: 'failed', note: err instanceof Error ? err.message : String(err) });
   }
@@ -58,32 +58,28 @@ async function pollLogin(
   }
 }
 
-/** What the operator needs to finish a login somewhere else: the code and its link, or a URL. */
-function LoginTicket({ start }: { start: LoginStartPayload }) {
-  if (start.flow === 'browser') {
-    return (
-      <div className="myx-acct-ticket">
-        {start.browser_url === undefined ? null : (
-          <>
-            <a className="myx-acct-link" href={start.browser_url}>{start.browser_url}</a>
-            <Copy value={start.browser_url} label={S.copy} />
-          </>
-        )}
-      </div>
-    );
-  }
+/** What the operator needs to finish a login somewhere else, as the flow announced it: a device
+ *  flow's code and its link, or a browser flow's URL. Nothing until the flow has announced one. */
+export function LoginTicket({ status }: { status: LoginView }) {
+  if (status.browser_url === null && status.user_code === null && status.verification_uri === null) return null;
   return (
     <div className="myx-acct-ticket">
-      {start.user_code === undefined ? null : (
+      {status.user_code === null ? null : (
         <>
-          <span className="myx-acct-code">{start.user_code}</span>
-          <Copy value={start.user_code} label={`${S.copy} ${S.code}`} />
+          <span className="myx-acct-code">{status.user_code}</span>
+          <Copy value={status.user_code} label={`${S.copy} ${S.code}`} />
         </>
       )}
-      {start.verification_uri === undefined ? null : (
+      {status.verification_uri === null ? null : (
         <>
-          <a className="myx-acct-link" href={start.verification_uri}>{start.verification_uri}</a>
-          <Copy value={start.verification_uri} label={`${S.copy} ${S.link}`} />
+          <a className="myx-acct-link" href={status.verification_uri}>{status.verification_uri}</a>
+          <Copy value={status.verification_uri} label={`${S.copy} ${S.link}`} />
+        </>
+      )}
+      {status.browser_url === null ? null : (
+        <>
+          <a className="myx-acct-link" href={status.browser_url}>{status.browser_url}</a>
+          <Copy value={status.browser_url} label={`${S.copy} ${S.link}`} />
         </>
       )}
     </div>
@@ -94,14 +90,20 @@ function LoginTicket({ start }: { start: LoginStartPayload }) {
  *  one "Add account" until the operator asks for the form. */
 export function AccountLogin({ head }: { head: string }) {
   const [state, dispatch] = useReducer(next, IDLE);
-  const loginId = state.start?.login_id;
+  // Polled by the id the start answered with, from starting through the head's restart.
+  const loginId = polling(state) ? state.status?.id ?? null : null;
 
   useEffect(() => {
-    if (state.step !== 'awaiting' || loginId === undefined) return;
+    if (loginId === null) return;
     return poll(() => {
       void pollLogin(head, loginId, dispatch);
     }, POLL_MS);
-  }, [state.step, loginId, head]);
+  }, [loginId, head]);
+
+  // The account joined the pool: read the accounts now rather than on the page's next poll.
+  useEffect(() => {
+    if (state.step === 'live') void fetchAccounts();
+  }, [state.step]);
 
   if (state.step === 'pending') {
     return <Empty text={LOGIN_PENDING_EMPTY.text} source={LOGIN_PENDING_EMPTY.source} />;
@@ -119,7 +121,7 @@ export function AccountLogin({ head }: { head: string }) {
           </Key>
           {state.step === 'idle' ? null : <Key onClick={() => dispatch({ kind: 'reset' })}>{S.cancel}</Key>}
         </div>
-        {state.start === null ? null : <LoginTicket start={state.start} />}
+        {state.step !== 'awaiting' || state.status === null ? null : <LoginTicket status={state.status} />}
         {message === null ? null : <p className="myx-acct-note" role="status">{message}</p>}
       </div>
     </Reveal>

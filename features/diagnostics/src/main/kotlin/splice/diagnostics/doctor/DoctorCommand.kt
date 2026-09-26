@@ -202,7 +202,7 @@ public class DoctorCommand(
     /** Both JSON paths' report, over the state root the daemon itself resolves (V4-109). */
     private fun jsonReport(envReader: EnvReader): DoctorJsonReport = DoctorJsonReport(
         envReader,
-        claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) },
+        claudeVersion = { probes.claudeVersion(envReader) },
         statePaths = TopologyStatePaths(envReader).current(),
     )
 
@@ -272,5 +272,4 @@ private const val NOTE_GLYPH = "\u2013"
 private const val WARN_GLYPH = "!"
 private const val FAIL_GLYPH = "\u2717"
 
-private val CLAUDE_VERSION = listOf("claude", "--version")
 private const val ACCOUNTS_CHECK = "accounts"

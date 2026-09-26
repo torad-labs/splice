@@ -25,7 +25,7 @@ import { ActivityFeed } from '@widgets/activity-feed';
 import type { ActivityFeedState } from '@widgets/activity-feed';
 import { TeamCompose, draftOf } from '@features/team-compose';
 import { Fault, Key } from '@shared/controls';
-import { ABSENT, poll } from '@shared/lib';
+import { ABSENT, poll, useLinkedId, useOpen } from '@shared/lib';
 import { Badge, DataTable, Empty, KeyValue, PageHeader, Pips, Section } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import type { TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
@@ -229,7 +229,7 @@ export function TeamsPage() {
   const { active } = useViews(PAGE_ID, VIEWS);
   const [sample, setSample] = useState<{ name: string; payload: TeamPayload; data: TeamViewData | null } | null>(null);
   const fixture = sample === null ? null : sample.payload;
-  const [opened, setOpened] = useState<string | null>(null);
+  const [opened, setOpened] = useOpen(useLinkedId());
   /** The editor: closed, composing a new team, or editing the opened one. */
   const [composing, setComposing] = useState<'new' | 'edit' | null>(null);
   /** The team the last save answered, and the line printed for it: the list re-read that carries

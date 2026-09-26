@@ -25,7 +25,7 @@ export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/sessions/{id}/edges', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/edges', disposition: 'read-only' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
-  { kind: 'verb', name: 'sessions', disposition: 'read-only' },
+  { kind: 'verb', name: 'sessions', disposition: 'read-only', via: '/api/sessions' },
 ];
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */

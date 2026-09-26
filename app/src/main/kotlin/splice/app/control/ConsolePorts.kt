@@ -13,6 +13,7 @@ import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.events.bus.EventBus
 import splice.lifecycle.restart.DaemonSupervised
+import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeStatus
 import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
@@ -97,6 +98,10 @@ public class ConsolePorts {
     /** V4-220 item 4: the fixes POST /api/doctor/fix/{id} runs. Null answers a named 503, never a
      *  fix that silently did nothing. */
     public var doctorFixes: DoctorFixes? = null
+
+    /** V4-220 item 4: `splice upgrade` as the console starts it, and the run it reports. Null answers
+     *  a named 503 on POST /api/upgrade and GET /api/upgrade/run, never a run that never started. */
+    public var upgradeRuns: UpgradeRuns? = null
 
     /** V4-137: whether anything would bring this daemon back after it drains. Assigned beside the
      *  ports above, and read at CALL time by the routing lambda for the same reason they are.

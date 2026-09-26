@@ -1,18 +1,17 @@
-// The payload contracts of the four auth WRITES. The read side stays where it was: `AuthPayload`
-// on GET /api/auth comes from @shared/api and the existing exports keep working unchanged.
+// The payload contracts of the auth WRITES. The read side stays where it was: `AuthPayload` on GET
+// /api/auth comes from @shared/api and the existing exports keep working unchanged.
 //
-//   POST   /api/auth/{head}/switch                 -> SwitchPayload          (PENDING V4-132)
-//   POST   /api/auth/{head}/login                  -> LoginStartPayload      (PENDING V4-132)
-//   GET    /api/auth/{head}/login/{id}             -> LoginStatusPayload     (PENDING V4-132)
-//   DELETE /api/auth/{kind}/accounts/{label}       -> AccountMutationPayload (PENDING V4-132)
-//   PATCH  /api/auth/{kind}/accounts/{label}       -> AccountMutationPayload (PENDING V4-132)
+//   POST   /api/auth/{head}/switch                 -> SwitchPayload          (SwitchRoute.kt)
+//   POST   /api/auth/{head}/login                  -> LoginStatusPayload     (LoginRoutes.kt)
+//   GET    /api/auth/{head}/login/{id}             -> LoginStatusPayload     (LoginRoutes.kt)
+//   DELETE /api/auth/{kind}/accounts/{label}       -> AccountMutationPayload (AccountEditRoutes.kt)
+//   PATCH  /api/auth/{kind}/accounts/{label}       -> AccountMutationPayload (AccountEditRoutes.kt)
 //
-// Typed from FEATURES.md 6 and 2.6, which is where the daemon-side work is described. Two of these
-// routes are new observation seams rather than thin wrappers, and the payloads say so: a login
-// device code goes to stdout today (`DeviceLoginFlow.kt:114-124`) and a landed credential only
-// joins a pool at head assembly (`ManagedHeadFactory.kt:143`), so "signed in" and "usable" are two
-// different states and the console must be able to show the gap.
-import type { PendingRoute } from '@shared/api';
+// Each is typed from the route that serves it. They were first typed from FEATURES.md 6 and 2.6,
+// the plan, and three of the five were shapes the daemon never sent: the switch's (corrected
+// before), the login's (`login_id`, `flow` and a `landed` state, none on the wire, so a login never
+// polled and never finished) and the account edit's (`kind` and `label` on an answer that is `ok`).
+import type { LoginView, PendingRoute } from '@shared/api';
 
 /** POST /api/auth/{head}/switch, as SwitchRoute.kt answers it: `ok`, and the reason when not. The
  *  console typed a richer payload (head, to, from, reason, time) that the daemon never sent. The
@@ -23,57 +22,18 @@ export interface SwitchPayload {
   error?: string;
 }
 
-export const LOGIN_FLOWS = ['device', 'browser'] as const;
-export type LoginFlow = (typeof LOGIN_FLOWS)[number];
-
-/** POST /api/auth/{head}/login — start a login and get back what the operator needs to finish it.
- *  `flow` is which of the two the daemon chose, not which the console asked for: a device flow
- *  prints a code, a browser flow parks a thread and opens a URL, and only the daemon knows which
- *  is available for that provider. */
-export interface LoginStartPayload {
-  login_id: string;
+/** POST /api/auth/{head}/login answers with the login's STARTING view, and GET
+ *  /api/auth/{head}/login/{id} with its view now: one shape, LoginRoutes.loginStatusJson, which
+ *  names the head the login is for. */
+export interface LoginStatusPayload extends LoginView {
   head: string;
-  label: string;
-  flow: LoginFlow;
-  /** Device flow: the code to type at the verification link, and that link. Both absent on a
-   *  browser flow, which is why neither carries a default. */
-  user_code?: string;
-  verification_uri?: string;
-  /** Browser flow: the URL for the CONSOLE to open. The daemon has its own browser path
-   *  (`OAuthLoginFlow.kt:64-105`); this is the console's, and the two are not interchangeable. */
-  browser_url?: string;
-  expires_at_epoch_millis?: number;
 }
 
-export const LOGIN_STATES = ['pending', 'landed', 'failed'] as const;
-export type LoginState = (typeof LOGIN_STATES)[number];
-
-/** GET /api/auth/{head}/login/{id} — poll one login to its end. */
-export interface LoginStatusPayload {
-  login_id: string;
-  head: string;
-  label: string;
-  state: LoginState;
-  /** True once the credential file is on disk but the head has not restarted, so the account is
-   *  NOT yet in the pool: a new account joins only at head assembly, and heads sharing a
-   *  credential file share the login while heads with their own file need their own (FEATURES 4.5).
-   *  The strip stays cocked with "signed in, live after restart" until this clears. */
-  restart_required: boolean;
-  note?: string;
-}
-
-/** DELETE and PATCH on one pooled account. Both are pool-store edits and neither touches a
- *  credential file, so neither can need a restart. */
+/** DELETE and PATCH on one pooled account, as AccountEditRoutes.kt answers them: `ok`, and a
+ *  refusal is `{error}` with its status. Both are pool-store edits and neither touches a credential
+ *  file, so neither can need a restart. */
 export interface AccountMutationPayload {
   ok: boolean;
-  kind: string;
-  label: string;
-  /** PATCH only: the new label. A pool is keyed by the credential PATH, so a relabel moves no
-   *  file and loses no window data. */
-  label_new?: string;
-  /** The pool's labels after the change, so the caller re-renders without a second read. */
-  accounts?: string[];
-  note?: string;
 }
 
 /** The v0.4.0 item that will serve every route above (FEATURES.md 6). */
@@ -83,9 +43,33 @@ export const PENDING_AUTH_WRITES = 'V4-132';
 export type AuthActionOutcome =
   | { action: 'switch'; result: SwitchPayload }
   | { action: 'unpin'; result: SwitchPayload }
-  | { action: 'login'; result: LoginStartPayload }
+  | { action: 'login'; result: LoginStatusPayload }
   | { action: 'login-status'; result: LoginStatusPayload }
   | { action: 'relabel'; result: AccountMutationPayload }
   | { action: 'remove'; result: AccountMutationPayload };
 
 export type AuthActionState = AuthActionOutcome | PendingRoute;
+
+// ── the key store (V4-220 item 1: `splice key list|set|unset` over the console, KeyRoutes.kt) ──
+
+/** One head that reads a key, and which link of its read chain supplies it now: `environment`,
+ *  `file`, `store` or `missing` (ApiKeyAuthProvider's key_source), `unknown` from a provider that
+ *  predates it. A string, not a union: a link the daemon adds later still prints as itself. */
+export interface KeyReader {
+  head: string;
+  source: string;
+}
+
+/** One key by name, never by value: whether splice's store holds it, and who reads it from where.
+ *  A stored key a head reads from the environment or its file is shadowed, never applied. */
+export interface KeyState {
+  name: string;
+  stored: boolean;
+  heads: KeyReader[];
+}
+
+/** GET /api/keys: every key a head reads or the store holds, sorted by name. */
+export interface KeysPayload {
+  path: string;
+  keys: KeyState[];
+}

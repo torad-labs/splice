@@ -123,6 +123,10 @@ internal object ConsoleWiring {
 
         // V4-220 item 3: `splice add` over /api/add. Unassigned, every add route answers a named 503.
         srv.ports.add = AddWiring.console(log)
+
+        // V4-220 item 4: `splice upgrade` over POST /api/upgrade, run out of process. Unassigned, it and
+        // GET /api/upgrade/run answer a named 503.
+        srv.ports.upgradeRuns = LifecycleWiring.consoleUpgrades()
     }
 
     /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out

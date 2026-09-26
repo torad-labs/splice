@@ -2,6 +2,8 @@
 // managed-head surface is not billed for a second column-0 type. Same-package.
 package splice.usage.perf
 
+import splice.core.perf.PerfSessionTail
+
 /** Reads the head's per-turn perf rows (file truth, numeric fields only, newest last). */
 public fun interface HeadPerfSource {
     public fun tailNumeric(n: Int): List<Map<String, Long>>
@@ -10,9 +12,10 @@ public fun interface HeadPerfSource {
 /** The same rows, narrowed to ONE client session — the input the statusline's cost segment needs
  *  (V4-37). A SIBLING of [HeadPerfSource] rather than a second method on it, because that type is a
  *  fun interface with six construction sites and widening it would break every one of them for a
- *  reader most of them never call. Implementations answer with the numeric fields of the rows whose
- *  stored session tag belongs to [sessionId]; the tag on disk is a TRUNCATION of the id the caller
- *  holds, so the matching belongs with the writer that truncates it, not here.
+ *  reader most of them never call. Implementations answer with the rows whose stored session tag
+ *  belongs to [sessionId], each with the model its turn recorded (V4-240 review: a turn is billed at
+ *  its own model's card); the tag on disk is a TRUNCATION of the id the caller holds, so the matching
+ *  belongs with the writer that truncates it, not here.
  *
  *  An unknown or empty session yields no rows — never another session's, and never a head-wide
  *  total: a per-session number that silently becomes a per-head number is a differently-wrong
@@ -20,8 +23,9 @@ public fun interface HeadPerfSource {
 public fun interface HeadSessionPerfSource {
     /** Every matching row the reader's byte-bounded tail holds — deliberately NOT a row count. The
      *  read is already bounded by bytes, and a session's cost needs ALL of its rows in that window:
-     *  a `takeLast(n)` here would quietly truncate a long session's spend. */
-    public fun tailNumericFor(sessionId: String): List<Map<String, Long>>
+     *  a `takeLast(n)` here would quietly truncate a long session's spend. The tail's own start rides
+     *  along ([PerfSessionTail.tailStartMs]) so a session older than the window reads as a lower bound. */
+    public fun sessionTail(sessionId: String): PerfSessionTail
 }
 
 /** How many rows the COST reader DROPPED because they would not parse (V4-45).

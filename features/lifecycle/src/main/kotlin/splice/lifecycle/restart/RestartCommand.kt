@@ -16,6 +16,7 @@ import splice.daemonclient.DaemonSettings
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.lifecycle.start.DaemonColdStart
+import splice.lifecycle.upgrade.CompactionWait
 import splice.lifecycle.upgrade.JdkUpgradeInflight
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths

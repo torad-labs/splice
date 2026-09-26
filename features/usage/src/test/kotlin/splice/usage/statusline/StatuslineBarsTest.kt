@@ -72,12 +72,17 @@ class StatuslineBarsTest {
     fun `dropped perf rows mark splice's own figure and carry the count`() {
         val root = Json.parseToJsonElement("""{"cost":{"total_cost_usd":61.44}}""").jsonObject
         val bars = StatuslineBars()
+        // A non-Anthropic head: on an Anthropic one the blob's own figure wins (V4-240 review, 4a).
+        val rated = CostFallback(rated = true, clientPriced = false)
 
-        val clean = bars.costSegment(root, computed = 12.5, droppedRows = 0L)?.replace(ansi, "")
+        val clean = bars.costSegment(root, computed = 12.5, droppedRows = 0L, fallback = rated)?.replace(ansi, "")
         assertEquals("API est. $12.50", clean, "nothing dropped, nothing said beyond the figure's basis")
 
-        val short = bars.costSegment(root, computed = 12.5, droppedRows = 3L)?.replace(ansi, "")
+        val short = bars.costSegment(root, computed = 12.5, droppedRows = 3L, fallback = rated)?.replace(ansi, "")
         assertEquals("API est. ≥$12.50 ⚠3", short, "the true spend is AT LEAST this, and 3 rows were unreadable")
+
+        val bound = bars.costSegment(root, computed = 12.5, fallback = rated, lowerBound = true)?.replace(ansi, "")
+        assertEquals("API est. ≥$12.50", bound, "a lower bound with nothing dropped carries the direction, no count")
     }
 
     /** THE FALSE-ALARM GUARD, and it is not a technicality. When the head declares no rates the bar
@@ -97,8 +102,9 @@ class StatuslineBarsTest {
 
     /** V4-240: what stands in when splice has no figure of its own. Claude Code prices its
      *  `total_cost_usd` at Anthropic's card whatever head it talks to, so that figure may stand in
-     *  only on a head whose upstream IS Anthropic; a rated model with nothing spent shows nothing;
-     *  and anywhere else a model with no card says so in words. */
+     *  only on a head whose upstream IS Anthropic, and there it shows whether or not the head has a
+     *  card (V4-240 review, 4a); a rated model with nothing spent shows nothing; and anywhere else a
+     *  model with no card says so in words. */
     @Test
     fun `the client's own figure stands in only on an Anthropic head, and no card is said in words`() {
         val root = Json.parseToJsonElement("""{"cost":{"total_cost_usd":0.85}}""").jsonObject
@@ -109,7 +115,29 @@ class StatuslineBarsTest {
         assertEquals("API est. $0.85", seg(rated = false, clientPriced = true), "an Anthropic head, no card")
         assertEquals("no rate card", seg(rated = false, clientPriced = false), "the rehearsal's GPT-6-Sol line")
         assertEquals(null, seg(rated = true, clientPriced = false), "a rated model with nothing spent yet")
-        assertEquals(null, seg(rated = true, clientPriced = true), "rated wins over the client's number too")
+        assertEquals("API est. $0.85", seg(rated = true, clientPriced = true), "an Anthropic head with a card")
+    }
+
+    /** V4-240 review, finding 4a. On a head whose upstream IS Anthropic, Claude Code's own figure is
+     *  priced at this upstream's card, turn by turn at each turn's model, from the session's start.
+     *  A rate card on the head (#319 gave claude-opus-5-5 one) must not let splice's tail-bounded
+     *  figure replace it: ours stands in only when the blob carries none. */
+    @Test
+    fun `on an Anthropic head the blob's own figure wins over splice's, and ours shows only when it has none`() {
+        val bars = StatuslineBars()
+        val anthropicWithCard = CostFallback(rated = true, clientPriced = true)
+        val withBlob = Json.parseToJsonElement("""{"cost":{"total_cost_usd":3.69}}""").jsonObject
+        assertEquals(
+            "API est. $3.69",
+            bars.costSegment(withBlob, computed = 1.25, fallback = anthropicWithCard)?.replace(ansi, ""),
+            "Claude Code's cumulative, per-model figure is the right one on an Anthropic head",
+        )
+        val noBlob = Json.parseToJsonElement("""{"model":{"id":"claude-opus-5-5"}}""").jsonObject
+        assertEquals(
+            "API est. $1.25",
+            bars.costSegment(noBlob, computed = 1.25, fallback = anthropicWithCard)?.replace(ansi, ""),
+            "with no figure in the blob, splice's own stands in",
+        )
     }
 
     /** THE HOP ITSELF. The two arms above prove the renderer draws the marker when handed a count;

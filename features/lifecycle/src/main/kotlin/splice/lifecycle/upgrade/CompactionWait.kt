@@ -7,13 +7,12 @@
 // keeps serving, no head closes admission, and ordinary turns never hold a restart. A slot is waited
 // for until it reaches the client's 600 s, and the whole wait is held to the same 600 s, so new
 // compactions arriving meanwhile cannot hold a restart forever. `--now` skips it.
-package splice.lifecycle.restart
+//
+// V4-220: it lives beside the in-flight read it is built on, so `splice upgrade`'s own restart takes it
+// too (UpgradeDaemon) with the dependency running one way, restart -> upgrade.
+package splice.lifecycle.upgrade
 
 import splice.core.terminal.TerminalOutput
-import splice.lifecycle.upgrade.CompactionSlot
-import splice.lifecycle.upgrade.INFLIGHT_POLL_MS
-import splice.lifecycle.upgrade.InflightRead
-import splice.lifecycle.upgrade.UpgradeInflight
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 

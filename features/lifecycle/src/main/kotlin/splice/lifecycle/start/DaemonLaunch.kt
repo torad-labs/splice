@@ -18,22 +18,38 @@ import java.time.Duration
 
 /** The daemon cold start `splice dashboard` and `splice restart` share: the supervisor unit when this
  *  box has one, the raw spawn otherwise, then the wait for the expected version. [errors] carries the
- *  corrupt-TOML diagnostic the supervisor-unit read can raise; stdout belongs to the verb. */
-public class DaemonColdStart(output: TerminalOutput, errors: TerminalOutput, env: EnvReader, jar: RunningJar) {
+ *  corrupt-TOML diagnostic the supervisor-unit read can raise; stdout belongs to the verb. [supervised]
+ *  and [startupPolls] keep their defaults outside this module's tests. */
+public class DaemonColdStart(
+    output: TerminalOutput,
+    errors: TerminalOutput,
+    env: EnvReader,
+    jar: RunningJar,
+    supervised: SupervisedStart = SupervisedStart(
+        JdkSystemctl(),
+        env,
+        DaemonSettings(errors),
+        restarter = JdkSystemctl(UNIT_RESTART_TIMEOUT_MS),
+    ),
+    startupPolls: Int = STARTUP_POLLS,
+) {
 
     private val launch = DaemonHealth().let { health ->
-        DaemonLaunch(
-            output,
-            health,
-            DaemonSpawn(output, health, jar),
-            SupervisedStart(JdkSystemctl(), env, DaemonSettings(errors)),
-        )
+        DaemonLaunch(output, health, DaemonSpawn(output, health, jar), supervised, startupPolls)
     }
 
     /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers with
      *  [expectedVersion] (this CLI's own, or the one an upgrade just activated). */
     public fun ensureDaemon(port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean =
         launch.ensureDaemon(port, expectedVersion)
+
+    /** V4-243: the supervisor unit a restart must go THROUGH, or null when this shell's daemon is its
+     *  own (a selector is set), there is no unit on the box, or the unit is not running a daemon. */
+    public fun activeUnit(): String? = launch.activeUnit()
+
+    /** V4-243: restart [unit] through systemd and wait until the daemon answers with [expectedVersion]. */
+    public fun restartUnit(unit: String, port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean =
+        launch.restartUnit(unit, port, expectedVersion)
 }
 
 internal class DaemonLaunch(
@@ -94,6 +110,30 @@ internal class DaemonLaunch(
             output.line(
                 "splice: $unit did not answer /health with $expectedVersion within ${budget}s; never starting " +
                     "a second daemon beside it. See: systemctl --user status $unit; journalctl --user -u $unit -n 50",
+            )
+        }
+        return up
+    }
+
+    /** V4-243: the unit whose running daemon a restart replaces, when the route is the unit's. */
+    internal fun activeUnit(): String? =
+        (supervised.route() as? ColdStartRoute.Unit)?.unit?.takeIf { supervised.active(it) }
+
+    /** V4-243: systemd restarts [unit] (stop with SIGTERM, which drains, then start at once, the
+     *  restart counter reset), and the daemon must then answer with [expectedVersion]. Stopping the
+     *  daemon here and starting the unit after is the path that waited out the unit's backoff: the
+     *  start reached a unit still active in its shutdown tail, a no-op, and the exit then waited
+     *  46 s at the sixth automatic restart (2026-09-25). */
+    internal fun restartUnit(unit: String, port: Int, expectedVersion: String): Boolean {
+        output.line(
+            "splice: restarting $unit; in-flight turns finish first (a held turn is the feature, not a hang)…",
+        )
+        val up = supervised.restart(unit) && waitUntilUp(port, expectedVersion)
+        if (!up) {
+            val budget = Duration.ofMillis(startupPolls * POLL_INTERVAL_MS).toSeconds()
+            output.line(
+                "splice: $unit did not come back answering /health with $expectedVersion within ${budget}s. " +
+                    "See: systemctl --user status $unit; journalctl --user -u $unit -n 50",
             )
         }
         return up

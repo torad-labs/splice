@@ -7786,7 +7786,7 @@ id = "V4-317"
 phase = "release"
 title = "The example config's KNOB REFERENCE can be uncommented and boots (console, V4-239 fix-forward 2026-09-26): the block says each key is settable in [defaults] or [heads.<key>.overrides], both string maps (Topology.kt:40, HeadConfig.kt:28), but writes 28 values as bare numbers and others as bare booleans (# maxQueued = 512, # wireTap = 0, # progressLine = true), which ktoml refuses at boot (IllegalTypeException, as the wire-keys probe's boot did in CI run 36253801306); the live example rows are already quoted (maxInflight = \"100\"). Every reference value is written as the string the map takes, and a test uncomments the whole block into [defaults] and parses it with TopologyLoader"
 files = ["app/src/main/resources/splice.example.toml", "app/src/test/kotlin/splice/app/PromotedKnobsExampleTest.kt"]
-status = "in_flight"
+status = "done"
 verify = "red first: a test that uncomments every KNOB REFERENCE line into a [defaults] table and parses it with TopologyLoader fails with ktoml's IllegalTypeException naming a bare key (quoted); green: it parses and every key maps to a Knob.kt entry; :app:test for the example tests; detekt"
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T16:41:50.505Z"

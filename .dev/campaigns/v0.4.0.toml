@@ -7825,8 +7825,11 @@ id = "V4-320"
 phase = "release"
 title = "Resume a session on another head: a read-only recipe route names the command, the transcript found, the tree it goes to, the model it is rewritten to, and whether the original still runs (V4-247)"
 files = ["app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt", "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red: GET /api/sessions/{id}/resume?head=<h> answers 404; green: a registry session with a transcript under head A asked for head B answers argv, head, from, to_tree, model, live; an unlinked head is refused naming splice install claude-<h>; live follows the registry; nothing is copied by the read; route and console files named at claim"
+claimed_by = "console"
+claimed_at = "2026-09-26T18:37:48.260Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T18:37:48Z
 
 [[items]]
 id = "V4-321"

@@ -103,9 +103,9 @@ public class AlertRoutes(
                     }.toString(),
                 )
             },
+            // V4-295: the class and the host, never the message, which carries the URL's secret path.
             onFailure = { failure ->
-                val why = failure.message ?: failure::class.simpleName
-                refuse(HttpStatusCode.BadGateway, "webhook test failed: $why")
+                refuse(HttpStatusCode.BadGateway, "webhook test failed: ${WebhookFailure(url).of(failure)}")
             },
         )
     }

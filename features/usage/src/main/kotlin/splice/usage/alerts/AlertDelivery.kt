@@ -32,6 +32,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.usage.budgets.BudgetAlert
+import java.net.URI
 
 // why: an alert waits for one network round trip to an operator-chosen endpoint, never longer —
 // a dead endpoint must not pile up coroutines behind a day's worth of warnings.
@@ -75,8 +76,26 @@ public class AlertDelivery(
                 }
             },
             onFailure = { failure ->
-                log("[${LogSafe.str(head)}][budget] webhook alert failed: ${LogSafe.str(failure.toString())}\n")
+                log(
+                    "[${LogSafe.str(head)}][budget] webhook alert failed: " +
+                        "${LogSafe.str(WebhookFailure(url).of(failure))}\n",
+                )
             },
         )
     }
 }
+
+/** A failed webhook POST said without its message (V4-295): Ktor's timeouts put the whole URL in theirs
+ *  ('Request timeout has expired [url=…'), and a webhook often carries its secret in the path (AlertStore's
+ *  validate). The failure's class names what failed; the host is all of the URL that is said. Shared with
+ *  AlertRoutes.test, so the console's answer and the head's log line cannot drift apart. */
+internal class WebhookFailure(private val url: String) {
+    fun of(failure: Throwable): String = "${failure::class.simpleName ?: "an unnamed failure"} reaching ${host()}"
+
+    private fun host(): String = Cancellables.runCatchingCancellable { URI.create(url).host }.fold(
+        onSuccess = { it ?: UNNAMED_HOST },
+        onFailure = { UNNAMED_HOST },
+    )
+}
+
+private const val UNNAMED_HOST = "a host the URL does not name"

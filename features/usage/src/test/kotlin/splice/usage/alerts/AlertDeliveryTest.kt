@@ -5,6 +5,9 @@
 package splice.usage.alerts
 
 import com.sun.net.httpserver.HttpServer
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.java.Java
+import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -14,10 +17,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.nio.file.Path
 
 private const val DELIVERY_WAIT_MS = 10_000L
@@ -84,4 +90,22 @@ class AlertDeliveryTest {
             webhook.stop()
         }
     }
+
+    // V4-295: Ktor's timeout message carries the whole URL, and the alert logged it through toString().
+    @Test
+    fun `a webhook that never answers is logged a timeout without its path - V4-295`(@TempDir tmp: Path) =
+        runBlocking {
+            val logged = CompletableDeferred<String>()
+            ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { silent ->
+                val store = AlertStore(tmp.resolve("alerts.json"))
+                store.replace(AlertSettings(webhookUrl = "http://127.0.0.1:${silent.localPort}/hook/s3cr3t-T0KEN"))
+                HttpClient(Java) { install(HttpTimeout) { requestTimeoutMillis = 300 } }.use { client ->
+                    AlertDelivery(store, { logged.complete(it) }, this, client).budgetReached("h", "x")
+                    val line = withTimeout(DELIVERY_WAIT_MS) { logged.await() }
+
+                    assertFalse("s3cr3t-T0KEN" in line || "/hook" in line, "no part of the path is logged: $line")
+                    assertTrue(line.startsWith("[h][budget] webhook alert failed: ") && "Timeout" in line, line)
+                }
+            }
+        }
 }

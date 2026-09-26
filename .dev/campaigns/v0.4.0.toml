@@ -7169,3 +7169,11 @@ title = "A labelled Claude login can be saved, or the promise of one goes (conso
 files = ["integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt"]
 status = "todo"
 verify = "the trace of 'splice login <head> --label <name>' from the verb to its store, with file:line; red first: a test that runs that verb and finds no labelled copy today; green: the verb saves the label (0600) and a launch selects it, or the verb and the README lines go together; CI gate on the pushed sha."
+
+[[items]]
+id = "V4-277"
+phase = "release"
+title = "A replace-mode chat head keeps the system messages Claude Code sends mid-conversation (rig-lead, 2026-09-26): ChatSystemPrompt.replaced() drops EVERY role=system message (ChatSystemPrompt.kt:62), so background-subagent task notifications, SessionStart hook context and peer messages never reach bonsai, bonsai-vast or bonsai-second. Replace drops only the leading system run, which is the client's system field; STRIP and APPEND already keep the rest"
+files = ["integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt", "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatSystemPromptTest.kt"]
+status = "todo"
+verify = "red first: a ChatSystemPromptTest case where a REPLACE request [system(field), user, system(mid), assistant, user(tool_result), system(task notification)] keeps both mid-conversation system messages and drops only the leading run fails on today's replaced(); green: bun tools/gate slot V4-277 -- :integrations-dialects-openai-chat:test :integrations-dialects-openai-chat:detekt --continue"

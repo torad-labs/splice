@@ -144,9 +144,16 @@ internal object Concentration {
      *  Both leavers are unchanged: LocalRuntimeProbe.kt 3.05 -> 2.32 (it imports splice.upstream.transport's
      *  LocalHttp) and TurnPreparation.kt 3.46 -> 2.96 (its HeaderRedaction). The row raised that package's
      *  median: it added SendQueues.kt (the counted socket and the kernel's send-queue table) and grew
-     *  RequestWriteBound.kt into the watch that reads it. */
+     *  RequestWriteBound.kt into the watch that reads it.
+     *
+     *  2026-09-26, 15 -> 14, V4-320, cause `neighbourhood`, measured with this law's census (a scratch
+     *  baseline of 0 to list the band) at ad9b6bb8e (15), at d13d5e38b, the row's commit (14), and at
+     *  25e6a0796 (14, CI run 36266163596), so V4-307 between them moved no file in or out of the band.
+     *  Knob.kt 3.04 -> 2.95 left the band, the file unchanged: the row's ResumeRecipeRoute.kt imports
+     *  splice.core.config's InstallPaths, which made splice.launch.resume a new neighbour of Knob.kt's
+     *  package with its own vote in the denominator. */
     const val RATCHET_RECORDED = "2026-09-26"
-    const val RATCHET_MAX_HIGH = 15
+    const val RATCHET_MAX_HIGH = 14
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

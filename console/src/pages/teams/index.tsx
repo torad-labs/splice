@@ -16,16 +16,18 @@ import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/sessi
 import { useSpliceHeads } from '@entities/control-status';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { fetchPerfTurns, inflightFrom, usePerfTurns } from '@entities/perf';
+import type { PendingRoute, TurnRow, TurnsState } from '@entities/perf';
 import { ViewTabs, useViews, type View } from '@features/views';
 import { CostPerRole, TeamLanes, TeamMembers, TeamStats, TeamTimeline } from '@widgets/team-board';
-import type { TeamViewData } from '@widgets/team-board';
+import type { TeamViewData, TimelineFault } from '@widgets/team-board';
 import { TeamChat } from '@widgets/team-chat';
 import type { TeamChatState } from '@widgets/team-chat';
 import { ActivityFeed } from '@widgets/activity-feed';
 import type { ActivityFeedState } from '@widgets/activity-feed';
 import { TeamCompose, draftOf } from '@features/team-compose';
 import { Fault, Key } from '@shared/controls';
-import { ABSENT, poll, useLinkedId, useOpen } from '@shared/lib';
+import { ABSENT, fmtInt, poll, useLinkedId, useOpen } from '@shared/lib';
+import type { Resource } from '@shared/lib';
 import { Badge, DataTable, Empty, KeyValue, PageHeader, Pips, Section } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import type { TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
@@ -43,7 +45,8 @@ const FIXTURE = 'hero';
 const READ_EVERY_MS = 10_000;
 
 /** The perf rows read for the day's turn log: the route's own ceiling per head (PerfRoutes.kt
- *  MAX_TURNS), so the log is short only on a day busier than the route will serve. */
+ *  MAX_TURNS), so the log is short only on a day busier than the route will serve, and the timeline
+ *  then names the head (turnLogOf). */
 const TURN_TAIL = 2_000;
 
 /** How often that log is re-read. A day of rows per head is the heaviest read on the page, and the
@@ -88,6 +91,8 @@ export interface TeamsBodyInput {
   board: TeamPayload | null;
   /** What the views read beyond the board; null while it is being read. */
   data?: TeamViewData | null;
+  /** Why the day's turn log on the timeline is short or old (turnLogOf); none when it is whole. */
+  faults?: readonly TimelineFault[];
   chat?: TeamChatState;
   feed?: ActivityFeedState;
   /** The editor's key on the opened team, and the empty's action when there is no team. */
@@ -95,14 +100,14 @@ export interface TeamsBodyInput {
   onNew?: () => void;
 }
 
-export function teamsBodyFor({ view, teams, error = null, lastRead = null, board, data = null, chat = null, feed = null, onEdit, onNew }: TeamsBodyInput) {
+export function teamsBodyFor({ view, teams, error = null, lastRead = null, board, data = null, faults = [], chat = null, feed = null, onEdit, onNew }: TeamsBodyInput) {
   if (board === null) return liveEmpty(teams, error, onNew);
   // A list read that fails after a team was drawn keeps the team and says so above it, with the
   // age of what it shows, so a dead daemon's team does not read as a live one.
   return (
     <>
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
-      <TeamView board={board} mode={modeOf(view)} data={data} chat={chat} feed={feed} {...(onEdit === undefined ? {} : { onEdit })} />
+      <TeamView board={board} mode={modeOf(view)} data={data} faults={faults} chat={chat} feed={feed} {...(onEdit === undefined ? {} : { onEdit })} />
     </>
   );
 }
@@ -137,12 +142,41 @@ const localDay = (epochMs: number): string => {
 
 const boundOf = (team: TeamRow): number => team.slots.filter((slot) => slot.session !== null).length;
 
+/** The day's turn log as the timeline draws it: the rows in hand, and every reason they are short. */
+export interface TurnLog {
+  rows: readonly TurnRow[];
+  faults: TimelineFault[];
+}
+
+/**
+ * The day's turn log from the turns read (V4-288). The page drew the rows alone, so a failed read
+ * kept the last log, or "No turns today", with no word, and a head that was not read, or read only
+ * in part, looked like a head with a quiet morning. Each is now a fault on the timeline: the read's
+ * error with the age of the rows still drawn, a route this daemon does not serve, each head the
+ * daemon could not read, and each head whose day held more turns than the route serves.
+ */
+export function turnLogOf(turns: Resource<TurnsState | PendingRoute>): TurnLog {
+  const { data, error, lastUpdated } = turns;
+  const read = data !== null && !isPending(data) ? data : null;
+  const faults: TimelineFault[] = [
+    ...(error === null ? [] : [{ message: `${S.turnLog}: ${error}`, lastRead: read === null ? null : lastUpdated }]),
+    ...(isPending(data) ? [{ message: H.turnsPending, lastRead: null }] : []),
+    ...(read?.unread ?? []).map(({ head, reason }) => ({ message: `${head}: ${reason}`, lastRead: null })),
+    ...(read?.truncated ?? []).map(({ head, count, returned }) => ({
+      message: `${head}: ${fmtInt(returned)} ${U.of} ${count === null ? ABSENT : fmtInt(count)} ${U.turnsRead}`,
+      lastRead: null,
+    })),
+  ];
+  return { rows: read?.landed ?? [], faults };
+}
+
 /** One team, opened: who it is, its figures, then the view's seats or lanes, today's chat and
  *  activity, and the cost per role. */
-export function TeamView({ board, mode, data, chat, feed, onEdit }: {
+export function TeamView({ board, mode, data, faults, chat, feed, onEdit }: {
   board: TeamPayload;
   mode: 'lanes' | 'head' | 'role' | 'timeline';
   data: TeamViewData | null;
+  faults: readonly TimelineFault[];
   chat: TeamChatState;
   feed: ActivityFeedState;
   onEdit?: () => void;
@@ -173,7 +207,7 @@ export function TeamView({ board, mode, data, chat, feed, onEdit }: {
         </div>
       </Section>
       {mode === 'lanes' ? <TeamLanes board={board} /> : null}
-      {mode === 'timeline' ? <TeamTimeline board={board} data={data} /> : null}
+      {mode === 'timeline' ? <TeamTimeline board={board} data={data} faults={faults} /> : null}
       {mode === 'head' || mode === 'role' ? <TeamMembers board={board} by={mode} /> : null}
       <div className="myx-tm-pair">
         <TeamChat state={chat} />
@@ -310,7 +344,7 @@ export function TeamsPage() {
   }, [fixture, openId]);
 
   const sessions = registry.data?.sessions ?? [];
-  const rows = turns.data !== null && !isPending(turns.data) ? turns.data.landed : [];
+  const log = turnLogOf(turns);
   const live = open === null ? null : boardOf(open, sessions, panels.data, now, spliceHeads);
   const board = fixture ?? live;
   const states = fixture !== null
@@ -329,7 +363,8 @@ export function TeamsPage() {
     error: fixture === null ? teams.error : null,
     lastRead: teams.lastUpdated,
     board,
-    data: sample !== null ? sample.data : live === null ? null : viewDataOf(live, rows, heads === null ? null : inflightFrom(heads), panels.data, now),
+    data: sample !== null ? sample.data : live === null ? null : viewDataOf(live, log.rows, heads === null ? null : inflightFrom(heads), panels.data, now),
+    faults: fixture === null ? log.faults : [],
     ...states,
     onEdit: () => setComposing('edit'),
     onNew: () => setComposing('new'),

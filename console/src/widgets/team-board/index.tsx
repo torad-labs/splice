@@ -18,6 +18,7 @@ import {
   StackedBar, Stat, StatRow, weightedColumns,
 } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup, Tone } from '@shared/ui';
+import { Fault } from '@shared/controls';
 import { cx, fmtInt, fmtMs, fmtTokens } from '@shared/lib';
 import { clockText, costTable, dayAxis, lanesOf, lastReceived, roleName, seatGroups, seatsOf, slotName } from './model';
 import type { RoleCost, Seat, TeamViewData } from './model';
@@ -376,11 +377,21 @@ const TIMELINE_KEY = [
   { mark: 'series-2', label: S.handoffs },
 ] as const;
 
+/** One reason the day's turn log is short or old, and when the rows still drawn were read (null
+ *  when the fault is not about their age). */
+export interface TimelineFault {
+  message: string;
+  lastRead: number | null;
+}
+
 /** The day as lanes: one per member, each turn a bar from its start as long as it ran, the
- *  hand-offs as ticks on a lane of their own, all on one clock that ends now. */
-export function TeamTimeline({ board, data }: { board: TeamPayload; data: TeamViewData | null }) {
+ *  hand-offs as ticks on a lane of their own, all on one clock that ends now. Each fault prints
+ *  above the lanes (V4-288: a failed or clamped turn log drew as a complete day), and while one
+ *  stands the timeline never says there were no turns. */
+export function TeamTimeline({ board, data, faults = [] }: { board: TeamPayload; data: TeamViewData | null; faults?: readonly TimelineFault[] }) {
   const section = (body: ReactNode) => (
     <Section title={S.today} info={{ text: H.today, label: S.todayWhy }} actions={<Legend items={TIMELINE_KEY} label={S.timelineKey} />}>
+      {faults.map((fault) => <Fault key={fault.message} message={fault.message} lastRead={fault.lastRead} />)}
       {body}
     </Section>
   );
@@ -437,7 +448,7 @@ export function TeamTimeline({ board, data }: { board: TeamPayload; data: TeamVi
           </span>
         </div>
       ))}
-      {data.turns.length === 0 ? <Empty text={S.noTurnsToday} source={H.noTurns} /> : null}
+      {data.turns.length === 0 && faults.length === 0 ? <Empty text={S.noTurnsToday} source={H.noTurns} /> : null}
     </div>,
   );
 }

@@ -219,6 +219,14 @@ export interface UnreadHead {
   reason: string;
 }
 
+/** A head whose window held more rows than the route serves (its `truncated` flag): `returned` are
+ *  in hand, the newest of `count`, or of a count the daemon did not write (null). */
+export interface TruncatedHead {
+  head: string;
+  count: number | null;
+  returned: number;
+}
+
 /** The pending shape and the rule that detects it now live in @shared/api (hoisted from M2-D1's
  *  finding, so every entity resolves an unbuilt route the same way). Re-exported here for the
  *  callers that already address this slice. */
@@ -281,4 +289,7 @@ export interface TurnsState {
    *  head that failed is named rather than silently dropped from a list that would then look
    *  complete. */
   unread: UnreadHead[];
+  /** Heads the route clamped: their earliest rows in the asked window are missing from `landed`.
+   *  A tail read asks for the newest rows only, so there it is the ask, not a gap. */
+  truncated: TruncatedHead[];
 }

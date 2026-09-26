@@ -3,16 +3,20 @@
 // session's work under another's name, drop a message, or save a team the operator did not write.
 // Each test holds one join against fixed payloads, and the save path against a stubbed fetch that
 // records what went on the wire.
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { SessionRow } from '../src/entities/session';
 import type { InflightTurn, TurnRow } from '../src/entities/perf';
+import { fetchPerfTurns } from '../src/entities/perf';
+import { perfTurnsStore } from '../src/entities/perf/model/store';
 import type { TeamActivityPayload, TeamChatPayload, TeamEconomicsPayload, TeamPanels, TeamRow, TeamSlot } from '../src/entities/team';
 import { fetchTeamPanels } from '../src/entities/team';
 import { draftOf, keyFor, saveDraft, unbindSession, unbindsOf, writeOf } from '../src/features/team-compose';
 import { UNLISTED, activityOf, boardOf, dayOf, dayStartOf, hhmm, hhmmss, lastHourOf, liveTurnsOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
 import { dayAxis } from '../src/widgets/team-board';
-import { panelStates } from '../src/pages/teams';
+import { panelStates, teamsBodyFor, turnLogOf } from '../src/pages/teams';
+import type { TurnLog } from '../src/pages/teams';
 
 const NOW = Date.UTC(2026, 8, 23, 14, 0, 0);
 const DAY = Date.UTC(2026, 8, 23);
@@ -368,6 +372,97 @@ describe('the turns running now', () => {
     expect(at(5)).toBe(1);
     expect(at(1)).toBe(2);
     expect(at(0)).toBe(2);
+  });
+});
+
+describe('the turn log says when it is short or failed (V4-288)', () => {
+  // The page drew turns.data.landed alone: a failed read kept the last log (or "No turns today") with
+  // no word, a head the route clamped read as a head with a quiet morning, and the merge cut the day
+  // to 2,000 rows across every head, so past 2,000 fleet turns the day began partway through.
+  afterEach(() => vi.unstubAllGlobals());
+  const TIMELINE = { layout: 'timeline', group: null };
+  const board = boardOf(TEAM, SESSIONS, PANELS, NOW, null);
+  const start = dayStartOf(NOW);
+  const wire = (session: string, ts: number) => ({ ts, model: 'fable', outcome: 'ok', compact: false, session, account: null, cache_cold: null, total: 1_000 });
+  /** `count` turns of one session, oldest first, spread over the day from `from`. */
+  const day = (session: string, count: number, from: number, step: number) => Array.from({ length: count }, (_, i) => wire(session, from + i * step));
+  const block = (key: string, rows: readonly object[], over: object = {}) => ({
+    key, label: key, count: rows.length, returned: rows.length, truncated: false, oldest_held_ts: null, rows, ...over,
+  });
+  /** The route's answer for one head, or a failed request for it. */
+  type Answer = ReturnType<typeof block> | { key: string; label: string; error: string };
+  const answer = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  /** The page's own read (index.tsx: every head, n=2,000, since local midnight) against a stubbed
+   *  daemon; a null `since` is the Turns page's tail read, which sends none. */
+  const read = async (answers: readonly Answer[], n = 2_000, since: number | null = start): Promise<TurnLog> => {
+    vi.stubGlobal('fetch', (url: string) => {
+      const at = new URL(url, 'http://console');
+      if (at.pathname === '/api/heads') return answer({ heads: answers.map(({ key }) => ({ key, running: true, gate: null })) });
+      return answer({ since: since ?? 0, n, heads: answers.filter(({ key }) => key === at.searchParams.get('head')) });
+    });
+    await fetchPerfTurns(undefined, n, since ?? undefined);
+    return turnLogOf(perfTurnsStore.get());
+  };
+  const timeline = (log: TurnLog): string => renderToStaticMarkup(teamsBodyFor({
+    view: TIMELINE, teams: null, board, data: viewDataOf(board, log.rows, [], PANELS, NOW), faults: log.faults,
+  }));
+  const STEP = Math.floor((NOW - 60_000 - start) / 2_100);
+
+  test('a turns read that fails keeps the last log and says it is stale', async () => {
+    const good = await read([block('claude', day('aaaaaaaa', 3, start + 10_000, STEP))]);
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
+    await fetchPerfTurns(undefined, 2_000, start);
+    const log = turnLogOf(perfTurnsStore.get());
+    expect(log.rows).toEqual(good.rows);
+    const html = timeline(log);
+    expect(html).toContain('Turn log: Splice is not answering.');
+    expect(html).toContain('<span class="myx-fig-basis">Stale</span>');
+  });
+
+  test('a first turns read that fails is a fault, never "No turns today"', () => {
+    const html = timeline(turnLogOf({ data: null, error: 'Splice is not answering.', loading: false, lastUpdated: null }));
+    expect(html).toContain('Turn log: Splice is not answering.');
+    expect(html).not.toContain('No turns today');
+  });
+
+  test('a daemon that does not serve the turn log says so, never "No turns today"', () => {
+    const html = timeline(turnLogOf({ data: { pending: 'V4-127' }, error: null, loading: false, lastUpdated: null }));
+    expect(html).toContain('This splice version does not serve the turn log.');
+    expect(html).not.toContain('No turns today');
+  });
+
+  test('a head the daemon could not read is named on the timeline', async () => {
+    const html = timeline(await read([
+      block('claude', day('aaaaaaaa', 3, start + 10_000, STEP)),
+      { key: 'claudex', label: 'claudex', error: 'perf file unreadable: permission denied' },
+    ]));
+    expect(html).toContain('claudex: perf file unreadable: permission denied');
+  });
+
+  test('a head the route clamped says how much of its day was read', async () => {
+    const log = await read([block('claude', day('aaaaaaaa', 2_000, start + 10_000, STEP), { count: 2_345, truncated: true })]);
+    expect(timeline(log)).toContain('claude: 2,000 of 2,345 turns read');
+  });
+
+  test('2,001 turns across two heads are the whole day: the cap is per head', async () => {
+    const log = await read([
+      block('claude', day('aaaaaaaa', 1_500, start + 10_000, STEP)),
+      block('claudex', day('bbbbbbbb', 501, start + 20_000 + 1_500 * STEP, STEP)),
+    ]);
+    expect(log.rows).toHaveLength(2_001);
+    const html = timeline(log);
+    expect(html).toContain('aria-label="lead-seat: 1500 turns, 0 running"');
+    expect(html).toContain('aria-label="bbbbbbbb-2222: 501 turns, 0 running"');
+    expect(html).not.toContain('myx-fault');
+  });
+
+  test("the Turns page's tail read is still the fleet's newest n", async () => {
+    const log = await read([
+      block('claude', day('aaaaaaaa', 150, start + 10_000, STEP)),
+      block('claudex', day('bbbbbbbb', 150, start + 20_000, STEP)),
+    ], 200, null);
+    expect(log.rows).toHaveLength(200);
+    expect(log.rows.at(-1)?.ts).toBe(start + 20_000 + 149 * STEP);
   });
 });
 

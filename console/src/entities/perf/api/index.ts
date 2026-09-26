@@ -69,6 +69,10 @@ async function readHeadTurns(head: string, n: number, since: number | undefined)
  * every poll from V4-127 until 2026-09-22. So the whole fleet is every configured head, read in
  * parallel off the same heads read and merged (model/turns-wire.ts). One head failing does not
  * blank the others: it is named in `unread`, and only a read where EVERY head failed is an error.
+ *
+ * A read without `since` is a tail, the fleet's newest `n` (the Turns page); a read with `since` is
+ * a window (the Teams day), and keeps every row each head served, the route's cap being per head
+ * (V4-288: every read was cut to `n` across all heads, so a busy day began partway through).
  */
 export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: number): Promise<void> {
   perfTurnsStore.startLoading();
@@ -79,9 +83,10 @@ export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: nu
     const failed = reads.filter((read): read is HeadFailure => !read.ok);
     const first = failed[0];
     if (first !== undefined && failed.length === reads.length) throw first.err;
-    const merged = mergeTurns(reads.flatMap((read) => (read.ok ? [read.wire] : [])), n);
+    const merged = mergeTurns(reads.flatMap((read) => (read.ok ? [read.wire] : [])));
     const unread = [...merged.unread, ...failed.map((read) => ({ head: read.head, reason: messageOf(read.err) }))];
-    perfTurnsStore.setData({ inflight: inflightFrom(heads.heads), landed: merged.landed, unread });
+    const landed = since === undefined ? merged.landed.slice(-n) : merged.landed;
+    perfTurnsStore.setData({ inflight: inflightFrom(heads.heads), landed, unread, truncated: merged.truncated });
   } catch (err) {
     const pending = routePendingOf(err, PENDING_TURNS);
     if (pending !== null) {

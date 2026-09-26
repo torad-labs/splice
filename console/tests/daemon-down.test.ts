@@ -119,7 +119,7 @@ describe('a page keeps its rows, shows the fault and marks the rows stale', () =
   test('turns, which printed no fault at all once it had loaded', () => {
     const out = render(h(TurnsBoard, {
       inflight: [],
-      landed: { inflight: [], landed: [turn], unread: [] },
+      landed: { inflight: [], landed: [turn], unread: [], truncated: [] },
       summary: null,
       capture: null,
       error: DOWN,

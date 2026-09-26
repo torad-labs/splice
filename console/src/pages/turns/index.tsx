@@ -581,7 +581,7 @@ export default function TurnsPage() {
     <TurnsBoard
       slots={fixture !== null ? [] : slotsFrom(heads.data ?? [])}
       inflight={fixture !== null ? fixture.inflight : inflightFrom(heads.data ?? [])}
-      landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed, unread: [] } : turns.data}
+      landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed, unread: [], truncated: [] } : turns.data}
       summary={fixture !== null ? fixture.summary : summary.data}
       capture={capture.data}
       captureError={capture.error}

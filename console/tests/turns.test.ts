@@ -233,7 +233,7 @@ describe('landed turns', () => {
   test('every waterfall in the table shares one axis, so the long turn is the long bar', () => {
     const out = render(h(TurnsBoard, {
       inflight: [],
-      landed: { inflight: [], landed: [turn({ ts: T0 - 1000 }), turn({ ts: T0, finish: 8020, total: 8020, stream_end: 8010 })], unread: [] },
+      landed: { inflight: [], landed: [turn({ ts: T0 - 1000 }), turn({ ts: T0, finish: 8020, total: 8020, stream_end: 8010 })], unread: [], truncated: [] },
       summary: null,
       capture: null,
     }));
@@ -247,7 +247,7 @@ describe('landed turns', () => {
   test('a cell the row does not carry prints one dash, and durations and counts are scaled', () => {
     const out = render(h(TurnsBoard, {
       inflight: [],
-      landed: { inflight: [], landed: [without(turn({ first_byte: 12_820, out_tokens: 453_608 }), 'in_tokens')], unread: [] },
+      landed: { inflight: [], landed: [without(turn({ first_byte: 12_820, out_tokens: 453_608 }), 'in_tokens')], unread: [], truncated: [] },
       summary: null,
       capture: null,
     }));
@@ -298,7 +298,7 @@ describe('turn views', () => {
   });
 
   test('a grouped table prints each group once, and not again as a column', () => {
-    const out = render(h(TurnsBoard, { inflight: [], landed: { inflight: [], landed: rows, unread: [] }, summary: null, capture: null }));
+    const out = render(h(TurnsBoard, { inflight: [], landed: { inflight: [], landed: rows, unread: [], truncated: [] }, summary: null, capture: null }));
     expect(out).toContain('>Model<');
   });
 
@@ -318,7 +318,7 @@ describe('turn views', () => {
 
 describe('turns board', () => {
   const board = (over: Partial<React.ComponentProps<typeof TurnsBoard>> = {}) =>
-    render(h(TurnsBoard, { inflight: [inflight()], landed: { inflight: [], landed: [turn()], unread: [] }, summary: null, capture: null, ...over }));
+    render(h(TurnsBoard, { inflight: [inflight()], landed: { inflight: [], landed: [turn()], unread: [], truncated: [] }, summary: null, capture: null, ...over }));
 
   test('a route this daemon does not serve says so in words, not a row id', () => {
     const out = board({ landed: { pending: 'V4-127' } });
@@ -365,7 +365,7 @@ describe('turns board', () => {
   test('a head is printed by its label everywhere on the page, not the key its rows carry', () => {
     const out = board({
       inflight: [],
-      landed: { inflight: [], landed: [turn({ head: 'bonsai' })], unread: [] },
+      landed: { inflight: [], landed: [turn({ head: 'bonsai' })], unread: [], truncated: [] },
       summary: { window: '24h', heads: [{ key: 'bonsai', label: 'claude-bonsai', window: '24h', count: 0, empty: true, coverage_known: true, clamped: false, covers_ms: 0 }] },
     });
     expect(out).toContain('>claude-bonsai<');
@@ -396,7 +396,7 @@ describe('turns board', () => {
   test('the tokens split each head\'s input into what the cache served, wrote and missed', () => {
     const rows = [turn({ in_tokens: 1000, cached_tokens: 700, cache_write_tokens: 100, out_tokens: 50 }), turn({ in_tokens: 500, cached_tokens: 500, cache_write_tokens: 0, out_tokens: 10 })];
     expect(tokenRowsOf(rows)).toEqual([{ head: 'claudex', in: 1500, cached: 1200, write: 100, out: 60 }]);
-    const out = board({ landed: { inflight: [], landed: rows, unread: [] } });
+    const out = board({ landed: { inflight: [], landed: rows, unread: [], truncated: [] } });
     expect(out).toContain('aria-label="Input: Cached 1.2k, Cache write 100, Uncached 200"');
   });
 

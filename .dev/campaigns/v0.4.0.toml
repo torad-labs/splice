@@ -7722,3 +7722,11 @@ title = "A session's hand-off edges carry the text that was handed off (V4-219 s
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/ActivityRoutes.kt", "app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt", "console/src/pages/sessions/index.tsx", "console/src/pages/sessions/strip.tsx", "console/src/pages/sessions/strings.ts", "console/src/pages/sessions/coverage.ts", "console/tests/sessions.test.ts"]
 status = "todo"
 verify = "red first: a route test where an edge's tool_use id has a sent text and the edges answer lacks it (quoted); green: the edge carries the redacted text, an edge with no text says so rather than an empty string, unauthenticated reads stay 401; the console test shows the text only after Reveal; the module's test and detekt; cd console && bun test"
+
+[[items]]
+id = "V4-315"
+phase = "release"
+title = "FEATURES.md 2.3's documented splice.toml example is config the daemon refuses (console, V4-312 2026-09-26): share and isolate as tables where the daemon reads lists of names (ClassCastException), top-level [claude] isolate / config_dir (UnknownNameException), provider-level rates; the example is corrected to the daemon's shape and a test parses the documented block with TopologyLoader so the doc cannot drift again"
+files = [".dev/campaigns/web-console/FEATURES.md"]
+status = "todo"
+verify = "red first: a test that extracts FEATURES.md 2.3's toml block and parses it with TopologyLoader fails with the loader's own exception (quoted); green: it parses; the test's census row"

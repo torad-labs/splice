@@ -24,16 +24,17 @@
  * hand-authored summary over hand-authored attributions is a second denominator over the first,
  * which is the defect this CLI keeps filing rows about:
  *   .dev/campaigns/REVIEW-eli-ledger-2026-09-17.md — the adversarial review of the ledger system
- *   (provenance and its one sanctioned repair, the checked `touched` contract, newline injection
- *   into notes, duplicate ids, release-stale outside the lock, lock/temp debris); and the scout
+ *   (the checked `touched` contract, newline injection into notes, duplicate ids, release-stale
+ *   outside the lock, lock/temp debris; its provenance proof was retired 2026-09-26, see
+ *   ledger-core.ts's readLines); and the scout
  *   seats' field findings from 2026-09-18 (the `focus` seat pointer, per-file receipt blob hashes,
  *   the exit-code-after-a-pipe law, the pattern-honesty law).
  *
- * Vendoring gate: `selftest` runs 145 checks over a scratch ledger — including the wedged-proof
- * read-only path, the orchestrator-gated `reattest` repair, the review-milestone walls
+ * Vendoring gate: `selftest` runs 185 checks over a scratch ledger — including the self-commit
+ * (by path, a peer's staged file left alone, deferred under a held index lock), the review-milestone walls
  * (`deliver`, `<M>-review` as ONE row for one builder, no review note per row, the generated
  * `review` brief, `followup`, the `plan` growth ceiling and the no-plan refusal) and the
- * machinery-seat classifier in its permissive form — and passes 145/145 at the
+ * machinery-seat classifier in its permissive form — and passes 185/185 at the
  * revision this line was written. Run it at every
  * vendoring, and note the lineage in the vendoring repo. The ontology those walls enforce is
  * stated once, above `milestoneOf`, in the operator's words.
@@ -48,12 +49,11 @@ import {
   ITEM_STATUSES,
   LedgerError,
   locateItems,
+  commitWrites,
   mutate,
   notesOf,
   parseOrThrow,
   readLines,
-  readLinesLoose,
-  reattestLedger,
   toml,
   today,
   type ItemBlock,
@@ -82,7 +82,8 @@ read
   phase-status <P>                  one line per item in a phase (milestone) with its status
   touched <ID>                      the latest receipt's touched files, one per line
 
-write
+write                               each write commits the ledger by itself (git commit -- <ledger>);
+                                    never lock, stage or commit a ledger by hand
   add --id I --phase P --title T [--files a,b] [--verify V] [--status S]
                                     P is a milestone, or <M>-review — the review milestone attached to a
                                     DELIVERED milestone M; a delivered milestone takes no rows
@@ -118,13 +119,14 @@ write
                                     by one seat and delivered by another is the collision nothing caught
                                     scratch paths (**/*.tmp.ts, **/.tmp-*) are refused: the touched list is what gets committed
   stage <ID>                        orchestrator: git add exactly the receipt's touched files as they are
-                                    on disk now, then the ledger+proof pair; refuses only a dirty index and
-                                    a commit that would not load (no hashes, no moved-bytes refusal)
+                                    on disk now; refuses only a dirty index and a commit that would not
+                                    load (no hashes, no moved-bytes refusal). The ledger is never staged:
+                                    every write commits it by itself
   focus <ID> [--seat S]             write this seat's active pointer (re-anchor after compaction)
   landed <ID> [sha]                 orchestrator, after the commit: set-compare the receipt's touched+deleted lists
                                     with git show --name-only <sha> (default HEAD), both directions; exit 1 on a miss
-  reattest                          orchestrator: re-bind the proof to the ledger bytes after a wedge
-  init "title" --rows N             orchestrator: create a new ledger (header + proof); the plan is declared at birth
+  init "title" --rows N             orchestrator: create a new ledger (the header); the plan is declared at birth.
+                                    git add it once; every later write commits itself
   claim <ID> <seat>                 record ownership with a liveness stamp (--seat S also accepted)
   release <ID>                      release one named claim — the repair for a wrong claim and the
                                     honest way to hand a row over; release-stale can only judge age
@@ -1061,7 +1063,6 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
     (command === "set-status" && rest[1] === "verified") ||
     (command === "add" && flag(rest, "status") === "verified") ||
     command === "verify-phase" ||
-    command === "reattest" ||
     command === "init" ||
     command === "deliver" ||
     command === "plan" ||
@@ -1087,8 +1088,6 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
   // expire with the .py and it has: the file is deleted, and the disjointness guard it was protecting
   // now lives in this CLI's own claim (see fenceOverlap against in_flight rows below), so the two
   // halves of the delta are both discharged rather than one of them quietly dropped.
-  const READ_ONLY = new Set(["list", "get", "next", "laws", "packet", "phase-status", "touched", "validate"]);
-  const attested = rest.includes("--attested") || command === "snapshot";
   if (command === "init") {
     // The single channel has to be able to START a ledger: the Write/Bash guards block every raw
     // write to .dev/campaigns/*.toml, and before this verb a new ledger had no sanctioned birth.
@@ -1110,16 +1109,10 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       `# ${title}\n# created ${new Date().toISOString().slice(0, 10)} by the ledger CLI; laws are the \`# LAW:\` lines, rows are [[items]]\n` +
         `# PLANNED ${rows} rows — ceiling ${rows * CEILING_FACTOR} milestone rows; \`add\` refuses past it (review-milestone rows excluded)\n\n`,
     );
-    const hash = await reattestLedger(ledgerPath);
-    console.log(`${ledgerPath}: created, proof ${hash.slice(0, 12)}…`);
+    console.log(`${ledgerPath}: created — git add it once; every later write commits itself`);
     return 0;
   }
-  if (command === "reattest") {
-    const hash = await reattestLedger(ledgerPath);
-    console.log(`${ledgerPath}: proof re-bound to ${hash.slice(0, 12)}… — review \`git diff -- ${ledgerPath}\` and note what was blessed`);
-    return 0;
-  }
-  const lines = READ_ONLY.has(command) && !attested ? await readLinesLoose(ledgerPath) : await readLines(ledgerPath, attested);
+  const lines = await readLines(ledgerPath);
   if (command === "snapshot") {
     process.stdout.write(lines.join("\n"));
     return 0;
@@ -1409,8 +1402,7 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       // (another row's staged bytes would ride this commit) and a commit that would not load (a
       // staged file importing a path the commit will not contain). No fence refusal, no byte
       // comparison, no moved-bytes refusal — operator ruling 2026-09-18, see the note above
-      // `headBlob`. Then the ledger+proof pair, re-added until the two agree, so a concurrent ledger
-      // write cannot abort the commit (Eli F3/F4).
+      // `headBlob`. The ledger is not staged: every write already committed it (commitWrites).
       const id = positional(rest, 0, "an item id");
       const block = findBlock(locateItems(lines), id);
       const r = latestReceipt(notesOf(lines, block));
@@ -1422,9 +1414,9 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       const root = repoRootOf(ledgerPath);
       // A dirty index means someone else's staged bytes would ride this commit: `git mv` stages
       // renames on its own, and one orchestrator commit swept 81 of a peer's into the wrong
-      // commit (2026-09-18). The ledger pair is the only staged content `stage` tolerates.
+      // commit (2026-09-18). The ledger is the only staged content `stage` tolerates.
       const ledgerRelEarly = relative(root, ledgerPath);
-      const preStaged = git(root, "diff", "--cached", "--name-only", "-z").split("\0").filter((p) => p !== "" && p !== ledgerRelEarly && p !== `${ledgerRelEarly}.cli-sha256`);
+      const preStaged = git(root, "diff", "--cached", "--name-only", "-z").split("\0").filter((p) => p !== "" && p !== ledgerRelEarly);
       if (preStaged.length > 0) {
         throw new LedgerError(
           `${id}: the index already holds ${preStaged.length} staged path(s) (${preStaged.slice(0, 5).join(", ")}${preStaged.length > 5 ? ", …" : ""}) — stage never rides another row's bytes.\n` +
@@ -1468,15 +1460,7 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       }
       if (r.touched.length > 0) git(root, "add", "--", ...r.touched);
       if (removals.length > 0) git(root, "rm", "--cached", "--quiet", "--", ...removals);
-      const ledgerRel = relative(root, ledgerPath);
-      let consistent = false;
-      for (let attempt = 0; attempt < 3 && !consistent; attempt += 1) {
-        git(root, "add", "--", ledgerRel, `${ledgerRel}.cli-sha256`);
-        const stagedToml = new Bun.CryptoHasher("sha256").update(git(root, "show", `:${ledgerRel}`)).digest("hex");
-        consistent = git(root, "show", `:${ledgerRel}.cli-sha256`).trim() === stagedToml;
-      }
-      if (!consistent) throw new LedgerError("ledger and proof would not settle into a consistent staged pair after 3 tries");
-      console.log(`${id}: staged ${r.touched.length} files${removals.length > 0 ? ` + ${removals.length} deletions` : ""} + ledger pair — commit now`);
+      console.log(`${id}: staged ${r.touched.length} files${removals.length > 0 ? ` + ${removals.length} deletions` : ""} — commit now`);
       return 0;
     }
 
@@ -1504,7 +1488,7 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       if (r === undefined) throw new LedgerError(`${id} has no receipt to compare`);
       const root = repoRootOf(ledgerPath);
       const ledgerRel = relative(root, ledgerPath);
-      const inCommit = new Set(git(root, "show", "--name-only", "--format=", sha).split("\n").map((l) => l.trim()).filter((l) => l !== "" && l !== ledgerRel && l !== `${ledgerRel}.cli-sha256`));
+      const inCommit = new Set(git(root, "show", "--name-only", "--format=", sha).split("\n").map((l) => l.trim()).filter((l) => l !== "" && l !== ledgerRel));
       const onReceipt = new Set([...r.touched, ...r.deleted]);
       const blobAt = (rev: string, rel: string): string | null => {
         const p = Bun.spawnSync(["git", "-C", root, "rev-parse", "--verify", "--quiet", `${rev}:${rel}`], { stdout: "pipe", stderr: "pipe" });
@@ -2626,8 +2610,8 @@ async function selftest(): Promise<number> {
   sh("git", "reset", "-q");
   await run("receipt", "M2", "--cmd", "bun test tests/y", "--exit", "0", "--tests", "2", "--touched", "src/b.ts,src/c.ts");
   check("stage without the orchestrator env is refused", (await run("stage", "M2")).includes("orchestrator"));
-  check("stage adds exactly the receipt and the ledger pair", asOrchestrator("stage", "M2").includes("staged 2 files + ledger pair"));
-  check("the index holds the touched files and the ledger pair", sh("git", "diff", "--cached", "--name-only").trim().split("\n").sort().join("|") === ".dev/campaigns/selftest.toml|.dev/campaigns/selftest.toml.cli-sha256|src/b.ts|src/c.ts");
+  check("stage adds exactly the receipt's files", asOrchestrator("stage", "M2").includes("staged 2 files — commit now"));
+  check("the index holds the touched files and never the ledger", sh("git", "diff", "--cached", "--name-only").trim().split("\n").sort().join("|") === "src/b.ts|src/c.ts");
   // A deletion rides a receipt: --deleted needs the file gone and tracked; stage stages the removal.
   await run("add", "--id", "D1", "--phase", "m9", "--title", "delete a file", "--verify", "", "--files", "src/zz.ts,src/a.ts");
   check("a deleted file still on disk is refused", (await run("receipt", "D1", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-", "--deleted", "src/zz.ts")).includes("still exist"));
@@ -2818,13 +2802,34 @@ async function selftest(): Promise<number> {
   check("rows are verified", (await run("get", "M1")).includes("[verified]"));
   check("packet tells the builder not to run the suite", (await run("packet", "H3")).includes("never the full suite"));
 
-  // A wedged proof: read-only views survive with a warning, mutations refuse, reattest repairs.
-  await Bun.write(`${path}.cli-sha256`, "0".repeat(64) + "\n");
-  check("a read survives a provenance mismatch", (await run("get", "H1")).includes("first item"));
-  check("a mutation still refuses a provenance mismatch", (await run("note", "H1", "should not land")).includes("provenance mismatch"));
-  check("reattest without the orchestrator env is refused", (await run("reattest")).includes("orchestrator"));
-  check("reattest re-binds the proof", asOrchestrator("reattest").includes("re-bound"));
-  check("mutations work again after reattest", (await run("note", "H1", "lands after reattest")).includes("note appended"));
+  // THE CLI COMMITS ITS OWN WRITES (operator, 2026-09-26). The fixture ledger is tracked since the
+  // commit above, so each write is its own commit: by path, the ledger alone, a peer's staged file
+  // left staged, and no provenance sidecar anywhere.
+  await Bun.write(join(repo, "src", "a.ts"), "// a peer's staged edit\n");
+  sh("git", "add", "src/a.ts");
+  {
+    const out = await run("note", "H1", "a note commits itself");
+    const subject = sh("git", "log", "-1", "--format=%s").trim();
+    const inCommit = sh("git", "show", "--name-only", "--format=", "HEAD").trim();
+    check("a write commits the ledger by itself, the subject naming the verb and the row", out.includes("note appended") && subject === "chore(ledger): note H1", `${out.trim()} | ${subject}`);
+    check("the self-commit carries the ledger alone, never a peer's staged file", inCommit === ".dev/campaigns/selftest.toml", inCommit);
+    check("the peer's staged file stays staged", sh("git", "diff", "--cached", "--name-only").trim() === "src/a.ts");
+    check("nothing of the ledger is left uncommitted", sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
+    check("no provenance sidecar is written", !existsSync(`${path}.cli-sha256`));
+  }
+  sh("git", "reset", "-q"); sh("git", "checkout", "-q", "--", "src/a.ts");
+  // A commit that cannot land is deferred, never a failed write: with the index lock held past the
+  // timeout the note stands and the verb exits 0, and the next write's commit carries both.
+  await Bun.write(join(repo, ".git", "index.lock"), "");
+  {
+    const out = await run("note", "H1", "written while the index is locked");
+    check("a commit blocked by the index lock defers with a warning; the write stands", out.includes("note appended") && out.includes("written but not committed"), out.trim());
+  }
+  rmSync(join(repo, ".git", "index.lock"));
+  await run("note", "H1", "the next write commits both");
+  check("the next write's commit carries the deferred note too",
+    sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written while the index is locked") &&
+      sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
 
   check("validate passes", (await run("validate")).includes("valid"));
   {
@@ -2835,7 +2840,7 @@ async function selftest(): Promise<number> {
     // meant every ledger that predates the feature lost the verb — measured: it took out the
     // survival-stack fixture, the one that proves the laws re-arrive after a compaction.
     check("init without a plan is refused — a campaign declares its plan at birth", r("init", "fresh campaign").includes("--rows"));
-    check("init creates a ledger with a bound proof", r("init", "fresh campaign", "--rows", "5").includes("created") && existsSync(`${fresh}.cli-sha256`));
+    check("init creates a ledger and no provenance sidecar", r("init", "fresh campaign", "--rows", "5").includes("created") && !existsSync(`${fresh}.cli-sha256`));
     check("init writes the plan into the header at birth", r("snapshot").includes("PLANNED 5 rows"));
     check("init refuses an existing ledger", r("init", "again", "--rows", "5").includes("already exists"));
     r("add-law", "first-law — the first law");
@@ -2849,7 +2854,6 @@ async function selftest(): Promise<number> {
     const legacy = join(repo, ".dev", "campaigns", "legacy.toml");
     await Bun.write(legacy, "# a board born before the ceiling\n\n");
     const rl = (...a: string[]): string => { const x = Bun.spawnSync(["bun", import.meta.path, legacy, ...a], { env: { ...process.env, LEDGER_ORCHESTRATOR: "1" }, stdout: "pipe", stderr: "pipe" }); return x.stdout.toString() + x.stderr.toString(); };
-    rl("reattest");
     const grown = rl("add", "--id", "L1", "--phase", "p", "--title", "legacy row", "--verify", "true", "--files", "src/a.ts");
     check("a ledger with no plan grows, and says loudly that it has no ceiling", grown.includes("WARNING no plan declared") && grown.includes("added L1"));
   }
@@ -2949,7 +2953,6 @@ async function selftest(): Promise<number> {
 
   rmSync(repo, { recursive: true, force: true });
   await Bun.file(`${path}.lock`).delete().catch(() => {});
-  await Bun.file(`${path}.cli-sha256`).delete().catch(() => {});
 
   console.log(`${checks - failures}/${checks} checks passed`);
   return failures > 0 ? 1 : 0;
@@ -2965,8 +2968,10 @@ async function selftest(): Promise<number> {
 if (import.meta.main) {
   try {
     process.exitCode = await main(); // Natural exit drains piped snapshots before terminating.
+    await commitWrites(Bun.argv.slice(2));
   } catch (error) {
     if (error instanceof LedgerError) {
+      await commitWrites(Bun.argv.slice(2)); // a write that landed before the refusal is still committed
       console.error(`ledger: ${error.message}`);
       process.exit(1);
     }

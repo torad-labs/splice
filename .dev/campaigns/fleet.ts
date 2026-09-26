@@ -642,7 +642,7 @@ async function nextClaim(ledgerPath: string, seat: string): Promise<number> {
       await main([ledgerPath, "claim", id, "--seat", seat]);
     } catch (error) {
       // The one row-level refusal no filter above can see: another seat holds this row's review
-      // milestone. Anything else — provenance, the lock — is the ledger's, not the row's, and a
+      // milestone. Anything else — a ledger that no longer parses, the lock — is the ledger's, not the row's, and a
       // pull that recorded it as a reason and moved on would report "nothing eligible" about a
       // ledger it could not write at all.
       if (!(error instanceof LedgerError) || !error.message.startsWith("one builder works a review milestone")) throw error;
@@ -889,12 +889,13 @@ export async function fleetSelftest(): Promise<number> {
     // next --claim
     run("note", "F1", "RETIRED: folded into F5");
     // A campaign queue naming F6 (todo) before F0 (in_flight): init writes no [campaign] table.
-    const { appendFileSync } = await import("node:fs");
-    appendFileSync(ledger, '\n[campaign]\nnext = ["F6", "F0"]\n');
+    const { appendFileSync, writeFileSync } = await import("node:fs");
+    const intact = readFileSync(ledger, "utf8");
+    appendFileSync(ledger, "\n[campaign\n");
     const refused = run("next", "--claim", "seat-c");
-    check("a ledger-wide refusal (a raw edit breaking provenance) aborts the pull loudly, not as a row reason",
-      refused.code === 1 && refused.out.includes("provenance") && !refused.out.includes("queue empty"), refused.out);
-    run("reattest");
+    check("a ledger-wide refusal (a raw edit the TOML parser rejects) aborts the pull loudly, not as a row reason",
+      refused.code === 1 && refused.out.includes("not valid TOML") && !refused.out.includes("queue empty"), refused.out);
+    writeFileSync(ledger, `${intact}\n[campaign]\nnext = ["F6", "F0"]\n`);
     check("the fixture's campaign queue parses", campaignNext(readFileSync(ledger, "utf8"), ledger).join(",") === "F6,F0" && run("validate").code === 0);
     const pulled = run("next", "--claim", "seat-c");
     check("next --claim takes the queued todo row first, claims it and prints its packet",
@@ -939,7 +940,9 @@ export async function fleetSelftest(): Promise<number> {
     sh("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "fixture lands");
     check("fence-uncommitted is clean once the row's files are committed", run("fence-uncommitted", "FU1").out.trim() === '{"dirty": [], "warned": [], "available": true}');
     await Bun.write(join(root, "src", "fu", "new.ts"), "// never committed\n");
-    run("note", "FU1", "the ledger is now dirty too");
+    // The CLI commits its own writes, so a dirty ledger is a write whose commit was deferred; a raw
+    // line stands in for one, where a note would commit itself.
+    await Bun.write(ledger, `${readFileSync(ledger, "utf8")}# a write whose commit was deferred\n`);
     const fu = run("fence-uncommitted", "FU1");
     check("fence-uncommitted: a new file inside the fence is dirty (exit 1), the ledger itself only warned",
       fu.code === 1 && fu.out.trim() === '{"dirty": ["src/fu/new.ts"], "warned": [".dev/campaigns/fleet-selftest.toml"], "available": true}', fu.out);

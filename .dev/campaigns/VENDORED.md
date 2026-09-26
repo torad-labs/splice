@@ -28,8 +28,8 @@ Vendored 2026-09-18 by V4-143 into `.dev/campaigns/` from:
 Not vendored: `idle-watch.ts` (this repo has its own), `hydrate.ts`, the matrix plane, and the source
 repo's hooks. `manifest.py` IS GONE: V4-143 phase D deleted it 2026-09-20, and with it deltas 1, 2,
 3 and 5 retired themselves — `coexistsWithPython` in `ledger-core.ts` is false for every ledger now,
-so the flock-through-ffi, the write-in-place, the suppressed `.cli-sha256` and the claims-stay-on-py
-rules are dead code paths by construction rather than by an edit. Every caller runs `bun manifest.ts`.
+so the flock-through-ffi, the write-in-place and the claims-stay-on-py rules are dead code paths by
+construction rather than by an edit. The `.cli-sha256` proof itself is gone (delta 18). Every caller runs `bun manifest.ts`.
 
 ## Deltas — every one recorded, every one proved
 
@@ -47,7 +47,7 @@ temporary ledgers included — keeps the canonical behaviour.
    probe on the path ACQUIRES — exclusion silently gone.
 3. **No provenance proof on a coexisting ledger.** `manifest.py` never maintains `.cli-sha256`, so a
    proof born here goes stale at its next write and every later mutation here refuses. The cutover's
-   `reattest` binds the first proof.
+   `reattest` binds the first proof. Moot since delta 18: no ledger carries a proof.
 4. **A law line is `# LAW:` or `# LAW [date]:`.** 58 of the splice ledger's 59 laws are dated by
    `manifest.py`'s add-law. The canonical test matched only the undated form, so `laws` — the text
    SessionStart injects into every seat — printed ONE law. Now byte-identical to `manifest.py laws`.
@@ -151,6 +151,17 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     receipt from claude-builder, handing a release row to `scout-campaign-mod`, a seat splice does not
     have. Red first: the selftest check "an apparatus-only row is added, receipted and done by a builder
     seat" read 179/180 on the unmodified wall and 180/180 with the switch.
+18. **No provenance proof; the CLI commits its own writes (operator, 2026-09-26: "eliminate this hash
+    ceremony from the ledger").** The `.cli-sha256` sidecar, `reattest`, `--attested` and the loose
+    read are gone. Every write was a pair a seat had to lock, stage and commit together, and releasing
+    those seat locks (`rmdir "$L/$T"`) tripped Claude Code's dangerous-removal prompt, which no
+    permission rule and no bypass mode can pre-approve. `mutate` records each ledger it wrote, and the
+    entry points (`ledger.ts`, `manifest.ts`) call `commitWrites` once. It commits each tracked ledger
+    by path (`git commit -- <ledger>`, subject `chore(ledger): <verb> <row>`) under the ledger's write
+    lock, leaves an untracked one alone, and defers with a warning when the index lock is held past
+    5 s; the next write commits the whole file. `stage` no longer stages the ledger. Five selftest
+    arms; three mutants (never commits, commits the whole index, a blocked commit fails the verb) each
+    red on theirs, at 180, 182 and 184 of 185.
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

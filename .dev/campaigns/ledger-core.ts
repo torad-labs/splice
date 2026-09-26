@@ -186,65 +186,17 @@ function releaseLock(held: HeldLock): void {
 
 // ── reading ───────────────────────────────────────────────────────────────────────────────────
 
-async function assertProvenance(ledgerPath: string, text: string, required: boolean): Promise<void> {
-  const proof = Bun.file(`${ledgerPath}.cli-sha256`);
-  if (!(await proof.exists())) {
-    // VENDORING DELTA 3: a ledger manifest.py also writes cannot carry a proof (see mutate), so
-    // its absence there is the expected state rather than a tamper signal.
-    if (required && !coexistsWithPython(ledgerPath)) throw new LedgerError(`ledger provenance missing: ${ledgerPath}`);
-    return; // Explicit CLI use can initialize a legacy ledger; lifecycle reads cannot.
-  }
-  if ((await proof.text()).trim() !== new Bun.CryptoHasher("sha256").update(text).digest("hex")) {
-    throw new LedgerError(`ledger provenance mismatch: ${ledgerPath}; restore the attested bytes before a CLI mutation`);
-  }
-}
-
-export async function readLines(ledgerPath: string, attested = false): Promise<string[]> {
-  const lockPath = await acquireLock(ledgerPath);
-  try {
-    const text = await Bun.file(ledgerPath).text();
-    await assertProvenance(ledgerPath, text, attested);
-    return text.split("\n");
-  } finally {
-    releaseLock(lockPath);
-  }
-}
-
 /**
- * A READ-ONLY view that survives a wedged proof. A provenance mismatch used to refuse even `get`
- * and `list`, so the one seat trying to diagnose the wedge was blind (Eli F1, 2026-09-17). Reads
- * warn loudly on stderr and continue; every mutation and every attested (hook) read still refuses.
+ * NO PROVENANCE PROOF (operator, 2026-09-26: "eliminate this hash ceremony from the ledger"). The
+ * `.cli-sha256` sidecar bound each ledger to the bytes this CLI last wrote, so every write became a
+ * PAIR a seat had to lock, stage and commit together, and a pair that drifted wedged every mutation
+ * until the orchestrator ran `reattest`. Git already records every write: the CLI commits its own
+ * (commitWrites), and the raw-edit guard (08_manifest_single_channel) keeps hands off the file.
  */
-export async function readLinesLoose(ledgerPath: string): Promise<string[]> {
+export async function readLines(ledgerPath: string): Promise<string[]> {
   const lockPath = await acquireLock(ledgerPath);
   try {
-    const text = await Bun.file(ledgerPath).text();
-    try {
-      await assertProvenance(ledgerPath, text, false);
-    } catch (error) {
-      console.error(`WARNING: ${error instanceof Error ? error.message : String(error)}\n  read-only view; mutations are refused until the orchestrator runs \`reattest\` after reading \`git diff -- ${ledgerPath}\``);
-    }
-    return text.split("\n");
-  } finally {
-    releaseLock(lockPath);
-  }
-}
-
-/**
- * THE ONE SANCTIONED REPAIR. Re-binds the proof to the ledger bytes as they are, under the lock,
- * and returns the hash. The caller (the `reattest` verb) is orchestrator-gated and prints what
- * it is blessing; a kill between the two renames in `mutate` is the honest way to get here.
- */
-export async function reattestLedger(ledgerPath: string): Promise<string> {
-  const lockPath = await acquireLock(ledgerPath);
-  try {
-    const text = await Bun.file(ledgerPath).text();
-    parseOrThrow(text, ledgerPath);
-    const hash = new Bun.CryptoHasher("sha256").update(text).digest("hex");
-    const proofPath = `${ledgerPath}.cli-sha256`;
-    await Bun.write(`${proofPath}.${process.pid}.tmp`, hash + "\n");
-    renameSync(`${proofPath}.${process.pid}.tmp`, proofPath);
-    return hash;
+    return (await Bun.file(ledgerPath).text()).split("\n");
   } finally {
     releaseLock(lockPath);
   }
@@ -361,6 +313,9 @@ export function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Every ledger this process wrote, committed once by the entry point (commitWrites). */
+const writtenLedgers = new Set<string>();
+
 /**
  * The only write path. Takes the lock, applies a pure line transform, validates the result by
  * re-parsing, and writes only if it parses — otherwise the original file is left untouched and
@@ -376,7 +331,6 @@ export async function mutate(
   const lockPath = await acquireLock(ledgerPath);
   try {
     const original = await Bun.file(ledgerPath).text();
-    await assertProvenance(ledgerPath, original, false);
     const next = transform(original.split("\n")).join("\n");
 
     // Validate BEFORE writing: rollback is then simply "never wrote it".
@@ -404,15 +358,7 @@ export async function mutate(
         await Bun.write(tempPath, next);
         renameSync(tempPath, ledgerPath);
       }
-      // Publish proof before releasing the same lock used by attested readers. VENDORING DELTA 3
-      // (splice V4-143): NOT on a ledger manifest.py also writes. That CLI never maintains a proof,
-      // so one born here would be stale after its next write and every later mutation here would
-      // refuse. Such a ledger stays proof-free until the cutover's `reattest` binds one.
-      if (!coexistsWithPython(ledgerPath)) {
-        const proofPath = `${ledgerPath}.cli-sha256`;
-        await Bun.write(`${proofPath}.${process.pid}.tmp`, new Bun.CryptoHasher("sha256").update(next).digest("hex") + "\n");
-        renameSync(`${proofPath}.${process.pid}.tmp`, proofPath);
-      }
+      writtenLedgers.add(resolve(ledgerPath));
     } catch (error) {
       // A failed rename must not leave debris that a later glob mistakes for a ledger.
       try {
@@ -441,6 +387,62 @@ function writeInPlace(fd: number, text: string): void {
   while (written < bytes.length) written += writeSync(fd, bytes, written, bytes.length - written, written);
   ftruncateSync(fd, bytes.length);
   fsyncSync(fd);
+}
+
+const COMMIT_RETRY_MS = 200;
+/** Well inside LOCK_TIMEOUT_MS: a peer's write waits on the ledger lock this commit holds. */
+const COMMIT_TIMEOUT_MS = 5_000;
+
+/**
+ * THE CLI COMMITS ITS OWN WRITES (operator, 2026-09-26: "I hate how this ledger has so many steps").
+ * A seat wrapped every write in a seat lock on the ledger and one on its proof, `git add` of the
+ * pair, a commit, and two lock releases whose `rmdir "$L/$T"` trips Claude Code's dangerous-removal
+ * check, which no permission rule and no bypass mode can pre-approve. The entry point calls this
+ * once, after the command, so a write is ONE command and nobody locks, stages or commits a ledger:
+ *   - each ledger this process wrote and git tracks is committed BY PATH (`git commit -- <ledger>`),
+ *     so a peer's staged files never ride along (the shared-index law);
+ *   - under the ledger's own write lock, so the commit carries exactly the bytes on disk and a peer's
+ *     write lands in the next commit instead of racing this one;
+ *   - a ledger git does not track (a scratch copy, a fresh `init`, a fixture) is left alone, and one
+ *     with nothing left to commit (a peer's commit already carried the write) is skipped;
+ *   - a commit that cannot land (the index lock held past the timeout, a merge in progress) is
+ *     reported and deferred, never retried by re-running the verb, which would write twice: the next
+ *     write commits the whole file.
+ */
+export async function commitWrites(argv: readonly string[]): Promise<void> {
+  const subject = commitSubject(argv);
+  for (const ledgerPath of writtenLedgers) {
+    const git = (...args: string[]) =>
+      Bun.spawnSync(["git", "-C", dirname(ledgerPath), ...args], { stdout: "pipe", stderr: "pipe" });
+    if (git("ls-files", "--error-unmatch", "--", ledgerPath).exitCode !== 0) continue;
+    const held = await acquireLock(ledgerPath);
+    try {
+      if (git("diff", "--quiet", "HEAD", "--", ledgerPath).exitCode === 0) continue;
+      const deadline = Date.now() + COMMIT_TIMEOUT_MS;
+      for (;;) {
+        const commit = git("commit", "--quiet", "-m", subject, "--", ledgerPath);
+        if (commit.exitCode === 0) break;
+        const why = commit.stderr.toString().trim();
+        if (!why.includes("index.lock") || Date.now() > deadline) {
+          console.error(`WARNING: ${ledgerPath} is written but not committed (${why.split("\n")[0]}); the next ledger write commits it`);
+          break;
+        }
+        await Bun.sleep(COMMIT_RETRY_MS);
+      }
+    } finally {
+      releaseLock(held);
+    }
+  }
+  writtenLedgers.clear();
+}
+
+/** `chore(ledger): <verb> <target>`, from the CLI's own argv (`<ledger> <verb> [args]`): the row a
+ *  verb names, `--id` for `add`, or a text verb's first words. */
+function commitSubject(argv: readonly string[]): string {
+  const [, verb = "write", ...rest] = argv;
+  const idAt = rest.indexOf("--id");
+  const target = idAt >= 0 ? rest[idAt + 1] : rest.find((arg) => !arg.startsWith("--"));
+  return `chore(ledger): ${verb}${target === undefined ? "" : ` ${target}`}`.replace(/\s+/g, " ").trim().slice(0, 100);
 }
 
 /** Escape a value for a TOML basic string. */

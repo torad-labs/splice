@@ -26,7 +26,7 @@
 import { readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { FLEET_USAGE, fleetSelftest, journalLedgerEvent, runFleetVerb } from "./fleet.ts";
-import { LedgerError, readLinesLoose } from "./ledger-core.ts";
+import { commitWrites, LedgerError, readLines } from "./ledger-core.ts";
 import { lawSheet, ledgerEvents, main } from "./ledger.ts";
 
 const HERE = dirname(import.meta.path);
@@ -42,7 +42,7 @@ async function aggregateLaws(): Promise<number> {
   const seen = new Set<string>();
   const laws: string[] = [];
   for (const ledger of ledgers()) {
-    for (const law of lawSheet(await readLinesLoose(ledger))) {
+    for (const law of lawSheet(await readLines(ledger))) {
       if (seen.has(law)) continue;
       seen.add(law);
       laws.push(law);
@@ -93,10 +93,13 @@ async function usage(): Promise<number> {
   return code;
 }
 
+// Every ledger this run wrote is committed here, once, fleet verbs included (ledger-core.ts commitWrites).
 try {
   process.exitCode = await entry();
+  await commitWrites(Bun.argv.slice(2));
 } catch (error) {
   if (error instanceof LedgerError) {
+    await commitWrites(Bun.argv.slice(2)); // a write that landed before the refusal is still committed
     console.error(`ledger: ${error.message}`);
     process.exit(1);
   }

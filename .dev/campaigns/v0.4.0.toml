@@ -6958,13 +6958,14 @@ id = "V4-261"
 phase = "release"
 title = "PRIVACY: activity labels are kept only as long as a console view reads them (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). Labels carry file names, commands and search patterns, 32 chars each, and are kept 90 days (Knob.kt:454). Match the retention to the longest view that reads them."
 files = ["core/src/main/kotlin/splice/core/config/Knob.kt", "features/sessions/src/main/kotlin/splice/sessions/activity/ActivityStore.kt", "features/sessions/src/test/kotlin/splice/sessions/activity/ActivityStoresTest.kt", "core/src/main/kotlin/splice/core/storage/ActivityDays.kt", "app/src/main/resources/splice.example.toml", "console/src/widgets/knob-form/copy.ts", "console/src/widgets/knob-form/strings.ts"]
-status = "in_flight"
+status = "done"
 verify = "the retention equals the longest console view's window, named in the knob's doc; a test pins that a label older than it is gone; CI gate on the train sha."
 # [2026-09-26] amend by=unattributed: files were ["core/src/main/kotlin/splice/core/config/Knob.kt"]
 claimed_by = "console"
 claimed_at = "2026-09-26T05:50:50.230Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T05:50:50Z
 # [2026-09-26] amend by=unattributed: files were ["core/src/main/kotlin/splice/core/config/Knob.kt", "features/sessions/src/main/kotlin/splice/sessions/activity/ActivityStore.kt", "features/sessions/src/test/kotlin/splice/sessions/activity/ActivityStoresTest.kt"]
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-261 -- :features-sessions:test :features-sessions:detekt :core:detekt :quality-architecture:test :app:test --tests splice.app.ExampleConfigTest --tests splice.app.ExampleConfigPortTest --tests splice.app.PromotedKnobsExampleTest --continue; cd console && bunx vitest run && bunx eslint src/widgets/knob-form tests && bunx tsc --noEmit -p .; bun tools/gate rules" exit=0 tests=1733 touched=core/src/main/kotlin/splice/core/config/Knob.kt,features/sessions/src/main/kotlin/splice/sessions/activity/ActivityStore.kt,features/sessions/src/test/kotlin/splice/sessions/activity/ActivityStoresTest.kt,core/src/main/kotlin/splice/core/storage/ActivityDays.kt,app/src/main/resources/splice.example.toml,console/src/widgets/knob-form/copy.ts,console/src/widgets/knob-form/strings.ts tail="xample.toml and ActivityDays' header now say labels keep today only. Console: vitest 1414/1414 (75 files), eslint and tsc clean. Gate rules PASS, census 0. Found, not fixed: a day file is swept only on the store's first write of a later day (ActivityDays.kt:18-21), so an idle daemon keeps yesterday's labels on disk (never read) until the next label; a sweep at store open or on read would close it."
 
 [[items]]
 id = "V4-262"

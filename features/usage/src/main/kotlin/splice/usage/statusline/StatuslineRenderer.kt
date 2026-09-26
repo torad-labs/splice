@@ -111,6 +111,9 @@ internal class StatuslineRenderer(
         warnPct: Int,
         warnTokens5h: Long,
         sessionId: String? = null,
+        /** V4-274: this head has not answered the session since it took it over, so a usage the post
+         *  carries is another head's last turn (StatuslineUsageOwner). */
+        unanswered: Boolean = false,
     ): String {
         // A malformed or absent payload IS answered, on the next line, by the dim label: that is the
         // designed degradation for the one input splice does not author. No sink here, and this runs
@@ -143,8 +146,8 @@ internal class StatuslineRenderer(
         ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
             listOfNotNull(
-                contextSegment(root),
-                cacheSegment(root),
+                contextSegment(root, unanswered),
+                cacheSegment(root, unanswered),
                 warnSegment(snapshot, warnPct, warnTokens5h),
                 locationSegment(root),
             )
@@ -159,8 +162,8 @@ internal class StatuslineRenderer(
         return "$BOLD$CYAN●$RESET $BOLD$name$RESET$effort"
     }
 
-    private fun contextSegment(root: JsonObject): String? {
-        val cw = blob.obj(root, "context_window") ?: return null
+    private fun contextSegment(root: JsonObject, unanswered: Boolean): String? {
+        val cw = blob.ownContextWindow(root, unanswered) ?: return null
         val id = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
         val (size, used) = row.window(id, blob.num(cw["context_window_size"]) ?: 0, usedTokens(cw))
         val pct = blob.num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
@@ -173,8 +176,8 @@ internal class StatuslineRenderer(
         return "$window ${dim("·")} $color$pct%$RESET"
     }
 
-    private fun cacheSegment(root: JsonObject): String? {
-        val cu = blob.obj(blob.obj(root, "context_window"), "current_usage") ?: return null
+    private fun cacheSegment(root: JsonObject, unanswered: Boolean): String? {
+        val cu = blob.obj(blob.ownContextWindow(root, unanswered), "current_usage") ?: return null
         val hit = cacheHitPct(cu) ?: return null
         return "${cacheColor(hit)}⚡ $hit%$RESET"
     }
@@ -315,6 +318,12 @@ private class StatuslineJson {
     fun str(element: JsonElement?): String? = JsonScalars.str(element)?.takeIf { it.isNotEmpty() }
 
     fun num(element: JsonElement?): Long? = JsonScalars.str(element)?.toDoubleOrNull()?.toLong()
+
+    /** The post's `context_window`, or null when [unanswered] and it carries a usage: that usage is
+     *  another head's last turn, neither this head's context nor its cache hit (V4-274). A post with
+     *  no usage yet still reads zero, which is no other head's figure. */
+    fun ownContextWindow(root: JsonObject, unanswered: Boolean): JsonObject? =
+        obj(root, "context_window")?.takeUnless { unanswered && obj(it, "current_usage") != null }
 
     /** When the client session began: its `cost.total_duration_ms` before [nowMs], or null when the
      *  blob does not carry it (V4-240 review, finding 4c). */

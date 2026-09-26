@@ -23,6 +23,7 @@ public class StatuslineRoute(
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
     private val renderers = RendererCache()
+    private val usageOwner = StatuslineUsageOwner()
     private val json = Json { ignoreUnknownKeys = true }
 
     public suspend fun statusline(call: ApplicationCall) {
@@ -54,7 +55,9 @@ public class StatuslineRoute(
             )
         }
         val sessionId = sessionId(stdin)
-        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h, sessionId)
+        // V4-274: the usage a post carries is another head's last turn until this head answers the session.
+        val unanswered = usageOwner.unanswered(managed.key, sessionId, managed.perf as? HeadSessionPerfSource)
+        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h, sessionId, unanswered)
         val warning = clientVersions.statuslineWarning(sessionId)
         call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
     }

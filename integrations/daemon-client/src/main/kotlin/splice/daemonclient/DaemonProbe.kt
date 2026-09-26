@@ -14,7 +14,10 @@ import splice.core.auth.CredentialVerdict
 import splice.core.auth.CredentialVerdictRead
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URI
 
 /**
@@ -55,49 +58,96 @@ public object DaemonProbe {
         operator fun invoke(connection: HttpURLConnection): T
     }
 
-    /** The /health payload of any splice-shaped listener, or null when nothing answers.
-     *  Unlike AdminSupport.daemonUp this accepts a STALE daemon — restart must be able to stop one.
-     *  str() (JsonNull-filtering) keeps a foreign listener's {"version": null} from reading back as
-     *  the literal string "null". */
-    public fun healthView(port: Int): HealthView? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): no listener on the port is the NORMAL case for every caller — doctor and restart probe a daemon that may not be running — so the declared HealthView? absence IS the answer; this CLI-side probe holds no log lane to route a failure into.
-        Cancellables.runCatchingCancellable {
-            request("http://127.0.0.1:$port/health") { connection ->
-                val obj = json.parseToJsonElement(body(connection)).jsonObject
-                HealthView(
-                    version = JsonScalars.str(obj, "version"),
-                    heads = JsonScalars.int(obj, "heads"),
-                    readyHeads = JsonScalars.int(obj, "readyHeads"),
-                    failedHeads = JsonScalars.int(obj, "failedHeads"),
-                    topologyDigest = JsonScalars.str(obj, "topologyDigest"),
-                    configPath = JsonScalars.str(obj, "configPath"),
-                    topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
-                    ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
-                    turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
-                        ?.mapNotNull { JsonScalars.str(it) }
-                        .orEmpty(),
-                    clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
-                )
+    /** V4-230: what a /health probe found, each case its own. The probe read a refused connection, a
+     *  timeout and a non-2xx alike as nothing answering, so a daemon too busy to answer inside
+     *  [PROBE_TIMEOUT_MS] read "stopped" in doctor; in the console's own doctor, whose request that
+     *  busy daemon was serving, 3 page loads in 6 said so (2026-09-25). */
+    public sealed class HealthProbe {
+        /** A splice-shaped listener answered, with [view]. */
+        public data class Up(public val view: HealthView) : HealthProbe()
+
+        /** Something accepted the connection and gave no answer within [waitedMs]. */
+        public data class Slow(public val waitedMs: Int) : HealthProbe()
+
+        /** Nothing listens on the port. */
+        public data object Down : HealthProbe()
+
+        /** A listener answered, but not with splice's /health; [detail] says how. */
+        public data class Odd(public val detail: String) : HealthProbe()
+    }
+
+    /** What listens on [port], as its /health says. Unlike AdminSupport.daemonUp this accepts a STALE
+     *  daemon: restart must be able to stop one. */
+    public fun healthProbe(port: Int): HealthProbe =
+        Cancellables.runCatchingCancellable { answered(port) }.getOrElse { failure ->
+            when (failure) {
+                is ConnectException -> HealthProbe.Down
+                is SocketTimeoutException -> HealthProbe.Slow(PROBE_TIMEOUT_MS)
+                else -> HealthProbe.Odd(SafeFailureText.render(failure))
             }
-        }.getOrNull()
+        }
+
+    private fun answered(port: Int): HealthProbe {
+        val connection = open("http://127.0.0.1:$port/health")
+        return try {
+            val status = connection.responseCode
+            if (status !in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE) {
+                HealthProbe.Odd("it answered HTTP $status")
+            } else {
+                val body = body(connection)
+                Cancellables.runCatchingCancellable { HealthProbe.Up(parseHealth(body)) }
+                    .getOrElse { HealthProbe.Odd("its answer is not splice's /health") }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** The /health payload of any splice-shaped listener, or null when none answered: the probe's
+     *  other cases, for a caller that only asks whether one did. */
+    public fun healthView(port: Int): HealthView? = (healthProbe(port) as? HealthProbe.Up)?.view
+
+    /** A /health body, read the one way the probe and the daemon's own doctor both read it. str()
+     *  (JsonNull-filtering) keeps a foreign listener's {"version": null} from reading back as the
+     *  literal string "null". */
+    public fun parseHealth(body: String): HealthView {
+        val obj = json.parseToJsonElement(body).jsonObject
+        return HealthView(
+            version = JsonScalars.str(obj, "version"),
+            heads = JsonScalars.int(obj, "heads"),
+            readyHeads = JsonScalars.int(obj, "readyHeads"),
+            failedHeads = JsonScalars.int(obj, "failedHeads"),
+            topologyDigest = JsonScalars.str(obj, "topologyDigest"),
+            configPath = JsonScalars.str(obj, "configPath"),
+            topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
+            ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
+            turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
+                ?.mapNotNull { JsonScalars.str(it) }
+                .orEmpty(),
+            clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
+        )
+    }
 
     public fun healthVersion(port: Int): String? = healthView(port)?.version
 
     // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same probe contract as healthView: /api/heads unreachable is the normal no-daemon reading, and null is what the caller renders.
     public fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = Cancellables.runCatchingCancellable {
-        request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
-            val obj = json.parseToJsonElement(body(connection)).jsonObject
-            (obj["heads"] as? JsonArray).orEmpty().mapNotNull { el ->
-                val head = el as? JsonObject ?: return@mapNotNull null
-                val health = head["health"] as? JsonObject ?: return@mapNotNull null
-                HeadRuntime(
-                    key = JsonScalars.str(head, "key") ?: return@mapNotNull null,
-                    localOriginErrors = JsonScalars.long(health, "localOriginErrors") ?: 0L,
-                    providerErrors = JsonScalars.long(health, "providerErrors") ?: 0L,
-                )
-            }
-        }
+        request("http://127.0.0.1:$port/api/heads", bearer = bearer) { parseHeadsRuntime(body(it)) }
     }.getOrNull()
+
+    /** An /api/heads body's per-head counters: a head without a key or a health object is skipped. */
+    public fun parseHeadsRuntime(body: String): List<HeadRuntime> {
+        val obj = json.parseToJsonElement(body).jsonObject
+        return (obj["heads"] as? JsonArray).orEmpty().mapNotNull { el ->
+            val head = el as? JsonObject ?: return@mapNotNull null
+            val health = head["health"] as? JsonObject ?: return@mapNotNull null
+            HeadRuntime(
+                key = JsonScalars.str(head, "key") ?: return@mapNotNull null,
+                localOriginErrors = JsonScalars.long(health, "localOriginErrors") ?: 0L,
+                providerErrors = JsonScalars.long(health, "providerErrors") ?: 0L,
+            )
+        }
+    }
 
     /** The head ports the RUNNING daemon actually holds, or null when /api/heads is unreachable.
      *
@@ -126,10 +176,12 @@ public object DaemonProbe {
     public fun authSeen(port: Int, key: String): Map<String, HeadAuthSeen>? =
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null when unreachable'; doctor prints 'the daemon did not answer' for the null instead of a per-head verdict.
         Cancellables.runCatchingCancellable {
-            request("http://127.0.0.1:$port/api/auth", bearer = key) { connection ->
-                json.parseToJsonElement(body(connection)).jsonObject.mapValues { (_, v) -> headAuthSeen(v.jsonObject) }
-            }
+            request("http://127.0.0.1:$port/api/auth", bearer = key) { parseAuthSeen(body(it)) }
         }.getOrNull()
+
+    /** An /api/auth body's per-head credential state. */
+    public fun parseAuthSeen(body: String): Map<String, HeadAuthSeen> =
+        json.parseToJsonElement(body).jsonObject.mapValues { (_, v) -> headAuthSeen(v.jsonObject) }
 
     private fun headAuthSeen(head: JsonObject): HeadAuthSeen {
         val verdict = head["verdict"] as? JsonObject
@@ -149,18 +201,23 @@ public object DaemonProbe {
         bearer: String? = null,
         read: ResponseRead<T>,
     ): T? {
-        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+        val connection = open(url, method, bearer)
         return try {
-            connection.requestMethod = method
-            bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-            connection.connectTimeout = PROBE_TIMEOUT_MS
-            connection.readTimeout = PROBE_TIMEOUT_MS
             // 2xx (the shutdown endpoint answers 202 Accepted); anything else is a miss.
             val ok = connection.responseCode in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE
             if (ok) read(connection) else null
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun open(url: String, method: String = "GET", bearer: String? = null): HttpURLConnection {
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+        connection.requestMethod = method
+        bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+        connection.connectTimeout = PROBE_TIMEOUT_MS
+        connection.readTimeout = PROBE_TIMEOUT_MS
+        return connection
     }
 
     internal fun body(connection: HttpURLConnection): String =

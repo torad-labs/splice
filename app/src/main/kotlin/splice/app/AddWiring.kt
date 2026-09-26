@@ -21,6 +21,7 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.launch.install.InstallCommand
+import splice.launch.install.InstallFailureText
 import splice.terminal.KeyReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
@@ -35,7 +36,7 @@ internal object AddWiring {
         errors = TerminalOutput(System.err::println),
         ports = AddPorts(
             login = AddLogin { key, provider, topology -> LoginCommand().runLoginFlow(key, provider, topology) },
-            install = WrapperInstall { key, env -> InstallWiring.command().install(key, env) },
+            install = LinkerInstall(InstallWiring.command()),
             restart = restart,
             daemonUp = DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
             prompt = ConsolePrompter(),
@@ -47,10 +48,9 @@ internal object AddWiring {
      *  the daemon's heads read their keys and files through. */
     fun console(log: LogSink): AddConsole {
         val lines = TerminalOutput { line -> log("[control] add: ${LogSafe.str(line)}\n") }
-        val install = InstallCommand(lines, lines)
         return AddConsole(
             signIn = AddSignInSessions(),
-            install = WrapperInstall { key, env -> install.install(key, env) },
+            install = LinkerInstall(InstallCommand(lines, lines)),
             env = EnvReader(System::getenv),
             output = lines,
         )
@@ -60,6 +60,14 @@ internal object AddWiring {
         SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out),
         MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out),
     )
+}
+
+/** V4-255: the install verb as the add's wrapper seam, for the CLI and the console alike. Its refusals
+ *  print as the linker wrote them (InstallFailureText); anything else stays withheld. */
+internal class LinkerInstall(private val install: InstallCommand) : WrapperInstall {
+    override fun invoke(key: String, env: EnvReader): Boolean = install.install(key, env)
+
+    override fun refusalText(failure: Throwable): String = InstallFailureText.render(failure)
 }
 
 /** Answers with the operator's line on a terminal, or the default without one. */

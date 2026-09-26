@@ -36,11 +36,11 @@ public class DoctorRoute(private val log: LogSink) {
      *  fix finds no row still carrying it; 409 `{error, fix, report}` when the fix refused or rows
      *  remain, [error] one sentence; 404 for an id no fix has; 503 unwired. [report] is the
      *  `doctor --json` object of the run taken after the fix, the same shape GET /api/doctor serves. */
-    public suspend fun fix(call: ApplicationCall, fixes: DoctorFixes?) {
+    public suspend fun fix(call: ApplicationCall, fixes: DoctorFixes?, answers: DaemonAnswersSource) {
         if (fixes == null) return refuse(call, FIXES_UNWIRED, HttpStatusCode.ServiceUnavailable)
         val fix = DoctorFix.entries.firstOrNull { it.wire == call.parameters[FIX_PARAM] }
             ?: return refuse(call, unknownFix(), HttpStatusCode.NotFound)
-        val outcome = fixes.run(fix)
+        val outcome = fixes.run(fix, answers())
         val (status, refusal) = when (outcome) {
             is DoctorFixOutcome.Applied -> HttpStatusCode.OK to null
             is DoctorFixOutcome.Refused -> HttpStatusCode.Conflict to outcome.text
@@ -64,13 +64,14 @@ public class DoctorRoute(private val log: LogSink) {
     /** [report] ARRIVES AT CALL TIME: the routing lambda reads the server's own property as it calls,
      *  so the port is never captured — a captured one would be null forever against a daemon that
      *  wired it a moment later — and this route holds nothing to capture. A `() -> DoctorReport?`
-     *  constructor seam was the unnamed transposable shape kt-no-lambda-seam forbids. */
-    public suspend fun doctorJson(call: ApplicationCall, report: DoctorReport?) {
+     *  constructor seam was the unnamed transposable shape kt-no-lambda-seam forbids. [answers] is how
+     *  the report reads the daemon it runs in (V4-230): taken here, in process, for this request. */
+    public suspend fun doctorJson(call: ApplicationCall, report: DoctorReport?, answers: DaemonAnswersSource) {
         // UNSET IS NOT "NOTHING IS CONFIGURED". V4-136's discipline, carried here: an empty or
         // absent report would tell the operator that a daemon running heads has no findings, which
         // is a confident false negative — the same harm the 400-not-404 rule prevents on the models
         // path. A named 503 says the instrument is missing, which is the truth.
         if (report == null) return refuse(call, DOCTOR_UNWIRED, HttpStatusCode.ServiceUnavailable)
-        call.respondText(report(), ContentType.Application.Json)
+        call.respondText(report(answers()), ContentType.Application.Json)
     }
 }

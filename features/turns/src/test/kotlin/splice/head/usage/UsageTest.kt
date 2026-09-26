@@ -548,3 +548,93 @@ class SessionWindowUsageTest {
         assertTrue(assumed.single().contains("client window 256000"), assumed.toString())
     }
 }
+
+// V4-248 (2026-09-25): the client's usage carries the upstream's prompt-cache WRITE. TurnWiring passed 0
+// as cache_creation_input_tokens and left the write inside input_tokens, so every turn that wrote a
+// prefix read to Claude Code as uncached input and no write: through v0.3.2 and 076113ac6 against a
+// caching mock, turn 1 read "input 16,580, creation 0" where the upstream had reported those 16,580 as a
+// write. Claude Code prices a write above plain input, and its transcript showed a cache that never
+// wrote. The context total the client compacts on is the same either way.
+class ClientCacheWriteTest {
+
+    private val claude = ModelCatalog(
+        discoveryPrefix = "claude-splice--",
+        models = listOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 200_000)),
+        defaultContextWindow = 200_000,
+        pinnedModel = "claude-opus-5-5",
+    )
+
+    // An env-governed row, unlike a "claude-" id whose window Claude Code takes from its own table: the
+    // client believes the pinned row's 256k, so the 500k row's counts carry 256k/500k.
+    private val grok = ModelCatalog(
+        discoveryPrefix = "claude-grok--",
+        models = listOf(
+            ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+            ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
+        ),
+        defaultContextWindow = 256_000,
+        pinnedModel = "grok-4.6",
+    )
+
+    private fun meta(catalog: ModelCatalog, model: String) = TurnMeta(
+        compact = false,
+        showReasoning = ReasoningDisplay.TEXT,
+        stream = true,
+        originalModel = model,
+        upstreamModel = catalog.stripSuffixes(model),
+        clientMaxTokens = null,
+        effort = "high",
+        summary = null,
+        budgetTokens = null,
+    )
+
+    private fun payload(catalog: ModelCatalog, model: String, usage: Usage) =
+        TurnWiring().usagePayloadBuilder(catalog, meta(catalog, model))(usage)
+
+    private fun kotlinx.serialization.json.JsonObject.long(key: String) = this[key]?.jsonPrimitive?.content?.toLong()
+
+    /** What Claude Code compacts on: input + cache_creation + cache_read. */
+    private fun kotlinx.serialization.json.JsonObject.contextTotal() =
+        listOf("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens").sumOf { long(it) ?: 0 }
+
+    @Test
+    fun `a turn that writes the prefix reports the write as a write, never as input`() {
+        val p = payload(
+            claude,
+            "claude-opus-5-5",
+            Usage(inputTokens = 16_584, outputTokens = 7, cacheWriteTokens = 16_580),
+        )
+        assertEquals(4, p.long("input_tokens"), "16,584 minus the 16,580 written")
+        assertEquals(16_580, p.long("cache_creation_input_tokens"), "the upstream's write, as a write")
+        assertEquals(0, p.long("cache_read_input_tokens"))
+        assertEquals(16_584, p.contextTotal(), "the context total is unchanged")
+    }
+
+    @Test
+    fun `a turn that reads the prefix and writes its new tail reports all three buckets`() {
+        val p = payload(
+            claude,
+            "claude-opus-5-5",
+            Usage(inputTokens = 16_632, outputTokens = 7, cachedTokens = 16_580, cacheWriteTokens = 48),
+        )
+        assertEquals(4, p.long("input_tokens"), "16,632 minus 16,580 read minus 48 written")
+        assertEquals(48, p.long("cache_creation_input_tokens"))
+        assertEquals(16_580, p.long("cache_read_input_tokens"))
+        assertEquals(16_632, p.contextTotal(), "the context total is unchanged")
+    }
+
+    @Test
+    fun `a scaled row scales the write with the other buckets, so the total keeps its factor`() {
+        // A write left unscaled would move the numerator the client compacts on.
+        val p = payload(
+            grok,
+            "grok-4.6[500k]",
+            Usage(inputTokens = 300_000, outputTokens = 7, cachedTokens = 200_000, cacheWriteTokens = 60_000),
+        )
+        assertEquals(20_480, p.long("input_tokens"), "(300k - 200k - 60k) x 256k/500k")
+        assertEquals(30_720, p.long("cache_creation_input_tokens"), "60k x 256k/500k")
+        assertEquals(102_400, p.long("cache_read_input_tokens"), "200k x 256k/500k")
+        assertEquals(153_600, p.contextTotal(), "300k x 256k/500k, the factor the row carries")
+        assertEquals(60, p.long("used_percentage"), "real 300k of the row's own 500k")
+    }
+}

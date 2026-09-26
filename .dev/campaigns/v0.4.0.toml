@@ -217,6 +217,7 @@
 # 2026-09-25 Train 24 is console's V4-219 and V4-220 forms, built on train 23 (cf513a1ea) so it gates in parallel: #325 (Doctor upgrades and rolls back splice through the daemon's out-of-process run), #326 (Models adds an OpenRouter head's catalogue models through the daemon's own add-model), #329 (Needs you opens each item on its own page, V4-219). Marlin ruled that #329 lands before the film train or rides inside it, and pretake's first check stays strict, so it rides here and the film train 25 is built on this one. #311, #313, #314, #315, #317, #318 and #322 ride train 26, after the film. All three merged clean. splice-lead.
 # 2026-09-26 Train 25 is the film's, built on train 24 (e73278f9c) so it gates in parallel: #324 (V4-238 done, receipted against train 22's gate of record), #328 (V4-245, no SLF4J lines at a sign-in), #330 (V4-246, a stale sign-in tab is named in the pane), and claude-builder's V4-240 review fix once its PR is green. Resolved in the train: #324's proof conflicted with train 24's note in v0.4.0.toml.cli-sha256, so the auto-merged toml (train 24's note plus V4-238 done with its receipt) was read and re-attested; #328 and #330 both added a Fixed bullet at the same place in CHANGELOG.md, and both are kept. Filed here: V4-242 (a 1011 close before any output shown as a bare overloaded), V4-243 (splice restart waits out the unit's restart backoff), V4-244 (the session figure's running total), V4-245, V4-246, and V4-247 (V4-219's daemon routes, from console). INSTALL train 22: 076113ac6 built from a detached worktree, CI run 36201466537, jar sha256 daddcc981f818d2a21c50ff5ae5194e610c075795a5e00e18fa8dfeda478e7de equals /proc/2317647/fd/5, backup splice.jar.bak-20260925-pre-076113ac6. Restarted with 'systemctl --user restart splice.service' instead of splice restart (repo CLAUDE.md install step 5), because splice restart waits out the unit's restart backoff until V4-243 lands. splice-lead.
 # 2026-09-26 INSTALL train 25: 77d400c1a built from a detached worktree, CI gate run 36204593569 success on that sha, jar sha256 b9e07281aa041df3eb25efe65411c4eb1cf9663866c7e1ceae735fcc8eeafac3 equals /proc/2126008/fd/4, backup splice.jar.bak-20260925-pre-77d400c1a. Restarted with 'systemctl --user restart splice.service' instead of splice restart (repo CLAUDE.md install step 5), because splice restart waits out the unit's restart backoff until V4-243 lands; NRestarts 0 after it.
+# 2026-09-26 Train 27 (train/v040-27 off 795a82b6d) carries #301 (V4-230, doctor reads its own daemon in process; gate run 36207661469 on f97ee5525), #337 (V4-244, the session figure exact for any length; run 36206745462 on 4567743ba), #340 (V4-255, V4-266, V4-267, V4-268; run 36214883614 on 962b7e8e2) and #342 (V4-248, the prompt-cache write reaches the client; run 36214599321 on c81508ae8). All four merged clean. Held back: V4-263 and V4-265, whose test fixtures carry take 2's session and tool ids and go back to console to be made synthetic before anything is pushed; #341 (V4-243) re-gates on e1d851cf4. splice-lead.
 [campaign]
 id = "v0.4.0"
 title = "splice 0.4.0 — everything but the console: setup, drift warning, perf/sessions data, upgrade, doctor --json, compaction instructions, shared MCP hosting, local models, account pools, code-mode graduation"
@@ -6730,6 +6731,7 @@ claimed_by = "splice-lead"
 claimed_at = "2026-09-26T02:59:30.322Z"
 # [2026-09-26] CLAIM: owner=splice-lead at=2026-09-26T02:59:30Z
 # [2026-09-26] Started Sep 25 10:00 PM CT by splice-lead. Take 3 runs on 99244e63a without it (Marlin: busy panes scroll their headers off, and the crop rule covers the rest); the plans re-shoot's film jar carries it with V4-251. Take 2's replay (captures/film/team-storefront-2/on-screen.txt) shows the cost: an idle pane keeps its header, and so 'API Usage Billing', on screen for the whole take (grok and muse, 473 s each).
+# [2026-09-26] Trace in the 2.1.282 bundle (splice-lead): the welcome header's billing word is T9e(): billingType = De() !== 'firstParty' ? ZR[De()] : gt() ? zWn() : 'API Usage Billing'. De() returns 'gateway' when a gateway credential slot is filled, else the provider named by CLAUDE_CODE_USE_{BEDROCK,FOUNDRY,ANTHROPIC_AWS,ANTHROPIC_GOOGLE_CLOUD,MANTLE,VERTEX}, else 'firstParty'; gt() is claude.ai OAuth scopes; zWn() maps the subscription to Claude Enterprise, Team, Max or Pro, default 'Claude API'; ZR.gateway is 'Cloud gateway'. On a splice head (ANTHROPIC_BASE_URL plus ANTHROPIC_AUTH_TOKEN, LaunchService.kt:256 and :261, no claude.ai scopes) only two values splice could author move the word: claude.ai scopes, which name a Claude subscription the head does not have (ruled out by this row), or CLAUDE_CODE_USE_GATEWAY=1, which with those two env values fills the gateway slot (sa(): d3 with url, the auth token as jwt, its JWT expiry or MAX_SAFE_INTEGER, unpinned) and draws 'Cloud gateway'. That flag turns on Claude Code's gateway mode: 25 De()==='gateway' branches and 71 De()!=='firstParty' branches, a gateway-safe tool-search request shape, TLS pinning, and CLAUDE_GATEWAY_ALLOW_LOOPBACK for a loopback base URL. Next: a spike on a scratch daemon (own -Duser.home and ports) recording the request shapes one head sends with and without the flag, then the docker e2e with it; and Marlin's ruling on whether 'Cloud gateway' may stand in a local daemon's header.
 
 [[items]]
 id = "V4-242"
@@ -6802,6 +6804,7 @@ title = "The Teams board's day is the viewer's local day, never a UTC date (film
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt", "console/src/pages/teams/board.ts"]
 status = "todo"
 verify = "red first: a Teams read for a local day that spans two UTC dates misses the rows before UTC midnight; green after: the range read returns both halves and ?day= keeps its meaning; the console test holds a board at 20:00 CDT showing the evening's rows; CI gate on the train sha."
+# [2026-09-26] Marlin, 2026-09-26: take 2's board read Created and Updated 2026-09-26 for a team created at Sep 25 9:35 PM CT: the UTC day shown as the user's date. Same class as this row, folded here.
 
 [[items]]
 id = "V4-250"
@@ -6866,3 +6869,124 @@ verify = "npm view @anthropic-ai/claude-code dist-tags on the release day equals
 claimed_by = "splice-lead"
 claimed_at = "2026-09-26T03:02:47.649Z"
 # [2026-09-26] CLAIM: owner=splice-lead at=2026-09-26T03:02:47Z
+
+[[items]]
+id = "V4-257"
+phase = "release"
+title = "PRIVACY: prompt text typed on the command line is never logged (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). ControlAudit.kt:18 (via LaunchRoutes.kt:84) logs the user's claude argv with LogSafe.list: a -p prompt, a plain prompt argument and --append-system-prompt values, 200 chars each, into daemon.log and daemon-boot.log. Log the flags, never a prompt's text."
+files = ["app/src/main/kotlin/splice/app/control/api/ControlAudit.kt", "app/src/main/kotlin/splice/app/control/api/LaunchRoutes.kt"]
+status = "todo"
+verify = "red first: a launch with -p 'PROMPT-A', a positional 'PROMPT-B' and --append-system-prompt 'PROMPT-C' logs a line holding the flags and none of the three texts; CI gate on the train sha."
+
+[[items]]
+id = "V4-258"
+phase = "release"
+title = "PRIVACY: daemon-boot.log is bounded while the daemon runs (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). It rolls only at spawn and only past 1 MB (DaemonLaunch.kt:55-70, splice-launch:361), and every daemon.log line is also printed to stderr and lands in it (DaemonBoundary.kt:92), so it grows without limit and duplicates daemon.log. Stop the duplicate or cap the file, in both cold-start paths."
+files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "app/src/main/dist/bin/splice-launch"]
+status = "todo"
+verify = "red first: a running daemon that logs past the cap leaves daemon-boot.log no larger than the cap, or daemon.log lines no longer appear in it; both launch paths agree; CI gate on the train sha."
+
+[[items]]
+id = "V4-259"
+phase = "release"
+title = "PRIVACY: the resume rewrite never truncates the user's Claude Code transcript (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). TranscriptModelRewrite.kt:97 rewrites the transcript in place with Files.writeString, so a crash mid-write leaves it truncated. Write a temp file in the same directory and move it over the original atomically."
+files = ["integrations/claude-code/src/main/kotlin/splice/client/resume/TranscriptModelRewrite.kt"]
+status = "todo"
+verify = "red first: a write that fails after its first bytes leaves the original transcript byte-identical; a successful rewrite replaces it whole; CI gate on the train sha."
+
+[[items]]
+id = "V4-260"
+phase = "release"
+title = "PRIVACY: kept files go when their promise ends (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). An expired compaction answer is swept only inside that head's next save (CompactionRecordings.kt:52, :87-91), code-mode state stays when its head is removed or code mode is turned off (CodexCodeModeRegistry.kt:24-29), and trace files stay after trace is turned off. Sweep all three at head start and on removal."
+files = ["features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt"]
+status = "todo"
+verify = "red first, one test per store: an expired recording, a removed head's code-mode state and a trace file after trace is off are each gone after the next head start or the removal; CI gate on the train sha."
+
+[[items]]
+id = "V4-261"
+phase = "release"
+title = "PRIVACY: activity labels are kept only as long as a console view reads them (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). Labels carry file names, commands and search patterns, 32 chars each, and are kept 90 days (Knob.kt:454). Match the retention to the longest view that reads them."
+files = ["core/src/main/kotlin/splice/core/config/Knob.kt"]
+status = "todo"
+verify = "the retention equals the longest console view's window, named in the knob's doc; a test pins that a label older than it is gone; CI gate on the train sha."
+
+[[items]]
+id = "V4-262"
+phase = "release"
+title = "PRIVACY: a README section, 'What splice keeps on your disk', and a check that keeps it whole (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). Each file splice writes: what it holds, who can read it, how long it stays; paired with a check that fails when a file-writing call in main sources has no entry. The page's privacy answer points to it. It also carries two doc fixes (Marlin, dispatch d79bf65f): README:186, :271 and :316 say splice stores no (Claude) credential, false once V4-129 labels are used (ClaudeLogins.kt:1-8 keeps 0600 copies); the true line is 'Claude Code signs in itself; splice never reads that login or sends it anywhere, and keeps copies only of logins you save under a label.' And .github/SECURITY.md:54 'plaintext reasoning is never retained' is scoped to the reasoning cache, since code-mode records keep reasoning summaries in plaintext for 24 h (CodexCodeModeStore.kt:33), with a pointer to the disk section."
+files = ["README.md", ".github/SECURITY.md"]
+status = "todo"
+verify = "the section lists every file-writing call site's file; mutation: an added Files.write* in a main source set with no entry fails the check by name; README and SECURITY.md carry the corrected lines; CI gate on the train sha."
+
+[[items]]
+id = "V4-263"
+phase = "release"
+title = "BOARD: a member's subagent traffic is that member's tool traffic, never a team hand-off (take 2's board.webm at Sep 25 9:42:01 and 9:43:19 PM CT (Marlin, 2026-09-26); the release highlight says the board shows hand-offs, activity and cost per role). Chat listed 'gpt -> code-review' at 9:40 PM CT and 'Messages 16 today' counted 16 where 13 went between members: the edge store records gpt's /code-review subagent's replies as gpt's session to 'main' (captures/film/team-storefront-2/edges-2026-09-26.take2.jsonl lines 11-12). Keep them out of Chat and the Messages count."
+files = ["features/sessions/src/main/kotlin/splice/sessions/http/TeamsEdges.kt", "features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt"]
+status = "done"
+verify = "red first on take 2's edge store shape: Chat lists the 13 member-to-member messages and Messages reads 13; CI gate on the train sha."
+claimed_by = "console"
+claimed_at = "2026-09-26T03:21:24.740Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T03:21:24Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot console-v4263 -- :features-sessions:test :features-sessions:detekt" exit=0 tests=67 touched=features/sessions/src/main/kotlin/splice/sessions/http/TeamsEdges.kt,features/sessions/src/test/kotlin/splice/sessions/http/TeamsSubagentTrafficTest.kt,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL; red first on take 2's 16 edges: Messages expected 13, was 16; the address clause's mutant is caught by TeamsRoutesTest's out edge"
+# [2026-09-26] Trace: Members.edges (TeamsEdges.kt) kept every edge with a member at either end, so gpt's calls to its /code-review subagent (to 'code-review') and the subagent's replies (to 'main') reached Chat as direction out. Fix: a call to no session is the sender's tool work; a session is a member or an address (a scheme, uds:). Both Chat and the edges route drop it; a member's message to a real outside session keeps its out edge.
+
+[[items]]
+id = "V4-264"
+phase = "release"
+title = "BOARD: the team's API cost is priced when its models have cards (take 2's board.webm at Sep 25 9:42:01 and 9:43:19 PM CT (Marlin, 2026-09-26); the release highlight says the board shows hand-offs, activity and cost per role). The tile read 'API cost Estimated: - Unpriced' for the whole take; derive.ts:169 prints the dash only when every turn is unpriced, yet all four models have cards (V4-240) and each status line priced the same turns 'API est.'. EconomicsStore prices with TurnPrice(ctx.catalog) (ManagedHeadFactory.kt:143): trace why every turn came back without a card."
+files = ["console/src/entities/economics/model/derive.ts", "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt", "app/src/main/kotlin/splice/app/ManagedHeadFactory.kt"]
+status = "in_flight"
+verify = "the trace names the dropped value; red first on a film-shaped team (claude-splice, codex, grok, muse on their catalog models): the tile shows a figure; CI gate on the train sha."
+claimed_by = "console"
+claimed_at = "2026-09-26T03:32:19.185Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T03:32:19Z
+
+[[items]]
+id = "V4-265"
+phase = "release"
+title = "BOARD: Activity shows a working team's activity (take 2's board.webm at Sep 25 9:42:01 and 9:43:19 PM CT (Marlin, 2026-09-26); the release highlight says the board shows hand-offs, activity and cost per role). It read 'Nothing sampled today' while the team worked for five minutes, and the store is on for every head (Knob.kt:465). Trace why nothing reached the team's Activity."
+files = ["features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt"]
+status = "done"
+verify = "the trace names where the samples stop; red first: a bound member's sampled activity appears in the team's Activity the same day; CI gate on the train sha."
+claimed_by = "console"
+claimed_at = "2026-09-26T03:32:19.263Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T03:32:19Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4265-green -- :features-turns:test (ActivityLabelTest, HeadEventsTest, MessageEdgesTest) :features-sessions:test (splice.sessions.http.*) :app:test (TeamActivitySampleTest, ConsoleActivityPublishTest) :features-turns:detekt :features-sessions:detekt :app:detekt" exit=0 tests=52 touched=features/turns/src/main/kotlin/splice/head/ActivityLabel.kt,features/turns/src/main/kotlin/splice/head/turn/TurnPreparation.kt,features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt,console/src/widgets/activity-feed/index.tsx,app/src/test/kotlin/splice/app/TeamActivitySampleTest.kt,features/turns/src/test/kotlin/splice/head/ActivityLabelTest.kt,features/turns/src/test/kotlin/splice/head/HeadEventsTest.kt,features/sessions/src/test/kotlin/splice/sessions/http/TeamsRoutesTest.kt,.dev/restructure/capabilities.tsv tail="nd nothing reached TurnPreparation. On the live daemon, labels come only from claudex and claude-deepseek sessions that run background agents, and never from claude-splice. Fix: each ordinary turn's transcript tail is sampled into the same label (ActivityLabel.sampleOf), one per session per 30 s (ActivitySamples), and the client's own label counts as the sample. Census 0 findings, gate rules PASS."
+
+[[items]]
+id = "V4-266"
+phase = "release"
+title = "SPLICE ADD: a passing base url check says what the pass means (on camera in the plans take, so the re-shoot waits for it, as for V4-251 (Marlin, 2026-09-26)). AddChecks.kt:76-79 prints 'HTTP 403 from https://chatgpt.com/backend-api/codex' (grok: 'HTTP 404 from https://api.x.ai/v1') beside a green check, so a new user reads an error code marked as passing. Print 'reachable at <url>'; the status code stays in doctor."
+files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt"]
+status = "done"
+verify = "red first: a base url answering 403 prints 'reachable at <url>' with no status code in the add output; doctor still shows the code; CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T03:13:49.718Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T03:13:49Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4266 -- :features-configuration:test :features-models:test :features-configuration:detekt :features-models:detekt :app:test --tests splice.app.control.api.fleet.AddBackendRouteTest --tests splice.app.cli.setup.SetupLocalModelTest --tests splice.app.AddWrapperRefusalTest :quality-architecture:test" exit=0 tests=372 touched=features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt,features/configuration/src/test/kotlin/splice/configuration/add/AddChecksWordingTest.kt,CHANGELOG.md,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL in 41s (committed as 962b7e8e2 with V4-267 and V4-268)"
+
+[[items]]
+id = "V4-267"
+phase = "release"
+title = "SPLICE ADD: the models check says where the rows come from, in plain words (on camera in the plans take, so the re-shoot waits for it, as for V4-251 (Marlin, 2026-09-26)). AddChecks.kt:105-106 prints 'no model list on OPENAI_RESPONSES; 4 row(s) trusted': an internal dialect name plus jargon. Print '4 models from splice's catalog; this provider publishes no list to check them against'."
+files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt"]
+status = "done"
+verify = "red first: a provider without a published list prints the new sentence with its count and no dialect name; CI gate on the train sha."
+# [2026-09-26] Waits on V4-266 by the seat law (same file, AddChecks.kt). claude-builder takes it the moment V4-266 is done, in the same PR.
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T03:31:16.094Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T03:31:16Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4266 -- :features-configuration:test :features-models:test :features-configuration:detekt :features-models:detekt :app:test --tests splice.app.control.api.fleet.AddBackendRouteTest --tests splice.app.cli.setup.SetupLocalModelTest --tests splice.app.AddWrapperRefusalTest :quality-architecture:test" exit=0 tests=372 touched=features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt,features/configuration/src/test/kotlin/splice/configuration/add/AddChecksWordingTest.kt,CHANGELOG.md,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL in 41s (committed as 962b7e8e2 with V4-266 and V4-268)"
+
+[[items]]
+id = "V4-268"
+phase = "release"
+title = "splice models names why a provider's list could not be asked (splice-lead, film stack, 2026-09-26 03:07Z): the codex row read 'could not be asked: failure (message withheld: it may quote file bytes)', and two retries listed it (captures/film/team-storefront-3/models-check.txt). JdkModelsHttp.classify renders every failure through SafeFailureText.render (ModelsHttp.kt:69-73), which withholds java.net.http.HttpTimeoutException and every other client failure outside its allowlist, so a slow endpoint and a TLS fault print the same nothing. Classify the failures the client names (a timeout after LIST_TIMEOUT_S, TLS, a URL that does not parse) in splice's own words; V4-255's class."
+files = ["features/models/src/main/kotlin/splice/models/list/ModelsHttp.kt"]
+status = "done"
+verify = "red first: an HttpTimeoutException renders as a timeout naming the seconds, not the withheld text; an unclassified failure still renders withheld; CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T03:13:49.865Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T03:13:49Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4266 -- :features-configuration:test :features-models:test :features-configuration:detekt :features-models:detekt :app:test --tests splice.app.control.api.fleet.AddBackendRouteTest --tests splice.app.cli.setup.SetupLocalModelTest --tests splice.app.AddWrapperRefusalTest :quality-architecture:test" exit=0 tests=372 touched=features/models/src/main/kotlin/splice/models/list/ModelsHttp.kt,features/models/src/test/kotlin/splice/models/list/ModelsHttpTest.kt,CHANGELOG.md,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL in 41s (committed as 962b7e8e2 with V4-266 and V4-267)"

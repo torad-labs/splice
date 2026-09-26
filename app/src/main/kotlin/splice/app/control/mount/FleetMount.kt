@@ -32,6 +32,9 @@ internal class FleetMount(
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val listHeads = ListHeads(HeadStatusListing(resolver::headStatuses))
 
+    /** The /api/heads body, for the daemon's own doctor (V4-230). */
+    fun headsJson(): String = listHeads.json()
+
     fun register(route: Route) {
         // Unauthenticated liveness probe: the launch shim polls this to tell a running
         // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.

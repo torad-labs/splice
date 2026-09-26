@@ -161,3 +161,11 @@ internal class InstallLinker(
  *  trace (the V4-212 real-rig run: setup without the launch shim). Still an IllegalStateException,
  *  so every caller that caught the old `check` failures keeps catching it. */
 public class InstallRefused(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
+
+/** V4-255: the one rule for showing an install failure, for every caller that catches one (the
+ *  doctor's fix, `splice add`, the console's add). [InstallRefused] is final and splice composed its
+ *  sentence, so it prints verbatim; anything else goes through the renderer that withholds quoted bytes. */
+public object InstallFailureText {
+    public fun render(failure: Throwable): String =
+        (failure as? InstallRefused)?.message ?: SafeFailureText.render(failure)
+}

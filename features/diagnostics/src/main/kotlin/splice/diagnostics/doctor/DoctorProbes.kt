@@ -51,10 +51,19 @@ internal class DoctorProbes(
         val status = wrappedHead.status()
         val detail = buildString {
             append(status.mode)
-            status.resolvesTo?.let { append(" — claude on PATH resolves to $it") }
+            status.resolvesTo?.let { append("; claude on PATH resolves to $it") }
         }
         return DoctorCheck("claude-head", CheckStatus.INFO, detail)
     }
+
+    /** Claude Code's version for the report's `claude_code` block, from the claude this doctor's PATH
+     *  resolves: the lookup the prerequisites row makes, so the two cannot disagree. It ran the bare
+     *  name on the JVM's own PATH, and an absent binary's failure to start read "present (version
+     *  probe failed: ...)" (CI run 36184525303). */
+    internal fun claudeVersion(envReader: EnvReader): String =
+        path.binaryOnPath(CLAUDE_BINARY, envReader)
+            ?.let { install.capturedVersion(listOf(it.toString(), FLAG_VERSION)) }
+            ?: CLAUDE_NOT_FOUND
 
     private fun binaryCheck(spec: BinarySpec, envReader: EnvReader): DoctorCheck {
         val found = path.binaryOnPath(spec.name, envReader) ?: return DoctorCheck(

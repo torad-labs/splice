@@ -71,7 +71,7 @@ internal class DoctorAuth(output: TerminalOutput) {
         return DoctorCheck(
             "auth",
             CheckStatus.WARN,
-            "$key signs in with the ${kind.nativeApp}'s own credential file ($file) — " +
+            "$key signs in with the ${kind.nativeApp}'s own credential file ($file), so " +
                 "a token refresh by either side signs the other out",
             fix = "remove `file` from [providers.$providerKey] auth in splice.toml, then: splice login $key",
         )

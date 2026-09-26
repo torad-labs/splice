@@ -144,13 +144,13 @@ internal class ClientAuth(
         val variables = carriers.map { FORWARDED_CLIENT_HEADERS.getValue(it) }.distinct().joinToString(" and ")
         deps.log(
             "[auth] refused a turn on a client-auth head that presented one of splice's own keys (the " +
-                "management key or the turn key) in $headers — " +
+                "management key or the turn key) in $headers: " +
                 "$variables in the launching environment carried it and shadowed the caller's own " +
                 "credential; unset it (or launch from a clean shell) so this head can forward yours\n",
         )
         responses.respondUnauthorized(
             call,
-            "splice's own keys (the management key and the turn key) are not upstream credentials — " +
+            "splice's own keys (the management key and the turn key) are not upstream credentials; " +
                 "this head forwards your own Anthropic credential, so unset $variables in the " +
                 "environment that launched it (it put splice's key in $headers)",
         )

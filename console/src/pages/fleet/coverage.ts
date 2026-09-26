@@ -10,7 +10,7 @@
 //
 // The fleet also READS /api/accounts for the head detail's pool and /api/auth for the strips; both
 // are disposed once, by the accounts page that owns them.
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   // The shell's own reads: the rule bar's server/version and the unauthenticated health probe the
@@ -25,4 +25,29 @@ export const dispositions: readonly Disposition[] = [
   // The draining restart, written through from the head detail (features/daemon-restart).
   { kind: 'route', name: '/api/daemon/restart', disposition: 'editable' },
   { kind: 'route', name: '/api/usage', disposition: 'read-only' },
+  // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
+  // V4-220: each names its job action and the route that action calls (checks.ts, verbProblems).
+  { kind: 'verb', name: 'status', disposition: 'read-only', via: '/api/status' },
+  { kind: 'verb', name: 'restart', disposition: 'editable', action: 'Restart the daemon', via: '/api/daemon/restart' },
+  // add is the Add backend key: the add form in the detail panel (widgets/add-backend).
+  { kind: 'verb', name: 'add', disposition: 'editable', action: 'Add a backend', via: '/api/add' },
+  // upgrade is the doctor page's: its version strip reads /api/upgrade, and the upgrade form sits there.
+  // Adding a backend, `splice add` over HTTP (V4-220 item 3): a new head joins this page's fleet.
+  { kind: 'route', name: '/api/add/profiles', disposition: 'read-only' },
+  { kind: 'route', name: '/api/add', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}/login', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}/verify', disposition: 'editable' },
+  { kind: 'route', name: '/api/add/{id}/save', disposition: 'editable' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'Is every head up, and which account will each use next?',
+  leaves: 'Each head\'s health, pinned model, turns in flight and account pool, with the next target marked.',
+  actions: [
+    { name: 'Start, stop or restart a head' },
+    { name: 'Restart the daemon' },
+    { name: 'Add a backend' },
+  ],
+};

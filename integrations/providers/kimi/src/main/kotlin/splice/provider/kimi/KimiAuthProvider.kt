@@ -166,7 +166,7 @@ public class KimiAuthProvider(
         }.onFailure {
             log(
                 "[kimi-auth] could not re-read $authPath before persist " +
-                    "(${SafeFailureText.render(it)}) — writing tokens-only",
+                    "(${SafeFailureText.render(it)}); writing tokens-only",
             )
         }.getOrNull()
         Cancellables.runCatchingCancellable {

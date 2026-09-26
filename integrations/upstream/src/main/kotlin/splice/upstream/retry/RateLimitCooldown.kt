@@ -164,7 +164,7 @@ public class RateLimitCooldown public constructor(
     public fun failFastIfArmed(onRetry: RetryNotice) {
         val remainingMs = rateLimitedUntilMs.get() - clock()
         if (remainingMs <= 0) return
-        onRetry("rate-limit cooldown active (${remainingMs}ms remaining) — failing fast, no upstream attempt")
+        onRetry("rate-limit cooldown active (${remainingMs}ms remaining): failing fast, no upstream attempt")
         val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
         val gatewayClause = "this gateway is holding retries for ${waitS}s"
         val providerResetMs = providerUnavailableForMs()
@@ -180,10 +180,10 @@ public class RateLimitCooldown public constructor(
             // V4-61: the window is REPORTED, not asserted as the deadline. muse stamps its 5h-window
             // reset on burst 429s that clear in seconds (the operator's own re-send succeeded), so
             // "waiting will not help" was a claim this turn could not support.
-            "Rate limit exceeded — $gatewayClause; the upstream reports its quota window resets " +
+            "Rate limit exceeded: $gatewayClause, and the upstream reports its quota window resets " +
                 "at $resetsAt. If this keeps happening, that is the real deadline."
         } else {
-            "Rate limit exceeded — $gatewayClause to avoid a retry wave"
+            "Rate limit exceeded: $gatewayClause to avoid a retry wave"
         }
         // V4-61: the ANTHROPIC ERROR ENVELOPE, not a hand-built {"detail":...}. This body is the
         // classifier's structured input (TurnKnownEnd hands it to UpstreamFailureClassifier, which

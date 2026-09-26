@@ -11,7 +11,7 @@ import { fetchInstructions } from '../src/entities/compact-stats';
 import type { InstructionsWire } from '../src/entities/compact-stats';
 import { mergeInstructions } from '../src/entities/compact-stats/model/instructions';
 import { instructionsStore } from '../src/entities/compact-stats/model/store';
-import { RuleLength } from '../src/widgets/compaction-rule';
+import { CompactionRules, RuleLength } from '../src/widgets/compaction-rule';
 
 const h = React.createElement;
 
@@ -109,5 +109,11 @@ describe("a rule's length", () => {
     expect(cell(0)).toContain('>Client default<');
     expect(cell(0), 'zero is a decision, never drawn as a length').not.toContain('role="meter"');
     expect(cell(null)).toContain('>Unavailable<');
+  });
+
+  test('the column names its unit, so a bare count reads as characters (Hitstop, 2026-09-25)', () => {
+    const table = renderToStaticMarkup(h(CompactionRules, { rules: [{ scope: 'global', source: 'global', chars: 53 }] }));
+    expect(table).toContain('>Characters<');
+    expect(table).not.toContain('>Length<');
   });
 });

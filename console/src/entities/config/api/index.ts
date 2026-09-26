@@ -31,4 +31,4 @@ export async function applyConfigPatch(
 
 // JW-04: re-exported through the entity so pages stay inside the boundaries policy
 // (pages -> entities -> shared-api).
-export { fetchTopologyStale } from '@shared/api';
+export { fetchTopologyStale, probeTopologyStale } from '@shared/api';

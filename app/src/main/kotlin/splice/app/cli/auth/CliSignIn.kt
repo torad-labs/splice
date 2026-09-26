@@ -37,8 +37,8 @@ internal class CliSignIn {
      *  disk now and in the pool after the next restart: the receipt says that, never "using". */
     internal fun outcomeText(headKey: String, ok: Boolean, label: String?): String = when {
         ok && label != null ->
-            "signed in as '$label' — saved beside the primary; it joins this head's pool after `splice restart`."
-        ok -> "signed in — this session is using the new credentials."
+            "signed in as '$label' and saved beside the primary. It joins this head's pool after `splice restart`."
+        ok -> "signed in; this session is using the new credentials."
         else -> "sign-in did not complete. Run `$headKey login` in a terminal to see why."
     }
 
@@ -51,17 +51,17 @@ internal class CliSignIn {
         val console = System.console()
         val value = when {
             console == null -> {
-                println("splice: no interactive console — pipe it instead:")
+                println("splice: no interactive console, so pipe it instead:")
                 println("  printf '%s' \"\$KEY\" | splice key set $envVar --stdin")
                 null
             }
             else -> console.readPassword("$headKey API key ($envVar): ")?.let { String(it).trim() }
         }
-        if (value != null && value.isEmpty()) println("splice: empty key — nothing stored.")
+        if (value != null && value.isEmpty()) println("splice: empty key, nothing stored.")
         return !value.isNullOrEmpty() && Cancellables.runCatchingCancellable {
             val store = KeyStore(KeyStorePath.defaultPath())
             store.write(envVar, value)
-            println("$envVar stored to ${store.path} (0600) — live daemons pick it up on the next request.")
+            println("$envVar stored to ${store.path} (0600). Live daemons pick it up on the next request.")
         }.onFailure { System.err.println("splice: failed to store key: ${SafeFailureText.render(it)}") }.isSuccess
     }
 

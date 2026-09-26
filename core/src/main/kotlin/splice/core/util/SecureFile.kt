@@ -80,7 +80,7 @@ public object SecureFile {
             val fallback = Files.createTempFile(parent, ".secure", ".tmp")
             Cancellables.discard(
                 runCatching { Files.setPosixFilePermissions(fallback, OWNER_ONLY) },
-                "POSIX perms unsupported on this filesystem — nothing to lock down",
+                "POSIX perms unsupported on this filesystem, so there is nothing to lock down",
             )
             fallback
         }

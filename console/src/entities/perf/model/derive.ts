@@ -190,3 +190,10 @@ export function inflightFrom(heads: readonly HeadStatus[]): InflightTurn[] {
   }
   return inflight;
 }
+
+/** A live turn idle past its head's own stream idle limit is the one that needs the operator: it
+ *  is the difference between a turn that is reasoning and one that has hung. Turns and Needs you
+ *  both read it. */
+export function isStalled(turn: InflightTurn): boolean {
+  return turn.idleMs > turn.streamIdleMs;
+}

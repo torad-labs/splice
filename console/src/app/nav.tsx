@@ -2,6 +2,7 @@
 // themselves are plain data in rows.ts; this file only adds what a widget draws.
 import type { ReactNode } from 'react';
 import { ArrowsInSimpleIcon } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
+import { BellSimpleIcon } from '@phosphor-icons/react/dist/csr/BellSimple';
 import { ChartBarIcon } from '@phosphor-icons/react/dist/csr/ChartBar';
 import { CubeIcon } from '@phosphor-icons/react/dist/csr/Cube';
 import { FolderSimpleIcon } from '@phosphor-icons/react/dist/csr/FolderSimple';
@@ -19,6 +20,7 @@ import { NAV_GROUPS, type Address } from './rows';
 import { PAGE } from './strings';
 
 const ICON: Record<Address, ReactNode> = {
+  'needs-you': <BellSimpleIcon />,
   sessions: <TerminalWindowIcon />,
   turns: <TimerIcon />,
   teams: <UsersThreeIcon />,

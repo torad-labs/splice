@@ -4,7 +4,7 @@ export const S = {
   rules: 'Compaction rules',
   scope: 'Scope',
   source: 'Source',
-  chars: 'Length',
+  chars: 'Characters',
   heads: 'Heads',
   /** A rule whose text is empty: the client's own instructions stand. */
   optOut: 'Client default',

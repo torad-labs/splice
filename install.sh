@@ -338,10 +338,19 @@ if ! mv -f "$JAR_TMP" "$JAR_DST" || ! mv -f "$SHIM_TMP" "$SHIM_DST"; then
   exit 1
 fi
 
+# run_jar <jar> <args…> — the jar's verbs that touch an install, in THIS script's home and dirs. The
+# jar resolves its dirs from the JVM's user.home, which the JDK reads from the passwd entry rather
+# than $HOME, so under a HOME of its own (a container, a CI job, a demo home) `init` and `install
+# --all` wrote into the passwd home while step 4 checked $BIN_DIR, and doctor checked that other
+# install (V4-231, 2026-09-25). `version` reads only the jar, so it runs bare.
+run_jar() {
+  SPLICE_BIN_DIR="$BIN_DIR" SPLICE_SHARE_DIR="$SHARE_DIR" java -Duser.home="$HOME" -jar "$@"
+}
+
 # 3. Materialize the topology + atomically link the wrapper commands (+ the `splice` command).
 # A CLI/preflight failure rolls the jar and shim back as one installation generation.
-if ! java -jar "$JAR_DST" init ||
-  ! SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" install --all; then
+if ! run_jar "$JAR_DST" init ||
+  ! SPLICE_JAR="$JAR_DST" run_jar "$JAR_DST" install --all; then
   restore_previous_artifacts
   echo "splice: command installation failed; previous jar and shim restored" >&2
   exit 1
@@ -415,7 +424,7 @@ fi
 #    everything above already validated the artifacts that this script is responsible for.
 echo
 echo "splice: verifying the install (splice doctor)…"
-if SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" doctor; then
+if SPLICE_JAR="$JAR_DST" run_jar "$JAR_DST" doctor; then
   :
 else
   echo

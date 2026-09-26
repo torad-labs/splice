@@ -94,7 +94,7 @@ public object AsyncFileIo {
             // accept work — making the one message you most need the one guaranteed not to arrive.
             // stderr is deliberately the fallback, and the warning fires exactly once (CAS above).
             // ast-grep-ignore: kt-no-println -- the log lane cannot report its own failure through itself
-            System.err.println("[async-file-io] task dropped (pending cap or rejection) — further drops silent")
+            System.err.println("[async-file-io] task dropped (pending cap or rejection); further drops silent")
         }
     }
 

@@ -168,7 +168,7 @@ internal class TopologyWindows(
             .onFailure {
                 log(
                     "[topology] splice.toml does not parse (${SafeFailureText.render(it)}); context windows " +
-                        "unchanged until it does — `splice doctor` names the line\n",
+                        "unchanged until it does, and `splice doctor` names the line\n",
                 )
             }
             .getOrNull()

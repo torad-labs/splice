@@ -100,7 +100,7 @@ internal class ResponsesWsIdentity(
      *  original bytes untouched. */
     fun parseRequest(bodyJson: String): JsonObject? =
         Cancellables.runCatchingCancellable { responsesRequestJson.parseToJsonElement(bodyJson) as? JsonObject }
-            .onFailure { log("[ws] unparseable request body — round rides SSE: ${it::class.simpleName}\n") }
+            .onFailure { log("[ws] unparseable request body, so the round rides SSE: ${it::class.simpleName}\n") }
             .getOrNull()
 }
 

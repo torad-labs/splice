@@ -72,7 +72,7 @@ internal class TurnFinish(
         // below). Local attribution: the downgrade is the gateway's own call — G20's
         // providerReported stays translator-owned.
         if (outcome is TurnOutcome.Success && outcomeTag != OutcomeTag.OK.wire) {
-            log(telemetry.errTurn("finish-degraded", drive, "tag=$outcomeTag — client received an error terminal"))
+            log(telemetry.errTurn("finish-degraded", drive, "tag=$outcomeTag; client received an error terminal"))
             health.local()
         }
         // V4-117: the failing outcome is in scope here, so the perf row gets its cause and the

@@ -74,7 +74,7 @@ internal class WsRoundOpener(
             } else {
                 "${error::class.simpleName}: ${error.message?.take(ERR_SNIPPET)}"
             }
-            log("[ws] ${logKeys.logKey(key)} send failed $kind ($detail) — killing connection, round rides SSE\n")
+            log("[ws] ${logKeys.logKey(key)} send failed $kind ($detail); killing connection, round rides SSE\n")
             pool.failRound(conn, key)
         }
         return failure == null
@@ -98,7 +98,7 @@ internal class WsRoundOpener(
             } else {
                 "inbox closed before first event (${received.exceptionOrNull()?.message?.take(ERR_SNIPPET) ?: "clean"})"
             }
-            log("[ws] ${logKeys.logKey(key)} $why — killing connection, round rides SSE\n")
+            log("[ws] ${logKeys.logKey(key)} $why; killing connection, round rides SSE\n")
             pool.failRound(conn, key)
         }
         return first

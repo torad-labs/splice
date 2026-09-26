@@ -91,7 +91,7 @@ internal class DoctorProbeWrite(
         val (outcome, ts) = failures.last()
         val age = DoctorAge.ago(System.currentTimeMillis() - ts)
         val last = "last failure: $age (${tag(outcome)})"
-        val detail = "${failures.size} of last $n turn(s) failed — $last$unread"
+        val detail = "${failures.size} of last $n turn(s) failed; $last$unread"
         return DoctorCheck(name, CheckStatus.WARN, detail, "splice logs --head $headKey --tail 50")
     }
 

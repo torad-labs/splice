@@ -67,14 +67,14 @@ internal class ModelsProbe(
         // red on any box where one of three local packs is up.
         is ModelsAnswer.NotListening ->
             if (provider.isLocal) {
-                UpstreamRoster.Unpublished("nothing answers at $url — this local runtime is not running")
+                UpstreamRoster.Unpublished("nothing answers at $url; this local runtime is not running")
             } else {
                 UpstreamRoster.Unreadable("nothing answers at $url")
             }
         // NOT routed through the local branch above: a URL that does not parse or a TLS failure is a
         // fault whether the endpoint is on this machine or not, and "not running" would send the
         // operator to restart a process that is already up.
-        is ModelsAnswer.Failed -> UpstreamRoster.Unreadable("$url could not be asked — ${answer.detail}")
+        is ModelsAnswer.Failed -> UpstreamRoster.Unreadable("$url could not be asked: ${answer.detail}")
     }
 
     private fun served(
@@ -88,10 +88,10 @@ internal class ModelsProbe(
         answer.status != HttpStatus.UNAUTHORIZED && answer.status != HttpStatus.FORBIDDEN ->
             UpstreamRoster.Unreadable("HTTP ${answer.status} from $url")
         held -> UpstreamRoster.Unreadable(
-            "$url refused the stored credential (HTTP ${answer.status}) — ${fix(provider, key)}",
+            "$url refused the stored credential (HTTP ${answer.status}); ${fix(provider, key)}",
         )
         else -> UpstreamRoster.Unreadable(
-            "$url wants a credential and splice holds none for '$key' (${provider.auth.kind}) — ${fix(provider, key)}",
+            "$url wants a credential and splice holds none for '$key' (${provider.auth.kind}); ${fix(provider, key)}",
         )
     }
 

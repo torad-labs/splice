@@ -7,6 +7,8 @@
 //
 // A `.ts` test cannot hold JSX (TS1161), so elements are built with React.createElement and
 // asserted against renderToStaticMarkup's string.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
@@ -29,10 +31,11 @@ import type { TurnRow } from '../src/entities/perf';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
 import {
   EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthOf, healthParts, inflightTotals,
-  lastTurnOf, median, noneAvailable, poolEmpty, poolOf, rowTone, selectedExcluded, stateTone,
+  lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone,
 } from '../src/pages/fleet/model';
+import { poolOf, selectedExcluded } from '../src/entities/account';
 import { dispositions } from '../src/pages/fleet/coverage';
-import { ADD_COMMAND, AddHead, CauseLine, FleetBoard } from '../src/pages/fleet';
+import { AddKey, CauseLine, FleetBoard } from '../src/pages/fleet';
 import type { FleetSources } from '../src/pages/fleet';
 import { H, S } from '../src/pages/fleet/strings';
 import { ACCOUNT_WORDS } from '../src/widgets/account-table';
@@ -422,7 +425,9 @@ describe('what one head row prints', () => {
     expect(row({}, { lastTs: new Map([['claudex', BOARD_NOW - 3 * 3_600_000]]) })).toContain('>3h ago<');
     expect(row({}, { lastTs: new Map([['claudex', null]]) })).toContain(`>${S.none}<`);
     const live = row({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
-    expect(live).toContain('streaming 1.5s');
+    // The column holds a word: the cell says Running, and the phase and age stand in its tip.
+    expect(live).toContain(`>${S.running}<`);
+    expect(live).toMatch(/role="tooltip"[^>]*>streaming 1\.5s</);
   });
 
   test('the last turn is live, ago, none or unknown, and these are four different facts', () => {
@@ -741,8 +746,15 @@ describe('account excluded on the rack', () => {
 });
 
 describe('the coverage manifest', () => {
-  test('takes over exactly the eight routes the baseline held for this row', () => {
-    expect(dispositions.map((entry) => entry.name).sort()).toEqual([
+  test('takes over exactly the eight routes the baseline held for this row, and the six add routes', () => {
+    // Routes only: the page also answers CLI verbs (V4-219), which the coverage wall counts.
+    expect(dispositions.filter((entry) => entry.kind === 'route').map((entry) => entry.name).sort()).toEqual([
+      '/api/add',
+      '/api/add/profiles',
+      '/api/add/{id}',
+      '/api/add/{id}/login',
+      '/api/add/{id}/save',
+      '/api/add/{id}/verify',
       '/api/daemon/restart',
       '/api/heads',
       '/api/heads/{head}/restart',
@@ -775,16 +787,37 @@ describe('the coverage manifest', () => {
 });
 
 describe('how a head joins the fleet', () => {
-  test('the page names the command that adds one, with a copy key, and no route', () => {
-    const markup = renderToStaticMarkup(React.createElement(AddHead));
-    expect(ADD_COMMAND).toBe('splice add');
-    expect(markup).toContain(`>${ADD_COMMAND}<`);
-    expect(markup).toContain('>Copy<');
-    expect(markup).not.toContain('/api/');
+  test('the header\'s key opens the add in the detail panel, and a head\'s detail never shares it', () => {
+    // V4-220 item 3: `splice add` over /api/add replaced the command the page printed to copy.
+    expect(renderToStaticMarkup(React.createElement(AddKey, { onAdd: () => undefined }))).toContain(`>${S.addBackend}<`);
+    const rest = board([head()]);
+    expect(rest).toContain(`>${S.addBackend}<`);
+    expect(rest).not.toContain(`aria-label="${S.addBackend}"`);
+    const adding = render(h(FleetBoard, { heads: [head()], sources: NO_SOURCES, openKey: null, onOpen: () => undefined, adding: true, nowMs: BOARD_NOW }));
+    expect(adding).toContain(`<aside class="myx-panel" aria-label="${S.addBackend}"`);
+    expect(adding).toContain('myx-fl-board-open');
+    // The narrowed board drops the identity columns for the add as for a head's detail: at 1600 the
+    // full set squeezed the head's name to nothing under an overprinted "Provider" (2026-09-25 render).
+    expect(rest).toContain(`>${S.provider}<`);
+    expect(adding).not.toContain(`>${S.provider}<`);
+    const both = render(h(FleetBoard, { heads: [head()], sources: NO_SOURCES, openKey: head().key, onOpen: () => undefined, adding: true, nowMs: BOARD_NOW }));
+    expect(both).not.toContain(`aria-label="${S.addBackend}"`);
+    expect(both).toContain(`aria-label="${S.detail}"`);
   });
 
   test('the empty fleet does not send the operator to a topology editor that cannot add a head', () => {
     expect(EMPTIES.noHeads.source).not.toContain('topology');
     expect(EMPTIES.noHeads.source).toContain('splice add');
+  });
+});
+
+describe('the first-byte cell', () => {
+  // Hitstop, 2026-09-25: the sparkline's own minimum width outgrew its track in the 9.5u column, so
+  // claude-grok's line ran over the 9 of 986ms.
+  const sheet = readFileSync(fileURLToPath(new URL('../src/pages/fleet/fleet.css', import.meta.url)), 'utf8');
+  test('the line shrinks to its track, and the figure keeps the width of its widest value', () => {
+    expect(sheet).toMatch(/\.myx-fl-lat \.myx-spark \{ min-width: 0; \}/);
+    expect(sheet).toMatch(/\.myx-fl-lat \.myx-fl-figure \{ min-width: 5ch; text-align: end; \}/);
+    expect(sheet).toMatch(/\.myx-fl-figure \{[^}]*font-variant-numeric: tabular-nums;/);
   });
 });

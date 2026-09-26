@@ -163,7 +163,7 @@ public class CompactionInstructions(
             val text = Cancellables.runCatchingCancellable { readFile(file) }
                 .onFailure { failure ->
                     log(
-                        "[compaction] $file unreadable (${SafeFailureText.render(failure)}) — " +
+                        "[compaction] $file unreadable (${SafeFailureText.render(failure)}); " +
                             "custom instructions disabled for ${rule.source}\n",
                     )
                 }
@@ -205,7 +205,7 @@ public class CompactionInstructions(
                 },
                 onFailure = { failure ->
                     log(
-                        "[compaction] $path unreadable (${SafeFailureText.render(failure)}) — " +
+                        "[compaction] $path unreadable (${SafeFailureText.render(failure)}); " +
                             "custom instructions disabled for $source\n",
                     )
                     Rule(null, scope, "$source file:$path unreadable")

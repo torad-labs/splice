@@ -252,7 +252,7 @@ internal class RosterDiff {
      *  three reasons, in the same order, the daemon's discovery applies (ModelDiscovery). */
     private fun undeclared(model: UpstreamModel, local: Boolean, discovery: ModelDiscoveryConfig): RosterRow {
         val keptOut = when {
-            local -> "a local runtime lists the file it loaded — declare a row to name it"
+            local -> "a local runtime lists the file it loaded; declare a row to name it"
             model.unusable != null -> "kept out of the picker: ${model.unusable}"
             !discovery.admits(model.id) -> "kept out of the picker by this provider's discovery filter"
             else -> null
@@ -278,9 +278,9 @@ internal class RosterDiff {
     private fun unmatched(entry: ModelEntry, local: Boolean): RosterRow {
         val bare = ModelTierSuffix.strip(entry.id)
         val note = if (local) {
-            "the runtime lists no '$bare' — it serves the model it loaded whatever id is sent"
+            "the runtime lists no '$bare'; it serves the model it loaded whatever id is sent"
         } else {
-            "the endpoint lists no model '$bare' — turns chosen on this row are refused upstream"
+            "the endpoint lists no model '$bare'; turns chosen on this row are refused upstream"
         }
         return RosterRow(
             id = entry.id,
@@ -309,21 +309,21 @@ internal class RosterDiff {
                 verdict = RosterVerdict.OVER_CEILING,
                 declaredWindow = entry.contextWindow,
                 upstreamWindow = accepted,
-                note = "the endpoint serves $accepted$aliased — compaction runs past what it accepts",
+                note = "the endpoint serves $accepted$aliased; compaction runs past what it accepts",
             )
             entry.contextWindow > ceiling -> RosterRow(
                 id = entry.id,
                 verdict = RosterVerdict.SERVED,
                 declaredWindow = entry.contextWindow,
                 upstreamWindow = ceiling,
-                note = "the endpoint serves $ceiling by default and accepts up to $accepted$aliased — this row opts in",
+                note = "the endpoint serves $ceiling by default and accepts up to $accepted$aliased; this row opts in",
             )
             entry.contextWindow < ceiling -> RosterRow(
                 id = entry.id,
                 verdict = RosterVerdict.CAPPED,
                 declaredWindow = entry.contextWindow,
                 upstreamWindow = ceiling,
-                note = "the endpoint serves $ceiling$aliased — this row caps it",
+                note = "the endpoint serves $ceiling$aliased; this row caps it",
             )
             else -> RosterRow(
                 id = entry.id,

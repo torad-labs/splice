@@ -6,7 +6,7 @@
 // `/api/models` is deliberately NOT here. The page reads the catalog for the rate cards, but the
 // MODELS page is the one that owns the name — the coverage wall fails when two pages declare the
 // same name, and a route owned by two pages is a route nobody owns.
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/economics', disposition: 'read-only' },
@@ -17,3 +17,14 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/alerts', disposition: 'editable' },
   { kind: 'route', name: '/api/alerts/test', disposition: 'editable' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'How many tokens and dollars is each head spending, against what limits?',
+  leaves: 'Hourly tokens, estimated cost, request size and rate-limited turns per head, with budgets and alerts.',
+  actions: [
+    { name: 'Set a daily budget and what passing it does' },
+    { name: 'Set the alert webhook' },
+    { name: 'Send a test alert' },
+  ],
+};

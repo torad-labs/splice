@@ -30,6 +30,7 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlPayloads
 import splice.app.control.api.HeadResolver
 import splice.app.control.mount.AccountsMount
+import splice.app.control.mount.AddMount
 import splice.app.control.mount.ConfigurationMount
 import splice.app.control.mount.ControlGuard
 import splice.app.control.mount.DiagnosticsMount
@@ -112,6 +113,9 @@ public class ControlServer(
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
     private val fleet = FleetMount(payloads, resolver, audit, dashboardHtml, guard, ports)
     private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard, heads, log)
+
+    // V4-220 item 3: the add's save restarts through lifecycle's own restarts, never a second path.
+    private val add = AddMount(ports, guard, lifecycle.restarts, shutdownDaemon, log)
     private val configuration = ConfigurationMount(config, topologyStale, ports, guard)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log)
@@ -176,6 +180,7 @@ public class ControlServer(
             routing {
                 fleet.register(this)
                 lifecycle.register(this)
+                add.register(this)
                 configuration.register(this)
                 usage.register(this)
                 accounts.register(this)

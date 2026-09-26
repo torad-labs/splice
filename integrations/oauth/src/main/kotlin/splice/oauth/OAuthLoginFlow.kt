@@ -29,6 +29,14 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val CALLBACK_TIMEOUT_S = 300L
 
+/** What the pane says when a sign-in finished in a tab from an earlier attempt reaches this one. */
+private const val STALE_CALLBACK_LINE =
+    "splice: a sign-in from an earlier attempt arrived and was ignored; finish the sign-in in the newest tab."
+
+/** The same, on the page that tab shows. */
+private const val STALE_CALLBACK_PAGE =
+    "This sign-in is from an earlier attempt and was ignored. Finish the sign-in in the newest tab."
+
 /** `code=` in a pasted redirect URL or query fragment. */
 private val CODE_PARAM = Regex("""[?&#]code=([^&\s]+)""")
 
@@ -153,7 +161,7 @@ public class OAuthLoginFlow(
                         latch.countDown()
                         return@execute
                     }
-                    if (line.isNotBlank()) output.line("splice: that is not an authorization code — try again:")
+                    if (line.isNotBlank()) output.line("splice: that is not an authorization code; try again:")
                 }
             }
             Cancellables.discard(pasted, "stdin closed or unreadable; the loopback callback is still live")
@@ -179,16 +187,22 @@ public class OAuthLoginFlow(
     ) {
         val params = Cancellables.runCatchingCancellable { queryParams(ex.requestURI.rawQuery.orEmpty()) }
             .onFailure {
-                output.line("splice: ignoring a callback whose query does not parse — ${SafeFailureText.render(it)}")
+                output.line("splice: ignoring a callback whose query does not parse: ${SafeFailureText.render(it)}")
             }
             .getOrDefault(emptyMap())
         // Only a callback carrying OUR state ends the login. A drive-by hit on the loopback port (a
         // local page, another process, a malformed-escape probe) is answered but IGNORED, so the
         // genuine provider redirect can still land — a stray request can't abort the flow.
         if (params["state"] != spec.expectedState) {
+            // A callback carrying ANOTHER state is a sign-in finished in a tab from an earlier
+            // attempt. It stays ignored, but it is named: silent, the pane sat until the timeout
+            // while the operator believed he had signed in (rehearsal-plans-1, 2026-09-25).
+            val stale = params["state"] != null
+            if (stale) output.line(STALE_CALLBACK_LINE)
             Cancellables.discard(
                 Cancellables.runCatchingCancellable {
-                    callbackPage.respond(ex, ok = false, head = spec.head, error = "unexpected callback")
+                    val why = if (stale) STALE_CALLBACK_PAGE else "unexpected callback"
+                    callbackPage.respond(ex, ok = false, head = spec.head, error = why)
                 },
                 "reply to a stray request is cosmetic; the flow keeps waiting either way",
             )
@@ -253,7 +267,7 @@ public class OAuthLoginFlow(
 
     private fun decode(s: String): String =
         Cancellables.runCatchingCancellable { URLDecoder.decode(s, Charsets.UTF_8) }
-            .onFailure { output.line("splice: a callback value is not valid percent-encoding — using it verbatim") }
+            .onFailure { output.line("splice: a callback value is not valid percent-encoding; using it verbatim") }
             .getOrDefault(s)
 
     private fun queryParams(raw: String): Map<String, String> =

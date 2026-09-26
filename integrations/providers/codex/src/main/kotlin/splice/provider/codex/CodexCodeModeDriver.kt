@@ -198,7 +198,7 @@ internal class CodexCodeModeDriver(
             .ifEmpty { "runtime exception" }
         config.log(
             "[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): " +
-                "runtime failed to start — $chain",
+                "runtime failed to start: $chain",
         )
         registry.lose(record, "code-mode runtime failed to start; source was not rerun")
         return failure(record.error.orEmpty())
@@ -220,4 +220,4 @@ internal class CodexCodeModeDriver(
 
 private const val RECORD_ID_LOG_CHARS: Int = 8
 private const val CAPACITY_DETAIL: String =
-    "code-mode worker capacity reached; nothing was executed — call the tools directly this turn"
+    "code-mode worker capacity reached; nothing was executed. Call the tools directly this turn"

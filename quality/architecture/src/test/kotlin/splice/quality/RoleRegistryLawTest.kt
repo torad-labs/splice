@@ -717,7 +717,7 @@ class RoleRegistryLawTest {
         val text = RoleRegistry.declarations().orEmpty()
         val config = shipped()
         assertEquals(emptyList<String>(), config.problems, "the shipped dispositions must parse")
-        assertEquals(28, config.entries.size, "one entry per shared signature")
+        assertEquals(29, config.entries.size, "one entry per shared signature")
         assertEquals(
             text.split("\n").count { it == "[[groups]]" },
             config.entries.size,
@@ -725,8 +725,9 @@ class RoleRegistryLawTest {
         )
         val names = config.entries.values.map { it.strings("names") }
         assertTrue(names.none { it == null }) { "every entry must declare an array of strings under `names`" }
-        // 108 since 2026-09-25: DoctorReport left `()->String` when it began taking the daemon's answers (V4-230).
-        assertEquals(108, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 110 since 2026-09-25: DoctorReport left `()->String` when it began taking the daemon's answers (V4-230),
+        // and V4-226 wrote WorkerFrameIo and GlobalMcpServers as two roles of one shape.
+        assertEquals(110, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

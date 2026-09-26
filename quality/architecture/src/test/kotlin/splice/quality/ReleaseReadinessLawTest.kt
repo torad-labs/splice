@@ -262,6 +262,17 @@ internal object ReleaseReadiness {
         Rule("install-attests-shim") { repo ->
             repo.contains(INSTALL, "verify_attestation \"\$SHIM_TMP\" splice-launch")
         },
+        // V4-231: the jar resolves its dirs from user.home, which the JDK reads from the passwd entry,
+        // and the script from $HOME. Under a HOME of its own the jar's verbs wrote into the passwd
+        // home, so every verb that touches the install goes through run_jar, which hands the jar this
+        // script's HOME and both dirs, and none runs the installed jar bare.
+        Rule("install-jar-in-its-home") { repo ->
+            repo.contains(INSTALL, INSTALL_RUN_JAR)
+                ?: repo.contains(INSTALL, "run_jar \"\$JAR_DST\" init")
+                ?: repo.contains(INSTALL, "run_jar \"\$JAR_DST\" install --all")
+                ?: repo.contains(INSTALL, "run_jar \"\$JAR_DST\" doctor")
+                ?: repo.lacks(INSTALL, "java -jar \"\$JAR_DST\"")
+        },
     )
 
     private fun readmeRules(): List<Rule> = listOf(
@@ -319,6 +330,10 @@ private const val INSTALL_REFUSALS = "echo 'sha256 verification FAILED'; echo 'a
 private const val INSTALL_JAR = "verify_attestation \"\$JAR_TMP\" splice.jar\n"
 private const val INSTALL_SHIM = "verify_attestation \"\$SHIM_TMP\" splice-launch\n"
 private const val INSTALL_PREVIOUS = "  $ALLOWED_LINK\n  $ALLOWED_PREVIOUS\n"
+private const val INSTALL_RUN_JAR =
+    "SPLICE_BIN_DIR=\"\$BIN_DIR\" SPLICE_SHARE_DIR=\"\$SHARE_DIR\" java -Duser.home=\"\$HOME\" -jar \"\$@\""
+private const val INSTALL_HOME = "run_jar() {\n  $INSTALL_RUN_JAR\n}\n" +
+    "run_jar \"\$JAR_DST\" init\nrun_jar \"\$JAR_DST\" install --all\nrun_jar \"\$JAR_DST\" doctor\n"
 
 // The Kotlin fixtures are assembled at runtime so this file, which the live rules also scan, does
 // not trip its own port and sleep rules.
@@ -354,7 +369,7 @@ private class Tree(val root: File) {
         file(RELEASE_WORKFLOW, "permissions: {}\n  draft: true\n  files: dist/THIRD_PARTY_LICENSES.txt\n")
         // The compliant installer CARRIES both allowed swallows: an allowlist never exercised on the
         // green side proves only that the file had nothing to match.
-        file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS)
+        file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS + INSTALL_HOME)
         file(GATE_LADDER, "gateOfRecord { dependsOn($INCLUDED_BUILD_TEST) }\n")
         file("${BUILD_LOGIC_TESTS}splice/discovery/TestDiscoveryTest.kt", "class TestDiscoveryTest\n")
         file(
@@ -475,6 +490,17 @@ private fun installerMutations(): List<Mutation> = listOf(
     },
     Mutation("install.sh not attesting the shim", "install-attests-shim", "splice-launch") {
         file(INSTALL, INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR)
+    },
+    // V4-231's two shapes: the helper that forgets the JVM's home, and a verb run bare beside it.
+    Mutation("install.sh running the jar in the passwd home", "install-jar-in-its-home", "user.home") {
+        file(
+            INSTALL,
+            INSTALL_RELEASE + INSTALL_REFUSALS + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS +
+                INSTALL_HOME.replace(" -Duser.home=\"\$HOME\"", ""),
+        )
+    },
+    Mutation("install.sh running a verb bare", "install-jar-in-its-home", "java -jar") {
+        append(INSTALL, "java -jar \"\$JAR_DST\" init\n")
     },
 )
 

@@ -79,7 +79,7 @@ internal class HeadBoot {
         if (unlisted.isEmpty()) return
         log(
             "[$key][boot] models list names ${unlisted.joinToString(", ")}, which its endpoint did not " +
-                "list at this start — not offered until it does\n",
+                "list at this start, so they are not offered until it does\n",
         )
     }
 
@@ -90,7 +90,7 @@ internal class HeadBoot {
         statePaths.usageKeyCollisions(headKeys).forEach { (statKey, keys) ->
             log(
                 "[daemon][boot] WARNING: heads ${keys.joinToString(" and ")} share the '$statKey' usage/ratelimit " +
-                    "files with no cross-process write coordination — quota numbers may race\n",
+                    "files with no cross-process write coordination, so quota numbers may race\n",
             )
         }
     }

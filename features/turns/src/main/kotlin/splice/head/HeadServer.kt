@@ -132,7 +132,7 @@ public class HeadServer(
             inflight = gate.snapshot().inflight
         }
         if (inflight > 0) {
-            log("[${provider.key}] stop: draining timed out with inflight=$inflight — forcing engine stop\n")
+            log("[${provider.key}] stop: draining timed out with inflight=$inflight; forcing engine stop\n")
         }
         // A detached compaction OUTLIVES ITS CLIENT (TurnStreamer): its handed-off slot travels with
         // the drive, and the drain budget above belongs to that feature — a detached compaction that

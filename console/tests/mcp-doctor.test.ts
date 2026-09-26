@@ -19,7 +19,8 @@ import { budgetFor } from '../src/entities/budget';
 import { BudgetRefusals, BudgetsPanel, cellNote, parseUsd } from '../src/features/budgets';
 import { canTest } from '../src/entities/alert';
 import type { AlertSettings } from '../src/entities/alert';
-import { DoctorBoard } from '../src/pages/doctor';
+import { DoctorBoard, FixLine } from '../src/pages/doctor';
+import { S as FIX_WORDS } from '../src/features/doctor-fix/strings';
 import {
   EMPTIES as DOCTOR_EMPTIES,
   MARK as DOCTOR_MARK,
@@ -27,17 +28,16 @@ import {
   attentionCount,
   attentionParts,
   canSend,
-  claudeVersionText,
-  collapseChecks,
+  claudeVersion,
   groupChecks,
   latestText,
   logsHeadOf,
   playgroundNext,
   rollbackText,
   statusParts,
-  wantsAttention,
   IDLE_PLAYGROUND,
 } from '../src/pages/doctor/model';
+import { collapseChecks, wantsAttention } from '../src/entities/doctor';
 import { S as DOCTOR_WORDS } from '../src/pages/doctor/strings';
 import { ABSENT } from '../src/shared/lib';
 import type { PlaygroundState } from '../src/pages/doctor/model';
@@ -187,6 +187,21 @@ describe('every failing check carries its fix', () => {
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
   });
 
+  test('a row carries the fix the daemon can run itself, and the detail offers it beside the copy', () => {
+    // V4-220 item 4: `fix_id` names a fix POST /api/doctor/fix/{id} runs (install_all today).
+    const [wrappers, port] = collapseChecks([
+      { ...check('installation/wrapper', 'fail', `'claudex' missing${SEP}splice install --all`), fix_id: 'install_all' },
+      { ...check('installation/wrapper', 'fail', `'claude-grok' missing${SEP}splice install --all`), fix_id: 'install_all' },
+      check('daemon/port', 'warn', `taken${SEP}lsof -iTCP:3099 -sTCP:LISTEN`),
+    ]);
+    expect([wrappers.fixId, port.fixId]).toEqual(['install_all', null]);
+    const offered = renderToStaticMarkup(React.createElement(FixLine, { fix: wrappers.fix, fixId: wrappers.fixId }));
+    expect(offered).toContain(`>${FIX_WORDS.run}<`);
+    expect(offered).toContain('Copy');
+    const text = renderToStaticMarkup(React.createElement(FixLine, { fix: port.fix, fixId: port.fixId }));
+    expect(text).not.toContain(FIX_WORDS.run);
+  });
+
   test('checks whose fixes differ stay their own rows', () => {
     const rows = collapseChecks([
       check('configuration/local:a', 'warn', `down${SEP}start it`),
@@ -235,8 +250,16 @@ describe('every failing check carries its fix', () => {
   });
 
   test('Claude Code\'s version drops the product name its tile already prints', () => {
-    expect(claudeVersionText('2.1.282 (Claude Code)')).toBe('2.1.282');
-    expect(claudeVersionText('2.1.282')).toBe('2.1.282');
+    expect(claudeVersion('2.1.282 (Claude Code)')).toEqual({ figure: '2.1.282', note: null });
+    expect(claudeVersion('2.1.282')).toEqual({ figure: '2.1.282', note: null });
+  });
+
+  test('a probe that read no version is unknown in the figure, with the daemon\'s sentence whole under it', () => {
+    // CI run 36184525303, no `claude` on the runner: the whole sentence was the figure, cut to an ellipsis.
+    const failed = 'present (version probe failed: failure (message withheld, may quote file bytes))';
+    expect(claudeVersion(failed)).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: failed });
+    expect(claudeVersion('probe timed out')).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: 'probe timed out' });
+    expect(claudeVersion('present')).toEqual({ figure: DOCTOR_WORDS.unknownVersion, note: 'present' });
   });
 
   test('attention first lists every check that wants the operator before any that does not', () => {
@@ -386,13 +409,13 @@ describe('budgets and alerts', () => {
 
   test('a refusal prints whole on its own line under the table; the save cell holds only Saved', () => {
     // The review capture of 2026-09-25 cut the daemon's refusal to "daily_usd 90…" in the cell.
-    const reason = 'daily_usd 900 for claudex is past the 500 cap in splice.toml';
+    const reason = "The daily cap can't be negative."; // the daemon's own words (BudgetStore, #275)
     expect(cellNote('Saved')).toBe('Saved');
     expect(cellNote(reason)).toBeNull();
     expect(cellNote(undefined)).toBeNull();
     const out = renderToStaticMarkup(h(BudgetRefusals, { heads: ['claudex', 'claude-grok'], notes: { claudex: reason, 'claude-grok': 'Saved' } }));
     expect(out.match(/class="myx-bud-refusal" role="status"/g)?.length).toBe(1);
-    expect(out).toContain(`<span>${reason}</span>`);
+    expect(out).toContain(`<span>${reason.replace(/'/g, '&#x27;')}</span>`); // static markup escapes the apostrophe
     expect(out).toContain('claudex');
     expect(out).not.toContain('Saved');
     // a box as wide as its placeholder and its padding: w is the box's width in ch, padding included
@@ -473,20 +496,23 @@ describe('the upgrade verdict', () => {
 
 describe('the coverage manifests', () => {
   test('the routes of this row are disposed exactly once, across the two files', () => {
-    const names = [...mcpDispositions, ...doctorDispositions].map((entry) => entry.name);
+    // Routes only: doctor also answers the doctor and version verbs (V4-219), which the coverage wall counts.
+    const names = [...mcpDispositions, ...doctorDispositions].filter((entry) => entry.kind === 'route').map((entry) => entry.name);
     // This list is the pages' route INVENTORY and stays exact on purpose: a new fetch site with no
     // disposition should fail here by name. Four since M4-06. /api/heads/{head}/capture moved to the
     // turns page (M4-04: its request drawer's switch reads and writes it), and budgets, alerts and
     // the alerts test to the usage page (M4-06: it mounts those two panels); the coverage wall fails
     // if nothing declares them. (/api/alerts/test was added 2026-09-18, when M1-37's wire-check
     // found it fetched and disposed by nothing.)
-    // Five since V4-220 item 4: the doctor page's Fix button posts /api/doctor/fix/{id}.
+    // Five since V4-220 item 4: the doctor page's Fix button posts /api/doctor/fix/{id}. Six with the
+    // upgrade's run, which POST /api/upgrade starts from the version strip (V4-220 item 4).
     expect([...names].sort()).toEqual([
       '/api/doctor',
       '/api/doctor/fix/{id}',
       '/api/mcp',
       '/api/playground',
       '/api/upgrade',
+      '/api/upgrade/run',
     ]);
     expect(new Set(names).size).toBe(names.length); // no name carries two page dispositions
   });

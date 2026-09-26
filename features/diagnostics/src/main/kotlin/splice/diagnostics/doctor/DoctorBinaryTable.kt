@@ -4,6 +4,10 @@
 package splice.diagnostics.doctor
 
 internal const val FLAG_VERSION = "--version"
+internal const val CLAUDE_BINARY = "claude"
+
+/** The report's `claude_code.version` when no claude is on the doctor's PATH. */
+internal const val CLAUDE_NOT_FOUND = "not found on PATH"
 
 // V4-220 item 4: the public pages doctor's fixes link to, in the one list the report's redaction
 // allows verbatim (DoctorRedaction). A URL's `//host/path` is path-shaped to that pass, so
@@ -23,27 +27,27 @@ internal data class BinarySpec(
 // FILE SCOPE ON PURPOSE: the probe table is a constant shared by every doctor run.
 internal val binaries = listOf(
     BinarySpec(
-        "claude",
+        CLAUDE_BINARY,
         listOf(FLAG_VERSION),
-        "Claude Code not found on PATH — splice wraps it",
+        "Claude Code not found on PATH; splice wraps it",
         "install it: $CLAUDE_CODE_DOCS",
     ),
     BinarySpec(
         "node",
         listOf("-v"),
-        "not found on PATH — Claude Code's runtime and the launch shim's (Node 24)",
+        "not found on PATH; Claude Code and the launch shim run on it (Node 24)",
         "install Node 24: $NODE_DOWNLOAD",
     ),
     BinarySpec(
         "curl",
         listOf(FLAG_VERSION),
-        "not found on PATH — install.sh downloads releases with it",
+        "not found on PATH; install.sh downloads releases with it",
         "install curl with your package manager",
     ),
     BinarySpec(
         "bash",
         listOf(FLAG_VERSION),
-        "not found on PATH — install.sh is a bash script",
+        "not found on PATH; install.sh is a bash script",
         "install bash with your package manager",
     ),
 )

@@ -55,6 +55,10 @@ internal class StatuslineRenderer(
      *  once, so a captured count would freeze at the head's start (zero) and the operator would
      *  never learn that the figure beside it had gone short. Null renders exactly as today. */
     private val perfSkips: HeadPerfSkipSource? = null,
+    /** V4-240: the head's upstream is Anthropic (it forwards the client's own login), so Claude
+     *  Code's own figure is priced at this upstream's card and may stand in for splice's. False on
+     *  every other head, where a model splice cannot price says "no rate card" instead. */
+    private val anthropicUpstream: Boolean = false,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
@@ -125,10 +129,17 @@ internal class StatuslineRenderer(
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
         }
         val modelId = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
+        val spend = sessionCost?.spendFor(sessionId, modelId, blob.sessionStartMs(root, now()))
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
-            bars.costSegment(root, sessionCost?.usdFor(sessionId, modelId), perfSkips?.skippedRowCount() ?: 0L),
+            bars.costSegment(
+                root,
+                spend?.usd,
+                perfSkips?.skippedRowCount() ?: 0L,
+                CostFallback(rated = sessionCost?.rated(modelId) ?: false, clientPriced = anthropicUpstream),
+                lowerBound = spend?.lowerBound == true,
+            ),
         ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
             listOfNotNull(
@@ -304,6 +315,11 @@ private class StatuslineJson {
     fun str(element: JsonElement?): String? = JsonScalars.str(element)?.takeIf { it.isNotEmpty() }
 
     fun num(element: JsonElement?): Long? = JsonScalars.str(element)?.toDoubleOrNull()?.toLong()
+
+    /** When the client session began: its `cost.total_duration_ms` before [nowMs], or null when the
+     *  blob does not carry it (V4-240 review, finding 4c). */
+    fun sessionStartMs(root: JsonObject, nowMs: Long): Long? =
+        num(obj(root, "cost")?.get("total_duration_ms"))?.let { nowMs - it }
 }
 
 // StatuslineRenderer's companion constants at their sanctioned file-scope home. The ANSI values

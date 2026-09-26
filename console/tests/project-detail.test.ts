@@ -44,7 +44,7 @@ describe('the project detail', () => {
       ['Sessions running', '2'],
       ['Teams', '0'],
       ['Turns today', '1'],
-      ['Cost today', '–'],
+      ['API cost today', '–'],
       ['Day', '2026-09-23 UTC'],
       ['Last seen', '1m ago'],
     ]);
@@ -52,7 +52,7 @@ describe('the project detail', () => {
 
   test('a dollar figure from declared rates prints, and no rates or no activity is an absence', () => {
     const rows = new Map(detailRowsOf(row({ cost_today_usd: 12.844, last_activity: null }), NOW));
-    expect(rows.get('Cost today')).toBe('$12.84');
+    expect(rows.get('API cost today')).toBe('$12.84');
     expect(rows.get('Last seen')).toBe('–');
     expect(costText(0), 'declared rates that came to nothing are a figure, not an absence').toBe('$0.00');
   });

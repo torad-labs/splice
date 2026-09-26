@@ -101,9 +101,15 @@ const DISPOSITIONED: Record<string, string> = {
   "entities/transcript/api/index.ts|pagePath(state.sessionId, token)":
     "a later page of the same route and the same TranscriptPage type the first page is checked " +
     "against; its cursor exists only after a first page returned one",
+  "entities/add/api/index.ts|path(id)":
+    "path(id) is GET /api/add/{id}, which reads an add, and DELETE, which closes one; an add id " +
+    "exists only after POST /api/add opens one, which this read-only probe never sends, so AddView's " +
+    "keys are held against AddViews.session's own serializer by console/tests/add-backend.test.ts",
   "entities/auth/api/index.ts|path":
-    "settle<T>() is the transport of the five auth WRITES; its T is generic here and each write " +
-    "is a POST, so there is no read payload at this call site",
+    "settle<T>() is the transport of the auth writes and the one login poll; its T is generic here. " +
+    "The writes are POST, PATCH and DELETE; the poll (GET /api/auth/{head}/login/{id}) has a login " +
+    "id only after a POST that reaches a real provider, so its keys and states are held against the " +
+    "daemon's own serializers by console/tests/login-wire.test.ts",
 };
 /** Non-request fetch() sites in console/src, which the same scan enumerates. */
 const FETCH_DISPOSITIONED: Record<string, string> = {

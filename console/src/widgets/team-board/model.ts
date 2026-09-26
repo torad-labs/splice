@@ -7,7 +7,8 @@
 // in flight over the last hour worked out from that log. The economics are the daemon's numbers
 // printed as they arrive: it joins every perf row to a slot on the 8-character session tag itself
 // (TeamsEconomics.kt), so nothing here joins them a second time.
-import type { TeamEconomicsPayload, TeamMemberRow, TeamPayload, TeamSlot, TeamTally } from '@entities/team';
+import { registryLists } from '@entities/control-status';
+import type { TeamEconomicsPayload, TeamMemberRow, TeamMessage, TeamPayload, TeamSlot, TeamTally } from '@entities/team';
 
 /** One turn of one member. `live` is a turn still running: its length is the time so far. */
 export interface TeamTurn {
@@ -85,11 +86,16 @@ export interface SeatGroup {
   seats: Seat[];
 }
 
+/** The run of every seat on a head the registry does not list: no head key is empty. */
+export const NO_HEAD_KEY = '';
+
 /** The seats in runs: by the head each slot runs on, in the order the slots first name it, or by
- *  role, in the order the team declares its roles. */
+ *  role, in the order the team declares its roles. The heads splice does not run share one run, as
+ *  Sessions puts every session it ties to no head in one. */
 export function seatGroups(board: TeamPayload, by: 'head' | 'role'): SeatGroup[] {
   const seats = seatsOf(board);
-  const keyOf = (seat: Seat): string => (by === 'role' ? seat.slot.role : seat.slot.head);
+  const headOf = (slot: TeamSlot): string => (registryLists(board.spliceHeads, slot.head) === false ? NO_HEAD_KEY : slot.head);
+  const keyOf = (seat: Seat): string => (by === 'role' ? seat.slot.role : headOf(seat.slot));
   const keys = by === 'role' ? rolesOf(board.team.slots) : [...new Set(seats.map(keyOf))];
   return keys.map((key) => ({ key, seats: seats.filter((seat) => keyOf(seat) === key) }));
 }
@@ -101,8 +107,8 @@ function secondsOf(stamp: string): number {
 }
 
 /** The newest hand-off a member RECEIVED, as its HH:MM, or null when none reached it. */
-export function lastReceived(board: TeamPayload, member: string): string | null {
-  const got = board.messages.filter((m) => m.to === member).sort((a, b) => secondsOf(b.time) - secondsOf(a.time));
+export function lastReceived(messages: readonly TeamMessage[], member: string): string | null {
+  const got = messages.filter((m) => m.to === member).sort((a, b) => secondsOf(b.time) - secondsOf(a.time));
   return got[0]?.time ?? null;
 }
 
@@ -181,10 +187,14 @@ export interface CostTable {
   /** Epoch ms of the oldest turn the perf files still hold, which is how far back "lifetime"
    *  reaches. */
   oldest: number | null;
+  /** Roles on no head the daemon read (`heads_read`): splice does not run their heads, so it never
+   *  saw their turns, and their zeros are unknown, not zero (Marlin, 2026-09-25). */
+  unseen: string[];
 }
 
-/** The daemon's per-role tallies as the page prints them, with their total. */
-export function costTable(economics: TeamEconomicsPayload): CostTable {
+/** The daemon's per-role tallies as the page prints them, with their total, and the roles whose
+ *  slots all run on heads it did not read. */
+export function costTable(economics: TeamEconomicsPayload, slots: readonly TeamSlot[]): CostTable {
   const rows = economics.roles.map((tally) => ({
     role: tally.role,
     input: tokensIn(tally),
@@ -202,7 +212,10 @@ export function costTable(economics: TeamEconomicsPayload): CostTable {
     }),
     { role: '', input: 0, output: 0, cost: 0, turns: 0 },
   );
-  return { rows, total, unattributed: economics.unattributed_turns, oldest: economics.oldest_turn_epoch_millis };
+  const unseen = rows
+    .map((row) => row.role)
+    .filter((role) => !slots.some((slot) => slot.role === role && economics.heads_read.includes(slot.head)));
+  return { rows, total, unattributed: economics.unattributed_turns, oldest: economics.oldest_turn_epoch_millis, unseen };
 }
 
 /** Turns per slot, named by the member sitting in it or, for an open seat, by its role: the daemon

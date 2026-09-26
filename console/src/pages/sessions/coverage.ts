@@ -9,7 +9,7 @@
 // its peer column, and the opened session's own edges for its hand-offs bay.
 // The transcript is served and read-only too; the per-session repo route was never built,
 // because the repo became a field on /api/sessions (M4-06).
-import type { Disposition } from '@shared/coverage';
+import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/sessions', disposition: 'read-only' },
@@ -24,4 +24,17 @@ export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/sessions/{id}/transcript', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/{id}/edges', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/edges', disposition: 'read-only' },
+  // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
+  { kind: 'verb', name: 'sessions', disposition: 'read-only', via: '/api/sessions' },
 ];
+
+/** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
+export const job: PageJob = {
+  question: 'What is running now, and who is handing work to whom?',
+  leaves: 'Every live session on its head\'s lane, with its project and state, and each hand-off between sessions.',
+  actions: [
+    { name: 'Change the view: lanes, by head, by project, by team or timeline' },
+    { name: 'Open a session for its detail' },
+    { name: 'Read a hand-off\'s text', row: 'V4-219' },
+  ],
+};

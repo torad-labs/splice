@@ -224,8 +224,10 @@ private val PHASE_LEGALITY: Map<FailurePhase, Pair<Set<RetryLayer>, String>> = m
 internal object RetryMatrix {
 
     // The cell a pair with no layer prints. An em dash rather than an empty cell, so a reader can
-    // tell "entitled to nothing" from "the table is missing a row".
-    private const val NO_LAYER = "—"
+    // tell "entitled to nothing" from "the table is missing a row". Spelled by code point: the cell
+    // is a table glyph, not a sentence (quality/rules/kotlin/kt-no-emdash-cli-text.yml).
+    private const val NO_LAYER_CODE_POINT = 0x2014
+    private val NO_LAYER = Char(NO_LAYER_CODE_POINT).toString()
 
     /**
      * The operator-facing table, RENDERED FROM THIS CODE so it cannot come to describe a matrix we

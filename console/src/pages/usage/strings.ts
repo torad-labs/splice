@@ -16,8 +16,8 @@ export const S = {
   models: 'Models',
   tokens: 'Tokens',
   turns: 'Turns',
-  cost: 'Cost',
-  unpricedWhy: 'Unpriced heads',
+  cost: 'Estimated API cost',
+  unpricedWhy: 'Unpriced turns',
   /** The heads table's sparkline column: each head's turns, hour by hour. */
   trend: 'Turns per hour',
   inTokens: 'Input',
@@ -68,8 +68,8 @@ export const H = {
   noCatalog: 'This splice version does not serve the model catalog.',
   noModels: 'The topology declares no models for this head.',
   noPlan: "Plan windows come from each provider's response headers.",
-  /** The cost figure when some heads carry no rate card: they are left out, never priced at zero. */
-  unpriced: 'Heads without a rate card are left out of cost.',
+  /** The cost figure when some turns carry no price: they are left out, never priced at zero. */
+  unpriced: 'Left out: no rate card, or run before splice priced turns.',
   /** The cache read share is a diagnostic, not a saving. */
   cacheRead: 'Share of input served from cache; the plan still meters it.',
 } as const;
@@ -78,7 +78,7 @@ export const H = {
 export const U = {
   cached: 'cached',
   turns: 'turns',
-  unpriced: 'unpriced',
+  unpriced: 'turns unpriced',
   resets: 'Resets',
   /** After a window's reported length: `5h window`, `30d window`. */
   window: 'window',

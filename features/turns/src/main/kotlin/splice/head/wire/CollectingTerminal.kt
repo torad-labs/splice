@@ -46,7 +46,7 @@ internal class CollectingTerminal(
      *  only a torn drive that somehow emitted neither. */
     public fun responseBody(): JsonObject = body ?: errorEnvelope(
         ErrorType.API_ERROR.wireName,
-        "splice: gateway produced no response — retry",
+        "splice: gateway produced no response; retry",
     )
 
     public fun httpStatus(): Int = status
@@ -97,7 +97,7 @@ internal class CollectingTerminal(
             degraded = "buffered_capacity"
             body = errorEnvelope(
                 ErrorType.API_ERROR.wireName,
-                "splice: response exceeded max buffered size — aborting",
+                "splice: response exceeded max buffered size; aborting",
                 usagePayload(usage),
             )
             status = statusFor(ErrorType.API_ERROR)
@@ -116,7 +116,7 @@ internal class CollectingTerminal(
             degraded = "malformed_tool_input"
             body = errorEnvelope(
                 ErrorType.API_ERROR.wireName,
-                "splice: malformed tool_use input from upstream — retry",
+                "splice: malformed tool_use input from upstream; retry",
                 usagePayload(usage),
             )
             status = statusFor(ErrorType.API_ERROR)

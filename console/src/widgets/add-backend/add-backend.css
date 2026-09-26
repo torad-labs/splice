@@ -1,0 +1,50 @@
+/* The add form in the detail panel: one column of fields and keys, the check rows under their keys,
+   and the daemon's lines under them. The controls are the world's (shared/controls); nothing here
+   re-colours them. Radius 0, tokens only. */
+.myx-add-flow,
+.myx-add,
+.myx-add-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-add-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.myx-add-note {
+  margin: 0;
+  font-size: var(--text-1);
+  color: var(--fg-muted);
+}
+
+.myx-add-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* A check: its badge, its name, then the daemon's detail, which wraps under the name. */
+.myx-add-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+
+.myx-add-check-name { color: var(--fg); }
+
+.myx-add-check-detail {
+  grid-column: 2;
+  font-size: var(--text-1);
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}

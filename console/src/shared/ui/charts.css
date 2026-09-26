@@ -12,12 +12,19 @@
 .myx-mark-hue { --mark: var(--hue, var(--head-none)); }
 
 /* ---------- tip: help on hover and focus ---------- */
+/* Positioned so the trigger paints above an openable row's stretched opener (kit.css .myx-dt-opener
+   ::after), which would otherwise take its hover. */
 .myx-tip { position: relative; display: inline-flex; align-items: center; }
 .myx-tip:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); border-radius: var(--radius-1); }
+/* The body is a manual popover in the top layer, placed against its trigger by the component
+   (charts.tsx placeTip), so no ancestor's overflow clips it. These reset the popover's UA box; the
+   UA sheet keeps a closed popover out of the layout. */
 .myx-tip-body {
-  position: absolute;
-  left: 50%;
-  z-index: 20;
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  border: 0;
+  overflow: visible;
   width: max-content;
   max-width: calc(22.5 * var(--u));
   padding: var(--space-2) var(--space-3);
@@ -31,22 +38,13 @@
   text-align: start;
   white-space: normal;
   pointer-events: none;
-  /* Out of the layout while hidden: a hidden body still widened its page's scroll area, so a phone
-     could scroll sideways into tips nobody had opened. The fade survives the display switch. */
-  display: none;
   opacity: 0;
-  transform: translate(-50%, 0);
-  transition: opacity var(--dur-1) ease, display var(--dur-1) allow-discrete;
+  /* The fade survives the popover's display and top-layer switches. */
+  transition: opacity var(--dur-1) ease, display var(--dur-1) allow-discrete, overlay var(--dur-1) allow-discrete;
 }
-.myx-tip-top .myx-tip-body { bottom: calc(100% + var(--space-3)); }
-.myx-tip-bottom .myx-tip-body { top: calc(100% + var(--space-3)); }
-.myx-tip:hover > .myx-tip-body,
-.myx-tip:focus-visible > .myx-tip-body,
-.myx-tip:focus-within > .myx-tip-body { display: block; opacity: 1; }
+.myx-tip-body:popover-open { opacity: 1; }
 @starting-style {
-  .myx-tip:hover > .myx-tip-body,
-  .myx-tip:focus-visible > .myx-tip-body,
-  .myx-tip:focus-within > .myx-tip-body { opacity: 0; }
+  .myx-tip-body:popover-open { opacity: 0; }
 }
 
 .myx-info-btn {
@@ -98,6 +96,8 @@
 .myx-pips { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
 .myx-pip { width: calc(.625 * var(--u)); height: calc(.9375 * var(--u)); border-radius: var(--radius-0); background: var(--track); }
 .myx-pip-on { background: var(--mark); }
+/* Even rows: as many columns as the longest row, set by the component. */
+.myx-pips-rack { display: inline-grid; grid-template-columns: repeat(var(--pip-cols), auto); }
 
 /* ---------- legend: marks named once for a set of charts ---------- */
 .myx-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); font-size: var(--text-1); color: var(--fg-subtle); }

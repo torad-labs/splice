@@ -104,14 +104,14 @@ internal class DaemonProcess {
             LockOutcome.WON -> Unit
             LockOutcome.PEER_SERVING -> {
                 System.err.println(
-                    "[daemon] another splice daemon serves on :$controlPort — exiting (the winner serves)",
+                    "[daemon] another splice daemon serves on :$controlPort; exiting (the winner serves)",
                 )
                 return
             }
             LockOutcome.EXPIRED -> {
                 System.err.println(
                     "[daemon] the daemon lock stayed held for ${lockWait.windowMs()}ms by a process that is not " +
-                        "serving on :$controlPort — exiting; find that process (`splice doctor`) and retry",
+                        "serving on :$controlPort; exiting. Find that process (`splice doctor`) and retry",
                 )
                 return
             }
@@ -208,7 +208,7 @@ internal class DaemonProcess {
             // The file lane's flush is the last reportable signal before lock.close() and the halt
             // watchdog: a false means daemon.log / usage / economics writes were lost on the way out.
             if (!AsyncFileIo.drain()) {
-                System.err.println("[daemon] file lane did not flush before halt — telemetry writes may be lost\n")
+                System.err.println("[daemon] file lane did not flush before halt; telemetry writes may be lost\n")
             }
             lock.close()
         }
@@ -234,7 +234,7 @@ internal class DaemonProcess {
         watchdog.schedule(
             Runnable {
                 if (halted.compareAndSet(false, true)) {
-                    System.err.println("[daemon] stop exceeded ${deadlineMs}ms — halting")
+                    System.err.println("[daemon] stop exceeded ${deadlineMs}ms; halting")
                     halt()
                 }
             },

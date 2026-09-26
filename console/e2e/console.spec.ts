@@ -10,6 +10,7 @@
 // printed as `undefined` (doctor's rollback). Soft assertions, so one run names every fault class on
 // every page instead of stopping at the first.
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +72,50 @@ async function open(page: Page, name: string): Promise<Faults> {
   return faults;
 }
 
+/** Opens the tip [trigger] describes and fails unless the operator sees all of it: its box inside
+ *  the window, and hit-testing at its four inner corners finding the tip, not a clip or what a clip
+ *  leaves. A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips.
+ *  With [subject], the tip must also leave clear the text it explains. */
+async function expectWholeTip(trigger: Locator, where: string, subject?: Locator): Promise<void> {
+  await trigger.hover();
+  const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
+  await expect(tip, `${where}: the tip did not open`).toBeVisible();
+  if (subject !== undefined) {
+    const [a, b] = [await tip.boundingBox(), await subject.boundingBox()];
+    const overlaps = a !== null && b !== null
+      && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    expect(overlaps, `${where}: the open tip covers the text it explains`).toBe(false);
+  }
+  const seen = await tip.evaluate((body: HTMLElement) => {
+    body.style.pointerEvents = 'auto';
+    const box = body.getBoundingClientRect();
+    const inWindow = box.left >= 0 && box.top >= 0
+      && box.right <= document.documentElement.clientWidth && box.bottom <= window.innerHeight;
+    const inset = 2;
+    const corners = [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]]
+      .map(([x, y]) => [x + (x === box.left ? inset : -inset), y + (y === box.top ? inset : -inset)]);
+    const onTop = corners.every(([x, y]) => body.contains(document.elementFromPoint(x, y)));
+    body.style.pointerEvents = '';
+    return { inWindow, onTop };
+  });
+  expect(seen, `${where}: the open tip must be whole in the window and on top`).toEqual({ inWindow: true, onTop: true });
+}
+
+/** Every stat figure on the page that its tile cuts, by its text: a figure is the point of its tile,
+ *  and a version or a count read as "2.1.2…" is a different value. */
+async function cutFigures(page: Page): Promise<string[]> {
+  return page.locator('main .myx-stat-value').evaluateAll((figures) => figures
+    .filter((figure) => figure.scrollWidth > figure.clientWidth)
+    .map((figure) => figure.textContent ?? ''));
+}
+
+// A route handler still reading a poll's response when its test ends fails that test with "Response
+// has been disposed" once the context closes (CI run 36188793251, the masked-fix test). Every
+// rewrite a test installs stops with the test.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 test('the page set comes from the source', () => {
   expect(PAGES, `no page directories under ${PAGES_DIR}`).toContain('fleet');
 });
@@ -79,9 +124,10 @@ test('the address splice dashboard opens unlocks the console and leaves no key b
   // The fragment is what DashboardCommand's redirect page sends the browser to; no init script.
   const key = env('CONSOLE_E2E_KEY');
   await page.goto(`${env('CONSOLE_E2E_BASE')}/#k=${encodeURIComponent(key)}`);
-  // The landing page is sessions: a locked console could not have read these two from the daemon.
-  await expect(page.locator('main')).toContainText(STACK.sender.name);
-  await expect(page.locator('main')).toContainText(STACK.peer.name);
+  // The landing page is Needs you (V4-219), and its read time prints only once every input it rests
+  // on answered: a locked console, refused on every read, could not print it.
+  await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
+  await expect(page.locator('main').getByText(/^Read \d\d:\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
   expect(await page.getByText('management key required').count(), 'the handed-over key did not unlock').toBe(0);
   expect(page.url(), 'the key was left in the address').not.toContain(key);
   expect(await page.evaluate((storage) => localStorage.getItem(storage), KEY_STORAGE), 'the key was not kept').toBe(key);
@@ -106,6 +152,7 @@ for (const name of PAGES) {
     const text = (await main.count()) > 0 ? await main.innerText() : '';
     expect.soft(text.trim().length, 'main printed nothing').toBeGreaterThan(0);
     expect.soft(text.match(LEAKED_VALUE)?.[0] ?? null, 'a value the console never received was printed').toBeNull();
+    expect.soft(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
     expect.soft(faults.pageErrors, 'uncaught page errors').toEqual([]);
     expect.soft([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
     expect.soft(faults.consoleErrors, 'console errors').toEqual([]);
@@ -168,6 +215,34 @@ test('turns lists the turn the stack drove through a real head', async ({ page }
   await expect(page.locator('main')).toContainText(STACK.oauthHead);
 });
 
+test('the in-flight table holds exactly the turns the gate lists, twins included, as they end', async ({ page }) => {
+  // Marlin and Hitstop, 2026-09-25: a session's parallel turns share its label, the table keyed its
+  // rows by head and label, and React kept the rows of turns that had ended: 10 streaming rows under
+  // a gate holding 4. The rows it kept were twins left behind when an OLDER turn ahead of them
+  // ended, so the daemon's answer is rewritten here to hold one turn and two twins, then the twins.
+  const TWIN = 'c3d5e7a0 grok-4.6';
+  let labels = ['e5b7a0c4 grok-build-latest', TWIN, TWIN];
+  await page.route('**/api/heads', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { heads: { gate: Record<string, unknown> | null }[] };
+    const head = body.heads.find((entry) => entry.gate !== null);
+    if (head?.gate != null) {
+      head.gate = {
+        ...head.gate,
+        inflight: labels.length,
+        live: labels.map((label, at) => ({ label, compact: false, phase: 'streaming', age_ms: 9_000 - at * 1_000, idle_ms: 20 })),
+      };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'turns');
+  const rows = page.getByRole('table', { name: 'In flight', exact: true }).locator('tbody tr');
+  await expect(rows).toHaveCount(3, { timeout: 15_000 });
+  labels = [TWIN, TWIN];
+  await expect(rows, 'the turn that ended must leave the table, and its twins stay two').toHaveCount(2, { timeout: 15_000 });
+  await expect(rows.filter({ hasText: 'grok-build-latest' })).toHaveCount(0);
+});
+
 /** Picks `option` in the `nth` picker named `label` inside `scope`: the Choice is a combobox named by
  *  its printed label, and its rack is a listbox of options named by their text (shared/controls). */
 async function pick(scope: Locator, label: string, option: string, nth = 0): Promise<void> {
@@ -183,6 +258,76 @@ async function nextCell(main: Locator, account: string): Promise<Locator> {
   // `has` resolves inside each row, so the inner locator starts from the page, not from `main`
   const row = table.getByRole('row').filter({ has: main.page().getByRole('button', { name: `Open account ${account}`, exact: true }) });
   return row.getByRole('cell').nth(names.indexOf('Next'));
+}
+
+test('an api-key head\'s key is stored and removed from its detail, and each answer says where the head reads it', async ({ page }) => {
+  // V4-220 item 1 against the real jar: the stack's api-key head reads CONSOLE_E2E_NO_SUCH_KEY,
+  // which nothing sets, so it reads nowhere until the store holds one. The daemon's key store sits
+  // beside SPLICE_CONFIG in the stack's own home. The doctor rows later in this file read the key as
+  // unset, so the store is emptied however this test ends.
+  const name = 'CONSOLE_E2E_NO_SUCH_KEY';
+  const secret = `sk-e2e-${randomUUID()}`;
+  const faults = await open(page, 'accounts');
+  try {
+    await headRow(page, STACK.keyHead).click();
+    const detail = page.getByRole('complementary', { name: 'Account detail' });
+    const readFrom = detail.getByRole('definition').filter({ hasText: /^(Nowhere|Key store|Environment|Key file)$/ });
+    await expect(readFrom).toHaveText('Nowhere', { timeout: 15_000 });
+    await expect(detail.getByRole('button', { name: 'Remove key', exact: true })).toHaveCount(0);
+
+    const box = detail.getByLabel('New key', { exact: true });
+    await box.fill(secret);
+    const stored = page.waitForResponse((response) => response.request().method() === 'PUT'
+      && new URL(response.url()).pathname === `/api/keys/${name}`);
+    await detail.getByRole('button', { name: 'Store key', exact: true }).click();
+    expect((await stored).status()).toBe(200);
+    await expect(detail.getByRole('status')).toHaveText(`${STACK.keyHead} uses the stored key from its next request.`);
+    await expect(box, 'the box keeps no key once the store answered').toHaveValue('');
+    await expect(readFrom).toHaveText('Key store');
+    const keys = page.locator('main').getByRole('table', { name: 'API keys', exact: true });
+    await expect(keys.getByRole('row').filter({ hasText: name })).toContainText('Set');
+    expect(await page.content(), 'the value is on no page').not.toContain(secret);
+
+    await detail.getByRole('button', { name: 'Remove key', exact: true }).click();
+    const removed = page.waitForResponse((response) => response.request().method() === 'DELETE'
+      && new URL(response.url()).pathname === `/api/keys/${name}`);
+    await detail.getByRole('button', { name: `Remove ${name}`, exact: true }).click();
+    expect((await removed).status()).toBe(200);
+    await expect(detail.getByRole('status')).toHaveText(`${STACK.keyHead} has no key now.`);
+    await expect(readFrom).toHaveText('Nowhere');
+    expect(faults.pageErrors, 'the accounts page threw').toEqual([]);
+  } finally {
+    await page.evaluate(async ([storage, variable]) => {
+      await fetch(`/api/keys/${variable}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem(storage) ?? ''}` } });
+    }, [KEY_STORAGE, name]);
+  }
+});
+
+// The design's two frames (DESIGN.md, Scale), in both views that print the Heads column.
+for (const viewport of [{ width: 1600, height: 1000 }, { width: 3840, height: 2060 }]) {
+  for (const view of ['By provider', 'Nearest limit']) {
+    test(`accounts prints the longest head name whole, ${view} at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      // Every column had a width but Heads, which took the 11% left: 136px at 1600, and claude-muse
+      // needs 155 (the film's demo, 2026-09-25). claude-deepseek is the longest head the example
+      // config ships.
+      await page.setViewportSize(viewport);
+      await page.route('**/api/accounts', async (route) => {
+        const response = await route.fetch();
+        const body = await response.json() as { accounts: { heads: string[] }[] };
+        for (const account of body.accounts) account.heads = ['claude-deepseek'];
+        await route.fulfill({ response, json: body });
+      });
+      const faults = await open(page, 'accounts');
+      const main = page.locator('main');
+      await main.getByRole('tab', { name: view, exact: true }).click();
+      await expect(main.locator('table td').getByText('claude-deepseek').first()).toBeVisible({ timeout: 15_000 });
+      const cut = await main.locator('table td').evaluateAll((cells) => cells
+        .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+        .map((cell) => `${cell.textContent ?? ''} ${cell.scrollWidth}>${cell.clientWidth}`));
+      expect(cut, 'a cell of the accounts table is cut').toEqual([]);
+      expect(faults.pageErrors, 'the accounts page threw').toEqual([]);
+    });
+  }
 }
 
 test('accounts shows the OAuth account with the windows its provider reported', async ({ page }) => {
@@ -201,6 +346,43 @@ test('accounts shows the OAuth account with the windows its provider reported', 
   // The order the daemon walks, the pin first, behind the accounts section's info mark.
   await expect(main.getByRole('button', { name: 'About next', exact: true }))
     .toHaveAccessibleDescription('Pinned, then primary, then last used, then most weekly room.');
+});
+
+test('a table cell lets its open tip out, and twelve slots stand six and six', async ({ page }) => {
+  // Fleet at 1600, 2026-09-25: a gate of twelve wrapped its pips nine and three, and "streaming 3.2s"
+  // ran past the Last turn column's edge. The cell says Running now, with the phase in its tip, and
+  // a cell's own clip cut every tip in a table to a sliver until the cell let an open one out.
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.route('**/api/heads', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { heads: { gate: Record<string, unknown> | null }[] };
+    const head = body.heads.find((entry) => entry.gate !== null);
+    if (head?.gate != null) {
+      head.gate = { ...head.gate, max: 12, inflight: 1, live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 3_200, idle_ms: 20 }] };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'fleet');
+  const table = page.getByRole('table', { name: 'Heads', exact: true });
+  const running = table.getByText('Running', { exact: true }).first();
+  await expect(running).toBeVisible({ timeout: 15_000 });
+  await running.hover();
+  const tip = table.getByRole('tooltip').filter({ hasText: 'streaming 3.2s' });
+  await expect(tip).toBeVisible();
+  // Seen, not only laid out: the top of the tip, above its cell, is the tip and not what a clip
+  // leaves. A tip takes no pointer, so hit-testing would pass through it; it takes one for the probe,
+  // and hit-testing still honours every clip.
+  const seen = await tip.evaluate((body) => {
+    (body as HTMLElement).style.pointerEvents = 'auto';
+    const box = body.getBoundingClientRect();
+    return body.contains(document.elementFromPoint(box.x + box.width / 2, box.y + 2));
+  });
+  expect(seen, 'the open tip must not be clipped by its cell').toBe(true);
+  const rows = await table.getByRole('img', { name: /: 1 of 12$/ }).first().evaluate((pips) => {
+    const tops = [...pips.children].map((pip) => Math.round(pip.getBoundingClientRect().top));
+    return [...new Set(tops)].map((top) => tops.filter((at) => at === top).length);
+  });
+  expect(rows, 'twelve pips in two even rows').toEqual([6, 6]);
 });
 
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {
@@ -248,6 +430,44 @@ test('fleet opens a head with its account pool and the next target marked', asyn
   await expect(detail).toContainText('No pool');
   await expect(detail.getByRole('table', { name: 'Account pool', exact: true })).toHaveCount(0);
   expect(faults.pageErrors, 'opening a head threw').toEqual([]);
+});
+
+test('a backend is added from the fleet\'s detail panel through the daemon\'s own add, and a failed check prints its rows', async ({ page }) => {
+  // V4-220 item 3 against the real jar: the `api-key` profile asks a name, a base URL and a model.
+  // Nothing supplies its key, so the checks refuse (409, with the rows), and the add is discarded:
+  // a save would write the stack's splice.toml and restart the daemon under the journeys after it.
+  const faults = await open(page, 'fleet');
+  await page.locator('main').getByRole('button', { name: 'Add backend', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Add backend' });
+  await pick(panel, 'Profile', 'api-key');
+  await panel.getByLabel('Head name', { exact: true }).fill('claude-e2e-added');
+  await panel.getByLabel('Base URL', { exact: true }).fill('http://127.0.0.1:9/v1');
+  await panel.getByLabel('Model id', { exact: true }).fill('e2e/added-model');
+  const opened = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/add');
+  await panel.getByRole('button', { name: 'Continue', exact: true }).click();
+  expect((await opened).status()).toBe(200);
+  await expect(panel.getByRole('definition').filter({ hasText: /^claude-e2e-added$/ })).toBeVisible();
+  await expect(panel).toContainText('API key');
+  // The key-signed head stores its key with the Accounts key form itself.
+  await expect(panel.getByRole('button', { name: 'Store key', exact: true })).toBeVisible();
+
+  const verified = page.waitForResponse((response) => response.request().method() === 'POST'
+    && /^\/api\/add\/[^/]+\/verify$/.test(new URL(response.url()).pathname));
+  await panel.getByRole('button', { name: 'Run checks', exact: true }).click();
+  const answer = await verified;
+  const body = await answer.json() as { error: string; checks: { name: string; ok: boolean }[] };
+  expect(answer.status()).toBe(409);
+  expect(body.checks.some((check) => !check.ok), 'a check failed').toBe(true);
+  await expect(panel.getByRole('alert')).toContainText(body.error);
+  await expect(panel.locator('.myx-add-check')).toHaveCount(body.checks.length);
+
+  const discarded = page.waitForResponse((response) => response.request().method() === 'DELETE'
+    && /^\/api\/add\/[^/]+$/.test(new URL(response.url()).pathname));
+  await panel.getByRole('button', { name: 'Discard', exact: true }).click();
+  expect((await discarded).status()).toBe(200);
+  await expect(panel).toHaveCount(0);
+  expect(faults.pageErrors, 'the fleet page threw').toEqual([]);
 });
 
 test('the draining restart confirms inline and prints the daemon\'s refusal verbatim', async ({ page }) => {
@@ -298,6 +518,182 @@ test('doctor renders the stack\'s report whole, the api-key row\'s fix included'
   expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
 });
 
+test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at Needs you\'s right edge', async ({ page }) => {
+  // The tip opened inside the panel's scroll box, which cut it at the panel's left edge, and in Needs
+  // you's last column, where the window cut it (2026-09-25 renders). The stack's own masked fix went
+  // with V4-220's `splice key set`, and the daemon still masks a value or a path it does not know in
+  // any other fix, so the report carries one here, in the daemon's own detail shape.
+  const masked = 'CONSOLE_E2E_MASKED=<redacted>';
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { checks: { id: string; status: string; detail: string }[] };
+    const fix = ` ${String.fromCharCode(0x2014)} fix: export ${masked}`;
+    body.checks.push({ id: 'configuration/e2e-masked', status: 'warn', detail: `a value doctor masks${fix}` });
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const row = page.locator('main').getByRole('table', { name: 'Checks', exact: true }).getByRole('row').filter({ hasText: masked });
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole('button').click();
+  const detail = page.getByRole('complementary', { name: 'Check detail' });
+  await expectWholeTip(detail.getByRole('button', { name: 'Why no copy', exact: true }), 'doctor detail panel', detail.getByText(masked));
+
+  await page.goto(`${env('CONSOLE_E2E_BASE')}/#/needs-you`);
+  const item = page.locator('main').getByRole('row').filter({ hasText: masked });
+  await expect(item, 'the masked fix is not on Needs you').toBeVisible({ timeout: 15_000 });
+  const why = item.getByRole('button', { name: 'Why no copy', exact: true });
+  await expectWholeTip(why, 'needs you, last column');
+  expect(faults.pageErrors, 'a page threw').toEqual([]);
+});
+
+test('Needs you opens each item on its page, and a link to another item opens it on the page already up', async ({ page }) => {
+  // V4-219: an item's page column links to the item itself, `#/<page>?open=<id>`, not only its page.
+  // The stack's key head has no key (a head item) and its wrappers are not linked (doctor items).
+  const faults = await open(page, 'needs-you');
+  const items = page.locator('main').getByRole('table', { name: 'Open items', exact: true });
+  const wrappers = items.getByRole('row').filter({ hasText: 'splice install --all' }).first();
+  await expect(wrappers, 'the wrappers are not on Needs you').toBeVisible({ timeout: 15_000 });
+  const check = (await wrappers.locator('th, td').first().innerText()).trim();
+  await wrappers.getByRole('link', { name: 'Doctor', exact: true }).click();
+  await expect(page).toHaveURL(/#\/doctor\?open=/);
+  await expect(page.getByRole('complementary', { name: 'Check detail' }).getByRole('heading', { level: 2 }).first()).toHaveText(check, { timeout: 15_000 });
+
+  await page.goBack();
+  const keyItem = items.getByRole('row').filter({ hasText: 'splice key set CONSOLE_E2E_NO_SUCH_KEY' });
+  await expect(keyItem, 'the key head is not on Needs you').toBeVisible({ timeout: 15_000 });
+  await keyItem.getByRole('link', { name: 'Fleet', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`#/fleet\\?open=${STACK.keyHead}$`));
+  // The panel's title is its first heading; the sections under it carry their own.
+  const head = page.getByRole('complementary', { name: 'Head detail' }).getByRole('heading', { level: 2 }).first();
+  await expect(head).toHaveText(STACK.keyHead, { timeout: 15_000 });
+
+  // A link to another head while Fleet is up: the route stays mounted, and the page opens that head.
+  await page.evaluate((to) => { window.location.hash = to; }, `#/fleet?open=${encodeURIComponent(STACK.oauthHead)}`);
+  await expect(head).toHaveText(STACK.oauthHead);
+  // Closed from the page, it stays closed: the link opens an item once, it does not hold it open.
+  await page.getByRole('complementary', { name: 'Head detail' }).getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Head detail' })).toHaveCount(0);
+  await page.waitForTimeout(2_500);
+  await expect(page.getByRole('complementary', { name: 'Head detail' })).toHaveCount(0);
+  expect(faults.pageErrors, 'a page threw').toEqual([]);
+});
+
+test('a check the daemon fixes itself runs its fix from the detail, and the answer is doctor re-run', async ({ page }) => {
+  // V4-220 item 4: the stack's wrappers are not linked, so their rows carry fix_id install_all. The
+  // stack's daemon runs with its own HOME and user.home, so install --all works inside that home, and
+  // the home has no launch shim, so the fix refuses (InstallRefused) and the row stays: this is the
+  // refusal's path end to end. tests/doctor-fix.test.ts holds the applied one.
+  const faults = await open(page, 'doctor');
+  const rack = page.locator('main').getByRole('table', { name: 'Checks', exact: true });
+  const wrappers = rack.getByRole('row').filter({ hasText: 'splice install --all' });
+  await expect(wrappers.first()).toBeVisible({ timeout: 15_000 });
+  await wrappers.first().getByRole('button').click();
+  const detail = page.getByRole('complementary', { name: 'Check detail' });
+  await detail.getByRole('button', { name: 'Run fix', exact: true }).click();
+  const answered = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/doctor/fix/install_all');
+  await detail.getByRole('button', { name: 'Relink wrappers', exact: true }).click();
+  const answer = await answered;
+  const body = await answer.json() as { error: string; report: { checks: { detail: string }[] } };
+  expect(answer.status()).toBe(409);
+  expect(body.error).toContain('launch shim not found');
+  expect(body.report.checks.length, 'the refusal carries doctor re-run').toBeGreaterThan(0);
+  await expect(detail.getByRole('alert')).toContainText(body.error);
+  await expect(wrappers.first()).toBeVisible();
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('Doctor\'s figures read whole beside an open check', async ({ page }) => {
+  // The open panel narrows the four tiles: at 1600 the Claude Code tile cut its version to "2.1.2…"
+  // (Marlin, 2026-09-25).
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  // The stack's claude may print a shorter version than the one that was cut; the tile reads this one.
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { claude_code: { version: string | null } };
+    body.claude_code.version = '2.1.282 (Claude Code)';
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const row = page.locator('main').getByRole('table', { name: 'Checks', exact: true }).getByRole('row').nth(1);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole('button').click();
+  await expect(page.getByRole('complementary', { name: 'Check detail' })).toBeVisible();
+  await expect(page.locator('main .myx-stat-value')).not.toHaveCount(0);
+  expect(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('Doctor\'s upgrade reads the stack\'s run route and shows no run before one starts', async ({ page }) => {
+  // V4-220 item 4 against the real jar: GET /api/upgrade/run answers the newest run the console
+  // started, and the stack has never started one. Nothing here presses a key.
+  const faults = await open(page, 'doctor');
+  const version = page.locator('main section').filter({ has: page.getByRole('heading', { name: 'Version', exact: true }) });
+  await expect(version.getByRole('button', { name: 'Upgrade', exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(version.getByRole('region', { name: 'Upgrade run' })).toHaveCount(0);
+  await expect(version.getByRole('alert')).toHaveCount(0);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('Doctor upgrades through the daemon\'s run, reads it through the restart, and prints how it ended', async ({ page }) => {
+  // The run is `splice upgrade` for real, out of process, in the daemon's own environment: it fetches
+  // a release and restarts the daemon (SystemdUpgradeLauncher.kt). So no start reaches the stack: the
+  // start and the reads answer here in UpgradeRunRoutes' shapes (tests/daemon-upgrade.test.ts holds
+  // the types to it), and one read answers nothing, as the restart the run causes does.
+  const run = {
+    id: '0001790000000000-e2e0', args: ['upgrade', '--to', 'v0.4.1'], state: 'running', started_at_epoch_millis: Date.now(),
+    exit_code: null as number | null, output: ['splice upgrade: 0.4.0 -> 0.4.1'],
+  };
+  const sent: (string | null)[] = [];
+  let reads = 0;
+  await page.route('**/api/upgrade', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent.push(route.request().postData());
+    return route.fulfill({ status: 202, json: { run } });
+  });
+  await page.route('**/api/upgrade/run', async (route) => {
+    if (sent.length === 0) return route.fulfill({ json: { run: null } });
+    reads += 1;
+    if (reads === 1) return route.fulfill({ json: { run: { ...run, output: [...run.output, 'fetching splice-0.4.1.jar'] } } });
+    if (reads === 2) return route.abort('connectionrefused');
+    return route.fulfill({ json: { run: { ...run, state: 'succeeded', exit_code: 0, output: [...run.output, 'fetching splice-0.4.1.jar', 'restarted'] } } });
+  });
+  const faults = await open(page, 'doctor');
+  const version = page.locator('main section').filter({ has: page.getByRole('heading', { name: 'Version', exact: true }) });
+  await version.getByLabel('Release', { exact: true }).fill('v0.4.1');
+  await version.getByRole('button', { name: 'Upgrade', exact: true }).click();
+  await version.getByRole('button', { name: 'Upgrade to v0.4.1', exact: true }).click();
+  await expect.poll(() => sent, 'the start asks for the release in the box').toEqual(['{"to":"v0.4.1"}']);
+
+  const shown = version.getByRole('region', { name: 'Upgrade run' });
+  await expect(shown.getByText('splice upgrade --to v0.4.1', { exact: true })).toBeVisible();
+  await expect(shown.getByRole('log', { name: 'Run output' })).toContainText('fetching splice-0.4.1.jar', { timeout: 10_000 });
+  await expect(shown.getByRole('status'), 'a read nothing answered is the restart').toContainText('restarting', { timeout: 10_000 });
+  await expect(shown.getByText('Succeeded', { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(shown.getByText('Exit 0', { exact: true })).toBeVisible();
+  await expect(shown.getByRole('status')).toHaveCount(0);
+  await expect(shown.getByRole('log', { name: 'Run output' })).toContainText('restarted');
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
+test('a Claude Code probe that read no version reads unknown, with the daemon\'s sentence whole under it', async ({ page }) => {
+  // CI run 36184525303: no `claude` on the runner, and the daemon's sentence was the tile's figure,
+  // cut to an ellipsis.
+  const failed = 'present (version probe failed: failure (message withheld, may quote file bytes))';
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { claude_code: { version: string | null } };
+    body.claude_code.version = failed;
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'doctor');
+  const tile = page.locator('main .myx-stat').filter({ hasText: 'Claude Code' });
+  await expect(tile.locator('.myx-stat-value')).toHaveText('Unknown', { timeout: 15_000 });
+  await expect(tile.locator('.myx-stat-sub')).toHaveText(failed);
+  expect(await cutFigures(page), 'a tile\'s figure ends in an ellipsis').toEqual([]);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
 test('doctor\'s playground sends one prompt through a head to the upstream and shows both sides', async ({ page }) => {
   const faults = await open(page, 'doctor');
   // The playground is a section of the page, open at rest: one form, no reveal to press first.
@@ -312,6 +708,38 @@ test('doctor\'s playground sends one prompt through a head to the upstream and s
   await expect(playground).toContainText('one prompt from the console e2e');
   expect(faults.pageErrors, 'the playground threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'the playground send was refused').toEqual([]);
+});
+
+test('Models offers the stack\'s OpenRouter head the catalogue models its roster does not reach, and adds the ones picked', async ({ page }) => {
+  // V4-220 against the real jar: GET /api/add-model reads the stack's splice.toml, where
+  // e2e-openrouter's roster reaches one model, so the OpenRouter catalogue's others are on offer.
+  // The add writes splice.toml and takes the restart, which would change the stack under every later
+  // test, so the POST answers here in AddViews.added's shape (tests/add-model.test.ts holds it).
+  const sent: (string | null)[] = [];
+  await page.route('**/api/add-model', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent.push(route.request().postData());
+    const asked = JSON.parse(route.request().postData() ?? '{}') as { head: string; models: string[] };
+    return route.fulfill({ json: { path: '/e2e/splice.toml', head: asked.head, added: asked.models, restart: { status: 'draining' } } });
+  });
+  const faults = await open(page, 'models');
+  await page.locator('main').getByRole('button', { name: 'Add models', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Add models' });
+  const offered = panel.getByRole('list', { name: 'Offered models' });
+  await expect(offered.getByRole('listitem').first()).toBeVisible({ timeout: 15_000 });
+  await expect(panel.getByText(STACK.keyHead, { exact: true })).toBeVisible();
+  await expect(offered, 'the roster\'s own model is not on offer').not.toContainText('e2e/key-model');
+
+  const first = offered.getByRole('switch').first();
+  const id = (await first.getAttribute('aria-label'))?.replace(/^Add /, '') ?? '';
+  await first.click();
+  await expect(first).toHaveAttribute('aria-checked', 'true');
+  await panel.getByRole('button', { name: 'Add 1 model', exact: true }).click();
+  await panel.getByRole('button', { name: 'Add and restart', exact: true }).click();
+  await expect.poll(() => sent, 'the add names the head and the picked id').toEqual([JSON.stringify({ head: STACK.keyHead, models: [id] })]);
+  await expect(panel.getByRole('status')).toHaveText('The daemon is restarting; the models appear once it is back.');
+  await expect(panel).toContainText(id);
+  expect(faults.pageErrors, 'the models page threw').toEqual([]);
 });
 
 test('models opens a model with the head windows its topology declares', async ({ page }) => {
@@ -388,7 +816,7 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   };
   await expect(await turnsOf(STACK.sender.name)).toHaveText('1', { timeout: 15_000 });
   await expect(await turnsOf(STACK.peer.name)).toHaveText('0');
-  await expect(page.getByRole('table', { name: 'Cost per role' })).toContainText('lead');
+  await expect(page.getByRole('table', { name: 'Per-role API cost' })).toContainText('lead');
   // The day's timeline lays the sender's turns on its lane, joined on the same session tag.
   await page.getByRole('tab', { name: 'Timeline' }).click();
   await expect(page.getByRole('img', { name: new RegExp(`^${STACK.sender.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: [1-9]\\d* turns`) }))
@@ -423,7 +851,7 @@ test('projects opens the stack repository with the detail its own route reports'
   await expect(detail).toContainText(/Sessions running\s*2/);
   expect(row.turns_today, 'the sender\'s hand-off is a turn in this repository today').toBeGreaterThanOrEqual(1);
   await expect(detail).toContainText(new RegExp(`Turns today\\s*${row.turns_today}(?!\\d)`));
-  await expect(detail).toContainText(/Cost today\s*–/);
+  await expect(detail).toContainText(/API cost today\s*–/);
   await expect(detail).toContainText(`${repo}/CLAUDE.md`);
   // What governs the repo (FEATURES.md 4.14), from the same row: the stack's project rule for this
   // repo shadows its model and global rules here, so it is the only one listed; and every head's

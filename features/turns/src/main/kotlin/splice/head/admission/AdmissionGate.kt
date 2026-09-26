@@ -29,7 +29,7 @@ internal class AdmissionGate(
     /** False (with a 529 on the wire) while stopLocked drains — clients retry and land post-restart. */
     suspend fun acceptingOrRespond(call: ApplicationCall): Boolean {
         if (window.isOpen) return true
-        responses.respondAtCapacity(call, "head is stopping — retry")
+        responses.respondAtCapacity(call, "head is stopping; retry")
         return false
     }
 
@@ -51,7 +51,7 @@ internal class AdmissionGate(
         // bounce (queued waiters defeated the drain; review 2026-07-22 round 3).
         if (!window.isOpen) {
             withContext(NonCancellable) { slot.release() }
-            responses.respondAtCapacity(call, "head is stopping — retry")
+            responses.respondAtCapacity(call, "head is stopping; retry")
             return null
         }
         return slot
@@ -68,7 +68,7 @@ internal class AdmissionGate(
         if (fastFail) {
             val leased = deps.seams.requestMaterializationGate.tryWithLease(block)
             if (leased == null) {
-                responses.respondAtCapacity(call, "gateway busy — retry")
+                responses.respondAtCapacity(call, "gateway busy; retry")
             }
             leased
         } else {

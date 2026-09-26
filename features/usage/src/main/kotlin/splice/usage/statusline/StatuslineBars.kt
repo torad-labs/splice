@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.core.usage.QuotaView
+import splice.usage.ApiCostText
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -23,8 +24,16 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
 
     /** [computed] is splice's OWN figure for this session (V4-37). It wins when present, because the
      *  client's `total_cost_usd` is priced with an ANTHROPIC card whatever head it is really talking
-     *  to — the 20x error the operator reported. Null means the head declares no rates, and the
-     *  client's number renders exactly as it does today: NEVER-BELOW-STATUS-QUO.
+     *  to — the 20x error the operator reported. Except where that card IS the head's
+     *  ([CostFallback.clientPriced]): there Claude Code's figure is priced at the upstream's own card,
+     *  turn by turn at each turn's model, from the session's start, so it shows whenever the blob
+     *  carries one and splice's shows only when it does not (V4-240 review, finding 4a).
+     *
+     *  V4-240: every figure carries its basis, `API est.` (ApiCostText), because none of them is a
+     *  charge. And the client's own figure is shown only where [fallback] says the head's upstream IS
+     *  Anthropic: on any other head it is an Anthropic price under another vendor's model (the $0.85
+     *  a resumed Opus session left under GPT-6-Sol in rehearsal-resume-2), so a model with no card
+     *  there says so in words. A rated model with nothing spent yet shows nothing, as before.
      *
      *  [droppedRows] is V4-45's last hop to a human. The cost reader SKIPS a perf row it cannot
      *  parse — a torn append leaves a length-extended run of NULs — so the figure above is summed
@@ -41,15 +50,31 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
      *  exists to remove.
      *
      *  Reading, left to right: `≥` on the money is the direction (the true spend is AT LEAST this),
-     *  `⚠N` is the magnitude (N rows the reader could not read). Nothing is dropped, nothing is
-     *  rendered, and the string is byte-identical to the one this function returned before. */
-    fun costSegment(root: JsonObject, computed: Double? = null, droppedRows: Long = 0L): String? {
-        val cost = computed ?: num((root["cost"] as? JsonObject)?.get("total_cost_usd"))
-        val shown = cost?.takeIf { it > 0.0 } ?: return null
-        val figure = "$DIM\$$RESET" + String.format(Locale.ROOT, "%.2f", shown)
-        // Only OUR figure can be short, so only OUR figure gets qualified.
-        if (computed == null || droppedRows <= 0L) return figure
-        return "$YELLOW≥$RESET$figure $YELLOW⚠$droppedRows$RESET"
+     *  `⚠N` is the magnitude (N rows the reader could not read). [lowerBound] draws the same `≥`
+     *  with no count (V4-240 review): a turn on a model with no card, or a session older than the
+     *  perf tail the reader holds. */
+    fun costSegment(
+        root: JsonObject,
+        computed: Double? = null,
+        droppedRows: Long = 0L,
+        fallback: CostFallback = CostFallback(rated = false, clientPriced = true),
+        lowerBound: Boolean = false,
+    ): String? {
+        val ours = computed?.takeIf { it > 0.0 }
+        val client = num((root["cost"] as? JsonObject)?.get("total_cost_usd"))?.takeIf { it > 0.0 }
+        return when {
+            fallback.clientPriced && client != null -> ApiCostText.short(client, DIM, RESET)
+            ours != null -> ownFigure(ours, droppedRows, lowerBound)
+            fallback.rated || fallback.clientPriced -> null
+            else -> DIM + ApiCostText.NO_RATE_CARD + RESET
+        }
+    }
+
+    /** splice's own figure, `≥` when it may be low, with `⚠N` only when rows were dropped. */
+    private fun ownFigure(usd: Double, droppedRows: Long, lowerBound: Boolean): String {
+        if (!lowerBound && droppedRows <= 0L) return ApiCostText.short(usd, DIM, RESET)
+        val count = if (droppedRows > 0L) " $YELLOW⚠$droppedRows$RESET" else ""
+        return ApiCostText.short(usd, DIM, RESET, "$YELLOW≥$RESET") + count
     }
 
     /** [quotaFirst]: the line is pooled, so the tracked windows are the SELECTED account's and win;
@@ -96,6 +121,12 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
     private fun str(el: kotlinx.serialization.json.JsonElement?): String? =
         (el as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotEmpty() }
 }
+
+/** V4-240: what the cost segment may show when splice has no figure of its own for the session.
+ *  [rated]: this session's model has a rate card on the head, so no figure means nothing spent yet.
+ *  [clientPriced]: the head's upstream is Anthropic, so Claude Code's own `total_cost_usd`, which it
+ *  prices at Anthropic's API card, is priced at this upstream's card. */
+internal data class CostFallback(val rated: Boolean, val clientPriced: Boolean)
 
 private const val RESET = "[0m"
 private const val DIM = "[2m"

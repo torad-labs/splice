@@ -187,7 +187,7 @@ public class LaunchService(
         continueWarning: String?,
     ): String? {
         val danger = if (dangerouslySkipPermissions) {
-            "dangerouslySkipPermissions engaged for ${spec.trees.own} — Claude Code runs with " +
+            "dangerouslySkipPermissions engaged for ${spec.trees.own}: Claude Code runs with " +
                 "--dangerously-skip-permissions (no permission prompts)."
         } else {
             null
@@ -203,10 +203,10 @@ public class LaunchService(
         null, is SessionAdoption.HeadOwned ->
             null
         is SessionAdoption.Adopted ->
-            "resumed session ${adoption.sessionId} copied into this head from ${adoption.from} — " +
+            "resumed session ${adoption.sessionId} copied into this head from ${adoption.from}, and " +
                 "${adoption.modelsRewritten} assistant rows now name this head's model"
         is SessionAdoption.Absent ->
-            "session ${adoption.sessionId} is in no transcript tree — searched " +
+            "session ${adoption.sessionId} is in no transcript tree: searched " +
                 "${adoption.searchedHeads.size} heads (${adoption.searchedHeads.joinToString(", ")}). " +
                 "Nothing was copied, so Claude Code will refuse the id: check the id, or start a new " +
                 "session in this head"

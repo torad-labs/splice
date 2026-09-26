@@ -546,6 +546,24 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
+- **Every dollar figure says it is an API-rate estimate, and the film's four models have rate
+  cards.** The status line printed a bare `$0.85`, and on a subscription head no token is billed at
+  all, so it read as a charge. It now reads `API est. $0.85`, and a budget's refusal and warning say
+  "an estimated $2.50 in API cost". Claude Code prices its own `total_cost_usd` at Anthropic's card
+  whatever head it talks to, so that figure now shows only on a head whose upstream is Anthropic; on
+  any other head a model splice cannot price shows `no rate card`, where it used to show Anthropic's
+  price under GPT-6-Sol. On a head whose upstream is Anthropic, Claude Code's figure wins over
+  splice's own whenever it has one, because it is priced at that upstream's card from the session's
+  start. splice's own figure prices each turn at the card of the model that turn ran on, not the
+  model the session is on now, and reads `≥` when a turn's model has no card or the session began
+  before the oldest perf row splice still reads. `splice add` writes the vendors' published API
+  cards for gpt-6-sol, grok-4.7, muse-spark-1.3 and claude-opus-5-5, each citing its source and
+  date. A card can carry a long-context tier (`long_context_over_input_tokens` with
+  `long_context_input`, `long_context_cache_read`, `long_context_output` and optionally
+  `long_context_cache_write`) that bills a request over the line at the higher card, and a session
+  is priced turn by turn, so each request pays its own tier. The `kt-dollar-figure-single-source`
+  wall keeps any other source from gluing a `$` to an amount, in any of its spellings:
+  `"$$amount"`, `"\$" + amount` and `"\$%.2f"` (V4-240).
 - **Installing a release needs no GitHub account.** `install.sh` and `splice upgrade` used to stop
   unless the GitHub CLI was installed and signed in. Now every asset is still checked against the
   release's `sha256sums.txt`, and a mismatch still refuses. The build-provenance attestation is
@@ -594,6 +612,14 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **A sign-in no longer prints SLF4J warnings.** The jar carried slf4j-api (Ktor brings it in) and
+  no provider, so the first log call printed three `SLF4J(W): No SLF4J providers were found` lines
+  on the user's terminal, during every `splice add` sign-in. The no-op provider now ships beside it,
+  and a test fails if the fat jar loses it again.
+- **A sign-in finished in an old tab says so.** A browser sign-in completed in a tab from an earlier
+  attempt carries that attempt's state, and splice rightly ignores it, but it used to do so without a
+  word: the pane sat silent until the 300-second timeout. The pane and the tab's page now say the
+  sign-in came from an earlier attempt and to finish it in the newest tab.
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the
@@ -605,6 +631,12 @@ origin.
   reached`: the slot came back only when the JDK's process reaper got round to the killed worker.
   The cancelled start now kills its worker and waits for the exit itself, off the caller's thread,
   so its slot is free when it finishes.
+- **A code-mode script's deadline no longer pays for its worker's start.** Each cell runs in a
+  fresh worker JVM, and the 5 s a script has to answer (`code_mode_timeout_ms`) also covered that
+  JVM's boot and its JavaScript engine's set-up. A busy machine stretches those past 5 s, and the
+  cell then failed with `Code-mode worker timed out` before its script ran. A worker now says it is
+  ready once it is up, under a start budget of its own (30 s), and the deadline times the script
+  alone.
 - **An install that cannot link says so in one line.** `splice install` and `splice setup` stopped
   with a JVM stack trace when the launch shim was missing, dangling or unreadable, when two heads
   shared a wrapper command, or when a command name held a real file. Each now prints the one

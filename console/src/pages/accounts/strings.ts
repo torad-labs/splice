@@ -3,6 +3,7 @@
 // account row's own words (its columns, states and rules) are widgets/account-table's.
 export const S = {
   title: 'Accounts',
+  about: 'About accounts',
   sample: 'Sample data',
   byProvider: 'By provider',
   nearest: 'Nearest limit',
@@ -23,6 +24,8 @@ export const S = {
   variable: 'Variable',
   keyFile: 'Key file',
   key: 'Key',
+  /** The link of the head's read chain that supplies its key now (GET /api/keys). */
+  readFrom: 'Read from',
   keySet: 'Set',
   keyMissing: 'Missing',
   signedIn: 'Signed in',
@@ -40,6 +43,7 @@ export const S = {
 } as const;
 
 export const H = {
+  about: 'Which login each head uses, and how near its limits are.',
   claude: 'A Claude head keeps its Claude Code login; it has no pool.',
   noAccounts: 'Open a head to sign one in, or run splice login <head>.',
   poolsUnavailable: 'This splice version does not serve pools; each head shows its login.',

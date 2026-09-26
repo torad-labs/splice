@@ -1,0 +1,47 @@
+# V4-240 (CPO dispatch b27c33fb, 2026-09-25): every dollar figure splice prints says what it is based
+# on, an API-rate estimate and never a charge. On a subscription head nothing is billed per token, so a
+# bare "$0.85" in a status line reads as money spent that was not spent.
+#
+# LAW: the one place a `$` is glued to an amount is splice.usage.ApiCostText, which attaches the basis
+# by construction ("API est. $0.85", "an estimated $0.85 in API cost") and is exempt BY PATH below.
+# Anywhere else in main sources these spellings of a figure are red:
+#   "\$$amount", "\$${amount}"   an escaped dollar right before an interpolation (tree-sitter-kotlin
+#                                  keeps both in ONE string_content, measured on ast-grep 0.45)
+#   "\$0.85"                      an escaped dollar before a decimal literal
+#   "$" + amount, amount + "$"    a lone dollar as an operand of `+`, escaped ("\$" + amount) or not
+#   "$%.2f", "\$%.2f"             a dollar before a format spec, escaped or not
+#   "$$usd", "$${amount(usd)}"    a literal dollar right before a template (V4-240 review, finding 3:
+#                                  these four escaped spellings walked past the first version)
+#
+# CENSUS that seeded it (2026-09-25, every string_literal in **/src/main/**/*.kt): two surfaces printed
+# a figure, StatuslineBars.kt ("$DIM\$$RESET" + "%.2f") and BudgetText.kt ("$" + amount); both call
+# ApiCostText now. Shell text is not money and stays green: `val d = "$"` (LoginHook*), "\$HOME",
+# "\$1", "\${VAR}", JSON Schema's "\$ref".
+#
+# DISCLOSED GAP: `${'$'}` before an amount, and a "$" held in a val and interpolated later, are not
+# matched. The surfaces' behavioral half is features/usage DollarFigureBasisTest.
+id: kt-dollar-figure-single-source
+language: kotlin
+severity: error
+message: "A dollar figure is spelled only by splice.usage.ApiCostText, which says what it is based on (an API-rate estimate, never a charge). Call ApiCostText.short, .sentence or .limit instead of gluing a $ to an amount here."
+note: "A figure priced from a rate card is an estimate of API cost, and on a plan head no token is billed at all, so a bare dollar figure reads as a charge that did not happen (V4-240). ApiCostText is the sole spelling site; the operator's own budget limit goes through ApiCostText.limit."
+files:
+  - "**/src/main/**/*.kt"
+ignores:
+  # the sole spelling site, exempt BY PATH so no other file can claim the exemption
+  - features/usage/src/main/kotlin/splice/usage/ApiCostText.kt
+  # build tooling ships in no runtime and prints no money; its one hit, "$outer\$$name" in
+  # TestDiscovery.kt, joins a JVM nested-class binary name (Outer$Inner)
+  - build-logic/**
+rule:
+  any:
+    - kind: string_content
+      regex: '\\\$(\$|[0-9]+\.[0-9])'
+    - kind: string_literal
+      regex: '^"\\?\$"$'
+      inside:
+        kind: additive_expression
+    - kind: string_literal
+      regex: '^"\\?\$%'
+    - kind: string_literal
+      regex: '(^"|[^\\])\$\$[A-Za-z_{]'

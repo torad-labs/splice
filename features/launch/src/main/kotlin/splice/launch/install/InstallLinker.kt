@@ -109,7 +109,8 @@ internal class InstallLinker(
             output.line("splice: installed '$command' -> $launchShim (head=$headKey)")
         } catch (e: java.io.IOException) {
             // SAFE-RENDER-EXEMPT[2026-08-31]: symlink claim under bin — the caught java.io.IOException is FileSystemException over a path we own, never file content
-            throw InstallRefused("failed to link $command — $link was not claimable: ${e.message}", e)
+            // No em-dash: the console's add shows this sentence verbatim in saved.wrapper.error (V4-220).
+            throw InstallRefused("failed to link $command: $link was not claimable (${e.message})", e)
         }
     }
 
@@ -122,7 +123,7 @@ internal class InstallLinker(
         } catch (e: java.io.IOException) {
             val restored = previous == null ||
                 Cancellables.runCatchingCancellable { ExclusiveSymlinkClaim(link, previous) }.isSuccess
-            if (!restored) output.line("splice: warning — the previous wrapper at $link could not be restored")
+            if (!restored) output.line("splice: warning: the previous wrapper at $link could not be restored")
             throw e
         }
     }
@@ -140,9 +141,9 @@ internal class InstallLinker(
         val entryPresent = Files.exists(launchShim, NOFOLLOW_LINKS)
         val message = when {
             noSuch && !entryPresent -> "launch shim not found at $launchShim (run install.sh)"
-            noSuch -> "launch shim at $launchShim is a dangling symlink — its target is gone; run install.sh"
+            noSuch -> "launch shim at $launchShim is a dangling symlink: its target is gone; run install.sh"
             else ->
-                "launch shim at $launchShim is unreadable (${SafeFailureText.render(failure)}) — " +
+                "launch shim at $launchShim is unreadable (${SafeFailureText.render(failure)}); " +
                     "fix access to it and its parents, not reinstall"
         }
         throw InstallRefused(message)

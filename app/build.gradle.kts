@@ -59,6 +59,10 @@ dependencies {
     implementation(libs.ktor.client.java)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
+    // Ktor logs through slf4j-api. With no provider on the classpath SLF4J prints three warning lines to
+    // stderr on first use, which is a user's terminal during every `splice add` sign-in. splice reports
+    // its own failures through its own log (RouteFailure), so the provider is the no-op one.
+    runtimeOnly(libs.slf4j.nop)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
@@ -494,7 +498,8 @@ tasks.register("stageRelease") {
     }
 }
 
-// A classpath test cannot catch lost language service registrations in the shipped fat JAR.
+// A classpath test cannot catch lost service registrations in the shipped fat JAR: the Truffle
+// languages, and the SLF4J provider whose absence prints warnings on a user's terminal.
 val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
     dependsOn(tasks.named("shadowJar"))
     testClassesDirs = sourceSets.test.get().output.classesDirs + codeModeRuntimeTests
@@ -503,6 +508,7 @@ val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
         includeTestsMatching("CodeModeLanguagesTest")
         includeTestsMatching("CodeModeRuntimeTest")
         includeTestsMatching("CodeModeBridgeRuntimeTest")
+        includeTestsMatching("Slf4jProviderTest")
     }
     val packagedJar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
     inputs.file(packagedJar)

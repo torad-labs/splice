@@ -1,6 +1,7 @@
 // NEW: LAYOUT-01 — the daemon's own lifecycle on the control plane: the drain-and-stop, the restart the
 // host unit completes, and the upgrade status (features/lifecycle). V4-220: the restart waits for the
 // compactions the heads' gates hold (RestartAfterCompactions), read in-process off each head's health.
+// V4-220 item 4: and `splice upgrade` from the console (UpgradeRunRoutes), run out of process.
 package splice.app.control.mount
 
 import io.ktor.http.ContentType
@@ -14,11 +15,14 @@ import splice.app.control.ManagedHead
 import splice.app.control.api.ControlPayloads
 import splice.core.util.LogSink
 import splice.lifecycle.restart.CompactionsInFlight
+import splice.lifecycle.restart.DaemonRestarts
 import splice.lifecycle.restart.DaemonRoutes
 import splice.lifecycle.restart.RestartAfterCompactions
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.lifecycle.upgrade.CompactionSlot
 import splice.lifecycle.upgrade.UpgradeRoute
+import splice.lifecycle.upgrade.UpgradeRunRoutes
+import splice.lifecycle.upgrade.UpgradeRunsSource
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 
@@ -38,8 +42,12 @@ internal class LifecycleMount(
         }
     }
     private val restart = RestartAfterCompactions(compactions, LifecycleScope(ProcessDispatchers().background()), log)
-    private val daemonRoutes = DaemonRoutes(restart)
+
+    /** The daemon's ONE restart decision and wait; AddMount's save takes its restart through it too. */
+    internal val restarts = DaemonRestarts(restart)
+    private val daemonRoutes = DaemonRoutes(restarts)
     private val upgradeRoute = UpgradeRoute()
+    private val upgradeRuns = UpgradeRunRoutes(UpgradeRunsSource { ports.upgradeRuns }, log)
 
     fun register(route: Route) {
         route.post("/api/daemon/shutdown") {
@@ -55,5 +63,7 @@ internal class LifecycleMount(
         }
         route.get("/api/daemon/restart") { guard.guarded(call) { daemonRoutes.statusJson(call) } }
         route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.upgrade) } }
+        route.post("/api/upgrade") { guard.guarded(call) { upgradeRuns.start(call) } }
+        route.get("/api/upgrade/run") { guard.guarded(call) { upgradeRuns.status(call) } }
     }
 }

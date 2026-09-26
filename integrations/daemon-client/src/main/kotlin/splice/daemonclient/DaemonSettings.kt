@@ -28,7 +28,7 @@ public class DaemonSettings(private val errors: TerminalOutput) {
             TopologyLoader.loadOrMaterialize(configPath)
         }.onFailure {
             errors.line(
-                "splice: could not read $configPath (${SafeFailureText.render(it)}) — " +
+                "splice: could not read $configPath (${SafeFailureText.render(it)}): " +
                     "using default ports; a running daemon may appear stopped",
             )
         }.getOrNull()

@@ -241,7 +241,7 @@ public class MuseAuthProvider(
             is MuseMintAttempt.SubscriptionRequired -> {
                 val actionUrl = oauth.safeActionOrigin(attempt.actionUrl)
                 holds.recordInactive(snapshot, MAX_MINT_HOLD_MS, actionUrl)
-                val action = actionUrl?.let { " — $it" }.orEmpty()
+                val action = actionUrl?.let { ": $it" }.orEmpty()
                 log("[muse-auth] subscription inactive; retry held for 60 minutes$action")
             }
             is MuseMintAttempt.RateLimited -> {

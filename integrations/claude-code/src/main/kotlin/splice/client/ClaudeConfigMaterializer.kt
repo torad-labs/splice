@@ -183,7 +183,7 @@ public class ClaudeConfigMaterializer(
         val isolated = target.fileName.toString().startsWith(Keys.CLAUDE_DIR) &&
             realOf(target) != realOf(globalDir().toAbsolutePath().normalize())
         require(isolated) {
-            "refuse to materialize into '$configDir' — must be an isolated .claude* dir, not the global ~/.claude"
+            "refuse to materialize into '$configDir': it must be an isolated .claude* dir, not the global ~/.claude"
         }
     }
 
@@ -245,7 +245,7 @@ public class ClaudeConfigMaterializer(
         if (probeFailure != null) {
             log(
                 // SAFE-RENDER-EXEMPT[2026-08-31]: a NOFOLLOW stat plus our OWN authored IOException text; render would withhold the dangling-target sentence this line exists to name
-                "[materialize] shared '$item' NOT linked into $configDir (${probeFailure.message}) — " +
+                "[materialize] shared '$item' NOT linked into $configDir (${probeFailure.message}); " +
                     "this head launches without the operator's $item\n",
             )
             return
@@ -263,7 +263,7 @@ public class ClaudeConfigMaterializer(
         if (Files.isDirectory(dst, NOFOLLOW_LINKS) && !dst.isSymbolicLink()) {
             if (item != Keys.COMMANDS) {
                 log(
-                    "[materialize] shared '$item' kept as this head's own real directory at $dst — " +
+                    "[materialize] shared '$item' kept as this head's own real directory at $dst; " +
                         "the operator's global copy is not linked\n",
                 )
             }
@@ -274,7 +274,7 @@ public class ClaudeConfigMaterializer(
             ?.let { cause ->
                 log(
                     // SAFE-RENDER-EXEMPT[2026-08-31]: replaceWithSymlink is path work only — the failure names src or dst, never file content
-                    "[materialize] shared '$item' NOT linked into $configDir (${cause.message}) — " +
+                    "[materialize] shared '$item' NOT linked into $configDir (${cause.message}); " +
                         "this head launches without the operator's $item\n",
                 )
             }
@@ -298,7 +298,7 @@ public class ClaudeConfigMaterializer(
             // read as failed). Same rule as LoginInterception's writeHookScript teardown.
             Cancellables.discard(
                 Cancellables.runCatchingCleanup { Files.deleteIfExists(staged) },
-                "staged-link cleanup — the move outcome must stand",
+                "staged-link cleanup: the move outcome must stand",
             )
         }
     }
@@ -365,7 +365,7 @@ public class ClaudeConfigMaterializer(
                 val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(dst, NOFOLLOW_LINKS)
                 if (failure is IOException && !genuinelyAbsent) {
                     throw IOException(
-                        "$dst unreadable (${SafeFailureText.render(failure)}) — " +
+                        "$dst unreadable (${SafeFailureText.render(failure)}); " +
                             "refusing to rebuild the head settings over it",
                     )
                 }

@@ -136,7 +136,7 @@ internal class DoctorStateLayout {
         DoctorCheck(
             CHECK_STATE_LAYOUT,
             CheckStatus.WARN,
-            "a state root could not be ruled out: $fault — ${statePaths.stateDir} is being used, but " +
+            "a state root could not be ruled out: $fault; ${statePaths.stateDir} is being used, but " +
                 "history under an unreadable root is NOT gone and must not be re-initialised away",
             "make the path above readable (or remove it if it is genuinely not yours), then re-run",
         )
@@ -146,14 +146,14 @@ internal class DoctorStateLayout {
         StateDirOrigin.ADOPTED_LEGACY -> DoctorCheck(
             CHECK_STATE_LAYOUT,
             CheckStatus.INFO,
-            "reading the pre-0.4 root ${statePaths.stateDir} in place — it holds this install's " +
+            "reading the pre-0.4 root ${statePaths.stateDir} in place: it holds this install's " +
                 "history, and nothing was copied, moved or deleted to get here",
         )
         StateDirOrigin.DEFAULT -> statePaths.unmigratedLegacyDir?.let { legacy ->
             DoctorCheck(
                 CHECK_STATE_LAYOUT,
                 CheckStatus.WARN,
-                "$legacy still exists and is NOT read — ${statePaths.stateDir} is live, so any " +
+                "$legacy still exists and is NOT read; ${statePaths.stateDir} is live, so any " +
                     "usage, perf or compact history under the old root is missing from these numbers",
                 "move what you want to keep into ${statePaths.stateDir}, then remove the old state dir",
             )

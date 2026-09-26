@@ -70,7 +70,7 @@ public object TransportFailureReason {
         t is HttpConnectTimeoutException || t is io.ktor.client.network.sockets.ConnectTimeoutException ->
             "connecting to $where timed out"
         t is ConnectException && chain.any { it is ClosedChannelException } ->
-            "connection refused by $where — nothing is listening there; the server is down or still starting"
+            "connection refused by $where: nothing is listening there; the server is down or still starting"
         t is ConnectException -> "could not connect to $where"
         else -> null
     }

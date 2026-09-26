@@ -71,7 +71,7 @@ public class QuotaTracker(
                 !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
                 log(
-                    "[quota] $file unreadable (${SafeFailureText.render(failure)}) — " +
+                    "[quota] $file unreadable (${SafeFailureText.render(failure)}); " +
                         "no snapshot until the next round\n",
                 )
             }

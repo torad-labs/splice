@@ -59,7 +59,7 @@ public class AuthStatusRoutes(
                 buildJsonObject {
                     put("ok", refreshed != null)
                     put("head", key)
-                    if (refreshed == null) put("note", "refresh failed — run: splice logs; re-login likely required")
+                    if (refreshed == null) put("note", "refresh failed; sign in again (splice logs has the cause)")
                 }.toString(),
                 ContentType.Application.Json,
             )

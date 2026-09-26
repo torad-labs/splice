@@ -63,8 +63,8 @@ object CatalogMetadata {
 
     val REMEDY = """
         |catalog-metadata-sync: gradle/libs.versions.toml declares versions that
-        |gradle/verification-metadata.xml does not pin. Regenerate from the repository root —
-        |BOTH passes, the shadowJar license pass fetches poms that `check` alone never resolves:
+        |gradle/verification-metadata.xml does not pin. Regenerate from the repository root with
+        |BOTH passes, since the shadowJar license pass fetches poms that `check` alone never resolves:
         |
         |    ./gradlew --write-verification-metadata sha256 clean check
         |    ./gradlew --write-verification-metadata sha256 :app:shadowJar --no-daemon --no-parallel
@@ -81,17 +81,17 @@ object CatalogMetadata {
         }
         val document = factory.newDocumentBuilder().parse(xml.byteInputStream())
         if (document.documentElement.namespaceURI != NAMESPACE) {
-            throw UnreadableMetadata("$where: no dependency-verification namespace declaration — unreadable metadata shape")
+            throw UnreadableMetadata("$where: no dependency-verification namespace declaration; unreadable metadata shape")
         }
         val tags = document.getElementsByTagNameNS(NAMESPACE, "component")
         if (tags.length == 0) {
-            throw UnreadableMetadata("$where: no <component> elements found — an unread metadata file must not read as empty")
+            throw UnreadableMetadata("$where: no <component> elements found; an unread metadata file must not read as empty")
         }
         // A NodeList hands back Node, and the narrowing is total rather than asserted: every node
         // this list holds is accounted for, and a shortfall is named instead of silently dropped.
         val elements = (0 until tags.length).mapNotNull { index -> tags.item(index) as? Element }
         if (elements.size != tags.length) {
-            throw UnreadableMetadata("$where: ${tags.length - elements.size} <component> node(s) are not elements — unreadable metadata shape")
+            throw UnreadableMetadata("$where: ${tags.length - elements.size} <component> node(s) are not elements; unreadable metadata shape")
         }
         return elements.map { element -> component(element, where) }.toSet()
     }

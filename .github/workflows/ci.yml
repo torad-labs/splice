@@ -54,6 +54,18 @@ jobs:
         run: ./node_modules/.bin/playwright install --with-deps --only-shell chromium
       - name: complete repository gate
         run: npm run gate
+      # Where the gate's minutes went: the profile `bun tools/gate run` asks Gradle for, and every
+      # suite's JUnit report with each test's time. Kept on a red run too, which is when they are read.
+      - name: keep the gate's timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gate-timings
+          path: |
+            build/reports/profile/
+            **/build/test-results/**/*.xml
+          retention-days: 14
+          if-no-files-found: warn
 
   walls-annotate:
     # Annotation-only surface for ast-grep wall violations.

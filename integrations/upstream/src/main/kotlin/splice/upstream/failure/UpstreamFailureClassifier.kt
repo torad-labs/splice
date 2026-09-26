@@ -67,10 +67,12 @@ public object UpstreamFailureClassifier {
     // ("Do not panic. Please try again.") still reads as an invitation to retry. DR-71: the
     // boundary set includes em/en dash and line breaks (a dash-cut fresh clause is a real
     // invitation), the negators include won't/will not, and the clause budget is the full
-    // MAX_MESSAGE — a 120-char cap let long clauses outrun their own negation.
+    // MAX_MESSAGE — a 120-char cap let long clauses outrun their own negation. The em dash is spelled
+    // as the regex escape \x{2014}: it is a boundary this regex reads in vendor prose, not text
+    // splice writes (quality/rules/kotlin/kt-no-emdash-cli-text.yml).
     private val negatedTryAgainRe = Regex(
         "\\b(?:do\\s+not|don['’]t|never|cannot|can['’]t|should\\s+not|must\\s+not|won['’]t|will\\s+not)" +
-            "[^.,;:!?—–\\n\\r]{0,2000}?\\b(?:try\\s+again|retry)\\b",
+            "[^.,;:!?\\x{2014}–\\n\\r]{0,2000}?\\b(?:try\\s+again|retry)\\b",
         RegexOption.IGNORE_CASE,
     )
     private val promptTooLongRe = Regex("prompt is too long", RegexOption.IGNORE_CASE)

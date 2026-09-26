@@ -7246,6 +7246,6 @@ id = "V4-281"
 phase = "release"
 title = "The quota-429 reset test cannot straddle a second (CI run 36228211391 on 202c22eb0, 2026-09-26): UpstreamFailureClassifierTest:55 builds resets_at from one clock read as now + 6d 4h exactly, and the classifier subtracts a second read (UpstreamFailureClassifier.kt:219); a wall-clock second between the two leaves 6d 3h 59m 59s, humanized to '6d 3h', so the gate went red on no code change (the same test passed on 1e7f05a66 twenty minutes earlier). The offset sits mid-hour, so any drift under 30 minutes still reads 6d 4h"
 files = ["integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailureClassifierTest.kt"]
-status = "todo"
+status = "done"
 verify = "red first: the old offset with a 1 s pause between the two clock reads fails with 'resets in 6d 3h' every run; green: the mid-hour offset passes with the same pause; bun tools/gate slot V4-281 -- :integrations-upstream:test --continue"
 # [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-281 -- :integrations-upstream:test :integrations-upstream:detekt --continue" exit=0 tests=338 touched=integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailureClassifierTest.kt tail="fix 1ceb0c54b. red: the old offset with Thread.sleep(1_000) between the clock reads fails 'resets in 6d 3h' (CI's exact text); green: the mid-hour offset passes with the same pause, and the module passes 338/338, detekt clean"

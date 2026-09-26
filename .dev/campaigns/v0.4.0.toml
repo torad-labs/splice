@@ -7501,8 +7501,11 @@ id = "V4-299"
 phase = "release"
 title = "Config, credentials and the installer report what happened (5-day review, F silent-failure hunt, 2026-09-26; each predates the range, and LAYOUT-01 made more surfaces read them). (1) CredentialPresence's key-store branch (CredentialPresence.kt:35-36) reads KeyStore.read, which answers an unreadable keys.toml as empty (KeyStore.kt:125-150), so doctor, status, add and the console say 'no credential' for a key still on disk, against the file branch's DR-70 rule (:40-55) that an unreadable credential counts as configured. (2) PATCH /api/config always answers persisted: 'state/config.json' (ConfigRoutes.kt:86) while ConfigService.persistApplied only logs a failed write (ConfigService.kt:284-294) and PatchResult carries no outcome, so a knob that did not save reverts at the next start after the caller was told it saved. (3) install.sh prints 'previous installation restored' after restore_previous_artifacts without checking its mv/rm (install.sh:322-337)"
 files = ["features/accounts/src/main/kotlin/splice/accounts/status/CredentialPresence.kt", "features/accounts/src/test/kotlin/splice/accounts/status/CredentialPresenceTest.kt", "core/src/main/kotlin/splice/core/config/KeyStore.kt", "features/configuration/src/main/kotlin/splice/configuration/knobs/ConfigRoutes.kt", "core/src/main/kotlin/splice/core/config/ConfigService.kt", "core/src/main/kotlin/splice/core/config/ConfigResults.kt", "core/src/test/kotlin/splice/core/config/ConfigServiceTest.kt", "install.sh"]
-status = "todo"
+status = "in_flight"
 verify = "red first, each quoted: an unreadable keys.toml holding the head's key reads not configured; a PATCH with the state dir read-only answers persisted: state/config.json; install.sh with the rollback mv failing prints 'previous installation restored'; green: the key reads configured-but-unreadable, the PATCH says it did not persist and why, the installer names the backups to restore by hand; :core:test :features-accounts:test :features-configuration:test and detekt through the slot, shellcheck on install.sh"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T12:34:12.811Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T12:34:12Z
 
 [[items]]
 id = "V4-300"

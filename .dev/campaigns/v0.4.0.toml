@@ -7258,3 +7258,11 @@ title = "splice's Claude Code conformance suite, a gate leg (rig-lead with the o
 files = ["tools/e2e/src/commands/conformance.ts", "tools/e2e/test/conformance.test.ts", "fixtures/conformance/", "tools/gate/config/ladder.json"]
 status = "todo"
 verify = "red first: restoring V4-277's filterNot in ChatSystemPrompt reds the suite by name (the message class, the dialect and the mode); every class x dialect x mode cell is asserted, with a census that fails when a dialect or mode has no row; green: the leg runs in gateOfRecord with no network; CI gate on the pushed sha"
+
+[[items]]
+id = "V4-283"
+phase = "release"
+title = "A folder the operator trusted in Claude Code is trusted in every head (Marlin via splice-cpo-65, take-resume-3, 2026-09-26): each head keeps its own .claude.json, and splice seeds onboarding and API-key keys into it (ClaudeConfigMaterializer) but never folder trust, so claudex -r of a claude-splice session in the same folder met Claude Code's 'Quick safety check' at +121 s (resume3.cast.json): one extra trust prompt per head per folder, on the 'same session' moment. At launch a head's .claude.json gets projects[<cwd>].hasTrustDialogAccepted = true when the operator's own ~/.claude.json or another head's record already trusts that EXACT path; never a parent or sibling, never a path nobody trusted, never over a head's explicit false"
+files = ["integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt", "integrations/claude-code/src/test/kotlin/splice/client/ClaudeConfigMaterializerTest.kt"]
+status = "todo"
+verify = "red first: a launch of head B in a folder trusted only in head A's .claude.json (or only in ~/.claude.json) leaves B untrusted today; green: B is trusted for that exact path, while a parent, a sibling and a path nobody trusted stay untrusted, and B's explicit false stands; the module's tests and detekt through the slot"

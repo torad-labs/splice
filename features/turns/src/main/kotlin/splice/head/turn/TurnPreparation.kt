@@ -36,6 +36,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
+import splice.head.ActivitySamples
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
 import splice.head.HeadDeps
@@ -80,6 +81,7 @@ internal class TurnPreparation(
 ) {
     private val compactClassifier = CompactClassifier()
     private val activityLabel = ActivityLabel()
+    private val activitySamples = ActivitySamples(deps.seams.clock)
     private val messageEdges = MessageEdges(deps.seams.events)
     private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
@@ -102,8 +104,17 @@ internal class TurnPreparation(
         return if (label != null) {
             local(label, parsed.typed, sessionId, perf)
         } else {
+            sampleActivity(parsed.typed, sessionId)
             build(call, parsed, Arrival(sessionId, inbound), perf)
         }
+    }
+
+    /** V4-265: a working session's own turn is its activity sample, at the side query's pace; see
+     *  ActivityLabel for why the client's query alone left a team's Activity empty. */
+    private fun sampleActivity(request: AnthropicRequest, sessionId: String?) {
+        if (sessionId == null) return
+        val label = activityLabel.sampleOf(request) ?: return
+        if (activitySamples.due(sessionId)) deps.seams.events.activityLabel(sessionId, label)
     }
 
     /** What the request arrived with, beyond its parsed body: the client's session, and the request
@@ -134,6 +145,7 @@ internal class TurnPreparation(
     ): Preparation.Local {
         perf.mark(PerfKeys.PARSE)
         deps.log("[${provider.key}] activity label answered locally: \"$label\" (${who(sessionId)}no upstream turn)\n")
+        sessionId?.let(activitySamples::sampled)
         deps.seams.events.activityLabel(sessionId, label)
         return Preparation.Local(label, request.model, sessionId, request.stream)
     }

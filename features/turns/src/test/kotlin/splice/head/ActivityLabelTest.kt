@@ -3,7 +3,9 @@
 package splice.head
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.wire.AnthropicRequest
@@ -106,5 +108,40 @@ class ActivityLabelTest {
         val assistantSays = """{"role":"assistant","content":"Describe your most recent action in 3-5 words using """ +
             """present tense (-ing)."}"""
         assertNull(label.labelFor(request(user, assistantSays)))
+    }
+
+    @Test
+    fun `an ordinary turn samples its last tool call and nothing else (V4-265)`() {
+        assertEquals(
+            "Running npm test",
+            label.sampleOf(request(user, toolUse("Bash", """{"command":"cd /s && npm test"}"""), toolResult)),
+        )
+        val textOnly = """{"role":"assistant","content":[{"type":"text","text":"Here is the fix."}]}"""
+        assertNull(label.sampleOf(request(user, textOnly, user)), "a reply is not a sample")
+        assertNull(label.sampleOf(request(user)), "a request with no transcript is not a sample")
+    }
+
+    @Test
+    fun `a session is sampled once per interval, and the client's own label counts as its sample`() {
+        var now = 1_000L
+        val samples = ActivitySamples { now }
+        assertTrue(samples.due("s-1"), "a session never sampled is due")
+        assertTrue(samples.due("s-2"), "each session keeps its own pace")
+        now += 29_999
+        assertFalse(samples.due("s-1"))
+        now += 1
+        assertTrue(samples.due("s-1"), "an interval after the last sample")
+        samples.sampled("s-1")
+        now += 29_999
+        assertFalse(samples.due("s-1"), "the client's own label restarted the interval")
+    }
+
+    @Test
+    fun `a head forgets the oldest session past its bound, which is then due again`() {
+        val samples = ActivitySamples { 0L }
+        assertTrue(samples.due("first"))
+        repeat(512) { assertTrue(samples.due("s-$it")) }
+        assertTrue(samples.due("first"), "forgotten, so sampled again at once")
+        assertFalse(samples.due("s-511"), "the newest is still remembered")
     }
 }

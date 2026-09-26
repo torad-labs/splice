@@ -6682,12 +6682,13 @@ claimed_at = "2026-09-26T08:05:00.367Z"
 id = "V4-232"
 phase = "release"
 title = "A fresh claude-bonsai prints no [claude-code:unrecognized_model] line, interactive or -p, and in -p its stdout carries only the answer (CPO triage 2026-09-25 of the v0.4.0.toml:181 follow-up; rig-lead's receipt 2 saw [claude-code:unrecognized_model] {\"model\":\"bonsai-2-27b\",\"query_source\":\"sdk\"} before the answer on Claude Code 2.1.282). Local models are a 0.4.0 headline and this is the first line a local-model user sees. The model id the client sees is a value splice authors (mythos CLAUDE.md section 22). Whatever id the head presents, the client's context window still matches what the runtime serves: scale the reported counts, and never spell an id past the ceiling. splice-lead."
-files = ["app/src/main/dist/bin/splice-launch", "features/launch/src/main/kotlin/splice/launch/", "features/configuration/src/main/kotlin/splice/configuration/add/"]
+files = ["app/src/main/dist/bin/splice-launch", "features/launch/src/main/kotlin/splice/launch/", "features/configuration/src/main/kotlin/splice/configuration/add/", "core/src/main/kotlin/splice/core/model/ModelCatalog.kt", "core/src/test/kotlin/splice/core/model/ModelCatalogTest.kt", "core/src/test/kotlin/splice/core/model/ClientWindowsTest.kt", "integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt", "integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigKeys.kt", "integrations/claude-code/src/test/kotlin/splice/client/ClaudeConfigMaterializerTest.kt", "app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt", "app/src/test/kotlin/splice/app/head/LaunchSpecClientAuthTest.kt", "console/src/pages/settings/coverage.ts"]
 status = "in_flight"
 verify = "red first on the receipt's command (claude-bonsai -p against a runtime head that presents bonsai-2-27b prints the line; a mock runtime is enough, since the line is the client's reaction to the id), green after: no unrecognized_model line interactive or -p, -p stdout is the answer alone, and the client's window equals the runtime's served context; CI gate on the train sha."
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T21:57:13.797Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T21:57:13Z
+# [2026-09-26] amend by=orchestrator: files were ["app/src/main/dist/bin/splice-launch", "features/launch/src/main/kotlin/splice/launch/", "features/configuration/src/main/kotlin/splice/configuration/add/"]
 
 [[items]]
 id = "V4-233"

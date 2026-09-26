@@ -417,10 +417,12 @@ const COMMIT_TIMEOUT_MS = 5_000;
  *     so a peer's staged files never ride along (the shared-index law);
  *   - under the ledger's own write lock, so the commit carries exactly the bytes on disk and a peer's
  *     write lands in the next commit instead of racing this one;
- *   - a ledger git does not track (a scratch copy, a fresh `init`, a fixture) is left alone, and one
- *     with nothing left to commit (a peer's commit already carried the write) is skipped;
- *   - a commit that cannot land (the index lock held past the timeout, a merge in progress, the
- *     ledger lock not free in time) is reported and deferred, never retried by re-running the verb,
+ *   - a ledger git does not track (a scratch copy, a fresh `init`, a fixture) is left alone, said out
+ *     loud when it sits beside this CLI, and one with nothing left to commit (a peer's commit already
+ *     carried the write) is skipped;
+ *   - a commit that cannot land (the index lock or the HEAD ref held past the timeout, a merge in
+ *     progress, a detached HEAD, the ledger lock not free in time) is reported and deferred, never
+ *     retried by re-running the verb,
  *     which would write twice: the next write commits the whole file. So this never throws: the
  *     write already landed, and an exit 1 after it would invite exactly that re-run.
  */
@@ -429,7 +431,19 @@ export async function commitWrites(argv: readonly string[], lockTimeoutMs = LOCK
   for (const ledgerPath of writtenLedgers) {
     const git = (...args: string[]) =>
       Bun.spawnSync(["git", "-C", dirname(ledgerPath), ...args], { stdout: "pipe", stderr: "pipe" });
-    if (git("ls-files", "--error-unmatch", "--", ledgerPath).exitCode !== 0) continue;
+    const tracked = git("ls-files", "--error-unmatch", "--", ledgerPath);
+    if (tracked.exitCode !== 0) {
+      // A scratch copy (the gate's /tmp ledgers, the selftests' fixtures) is untracked by design. A
+      // campaign ledger beside this CLI that git does not track, or cannot read, is a write nobody
+      // will ever commit, so it is said out loud.
+      if (resolve(dirname(ledgerPath)) === import.meta.dir) {
+        const why = tracked.exitCode === 1
+          ? "git does not track it: git add it once and the next write commits it"
+          : `git cannot read it: ${tracked.stderr.toString().trim().split("\n")[0]}`;
+        console.error(`WARNING: ${ledgerPath} is written but not committed (${why})`);
+      }
+      continue;
+    }
     const deferred = await commitOne(ledgerPath, subject, git, lockTimeoutMs);
     if (deferred !== null) {
       console.error(`WARNING: ${ledgerPath} is written but not committed (${deferred}); the next ledger write commits it`);
@@ -458,13 +472,18 @@ async function commitOne(
     let why: string;
     try {
       if (git("diff", "--quiet", "HEAD", "--", ledgerPath).exitCode === 0) return null;
+      // git commits on a detached HEAD without a word, into a commit no branch holds, and a later
+      // checkout drops the write from the ledger: left uncommitted, it at least stays in the tree.
+      if (git("symbolic-ref", "-q", "HEAD").exitCode !== 0) return "HEAD is detached, so the commit would land on no branch";
       const commit = git("commit", "--quiet", "-m", subject, "--", ledgerPath);
       if (commit.exitCode === 0) return null;
       why = commit.stderr.toString().trim();
     } finally {
       releaseLock(held);
     }
-    if (!why.includes("index.lock") || Date.now() > deadline) return why.split("\n")[0] ?? why;
+    // A peer's commit holds the index lock, or moves HEAD between this commit's read of it and its
+    // update ("cannot lock ref 'HEAD'"); both pass in moments, so both are retried.
+    if (!/index\.lock|cannot lock ref/.test(why) || Date.now() > deadline) return why.split("\n")[0] ?? why;
     await Bun.sleep(COMMIT_RETRY_MS);
   }
 }

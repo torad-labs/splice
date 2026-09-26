@@ -819,11 +819,20 @@ export async function fleetSelftest(): Promise<number> {
   console.log("fleet selftest");
   try {
     sh("git", "init", "-q");
+    // The fixture's own identity: the CLI commits every write it makes, and a CI runner has no global one.
+    sh("git", "config", "user.name", "t"); sh("git", "config", "user.email", "t@t");
     sh("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base");
     const head = sh("git", "rev-parse", "HEAD").stdout.toString().trim();
     check("the layout carries no manifest.py (the post-deletion layout)", !existsSync(join(dir, "manifest.py")));
     check("init creates the ledger", run("init", "fleet selftest", "--rows", "20").code === 0);
     const add = (id: string, title: string, files: string, verify = "true") => run("add", "--id", id, "--phase", "f1", "--title", title, "--verify", verify, "--files", files);
+    // The ledger sits beside the CLI and git does not track it yet (it lands with the fixture), so a
+    // write says it is not committed and how to fix that, instead of skipping the commit in silence.
+    {
+      const probe = run("add-note", "the ledger is untracked until the fixture lands");
+      check("a write to an untracked ledger beside the CLI says it is not committed",
+        probe.out.includes("git does not track it: git add it once"), probe.out);
+    }
     for (const [id, title, files, verify] of [
       ["F0", "the in_flight peer", "src/shared.ts", "true"],
       ["F1", "retired row", "src/f1.ts", "true"],
@@ -947,6 +956,15 @@ export async function fleetSelftest(): Promise<number> {
     sh("git", "add", "-A");
     sh("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "fixture lands");
     check("fence-uncommitted is clean once the row's files are committed", run("fence-uncommitted", "FU1").out.trim() === '{"dirty": [], "warned": [], "available": true}');
+    // Through the production entry (manifest.ts, which every seat and hook runs): a write on a tracked
+    // ledger commits itself, by path, under its verb's subject.
+    {
+      const noted = run("note", "FU1", "a note through manifest.ts commits itself");
+      const subject = sh("git", "log", "-1", "--format=%s").stdout.toString().trim();
+      const dirty = sh("git", "status", "--porcelain", "--", ledger).stdout.toString().trim();
+      check("a write through manifest.ts commits the tracked ledger under its verb's subject",
+        noted.code === 0 && subject === "chore(ledger): note FU1" && dirty === "", `${noted.out.trim()} | ${subject} | ${dirty}`);
+    }
     await Bun.write(join(root, "src", "fu", "new.ts"), "// never committed\n");
     // The CLI commits its own writes, so a dirty ledger is a write whose commit was deferred; a raw
     // line stands in for one, where a note would commit itself.

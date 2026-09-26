@@ -83,7 +83,8 @@ read
   touched <ID>                      the latest receipt's touched files, one per line
 
 write                               each write commits the ledger by itself (git commit -- <ledger>);
-                                    never lock, stage or commit a ledger by hand
+                                    never lock or commit a ledger by hand (a new one is git added
+                                    once, after init)
   add --id I --phase P --title T [--files a,b] [--verify V] [--status S]
                                     P is a milestone, or <M>-review — the review milestone attached to a
                                     DELIVERED milestone M; a delivered milestone takes no rows
@@ -2822,8 +2823,14 @@ async function selftest(): Promise<number> {
   // timeout the note stands and the verb exits 0, and the next write's commit carries both.
   await Bun.write(join(repo, ".git", "index.lock"), "");
   {
-    const out = await run("note", "H1", "written while the index is locked");
-    check("a commit blocked by the index lock defers with a warning; the write stands", out.includes("note appended") && out.includes("written but not committed"), out.trim());
+    const blocked = Bun.spawnSync(["bun", import.meta.path, path, "note", "H1", "written while the index is locked"], {
+      env: { ...process.env, LEDGER_ORCHESTRATOR: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const out = blocked.stdout.toString() + blocked.stderr.toString();
+    check("a commit blocked by the index lock defers with a warning and exits 0; the write stands",
+      blocked.exitCode === 0 && out.includes("note appended") && out.includes("written but not committed"), `exit ${blocked.exitCode}: ${out.trim()}`);
   }
   rmSync(join(repo, ".git", "index.lock"));
   await run("note", "H1", "the next write commits both");
@@ -2847,6 +2854,38 @@ async function selftest(): Promise<number> {
     await run("note", "H1", "the next write commits the deferred line");
     check("the next write's commit carries the line deferred by the ledger lock",
       sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written while a peer holds the ledger lock") &&
+        sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
+  }
+  // A peer's commit can hold the HEAD ref for a moment ("cannot lock ref 'HEAD'"), not only the
+  // index: that is retried too, and the write lands once the peer is done (the lock goes at 1.5 s,
+  // well after this commit's first attempt and inside its 5 s of retries).
+  {
+    await Bun.write(join(repo, ".git", "HEAD.lock"), "");
+    const racing = Bun.spawn(["bun", import.meta.path, path, "note", "H1", "written while a peer's commit holds HEAD"], {
+      env: { ...process.env, LEDGER_ORCHESTRATOR: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await Bun.sleep(1_500);
+    rmSync(join(repo, ".git", "HEAD.lock"), { force: true });
+    const out = (await new Response(racing.stdout).text()) + (await new Response(racing.stderr).text());
+    const code = await racing.exited;
+    check("a commit that loses the HEAD ref to a peer retries and lands",
+      code === 0 && !out.includes("not committed") && sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "",
+      `exit ${code}: ${out.trim()}`);
+  }
+  // On a detached HEAD git would commit into no branch without a word, and a checkout would drop the
+  // write: the commit is deferred instead, and the write stays in the tree for a branch to commit.
+  {
+    sh("git", "checkout", "-q", "--detach");
+    const out = await run("note", "H1", "written on a detached HEAD");
+    const dirty = sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim();
+    sh("git", "checkout", "-q", "-");
+    check("a write on a detached HEAD is not committed into no branch; it stays in the tree",
+      out.includes("HEAD is detached") && dirty !== "", `${out.trim()} | ${dirty}`);
+    await run("note", "H1", "back on the branch, the next write commits both");
+    check("back on a branch, the next write's commit carries the detached-HEAD write",
+      sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written on a detached HEAD") &&
         sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
   }
   // A lock file that cannot be created is the caller's error at once. Only an existing lock is a

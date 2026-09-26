@@ -175,6 +175,16 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     held ledger lock through the claim reaches it again. Three new selftest arms (188 ledger, 37
     fleet); three mutants (the lock failure thrown, every create failure read as stale, the claim
     filter taking any LedgerError as a row reason) each red on its own arm.
+    The silent-failure pass on the same code added five, each reproduced before the fix: a write on
+    a detached HEAD was committed into no branch without a word (now deferred, and the write stays in
+    the tree); a campaign ledger beside the CLI that git does not track, or cannot read (exit 128),
+    was skipped in silence (now a warning naming the fix; scratch copies stay quiet); a peer's commit
+    moving HEAD ("cannot lock ref 'HEAD'", 11 of 600 contended commits) was deferred on the first try
+    (now retried like the index lock); the index-lock arm never read the exit code; and no arm wrote
+    through manifest.ts, the entry every seat runs. Five more arms (191 ledger, 39 fleet; the fleet
+    fixture now carries its own git identity, so its commits land on a CI runner too); five mutants
+    (no detached check, retry on index.lock only, a deferral that fails the verb, the untracked
+    warning dropped, manifest.ts never committing) each red on its own.
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

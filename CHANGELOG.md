@@ -555,8 +555,11 @@ origin.
   price under GPT-6-Sol. On a head whose upstream is Anthropic, Claude Code's figure wins over
   splice's own whenever it has one, because it is priced at that upstream's card from the session's
   start. splice's own figure prices each turn at the card of the model that turn ran on, not the
-  model the session is on now, and reads `≥` when a turn's model has no card or the session began
-  before the oldest perf row splice still reads. `splice add` writes the vendors' published API
+  model the session is on now. It comes from a running total each head keeps per session as it
+  records each turn (`<head>-session-totals.json`), so a session of any length is priced whole
+  (V4-244); before, only the turns in the last 256 KiB of the perf log counted. It reads `≥` when a
+  turn's model has no card, or when the session began before its head kept the total and the perf
+  log no longer reaches its start. `splice add` writes the vendors' published API
   cards for gpt-6-sol, grok-4.7, muse-spark-1.3 and claude-opus-5-5, each citing its source and
   date. A card can carry a long-context tier (`long_context_over_input_tokens` with
   `long_context_input`, `long_context_cache_read`, `long_context_output` and optionally
@@ -612,6 +615,13 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **A turn's cache write reaches Claude Code as a cache write.** splice reported the tokens an
+  upstream wrote to its prompt cache as plain input and `cache_creation_input_tokens` as 0, so a
+  session's transcript showed a cache that never wrote, and Claude Code priced each write as
+  uncached input. The cache itself was never affected: through 0.3.2 and this release, turns after
+  the first read 99.7% of their prompt from cache, as they do without splice. The write now arrives
+  in its own field. The context total Claude Code compacts on is unchanged, and heads whose upstream
+  reports no cache write send the same numbers as before.
 - **A sign-in no longer prints SLF4J warnings.** The jar carried slf4j-api (Ktor brings it in) and
   no provider, so the first log call printed three `SLF4J(W): No SLF4J providers were found` lines
   on the user's terminal, during every `splice add` sign-in. The no-op provider now ships beside it,
@@ -620,6 +630,27 @@ origin.
   attempt carries that attempt's state, and splice rightly ignores it, but it used to do so without a
   word: the pane sat silent until the 300-second timeout. The pane and the tab's page now say the
   sign-in came from an earlier attempt and to finish it in the newest tab.
+- **The prompt after a browser sign-in takes the first answer typed.** While a browser sign-in waits,
+  splice also reads the terminal, for a redirect URL pasted by someone whose browser cannot reach the
+  machine. That reader stayed parked on the terminal after the browser won, so it took the next line
+  typed and threw it away: the live-turn question after `splice add codex` needed its answer typed
+  twice. The reader now reads only what is already typed while the sign-in waits, and stops before
+  the next prompt asks (V4-251).
+- **`splice add` says why it could not link a wrapper.** When the link failed, the add printed
+  `not linked (failure (message withheld: it may quote file bytes))` instead of the reason, such as
+  `launch shim not found at … (run install.sh)`. The CLI's add and the console's add now print the
+  linker's own sentence, as `splice doctor`'s fix already did; any other failure is still withheld
+  (V4-255).
+- **`splice add`'s passing checks say what the pass means.** A base URL that answered printed its
+  status beside the green tick, so a codex add read `✓ base url HTTP 403 from …`; it now reads
+  `reachable at …`. A provider that publishes no model list printed
+  `no model list on OPENAI_RESPONSES; 4 row(s) trusted`; it now reads
+  `4 models from splice's catalog; this provider publishes no list to check them against`
+  (V4-266, V4-267).
+- **`splice models` says why it could not ask for a list.** A provider whose list did not arrive
+  printed `could not be asked: failure (message withheld: it may quote file bytes)`. A list that does
+  not arrive within the 10-second budget, a TLS failure and a URL that does not parse now say so;
+  any other failure is still withheld (V4-268).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

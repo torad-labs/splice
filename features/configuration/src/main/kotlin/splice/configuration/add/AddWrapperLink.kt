@@ -5,11 +5,14 @@
 // runCatchingCancellable, which lets an IllegalStateException through: a wrapper name another file
 // already held escaped `splice add` AFTER the save had written the head, instead of printing the
 // `splice install` line. runCatchingCleanup is the catch that includes it.
+//
+// V4-255: the reason is the install seam's own rendering (WrapperInstall.refusalText). Rendering every
+// failure through SafeFailureText here withheld InstallRefused's sentence, an IllegalStateException, so
+// a missing launch shim read "failure (message withheld: it may quote file bytes)".
 package splice.configuration.add
 
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
 
 /** Whether the wrapper was linked; [why] is the linker's own reason when it gave one. */
 internal sealed class AddLinked {
@@ -23,7 +26,7 @@ internal class AddWrapperLink(private val install: WrapperInstall) {
         val link = Cancellables.runCatchingCleanup { install(key, env) }
         return when {
             link.getOrElse { false } -> AddLinked.Linked
-            else -> AddLinked.NotLinked(link.exceptionOrNull()?.let(SafeFailureText::render))
+            else -> AddLinked.NotLinked(link.exceptionOrNull()?.let(install::refusalText))
         }
     }
 }

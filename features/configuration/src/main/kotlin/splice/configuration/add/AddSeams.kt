@@ -8,6 +8,7 @@ package splice.configuration.add
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 
 /** Answers a question with the operator's line, or [default] when there is no terminal. */
 public fun interface AddPrompter {
@@ -22,6 +23,10 @@ public fun interface AddLogin {
 /** Links the wrapper command for a head (`splice install <key>`). */
 public fun interface WrapperInstall {
     public operator fun invoke(key: String, env: EnvReader): Boolean
+
+    /** V4-255: the sentence a [failure] of [invoke] shows. Only the linker knows which of its failures
+     *  are its own sentences, so app's wiring names them (AddWiring); anything else stays withheld. */
+    public fun refusalText(failure: Throwable): String = SafeFailureText.render(failure)
 }
 
 /** Whether a daemon answers on the control port. */

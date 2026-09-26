@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STACK, TURN_PROMPT, driveOneTurn } from './stack';
+import { STACK, TURN_PROMPT, driveOneTurn, sendHandOff, utcDayWait } from './stack';
 
 const PAGES_DIR = join(dirname(fileURLToPath(import.meta.url)), '../src/pages');
 const PAGES = readdirSync(PAGES_DIR, { withFileTypes: true })
@@ -81,10 +81,16 @@ async function expectWholeTip(trigger: Locator, where: string, subject?: Locator
   const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
   await expect(tip, `${where}: the tip did not open`).toBeVisible();
   if (subject !== undefined) {
-    const [a, b] = [await tip.boundingBox(), await subject.boundingBox()];
-    const overlaps = a !== null && b !== null
-      && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    expect(overlaps, `${where}: the open tip covers the text it explains`).toBe(false);
+    // Both boxes from one layout: two reads apart compare one layout's tip with the next one's text
+    // when a poll re-flows the page between them (fired once, CI run 36194751483, on a console that
+    // passed it in five other runs). Polled, because the claim is what the operator reads once the
+    // page settles, not one frame of a re-flow.
+    const text = await subject.elementHandle();
+    const covers = (): Promise<boolean> => tip.evaluate((body: HTMLElement, under: Element) => {
+      const [a, b] = [body.getBoundingClientRect(), under.getBoundingClientRect()];
+      return body.matches(':popover-open') && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    }, text);
+    await expect.poll(covers, { message: `${where}: the open tip covers the text it explains` }).toBe(false);
   }
   const seen = await tip.evaluate((body: HTMLElement) => {
     body.style.pointerEvents = 'auto';
@@ -546,6 +552,26 @@ test('a masked fix\'s "Why no copy" reads whole in Doctor\'s detail panel and at
   expect(faults.pageErrors, 'a page threw').toEqual([]);
 });
 
+test('a tip opened from the keyboard stays on its mark when the page moves under it without a scroll', async ({ page }) => {
+  // The body is fixed in the top layer, and it was placed once, when it opened: a page that moved
+  // without scrolling (a poll re-flowing a table, a fault landing above) left it where the mark had
+  // been. A pointer closes it as the mark slides away; keyboard focus does not, so it stayed there,
+  // over whatever moved under it. Here the move is forced.
+  const faults = await open(page, 'doctor');
+  const mark = page.locator('main').getByRole('button', { name: 'About doctor', exact: true });
+  await mark.focus();
+  const tip = page.locator(`[id="${await mark.getAttribute('aria-describedby')}"]`);
+  await expect(tip, 'the tip did not open').toBeVisible();
+  const offset = async (): Promise<number | null> => {
+    const [at, body] = [await mark.boundingBox(), await tip.boundingBox()];
+    return at === null || body === null ? null : Math.round(body.y - at.y);
+  };
+  const placed = await offset();
+  await page.locator('main .myx-dc').evaluate((board: HTMLElement) => { board.style.paddingTop = '120px'; });
+  await expect.poll(offset, 'the tip stayed where its mark had been').toBe(placed);
+  expect(faults.pageErrors, 'the doctor page threw').toEqual([]);
+});
+
 test('Needs you opens each item on its page, and a link to another item opens it on the page already up', async ({ page }) => {
   // V4-219: an item's page column links to the item itself, `#/<page>?open=<id>`, not only its page.
   // The stack's key head has no key (a head item) and its wrappers are not linked (doctor items).
@@ -754,8 +780,12 @@ test('models opens a model with the head windows its topology declares', async (
 
 test('teams composes the stack\'s two sessions, shows their hand-off and the sender\'s priced turn, and unbinds', async ({ page }) => {
   // The journey drives a real turn bounded at 60 s (stack.ts postTurn), so its budget sits above that
-  // bound: a turn that hangs fails as that turn, named, rather than as a bare test timeout.
-  test.setTimeout(120_000);
+  // bound: a turn that hangs fails as that turn, named, rather than as a bare test timeout. The chat
+  // and the timeline are the daemon's UTC today, so the whole budget falls inside one UTC day.
+  const budget = 120_000;
+  const wait = utcDayWait(budget);
+  test.setTimeout(budget + wait);
+  await new Promise((resolve) => setTimeout(resolve, wait));
   const faults = await open(page, 'teams');
   const main = page.locator('main');
   // Another run of this test may already have left a team in the stack's daemon: then the key is the
@@ -784,9 +814,12 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   const edit = page.getByRole('form', { name: `Edit ${name}` });
   await expect(edit).toBeVisible({ timeout: 15_000 });
   await expect(edit.getByRole('status')).toContainText(`Saved ${name} as team-`);
-  // A team's economics run over its own lifetime, so the stack's hand-off turn (driven before this
-  // team existed) is not its cost: the sender drives one tagged turn now, inside it.
-  await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
+  // A team's economics run over its own lifetime, and its chat over the daemon's UTC today, so the
+  // stack's hand-off (sent at boot, before this team, perhaps on another day) is neither: the sender
+  // hands off to the peer now, inside the team. That hand-off is one tagged turn, the seat's one
+  // priced turn, under its own tool_use id (the daemon keeps one edge per id, and an earlier run's
+  // id would be an earlier day's edge).
+  await sendHandOff(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), env('CONSOLE_E2E_PEER_ADDRESS'), `toolu_console_e2e_team_${Date.now()}`);
   await expect(page.locator('.myx-tm-team')).toContainText(name);
   await expect(page.getByRole('img', { name: 'Slots bound: 2 of 2' })).toBeVisible();
   // The lanes are the team's default view: both sessions are seated as cards on their head's strand,
@@ -796,8 +829,9 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await expect(card(STACK.sender.name)).toBeVisible({ timeout: 15_000 });
   await expect(card(STACK.peer.name)).toBeVisible();
   // The day's chat carries the hand-off, sender to recipient, both resolved to their seats, and the
-  // lanes draw it as the one arc between their cards once they are laid out.
-  await expect(page.getByRole('listitem', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible();
+  // lanes draw it as the one arc between their cards once they are laid out. The hand-off was sent
+  // after the team opened, so it reaches the chat on the panels' next read (every 10 s).
+  await expect(page.getByRole('listitem', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible({ timeout: 15_000 });
   await expect(lanes.locator('path.myx-lanes-arc')).toHaveCount(1, { timeout: 15_000 });
   // The table is a view behind the lanes, where each seat's turns are counted.
   await page.getByRole('tab', { name: 'By head' }).click();
@@ -834,6 +868,13 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
 });
 
 test('projects opens the stack repository with the detail its own route reports', async ({ page }) => {
+  // Turns today are the daemon's UTC today: the sender drives one turn in the repository now, and the
+  // read below comes back inside the same UTC day.
+  const budget = 60_000;
+  const wait = utcDayWait(budget);
+  test.setTimeout(budget + wait);
+  await new Promise((resolve) => setTimeout(resolve, wait));
+  await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
   const faults = await open(page, 'projects');
   const repo = env('CONSOLE_E2E_REPO');
   const read = page.waitForResponse((response) =>
@@ -845,11 +886,11 @@ test('projects opens the stack repository with the detail its own route reports'
   const detail = page.getByRole('complementary', { name: 'Project detail' });
   // The heading prints the root with the home directory as `~`; the stack's repo is under /tmp.
   await expect(detail).toContainText(repo);
-  // Two registered sessions work in the repository. Today's turns are the sender's: the stack's
-  // hand-off, plus the one the teams journey drives when it runs first, so the count printed is the
-  // one this read returned, and at least the hand-off.
+  // Two registered sessions work in the repository. Today's turns are the sender's: the one driven
+  // above, plus any this day's earlier journeys and the stack drove, so the count printed is the one
+  // this read returned, and at least the one driven above.
   await expect(detail).toContainText(/Sessions running\s*2/);
-  expect(row.turns_today, 'the sender\'s hand-off is a turn in this repository today').toBeGreaterThanOrEqual(1);
+  expect(row.turns_today, 'the sender\'s turn is a turn in this repository today').toBeGreaterThanOrEqual(1);
   await expect(detail).toContainText(new RegExp(`Turns today\\s*${row.turns_today}(?!\\d)`));
   await expect(detail).toContainText(/API cost today\s*–/);
   await expect(detail).toContainText(`${repo}/CLAUDE.md`);

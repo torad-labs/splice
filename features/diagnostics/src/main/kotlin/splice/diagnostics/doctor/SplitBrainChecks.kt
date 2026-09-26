@@ -7,8 +7,6 @@ package splice.diagnostics.doctor
 
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
-import splice.daemonclient.MgmtKeyFile
-import splice.daemonclient.MgmtKeyRead
 
 /** What the running daemon's `/api/auth` said, read ONCE per doctor run: the client heads' verdict
  *  lines and the split-brain comparison both read it (V4-220 item 6b). */
@@ -26,18 +24,16 @@ internal class SplitBrainChecks {
 
     // DR-174: "no mgmt-key" was also this check's word for a key it simply could not read, so
     // the flagship split-brain diagnosis blamed a missing file on a box where one exists.
-    internal fun read(snapshot: DaemonSnapshot, envReader: EnvReader): DaemonAuthSeen {
-        if (!snapshot.running) return DaemonAuthSeen.Stopped
-        val read = MgmtKeyFile().read(envReader)
-        val key = (read as? MgmtKeyRead.Present)?.key
-        val seen = key?.let { DaemonProbe.authSeen(snapshot.port, it) }
-        if (seen != null) return DaemonAuthSeen.Seen(seen)
-        val reason = when {
-            read is MgmtKeyRead.Unreadable -> "mgmt-key unreadable (${read.reason}); fix its permissions"
-            key == null -> "no mgmt-key"
-            else -> "daemon /api/auth unreachable"
+    internal fun read(snapshot: DaemonSnapshot, envReader: EnvReader, reads: DaemonReads): DaemonAuthSeen {
+        if (snapshot.probe == DaemonProbe.HealthProbe.Down) return DaemonAuthSeen.Stopped
+        snapshot.unanswered?.let { return DaemonAuthSeen.Skipped(it) }
+        return when (val seen = reads.auth(snapshot.port, envReader)) {
+            is DaemonRead.Answered -> DaemonAuthSeen.Seen(seen.value)
+            is DaemonRead.KeyUnreadable ->
+                DaemonAuthSeen.Skipped("mgmt-key unreadable (${seen.reason}); fix its permissions")
+            DaemonRead.KeyAbsent -> DaemonAuthSeen.Skipped("no mgmt-key")
+            DaemonRead.Unreachable -> DaemonAuthSeen.Skipped("daemon /api/auth unreachable")
         }
-        return DaemonAuthSeen.Skipped(reason)
     }
 
     // The daemon reads api-key env vars from ITS OWN environment. A key exported after the daemon

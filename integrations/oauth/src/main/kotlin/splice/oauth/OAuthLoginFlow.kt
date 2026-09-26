@@ -16,10 +16,13 @@ import io.ktor.http.isSuccess
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -42,6 +45,22 @@ private val CODE_PARAM = Regex("""[?&#]code=([^&\s]+)""")
 
 /** Shortest thing accepted as a BARE code — below this it is almost certainly a stray key. */
 private const val MIN_BARE_CODE = 8
+
+// why: how often the paste reader looks for a typed line; a pasted code waits at most this long.
+private const val PASTE_POLL_MS = 50L
+
+// why: the stop waits out one poll and a line already typed, since the reader never blocks in a read.
+private const val PASTE_STOP_MS = 4 * PASTE_POLL_MS
+
+/** A running paste reader and the one way to end it (V4-251): [stop] returns once it has stopped
+ *  reading, so nothing typed after the sign-in can reach it. */
+private class PasteReading(private val stopSignal: CountDownLatch, private val reader: ExecutorService) {
+    fun stop() {
+        stopSignal.countDown()
+        // Bounded, and enough: the reader checks the signal at every line boundary and every poll.
+        reader.awaitTermination(PASTE_STOP_MS, TimeUnit.MILLISECONDS)
+    }
+}
 // V4-122: ERR_BODY_CAP is LoginIo's declaration now, read from this package — one width for the
 // login flow rather than one per file that renders it.
 
@@ -50,6 +69,8 @@ private const val MIN_BARE_CODE = 8
 public class OAuthLoginFlow(
     private val output: TerminalOutput,
     browser: BrowserOpener = SystemBrowserOpener(output),
+    /** V4-251: the console a pasted code is read from; the process's own terminal by default. */
+    private val paste: PasteSource = SystemPasteSource(),
 ) {
 
     private val loginIo = LoginIo(output, browser)
@@ -118,8 +139,14 @@ public class OAuthLoginFlow(
         // ("OIDC: waiting for auth code (loopback + stdin)"), and without a second channel the only
         // outcome is a silent timeout. Racing them means whichever lands first wins; the pasted
         // value goes through the SAME exchange, so nothing about the token path changes.
-        pasteFallback(spec, latch, codeRef)
-        if (!latch.await(CALLBACK_TIMEOUT_S, TimeUnit.SECONDS)) {
+        val pasting = pasteFallback(spec, latch, codeRef)
+        val arrived = try {
+            latch.await(CALLBACK_TIMEOUT_S, TimeUnit.SECONDS)
+        } finally {
+            // V4-251: every way out of the wait ends the paste reader before the next prompt reads.
+            pasting?.stop()
+        }
+        if (!arrived) {
             output.line("splice: login timed out waiting for the callback (${CALLBACK_TIMEOUT_S}s).")
             return null
         }
@@ -133,19 +160,28 @@ public class OAuthLoginFlow(
         }
     }
 
-    /** Read a pasted `code=` value (or a whole redirect URL) from stdin, racing the loopback.
+    /** Read a pasted `code=` value (or a whole redirect URL) from the terminal, racing the loopback.
      *
-     *  Daemon thread on purpose: when the loopback wins, this reader is still parked on a blocking
-     *  read that nothing will ever satisfy, and a non-daemon thread would keep the JVM alive after
-     *  a successful login. Silently no-ops without a console, which is also the detached case. */
-    private fun pasteFallback(spec: LoginSpec, latch: CountDownLatch, codeRef: AtomicReference<String?>) {
-        if (System.console() == null) return
+     *  V4-251: it reads ONLY while the flow waits, and never parks in a blocking read. It used to sit
+     *  in readlnOrNull, which outlived the flow: once the loopback won, the next line the user typed
+     *  (the answer to the next prompt) went to that parked thread and was thrown away, and the prompt
+     *  needed it typed twice (take2-plans-1). Now it takes bytes only when the terminal already holds
+     *  them (in canonical mode a line becomes readable whole, on Enter), and stops at the first line
+     *  boundary once the wait is over. The returned [PasteReading] is that stop, which [awaitCode]
+     *  calls on every way out. Null without a terminal (a detached run, the console's off-request
+     *  sign-in), which prints no prompt and reads nothing. */
+    private fun pasteFallback(
+        spec: LoginSpec,
+        latch: CountDownLatch,
+        codeRef: AtomicReference<String?>,
+    ): PasteReading? {
+        if (!paste.interactive()) return null
         output.line("splice: if the browser cannot reach this machine, paste the redirect URL (or just the code) here:")
+        val input = paste.input()
+        val stop = CountDownLatch(1)
         // A named single-thread executor, the same seam [run] already uses for the loopback server's
-        // handler pool — not a raw thread. The reader thread keeps both properties the old one had:
-        // it is a daemon (see above) and it carries the per-head name a stack dump needs. shutdown()
-        // retires the executor once this one task finishes; it does NOT interrupt the parked read,
-        // so the "loopback wins while stdin is still blocked" case behaves exactly as before.
+        // handler pool, not a raw thread: a daemon, so a reader the stop could not wait out never
+        // holds the JVM open, carrying the per-head name a stack dump needs.
         val reader = Executors.newSingleThreadExecutor { task ->
             Executors.defaultThreadFactory().newThread(task).apply {
                 name = "splice-login-paste-${spec.head}"
@@ -153,20 +189,69 @@ public class OAuthLoginFlow(
             }
         }
         reader.execute {
-            val pasted = Cancellables.runCatchingCancellable {
-                generateSequence(::readlnOrNull).forEach { line ->
-                    if (latch.count == 0L) return@execute // the loopback already won
-                    extractCode(line)?.let { code ->
-                        codeRef.compareAndSet(null, code)
-                        latch.countDown()
-                        return@execute
-                    }
-                    if (line.isNotBlank()) output.line("splice: that is not an authorization code; try again:")
-                }
-            }
-            Cancellables.discard(pasted, "stdin closed or unreadable; the loopback callback is still live")
+            val read = Cancellables.runCatchingCancellable { readPastes(input, latch, stop, codeRef) }
+            Cancellables.discard(read, "the terminal closed or will not read; the loopback callback is still live")
         }
         reader.shutdown()
+        return PasteReading(stop, reader)
+    }
+
+    /** The paste reader's loop: whole lines, only bytes already typed, and only while the flow waits. */
+    private fun readPastes(
+        input: InputStream,
+        latch: CountDownLatch,
+        stop: CountDownLatch,
+        codeRef: AtomicReference<String?>,
+    ) {
+        val line = ByteArrayOutputStream()
+        var reading = true
+        while (reading) {
+            val waiting = latch.count > 0L && stop.count > 0L
+            reading = when {
+                // A line boundary after the wait is over: everything from here on is the next prompt's.
+                !waiting && line.size() == 0 -> false
+                input.available() > 0 -> takeByte(input, line, latch, stop, codeRef)
+                // Nothing typed yet: poll again, unless the wait is over mid-line, when what was typed
+                // during the wait goes with the flow.
+                else -> waiting.also { if (it) stop.await(PASTE_POLL_MS, TimeUnit.MILLISECONDS) }
+            }
+        }
+    }
+
+    /** One byte already typed, and at a line's end the whole line; false when reading should end. */
+    private fun takeByte(
+        input: InputStream,
+        line: ByteArrayOutputStream,
+        latch: CountDownLatch,
+        stop: CountDownLatch,
+        codeRef: AtomicReference<String?>,
+    ): Boolean {
+        val b = input.read()
+        if (b < 0 || b == '\n'.code) {
+            val text = line.toString(Charsets.UTF_8).also { line.reset() }
+            return b >= 0 && lineTyped(text, latch, stop, codeRef)
+        }
+        line.write(b)
+        return true
+    }
+
+    /** A whole typed line during the wait: a code ends the wait, and the reading with it, because the
+     *  rest of what was typed belongs to the next prompt; anything else asks again. */
+    private fun lineTyped(
+        text: String,
+        latch: CountDownLatch,
+        stop: CountDownLatch,
+        codeRef: AtomicReference<String?>,
+    ): Boolean {
+        if (latch.count == 0L || stop.count == 0L) return false
+        val code = extractCode(text)
+        if (code == null) {
+            if (text.isNotBlank()) output.line("splice: that is not an authorization code; try again:")
+            return true
+        }
+        codeRef.compareAndSet(null, code)
+        latch.countDown()
+        return false
     }
 
     /** A pasted redirect URL, a bare `code=...` fragment, or a bare code. Null when it is neither. */

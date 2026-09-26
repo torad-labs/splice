@@ -7865,3 +7865,11 @@ claimed_by = "console"
 claimed_at = "2026-09-26T18:28:01.561Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T18:28:01Z
 # [2026-09-26] RECEIPT cmd="cd console && tsc --noEmit -p . && eslint src tests e2e playwright.config.ts && vitest run (79 files); bun tools/gate rules" exit=0 tests=1516 touched=console/src/entities/topology/model/schema.ts,console/tests/entities-accounts.test.ts tail="3e07a5452; red: splice.example.toml share -> claude.share[6]: unknown name; green 43/43; mutants 4/4 (Kotlin alias added, Kotlin default added, console drops CLAUDE.md, refusal wording back); notice reads 'no known item' (copy wall: 3 words)"
+
+[[items]]
+id = "V4-324"
+phase = "release"
+title = "splice sessions prints a SendMessage target that reaches the session when its name holds an emoji or other astral character"
+files = ["features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt"]
+status = "todo"
+verify = "red first: a registry session named with an astral character (e.g. 'build 🚀') prints SendMessage(to=\"build \") today, because clean() (SessionsCommand.kt:111) filters UTF-16 chars and UNPRINTABLE (:39-47) drops Character.SURROGATE, so both halves go; green: clean filters by code point (codePoints()) and drops lone surrogates only, so the name prints whole, and C0/C1/format characters are still dropped; the console's sendCall (V4-321) and the CLI agree on the same fixtures; test file named at claim"

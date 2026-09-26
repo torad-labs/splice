@@ -7728,6 +7728,7 @@ verify = "red first: a projects test that saves a prompt and a compaction instru
 claimed_by = "console"
 claimed_at = "2026-09-26T16:31:44.961Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T16:31:44Z
+# [2026-09-26] RECEIPT cmd="cd console && npx vitest run (79 files) && npx tsc --noEmit -p . && npx eslint src/pages/projects tests/projects.test.ts" exit=0 tests=1510 touched=console/src/pages/projects/standing.tsx,console/src/pages/projects/coverage.ts,console/src/pages/projects/index.tsx,console/src/pages/projects/projects.css,console/src/pages/projects/strings.ts,console/tests/projects.test.ts,docs/design/JOBS.md,.dev/restructure/capabilities.tsv tail="dispositioned by Settings alone. JOBS.md +1 line. Mutants 8/8 killed and restored (rule never PUT, stale named, other repo named, refusal dropped, '' written, file prompt boxed, restart line hidden, action marked unbuilt). Console 1510/1510, tsc, eslint. Gradle slot console legs not rerun: qgre's coherence window; CI on the push is the verdict. standing.tsx asked into the fence (census row added)."
 
 [[items]]
 id = "V4-314"

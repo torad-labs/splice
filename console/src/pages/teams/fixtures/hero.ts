@@ -11,8 +11,8 @@ import type { TeamActivity, TeamEconomicsPayload, TeamMemberRow, TeamMessage, Te
 import { clockText } from '@widgets/team-board';
 import type { TeamTurn, TeamViewData } from '@widgets/team-board';
 
-/** Epoch ms of HH:MM(:SS) on the sample's day, in UTC like the daemon's day. */
-const at = (h: number, m: number, s = 0): number => Date.UTC(2025, 4, 22, h, m, s);
+/** Epoch ms of HH:MM(:SS) on the sample's day, on the viewer's own clock like the board's day. */
+const at = (h: number, m: number, s = 0): number => new Date(2025, 4, 22, h, m, s).getTime();
 
 /** A slot as the daemon writes one, with the fields the sample leaves at their empty. */
 const slot = (id: string, fields: Pick<TeamSlot, 'role' | 'head' | 'model' | 'account' | 'lead' | 'session' | 'instructions'>): TeamSlot => ({

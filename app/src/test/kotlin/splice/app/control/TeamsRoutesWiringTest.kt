@@ -16,6 +16,8 @@ import io.ktor.http.HttpMethod
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -23,12 +25,15 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.util.AsyncFileIo
+import splice.sessions.activity.MessageEdge
 import java.net.Socket
 import java.net.URLEncoder
 import java.nio.file.Path
 
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 20L
+private const val HOUR_MS = 3_600_000L
 
 /** One request: method, path, body (null = none), and whether to send the mgmt key. */
 private fun interface TeamsCall {
@@ -114,6 +119,34 @@ class TeamsRoutesWiringTest {
             assertEquals(rig.repo.toString(), row.getValue("id").jsonPrimitive.content, "an encoded root decodes")
             val composite = call(HttpMethod.Get, "/api/teams/$id", null, true)
             assertEquals(404, composite.status.value, "no composite team read (6.1)")
+        }
+    }
+
+    /** RED before V4-249: the day was a UTC date, so in Chicago the board turned over at 19:00 CDT and a
+     *  read of the evening lost everything before UTC midnight. The console now sends its local day's
+     *  bounds, and both halves come back. */
+    @Test
+    fun `a range read returns a local day that spans two UTC dates, both halves`() {
+        val from = 1_789_621_200_000L // 2026-09-17T05:00Z: midnight of Sep 17 in Chicago (CDT)
+        val to = from + 24 * HOUR_MS
+        val beforeUtcMidnight = from + 13 * HOUR_MS // 18:00 CDT, 23:00Z on the 17th
+        val afterUtcMidnight = from + 15 * HOUR_MS // 20:00 CDT, 01:00Z on the 18th
+        val team = rig.team()
+        rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", beforeUtcMidnight, "toolu_a"))
+        rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", afterUtcMidnight, "toolu_b"))
+        rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", to, "toolu_c"))
+        rig.stores.activity.label(LEAD, "claude", "Evening", beforeUtcMidnight)
+        rig.stores.activity.label(LEAD, "claude", "Night", afterUtcMidnight)
+        AsyncFileIo.drain()
+        val both = listOf(beforeUtcMidnight, afterUtcMidnight).map(Long::toString)
+        serve(wired = true) { call ->
+            for ((panel, rows) in listOf("chat" to "messages", "activity" to "entries")) {
+                val reply = call(HttpMethod.Get, "/api/teams/${team.id}/$panel?from=$from&to=$to", null, true)
+                val body = rig.json(reply.bodyAsText())
+                val ats = body.getValue(rows).jsonArray.map { it.jsonObject.getValue("at").jsonPrimitive.content }
+                assertEquals(both, ats, "$panel: the local day's two halves, and nothing at its end")
+                assertEquals(from.toString(), body.getValue("day_start_epoch_millis").jsonPrimitive.content)
+            }
         }
     }
 

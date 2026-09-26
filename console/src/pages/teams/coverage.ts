@@ -22,7 +22,7 @@ export const dispositions: Disposition[] = [
     kind: 'route',
     name: '/api/teams/{id}/edges',
     disposition: 'excluded',
-    reason: 'the chat read serves the same edges one UTC day at a time with their text, and the board draws one day',
+    reason: 'the chat read serves the same edges one day at a time with their text, and the board draws one day',
   },
   {
     kind: 'route',

@@ -23,6 +23,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val DAY = 86_400_000L
+private const val HOUR = 3_600_000L
 
 /** A session outside the team and the registry. */
 private const val STRANGER = "e5e5e5e5-0000-4000-8000-000000000005"
@@ -224,6 +225,44 @@ class TeamsRoutesTest {
         val bad = routes().reads.chat(id, "yesterday")
         assertEquals(HttpStatusCode.BadRequest, bad.status)
         assertEquals("""{"error":"day is a UTC date, YYYY-MM-DD: yesterday"}""", bad.body)
+    }
+
+    /** V4-249: the console's local day. Sep 18 in Chicago (CDT) runs 05:00Z on the 18th to 05:00Z on
+     *  the 19th, so its evening sits across UTC midnight; the window is half-open like a UTC day. */
+    @Test
+    fun `a from-to read is the caller's own day, both sides of UTC midnight, and a query naming no day is a 400`() {
+        val id = rig.team().id
+        val from = DAY_START + 5 * HOUR
+        val to = from + DAY
+        val inside = listOf(from, DAY_START + DAY - HOUR, DAY_START + DAY + HOUR)
+        (inside + listOf(from - 1, to)).forEachIndexed { n, at ->
+            rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", at, "toolu_$n"))
+            rig.stores.activity.label(LEAD, "claude", "label $n", at)
+        }
+        AsyncFileIo.drain()
+        val chat = rig.json(routes().reads.chat(id, null, from.toString(), to.toString()).body)
+        assertEquals(inside.map(Long::toString), rig.column(chat, "messages", "at"), "[from, to): both halves")
+        assertEquals(from.toString(), chat.getValue("day_start_epoch_millis").jsonPrimitive.content)
+        val activity = rig.json(routes().reads.activity(id, null, from.toString(), to.toString()).body)
+        assertEquals(inside.map(Long::toString), rig.column(activity, "entries", "at"))
+        val utc = rig.json(routes().reads.chat(id, "2026-09-18").body)
+        val utcDay = listOf(from - 1, from, DAY_START + DAY - HOUR).map(Long::toString).toSet()
+        assertEquals(utcDay, rig.column(utc, "messages", "at").toSet(), "?day= is still the UTC date")
+        listOf(
+            Triple(null, from.toString(), null),
+            Triple(null, to.toString(), from.toString()),
+            Triple(null, from.toString(), (from + DAY + 2 * HOUR).toString()),
+            Triple("2026-09-18", from.toString(), to.toString()),
+            Triple(null, "dawn", to.toString()),
+        ).forEach { (day, start, end) ->
+            val bad = routes().reads.chat(id, day, start, end)
+            assertEquals(HttpStatusCode.BadRequest, bad.status, "day=$day from=$start to=$end")
+            assertEquals(
+                """{"error":"from and to are one day's bounds in epoch milliseconds, from before to and at most """ +
+                    """25 hours apart, never beside day: from=$start to=$end day=$day"}""",
+                bad.body,
+            )
+        }
     }
 
     @Test

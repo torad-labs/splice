@@ -8,8 +8,9 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { SessionRow } from '../src/entities/session';
 import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import type { TeamActivityPayload, TeamChatPayload, TeamEconomicsPayload, TeamPanels, TeamRow, TeamSlot } from '../src/entities/team';
+import { fetchTeamPanels } from '../src/entities/team';
 import { draftOf, keyFor, saveDraft, unbindSession, unbindsOf, writeOf } from '../src/features/team-compose';
-import { UNLISTED, activityOf, boardOf, dayStartOf, hhmm, hhmmss, lastHourOf, liveTurnsOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
+import { UNLISTED, activityOf, boardOf, dayOf, dayStartOf, hhmm, hhmmss, lastHourOf, liveTurnsOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
 import { dayAxis } from '../src/widgets/team-board';
 import { panelStates } from '../src/pages/teams';
 
@@ -265,11 +266,11 @@ describe('the clock the page prints', () => {
     else process.env.TZ = zone;
   });
 
-  test("times print on the operator's own clock, and the day's window stays the UTC day", () => {
+  test("times print on the operator's own clock, and so does the day's window (V4-249)", () => {
     process.env.TZ = 'America/Chicago';
     expect(hhmm(NOW)).toBe('09:00'); // 14:00 UTC, in September's CDT
     expect(hhmmss(NOW - 30_000)).toBe('08:59:30');
-    expect(dayStartOf(NOW)).toBe(DAY);
+    expect(dayStartOf(NOW)).toBe(DAY + 5 * 3_600_000); // local midnight, 05:00 UTC
     expect(dayAxis([NOW - 5 * 3_600_000], NOW).ticks[0].label).toBe('04:00');
   });
 
@@ -279,6 +280,53 @@ describe('the clock the page prints', () => {
     const ticks = dayAxis([NOW - 5 * 3_600_000], NOW).ticks;
     expect(ticks.length).toBeGreaterThan(1);
     expect(ticks.every((tick) => tick.label.endsWith(':00'))).toBe(true);
+  });
+});
+
+describe("the day is the viewer's own (V4-249)", () => {
+  // In Chicago the board turned over at 19:00 CDT, 00:00 UTC, and a take that crossed it lost its
+  // first half. 20:00 CDT on Sep 25 is 01:00 UTC on the 26th; the local day began at 05:00 UTC.
+  const zone = process.env.TZ;
+  afterEach(() => {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+  const EVENING = Date.UTC(2026, 8, 26, 1, 0, 0);
+  const LOCAL_MIDNIGHT = Date.UTC(2026, 8, 25, 5, 0, 0);
+  const SIX_PM = Date.UTC(2026, 8, 25, 23, 0, 0);
+  const row = (ts: number, total: number): TurnRow => ({ head: 'claude', ts, model: 'fable', outcome: 'ok', compact: false, session: 'aaaaaaaa', total });
+
+  test('a board held at 20:00 CDT keeps the evening before UTC midnight', () => {
+    process.env.TZ = 'America/Chicago';
+    expect(dayStartOf(EVENING)).toBe(LOCAL_MIDNIGHT);
+    const board = boardOf(TEAM, SESSIONS, PANELS, EVENING, null);
+    const rows = [row(LOCAL_MIDNIGHT - 1, 1), row(SIX_PM, 60_000), row(EVENING - 60_000, 30_000)];
+    expect(viewDataOf(board, rows, [], PANELS, EVENING)?.turns.map((turn) => turn.start)).toEqual([SIX_PM - 60_000, EVENING - 90_000]);
+  });
+
+  test("the chat and activity reads ask the daemon for the viewer's day, from local midnight to the next", async () => {
+    process.env.TZ = 'America/Chicago';
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', (url: string) => {
+      urls.push(url);
+      return Promise.resolve(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    });
+    try {
+      await fetchTeamPanels('team-1', dayOf(EVENING));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const day = `?from=${LOCAL_MIDNIGHT}&to=${Date.UTC(2026, 8, 26, 5, 0, 0)}`;
+    expect(urls.filter((url) => url.includes('/chat') || url.includes('/activity'))).toEqual([
+      `/api/teams/team-1/chat${day}`,
+      `/api/teams/team-1/activity${day}`,
+    ]);
+  });
+
+  test('a DST day is the calendar\'s, 25 hours on the fall-back, never 24', () => {
+    process.env.TZ = 'America/Chicago';
+    const fallBack = dayOf(Date.UTC(2026, 10, 1, 18, 0, 0)); // Nov 1 2026, noon CST
+    expect(fallBack.to - fallBack.from).toBe(25 * 3_600_000);
   });
 });
 

@@ -3,8 +3,10 @@
 // THE WIRE (V4-131, features/sessions/.../http/TeamsRoutes.kt and TeamsReads.kt). The read is SPLIT
 // on purpose: there is no GET /api/teams/{id}. A team's board is composed from
 //   GET /api/teams                       -> TeamsPayload       every team, archived included
-//   GET /api/teams/{id}/chat?day=        -> TeamChatPayload    the day's messages, text read on demand
-//   GET /api/teams/{id}/activity?day=    -> TeamActivityPayload the day's sampled activity labels
+//   GET /api/teams/{id}/chat?from=&to=     -> TeamChatPayload    the day's messages, text read on demand
+//   GET /api/teams/{id}/activity?from=&to= -> TeamActivityPayload the day's sampled activity labels
+// where from and to bound the viewer's local day in epoch ms (V4-249; `?day=`, a UTC date, is the
+// daemon's form for other callers), and `day_start_epoch_millis` answers `from`.
 //   GET /api/teams/{id}/economics        -> TeamEconomicsPayload lifetime tallies per role and slot
 // plus /api/sessions, whose rows carry the team they are bound to. The writes answer the saved team:
 //   PUT  /api/teams                      create, under an Idempotency-Key header

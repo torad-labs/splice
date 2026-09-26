@@ -12,7 +12,7 @@
 //   PUT  /api/teams/{id}/slots/{slot}/instructions  {instructions: string | null}
 //   POST /api/teams/{id}/archive                 sets the flag; nothing is ever deleted
 //   GET  /api/teams/{id}/economics               lifetime turns, tokens and dollars per role and slot
-//   and TeamReads' edges, chat?day= and activity?day=.
+//   and TeamReads' edges, chat and activity, each for ?day= (a UTC date) or ?from=&to= (the caller's day).
 //
 // ECONOMICS joins perf rows on the 8-character session tag the row stores (TurnDrive.SESSION_TAG_CHARS
 // in the gateway module, which this module cannot import), over EVERY session a slot ever held

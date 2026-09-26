@@ -29,7 +29,7 @@ import { ABSENT, poll, useLinkedId, useOpen } from '@shared/lib';
 import { Badge, DataTable, Empty, KeyValue, PageHeader, Pips, Section } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import type { TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
-import { boardOf, dayStartOf, viewDataOf } from './board';
+import { boardOf, dayOf, dayStartOf, viewDataOf } from './board';
 import { H, S, U } from './strings';
 import './teams.css';
 
@@ -128,8 +128,12 @@ export function panelStates(board: TeamPayload, panels: TeamPanels | null): { ch
   };
 }
 
-/** YYYY-MM-DD in UTC, the daemon's day. */
-const utcDay = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
+/** YYYY-MM-DD on the viewer's own calendar, the board's day (V4-249: a team made at 9:35 PM CDT read
+ *  as the next day's UTC date). */
+const localDay = (epochMs: number): string => {
+  const at = new Date(epochMs);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+};
 
 const boundOf = (team: TeamRow): number => team.slots.filter((slot) => slot.session !== null).length;
 
@@ -148,8 +152,8 @@ export function TeamView({ board, mode, data, chat, feed, onEdit }: {
     [S.goal, team.goal === '' ? ABSENT : team.goal],
     [S.repo, <code className="myx-tm-code">{team.repo}</code>],
     ...(team.features.length === 0 ? [] : [[S.features, team.features.join(', ')] as const]),
-    [S.created, utcDay(team.created_epoch_millis)],
-    [S.updated, utcDay(team.updated_epoch_millis)],
+    [S.created, localDay(team.created_epoch_millis)],
+    [S.updated, localDay(team.updated_epoch_millis)],
   ];
   return (
     <div className="myx-tm-team">
@@ -296,7 +300,7 @@ export function TeamsPage() {
     if (fixture !== null || openId === null) return undefined;
     return poll(async () => {
       setNow(Date.now());
-      await Promise.all([fetchTeamPanels(openId), fetchSessions()]);
+      await Promise.all([fetchTeamPanels(openId, dayOf(Date.now())), fetchSessions()]);
     }, READ_EVERY_MS);
   }, [fixture, openId]);
 

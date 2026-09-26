@@ -41,12 +41,13 @@ function settled<T>(read: Promise<T>): Promise<T | { error: string }> {
   return read.catch((err: unknown) => ({ error: messageOf(err) }));
 }
 
-/** The opened team's chat and activity for `day` (a UTC date, YYYY-MM-DD; today when omitted) and
- *  its lifetime economics, read in parallel. Each path is written out at its request<T>() call, which
- *  is where tools/e2e/probes/console-wire-keys.ts finds a read and the type it is checked against. */
-export async function fetchTeamPanels(id: string, day?: string): Promise<void> {
+/** The opened team's chat and activity for `day`, the viewer's local day in epoch ms, [from, to)
+ *  (V4-249: the board turns over at the viewer's midnight, not at 00:00 UTC), and its lifetime
+ *  economics, read in parallel. Each path is written out at its request<T>() call, which is where
+ *  tools/e2e/probes/console-wire-keys.ts finds a read and the type it is checked against. */
+export async function fetchTeamPanels(id: string, day: { from: number; to: number }): Promise<void> {
   teamPanelsStore.startLoading();
-  const query = day === undefined ? '' : `?day=${encodeURIComponent(day)}`;
+  const query = `?from=${day.from}&to=${day.to}`;
   const [chat, activity, economics] = await Promise.all([
     settled(request<TeamChatPayload>(`/api/teams/${encodeURIComponent(id)}/chat${query}`)),
     settled(request<TeamActivityPayload>(`/api/teams/${encodeURIComponent(id)}/activity${query}`)),

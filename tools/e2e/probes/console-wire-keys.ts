@@ -85,7 +85,7 @@ const ID_SOURCES: Record<string, IdSource> = {
  *  path placeholder is. */
 const QUERY_FILL: Record<string, string> = {
   "entities/perf|query.toString()": "head={head}&n=20",
-  // fetchTeamPanels reads today unless a day is asked for.
+  // fetchTeamPanels sends the viewer's day as ?from=&to=; the daemon's default day answers the same keys.
   "entities/team|query": "",
 };
 

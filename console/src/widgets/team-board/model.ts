@@ -48,10 +48,9 @@ export const SESSION_TAG_CHARS = 8;
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
-/** HH:MM, or HH:MM:SS with `seconds`, on the operator's own clock, as Turns prints its times. The
- *  daemon's DAY is UTC (TeamsReads.kt reads `?day=` as a UTC date), so the window the page reads is
- *  the UTC day and its help says so; the times in it are local (Marlin, 2026-09-25: the page
- *  printed UTC times beside a local clock with no word of it). */
+/** HH:MM, or HH:MM:SS with `seconds`, on the operator's own clock, as Turns prints its times, and
+ *  the day the page reads is the operator's too (V4-249). Marlin, 2026-09-25: the page printed UTC
+ *  times beside a local clock with no word of it. */
 export function clockText(epochMs: number, seconds = false): string {
   const at = new Date(epochMs);
   const hm = `${pad(at.getHours())}:${pad(at.getMinutes())}`;

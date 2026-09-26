@@ -4,8 +4,9 @@
 // economics, and the day's perf rows of the team's sessions. Pure: no store and no clock (the
 // caller passes `now`), so the suite holds every join against fixed payloads.
 //
-// THE DAY IS UTC, because the daemon's is (TeamsReads.kt reads `?day=` as a UTC date), and the page
-// says so once, on its timeline's help. The times in it print on the operator's own clock.
+// THE DAY IS THE VIEWER'S OWN (V4-249): local midnight to the next, sent to the daemon as ?from=&to=,
+// so the board turns over at the viewer's midnight and not at 00:00 UTC, which in Chicago is 19:00
+// CDT, mid-evening. The times in it print on the same clock.
 import type { SessionRow } from '@entities/session';
 import type { InflightTurn, TurnRow } from '@entities/perf';
 import { UNLISTED } from '@entities/team';
@@ -24,7 +25,6 @@ import { SESSION_TAG_CHARS, clockText, tokensIn } from '@widgets/team-board';
 import type { TeamHourPoint, TeamTurn, TeamViewData } from '@widgets/team-board';
 import { ABSENT } from '@shared/lib';
 
-const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 
 export { UNLISTED };
@@ -41,9 +41,20 @@ export function span(ms: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
 }
 
-/** Midnight UTC of the day `epochMs` falls in: the start of the day the chat and activity read. */
+/** The viewer's local day `epochMs` falls in, [from, to) in epoch ms: the window the chat, the
+ *  activity and the turns read. Built from the calendar, never as 24 hours, since a DST change makes
+ *  the day 23 or 25. */
+export function dayOf(epochMs: number): { from: number; to: number } {
+  const at = new Date(epochMs);
+  return {
+    from: new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime(),
+    to: new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1).getTime(),
+  };
+}
+
+/** Local midnight of the day `epochMs` falls in: the start of the day the board reads. */
 export function dayStartOf(epochMs: number): number {
-  return Math.floor(epochMs / DAY_MS) * DAY_MS;
+  return dayOf(epochMs).from;
 }
 
 /** A panel's payload when it answered for THIS team, else null (still reading, or the store holds

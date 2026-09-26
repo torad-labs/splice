@@ -301,14 +301,24 @@ const DAY_MS = 86_400_000;
 
 /**
  * How long a journey waits so that the next [spanMs] fall inside one UTC day: 0, or until just past
- * the coming 00:00 UTC when it is nearer than that. The daemon's day-scoped reads (a team's chat and
- * timeline, a project's turns today) turn at UTC midnight, so a journey that makes its own facts
- * and reads them back as today's must do both on one UTC day. A gate run that straddled midnight
- * read an empty chat (train 23, run 36202675360). The stack and the daemon share this machine's
- * clock.
+ * the coming 00:00 UTC when it is nearer than that. The daemon's own day-scoped reads (a project's
+ * turns today) turn at UTC midnight, so a journey that makes its own facts and reads them back as
+ * today's must do both on one UTC day. A gate run that straddled midnight read an empty chat (train
+ * 23, run 36202675360). The stack and the daemon share this machine's clock.
  */
 export function utcDayWait(spanMs: number, now = Date.now()): number {
   const left = DAY_MS - (now % DAY_MS);
+  return left > spanMs ? 0 : left + 1_000;
+}
+
+/**
+ * The same wait against the coming LOCAL midnight: the Teams board reads the viewer's own day
+ * (V4-249), and the stack's browser runs in this process's zone (playwright.config.ts sets no
+ * timezoneId, and the browser inherits this environment).
+ */
+export function localDayWait(spanMs: number, now = Date.now()): number {
+  const at = new Date(now);
+  const left = new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1).getTime() - now;
   return left > spanMs ? 0 : left + 1_000;
 }
 

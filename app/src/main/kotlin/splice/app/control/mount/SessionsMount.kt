@@ -112,11 +112,18 @@ internal class SessionsMount(
         }
         route.post("/api/teams/{id}/archive") { guard.guarded(call) { teams.archive(id(call)).send(call) } }
         route.get("/api/teams/{id}/edges") { guard.guarded(call) { teams.reads.edges(id(call)).send(call) } }
+        // V4-249: ?from=&to= is the caller's own day (the console's local one), beside ?day=, a UTC date.
         route.get("/api/teams/{id}/chat") {
-            guard.guarded(call) { teams.reads.chat(id(call), call.request.queryParameters["day"]).send(call) }
+            guard.guarded(call) {
+                val query = call.request.queryParameters
+                teams.reads.chat(id(call), query["day"], query["from"], query["to"]).send(call)
+            }
         }
         route.get("/api/teams/{id}/activity") {
-            guard.guarded(call) { teams.reads.activity(id(call), call.request.queryParameters["day"]).send(call) }
+            guard.guarded(call) {
+                val query = call.request.queryParameters
+                teams.reads.activity(id(call), query["day"], query["from"], query["to"]).send(call)
+            }
         }
         route.get("/api/teams/{id}/economics") { guard.guarded(call) { teams.economics(id(call)).send(call) } }
     }

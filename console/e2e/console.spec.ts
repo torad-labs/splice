@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STACK, TURN_PROMPT, driveOneTurn, sendHandOff, utcDayWait } from './stack';
+import { STACK, TURN_PROMPT, driveOneTurn, localDayWait, sendHandOff, utcDayWait } from './stack';
 
 const PAGES_DIR = join(dirname(fileURLToPath(import.meta.url)), '../src/pages');
 const PAGES = readdirSync(PAGES_DIR, { withFileTypes: true })
@@ -780,9 +780,9 @@ test('models opens a model with the head windows its topology declares', async (
 test('teams composes the stack\'s two sessions, shows their hand-off and the sender\'s priced turn, and unbinds', async ({ page }) => {
   // The journey drives a real turn bounded at 60 s (stack.ts postTurn), so its budget sits above that
   // bound: a turn that hangs fails as that turn, named, rather than as a bare test timeout. The chat
-  // and the timeline are the daemon's UTC today, so the whole budget falls inside one UTC day.
+  // and the timeline are the viewer's local today (V4-249), so the whole budget falls inside one.
   const budget = 120_000;
-  const wait = utcDayWait(budget);
+  const wait = localDayWait(budget);
   test.setTimeout(budget + wait);
   await new Promise((resolve) => setTimeout(resolve, wait));
   const faults = await open(page, 'teams');

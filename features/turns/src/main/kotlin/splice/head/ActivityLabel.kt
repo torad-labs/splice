@@ -31,11 +31,11 @@ import splice.core.wire.ContentBlock.TextBlock
 import splice.core.wire.ContentBlock.ToolUseBlock
 
 /** One activity sample per session per [SAMPLE_INTERVAL_MS] on [clock], for the last
- *  [REMEMBERED_SESSIONS] sessions seen. */
+ *  [ACTIVITY_SESSIONS_REMEMBERED] sessions seen. */
 internal class ActivitySamples(private val clock: ElapsedClock) {
     private val lastAt = object : LinkedHashMap<String, Long>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean =
-            size > REMEMBERED_SESSIONS
+            size > ACTIVITY_SESSIONS_REMEMBERED
     }
 
     /** [session] was sampled now: the client answered its own side query. */
@@ -133,8 +133,9 @@ internal class ActivityLabel {
 /** The client's own interval between side queries (`xa=30000` in Claude Code 2.1.282). */
 private const val SAMPLE_INTERVAL_MS = 30_000L
 
-/** How many sessions' last sample a head remembers; a session past it is sampled again at once. */
-private const val REMEMBERED_SESSIONS = 512
+/** How many sessions' last sample a head remembers; a session past it is sampled again at once. Its
+ *  own name: the 4096-session caps in ConsoleWiring and SlotInstructions bound other maps (V4-88). */
+private const val ACTIVITY_SESSIONS_REMEMBERED = 512
 private const val ROLE_USER = "user"
 private const val ROLE_ASSISTANT = "assistant"
 private const val MCP_PREFIX = "mcp__"

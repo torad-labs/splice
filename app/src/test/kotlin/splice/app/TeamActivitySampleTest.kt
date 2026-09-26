@@ -46,7 +46,7 @@ private const val MEMBER = "8a2d4e6f-3c5b-4f7a-b812-1e9d0c3b5a02"
 private const val AFTER_A_TOOL_CALL =
     """[{"role":"user","content":"Review the rate limiter."},""" +
         """{"role":"assistant","content":[{"type":"text","text":"Running the suite."},""" +
-        """{"type":"tool_use","id":"toolu_t1","name":"Bash","input":{"command":"cd /tmp/storefront && npm test"}}]},""" +
+        """{"type":"tool_use","id":"toolu_t1","name":"Bash","input":{"command":"cd /repo && npm test"}}]},""" +
         """{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_t1","content":"20 passing"}]}]"""
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

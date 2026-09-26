@@ -7330,3 +7330,11 @@ title = "Code mode's 24-hour promise holds on an idle head, and the disk-writes 
 files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeBridge.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexCodeModeBridgeTest.kt", "quality/architecture/src/test/kotlin/splice/quality/DiskWritesLawTest.kt", "README.md", ".github/SECURITY.md"]
 status = "todo"
 verify = "red first: an idle head's code-mode record older than 24 hours still on disk with the daemon up; a second unlisted write in a named file passing the law (both quoted). Green: the record goes within the sweep interval after 24 hours, and the law's mutant (a new write site in CompactionRecordings.kt) goes red, or README states exactly what the law checks; :integrations-provider-codex:test (or the module's name) :quality-architecture:test and detekt through the slot"
+
+[[items]]
+id = "V4-288"
+phase = "release"
+title = "The Teams turn log says when it is short or failed (tonight's review, older code on the V4-249 board, 2026-09-26): the page draws only turns.data.landed and ignores turns.error and the unread heads (console/src/pages/teams/index.tsx:313), a failed read keeps the last good log or 'No turns yet', mergeTurns ignores each head's truncated flag (PerfRoutes.kt:150 sends it), and it cuts the merged list to 2,000 rows across all heads (turns-wire.ts:42) although index.tsx:44-46 says the cap is per head. Past 2,000 fleet turns since local midnight the timeline and 'turns today' silently start partway through the day. Show the error and the unread or truncated heads as a fault on the timeline, and cap per head as the comment says"
+files = ["console/src/pages/teams/index.tsx", "console/src/entities/perf/model/turns-wire.ts", "console/tests/teams-live.test.ts"]
+status = "todo"
+verify = "red first in vitest: a turns read that fails, a head with truncated=true, and 2,001 turns across two heads each render today as a complete day; green: each shows its fault and the per-head cap holds; console eslint, typecheck and vitest through the gate's console legs"

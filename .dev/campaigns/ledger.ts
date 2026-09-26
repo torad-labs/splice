@@ -116,6 +116,7 @@ write                               each write commits the ledger by itself (git
                                     the builder's proof: exact command, exit, test count, plain-path
                                     touched files, output tail. "done" is refused without one at exit 0
                                     --deleted a,b records removed tracked files so stage can stage the removal
+                                    --touched - alone closes a row whose files are [] (it delivers outside the repo)
                                     --seat S (or $LEDGER_SEAT) is checked against the claim: a row claimed
                                     by one seat and delivered by another is the collision nothing caught
                                     scratch paths (**/*.tmp.ts, **/.tmp-*) are refused: the touched list is what gets committed
@@ -1340,12 +1341,12 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       const cmd = flag(rest, "cmd"); const exit = flag(rest, "exit"); const tests = flag(rest, "tests");
       const touched = flag(rest, "touched"); const tail = flag(rest, "tail") ?? "";
       const deletedCsv = flag(rest, "deleted") ?? "";
-      if (cmd === null || exit === null || tests === null || touched === null) throw new LedgerError("receipt: --cmd, --exit, --tests and --touched are all required (--touched - with --deleted for a pure deletion)");
+      if (cmd === null || exit === null || tests === null || touched === null) throw new LedgerError("receipt: --cmd, --exit, --tests and --touched are all required (--touched - with --deleted for a pure deletion, or alone for a row whose files are [])");
       if (!/^\d+$/.test(exit) || !/^\d+$/.test(tests)) throw new LedgerError("receipt: --exit and --tests must be integers");
       const files = touched.split(",").map((p) => p.trim()).filter((p) => p !== "" && p !== "-");
       const deleted = deletedCsv.split(",").map((p) => p.trim()).filter(Boolean);
       const badPath = (p: string): boolean => p.startsWith("/") || p.includes("..") || /\s/.test(p);
-      if ((files.length === 0 && deleted.length === 0) || files.some(badPath) || deleted.some(badPath)) throw new LedgerError("receipt: --touched (and --deleted) must be repo-relative plain paths without whitespace, comma-separated");
+      if (files.some(badPath) || deleted.some(badPath)) throw new LedgerError("receipt: --touched (and --deleted) must be repo-relative plain paths without whitespace, comma-separated");
       const scratch = [...files, ...deleted].filter(isScratchPath);
       if (scratch.length > 0) {
         throw new LedgerError(
@@ -1358,6 +1359,11 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       const receiptBlock = findBlock(blocks, id);
       assertMachinerySeat(id, receiptBlock.item, rest, "receipt");
       const receiptFence = receiptBlock.item.files;
+      // V4-332: a receipt that touches nothing closes only a row whose fence is [], the row that delivers
+      // outside the repo (V4-331's renders). A fenced row's receipt is its staging list, so it names files.
+      if (files.length === 0 && deleted.length === 0 && receiptFence.length > 0) {
+        throw new LedgerError(`receipt: --touched (and --deleted) must be repo-relative plain paths without whitespace, comma-separated; ${id} fences ${receiptFence.length} path(s), and \`--touched -\` alone is for a row whose files are []`);
+      }
       const beyond = [...files, ...deleted].filter((p) => !inFence(p, receiptFence));
       if (receiptFence.length > 0 && beyond.length > 0) {
         console.error(`NOTE ${id}: ${beyond.length} path(s) outside this row's fence: ${beyond.slice(0, 8).join(", ")}${beyond.length > 8 ? ", …" : ""} — staged as receipted`);
@@ -2619,6 +2625,14 @@ async function selftest(): Promise<number> {
   rmSync(join(repo, "src", "zz.ts"));
   check("an untracked deletion is refused", (await run("receipt", "D1", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-", "--deleted", "src/never.ts")).includes("not tracked"));
   check("a pure deletion receipt is recorded", (await run("receipt", "D1", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-", "--deleted", "src/zz.ts")).includes("1 deleted"));
+  // V4-332: a row whose fence is [] delivers outside the repo (V4-331's renders under mythos/captures),
+  // so its receipt touches nothing and must still be able to close the row; a fenced row's receipt is
+  // the staging list, so an empty one stays refused there.
+  await run("add", "--id", "E1", "--phase", "m9", "--title", "an out-of-repo deliverable", "--verify", "");
+  { const out = await run("receipt", "E1", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-"); check("an empty-fence row records a `--touched -` receipt (V4-332)", out.includes("E1: receipt recorded"), out.trim()); }
+  { const out = await run("set-status", "E1", "done"); check("an empty-fence row with that receipt reaches done (V4-332)", out.includes("E1 → done"), out.trim()); }
+  await run("add", "--id", "E2", "--phase", "m9", "--title", "a fenced row", "--verify", "", "--files", "src/b.ts");
+  { const out = await run("receipt", "E2", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-"); check("a fenced row's `--touched -` receipt stays refused (V4-332)", out.includes("repo-relative plain paths"), out.trim()); }
   { const out = asOrchestrator("stage", "D1"); check("stage refuses a dirty index and names the remedy", out.includes("already holds") && out.includes("git restore --staged")); }
   sh("git", "commit", "-q", "-m", "row M2");
   check("landed confirms every receipt file is present at the commit", asOrchestrator("landed", "M2", "HEAD").includes("receipt file(s) present"));

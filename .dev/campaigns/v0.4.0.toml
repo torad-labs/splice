@@ -7847,5 +7847,8 @@ id = "V4-323"
 phase = "release"
 title = "The console's validator takes every share/isolate name the daemon takes: the shipped example's own 'CLAUDE.md' (splice.example.toml:443) reads 'unknown name' today"
 files = ["console/src/entities/topology/model/schema.ts", "console/tests/entities-accounts.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first: validating splice.example.toml's [claude] share reports claude.share[6]: unknown name (quoted); green: the daemon's aliases (ClaudeMaterializeTypes.kt:21-29: settings.json/settings, CLAUDE.md/claude_md/claude.md/claudemd, mcps/mcp) and ClaudeSharingDefaults' names pass, pinned by a parity test that reads the Kotlin at test time (V4-316's pattern), and a mutant adding an alias turns it red; a name outside the list is a notice ('matches no known item'), never a refusal, because the daemon matches any other on-disk name as itself (else -> setOf(item)); cd console && vitest"
+claimed_by = "console"
+claimed_at = "2026-09-26T18:28:01.561Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T18:28:01Z

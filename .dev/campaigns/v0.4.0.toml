@@ -7514,6 +7514,7 @@ claimed_by = "console"
 claimed_at = "2026-09-26T12:00:51.646Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T12:00:51Z
 # [2026-09-26] amend by=orchestrator: files were ["console/src/entities/perf/api/index.ts", "console/src/entities/perf/model/store.ts", "console/src/entities/perf/index.ts", "console/src/pages/turns/index.tsx", "console/src/pages/logs/index.tsx", "console/tests/capture.test.ts"]
+# [2026-09-26] RECEIPT cmd="umask 022; bun tools/gate slot V4-301-green -- :console:lint :console:typecheck :console:test --continue" exit=0 tests=1441 touched=console/src/entities/perf/api/index.ts,console/src/entities/perf/model/store.ts,console/src/entities/perf/index.ts,console/src/pages/turns/index.tsx,console/src/pages/logs/index.tsx,console/tests/capture.test.ts,console/tests/turns.test.ts tail="e:lint, :console:typecheck, :console:test executed; vitest 75 files, 1441 tests passed; fix 92011d673; reds 5/5 on HEAD's semantics (B's view read A's 'alpha: the trace store is unreadable' while B's read was in flight; the logs drawer for beta rendered A's fault; B's failure overwrote A's; B's success cleared A's; a write's failed re-read on alpha showed under beta); 7 mutants killed and restored"
 
 [[items]]
 id = "V4-302"

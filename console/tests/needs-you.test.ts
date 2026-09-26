@@ -21,7 +21,7 @@ import { FleetBoard } from '../src/pages/fleet';
 import type { FleetSources } from '../src/pages/fleet';
 import { SessionsBoard } from '../src/pages/sessions';
 import { linkedId } from '../src/shared/lib';
-import { H, S } from '../src/pages/needs-you/strings';
+import { H, S, U } from '../src/pages/needs-you/strings';
 import { S as FIX_WORDS } from '../src/features/doctor-fix/strings';
 import { clockText } from '../src/widgets/rule';
 
@@ -277,6 +277,34 @@ describe('the doctor', () => {
       auth: read({ claudex: { kind: 'chatgpt-oauth', login: 'x', present: false } }),
     }), NOW).needs;
     expect(out.map((need) => need.source)).toEqual(['heads']);
+  });
+
+  // V4-333: V4-331's render listed one stopped head three times: its own item, the daemon's
+  // "still converging" count and its port's "not listening" (DoctorHeadChecks), each with a fix.
+  const stopped = (): Partial<NeedInputs> => ({
+    heads: read([head(), head({ key: 'mockchat2', label: 'mockchat2', port: 54791, running: false, healthy: false })]),
+    doctor: read(doctor([
+      { id: 'daemon/heads', status: 'warn', detail: 'still converging: 1 ready + 0 failed of 2' },
+      { id: 'daemon/head claudex', status: 'info', detail: ':3099 listening' },
+      { id: 'daemon/head mockchat2', status: 'warn', detail: ':54791 not listening' },
+    ])),
+  });
+
+  test('a stopped head is one item, its Start fix kept and what Doctor found said on it - V4-333', () => {
+    const out = needsOf(quiet(stopped()), NOW).needs;
+    expect(out.map((need) => [need.source, need.subject, need.finding, need.fix])).toEqual([
+      ['heads', 'mockchat2', `${H.down} ${U.doctor} still converging: 1 ready + 0 failed of 2; :54791 not listening`, { kind: 'start', head: 'mockchat2' }],
+    ]);
+  });
+
+  test('a doctor check about no head with an item stays its own item - V4-333', () => {
+    // Every head up, one of them with an item that is not about being down: the count and the port
+    // are the daemon's to explain, not that head's.
+    const up = quiet({ ...stopped(), heads: read([head({ versionMatch: false }), head({ key: 'mockchat2', label: 'mockchat2', port: 54791 })]) });
+    expect(needsOf(up, NOW).needs.map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:claudex', 'doctor:daemon/heads', 'doctor:daemon/head mockchat2']);
+    // A head that failed to start carries the daemon's own remedy, which Start is not.
+    const failed = quiet({ ...stopped(), doctor: read(doctor([{ id: 'daemon/heads', status: 'fail', detail: '1 of 2 head(s) FAILED to start', fix: 'splice restart' }])) });
+    expect(needsOf(failed, NOW).needs.map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:mockchat2', 'doctor:daemon/heads']);
   });
 });
 

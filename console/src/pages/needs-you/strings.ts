@@ -95,4 +95,6 @@ export const U = {
   waiting: 'settings waiting',
   read: 'Read',
   seat: 'seat',
+  /** Before what Doctor's checks found, on the head item they are about. */
+  doctor: 'Doctor:',
 } as const;

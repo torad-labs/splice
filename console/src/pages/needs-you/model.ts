@@ -272,17 +272,12 @@ function teamNeeds(teams: readonly TeamRow[], rows: readonly SessionRow[]): Need
 }
 
 /**
- * Every doctor check that wants the operator, with its own remedy to copy where it carries one, and
- * the same finding once, as Doctor's rack collapses it (four unlinked launchers are one item with one
- * `splice install --all`). A head's sign-in check (`auth/<head>`) is the same fact as its head's
- * item, said once there.
+ * Every doctor check that wants the operator and is about no head with an item here, with its own
+ * remedy to copy where it carries one, and the same finding once, as Doctor's rack collapses it
+ * (four unlinked launchers are one item with one `splice install --all`).
  */
-function doctorNeeds(checks: readonly DoctorCheck[], saidFor: ReadonlySet<string>): Need[] {
-  const wanted = checks.filter((check) => {
-    const [section, name = ''] = check.id.split('/');
-    return wantsAttention(check.status) && !(section === 'auth' && saidFor.has(name));
-  });
-  return collapseChecks(wanted).map((row) => ({
+function doctorNeeds(checks: readonly DoctorCheck[]): Need[] {
+  return collapseChecks(checks).map((row) => ({
     key: `doctor:${row.key}`,
     severity: row.status === 'fail' ? 'danger' : 'warn',
     source: 'doctor',
@@ -294,6 +289,25 @@ function doctorNeeds(checks: readonly DoctorCheck[], saidFor: ReadonlySet<string
     // between this read and Doctor's would miss.
     at: itemHref('doctor', row.members[0]?.id ?? row.key),
   }));
+}
+
+/**
+ * The heads with an item here that a doctor check is about (V4-333): a head's sign-in
+ * (`auth/<head>`) and its port (`daemon/head <head>`, DoctorHeadChecks) are its own, and the
+ * daemon's count of heads still coming up (`daemon/heads` at warn) is about every head that is
+ * down. That count at fail carries the daemon's own remedy, which Start is not: it stays its own item.
+ */
+function headsOfCheck(check: DoctorCheck, said: ReadonlySet<string>, down: readonly string[]): string[] {
+  const [section, name = ''] = check.id.split('/');
+  const own = section === 'auth' ? name : section === 'daemon' && name.startsWith('head ') ? name.slice('head '.length) : null;
+  if (own !== null) return said.has(own) ? [own] : [];
+  return check.id === 'daemon/heads' && check.status === 'warn' ? [...down] : [];
+}
+
+/** A head's item, and what Doctor found about that head after it: one stopped head is one item. */
+function withDoctor(need: Need, checks: readonly DoctorCheck[]): Need {
+  if (checks.length === 0) return need;
+  return { ...need, finding: `${need.finding} ${U.doctor} ${[...new Set(checks.map(checkFinding))].join('; ')}` };
 }
 
 /** A doctor row's one fix: the daemon runs it, or its command is copied (printed when masked), or,
@@ -320,16 +334,21 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
   const doctor = answered(inputs.doctor);
 
   const fromHeads = headNeeds(heads, auth);
-  const saidFor = new Set(fromHeads.flatMap((need) => (need.head === null ? [] : [need.head])));
+  const headOf = (need: Need): string[] => (need.head === null ? [] : [need.head]);
+  const said = new Set(fromHeads.flatMap(headOf));
+  // headNeeds says danger only for a head down or failing its health check: the heads not up.
+  const down = fromHeads.filter((need) => need.severity === 'danger').flatMap(headOf);
+  const wanted = (doctor?.checks ?? []).filter((check) => wantsAttention(check.status));
+  const about = new Map(wanted.map((check) => [check, headsOfCheck(check, said, down)] as const));
   const needs = [
-    ...fromHeads,
+    ...fromHeads.map((need) => withDoctor(need, wanted.filter((check) => need.head !== null && about.get(check)?.includes(need.head)))),
     ...daemonNeeds(answered(inputs.topology), inputs.restartPending),
     ...planNeeds(accounts, usage, auth, now),
     ...accountNeeds(accounts, now),
     ...turnNeeds(heads),
     ...(registry === null ? [] : sessionNeeds(registry.sessions, now)),
     ...(registry === null ? [] : teamNeeds(teams, registry.sessions)),
-    ...(doctor === null ? [] : doctorNeeds(doctor.checks, saidFor)),
+    ...(doctor === null ? [] : doctorNeeds(wanted.filter((check) => about.get(check)?.length === 0))),
   ];
   const rank = (need: Need): number => (need.severity === 'danger' ? 0 : 1) * SOURCE_ORDER.length + SOURCE_ORDER.indexOf(need.source);
   needs.sort((left, right) => rank(left) - rank(right));

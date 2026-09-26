@@ -7879,5 +7879,8 @@ id = "V4-324"
 phase = "release"
 title = "splice sessions prints a SendMessage target that reaches the session when its name holds an emoji or other astral character"
 files = ["features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a registry session named with an astral character (e.g. 'build 🚀') prints SendMessage(to=\"build \") today, because clean() (SessionsCommand.kt:111) filters UTF-16 chars and UNPRINTABLE (:39-47) drops Character.SURROGATE, so both halves go; green: clean filters by code point (codePoints()) and drops lone surrogates only, so the name prints whole, and C0/C1/format characters are still dropped; the console's sendCall (V4-321) and the CLI agree on the same fixtures; test file named at claim"
+claimed_by = "console"
+claimed_at = "2026-09-26T19:03:37.909Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T19:03:37Z

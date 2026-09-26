@@ -6724,6 +6724,7 @@ verify = "#290's red arm with 'Extra usage is required' planted goes green when 
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T22:36:56.084Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T22:36:56Z
+# [2026-09-26] RECEIPT cmd="tools/e2e/docker/run.sh --scenario plan-limit --plan-reset-s 90 --probe-message 'Extra usage is required to keep using Claude until your limit resets.' --no-build (jar built from 47524fb6e, Claude Code 2.1.283)" exit=0 tests=11 touched=core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt,integrations/upstream/src/main/kotlin/splice/upstream/retry/PlanHold.kt,integrations/upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt,integrations/upstream/src/test/kotlin/campaign/v4233/UpstreamClientPlanLimitTest.kt,tools/e2e/docker/run.sh,tools/e2e/docker/plan-limit.sh,tools/e2e/docker/plan_limit.ts tail="Extra usage is required ...', 2 lines), the client's frame is the head's own refusal naming the reset. No reset named: UpstreamClientPlanLimitTest 'with no reset named the upstream's words reach the client, because waiting cannot fix a spend limit' green (upstream 374). Mutant MD words (the reset-named frame carries the upstream's text) red on 'a 429 naming a spent plan window...', restored MATCH."
 
 [[items]]
 id = "V4-235"

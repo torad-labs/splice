@@ -7409,6 +7409,7 @@ verify = "red first: a bounded run of sh -c 'sleep 60 | cat' at a 1 s deadline l
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T11:03:29.257Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T11:03:29Z
+# [2026-09-26] hostshield-lead, Sep 26, 6:3x AM CT: the red run of ProcessRigTest SIGKILLed the operator's systemd --user manager twice (6:09 and 6:17 AM CT), taking down the desktop and every session. Cause: the finally block's sleep.parent().ifPresent(ProcessHandle::destroyForcibly) — once the deadline kills sh, sleep is reparented to the user manager (a child subreaper), so parent() IS the manager (reproduced: parent pid = systemctl show user@1000 MainPID). Fixed in the untracked test: awaitPipeline() captures sh + its children while they are this JVM's descendants, and finally destroys only those handles; parent() is never called in cleanup. Verified: the red run still fails as designed (sleep 474250 outlives the run), the manager PID is unchanged, and a kernel trace shows the test SIGKILLed only sleep 474250 and cat 474251. Never kill a parent() of a possibly orphaned process.
 
 [[items]]
 id = "V4-292"

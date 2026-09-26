@@ -612,6 +612,13 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **A turn's cache write reaches Claude Code as a cache write.** splice reported the tokens an
+  upstream wrote to its prompt cache as plain input and `cache_creation_input_tokens` as 0, so a
+  session's transcript showed a cache that never wrote, and Claude Code priced each write as
+  uncached input. The cache itself was never affected: through 0.3.2 and this release, turns after
+  the first read 99.7% of their prompt from cache, as they do without splice. The write now arrives
+  in its own field. The context total Claude Code compacts on is unchanged, and heads whose upstream
+  reports no cache write send the same numbers as before.
 - **A sign-in no longer prints SLF4J warnings.** The jar carried slf4j-api (Ktor brings it in) and
   no provider, so the first log call printed three `SLF4J(W): No SLF4J providers were found` lines
   on the user's terminal, during every `splice add` sign-in. The no-op provider now ships beside it,

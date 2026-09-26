@@ -39,11 +39,14 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.nio.file.CopyOption
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 
 /** Claude Code's transcript extension — the one declaration; ResumeAcrossHeads reads it too. */
 internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
@@ -59,8 +62,14 @@ public interface TranscriptFs {
 }
 
 private object ProcessTranscriptFs : TranscriptFs {
+    /** The bytes are forced to disk before this returns: a rename can reach the disk before the data
+     *  it names, so a crash after an unforced move could leave an empty transcript in the original's place. */
     override fun write(path: Path, bytes: ByteArray) {
-        Files.write(path, bytes)
+        FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING).use { channel ->
+            val buffer = ByteBuffer.wrap(bytes)
+            while (buffer.hasRemaining()) channel.write(buffer)
+            channel.force(true)
+        }
     }
 
     override fun move(source: Path, target: Path, vararg options: CopyOption) {

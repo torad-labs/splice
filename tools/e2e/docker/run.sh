@@ -8,7 +8,7 @@
 #   --jar P --shim P      any prebuilt pair (sha256sums.txt beside the jar is verified if present)
 #   (default)             this checkout: :app:shadowJar via buildgate when present, app/src/main/dist/bin/splice-launch
 #
-# Usage: tools/e2e/docker/run.sh [--release vX.Y.Z | --jar PATH --shim PATH] [--upgrade-from vX.Y.Z | --scenario plan-limit] [--keep] [--no-build]
+# Usage: tools/e2e/docker/run.sh [--release vX.Y.Z | --jar PATH --shim PATH] [--upgrade-from vX.Y.Z | --scenario plan-limit|runtime-head] [--keep] [--no-build]
 #   --upgrade-from vX.Y.Z  instead of a fresh machine, run tools/e2e/docker/upgrade.sh: install that
 #                published release, use it, then install the build chosen above over it. Refused when
 #                the two shims carry the same version marker, since that upgrade cannot replace the daemon.
@@ -18,6 +18,10 @@
 #                90, which keeps CI short; a real five-hour window is 18000).
 #   --probe-message TEXT  the plan-limit probe upstream's 429 says TEXT (V4-234: plant a phrase the client
 #                reads as stop-waiting, and the probe step shows whether it reaches the client).
+#   --scenario runtime-head  run tools/e2e/docker/runtime-head.sh: a local runtime head as `splice setup`
+#                adds one, the real Claude Code through it in print mode (V4-232).
+#   --client-model ID  the runtime row's client_model (default claude-sonnet-4-6, what setup writes);
+#                `none` writes the row as setup wrote it before V4-232.
 #   --keep       keep the artifacts scratch dir and print its path
 #   --no-build   reuse the image if it exists (skips docker build); the in-image version check still
 #                fails if that image does not match Versions.kt's tested Claude Code pin.
@@ -29,6 +33,7 @@ TESTED_CLAUDE_CODE="$(sed -nE 's/^public const val TESTED_CLAUDE_CODE: String = 
 [ -n "$TESTED_CLAUDE_CODE" ] || { echo "run.sh: TESTED_CLAUDE_CODE is missing or malformed" >&2; exit 2; }
 IMAGE="splice-e2e-fresh:local"
 RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1; UPGRADE_FROM=""; SCENARIO_NAME=""; PLAN_RESET_S=""; PROBE_MESSAGE=""
+CLIENT_MODEL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) RELEASE="$2"; shift 2 ;;
@@ -38,9 +43,10 @@ while [ $# -gt 0 ]; do
     --scenario) SCENARIO_NAME="$2"; shift 2 ;;
     --plan-reset-s) PLAN_RESET_S="$2"; shift 2 ;;
     --probe-message) PROBE_MESSAGE="$2"; shift 2 ;;
+    --client-model) CLIENT_MODEL="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "run.sh: unknown arg $1" >&2; exit 2 ;;
   esac
 done
@@ -50,6 +56,10 @@ fi
 if [ -n "$PLAN_RESET_S" ]; then
   [ "$SCENARIO_NAME" = "plan-limit" ] || { echo "run.sh: --plan-reset-s belongs to --scenario plan-limit" >&2; exit 2; }
   [[ "$PLAN_RESET_S" =~ ^[1-9][0-9]*$ ]] || { echo "run.sh: --plan-reset-s takes whole seconds, got '$PLAN_RESET_S'" >&2; exit 2; }
+fi
+if [ -n "$CLIENT_MODEL" ]; then
+  [ "$SCENARIO_NAME" = "runtime-head" ] || { echo "run.sh: --client-model belongs to --scenario runtime-head" >&2; exit 2; }
+  [[ "$CLIENT_MODEL" =~ ^(none|claude-[a-z0-9.-]+)$ ]] || { echo "run.sh: --client-model takes claude-… or none, got '$CLIENT_MODEL'" >&2; exit 2; }
 fi
 
 command -v docker >/dev/null || { echo "run.sh: docker is required" >&2; exit 2; }
@@ -101,10 +111,12 @@ if [ -n "$SCENARIO_NAME" ]; then
   [ -z "$UPGRADE_FROM" ] || { echo "run.sh: --scenario and --upgrade-from are two different runs" >&2; exit 2; }
   case "$SCENARIO_NAME" in
     plan-limit) SCENARIO="plan-limit.sh"; RECEIPT_NAME="plan-limit" ;;
-    *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit)" >&2; exit 2 ;;
+    runtime-head) SCENARIO="runtime-head.sh"; RECEIPT_NAME="runtime-head" ;;
+    *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit, runtime-head)" >&2; exit 2 ;;
   esac
   [ -z "$PLAN_RESET_S" ] || MODE_ARGS+=(-e "PLAN_RESET_S=$PLAN_RESET_S")
   [ -z "$PROBE_MESSAGE" ] || MODE_ARGS+=(-e "PLAN_PROBE_MESSAGE=$PROBE_MESSAGE")
+  [ -z "$CLIENT_MODEL" ] || MODE_ARGS+=(-e "RUNTIME_CLIENT_MODEL=$CLIENT_MODEL")
 fi
 if [ -n "$UPGRADE_FROM" ]; then
   FROM_ART="$(mktemp -d "${TMPDIR:-/tmp}/splice-e2e-from.XXXXXX")"

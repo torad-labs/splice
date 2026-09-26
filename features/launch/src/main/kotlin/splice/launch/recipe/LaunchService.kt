@@ -25,7 +25,6 @@ import splice.core.util.EnvReader
 import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
 import java.nio.file.Paths
-import kotlin.math.max
 
 // Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small client window must not shrink the
 // auto-compact window below this. The client window is the pinned row's own (LaunchSpec.contextWindow,
@@ -103,7 +102,13 @@ public class LaunchService(
         // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in.
         val trust = cwd?.let { Paths.get(it) }?.takeIf { it.isAbsolute }
             ?.let { TrustedLaunch(it, effective.trees.siblings) }
-        if (wrapped != null) wrapped.materialize(materialize, trust) else materializer.materialize(materialize, trust)
+        // V4-232: a head's presented rows enter its OWN settings.json only; the wrap writes the operator's
+        // ~/.claude and takes no overrides.
+        if (wrapped != null) {
+            wrapped.materialize(materialize, trust)
+        } else {
+            materializer.materialize(materialize, trust, effective.tiers.modelOverrides)
+        }
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -276,10 +281,21 @@ public class LaunchService(
             // (stripping them printed "currently gpt-5.6-sol[1m]"; verified live 2026-09-04). Known
             // cost: a subagent on the wrapped tier runs under a wrapped ACTIVE id, for which Claude
             // Code does not honor CLAUDE_CODE_MAX_CONTEXT_TOKENS (header note).
+            // V4-232: a repeated tier of a PRESENTED row is planted as the Claude model the row is
+            // presented as instead. The client resolves it through settings.json modelOverrides and
+            // sends the row's own id (verified on 2.1.283), so it is routed like the first and, off
+            // availableModels, drawn never, like the wrapped spelling, which the client does not know
+            // and named in a [claude-code:unrecognized_model] line for every haiku-tier title and subagent.
+            val presentedAs = spec.tiers.modelOverrides.entries.associate { (claude, row) -> row to claude }
             val planted = mutableSetOf<String>()
             slots.forEach { (slot, model) ->
-                val repeated = !planted.add(model) && spec.discoveryPrefix.isNotBlank()
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL", if (repeated) spec.discoveryPrefix + model else model)
+                val spelling = when {
+                    planted.add(model) -> model
+                    model in presentedAs -> presentedAs.getValue(model)
+                    spec.discoveryPrefix.isNotBlank() -> spec.discoveryPrefix + model
+                    else -> model
+                }
+                put("ANTHROPIC_DEFAULT_${slot}_MODEL", spelling)
                 val label = spec.modelLabels[model] ?: model
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)
@@ -290,7 +306,11 @@ public class LaunchService(
             // later TOML edit are applied by usage scaling on the wire. AUTO_COMPACT_WINDOW rides
             // the same number: any smaller value would compact early by exactly that ratio.
             put("CLAUDE_CODE_MAX_CONTEXT_TOKENS", spec.contextWindow.toString())
-            put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", max(AUTO_COMPACT_FLOOR, spec.contextWindow).toString())
+            // V4-232: and no lower than the client's own window for a presented row, which ignores the
+            // env above: 2.1.283 compacts at min(window, this), so a presented row on a runtime under
+            // 200k would otherwise compact at a sixth of it. An env row's own window still wins min().
+            val compactWindow = maxOf(AUTO_COMPACT_FLOOR, spec.contextWindow, spec.tiers.presentedWindow)
+            put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", compactWindow.toString())
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             put("MAX_THINKING_TOKENS", "128000")
             // Claude Code's default request timeout is 600s and it also bounds the first-byte

@@ -28,6 +28,14 @@ private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
  *  the client's built-in table or its 200k default, and nothing we launch with can move it. */
 private const val CLIENT_OWN_ID_PREFIX = "claude-"
 
+/** V4-232: the window Claude Code gives a Claude model it knows when the base URL is not Anthropic's,
+ *  which is every head's (ANTHROPIC_BASE_URL is the head's own 127.0.0.1 port): its own table, never
+ *  the env. Seen on 2.1.283 for claude-sonnet-4-6, claude-sonnet-5, claude-opus-4-6 and
+ *  claude-haiku-4-5 alike (a native 1M window needs an api.anthropic.com base URL, cli `Os()`). The
+ *  runtime-head e2e reads it off the real client at each pin. Mirror the client, never improve on it.
+ *  The launch plants CLAUDE_CODE_AUTO_COMPACT_WINDOW no lower than it for a head that presents a row. */
+public const val CLIENT_TABLE_WINDOW: Long = 200_000L
+
 @Serializable
 public data class ModelEntry(
     val id: String,
@@ -44,6 +52,11 @@ public data class ModelEntry(
      *  ([DiscoveredModel]). Never read from TOML: provenance is a fact about where the row came
      *  from, not a setting. It decides one thing — [ModelCatalog.tierModelIds]. */
     @Transient val discovered: Boolean = false,
+    /** V4-232: the Claude model the CLIENT resolves this row as, its capabilities and its window, through
+     *  the head's settings.json `modelOverrides` (ClaudeConfigMaterializer). The wire id stays [id]. For a
+     *  row whose id Claude Code does not know, which it otherwise names on every -p run with a
+     *  `[claude-code:unrecognized_model]` line. Null = the client sees [id] as it is. */
+    @SerialName("client_model") val clientModel: String? = null,
 )
 
 @Serializable
@@ -83,6 +96,9 @@ public data class ModelCatalog(
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
         require(discoveryPrefix.isNotEmpty()) { "discovery prefix is the picker namespace and is never empty" }
     }
+
+    /** V4-232: the rows the client resolves as a Claude model it knows, and the overrides that make it. */
+    public val presented: PresentedRows = PresentedRows(models, discoveryPrefix)
 
     public val defaultModel: String get() = models.first().id
 
@@ -165,6 +181,9 @@ public data class ModelCatalog(
      *  [clientLaunchWindow], the env the launch planted. */
     public fun clientContextWindowFor(id: String, sessionWindow: Long? = null): Long = when {
         oneMillionHint.containsMatchIn(unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
+        // V4-232: a presented row is one the client knows, so its window is the client's table, and
+        // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
+        presented.covers(id) -> CLIENT_TABLE_WINDOW
         id.startsWith(CLIENT_OWN_ID_PREFIX) -> contextWindowFor(id)
         // An env-governed id: the window is whatever THIS session's process was launched with.
         // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
@@ -187,7 +206,7 @@ public data class ModelCatalog(
      *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
      *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
     public fun envGoverned(id: String): Boolean =
-        !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX)
+        !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
 
     public fun usageScale(id: String, sessionWindow: Long? = null): Double {
         val declared = contextWindowFor(id)
@@ -241,6 +260,37 @@ public data class ModelCatalog(
      *  sonnet-tier subagent to whatever the endpoint happened to list second (on OpenRouter, the
      *  first id ending "-sol" or containing "mini" among 380). */
     public fun tierModelIds(): List<String> = models.filterNot { it.discovered }.map { it.id }
+}
+
+/** V4-232: a catalog's rows the CLIENT resolves as a Claude model it knows ([ModelEntry.clientModel]),
+ *  through the head's settings.json `modelOverrides`. Keyed the way [ModelCatalog.contextWindowFor]
+ *  reads a window: a row's own raw id answers first and then its upstream id, so two rows over one
+ *  upstream id keep their own answers and an undeclared tier takes its upstream id's row's. The ids
+ *  normalize as [ModelCatalog.unwrap] and [ModelCatalog.stripSuffixes] do, on the same prefix. */
+public class PresentedRows internal constructor(models: List<ModelEntry>, private val discoveryPrefix: String) {
+    /** settings.json `modelOverrides`: each presented Claude model -> the row id the client then sends. */
+    public val overrides: Map<String, String> = models.mapNotNull { e -> e.clientModel?.let { it to e.id } }.toMap()
+
+    private val byId: Map<String, Boolean> =
+        models.associate { upstream(it.id) to (it.clientModel != null) } +
+            models.associate { raw(it.id) to (it.clientModel != null) }
+
+    init {
+        val named = models.mapNotNull { it.clientModel }
+        require(named.all { it.startsWith(CLIENT_OWN_ID_PREFIX) }) {
+            "client_model names a Claude model the client knows (claude-...), got $named"
+        }
+        require(overrides.size == named.size) {
+            "two rows name one client_model, and modelOverrides maps each Claude model to one row: $named"
+        }
+    }
+
+    /** Whether the client resolves [id] as the Claude model its row names. */
+    public fun covers(id: String): Boolean = (byId[raw(id)] ?: byId[upstream(id)]) == true
+
+    private fun raw(id: String): String = id.removePrefix(discoveryPrefix)
+
+    private fun upstream(id: String): String = ModelTierSuffix.strip(raw(id))
 }
 
 @Serializable

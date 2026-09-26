@@ -26,6 +26,8 @@ internal data class AddModel(
      *  spend instead of the client's Anthropic-priced figure. Null = no card, and the statusline
      *  renders the client's number exactly as it did before. */
     val rates: ModelRates? = null,
+    /** V4-232: the Claude model the client resolves this row as (ModelEntry.clientModel). Null = none. */
+    val clientModel: String? = null,
 ) {
     /** The rate card emitted INLINE on the model row — never as a `[providers.X.models.rates]`
      *  sub-table. That spelling repeats its header once per model, and splice's own
@@ -108,7 +110,7 @@ public class AddProfiles {
                 "id = \"${m.id}\"",
                 "label = \"${m.label}\"",
                 "context_window = ${m.contextWindow}",
-            ) + m.ratesLine()
+            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() + m.ratesLine()
         }
         val mappings = models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
         val pinned = models.first()

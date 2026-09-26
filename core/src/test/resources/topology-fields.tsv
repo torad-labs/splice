@@ -89,6 +89,7 @@ providers.*.extra_windows[].context_window
 providers.*.extra_windows[].id	
 providers.*.local	
 providers.*.models	
+providers.*.models[].client_model	
 providers.*.models[].context_window	
 providers.*.models[].description	
 providers.*.models[].id	

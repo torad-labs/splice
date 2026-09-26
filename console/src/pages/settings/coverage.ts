@@ -101,13 +101,15 @@ const EDITABLE_TOPOLOGY = [
   'projects.*.heads.*.system_prompt', 'projects.*.heads.*.system_prompt_file',
   'projects.*.heads.*.system_prompt_mode', 'projects.*.system_prompt', 'projects.*.system_prompt_file',
   'projects.*.system_prompt_mode',
-  // [providers.NAME]: dialect, auth, models and their cards (V4-240 long-context tier), discovery and
-  // the quirks (stream_usage V4-163, slot_affinity V4-165); models_url is where `splice models` asks.
+  // [providers.NAME]: dialect, auth, models and their cards (V4-240 long-context tier), the Claude model
+  // a row is presented to the client as (client_model, V4-232), discovery and the quirks (stream_usage
+  // V4-163, slot_affinity V4-165); models_url is where `splice models` asks.
   'providers.*.auth.env', 'providers.*.auth.file', 'providers.*.auth.kind', 'providers.*.base_url',
   'providers.*.default_context_window', 'providers.*.dialect', 'providers.*.discovery.exclude',
   'providers.*.discovery.include', 'providers.*.extra_headers.*',
   'providers.*.extra_windows[].context_window', 'providers.*.extra_windows[].id', 'providers.*.local',
-  'providers.*.models[].context_window', 'providers.*.models[].description', 'providers.*.models[].id',
+  'providers.*.models[].client_model', 'providers.*.models[].context_window',
+  'providers.*.models[].description', 'providers.*.models[].id',
   'providers.*.models[].label', 'providers.*.models[].rates.cache_read',
   'providers.*.models[].rates.cache_write', 'providers.*.models[].rates.input',
   'providers.*.models[].rates.long_context_cache_read',

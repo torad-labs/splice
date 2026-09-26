@@ -82,7 +82,7 @@ const rateCard: SchemaNode = {
 const ratesTable: SchemaNode = { each: rateCard };
 
 const providerModels: SchemaNode = {
-  array: { keys: { id: {}, label: {}, description: {}, context_window: {}, rates: rateCard } },
+  array: { keys: { id: {}, label: {}, description: {}, context_window: {}, client_model: {}, rates: rateCard } },
 };
 
 /** Every quirk key `QuirksConfig` parses. Which ones a given provider's dialect READS depends on

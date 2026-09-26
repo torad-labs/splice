@@ -81,6 +81,8 @@ internal class LaunchSpecFactory(
                     model.slot?.let { slot -> model.id to slot }
                 }.toMap(),
                 candidates = ctx.catalog.tierModelIds(),
+                // V4-232: the rows the client resolves as a Claude model it knows (their `client_model`).
+                modelOverrides = ctx.catalog.presented.overrides,
             ),
             // The pinned row's declared window (ModelCatalog.clientLaunchWindow): exact numbers on
             // the row a session starts on; every other row, and a window edited later in the TOML,

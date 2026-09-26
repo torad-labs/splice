@@ -26,6 +26,7 @@ package splice.client
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -93,8 +94,15 @@ public class ClaudeConfigMaterializer(
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. [trust] carries the folder-trust
      *  records the operator already granted for the launch's cwd into the head (V4-283, FolderTrust);
      *  null carries none. Beside the spec, not in it: MaterializeSpec is at its constructor-width
-     *  baseline. */
-    public fun materialize(spec: MaterializeSpec, trust: TrustedLaunch? = null): MaterializeResult {
+     *  baseline. [modelOverrides] (V4-232, ModelCatalog.presented) is written as settings.json
+     *  `modelOverrides`, a Claude model the client knows -> the row id it stands for; empty writes
+     *  nothing and leaves a shared value as it was. Only this entry point takes it, never
+     *  [materializeWrap]: the wrap writes the operator's own ~/.claude, which a head's rows never enter. */
+    public fun materialize(
+        spec: MaterializeSpec,
+        trust: TrustedLaunch? = null,
+        modelOverrides: Map<String, String> = emptyMap(),
+    ): MaterializeResult {
         requireIsolatedDir(spec.configDir)
         // Validate every ABORTING source BEFORE any mutation (DR-11 redo, codex ordering catch).
         // The local .claude.json is the one strict read — an unparseable one fails the launch — and
@@ -140,7 +148,7 @@ public class ClaudeConfigMaterializer(
                 } ?: emptyMap(),
             ),
         )
-        writeSettings(spec, hookAdditions, existingSettings)
+        writeSettings(spec, hookAdditions, existingSettings, modelOverrides)
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache,
@@ -166,7 +174,7 @@ public class ClaudeConfigMaterializer(
         val localClaudeJson = jsonReads.strict(spec.configDir.resolve(Keys.CLAUDE_JSON))
         val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
         Files.createDirectories(spec.configDir)
-        writeSettings(spec, emptyMap(), existingSettings)
+        writeSettings(spec, emptyMap(), existingSettings, modelOverrides = emptyMap())
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache,
@@ -315,6 +323,7 @@ public class ClaudeConfigMaterializer(
         spec: MaterializeSpec,
         hookAdditions: Map<String, List<JsonObject>>,
         existing: JsonObject,
+        modelOverrides: Map<String, String>,
     ) {
         val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS)
@@ -347,6 +356,7 @@ public class ClaudeConfigMaterializer(
                 },
             )
             if (hooks != null) put(Keys.HOOKS, hooks)
+            mergedOverrides(global, modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
         }
         // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
         // old truncate-then-write let it observe a torn settings.json mid-launch.
@@ -377,6 +387,15 @@ public class ClaudeConfigMaterializer(
                 }
                 EMPTY_JSON
             }
+    }
+
+    /** V4-232: the head's [own] overrides merged OVER the shared settings' map, the head winning a key,
+     *  so this head's rows are the ones the client resolves while an operator's own mapping of another
+     *  Claude model still stands. Null when the head presents nothing: the shared value is carried as is. */
+    private fun mergedOverrides(global: JsonObject, own: Map<String, String>): JsonObject? {
+        if (own.isEmpty()) return null
+        val shared = global[Keys.MODEL_OVERRIDES] as? JsonObject ?: EMPTY_JSON
+        return JsonObject(shared + own.mapValues { (_, id) -> JsonPrimitive(id) })
     }
 
     private fun isCarriedGlobalKey(key: String): Boolean =

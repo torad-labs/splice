@@ -27,6 +27,12 @@ import java.nio.file.Files
  *  why a key with no secret in it is there. */
 private const val RUNTIME_KEY_PLACEHOLDER = "local-runtime-no-auth"
 
+/** V4-232: the Claude model a runtime row is presented to the client as (ModelEntry.clientModel), so a
+ *  fresh runtime head prints no `[claude-code:unrecognized_model]` line. This one because the request it
+ *  makes Claude Code 2.1.283 send is the one an unknown id already got: adaptive thinking, effort high,
+ *  32000 max_tokens. The window it brings is the client's 200k, carried to the row's own by usage scaling. */
+private const val RUNTIME_CLIENT_MODEL = "claude-sonnet-4-6"
+
 /**
  * A model a local runtime serves on this machine, as the runtime DESCRIBED it — the only facts the
  * row needs. The runtime owns every value here but [key]; an openai-chat endpoint by contract (the
@@ -100,7 +106,9 @@ internal class RuntimeHeadAdd(
         baseUrl = head.baseUrl,
         headKey = head.key,
         command = "claude-${head.key}",
-        models = listOf(AddModel(head.modelId, head.modelLabel, head.contextWindow)),
+        models = listOf(
+            AddModel(head.modelId, head.modelLabel, head.contextWindow, clientModel = RUNTIME_CLIENT_MODEL),
+        ),
         providerExtra = listOf(
             "# Served on this machine; the facts are `${head.describedBy}`'s. The endpoint takes no key:",
             "# $envVar in keys.toml is a placeholder, because the api-key kind needs one that resolves.",

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.client.ClaudePolicy
 import splice.client.login.TokenCaptureSpec
+import splice.core.model.CLIENT_TABLE_WINDOW
 import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
 import java.nio.file.Path
@@ -23,8 +24,9 @@ public data class HeadTrees(
     val siblings: List<Path> = emptyList(),
 )
 
-/** How a head's models map onto Claude Code's tier slots ("opus"/"sonnet"/"haiku"/"fable"). One
- *  value, because both halves answer the same question and [LaunchSpec] sits at the constructor-width
+/** How a head's models map onto Claude Code's own model names: its tier slots
+ *  ("opus"/"sonnet"/"haiku"/"fable") and, for a presented row, the Claude model it is resolved as. One
+ *  value, because every part answers the same question and [LaunchSpec] sits at the constructor-width
  *  ratchet. */
 public data class ModelTiers(
     /** id -> tier slot, declared per row in the head's catalog. Empty = fall back to
@@ -39,7 +41,16 @@ public data class ModelTiers(
      *  the picker and never a slot — slot order is a decision splice.toml makes, and a vendor's list
      *  order is not one (OpenRouter's would put an arbitrary model behind `opus`). */
     val candidates: List<String>? = null,
-)
+    /** V4-232: settings.json `modelOverrides` (ModelCatalog.presented): each Claude model a presented row
+     *  is resolved as -> the row's id. Empty for a head that presents none. */
+    val modelOverrides: Map<String, String> = emptyMap(),
+) {
+    /** V4-232: the client's window for the presented rows, [CLIENT_TABLE_WINDOW], or 0 when there are
+     *  none. The client compacts at min(window, CLAUDE_CODE_AUTO_COMPACT_WINDOW), so the launch plants
+     *  that env no lower (LaunchService.buildEnv), or a presented row on a small runtime would compact
+     *  at a fraction of its window. */
+    val presentedWindow: Long get() = if (modelOverrides.isEmpty()) 0L else CLIENT_TABLE_WINDOW
+}
 
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
 public data class LaunchSpec(

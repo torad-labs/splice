@@ -6866,9 +6866,14 @@ claimed_at = "2026-09-26T05:03:58.885Z"
 id = "V4-253"
 phase = "release"
 title = "splice doctor --json prints no em dash (Marlin, 2026-09-26, V4-238's gap): DoctorReportShape.kt:38 joins a check's detail and fix with ' — fix: ' (:97), so 23 of 90 checks on this machine's installed 0.4.0 carry U+2014 in the JSON users paste into issues, and DoctorCommand.kt:182-187 shares the encoder with the console's /api/doctor. A 'fix' key beside 'detail' (an added key keeps schema 1), the console reads check.fix instead of splitting on the separator (console/src/entities/doctor/model/types.ts:64-97), and the wall's carve-out goes (kt-no-emdash-cli-text.yml:12 and the rule test's FIX_SEPARATOR case)."
-files = ["features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportShape.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorCommand.kt", "console/src/entities/doctor/model/types.ts", "quality/rules/kotlin/kt-no-emdash-cli-text.yml"]
-status = "todo"
+files = ["features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportShape.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorCommand.kt", "console/src/entities/doctor/model/types.ts", "quality/rules/kotlin/kt-no-emdash-cli-text.yml", "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorReportTest.kt", "quality/rules/rule-tests/kt-no-emdash-cli-text-test.yml", "console/src/pages/doctor/fixtures/doctor.ts", "console/src/pages/doctor/strings.ts", "console/tests/entities-sessions.test.ts", "console/tests/needs-you.test.ts", "console/tests/mcp-doctor.test.ts", "console/tests/doctor-gate.test.ts", "console/e2e/console.spec.ts"]
+status = "in_flight"
 verify = "red first: a test on the --json text fails on any U+2014 today and passes after; the console's Doctor still shows each fix; CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T07:16:02.187Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T07:16:02Z
+# [2026-09-26] amend by=unattributed: files were ["features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorReportShape.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorCommand.kt", "console/src/entities/doctor/model/types.ts", "quality/rules/kotlin/kt-no-emdash-cli-text.yml"]
+# [2026-09-26] fence widened by claude-builder: the report's new 'fix' key moves every reader off the separator, so the red test (DoctorReportTest), the wall's rule test (its FIX_SEPARATOR valid case), and the console's fixture, strings comment, four unit tests and one e2e that build the old detail shape come in
 
 [[items]]
 id = "V4-254"

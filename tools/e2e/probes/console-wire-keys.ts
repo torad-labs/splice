@@ -48,7 +48,7 @@
  *  The exit code and the last line always agree.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
@@ -575,6 +575,27 @@ function seedProject(home: string): void {
   }));
 }
 
+/** The head's command linked where `splice install` puts it, the install bin dir under the daemon's
+ *  HOME (InstallPaths: ~/.local/bin), so the resume recipe (V4-320) answers its recipe and is CHECKED,
+ *  where an unlinked command is refused with a 409 that carries no recipe keys. The check reads only
+ *  that the name is a link (DoctorPathCheck), so the link points at a stub in the same throwaway HOME. */
+function linkWrapper(home: string, command: string): void {
+  const bin = join(home, ".local/bin");
+  mkdirSync(bin, { recursive: true });
+  const stub = join(home, "wrapper-stub");
+  writeFileSync(stub, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  symlinkSync(stub, join(bin, command));
+}
+
+/** The head's transcript tree shared with the vanilla one, as its first launch leaves it (ProjectsLink,
+ *  V4-168: `projects` is shared by default), so the seeded session is in the head's own tree and the
+ *  resume recipe resolves it. The boot never launches the head, so nothing else would make the link. */
+function shareProjects(home: string, head: string): void {
+  const tree = join(home, `.claude-${head}`);
+  mkdirSync(tree, { recursive: true });
+  symlinkSync(join(home, ".claude/projects"), join(tree, "projects"));
+}
+
 async function boot(jar: string): Promise<Daemon> {
   if (!existsSync(jar)) throw new Error(`--boot: no jar at ${jar}; build it with :app:shadowJar`);
   const home = mkdtempSync(join(tmpdir(), "console-wire-keys-"));
@@ -616,6 +637,8 @@ async function boot(jar: string): Promise<Daemon> {
     "",
   ].join("\n"));
   seedProject(home);
+  linkWrapper(home, "openrouter");
+  shareProjects(home, "openrouter");
   const env = {
     PATH: process.env.PATH ?? "/usr/bin:/bin",
     HOME: home,

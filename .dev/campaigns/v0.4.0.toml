@@ -7779,6 +7779,7 @@ verify = "red first: a test that uncomments every KNOB REFERENCE line into a [de
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T16:41:50.505Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T16:41:50Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4307-hosttool -- :app:test --tests splice.app.cli.doctor.PublicSourceNamesNoHostToolTest --tests splice.app.PromotedKnobsExampleTest --tests splice.app.probe.TurnPathProbeLoopTest" exit=0 tests=13 touched=app/src/main/resources/splice.example.toml,app/src/test/kotlin/splice/app/PromotedKnobsExampleTest.kt tail="ot run, 13 tests, exit 0. MUTANTS (1:08-1:09 PM CT), each red and restored to HEAD blob 90e5663e6 (MATCH): M1 `# maxQueued = 512` bare -> \"IllegalTypeException: Line 12: <class kotlin.String> type is not allowed by toml specification, use <Signed Type> instead (key = maxQueued; value = 512)\"; M2 key renamed maxQueuedX -> \"reference keys that are no knob ==> expected: <[]> but was: <[maxQueuedX]>\"."
 
 [[items]]
 id = "V4-318"

@@ -137,7 +137,8 @@ public class LogsCommand(private val output: TerminalOutput, private val errors:
             val flag = valued[i]
             val value = valued.getOrNull(i + 1)
             error = when {
-                value == null -> "$flag needs a value"
+                // V4-309: a flag is never a value — `--head --help` read the log of a head named "--help".
+                value == null || value.startsWith("-") -> "$flag needs a value"
                 flag == "--head" -> {
                     opts.head = value
                     null

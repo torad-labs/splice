@@ -82,6 +82,23 @@ class KeyCommandTest {
         assertFalse(KeyCommand().key(listOf("frobnicate"), store(tmp)))
     }
 
+    // V4-309: each sub-verb takes only the words it names. `unset FOO --help` removed FOO and
+    // `set FOO --value V --help` stored V, because only the first word was ever checked.
+    @Test
+    fun `a word key does not name prints usage and leaves the store as it was - V4-309`(@TempDir tmp: Path) {
+        val s = store(tmp)
+        s.write("OPENROUTER_API_KEY", "sk-kept")
+        val ran = listOf(
+            listOf("unset", "OPENROUTER_API_KEY", "--help"),
+            listOf("set", "OPENROUTER_API_KEY", "--value", "sk-new", "--help"),
+            listOf("set", "OPENROUTER_API_KEY", "--value", "sk-new", "--value", "sk-other"),
+            listOf("list", "-h"),
+            listOf("unset", "-h"),
+        ).filter { KeyCommand().key(it, s) }
+        assertEquals(emptyList<List<String>>(), ran, "argv key ran despite a word it does not name")
+        assertEquals("sk-kept", s.read("OPENROUTER_API_KEY"), "a refused argv never touches the stored key")
+    }
+
     // V4-222: KeyStore REFUSES a write with check() — an IllegalStateException — when keys.toml is
     // unreadable or a peer holds its lock. runCatchingCancellable does not catch that type, so `set`
     // ended in an uncaught exception and a stack trace, and `unset` had no catch at all.

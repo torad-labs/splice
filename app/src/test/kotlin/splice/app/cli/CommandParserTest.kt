@@ -49,6 +49,37 @@ class CommandParserTest {
         )
     }
 
+    // V4-309: `splice restart --help` restarted the live daemon (Sep 26, 7:42 AM CT) because the arm
+    // kept the one word it knew and dropped the rest. A verb takes only the words it names; anything
+    // else, a help flag included, parses to null, so usage prints and nothing runs.
+    @Test
+    fun `a verb refuses a word it does not name, help flags included - V4-309`() {
+        val noArg = listOf(
+            "version", "shim-version", "init", "setup", "status", "dashboard", "sessions", "restart", "add-model",
+        )
+        val refused = listOf(
+            listOf("restart", "--help"), listOf("restart", "--now", "--help"), listOf("restart", "--now", "--now"),
+            listOf("status", "x"), listOf("install", "a", "b"), listOf("install", "--help"),
+            listOf("uninstall", "-h"), listOf("uninstall", "a", "b"),
+        ) + noArg.flatMap { verb -> listOf("--help", "-h", "x").map { listOf(verb, it) } }
+        val ran = refused.associateWith { parser.parse(it.toTypedArray()) }.filterValues { it != null }
+        assertEquals(emptyMap<List<String>, Command?>(), ran, "argv that parsed despite a word the verb does not name")
+    }
+
+    @Test
+    fun `the words a verb names still parse - V4-309`() {
+        assertEquals(Command.Restart(now = false), parser.parse(arrayOf("restart")))
+        assertEquals(Command.Restart(now = true), parser.parse(arrayOf("restart", "--now")))
+        assertEquals(Command.Install(null), parser.parse(arrayOf("install")))
+        assertEquals(Command.Install("codex"), parser.parse(arrayOf("install", "codex")))
+        assertEquals(Command.Uninstall(null), parser.parse(arrayOf("uninstall")))
+        assertEquals(Command.Uninstall("codex"), parser.parse(arrayOf("uninstall", "codex")))
+        assertEquals(Command.Install("--all"), parser.parse(arrayOf("install", "--all")), "--all is a word it names")
+        assertEquals(Command.Uninstall("--all"), parser.parse(arrayOf("uninstall", "--all")))
+        assertEquals(Command.Status, parser.parse(arrayOf("status")))
+        assertEquals(Command.AddModel, parser.parse(arrayOf("add-model")))
+    }
+
     // v0.4.0 compatibility statement (README "Compatibility"): the verbs a release ships are a contract
     // until the next minor release names the break. Frozen here rather than read from the table, so a
     // verb dropped from the table fails by name instead of vanishing from both sides. `daemon` and

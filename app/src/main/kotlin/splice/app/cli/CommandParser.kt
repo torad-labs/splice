@@ -17,6 +17,24 @@ package splice.app.cli
 internal fun interface CommandFactory {
     /** Null when the verb's own arguments do not parse (the caller prints usage). */
     operator fun invoke(args: Array<String>): Command?
+
+    // V4-309: `splice restart --help` restarted the live daemon (Sep 26, 7:42 AM CT), because the arm
+    // kept the one word it knew and dropped the rest. Every arm takes only the words its verb names;
+    // any other word, a help flag included, is null, so usage prints and nothing runs.
+
+    /** A verb that names no words parses alone; any word after it is refused. */
+    class Alone(private val command: Command) : CommandFactory {
+        override fun invoke(args: Array<String>): Command? = command.takeIf { args.size == 1 }
+    }
+
+    /** `install|uninstall [<head>|--all]` name one word, a head or --all. A flag is never a head. */
+    class OneHead(private val command: CommandFactory) : CommandFactory {
+        override fun invoke(args: Array<String>): Command? {
+            val head = args.getOrNull(1)
+            val named = args.size <= 2 && (head == null || head == EVERY_HEAD_FLAG || !head.startsWith("-"))
+            return if (named) command(args) else null
+        }
+    }
 }
 
 // FILE SCOPE ON PURPOSE: the parse table (verb -> factory) is built ONCE for the process rather than
@@ -25,13 +43,16 @@ internal fun interface CommandFactory {
 private const val LABEL_FLAG = "--label"
 private const val DISCARD_FLAG = "--discard"
 
+/** `install|uninstall --all`: every head (InstallLinker, UninstallCommand), not models' --all. */
+private const val EVERY_HEAD_FLAG = "--all"
+
 private val verbs: Map<String, CommandFactory> = mapOf(
     "doctor" to CommandFactory { a -> Command.Doctor(a.drop(1)) },
-    "version" to CommandFactory { Command.Version },
-    "shim-version" to CommandFactory { Command.ShimVersion },
-    "init" to CommandFactory { Command.Init },
-    "install" to CommandFactory { a -> Command.Install(a.getOrNull(1)) },
-    "uninstall" to CommandFactory { a -> Command.Uninstall(a.getOrNull(1)) },
+    "version" to CommandFactory.Alone(Command.Version),
+    "shim-version" to CommandFactory.Alone(Command.ShimVersion),
+    "init" to CommandFactory.Alone(Command.Init),
+    "install" to CommandFactory.OneHead { a -> Command.Install(a.getOrNull(1)) },
+    "uninstall" to CommandFactory.OneHead { a -> Command.Uninstall(a.getOrNull(1)) },
     // `login <head> [--label <name>] [--discard]` (v0.4.0, FEATURES.md §11): the value after the flag,
     // wherever it sits. --discard (V4-276) takes no value and only means something with --label.
     "login" to CommandFactory { a ->
@@ -48,21 +69,27 @@ private val verbs: Map<String, CommandFactory> = mapOf(
             discard && (label == null || a.count { it == DISCARD_FLAG } > 1)
         if (malformed) null else Command.Login(positional.firstOrNull(), label, discard)
     },
-    "setup" to CommandFactory { Command.Setup },
+    "setup" to CommandFactory.Alone(Command.Setup),
     "add" to CommandFactory { a -> Command.Add(a.drop(1)) },
     // V4-34 shipped AddModelVerb and Command.AddModel but never reached this table, so `splice
     // add-model` did not parse and the feature was unreachable from argv — the tests construct the
     // verb directly, which is exactly the gap a parse table can hide. Wired 2026-09-16.
-    "add-model" to CommandFactory { a -> Command.AddModel(a.drop(1)) },
+    "add-model" to CommandFactory.Alone(Command.AddModel),
     // 2026-09-22: `splice models [provider]` — the endpoint's own roster beside the declared one.
     "models" to CommandFactory { a -> Command.Models(a.drop(1)) },
     "upgrade" to CommandFactory { a -> Command.Upgrade(a.drop(1)) },
-    "status" to CommandFactory { Command.Status },
-    "restart" to CommandFactory { a -> Command.Restart(now = "--now" in a.drop(1)) },
-    "dashboard" to CommandFactory { Command.Dashboard },
+    "status" to CommandFactory.Alone(Command.Status),
+    "restart" to CommandFactory { a ->
+        when (a.drop(1)) {
+            emptyList<String>() -> Command.Restart()
+            listOf("--now") -> Command.Restart(now = true)
+            else -> null
+        }
+    },
+    "dashboard" to CommandFactory.Alone(Command.Dashboard),
     "key" to CommandFactory { a -> Command.Key(a.drop(1)) },
     "logs" to CommandFactory { a -> Command.Logs(a.drop(1)) },
-    "sessions" to CommandFactory { Command.Sessions },
+    "sessions" to CommandFactory.Alone(Command.Sessions),
     "perf" to CommandFactory { a -> Command.Perf(a.drop(1)) },
     "wire" to CommandFactory { a -> Command.Wire(a.drop(1)) },
     "trace" to CommandFactory { a -> Command.Trace(a.drop(1)) },

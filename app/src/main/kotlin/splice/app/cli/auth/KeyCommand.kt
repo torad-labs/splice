@@ -13,6 +13,8 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 
 private const val MASK_PROMPT = "API key: "
+private const val STDIN_FLAG = "--stdin"
+private const val VALUE_FLAG = "--value"
 
 /** Where the CLI's default KeyStore lives — the operator's real ~/.config/splice/keys.toml in
  *  production, a hermetic path in the DR-40 production-wiring arm. A fun interface (not a raw
@@ -44,7 +46,8 @@ internal class KeyCommand(
         store: KeyStore? = null,
     ): Boolean {
         val resolved = store ?: KeyStore(storePath(), log = cliStoreSink())
-        return when (args.firstOrNull()) {
+        // V4-309: an argv shaped otherwise lands on usage, before the store is touched.
+        return when (args.firstOrNull().takeIf { shaped(args) }) {
             "set" -> keySet(resolved, args.getOrNull(1), args.drop(2))
             "list" -> keyList(resolved)
             "unset" -> keyUnset(resolved, args.getOrNull(1))
@@ -52,6 +55,20 @@ internal class KeyCommand(
                 System.err.println("usage: splice key set <ENV_NAME> [--value V | --stdin] | list | unset <ENV_NAME>")
                 false
             }
+        }
+    }
+
+    /** V4-309: each sub-verb takes only the words it names — `set <ENV> [--value V | --stdin]`,
+     *  `list`, `unset <ENV>`. `unset FOO --help` removed FOO while only the first word was checked.
+     *  A missing <ENV> passes, so its own line still names what is missing. */
+    private fun shaped(args: List<String>): Boolean {
+        val name = args.getOrNull(1)
+        if (name != null && name.startsWith("-")) return false
+        val flags = args.drop(2)
+        return when (args.firstOrNull()) {
+            "set" -> flags.isEmpty() || flags == listOf(STDIN_FLAG) || flags[0] == VALUE_FLAG && flags.size <= 2
+            "list" -> args.size == 1
+            else -> args.size <= 2
         }
     }
 
@@ -85,8 +102,8 @@ internal class KeyCommand(
         (failure as? IllegalStateException)?.message ?: SafeFailureText.render(failure)
 
     private fun readValue(flags: List<String>): String? = when {
-        "--stdin" in flags -> readKeyStdin()
-        "--value" in flags -> flags.getOrNull(flags.indexOf("--value") + 1)
+        STDIN_FLAG in flags -> readKeyStdin()
+        VALUE_FLAG in flags -> flags.getOrNull(flags.indexOf(VALUE_FLAG) + 1)
             ?: run {
                 System.err.println("splice key set: --value needs an argument (prefer --stdin; --value shows in ps)")
                 null

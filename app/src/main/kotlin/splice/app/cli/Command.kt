@@ -70,7 +70,7 @@ public sealed class Command {
     }
 
     /** V4-34: `splice add-model` — pick OpenRouter catalog rows through the prompt toolkit. */
-    public data class AddModel(val args: List<String> = emptyList()) : Command() {
+    public data object AddModel : Command() {
         override fun run(): Int = outcomeExitCode(AddWiring.addModel().add(TopologyLoader.configPath()))
     }
 

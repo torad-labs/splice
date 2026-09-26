@@ -72,6 +72,15 @@ class LogsCommandTest {
         val (ok, _) = capture(stateEnv(tmp), listOf("--bogus"))
         assertTrue(!ok)
     }
+
+    // V4-309: a flag is never a value. `--head --help` read the log for a head named "--help".
+    @Test
+    fun `a flag in a value slot fails with usage - V4-309`(@TempDir tmp: Path) {
+        writeLog(tmp, "[codex] one")
+        val ran = listOf(listOf("--head", "--help"), listOf("--head", "-h"), listOf("--tail", "--follow"))
+            .filter { capture(stateEnv(tmp), it).first }
+        assertEquals(emptyList<List<String>>(), ran, "argv logs ran with a flag taken as a value")
+    }
 }
 
 // DR-100: --follow must print the DELTA, not the 20-line tail snapshot — the snapshot repeated

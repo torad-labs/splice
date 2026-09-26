@@ -6,6 +6,7 @@
 // 2026-09-23: a fourth line, a management route that threw (RouteFailure), with its request line.
 package splice.app.control.api
 
+import splice.client.ClaudeArgv
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 
@@ -14,8 +15,9 @@ internal class ControlAudit(private val log: LogSink) {
         log("[control] head ${LogSafe.str(key)} -> ${LogSafe.str(action)}\n")
     }
 
+    /** V4-257: the argv as ClaudeArgv logs it, every flag and no prompt's text. */
     fun launch(key: String, argv: List<String>) {
-        log("[control] launch ${LogSafe.str(key)} -> ${LogSafe.list(argv)}\n")
+        log("[control] launch ${LogSafe.str(key)} -> ${LogSafe.list(ClaudeArgv.promptFree(argv))}\n")
     }
 
     fun warning(message: String) {

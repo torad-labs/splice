@@ -143,6 +143,7 @@ public class HeadServer(
         provider.onHeadStop()
         deps.stores.usageStore.flushNow()
         deps.stores.economicsStore?.flushNow()
+        deps.stores.perfStats.totals?.flushNow()
         if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.STOPPED)
     }
 }

@@ -3,6 +3,7 @@
 package splice.usage.perf
 
 import splice.core.perf.PerfSessionTail
+import splice.core.perf.PerfSessionTotal
 
 /** Reads the head's per-turn perf rows (file truth, numeric fields only, newest last). */
 public fun interface HeadPerfSource {
@@ -26,6 +27,11 @@ public fun interface HeadSessionPerfSource {
      *  a `takeLast(n)` here would quietly truncate a long session's spend. The tail's own start rides
      *  along ([PerfSessionTail.tailStartMs]) so a session older than the window reads as a lower bound. */
     public fun sessionTail(sessionId: String): PerfSessionTail
+
+    /** V4-244: this session's running total, kept as its rows were appended, so a session longer than
+     *  the tail is priced whole. Null when the head keeps no total or has counted none of the
+     *  session's rows; the default, so a source that keeps none reads the tail as before. */
+    public fun sessionTotal(sessionId: String): PerfSessionTotal? = null
 }
 
 /** How many rows the COST reader DROPPED because they would not parse (V4-45).

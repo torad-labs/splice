@@ -555,8 +555,11 @@ origin.
   price under GPT-6-Sol. On a head whose upstream is Anthropic, Claude Code's figure wins over
   splice's own whenever it has one, because it is priced at that upstream's card from the session's
   start. splice's own figure prices each turn at the card of the model that turn ran on, not the
-  model the session is on now, and reads `≥` when a turn's model has no card or the session began
-  before the oldest perf row splice still reads. `splice add` writes the vendors' published API
+  model the session is on now. It comes from a running total each head keeps per session as it
+  records each turn (`<head>-session-totals.json`), so a session of any length is priced whole
+  (V4-244); before, only the turns in the last 256 KiB of the perf log counted. It reads `≥` when a
+  turn's model has no card, or when the session began before its head kept the total and the perf
+  log no longer reaches its start. `splice add` writes the vendors' published API
   cards for gpt-6-sol, grok-4.7, muse-spark-1.3 and claude-opus-5-5, each citing its source and
   date. A card can carry a long-context tier (`long_context_over_input_tokens` with
   `long_context_input`, `long_context_cache_read`, `long_context_output` and optionally

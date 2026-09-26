@@ -719,6 +719,15 @@ origin.
   deleted, a day file with one damaged character loses only that line, a file named for an
   impossible date stops no clean-up, and a midnight clean-up the computer slept through runs within
   10 minutes of waking (V4-286).
+- **A request the upstream stops taking is cut and retried, not left hanging.** When the network
+  dropped or the upstream stopped reading partway through a request, the unsent bytes sat in the
+  kernel and the turn hung until the 15-minute socket timeout. splice now watches each request until
+  its reply starts: if the upstream acknowledges none of the remaining bytes for
+  `firstByteTimeoutMs`, splice cuts it with "<host> stopped taking the request for Ns: the write
+  stalled" and retries once on a new connection, never a pooled one. This works the same over TLS,
+  where a stalled write used to hold up every other head's write timeouts too. A slow link that
+  keeps taking bytes is never cut. On macOS, where the kernel's send queue can't be read, only a
+  write the kernel has accepted nothing of is cut (V4-272, V4-289).
 - **A launch no longer puts back a Claude login that was already refreshed away.** Every launch of
   `claude-splice` copied the selected saved login over the head's live one. Claude Code's refresh
   tokens are single-use, so the copy was stale after the first refresh, and signing in with it could

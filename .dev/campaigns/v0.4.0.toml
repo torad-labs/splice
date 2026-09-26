@@ -6946,12 +6946,14 @@ claimed_at = "2026-09-26T04:53:37.855Z"
 id = "V4-260"
 phase = "release"
 title = "PRIVACY: kept files go when their promise ends (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). An expired compaction answer is swept only inside that head's next save (CompactionRecordings.kt:52, :87-91), code-mode state stays when its head is removed or code mode is turned off (CodexCodeModeRegistry.kt:24-29), and trace files stay after trace is turned off. Sweep all three at head start and on removal."
-files = ["features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt"]
+files = ["features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt", "core/src/main/kotlin/splice/core/config/StatePaths.kt", "core/src/main/kotlin/splice/core/storage/ActivityDays.kt", "app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt", "app/src/main/kotlin/splice/app/head/HeadKeptFiles.kt", "app/src/main/kotlin/splice/app/head/ManagedHeadFactory.kt", "app/src/main/kotlin/splice/app/Daemon.kt", "app/src/test/kotlin/splice/app/KeptFilesLifetimeTest.kt"]
 status = "in_flight"
 verify = "red first, one test per store: an expired recording, a removed head's code-mode state and a trace file after trace is off are each gone after the next head start or the removal; CI gate on the train sha."
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T06:12:28.947Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T06:12:28Z
+# [2026-09-26] amend by=unattributed: files were ["features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt"]
+# [2026-09-26] fence amended by claude-builder: heads are assembled only in Daemon.start (Daemon.kt:195-201), so head start is the daemon's start and a head removed from splice.toml is gone at the next one. One app class, HeadKeptFiles, holds the three lifetimes: at a head's start (ManagedHeadFactory.assembleHead) its expired compaction answers go, its code-mode state goes unless its provider's codeModeEnabled (the predicate CodexResponsesArm builds the bridge on, so a head moved off Codex is covered too), and its trace days go unless trace is on; at the daemon's start (Daemon.kt), before any head, every file of a head the topology no longer names goes. Trace's trace store is ActivityDays under StatePaths.traceDir (HeadTraceStores.kt); ActivityDays.kt gains the prefix listing, StatePaths.kt names the code-mode file (moved from CodexResponsesArm) and the compactions root. Red: a real daemon (KeptFilesLifetimeTest), one test per store.
 
 [[items]]
 id = "V4-261"

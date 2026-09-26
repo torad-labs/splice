@@ -78,6 +78,25 @@ interface SettingsFixture {
 const PAGE_ID = 'settings';
 const POLL_MS = 30000;
 
+/**
+ * The draft a head's knob save leaves once its write has answered (V4-303). The save PUTs the loaded
+ * file plus the override, never the draft, and a draft holding edits of its own was kept as it was,
+ * seeded before the override existed: the next Write PUT it and reverted the knob the page had just
+ * reported saved. A saved override now goes into that draft too, so both writes start from one base.
+ * A draft with no edits re-seeds from the file the save wrote (null); a refused save leaves it as is.
+ */
+export function draftAfterKnobSave(
+  loaded: Record<string, unknown>,
+  draft: Record<string, unknown> | null,
+  head: string,
+  key: string,
+  override: ConfigValue,
+  saved: boolean,
+): Record<string, unknown> | null {
+  if (draft === null || changedPaths(loaded, draft).length === 0) return null;
+  return saved ? withHeadOverride(draft, head, key, override) : draft;
+}
+
 export function SettingsPage() {
   const { search } = useLocation();
   const views = useViews(PAGE_ID, DEFAULT_VIEWS);
@@ -178,15 +197,13 @@ export function SettingsPage() {
   const saveForHead = (key: string, value: ConfigValue) => {
     if (loaded === null || configPayload === null) return;
     const fallback = globalValueOf(key, configPayload);
-    const next = withHeadOverride(loaded, head, key, value === null || value === fallback ? null : value);
-    const hadEdits = draft !== null && changedPaths(loaded, draft).length > 0;
+    const override = value === null || value === fallback ? null : value;
     setBusyKey(key);
-    void saveTopology(next)
+    void saveTopology(withHeadOverride(loaded, head, key, override))
       .then((result) => {
         setWriteResult(result);
         if (result.ok) markRestartPending([key]);
-        // Re-seed the topology form from the file just written, unless it holds edits of its own.
-        if (!hadEdits) setDraft(null);
+        setDraft((current) => draftAfterKnobSave(loaded, current, head, key, override, result.ok));
         return Promise.all([fetchTopology(), fetchConfig(head)]);
       })
       .catch((err: unknown) => setWriteResult({ ok: false, restart_required: true, findings: [{ path: '', message: err instanceof Error ? err.message : String(err) }] }))

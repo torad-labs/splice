@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { knobDispositions } from '../src/entities/config';
 import { headRows, validateNewHead, withoutHead } from '../src/features/head-edit';
@@ -20,7 +20,9 @@ import { KnobRack } from '../src/widgets/knob-form';
 import { SOURCE_LABELS } from '../src/widgets/knob-form/strings';
 import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
-import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath } from '../src/pages/settings/model';
+import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withHeadOverride } from '../src/pages/settings/model';
+import { draftAfterKnobSave } from '../src/pages/settings';
+import { saveTopology } from '../src/entities/topology';
 import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
 import { KNOB_SOURCE, TOPOLOGY_SOURCES, parseKnobNames, parseSerialNames } from '../src/shared/coverage/denominator';
 
@@ -196,6 +198,53 @@ describe('settings: the document model', () => {
     expect(clash).toContainEqual({ field: 'port', message: 'port 3099 is already claudex' });
     expect(validateNewHead({ key: 'claudex', provider: 'nope', port: '1', discoveryPrefix: '', pinnedModel: '' }, fixtureTopology)).toHaveLength(4);
     expect(headRows(withoutHead(fixtureTopology, 'claudex'))).toHaveLength(0);
+  });
+});
+
+describe('settings: a knob save and a Write start from one base (V4-303)', () => {
+  // Both PUT the whole topology, from different snapshots: a head's knob save wrote the loaded file
+  // plus the override, and a draft holding edits of its own was left as it was, seeded before the
+  // override existed, so the next Write PUT that draft and reverted the knob the page had just
+  // reported saved.
+  afterEach(() => vi.unstubAllGlobals());
+  /** A daemon that takes every topology PUT, and the documents it was sent. */
+  function daemon(): Record<string, unknown>[] {
+    const sent: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', (_input: unknown, init?: RequestInit): Promise<Response> => {
+      sent.push((JSON.parse(String(init?.body)) as { topology: Record<string, unknown> }).topology);
+      const ok = { ok: true, restart_required: true, findings: [] };
+      return Promise.resolve(new Response(JSON.stringify(ok), { status: 200, headers: { 'content-type': 'application/json' } }));
+    });
+    return sent;
+  }
+  const loaded = fixtureTopology;
+  const edited = setAtPath(loaded, 'daemon.control_port', 3097);
+
+  test('with a topology edit pending, a knob save and then Write send the edit and the override', async () => {
+    const sent = daemon();
+    await saveTopology(withHeadOverride(loaded, 'claudex', 'stream_idle_ms', 120000));
+    const draft = draftAfterKnobSave(loaded, edited, 'claudex', 'stream_idle_ms', 120000, true);
+    if (draft === null) throw new Error('the pending edit was dropped');
+    await saveTopology(draft);
+    const [knob, write] = sent;
+    expect(valueAtPath(knob, 'heads.claudex.overrides.stream_idle_ms')).toBe('120000');
+    expect(valueAtPath(write, 'daemon.control_port')).toBe(3097);
+    expect(valueAtPath(write, 'heads.claudex.overrides.stream_idle_ms')).toBe('120000');
+  });
+
+  test('a knob save that drops an override drops it from the pending draft too', () => {
+    const draft = draftAfterKnobSave(loaded, edited, 'claudex', 'effort', null, true);
+    expect(valueAtPath(draft ?? {}, 'heads.claudex.overrides.effort')).toBeUndefined();
+    expect(valueAtPath(draft ?? {}, 'daemon.control_port')).toBe(3097);
+  });
+
+  test('a refused knob save leaves the pending draft as it was', () => {
+    expect(draftAfterKnobSave(loaded, edited, 'claudex', 'stream_idle_ms', 120000, false)).toEqual(edited);
+  });
+
+  test('with no edit pending, the draft re-seeds from the file the save wrote', () => {
+    expect(draftAfterKnobSave(loaded, loaded, 'claudex', 'stream_idle_ms', 120000, true)).toBeNull();
+    expect(draftAfterKnobSave(loaded, null, 'claudex', 'stream_idle_ms', 120000, true)).toBeNull();
   });
 });
 

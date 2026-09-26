@@ -7423,6 +7423,7 @@ verify = "red first: a ProcNetTcp over two present tables whose reads throw retu
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T11:35:31.336Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T11:35:31Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4-292-green -- :integrations-upstream:test :integrations-upstream:detekt :integrations-providers-muse:test :integrations-providers-muse:detekt :quality-architecture:test --continue (shared checkout; user@1000 MainPID 109200 before and after)" exit=0 tests=645 touched=integrations/upstream/src/main/kotlin/splice/upstream/transport/SendQueues.kt,integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt,integrations/upstream/src/main/kotlin/splice/upstream/transport/RequestWriteBound.kt,integrations/upstream/src/test/kotlin/splice/upstream/transport/SendQueuesTest.kt,integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseAuthProvider.kt,integrations/providers/muse/src/test/kotlin/splice/provider/muse/MuseAuthProviderTest.kt,.dev/restructure/capabilities.tsv tail="ed-exchange missing line restored. ProcNetTcp is now per client with the client's log (UpstreamSockets.queues null = the kernel's). The denial detail is logged with the provider's account token and key masked; every Denied producer writes its own text (MuseOAuth.kt:86,88,97; MuseRefresh.kt:66), and the existing redaction test now echoes the provider's own key. gate rules exit 0, census 0 findings."
 
 [[items]]
 id = "V4-293"

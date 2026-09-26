@@ -7730,3 +7730,11 @@ title = "FEATURES.md 2.3's documented splice.toml example is config the daemon r
 files = [".dev/campaigns/web-console/FEATURES.md"]
 status = "todo"
 verify = "red first: a test that extracts FEATURES.md 2.3's toml block and parses it with TopologyLoader fails with the loader's own exception (quoted); green: it parses; the test's census row"
+
+[[items]]
+id = "V4-316"
+phase = "release"
+title = "The console's config validator knows every knob [defaults] may carry, derived from Knob.kt (console, V4-312 2026-09-26): schema.ts RUNTIME_KNOBS lists 33 keys against Knob.kt's 55, so maxRequestBytes, retryBackoff*, mcp*, supervisorUnit and the rest are flagged unknown in [defaults]; the list comes from Knob.kt's own scope (head-only knobs such as wireTap and trace stay out of [defaults] if Knob.kt says so) with a parity test both ways"
+files = ["console/src/entities/topology/model/schema.ts", "console/tests/coverage.test.ts"]
+status = "todo"
+verify = "red first: a parity test between RUNTIME_KNOBS and Knob.kt's defaults-scoped entries names the 22 missing (quoted); green both ways; a mutant adding a Knob.kt entry reds it; cd console && bun test"

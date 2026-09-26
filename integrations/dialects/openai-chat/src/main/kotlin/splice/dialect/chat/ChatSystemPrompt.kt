@@ -56,10 +56,14 @@ public class ChatSystemPrompt {
         return JsonArray(messages.take(at) + systemMessage(text) + messages.drop(at))
     }
 
-    /** The client's whole system field, gone: every system-role message is dropped and ours takes
-     *  the insertion point the append mode would have used. */
+    /** The client's whole system field, gone: the LEADING run of system-role messages (where the
+     *  mapper puts the system field) is dropped and ours takes the insertion point the append mode
+     *  would have used. A system message after the first non-system one is conversation, not the
+     *  field, and keeps its place and bytes (V4-277: Claude Code sends task notifications, hook
+     *  context and peer messages that way, and dropping them hid every subagent result). */
     private fun replaced(messages: JsonArray, text: String): JsonArray {
-        val kept = messages.filterNot { roleOf(it) == SYSTEM }
+        val opening = messages.indexOfFirst { roleOf(it) != SYSTEM }.let { if (it < 0) messages.size else it }
+        val kept = messages.drop(opening)
         val at = insertionIndex(kept)
         return JsonArray(kept.take(at) + systemMessage(text) + kept.drop(at))
     }

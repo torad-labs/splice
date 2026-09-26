@@ -88,6 +88,29 @@ class ChatSystemPromptTest {
         assertFalse(updated.toString().contains("more rules"))
     }
 
+    /** RED before V4-277: replace dropped every system-role message, and Claude Code 2.1.283 sends them
+     *  mid-conversation too (task notifications, SessionStart hook context, peer messages), so a bonsai
+     *  head's model never saw a subagent's result: 51 of 55 client requests carried one, 0 of 88 upstream. */
+    @Test
+    fun `replace keeps the system messages sent mid-conversation and drops only the leading run`() {
+        val request = messages(
+            """{"role":"system","content":"house rules"}""",
+            """{"role":"user","content":"hello"}""",
+            """{"role":"system","content":"SessionStart hook context"}""",
+            """{"role":"assistant","content":"on it"}""",
+            """{"role":"user","content":"tool_result: 3 files"}""",
+            """{"role":"system","content":"<task-notification> the subagent finished"}""",
+        )
+        val sent = request.getValue("messages").jsonArray.map { it.toString() }
+
+        val updated = applied(request, SystemPromptMode.REPLACE, "You are a bare model.")
+
+        assertEquals(listOf("system", "user", "system", "assistant", "user", "system"), updated.map { role(it) })
+        assertEquals("You are a bare model.", content(updated[0]))
+        assertEquals(sent.drop(1), updated.drop(1).map { it.toString() }, "after the leading run, every byte kept")
+        assertFalse(updated.toString().contains("house rules"))
+    }
+
     @Test
     fun `a request whose messages are absent and empty text both preserve the request`() {
         val request = json.parseToJsonElement("""{"model":"wire"}""").jsonObject

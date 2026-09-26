@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.GATEWAY_VERSION
+import splice.core.auth.CredentialVerdict
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.net.InetSocketAddress
@@ -77,6 +78,22 @@ class DaemonClientTest {
         } finally {
             server.stop(0)
         }
+    }
+
+    // V4-293: a verdict this build cannot read (a newer word, a dated state with no date) read as Held,
+    // "nothing to verify"; only a daemon that sent none predates verdicts.
+    @Test
+    fun `an unreadable verdict reads Unverified and an absent one Held - V4-293`() {
+        val seen = DaemonProbe.parseAuthSeen(
+            """{"old":{"present":true},"undated":{"present":true,"verdict":{"state":"rejected"}},""" +
+                """"newer":{"present":true,"verdict":{"state":"revoked","at_epoch_ms":5}},""" +
+                """"dated":{"present":true,"verdict":{"state":"rejected","at_epoch_ms":5}}}""",
+        )
+
+        assertEquals(CredentialVerdict.Held, seen.getValue("old").verdict, "a daemon that sent no verdict")
+        assertEquals(CredentialVerdict.Unverified, seen.getValue("undated").verdict, "a dated state with no date")
+        assertEquals(CredentialVerdict.Unverified, seen.getValue("newer").verdict, "a word this build does not know")
+        assertEquals(CredentialVerdict.Rejected(5), seen.getValue("dated").verdict)
     }
 
     // BS-4 DEFECT B: "/health stopped answering" is not proof the old daemon freed its control port,

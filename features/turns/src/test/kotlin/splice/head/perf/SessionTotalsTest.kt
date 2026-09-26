@@ -191,4 +191,31 @@ class SessionTotalsTest {
         store(tmp.resolve("t.json")).add(TAG, OPUS, COLD, 2_000L)
         assertTrue(lines.isEmpty(), lines.toString())
     }
+
+    // V4-293: a failed write dropped the totals with no line, and the flush retried it in silence.
+    @Test
+    fun `a write that fails is logged once per streak, with its cause - V4-293`(@TempDir tmp: Path) {
+        val dir = tmp.resolve("state")
+        val file = Files.createDirectory(dir).resolve("t.json")
+        val totals = store(file)
+        totals.add(TAG, OPUS, COLD, 2_000L)
+
+        blocked(dir)
+        repeat(2) { totals.flushNow() }
+        dir.toFile().deleteRecursively()
+        Files.createDirectory(dir)
+        totals.flushNow()
+        blocked(dir)
+        totals.flushNow()
+
+        val failed = lines.filter { "could not be written" in it }
+        assertEquals(2, failed.size, "one line for each streak of failed writes: $lines")
+        assertTrue(failed.all { "$file could not be written (java.nio.file." in it }, "$failed")
+    }
+
+    /** Every write under [dir] fails: it becomes a plain file, which no process can write beneath. */
+    private fun blocked(dir: Path) {
+        dir.toFile().deleteRecursively()
+        Files.createFile(dir)
+    }
 }

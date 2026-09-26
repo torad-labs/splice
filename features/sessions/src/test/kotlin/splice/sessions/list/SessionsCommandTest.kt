@@ -54,6 +54,25 @@ class SessionsCommandTest {
         assertTrue(out.contains("claude -p"))
     }
 
+    // V4-293: a session that never went through splice printed "unknown head", like one splice cannot place.
+    @Test
+    fun `a direct session prints direct and one splice cannot place prints unknown head - V4-293`(@TempDir dir: Path) {
+        Files.writeString(dir.resolve("21.json"), """{"pid":21,"name":"direct-one","status":"idle","updatedAt":$now}""")
+        Files.writeString(dir.resolve("22.json"), """{"pid":22,"name":"lost-one","status":"idle","updatedAt":$now}""")
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { pid -> if (pid == 21L) SessionRoute.Direct else SessionRoute.Unknown },
+            pidAlive = { true },
+            clock = { now },
+        )
+
+        val lines = capture { sessionsCommand().sessions({ null }, registry) { now } }.lines()
+
+        val direct = lines.first { "direct-one" in it }
+        assertTrue("direct" in direct.substringAfter("direct-one") && "unknown head" !in direct, direct)
+        assertTrue("unknown head" in lines.first { "lost-one" in it }, "$lines")
+    }
+
     @Test
     fun `a stale session prints no send line even with a name and a socket`(@TempDir dir: Path) {
         Files.writeString(
@@ -97,8 +116,10 @@ class SessionsCommandTest {
         assertTrue(out.contains("# uds:/run/x/31m\"q\\32.sock"), "the comment shows the cleaned socket: $out")
     }
 
+    // The row is this JVM, whose route is its own environment's: a splice launch (SPLICE=1) cannot be
+    // placed without the topology, and a direct one is direct whatever the topology says (V4-293).
     @Test
-    fun `an unreadable topology leaves heads unknown and writes nothing`(@TempDir home: Path) {
+    fun `an unreadable topology places no session on a head and writes nothing`(@TempDir home: Path) {
         val sessions = Files.createDirectories(home.resolve(".claude/sessions"))
         val me = ProcessHandle.current().pid()
         Files.writeString(sessions.resolve("$me.json"), """{"pid":$me,"name":"self","updatedAt":$now}""")
@@ -112,7 +133,8 @@ class SessionsCommandTest {
         } finally {
             System.setProperty("user.home", prev)
         }
-        assertTrue(out.contains("self") && out.contains("unknown head"), out)
+        val expected = if (System.getenv("SPLICE") == "1") "unknown head" else "direct"
+        assertTrue(out.lines().any { "self" in it && expected in it }, out)
         assertEquals("not = [toml", Files.readString(bad), "the malformed file is untouched")
         val entries = Files.list(home).use { it.map { p -> p.fileName.toString() }.toList().toSet() }
         assertEquals(setOf(".claude", "bad.toml"), entries, "no starter config was materialized")

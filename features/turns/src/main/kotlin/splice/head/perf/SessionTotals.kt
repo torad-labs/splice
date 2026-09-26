@@ -107,6 +107,10 @@ public class SessionTotals(
     private var persistedVersion = -1L
     private val writeScheduled = AtomicBoolean(false)
 
+    /** Guarded by [writeLock]: the last write failed. The flush retries itself, so only the first failure of
+     *  a streak is logged, and a write that lands ends the streak (V4-293). */
+    private var failing = false
+
     /** Fold one appended row into its session's total. Memory plus an enqueue, so it never blocks
      *  the turn; the first row after a head stop writes the file through, marked not clean. */
     public fun add(sessionTag: String, model: String, counters: Map<String, Long>, rowTs: Long) {
@@ -213,9 +217,22 @@ public class SessionTotals(
         synchronized(writeLock) {
             // A clean write goes out even at a version already written, because its mark is the news.
             if (v <= persistedVersion && !clean) return
-            if (Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.isSuccess) {
-                persistedVersion = maxOf(persistedVersion, v)
-            }
+            Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.fold(
+                onSuccess = {
+                    persistedVersion = maxOf(persistedVersion, v)
+                    failing = false
+                },
+                onFailure = { failure ->
+                    if (!failing) {
+                        log(
+                            "[session-totals] $file could not be written (${SafeFailureText.render(failure)}); the " +
+                                "totals stay in memory and the next flush tries again, so a restart before one " +
+                                "lands starts them over\n",
+                        )
+                    }
+                    failing = true
+                },
+            )
         }
     }
 }

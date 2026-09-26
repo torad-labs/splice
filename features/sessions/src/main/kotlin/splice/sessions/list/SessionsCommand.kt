@@ -2,7 +2,8 @@
 // ~/.claude/sessions, joined to the splice head each one talks to (launches splice made, by the
 // SPLICE=1 marker), with the copyable SendMessage address per LIVE session. Read-only: the registry
 // is Claude Code's, no socket is touched, and the topology is only read — never materialized; when
-// it cannot be read every head is "unknown". Registry text is untrusted: every string it carries
+// it cannot be read no splice launch is placed on a head ("unknown head"), while a session without
+// SPLICE=1 is still "direct" (V4-293). Registry text is untrusted: every string it carries
 // (name, status, cwd, head, socket) goes through ONE terminal-safe renderer that drops control and
 // format characters (C0, C1, DEL, Unicode Cc/Cf/Zl/Zp), and whatever lands inside the SendMessage
 // syntax — name or socket — is backslash/quote-escaped so the printed command stays valid.
@@ -26,6 +27,7 @@ import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
@@ -68,7 +70,7 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
 
     private fun printRow(s: SessionRecord, home: String, now: Long) {
         val name = shownName(s) ?: s.pid?.let { "pid $it" } ?: "?"
-        val head = clean(s.head ?: "unknown head")
+        val head = headLabel(s.route)
         val cwd = shortCwd(clean(s.cwd.orEmpty()).replaceFirst(home, "~"))
         val age = s.updatedAt?.let { ago(now - it) } ?: "never"
         val availability = s.availability.name.lowercase()
@@ -77,6 +79,13 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
                 "$availability  $DIM$age · $cwd$RESET",
         )
         sendLine(s)?.let { output.line(it) }
+    }
+
+    /** V4-293: a session that never went through splice is "direct", not a routing fault. */
+    private fun headLabel(route: SessionRoute): String = when (route) {
+        is SessionRoute.Head -> clean(route.key)
+        SessionRoute.Direct -> "direct"
+        SessionRoute.Unknown -> "unknown head"
     }
 
     private fun glyph(availability: SessionAvailability): String = when (availability) {

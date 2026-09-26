@@ -5,6 +5,7 @@ package splice.daemonclient
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -167,7 +168,8 @@ public object DaemonProbe {
         }.getOrNull()
 
     /** One head's credential as the DAEMON sees it. [verdict] is what upstream last said about a
-     *  forwarded credential (V4-220 item 6b); [CredentialVerdict.Held] from a daemon that predates it. */
+     *  forwarded credential (V4-220 item 6b); [CredentialVerdict.Held] from a daemon that predates it
+     *  (sent none), and [CredentialVerdict.Unverified] for one this build cannot read (V4-293). */
     public data class HeadAuthSeen(public val present: Boolean, public val verdict: CredentialVerdict)
 
     /** Per-head credential state as the DAEMON sees it (`/api/auth`), or null when unreachable.
@@ -183,15 +185,21 @@ public object DaemonProbe {
     public fun parseAuthSeen(body: String): Map<String, HeadAuthSeen> =
         json.parseToJsonElement(body).jsonObject.mapValues { (_, v) -> headAuthSeen(v.jsonObject) }
 
+    /** A verdict that is sent but unreadable (a newer word, a dated state with no date) is not "nothing to
+     *  verify": only a daemon that sent none predates verdicts (V4-293). */
     private fun headAuthSeen(head: JsonObject): HeadAuthSeen {
-        val verdict = head["verdict"] as? JsonObject
+        val sent = head["verdict"]?.takeUnless { it is JsonNull }
+        val verdict = sent as? JsonObject
         val read = CredentialVerdictRead().of(
             JsonScalars.str(verdict, "state"),
             JsonScalars.long(verdict, "at_epoch_ms"),
         )
         return HeadAuthSeen(
             present = head["present"]?.jsonPrimitive?.booleanOrNull == true,
-            verdict = read ?: CredentialVerdict.Held,
+            verdict = when {
+                sent == null -> CredentialVerdict.Held
+                else -> read ?: CredentialVerdict.Unverified
+            },
         )
     }
 

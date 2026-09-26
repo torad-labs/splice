@@ -140,5 +140,6 @@ class MgmtKeyTest {
         assertEquals(64, key.get().length)
         assertEquals(1, logs.size, "$logs")
         assertTrue(logs[0].contains("present but blank"), logs[0])
+        assertTrue(logs[0].contains("if the replacement publishes, every existing bearer"), "V4-293: ${logs[0]}")
     }
 }

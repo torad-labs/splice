@@ -23,8 +23,9 @@
 // do. The lifetime starts at the team's creation (TeamsEconomics.tally), and an archived generation
 // that ended before it is not opened, so the named oldest can be that generation's rotation second:
 // an upper bound on what the files hold, which is all "reaches back past the team" needs. Dollars use
-// the SessionCost arithmetic per row against the head's own catalog, and are null for any aggregate
-// with a turn no rate card priced: a partial sum would be a differently-wrong confident number.
+// the SessionCost arithmetic per row against the head's own catalog. An aggregate with a turn no rate
+// card priced carries the priced turns' sum with unpriced_turns beside it, and is null only when none of
+// its turns was priced (V4-264: one unpriced haiku call left a lead with no figure at all).
 //
 // CHECKS (V4-159): a slot's `checks` is "pass"/"fail" from the outcome tag of its most recently
 // tallied turn, null with checks_source naming the absence when the slot has tallied none yet —

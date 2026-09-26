@@ -52,7 +52,9 @@ class UpstreamFailureClassifierTest {
     // surfaced "The usage limit has been reached" with no hint the reset was 142h away.
     @Test
     fun `quota 429 keeps reset time and plan in the surfaced message`() {
-        val resetsAt = System.currentTimeMillis() / 1000 + 86_400 * 6 + 3600 * 4
+        // Mid-hour (V4-281): the classifier subtracts its own later clock read, and at exactly 6d 4h a
+        // second ticking between the two reads left 6d 3h 59m 59s, humanized as "6d 3h" (CI 36228211391).
+        val resetsAt = System.currentTimeMillis() / 1000 + 86_400 * 6 + 3600 * 4 + 1800
         val body = """{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached",""" +
             """"plan_type":"pro","resets_at":$resetsAt}}"""
         val out = http(body, 429)

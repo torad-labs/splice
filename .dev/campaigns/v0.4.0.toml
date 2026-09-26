@@ -7225,5 +7225,8 @@ id = "V4-280"
 phase = "release"
 title = "A daemon start that stops holding its files owner-only fails a test (console, 2026-09-26): secureStateDirs and secureConfig are tested only by calling DaemonProcess directly, so a refactor of Main.runDaemon that drops either call leaves every store and splice.toml at the umask while every test stays green. A test drives the start path itself and finds a 0644 state dir and a 0644 splice.toml tightened"
 files = ["app/src/main/kotlin/splice/app/Main.kt", "app/src/test/kotlin/splice/app/DaemonStateDirsTest.kt"]
-status = "todo"
+status = "in_flight"
 verify = "two mutants, each red: runDaemon without the secureStateDirs call, and runDaemon without the secureConfig call; green: bun tools/gate slot V4-280 -- :app:test :app:detekt --continue"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T07:55:58.729Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T07:55:58Z

@@ -162,6 +162,19 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     5 s; the next write commits the whole file. `stage` no longer stages the ledger. Five selftest
     arms; three mutants (never commits, commits the whole index, a blocked commit fails the verb) each
     red on theirs, at 180, 182 and 184 of 185.
+19. **The self-commit never fails a landed write, and a lock that cannot be created is refused (review
+    of delta 18, 2026-09-26).** `commitWrites` held the ledger lock through its 5 s of index-lock
+    retries, so peers queued behind it past their 10 s lock timeout, and its own lock timeout threw
+    into the entry's catch: a note that had landed exited 1 and a re-run wrote it twice. Each attempt
+    now takes the lock, tries once and releases, waits outside it, and a lock that is not free in time
+    is a deferral like any other: `commitWrites` never throws. `acquireSidecar` read every failure to
+    create the lock file as a stale lock, so a ledger whose directory is missing spun forever at full
+    CPU; only EEXIST is a peer's now, and anything else is a LedgerError at once. `review.ts record`
+    writes the ledger too and now commits like the other entry points. The fleet selftest's
+    ledger-wide arm moved to invalid TOML with delta 18 and stopped reaching the claim loop's filter; a
+    held ledger lock through the claim reaches it again. Three new selftest arms (188 ledger, 37
+    fleet); three mutants (the lock failure thrown, every create failure read as stale, the claim
+    filter taking any LedgerError as a row reason) each red on its own arm.
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

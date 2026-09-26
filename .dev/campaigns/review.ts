@@ -23,7 +23,7 @@ import {
   reviewDoneSatisfied,
   artifactDir,
 } from "./earn-core.ts";
-import { mutate, readLines, LedgerError } from "./ledger-core.ts";
+import { commitWrites, mutate, readLines, LedgerError } from "./ledger-core.ts";
 
 const USAGE = `usage: bun .dev/campaigns/review.ts <command> [args]
 
@@ -446,9 +446,13 @@ function selftest(): number {
   return fails === 0 ? 0 : 1;
 }
 
+// `record` writes the ledger, so it commits like every other write (ledger-core.ts commitWrites).
 try {
-  process.exit(await main());
+  const code = await main();
+  await commitWrites(["review", ...Bun.argv.slice(2)]);
+  process.exit(code);
 } catch (e) {
+  await commitWrites(["review", ...Bun.argv.slice(2)]); // a write that landed before the refusal
   console.error(e instanceof Error ? e.message : e);
   process.exit(1);
 }

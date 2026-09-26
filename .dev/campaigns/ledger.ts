@@ -2830,6 +2830,38 @@ async function selftest(): Promise<number> {
   check("the next write's commit carries the deferred note too",
     sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written while the index is locked") &&
       sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
+  // The ledger lock busy at commit time defers the commit too, and commitWrites never throws: the
+  // write already landed, and an exit 1 after it invites a re-run that writes it twice.
+  {
+    await mutate(path, (lines) => [...lines, "# written while a peer holds the ledger lock"]);
+    await Bun.write(`${path}.lock`, `${process.pid}\n${new Date().toISOString()}\n`);
+    let threw = "";
+    try {
+      await commitWrites(["note", "H1"], 100);
+    } catch (error) {
+      threw = String(error);
+    }
+    rmSync(`${path}.lock`, { force: true });
+    check("a ledger lock held at commit time defers the commit, never throws",
+      threw === "" && sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() !== "", threw);
+    await run("note", "H1", "the next write commits the deferred line");
+    check("the next write's commit carries the line deferred by the ledger lock",
+      sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written while a peer holds the ledger lock") &&
+        sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
+  }
+  // A lock file that cannot be created is the caller's error at once. Only an existing lock is a
+  // peer's; a missing directory used to read as a stale lock and spin forever at full CPU.
+  {
+    const probe = Bun.spawnSync(["bun", import.meta.path, join(repo, "no-such-dir", "ledger.toml"), "list"], {
+      env: { ...process.env, LEDGER_ORCHESTRATOR: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 15_000,
+    });
+    const out = probe.stdout.toString() + probe.stderr.toString();
+    check("a ledger whose directory is missing is refused at the lock, not spun on",
+      probe.exitCode === 1 && out.includes("cannot create the lock"), `exit ${probe.exitCode}: ${out.trim()}`);
+  }
 
   check("validate passes", (await run("validate")).includes("valid"));
   {

@@ -889,7 +889,7 @@ export async function fleetSelftest(): Promise<number> {
     // next --claim
     run("note", "F1", "RETIRED: folded into F5");
     // A campaign queue naming F6 (todo) before F0 (in_flight): init writes no [campaign] table.
-    const { appendFileSync, writeFileSync } = await import("node:fs");
+    const { appendFileSync, rmSync, writeFileSync } = await import("node:fs");
     const intact = readFileSync(ledger, "utf8");
     appendFileSync(ledger, "\n[campaign\n");
     const refused = run("next", "--claim", "seat-c");
@@ -897,6 +897,14 @@ export async function fleetSelftest(): Promise<number> {
       refused.code === 1 && refused.out.includes("not valid TOML") && !refused.out.includes("queue empty"), refused.out);
     writeFileSync(ledger, `${intact}\n[campaign]\nnext = ["F6", "F0"]\n`);
     check("the fixture's campaign queue parses", campaignNext(readFileSync(ledger, "utf8"), ledger).join(",") === "F6,F0" && run("validate").code === 0);
+    // The claim ITSELF refused for the ledger's reason: a peer holds the ledger lock through the
+    // claim's whole wait. This is the refusal the claim loop's filter must rethrow; taken as a row
+    // reason, the pull would move on and report the queue empty about a ledger it could not write.
+    writeFileSync(`${ledger}.lock`, `${process.pid}\n${new Date().toISOString()}\n`);
+    const locked = run("next", "--claim", "seat-c");
+    rmSync(`${ledger}.lock`, { force: true });
+    check("a claim refused by the ledger lock aborts the pull loudly, not as a row reason",
+      locked.code === 1 && locked.out.includes("could not lock") && !locked.out.includes("queue empty"), locked.out);
     const pulled = run("next", "--claim", "seat-c");
     check("next --claim takes the queued todo row first, claims it and prints its packet",
       pulled.code === 0 && pulled.out.includes("F6 claimed by seat-c") && run("get", "F6").out.includes("[in_flight]") && pulled.out.includes("F6"), pulled.out);

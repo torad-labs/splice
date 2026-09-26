@@ -116,19 +116,19 @@ function flockSymbols(): { flock: (fd: number, op: number) => number } {
 
 type HeldLock = { lockPath: string; fd: number | null };
 
-async function acquireLock(ledgerPath: string): Promise<HeldLock> {
-  const lockPath = await acquireSidecar(ledgerPath);
+async function acquireLock(ledgerPath: string, timeoutMs = LOCK_TIMEOUT_MS): Promise<HeldLock> {
+  const lockPath = await acquireSidecar(ledgerPath, timeoutMs);
   // A ledger not yet on disk (init) has nothing for manifest.py to contend: that CLI refuses a
   // missing path before it ever locks.
   if (!coexistsWithPython(ledgerPath) || !existsSync(ledgerPath)) return { lockPath, fd: null };
   let fd: number | null = null;
   try {
     fd = openSync(ledgerPath, "r+");
-    const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
     while (flockSymbols().flock(fd, LOCK_EX | LOCK_NB) !== 0) {
       if (Date.now() > deadline) {
         throw new LedgerError(
-          `could not flock ${ledgerPath} after ${LOCK_TIMEOUT_MS}ms — a manifest.py seat is writing`,
+          `could not flock ${ledgerPath} after ${timeoutMs}ms — a manifest.py seat is writing`,
         );
       }
       await Bun.sleep(LOCK_RETRY_MS);
@@ -142,17 +142,20 @@ async function acquireLock(ledgerPath: string): Promise<HeldLock> {
   }
 }
 
-async function acquireSidecar(ledgerPath: string): Promise<string> {
+async function acquireSidecar(ledgerPath: string, timeoutMs = LOCK_TIMEOUT_MS): Promise<string> {
   const lockPath = `${ledgerPath}.lock`;
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
 
   for (;;) {
+    let handle: number;
     try {
-      const handle = openSync(lockPath, "wx");
-      closeSync(handle);
-      await Bun.write(lockPath, `${process.pid}\n${new Date().toISOString()}\n`);
-      return lockPath;
-    } catch {
+      handle = openSync(lockPath, "wx");
+    } catch (error) {
+      // Only an existing lock is a peer's. Anything else (the ledger's directory missing, a read-only
+      // tree) has no lock file to age, so treating it as a stale one spun here forever at full CPU.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw new LedgerError(`cannot create the lock ${lockPath}: ${(error as Error).message}`);
+      }
       const age = Date.now() - (statSync(lockPath, { throwIfNoEntry: false })?.mtimeMs ?? 0);
       if (age > STALE_LOCK_MS) {
         try {
@@ -164,11 +167,21 @@ async function acquireSidecar(ledgerPath: string): Promise<string> {
       }
       if (Date.now() > deadline) {
         throw new LedgerError(
-          `could not lock ${ledgerPath} after ${LOCK_TIMEOUT_MS}ms — another seat is writing`,
+          `could not lock ${ledgerPath} after ${timeoutMs}ms — another seat is writing`,
         );
       }
       await Bun.sleep(LOCK_RETRY_MS);
+      continue;
     }
+    try {
+      writeSync(handle, `${process.pid}\n${new Date().toISOString()}\n`);
+    } catch (error) {
+      releaseLock({ lockPath, fd: null }); // never leave a lock behind: it wedges every seat for STALE_LOCK_MS
+      throw new LedgerError(`cannot write the lock ${lockPath}: ${(error as Error).message}`);
+    } finally {
+      closeSync(handle);
+    }
+    return lockPath;
   }
 }
 
@@ -390,7 +403,8 @@ function writeInPlace(fd: number, text: string): void {
 }
 
 const COMMIT_RETRY_MS = 200;
-/** Well inside LOCK_TIMEOUT_MS: a peer's write waits on the ledger lock this commit holds. */
+/** How long a held index lock is waited out before the write is deferred. The ledger lock is held
+ *  only for each attempt, never across the wait, so peers' writes go on meanwhile. */
 const COMMIT_TIMEOUT_MS = 5_000;
 
 /**
@@ -405,35 +419,54 @@ const COMMIT_TIMEOUT_MS = 5_000;
  *     write lands in the next commit instead of racing this one;
  *   - a ledger git does not track (a scratch copy, a fresh `init`, a fixture) is left alone, and one
  *     with nothing left to commit (a peer's commit already carried the write) is skipped;
- *   - a commit that cannot land (the index lock held past the timeout, a merge in progress) is
- *     reported and deferred, never retried by re-running the verb, which would write twice: the next
- *     write commits the whole file.
+ *   - a commit that cannot land (the index lock held past the timeout, a merge in progress, the
+ *     ledger lock not free in time) is reported and deferred, never retried by re-running the verb,
+ *     which would write twice: the next write commits the whole file. So this never throws: the
+ *     write already landed, and an exit 1 after it would invite exactly that re-run.
  */
-export async function commitWrites(argv: readonly string[]): Promise<void> {
+export async function commitWrites(argv: readonly string[], lockTimeoutMs = LOCK_TIMEOUT_MS): Promise<void> {
   const subject = commitSubject(argv);
   for (const ledgerPath of writtenLedgers) {
     const git = (...args: string[]) =>
       Bun.spawnSync(["git", "-C", dirname(ledgerPath), ...args], { stdout: "pipe", stderr: "pipe" });
     if (git("ls-files", "--error-unmatch", "--", ledgerPath).exitCode !== 0) continue;
-    const held = await acquireLock(ledgerPath);
-    try {
-      if (git("diff", "--quiet", "HEAD", "--", ledgerPath).exitCode === 0) continue;
-      const deadline = Date.now() + COMMIT_TIMEOUT_MS;
-      for (;;) {
-        const commit = git("commit", "--quiet", "-m", subject, "--", ledgerPath);
-        if (commit.exitCode === 0) break;
-        const why = commit.stderr.toString().trim();
-        if (!why.includes("index.lock") || Date.now() > deadline) {
-          console.error(`WARNING: ${ledgerPath} is written but not committed (${why.split("\n")[0]}); the next ledger write commits it`);
-          break;
-        }
-        await Bun.sleep(COMMIT_RETRY_MS);
-      }
-    } finally {
-      releaseLock(held);
+    const deferred = await commitOne(ledgerPath, subject, git, lockTimeoutMs);
+    if (deferred !== null) {
+      console.error(`WARNING: ${ledgerPath} is written but not committed (${deferred}); the next ledger write commits it`);
     }
   }
   writtenLedgers.clear();
+}
+
+/** One ledger's commit, or why it is deferred. Each attempt takes the ledger lock, checks there is
+ *  still something to commit, tries once and releases; a held index lock is waited out OUTSIDE the
+ *  ledger lock, so a peer's write never queues behind this commit's retries. */
+async function commitOne(
+  ledgerPath: string,
+  subject: string,
+  git: (...args: string[]) => { exitCode: number | null; stderr: Buffer },
+  lockTimeoutMs: number,
+): Promise<string | null> {
+  const deadline = Date.now() + COMMIT_TIMEOUT_MS;
+  for (;;) {
+    let held: HeldLock;
+    try {
+      held = await acquireLock(ledgerPath, lockTimeoutMs);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    let why: string;
+    try {
+      if (git("diff", "--quiet", "HEAD", "--", ledgerPath).exitCode === 0) return null;
+      const commit = git("commit", "--quiet", "-m", subject, "--", ledgerPath);
+      if (commit.exitCode === 0) return null;
+      why = commit.stderr.toString().trim();
+    } finally {
+      releaseLock(held);
+    }
+    if (!why.includes("index.lock") || Date.now() > deadline) return why.split("\n")[0] ?? why;
+    await Bun.sleep(COMMIT_RETRY_MS);
+  }
 }
 
 /** `chore(ledger): <verb> <target>`, from the CLI's own argv (`<ledger> <verb> [args]`): the row a

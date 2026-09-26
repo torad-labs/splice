@@ -6849,6 +6849,7 @@ title = "A launch never writes an older stored Claude login over the head's live
 files = ["integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt", "features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt"]
 status = "todo"
 verify = "red first: a launch whose live credentials are newer than the stored snapshot rewrites them today and keeps them byte for byte after; a switch to another label saves the running label's live credential under that label before materializing; CI gate on the train sha."
+# [2026-09-26] RECEIPT cmd="see V4-276: bun tools/gate slot V4-276 -- :integrations-claude-code:test :integrations-claude-code:detekt :features-launch:test :features-launch:detekt :app:test :app:detekt :quality-architecture:test --continue" exit=0 tests=1195 touched=integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt,features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt tail="apTest 'a launch keeps the client-auth head's live login byte for byte - V4-250', red first against V4-129 (the launch wrote max-gen1 over max-gen2-newer). A switch saves the running label's live credential under that label before putting another in: ClaudeLoginsTest inv1 (switch away and back after a rotation restores the rotated copy), red first, and a mutant dropping the save-back turns it red."
 
 [[items]]
 id = "V4-251"

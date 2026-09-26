@@ -316,7 +316,8 @@ expect = {
     "kimi-oauth": ["login error", "could not start device login", "enter this code"],
     "muse-oauth": ["login error", "could not start device login", "enter this code"],
     "api-key": ["pipe it instead", "splice key set"],
-    "client": ["no browser login for that kind"],
+    # A Claude head (claude-splice) signs in with Claude Code's own /login, and its verb says so (V4-276).
+    "client": ["no browser login for that kind", "signs in with Claude Code's own /login"],
 }
 failed = []
 for head, h in t["heads"].items():

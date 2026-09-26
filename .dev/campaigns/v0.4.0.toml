@@ -6830,6 +6830,7 @@ title = "The daemon serves the actions V4-219's pages end in (console, 2026-09-2
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/ActivityRoutes.kt"]
 status = "todo"
 verify = "red first: a route test per action fails on today's tree (404, or an edge without its id); green after: each route performs its action on a test daemon, the hand-off read returns the redacted message for a recorded tool_use id, and each mutation's answer names the sessions it interrupts; CI gate on the train sha."
+# [2026-09-26] SCOPE (orchestrator, from console's inventory 2026-09-26): items split out: read a hand-off's text -> V4-314 (the redacted read exists, TranscriptReader.kt:115-135; only the edges route lacks it); edit a project's prompt and compaction instructions -> V4-313 (console-only, PUT /api/topology writes splice.toml). Already built: open transcript, rebind a slot, the turn waterfall. LEFT ON THIS ROW, each needing a design before code: stop a turn (no in-flight turn registry with a cancel in src/main; InflightGate.kt:52 is a concurrency gate), message a session (no daemon path into a running client; may end as copy-the-SendMessage), resume on another head (ResumeHookRoute.kt:62, HeadBoundedContinue.kt, LaunchService.kt:163-170; the daemon cannot start the operator's client, so likely a route returning the launch recipe). Each mutation confirms first and names the live sessions it interrupts (V4-219 item 4); the file fence widens with the design
 
 [[items]]
 id = "V4-248"

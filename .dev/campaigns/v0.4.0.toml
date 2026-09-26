@@ -7596,6 +7596,7 @@ verify = "red first in vitest, quoted: a head whose two turns have null token co
 claimed_by = "console"
 claimed_at = "2026-09-26T12:37:51.099Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T12:37:51Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4-306-console -- :console:lint :console:typecheck :console:test --continue" exit=0 tests=1473 touched=console/src/pages/turns/index.tsx,console/tests/turns.test.ts,console/src/widgets/add-backend/index.tsx,console/tests/add-backend.test.ts tail=" never clears a write's refusal. 12 mutants killed, all restored (N6, the bar on no reports, survived first and got the aria-label assertion). strings.ts untouched: the copy wall (help <= 12 words, one sentence) refused a tip extension, and '≥' reads as 'at least' as it does on the status line. Untested: AddBackend's effect wiring readOpenAdd to setView/setReadFault (static render runs no effect)."
 
 [[items]]
 id = "V4-307"

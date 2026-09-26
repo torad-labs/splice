@@ -34,6 +34,8 @@ import splice.core.model.LongContextRates
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
+import splice.core.perf.PerfSessionTail
+import splice.core.perf.PerfSessionTurn
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.HeadSessionPerfSource
 
@@ -72,7 +74,9 @@ class SessionCostTest {
     /** Answers [rows] for the session under test and NOTHING for any other id — the isolation the
      *  per-session reader must preserve. */
     private fun tokens(rows: List<Map<String, Long>>, forSession: String = sessionId) =
-        HeadSessionPerfSource { asked -> if (asked == forSession) rows else emptyList() }
+        HeadSessionPerfSource { asked ->
+            PerfSessionTail(if (asked == forSession) rows.map { PerfSessionTurn(null, it) } else emptyList(), null)
+        }
 
     // ---- the REAL rows ------------------------------------------------------------------------
 
@@ -103,14 +107,15 @@ class SessionCostTest {
     /** PerfStats.belongsTo + numericFields over the real rows: the stored tag is a TRUNCATION of the
      *  id the caller holds, so the filter is `askedId.startsWith(storedTag)`. */
     private fun realTokens() = HeadSessionPerfSource { asked ->
-        realSessionRows
+        val turns = realSessionRows
             .filter { row -> (row["session"] as? JsonPrimitive)?.content?.let { asked.startsWith(it) } == true }
-            .map { numericFields(it) }
+            .map { row -> PerfSessionTurn((row["model"] as? JsonPrimitive)?.content, numericFields(row)) }
+        PerfSessionTail(turns, null)
     }
 
     @Test
     fun `real perf rows carry the cached prefix INSIDE in_tokens, which is what the arithmetic rests on`() {
-        val rows = realTokens().tailNumericFor(realSessionId)
+        val rows = realTokens().sessionTail(realSessionId).turns.map { it.counters }
         assertEquals(3, rows.size, "the prefix match must find all three of this session's rows")
         for (row in rows) {
             val rawIn = row["in_tokens"]!!
@@ -418,5 +423,92 @@ class SessionCostTest {
         )
         val cost = SessionCost(tokens(impossible), cacheWritingCatalog())
         assertEquals(0.003645, cost.usdFor(sessionId, "sonnet-4-6")!!, 1e-12)
+    }
+
+    // ---- V4-240 review, findings 4b and 4c ----------------------------------------------------------
+    //
+    // 4b: a session can switch models, and each turn is billed at the card of the model it RAN on. The
+    // figure used to price every row with the model the status line asked about, so a session with
+    // earlier Sonnet turns read at Opus rates. 4c: the reader holds a byte-bounded tail, so a session
+    // older than that tail may have turns it cut, and its figure is then only a lower bound.
+
+    private val sonnetFiveCard = ModelRates(input = 3.00, cacheRead = 0.30, output = 15.00)
+    private val opusCard = ModelRates(input = 5.00, cacheRead = 0.50, output = 25.00)
+
+    private fun anthropicCatalog() = ModelCatalog(
+        discoveryPrefix = "claude-anthropic--",
+        models = listOf(
+            ModelEntry(id = "claude-opus-5-5", label = "Opus 5.5", contextWindow = 1_000_000, rates = opusCard),
+            ModelEntry(id = "claude-sonnet-5", label = "Sonnet 5", contextWindow = 1_000_000, rates = sonnetFiveCard),
+        ),
+        defaultContextWindow = 1_000_000,
+        pinnedModel = "claude-opus-5-5",
+    )
+
+    /** One cold turn: 100000 input tokens, none cached, and 1000 output. */
+    private val coldTurn = mapOf("in_tokens" to 100_000L, "out_tokens" to 1_000L)
+
+    private fun tail(turns: List<PerfSessionTurn>, tailStartMs: Long? = null) = HeadSessionPerfSource { asked ->
+        if (asked == sessionId) PerfSessionTail(turns, tailStartMs) else PerfSessionTail(emptyList(), null)
+    }
+
+    @Test
+    fun `a session that switched models bills each turn at its own model's card - V4-240 review 4b`() {
+        //   the Sonnet turn: 100000 * 3.00 + 1000 * 15.00 = 315000.0 / 1e6 = 0.315
+        //   the Opus turn:   100000 * 5.00 + 1000 * 25.00 = 525000.0 / 1e6 = 0.525
+        //                                                                    -----
+        //                                                                    0.840
+        // Both at the Opus card, the defect, would read 1.05.
+        val turns = listOf(PerfSessionTurn("claude-sonnet-5", coldTurn), PerfSessionTurn("claude-opus-5-5", coldTurn))
+        val spend = SessionCost(tail(turns), anthropicCatalog()).spendFor(sessionId, "claude-opus-5-5", null)!!
+        assertEquals(0.84, spend.usd, 1e-12)
+        assertFalse(spend.lowerBound, "every turn had a card, so the figure is exact")
+    }
+
+    @Test
+    fun `a turn with no card is left out and makes the figure a lower bound - V4-240 review 4b`() {
+        val turns = listOf(
+            PerfSessionTurn("gpt-6-sol", coldTurn),
+            PerfSessionTurn("claude-opus-5-5", coldTurn),
+            // a legacy row that recorded no model is billed at the asked model's card
+            PerfSessionTurn(null, coldTurn),
+        )
+        val spend = SessionCost(tail(turns), anthropicCatalog()).spendFor(sessionId, "claude-opus-5-5", null)!!
+        assertEquals(1.05, spend.usd, 1e-12, "the two Opus-priced turns, 0.525 each; the uncarded one adds nothing")
+        assertTrue(spend.lowerBound, "a turn the head cannot price means the true spend is at least this")
+        val none = SessionCost(tail(listOf(PerfSessionTurn("gpt-6-sol", coldTurn))), anthropicCatalog())
+        assertNull(none.spendFor(sessionId, "claude-opus-5-5", null), "no priced turn at all is no figure, never zero")
+    }
+
+    @Test
+    fun `a session that began before the tail's oldest row is a lower bound - V4-240 review 4c`() {
+        val turns = listOf(PerfSessionTurn("claude-opus-5-5", coldTurn))
+        val cut = SessionCost(tail(turns, tailStartMs = 1_000_000L), anthropicCatalog())
+        assertTrue(cut.spendFor(sessionId, "claude-opus-5-5", 999_999L)!!.lowerBound, "began before the window")
+        assertFalse(cut.spendFor(sessionId, "claude-opus-5-5", 1_000_000L)!!.lowerBound, "began inside the window")
+        assertFalse(cut.spendFor(sessionId, "claude-opus-5-5", null)!!.lowerBound, "no start in the blob, no claim")
+        val whole = SessionCost(tail(turns, tailStartMs = null), anthropicCatalog())
+        assertFalse(whole.spendFor(sessionId, "claude-opus-5-5", 1L)!!.lowerBound, "the read held the whole history")
+    }
+
+    @Test
+    fun `the lower bound reaches the line as the same mark dropped rows use - V4-240 review 4c`() {
+        // total_duration_ms 600000 before a clock at 2000000 puts the session's start at 1400000, before
+        // the tail's oldest row at 1500000; on a non-Anthropic head splice's own figure is what shows.
+        val cutTail = tail(listOf(PerfSessionTurn("claude-opus-5-5", coldTurn)), tailStartMs = 1_500_000L)
+        val renderer = StatuslineRenderer(
+            label = "codex",
+            now = { 2_000_000L },
+            sessionCost = SessionCost(cutTail, anthropicCatalog()),
+        )
+        val line = renderer.render(
+            """{"model":{"id":"claude-opus-5-5"},"cost":{"total_cost_usd":9.99,"total_duration_ms":600000}}""",
+            null,
+            warnPct = 0,
+            warnTokens5h = 0,
+            sessionId = sessionId,
+        ).replace(ansi, "")
+        assertTrue("API est. ≥$0.53" in line, line)
+        assertFalse("⚠" in line, "no row was dropped, so no count: $line")
     }
 }

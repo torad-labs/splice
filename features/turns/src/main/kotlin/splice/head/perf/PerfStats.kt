@@ -25,6 +25,8 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.config.Knob
 import splice.core.perf.PerfArchiveName
+import splice.core.perf.PerfSessionTail
+import splice.core.perf.PerfSessionTurn
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -142,20 +144,43 @@ public class PerfStats(
     public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> =
         tailRows().takeLast(tailN).map { numericFields(it) }
 
-    /** Numeric fields of EVERY row in the byte-bounded tail belonging to ONE client session,
-     *  newest last. No row cap on purpose: the read is already bounded by bytes, and a session's
-     *  spend must not be truncated by a count that a long session would exceed.
+    /** EVERY row in the byte-bounded tail belonging to ONE client session, newest last, each with
+     *  the model its turn recorded beside its numeric fields. No row cap on purpose: the read is
+     *  already bounded by bytes, and a session's spend must not be truncated by a count that a long
+     *  session would exceed.
      *
      *  V4-37: the statusline's cost segment replaces a per-SESSION number, so it must be summed from
      *  one session's rows. The row on disk stores the session TRUNCATED (SESSION_TAG_CHARS in
      *  TurnDrive.kt); this reader is the one place that knows it, so the caller passes the full id it
      *  holds and the truncation stays with the writer instead of being duplicated in another module.
      *  An empty [sessionId] matches nothing at all — an empty tag would otherwise `startsWith` every
-     *  row in the file and quietly become a head-wide total. */
-    public fun tailNumericFor(sessionId: String): List<Map<String, Long>> {
-        if (sessionId.isEmpty()) return emptyList()
-        return tailRows().filter { row -> belongsTo(row, sessionId) }.map { numericFields(it) }
+     *  row in the file and quietly become a head-wide total.
+     *
+     *  V4-240 review: the model rides with each turn because a session can switch models, and each
+     *  turn is billed at its own model's card (finding 4b). The tail's start rides along when the
+     *  read could not hold the whole history (finding 4c), so a session older than it reads `≥`. */
+    public fun sessionTail(sessionId: String): PerfSessionTail {
+        if (sessionId.isEmpty()) return PerfSessionTail(emptyList(), null)
+        val rows = tailRows()
+        val turns = rows.filter { row -> belongsTo(row, sessionId) }
+            .map { row -> PerfSessionTurn(modelOf(row), numericFields(row)) }
+        val tailStart = if (historyBeyondTail()) rows.mapNotNull { tsOf(it) }.minOrNull() else null
+        return PerfSessionTail(turns, tailStart)
     }
+
+    /** Whether the perf history holds rows [tailRows] cannot reach: the file is past the byte bound,
+     *  or a rolled generation keeps older ones. Without it the tail's start would be reported for a
+     *  file read whole, and every fresh session, which always begins before its first row is written,
+     *  would read as cut. Taken after the read, whose drain has settled pending appends. A size
+     *  `File.length` cannot stat is 0, so an unknown size claims no cut; an unreadable file is
+     *  already said by [tailRows]. */
+    private fun historyBeyondTail(): Boolean =
+        Files.exists(file.resolveSibling("${file.fileName}.1")) || file.toFile().length() > READ_TAIL_BYTES
+
+    private fun tsOf(row: JsonObject): Long? = (row["ts"] as? JsonPrimitive)?.longOrNull
+
+    private fun modelOf(row: JsonObject): String? =
+        (row["model"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
 
     /** True when [row]'s stored tag is the truncated form of [sessionId]. */
     private fun belongsTo(row: JsonObject, sessionId: String): Boolean {

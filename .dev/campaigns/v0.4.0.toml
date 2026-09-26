@@ -7558,8 +7558,11 @@ id = "V4-305"
 phase = "release"
 title = "Saving a knob in the global view says when it failed or was refused (5-day review, B shard silent-failure, 2026-09-26). saveGlobal is 'void applyConfigPatch(...).finally(...)' (settings/index.tsx:173-176), the shape V4-175 removed from the page's other writes (:226-228): a daemon that is down or answers non-2xx leaves an unhandled rejection and a spinner that clears as if saved, and a 200 whose PatchResult.rejected names the key (shared/api/index.ts:273; nothing in console/src reads .rejected) is dropped too, so a value the daemon refused reads as saved. Print both under the knob the way saveForHead prints its WriteResult: the key's refusal in the daemon's words, or the failed request's message"
 files = ["console/src/pages/settings/index.tsx", "console/tests/settings.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first in vitest, quoted: a global save whose PATCH rejects prints nothing; a 200 with rejected {key: reason} prints nothing; green: each prints the daemon's sentence under the knob and the spinner clears; console eslint, typecheck and vitest through the gate's console legs"
+claimed_by = "console"
+claimed_at = "2026-09-26T12:15:16.680Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T12:15:16Z
 
 [[items]]
 id = "V4-306"

@@ -7691,3 +7691,11 @@ title = "The console's topology wall counts every serialized field of splice.tom
 files = ["console/src/shared/coverage/denominator.ts", "console/src/shared/coverage/baseline.ts", "console/tests/coverage.test.ts", ".dev/restructure/capabilities.tsv"]
 status = "todo"
 verify = "red first: with the manifest in place, the wall names every topology element it has no disposition for (quoted); a Kotlin test that walks Topology.serializer().descriptor (recursively through the table types) fails BY NAME when the checked-in manifest omits or adds an element; a mutant that adds a field to CompactionScope reds both; cd console && bun test tests/coverage.test.ts; the module's detekt and test"
+
+[[items]]
+id = "V4-313"
+phase = "release"
+title = "The Projects page edits a project's standing prompt and its compaction instructions (V4-219 step 3, V4-247 item split by console 2026-09-26): both live in splice.toml (Topology.kt:43-44 projects, V4-124; CompactionScope.kt:22-27 [[compaction.project]]) and PUT /api/topology already writes that file through the structured writer (ConfigurationMount.kt), so this is console-only; the Projects job has only Open a project (projects/coverage.ts:21-23)"
+files = ["console/src/pages/projects/index.tsx", "console/src/pages/projects/detail.tsx", "console/src/pages/projects/strings.ts", "console/src/pages/projects/projects.css", "console/src/pages/projects/coverage.ts", "console/tests/projects.test.ts", "docs/design/JOBS.md"]
+status = "todo"
+verify = "red first: a projects test that saves a prompt and a compaction instruction through the page and reads the PUT /api/topology body naming both (quoted); green with a confirm that names the live sessions of that project the change reaches at their next turn, and the daemon's refusal shown verbatim; cd console && bun test; the wall's projects job lists the edit as built"

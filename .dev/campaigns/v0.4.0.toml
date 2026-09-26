@@ -7369,6 +7369,7 @@ claimed_by = "console"
 claimed_at = "2026-09-26T10:39:23.326Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T10:39:23Z
 # [2026-09-26] amend by=orchestrator: files were ["console/src/pages/teams/index.tsx", "console/src/entities/perf/model/turns-wire.ts", "console/tests/teams-live.test.ts"]
+# [2026-09-26] RECEIPT cmd="umask 022; bun tools/gate slot V4-288-green -- :console:lint :console:typecheck :console:test --continue" exit=0 tests=1425 touched=console/src/entities/perf/api/index.ts,console/src/entities/perf/model/turns-wire.ts,console/src/entities/perf/model/types.ts,console/src/pages/teams/index.tsx,console/src/pages/teams/strings.ts,console/src/pages/turns/index.tsx,console/src/widgets/team-board/index.tsx,console/tests/daemon-down.test.ts,console/tests/teams-live.test.ts,console/tests/turns.test.ts tail="BUILD SUCCESSFUL in 21s; :console:lint, :console:typecheck, :console:test executed; vitest 75 files, 1425 tests passed; fix 071c66e05; reds 5/6 on HEAD's behaviour; 8 mutants killed and restored"
 
 [[items]]
 id = "V4-289"

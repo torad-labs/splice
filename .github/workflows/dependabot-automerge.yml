@@ -81,7 +81,9 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'automated')
       ) &&
       github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    # ubuntu-slim: 1 vCPU, no Docker, a 15-minute cap; one gh call needs none of
+    # it, at a third of ubuntu-latest's rate, on every PR in every repo.
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: write
@@ -101,7 +103,9 @@ jobs:
     # `dependabot/anything` can be pushed by anyone, and this job holds
     # contents: write.
     if: github.event.pull_request.user.login == 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    # ubuntu-slim: 1 vCPU, no Docker, a 15-minute cap; one gh call needs none of
+    # it, at a third of ubuntu-latest's rate, on every PR in every repo.
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: write # gh pr merge --auto

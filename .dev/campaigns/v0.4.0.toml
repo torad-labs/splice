@@ -7464,8 +7464,11 @@ id = "V4-296"
 phase = "release"
 title = "Budgets and quota say when they cannot be read (5-day review, G silent-failure hunt, 2026-09-26). (1) BudgetStore.budgets() is load().getOrElse { emptyList() } (BudgetStore.kt:64), so a budgets.json that does not parse turns every head's budget off, block and warn alike (BudgetLedger.kt:52), with no line anywhere, although load()'s own KDoc (:118-119) says a file that does not parse is 'never silently replaced by an empty list': log it once per bad stamp, and let enforcement and the console name it. (2) BearerGetProbe returns null for any non-200 (QuotaProbes.kt:71-75), which QuotaPoller.pollOnce takes as a success with nothing to record (QuotaPoller.kt:111-113), so a codex or kimi usage endpoint answering 401 or 429 on every poll freezes the bars on the last snapshot with no line, while a thrown failure logs once: fail the probe with the status so the existing log-once path carries it"
 files = ["features/usage/src/main/kotlin/splice/usage/budgets/BudgetStore.kt", "features/usage/src/test/kotlin/splice/usage/budgets/BudgetStoreTest.kt", "features/usage/src/main/kotlin/splice/usage/quota/QuotaProbes.kt", "features/usage/src/test/kotlin/splice/usage/quota/QuotaPollerTest.kt", "features/usage/src/test/kotlin/splice/usage/quota/CodexQuotaProbeTest.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a budgets.json with one broken byte reads as no budgets with no log line; a usage endpoint answering 401 on three polls logs nothing (both quoted); green: the broken file logs once and enforcement says the budgets could not be read, the 401 logs once with its status and the bars keep the last snapshot; :features-usage:test and detekt through the slot"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T12:15:55.265Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T12:15:55Z
 
 [[items]]
 id = "V4-297"

@@ -669,6 +669,17 @@ origin.
   same rule: `cost_today_usd` is the priced turns' dollars and `unpriced_turns_today` counts the
   rest, and the Projects page's summary counts those turns rather than the repos that had one. The
   Usage page says `1 turn unpriced` for a single turn (V4-269).
+- **The claude profile prices every model it lists.** Only Opus 5.5 carried a rate card, so a turn on
+  Fable 5.1, Sonnet 5 or Haiku 4.5, Claude Code's own background Haiku calls among them, counted as
+  unpriced. Each now carries its card from Anthropic's pricing page, with cache writes at the 1-hour
+  rate as for Opus 5.5 (V4-270).
+- **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
+  systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
+  while it was still shutting down, so the start did nothing and the daemon came back only after the
+  unit's automatic-restart delay, with every head down meanwhile: 46 seconds at the sixth restart,
+  growing toward five minutes. It now asks systemd to restart the unit, which drains in-flight turns
+  the same way, starts the new daemon at once and resets the delay. A daemon the unit isn't running
+  is stopped and started as before.
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

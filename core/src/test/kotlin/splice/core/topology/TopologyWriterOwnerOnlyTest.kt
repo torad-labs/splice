@@ -5,6 +5,7 @@
 package splice.core.topology
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.model.ModelEntry
@@ -37,9 +38,9 @@ class TopologyWriterOwnerOnlyTest {
         heads = mapOf("ex" to HeadConfig("ex", port, "ex/", "m1")),
     )
 
-    private fun writer(now: Long): TopologyWriter {
+    private fun writer(now: Long, path: Path = file): TopologyWriter {
         val table = mapOf(FILE to topology(8801), EDITED to topology(8802))
-        return TopologyWriter(file, TopologyParse { text -> table.getValue(text) }, WallClock { now })
+        return TopologyWriter(path, TopologyParse { text -> table.getValue(text) }, WallClock { now })
     }
 
     private fun mode(path: Path): String = PosixFilePermissions.toString(Files.getPosixFilePermissions(path))
@@ -69,5 +70,26 @@ class TopologyWriterOwnerOnlyTest {
 
         val stamps = backups().map { it.removePrefix("splice.toml.bak-").substringBefore('-') }
         assertEquals((2..11).map { "20260918T1200%02dZ".format(it) }, stamps, "the ten newest, by the second taken")
+    }
+
+    // V4-279: a dotfiles-managed splice.toml is a link. The rename landed ON the link and replaced it with a
+    // regular file, so the dotfiles copy silently stopped getting edits. The edit now lands on the target,
+    // and the backup, which carries the header secrets too, stays beside the link, out of the dotfiles repo.
+    @Test
+    fun `a console edit through a linked splice toml keeps the link and edits its target - V4-279`() {
+        val target = Files.createDirectories(tmp.resolve("dotfiles")).resolve("splice.toml")
+        Files.writeString(target, FILE)
+        val link = Files.createDirectories(tmp.resolve("config")).resolve("splice.toml")
+        Files.createSymbolicLink(link, target)
+
+        val result = writer(NOW, link).write(topology(8802))
+
+        val backup = checkNotNull((result as TopologyWriteResult.Written).backup)
+        assertTrue(Files.isSymbolicLink(link), "splice.toml is still the operator's link")
+        assertEquals(EDITED, Files.readString(target), "the edit landed in the link's target")
+        assertEquals(tmp.resolve("config"), backup.parent, "the backup sits beside the link")
+        val dotfiles = Files.list(target.parent).use { paths -> paths.map { it.fileName.toString() }.toList() }
+        assertEquals(listOf("splice.toml"), dotfiles, "no backup and no temp file in the dotfiles directory")
+        if (Files.getFileStore(tmp).supportsFileAttributeView("posix")) assertEquals("rw-------", mode(target))
     }
 }

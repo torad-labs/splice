@@ -2,6 +2,7 @@
 // add and add-model on both surfaces, moved out of AddCommand.save so none of them can write differently.
 package splice.configuration.add
 
+import splice.core.topology.TopologyFileTarget
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -25,7 +26,8 @@ internal sealed class AddWritten {
 internal class AddWrite {
 
     /** A sibling temp file, then ONE rename — the previous file is intact until then — owner-only
-     *  (0600) from the temp file's creation (V4-275), since splice.toml can hold header secrets. The candidate
+     *  (0600) from the temp file's creation (V4-275), since splice.toml can hold header secrets, and at a
+     *  linked splice.toml's target, so the link stays the operator's (V4-279). The candidate
      *  was built from [AddCandidate.existing]; a sign-in and the checks ran since, so the file is read
      *  again first and a change in between (an editor, a second add) refuses the write instead of being
      *  overwritten by a rename. A file that cannot be read again (deleted, replaced by something
@@ -44,7 +46,7 @@ internal class AddWrite {
             onFailure = { AddWritten.Unreadable(SafeFailureText.render(it)) },
         )
         if (stale != null) return stale
-        SecureFile.writeAtomic0600(path, composed)
+        SecureFile.writeAtomic0600(TopologyFileTarget.of(path), composed)
         return AddWritten.Written
     }
 

@@ -4,6 +4,7 @@
 package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -24,5 +25,23 @@ class AddWriteOwnerOnlyTest {
         assertEquals(AddWritten.Written, written)
         assertEquals("[heads.a]\nport = 8801\n\n[heads.b]\n", Files.readString(file))
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
+    }
+
+    // V4-279: the rename landed ON a linked splice.toml and replaced the link with a regular file.
+    @Test
+    fun `an add through a linked splice toml keeps the link and writes its target - V4-279`(@TempDir tmp: Path) {
+        val target = Files.createDirectories(tmp.resolve("dotfiles")).resolve("splice.toml")
+        Files.writeString(target, "[heads.a]\nport = 8801\n")
+        val link = Files.createDirectories(tmp.resolve("config")).resolve("splice.toml")
+        Files.createSymbolicLink(link, target)
+
+        val written = AddWrite().replace(link, "[heads.a]\nport = 8801\n", "[heads.a]\nport = 8801\n\n[heads.b]\n")
+
+        assertEquals(AddWritten.Written, written)
+        assertTrue(Files.isSymbolicLink(link), "splice.toml is still the operator's link")
+        assertEquals("[heads.a]\nport = 8801\n\n[heads.b]\n", Files.readString(target))
+        if (Files.getFileStore(tmp).supportsFileAttributeView("posix")) {
+            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(target)))
+        }
     }
 }

@@ -27,6 +27,11 @@
 // overwritten. The write itself is a temp file and an ATOMIC_MOVE, after re-reading the file to
 // refuse when someone else changed it since the read.
 //
+// A LINK STAYS A LINK (V4-279). A dotfiles-managed splice.toml is a symlink, and a rename onto the
+// link replaced it with a regular file, so the dotfiles copy silently stopped getting edits. The new
+// bytes land at the link's target ([TopologyFileTarget]); the backups stay beside the configured path,
+// so the header secrets they carry never land in a dotfiles repo.
+//
 // OWNER-ONLY AND CAPPED (V4-275). splice.toml can hold header secrets (extra_headers), and so does
 // every backup of it: both are written 0600 from the instant they exist (SecureFile), and only the
 // newest BACKUPS_KEPT backups stay. Before, both landed at the umask and every edit's backup stayed.
@@ -65,6 +70,15 @@ private const val UNEXPRESSIBLE = "the writer cannot express this edit; nothing 
  *  daemon boots with, so the writer's verdict and the next boot's cannot differ. */
 public fun interface TopologyParse {
     public operator fun invoke(text: String): Topology
+}
+
+/** V4-279: where a rewrite of splice.toml lands, for both of its writers (this one and `splice add`'s):
+ *  the file itself, or the target of the link the operator configured, so the link stays theirs.
+ *  SecureFile does not follow links, by design: it also writes credentials, where a planted link must
+ *  never redirect a secret; a config the operator linked on purpose is resolved here instead. */
+public object TopologyFileTarget {
+    public fun of(configured: Path): Path =
+        if (Files.isSymbolicLink(configured)) configured.toRealPath() else configured
 }
 
 /** One reason a write was refused: the dotted path of the key it concerns and what is wrong. */
@@ -134,7 +148,7 @@ public class TopologyWriter(
         val hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)).take(HASH_PREFIX)
         val backup = path.resolveSibling("$backupPrefix${stamp.format(Instant.ofEpochMilli(clock()))}-$hash")
         if (!Files.exists(backup)) SecureFile.writeAtomic0600(backup, existing)
-        SecureFile.writeAtomic0600(path, composed)
+        SecureFile.writeAtomic0600(TopologyFileTarget.of(path), composed)
         dropOldBackups()
         return TopologyWriteResult.Written(backup)
     }

@@ -7195,5 +7195,8 @@ id = "V4-278"
 phase = "release"
 title = "An existing splice.toml and its backups are held owner-only at every start, as the state dirs are (V4-275 follow-up, orchestrator ruling 2026-09-26): V4-275 writes 0600 from now on, but every install today has a splice.toml, and every backup of it, that an older splice left at the umask (0644), and those carry header secrets (extra_headers) until the next edit rewrites them. At start the daemon sets splice.toml and every splice.toml.bak-* to 0600 beside secureStateDirs (DaemonBoundary.kt:153). A file it changed gets one log line with the old mode; one it cannot change (not the owner, a read-only filesystem, a non-POSIX filesystem) gets one warning line and never stops the start; a symlinked config tightens its target"
 files = ["app/src/main/kotlin/splice/app/DaemonBoundary.kt", "app/src/main/kotlin/splice/app/Main.kt", "core/src/main/kotlin/splice/core/util/SecureFile.kt", "app/src/test/kotlin/splice/app/DaemonStateDirsTest.kt", "README.md"]
-status = "todo"
+status = "in_flight"
 verify = "red first under umask 022: a daemon start over a 0644 splice.toml and a 0644 backup leaves both 0644 today; green: both are 0600 after the start, the log names the old mode, and a file the daemon cannot chmod leaves one warning and a started daemon; bun tools/gate slot V4-278 -- :app:test :app:detekt :core:test :core:detekt --continue"
+claimed_by = "console"
+claimed_at = "2026-09-26T07:45:03.119Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T07:45:03Z

@@ -15,9 +15,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import { applyFilter, advance, headsPresent, levelsPresent, startLogsPolling, setLogHead, setLogTail, useLogs } from '@entities/logs';
 import type { LogFilter, LogLevel, LogTail as Tail, LogsPayload } from '@entities/logs';
-import type { CaptureState } from '@entities/perf';
+import type { CaptureCell } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
-import { fetchCapture, putCapture, useCapture } from '@entities/perf';
+import { captureFor, fetchCapture, putCapture, useCapture } from '@entities/perf';
 import { HeadMark } from '@entities/control-status';
 import { cx } from '@shared/lib';
 import { Badge, Empty, PageHeader, Section, Segmented } from '@shared/ui';
@@ -40,10 +40,8 @@ export interface LogsBoardProps {
   head: string;
   tail: number;
   heads: { key: string; label: string }[];
-  /** The capture state the drawer prints, read for the head this page is tailing. */
-  capture?: CaptureState | null;
-  /** A capture read that failed, in the daemon's words. */
-  captureError?: string | null;
+  /** The capture the console holds; the drawer asks it for the tailed head alone. */
+  capture?: CaptureCell | null;
   /** Writes the tailed head's capture switch. */
   onCaptureSwitch?: (enabled: boolean) => void;
   locked?: boolean;
@@ -75,7 +73,7 @@ export function kept<T extends string>(present: readonly T[], chosen: T | null):
 }
 
 export function LogsBoard({
-  payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture, captureError = null,
+  payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture = null,
   onCaptureSwitch, locked = false, error = null, lastRead = null, sample, onFilter, onFollow, onHead, onTail,
 }: LogsBoardProps) {
   if (locked) return <Empty text={S.locked} source={H.locked} />;
@@ -177,13 +175,9 @@ export function LogsBoard({
           />
 
           <Section title={S.drawer}>
-            {/* Only the tailed head's capture: another head's read never stands in while this one's
-                is in flight. */}
-            <RequestDrawer
-              capture={capture !== undefined && capture !== null && capture.running.head === head ? capture : null}
-              error={captureError}
-              onSwitch={onCaptureSwitch}
-            />
+            {/* Only the tailed head: another head's capture or failure never stands in while this
+                head's read is in flight, or after it never lands (V4-301). */}
+            <RequestDrawer {...captureFor(capture, head)} onSwitch={onCaptureSwitch} />
           </Section>
         </div>
       </div>
@@ -315,7 +309,6 @@ export default function LogsPage() {
       tail={tail}
       heads={heads}
       capture={capture.data}
-      captureError={capture.error}
       {...(head === null ? {} : { onCaptureSwitch: (enabled: boolean) => void putCapture(head, enabled) })}
       locked={false}
       error={fixture === null ? store.error : null}

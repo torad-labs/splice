@@ -5,12 +5,13 @@
 // prints a switch position, a sentence or a body the daemon did not report.
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { captureView, fetchCapture, putCapture } from '../src/entities/perf';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { captureFor, captureView, fetchCapture, putCapture } from '../src/entities/perf';
 import type { CaptureState, CaptureWire } from '../src/entities/perf';
 import { afterRead, afterWrite } from '../src/entities/perf/model/capture';
 import { captureStore } from '../src/entities/perf/model/store';
 import { CAPTURE_AT_RESTART, CAPTURE_ON, RequestDrawer } from '../src/widgets/waterfall';
+import { LogsBoard } from '../src/pages/logs';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -82,7 +83,7 @@ describe('capture reads and writes', () => {
     const calls = stub(wire(), { status: 200, body: wire() });
     await fetchCapture('e2e-codex');
     expect(calls).toEqual([{ method: 'GET', url: '/api/heads/e2e-codex/capture', body: null }]);
-    expect(captureStore.get().data).toEqual(state());
+    expect(captureStore.get().data?.state).toEqual(state());
   });
 
   test('a write PUTs the switch, then re-reads, and the store takes the re-read as what runs', async () => {
@@ -91,7 +92,7 @@ describe('capture reads and writes', () => {
     await putCapture('e2e-codex', true);
     expect(calls.map((call) => call.method)).toEqual(['GET', 'PUT', 'GET']);
     expect(JSON.parse(calls[1].body ?? '')).toEqual({ enabled: true });
-    expect(captureStore.get().data).toEqual(state({ written: wire({ enabled: true }) }));
+    expect(captureStore.get().data?.state).toEqual(state({ written: wire({ enabled: true }) }));
   });
 
   // Its own head: the store is the module's one store, and the write above is held for e2e-codex by
@@ -101,7 +102,84 @@ describe('capture reads and writes', () => {
     stub(wire({ head: 'refusing' }), { status: 400, body: { error: reason } });
     await fetchCapture('refusing');
     await putCapture('refusing', true);
-    expect(captureStore.get().data).toEqual(state({ running: wire({ head: 'refusing' }), refused: reason }));
+    expect(captureStore.get().data?.state).toEqual(state({ running: wire({ head: 'refusing' }), refused: reason }));
+  });
+});
+
+describe("one head's capture failure is that head's alone (V4-301)", () => {
+  // The drawers gated the capture DATA by head but passed the store's one error straight through, and
+  // that error cleared only on the next successful read of ANY head: a turn opened on head A whose
+  // capture GET failed, then a turn on head B, printed A's failure under B while B's read was in
+  // flight, and for good if it never landed. The logs page reads the same store.
+  const ALPHA_DOWN = 'alpha: the trace store is unreadable';
+  const BETA_DOWN = 'beta: the trace store is unreadable';
+  beforeEach(() => captureStore.setData({ state: null, failures: new Map() }));
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A daemon answering each head's capture route: its settings, a failure in the daemon's words,
+   *  or no answer at all (a read left in flight). */
+  type Route = CaptureWire | { down: string } | 'hang';
+  function daemon(routes: Record<string, Route>): void {
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit): Promise<Response> => {
+      const head = decodeURIComponent(String(input).split('/')[3] ?? '');
+      const route = routes[head];
+      if (route === 'hang') return new Promise<Response>(() => undefined);
+      const body = route === undefined || 'down' in route ? { error: route === undefined ? 'unknown head' : route.down } : init?.method === 'PUT' ? { ...route, enabled: true } : route;
+      const status = route === undefined || 'down' in route ? 503 : 200;
+      return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
+    });
+  }
+  const view = (head: string) => captureFor(captureStore.get().data, head);
+  const logsDrawer = (head: string): string => render(h(LogsBoard, {
+    payload: { key: head, path: '/home/user/.splice/logs/daemon.log', lines: [] },
+    filter: { head: null, level: null, substring: '' },
+    follow: true, appended: 0, reset: false, tags: [], levels: [], head, tail: 200,
+    heads: [{ key: 'alpha', label: 'alpha' }, { key: 'beta', label: 'beta' }],
+    capture: captureStore.get().data,
+  }));
+
+  test("head A's failed read never reads as head B's error while B's read is in flight", async () => {
+    daemon({ alpha: { down: ALPHA_DOWN }, beta: 'hang' });
+    await fetchCapture('alpha');
+    void fetchCapture('beta');
+    expect(view('beta')).toEqual({ capture: null, error: null });
+    expect(view('alpha')).toEqual({ capture: null, error: ALPHA_DOWN });
+  });
+
+  test("the logs page's drawer prints the tailed head's failure, and never another head's", async () => {
+    daemon({ alpha: { down: ALPHA_DOWN }, beta: 'hang' });
+    await fetchCapture('alpha');
+    void fetchCapture('beta');
+    expect(logsDrawer('beta')).not.toContain(ALPHA_DOWN);
+    expect(logsDrawer('alpha')).toContain(ALPHA_DOWN);
+  });
+
+  test("B's own failure is B's, and A's stays A's", async () => {
+    daemon({ alpha: { down: ALPHA_DOWN }, beta: { down: BETA_DOWN } });
+    await fetchCapture('alpha');
+    await fetchCapture('beta');
+    expect(view('alpha').error).toBe(ALPHA_DOWN);
+    expect(view('beta').error).toBe(BETA_DOWN);
+  });
+
+  test("a read of B leaves A's failure on A, until A is read again", async () => {
+    daemon({ alpha: { down: ALPHA_DOWN }, beta: wire({ head: 'beta' }) });
+    await fetchCapture('alpha');
+    await fetchCapture('beta');
+    expect(view('alpha')).toEqual({ capture: null, error: ALPHA_DOWN });
+    expect(view('beta')).toEqual({ capture: state({ running: wire({ head: 'beta' }) }), error: null });
+    daemon({ alpha: wire({ head: 'alpha' }) });
+    await fetchCapture('alpha');
+    expect(view('alpha')).toEqual({ capture: state({ running: wire({ head: 'alpha' }) }), error: null });
+  });
+
+  test('a write whose re-read fails files the failure under the head it wrote', async () => {
+    daemon({ beta: wire({ head: 'beta' }) });
+    await fetchCapture('beta');
+    daemon({ alpha: { down: ALPHA_DOWN }, beta: wire({ head: 'beta' }) });
+    await putCapture('alpha', true);
+    expect(view('alpha').error).toBe(ALPHA_DOWN);
+    expect(view('beta')).toEqual({ capture: state({ running: wire({ head: 'beta' }) }), error: null });
   });
 });
 

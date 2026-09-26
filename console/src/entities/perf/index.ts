@@ -1,5 +1,8 @@
 import { captureStore, perfStore, perfSummaryStore, perfTurnsStore } from './model/store';
 
+export { captureFor } from './model/store';
+export type { CaptureCell, HeadCapture } from './model/store';
+
 export {
   fetchCapture,
   fetchPerf,

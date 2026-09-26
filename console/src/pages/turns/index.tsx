@@ -24,6 +24,7 @@ import type { ReactNode } from 'react';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
 import {
+  captureFor,
   fetchCapture,
   fetchPerfTurns,
   inflightFrom,
@@ -37,7 +38,7 @@ import {
   STAGE_NAMES,
 } from '@entities/perf';
 import type {
-  CaptureState,
+  CaptureCell,
   InflightTurn,
   PendingRoute,
   PerfSummaryPayload,
@@ -291,10 +292,8 @@ export interface TurnsBoardProps {
   inflight: InflightTurn[];
   landed: TurnsState | PendingRoute | null;
   summary: PerfSummaryPayload | null;
-  /** The capture of whichever head was last read; the drawer shows it only for the open turn's. */
-  capture: CaptureState | null;
-  /** A capture read that failed, in the daemon's words. */
-  captureError?: string | null;
+  /** The capture the console holds; the drawer asks it for the open turn's head alone. */
+  capture: CaptureCell | null;
   locked?: boolean;
   error?: string | null;
   /** When the landed turns on screen were read, which the fault prints as stale while `error` stands. */
@@ -304,7 +303,7 @@ export interface TurnsBoardProps {
   sample?: string | undefined;
 }
 
-export function TurnsBoard({ slots = [], inflight, landed, summary, capture, captureError = null, locked = false, error = null, lastRead = null, sample }: TurnsBoardProps) {
+export function TurnsBoard({ slots = [], inflight, landed, summary, capture, locked = false, error = null, lastRead = null, sample }: TurnsBoardProps) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
 
@@ -507,11 +506,10 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, cap
               <TurnTokens row={open} />
             </Section>
             <Section title={S.capture}>
-              {/* Another head's capture never stands in for this one while its read is in flight:
-                  the drawer waits for a read of the head this turn ran on. */}
+              {/* Only this turn's head: another head's capture or failure never stands in while this
+                  head's read is in flight, or after it never lands (V4-301). */}
               <RequestDrawer
-                capture={capture !== null && capture.running.head === open.head ? capture : null}
-                error={captureError}
+                {...captureFor(capture, open.head)}
                 onSwitch={(enabled) => void putCapture(open.head, enabled)}
               />
             </Section>
@@ -613,7 +611,6 @@ export default function TurnsPage() {
       landed={fixture !== null ? { inflight: fixture.inflight, landed: fixture.landed, unread: [], truncated: [] } : turns.data}
       summary={fixture !== null ? fixture.summary : summary.data}
       capture={capture.data}
-      captureError={capture.error}
       locked={locked}
       error={fixture === null ? turns.error : null}
       lastRead={turns.lastUpdated}

@@ -508,8 +508,8 @@ describe('logs board', () => {
     });
     const drawer = 'aria-label="Body capture"';
     expect(render(h(RequestDrawer, { capture: capture('claudex') }))).toContain(drawer);
-    expect(board({ capture: capture('claudex') })).toContain(drawer);
-    expect(board({ capture: capture('other-head') })).not.toContain(drawer);
+    expect(board({ capture: { state: capture('claudex'), failures: new Map() } })).toContain(drawer);
+    expect(board({ capture: { state: capture('other-head'), failures: new Map() } })).not.toContain(drawer);
   });
 
   test('a rotated tail says it restarted', () => {

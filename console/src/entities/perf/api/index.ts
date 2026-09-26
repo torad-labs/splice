@@ -10,6 +10,7 @@ import type { CaptureWriteResult } from '../model/capture';
 import { inflightFrom } from '../model/derive';
 import { mergeTurns } from '../model/turns-wire';
 import { captureStore, perfStore, perfSummaryStore, perfTurnsStore } from '../model/store';
+import type { CaptureCell } from '../model/store';
 import type {
   CaptureWire,
   PerfPayload,
@@ -142,6 +143,20 @@ export function startPerfTurnsPolling(head?: string, intervalMs = 5000): () => v
   return poll(() => fetchPerfTurns(head), intervalMs);
 }
 
+const NO_CAPTURE: CaptureCell = { state: null, failures: new Map() };
+
+function captureCell(): CaptureCell {
+  return captureStore.get().data ?? NO_CAPTURE;
+}
+
+/** The failures with `head`'s set to `message`, or cleared by a null one. */
+function failedAs(failures: ReadonlyMap<string, string>, head: string, message: string | null): ReadonlyMap<string, string> {
+  const next = new Map(failures);
+  if (message === null) next.delete(head);
+  else next.set(head, message);
+  return next;
+}
+
 /**
  * One head's capture settings, as the daemon runs them (GET /api/heads/{head}/capture). Read when a
  * turn is opened or a page names a head, never polled: nothing changes them but a write and a
@@ -151,9 +166,11 @@ export async function fetchCapture(head: string): Promise<void> {
   captureStore.startLoading();
   try {
     const read = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`);
-    captureStore.setData(afterRead(captureStore.get().data, read));
+    const cell = captureCell();
+    captureStore.setData({ state: afterRead(cell.state, read), failures: failedAs(cell.failures, head, null) });
   } catch (err) {
-    captureStore.setError(messageOf(err));
+    const cell = captureCell();
+    captureStore.setData({ ...cell, failures: failedAs(cell.failures, head, messageOf(err)) });
   }
 }
 
@@ -164,9 +181,9 @@ export async function fetchCapture(head: string): Promise<void> {
  * read as capture on. A refusal is kept in the daemon's own words.
  */
 export async function putCapture(head: string, enabled: boolean): Promise<void> {
-  const previous = captureStore.get().data;
-  const mine = previous !== null && previous.running.head === head ? previous : null;
-  if (mine !== null) captureStore.setData({ ...mine, writing: true });
+  const previous = captureCell();
+  const mine = previous.state !== null && previous.state.running.head === head ? previous.state : null;
+  if (mine !== null) captureStore.setData({ ...previous, state: { ...mine, writing: true } });
   let write: CaptureWriteResult;
   try {
     const answer = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`, {
@@ -179,11 +196,14 @@ export async function putCapture(head: string, enabled: boolean): Promise<void> 
   }
   try {
     const reread = await request<CaptureWire>(`/api/heads/${encodeURIComponent(head)}/capture`);
-    captureStore.setData(afterWrite(mine, write, reread));
+    captureStore.setData({ state: afterWrite(mine, write, reread), failures: failedAs(captureCell().failures, head, null) });
   } catch (err) {
     // The write's outcome is still known when the re-read fails; what runs is the last read, and the
     // failed read is reported beside it rather than hidden behind a stale switch.
-    if (mine !== null) captureStore.setData(afterWrite(mine, write, mine.running));
-    captureStore.setError(messageOf(err));
+    const cell = captureCell();
+    captureStore.setData({
+      state: mine !== null ? afterWrite(mine, write, mine.running) : cell.state,
+      failures: failedAs(cell.failures, head, messageOf(err)),
+    });
   }
 }

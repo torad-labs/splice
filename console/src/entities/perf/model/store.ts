@@ -13,5 +13,32 @@ export const perfSummaryStore = createResource<PerfSummaryPayload>();
  *  honest empty, never a mocked row. */
 export const perfTurnsStore = createResource<TurnsState | PendingRoute>();
 
-/** One head's body capture (GET/PUT /api/heads/{head}/capture): what runs and what was written. */
-export const captureStore = createResource<CaptureState>();
+/**
+ * The body capture the console holds (GET/PUT /api/heads/{head}/capture): the last head read, with
+ * what runs and what this console wrote for it, and each head whose last capture read or write
+ * failed, in the daemon's words. Failures are kept by head because every reader asks for ONE head:
+ * the store's one error printed under whichever head's drawer was open, while that head's own read
+ * was in flight, and for good if it never landed (V4-301).
+ */
+export interface CaptureCell {
+  state: CaptureState | null;
+  failures: ReadonlyMap<string, string>;
+}
+
+export const captureStore = createResource<CaptureCell>();
+
+/** One head's capture, as a drawer prints it. */
+export interface HeadCapture {
+  capture: CaptureState | null;
+  error: string | null;
+}
+
+/** The capture and the failure that belong to `head`, each null when they are another head's: the
+ *  one view both the turns and the logs page read, so neither gates at its call site. */
+export function captureFor(cell: CaptureCell | null, head: string | null): HeadCapture {
+  if (cell === null || head === null) return { capture: null, error: null };
+  return {
+    capture: cell.state !== null && cell.state.running.head === head ? cell.state : null,
+    error: cell.failures.get(head) ?? null,
+  };
+}

@@ -7040,8 +7040,9 @@ id = "V4-271"
 phase = "release"
 title = "LEDGER: a fence entry spelled dir/** holds the files under dir (claude-builder, V4-270's receipt, 2026-09-26). inFence (.dev/campaigns/ledger.ts:579-581) matches an exact path or a prefix ending in '/', so an entry like 'features/configuration/src/test/kotlin/**', the form the FENCES ARE BRACE-FREE law prescribes for test dirs, holds nothing: V4-270's receipt printed '1 path(s) outside this row's fence' for ApiRateCardsTest.kt, which sits under that entry. stage prints the same note (ledger.ts:1430-1431), and its omission check (ledger.ts:1438) does not see a new file under another open row's dir/** entry as that row's work. Match dir/** as the dir/ prefix wherever inFence decides."
 files = [".dev/campaigns/ledger.ts"]
-status = "in_flight"
+status = "done"
 verify = "red first: a selftest case in which a receipt touches a path under a dir/** fence entry prints the outside-fence NOTE on HEAD; green after, and the whole selftest passes (bun .dev/campaigns/ledger.ts .dev/campaigns/v0.4.0.toml selftest). No gate runs the selftest today (tools/gate/src never references the ledger), so the receipt carries the selftest's own output; CI gate on the train sha."
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T04:45:04.940Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T04:45:04Z
+# [2026-09-26] RECEIPT cmd="bun .dev/campaigns/ledger.ts .dev/campaigns/v0.4.0.toml selftest" exit=0 tests=183 touched=.dev/campaigns/ledger.ts tail="red on HEAD's matcher: 'NOTE W5: 1 path(s) outside this row's fence: src/globbed/deep/x.ts — staged as receipted' (180/183 checks passed); green after 9cc660cfa: 183/183 checks passed"

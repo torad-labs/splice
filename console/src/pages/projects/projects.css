@@ -24,6 +24,15 @@
 .myx-px-go { display: inline-grid; place-items: center; width: calc(1.875 * var(--u)); height: calc(1.875 * var(--u)); border-radius: var(--radius-2); color: var(--fg-subtle); font-size: var(--text-4); }
 .myx-px-go:hover { color: var(--fg); background: var(--bg-hover); }
 
+/* V4-313: the repo's standing prompt and compaction rule, one field above the other, the sessions the
+   save reaches under them, then the save */
+.myx-px-standing { display: grid; gap: var(--space-4); }
+.myx-px-lines, .myx-px-lines .myx-input-box { width: 100%; }
+.myx-px-lines .myx-input-box { resize: vertical; font-family: var(--font-mono); }
+.myx-px-file, .myx-px-reach { display: grid; gap: var(--space-2); }
+.myx-px-file-path { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.myx-px-when { color: var(--fg-subtle); }
+
 @media (max-width: 1100px) {
   .myx-px-board-open { grid-template-columns: minmax(0, 1fr); }
 }

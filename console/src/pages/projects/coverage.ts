@@ -20,5 +20,8 @@ export const job: PageJob = {
   leaves: 'Every repo the daemon has seen, with its sessions, teams, today\'s turns and cost.',
   actions: [
     { name: 'Open a project' },
+    // V4-313: through PUT /api/topology, which Settings dispositions (one page per route); the fields
+    // are settings/coverage.ts's too, since its topology editor writes every one the file carries.
+    { name: 'Edit the repo\'s standing prompt and compaction rule' },
   ],
 };

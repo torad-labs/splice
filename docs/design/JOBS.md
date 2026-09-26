@@ -114,6 +114,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 **Actions.**
 
 - Open a project
+- Edit the repo's standing prompt and compaction rule
 
 ## sessions
 

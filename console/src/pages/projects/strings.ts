@@ -42,6 +42,17 @@ export const S = {
   gitRoots: 'Git roots',
   untrusted: 'No branch',
   files: 'Files',
+  /** V4-313: the repo's standing prompt and its own compaction rule, edited here. */
+  standing: 'Prompt and rule',
+  prompt: 'Standing prompt',
+  rule: 'Compaction rule',
+  fromFile: 'From file',
+  save: 'Save',
+  confirmSave: 'Write splice.toml',
+  saved: 'Saved',
+  reaches: 'Reaches',
+  noLive: 'No live sessions',
+  unavailable: 'No topology route',
   noProjects: 'No projects yet',
   noRule: 'No rule here',
   noHeads: 'No heads yet',
@@ -61,6 +72,12 @@ export const H = {
   compaction: "The rules a compaction here resolves to, in the daemon's precedence.",
   statusline: "The trusted root each head's statusline finds this repo under.",
   noHeads: 'Add one in Settings, under Topology.',
+  standing: "This repo's prompt and compaction rule, as splice.toml holds them.",
+  /** Both are read at boot (Daemon.kt), so no running session sees an edit before a restart. */
+  restart: 'Applies after the daemon restarts, at each session\'s next turn.',
+  reaches: 'Live sessions here get it at their first turn after a restart.',
+  fromFile: 'Read from this file; edit the file, or clear it in Settings.',
+  unavailable: 'This daemon serves no topology to edit.',
 } as const;
 
 export const U = {

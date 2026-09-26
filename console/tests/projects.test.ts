@@ -12,7 +12,7 @@
 // rows the board actually rendered, and each block first asserts there is something to read.
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { SessionRow } from '../src/entities/session';
 import { DEFAULT_VIEWS, SessionsBoard } from '../src/pages/sessions';
 
@@ -133,5 +133,90 @@ describe('projects declares its table', () => {
     const html = markup();
     expect(html).toMatch(/myx-stat-label">API cost today<span class="myx-basis">Estimated</);
     expect(html).toMatch(/>API cost today<span class="myx-basis">Estimated<\/span><\/th>/);
+  });
+});
+
+// V4-313: the opened project edits its own standing prompt ([projects."<root>"] system_prompt, V4-124)
+// and its compaction rule ([[compaction.project]] path = root) through PUT /api/topology, the same
+// structured writer the Settings topology uses. Both are read at boot (Daemon.kt HeadPromptInputs and
+// CompactionInstructions), so the confirm names the live sessions the edit reaches after a restart.
+describe('a project edits its standing prompt and compaction rule', async () => {
+  const { StandingForm, liveSessionsOf, saveStanding, standingOf, withStanding } = await import('../src/pages/projects/standing');
+  const ROOT = '/home/op/app';
+  const OTHER = '/home/op/other';
+  const TOPOLOGY: Record<string, unknown> = {
+    daemon: { control_port: 3096 },
+    projects: { [OTHER]: { system_prompt: 'Other repo.' } },
+    compaction: {
+      instructions: 'Keep paths.',
+      project: [{ path: OTHER, instructions: 'Other rule.' }, { path: ROOT, model: 'gpt-6', instructions: 'Model rule.' }],
+    },
+  };
+  const registered = (name: string, root: string, availability: SessionRow['availability']): SessionRow => ({
+    pid: 1, session_id: `${name}-id`, name, kind: 'interactive', version: '2', cwd: root, status: 'busy',
+    status_updated_at: T0, started_at: T0, updated_at: T0, address: null, head: 'claudex', availability, repo: { root },
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('saving puts both into the PUT /api/topology body, beside everything the file already held', async () => {
+    const sent: { method: string | undefined; body: { topology: Record<string, unknown> } }[] = [];
+    vi.stubGlobal('fetch', async (_path: string, init?: RequestInit) => {
+      sent.push({ method: init?.method, body: JSON.parse(String(init?.body)) as { topology: Record<string, unknown> } });
+      return { ok: true, status: 200, json: async () => ({ ok: true, restart_required: true, findings: [] }) };
+    });
+
+    await saveStanding(TOPOLOGY, ROOT, { prompt: 'Plan first.', compaction: 'Keep the plan.' });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.method).toBe('PUT');
+    const written = sent[0]?.body.topology ?? {};
+    expect(written.projects).toEqual({ [OTHER]: { system_prompt: 'Other repo.' }, [ROOT]: { system_prompt: 'Plan first.' } });
+    expect((written.compaction as { project: unknown[] }).project).toEqual([
+      { path: OTHER, instructions: 'Other rule.' },
+      { path: ROOT, model: 'gpt-6', instructions: 'Model rule.' },
+      { path: ROOT, instructions: 'Keep the plan.' },
+    ]);
+    expect(written.daemon).toEqual({ control_port: 3096 });
+  });
+
+  test('what the file holds reads back, and an empty field removes its key rather than writing ""', () => {
+    const saved = withStanding(TOPOLOGY, ROOT, { prompt: 'Plan first.', compaction: 'Keep the plan.' });
+    expect(standingOf(saved, ROOT)).toEqual({ prompt: 'Plan first.', promptFile: null, compaction: 'Keep the plan.', compactionFile: null });
+
+    const cleared = withStanding(saved, ROOT, { prompt: '', compaction: '' });
+    expect(cleared.projects).toEqual({ [OTHER]: { system_prompt: 'Other repo.' } });
+    expect((cleared.compaction as { project: unknown[] }).project).toEqual([
+      { path: OTHER, instructions: 'Other rule.' },
+      { path: ROOT, model: 'gpt-6', instructions: 'Model rule.' },
+    ]);
+    // The input is never mutated: the store's copy stays what the daemon last answered.
+    expect(TOPOLOGY.projects).toEqual({ [OTHER]: { system_prompt: 'Other repo.' } });
+  });
+
+  test('the confirm names the project\'s live sessions and says the edit reaches them after a restart', () => {
+    const live = liveSessionsOf([
+      registered('builder', ROOT, 'live'), registered('idle', ROOT, 'stale'), registered('elsewhere', OTHER, 'live'),
+    ], ROOT);
+    expect(live).toEqual(['builder']);
+
+    const html = renderToStaticMarkup(h(StandingForm, { topology: TOPOLOGY, root: ROOT, live }));
+    expect(html).toContain('builder');
+    expect(html).not.toContain('elsewhere');
+    expect(html).toContain('after the daemon restarts');
+  });
+
+  test('the daemon\'s refusal prints verbatim, and a prompt read from a file offers no text box', () => {
+    const refusal = 'projects."/home/op/app" cannot set both system_prompt and system_prompt_file';
+    const html = renderToStaticMarkup(h(StandingForm, { topology: TOPOLOGY, root: ROOT, live: [], fault: refusal }));
+    // The markup escapes the sentence's quotes; the words are the daemon's own.
+    expect(html.replaceAll('&quot;', '"')).toContain(refusal);
+
+    const fromFile = { ...TOPOLOGY, projects: { [ROOT]: { system_prompt_file: '~/prompts/app.md' } } };
+    const filed = renderToStaticMarkup(h(StandingForm, { topology: fromFile, root: ROOT, live: [] }));
+    expect(filed).toContain('~/prompts/app.md');
+    expect(filed.match(/<textarea/g) ?? []).toHaveLength(1);
   });
 });

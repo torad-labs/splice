@@ -22,6 +22,7 @@ import type { Column } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
 import { ProjectCompaction, ProjectStatusline, StateBadge, costText, dayText, detailRowsOf, unpricedText, unpricedTurnsOf, useOpenProject } from './detail';
+import { ProjectStanding } from './standing';
 import { H, S } from './strings';
 import './projects.css';
 
@@ -235,6 +236,9 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null, lastR
               actions={<a className="myx-px-go" href="#/sessions" aria-label={S.openSessions}><ArrowUpRightIcon aria-hidden="true" /></a>}
             >
               <KeyValue rows={detailRowsOf(detail.row ?? open)} />
+            </Section>
+            <Section title={S.standing} info={{ text: H.standing, label: S.standing }}>
+              <ProjectStanding root={open.root} />
             </Section>
             <Section title={S.compaction} info={{ text: H.compaction, label: S.compaction }}>
               <ProjectCompaction row={detail.row ?? open} />

@@ -183,7 +183,7 @@ If the daemon is already running, finish pending work before a full `splice rest
 
 ### Native Claude
 
-For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice; splice stores no Claude credential. Use Claude Code's own `/login` inside that head.
+For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice. Claude Code signs in itself; its sign-in passes through splice to Anthropic untouched, and splice keeps a copy only of a login you save under a label (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)). Use Claude Code's own `/login` inside that head.
 
 ### The billing word in Claude Code's header
 
@@ -272,7 +272,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
-| Claude (`claude-splice`) | `client` | Claude Code's native credential store | forwarded by Claude Code; splice stores no credential |
+| Claude (`claude-splice`) | `client` | Claude Code's native credential store | Claude Code signs in itself; its sign-in passes through splice to Anthropic untouched, and splice keeps a copy only of a login you save under a label |
 | codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` |
 | grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` |
 | kimi (Moonshot) | `kimi-oauth` | `~/.config/splice/auth/kimi.json` (+ `device_id` beside it) | splice's own device-flow token (`claude-kimi login`); the app's file only by explicit `auth.file` |
@@ -313,11 +313,105 @@ and names the earliest reset across the pool. The status line, `splice status` a
 name the account a head or session is on and the last switch with its reason; the daemon log
 records each switch once under `[<head>]`.
 
+## What splice keeps on your disk
+
+Everything splice writes stays on your machine, under your user account; nothing below is sent
+anywhere. Its own state lives in `~/.splice`: the state directory `~/.splice/state` and the logs in
+`~/.splice/logs`, which splice holds owner-only (0700) from the moment the daemon starts, so only
+your account can read what is inside. Config and credentials live in `~/.config/splice`, where every
+credential is written 0600. splice also writes into the Claude Code config directories it launches
+(`~/.claude-<head>/`), and the install lives in `~/.local/share/splice` and `~/.local/bin`.
+
+"Only you" below means owner-only: the file is 0600, or it sits inside the 0700 `~/.splice`.
+"Your umask" means the file gets your account's default permissions, usually readable by other
+local accounts unless its directory prevents it. The last column names the source file that writes
+it; a check in the build (`DiskWritesLawTest`) fails when any source file writes a file this section
+does not name.
+
+### Content from your sessions, kept with nothing turned on
+
+| File | What it holds | Who can read it | How long it stays | Written by |
+| --- | --- | --- | --- | --- |
+| `~/.splice/state/activity/activity-<day>.jsonl` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works | Only you | Today (UTC) only: the next day's first label deletes the old day's file | `ActivityStore.kt` |
+| `~/.splice/state/<head>-code-mode.json` | A Codex head's code mode: the model's scripts, tool calls with their arguments and results, script output and the model's reasoning summaries | Only you (0600) | Up to 24 hours per record, 128 records at most. The whole file goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml` | `CodexCodeModeStore.kt` |
+| `~/.splice/state/compactions/<head>/<hash>.json` | The answer of a finished compaction whose client hung up, kept so its retry gets the same bytes | Only you (0600) | Until the retry takes it, 2 hours at most: an expired one goes at the head's next save or the next daemon start, and a head removed from `splice.toml` loses the whole directory at the next start | `CompactionRecordings.kt` |
+| `~/.splice/logs/daemon.log` (and `daemon.log.1`) | The daemon's log. Most lines are about the daemon itself, but some quote short pieces of content: an upstream error body (up to 200 characters), a provider's failure message, a stream frame splice could not read, and the activity labels | Only you | Rotated at 64 MB, one older copy kept | `DaemonBoundary.kt` |
+| `~/.splice/logs/daemon-boot.log` (and `.1`) | The JVM's own output when splice starts the daemon itself (`splice dashboard`, `splice restart` or a launch's cold start): lines from before the logger exists, a boot crash's message and stack, JVM warnings, and any line `daemon.log` could not take. Under `splice.service` it is not written; that output goes to the systemd journal | Only you | Rolled at the next start once past 1 MB, one older copy kept | `DaemonLaunch.kt`, `splice-launch` |
+| Claude Code's transcripts (`projects/…/<session>.jsonl`) | No new text. When a session resumes on a head that serves other models, splice rewrites each earlier assistant row's model name and replaces its thinking with `[Thinking removed]`, in one atomic replace that keeps the file's permissions | Whoever could read it before | They are Claude Code's files; splice changes them in place | `TranscriptModelRewrite.kt` |
+
+### Content kept only when you turn it on
+
+| File | What it holds | Who can read it | How long it stays | Written by |
+| --- | --- | --- | --- | --- |
+| `~/.splice/state/trace/<head>-<day>.jsonl` | With `trace = true` on a head: every request (credentials removed), each upstream body and response and every frame, which is the whole conversation | Only you | `traceRetentionDays` (default 7), swept on the first write of each new day; `splice trace <head> --purge` deletes all of it now, and the next daemon start deletes it once trace is off or the head leaves `splice.toml` | `HeadTraceStores.kt`, `TraceRows.kt` |
+| A copy of another head's transcript in `~/.claude-<head>/projects/` | With `isolate = ["projects"]` on a head: resuming a session another head started copies its whole transcript, and its subagent files, into this head's tree | Your umask | Until you delete it | `ResumeAcrossHeads.kt` |
+
+### Credentials and keys
+
+Each of these is password-equivalent. See [credential locations](#credential-locations).
+
+| File | What it holds | Who can read it | How long it stays | Written by |
+| --- | --- | --- | --- | --- |
+| `~/.config/splice/auth/<head>.json`, and a labelled account's `auth/<kind>/<file>/<label>.json` | The OAuth tokens `splice login <head>` signed in with, refreshed in place; Muse's also holds its minted inference key | Only you (0600) | Until you delete it; a labelled account is removed from the console's Accounts page | `LoginIo.kt`, `OAuthAccountWrites.kt`, `OAuthAccountFiles.kt`, `CodexAuthProvider.kt`, `GrokAuthProvider.kt`, `KimiAuthProvider.kt`, `MuseMintPersistence.kt` |
+| Kimi's `device_id` beside its credential (or `~/.splice/state/<head>-device_id` for a Kimi API-key head) | A random id Kimi's API asks for; not a credential | Only you (0600) | Written once, kept | `KimiDeviceIdentity.kt` |
+| `~/.config/splice/keys.toml` | API keys from `splice key set`, a head's `login` or a key-capture hook | Only you (0600) | Until `splice key unset` | `KeyStore.kt` |
+| `~/.splice/state/mgmt-key` | The management key that opens the control plane | Only you (0600) | Kept; replaced only when missing or unreadable | `MgmtKey.kt` |
+| `~/.splice/state/turn-auth-header` | A launched session's turn key, derived one way from the management key | Only you (0600) | Rewritten when the management key changes | `TurnKey.kt` |
+| `~/.splice/state/dashboard-open.html` | The page `splice dashboard` opens; its link carries the management key | Only you (0600) | Replaced by each `splice dashboard` | `DashboardCommand.kt` |
+| `~/.splice/state/claude-logins/<label>.credentials.json` and `selected` | Claude Code logins saved under a label, and which one is selected. At launch the selected one is copied into `claude-splice`'s config directory as `.credentials.json` | Only you (0600) | Until removed | `ClaudeLogins.kt` |
+| `<credential file>.lock` and `.login-locks/<label>.lock` | Empty files that keep two refreshes or two labelled sign-ins from overlapping | Your umask | Never removed; always empty | `CredentialLock.kt`, `OAuthLoginReservation.kt` |
+
+### Settings and statistics
+
+None of these holds session content.
+
+| File | What it holds | Who can read it | How long it stays | Written by |
+| --- | --- | --- | --- | --- |
+| `~/.config/splice/splice.toml` | Your topology: providers, heads, models and ports, and any header values you put in `extra_headers` | Your umask | Yours. Written once from a template on first run. A console edit first saves the old bytes as `splice.toml.bak-<time>-<hash>` beside it, one per distinct version, never deleted; `splice add` edits it with no backup | `TopologyLoader.kt`, `TopologyWriter.kt`, `AddWrite.kt` |
+| `~/.splice/state/config.json` | Settings changed at runtime from the console | Only you (0600) | Until changed | `ConfigService.kt` |
+| `~/.splice/state/teams.json` (and `.bak`) | Your teams: their slots, heads, bound sessions and each slot's standing instructions | Only you (0600) | Kept; an archived team is flagged, not deleted. `.bak` is the version before the last write | `TeamStore.kt` |
+| `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily spend budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
+| `~/.splice/state/activity/edges-<day>.jsonl` | Which session sent a message to which, and when; never the message's text | Only you | `activityRetentionDays` (default 90) | `ActivityStore.kt` |
+| `~/.splice/state/<head>-perf.jsonl` and `perf-archive/` | One row per turn: model, outcome, timings and token counts | Only you | Rolled at 64 MB into the archive, which keeps `perfArchiveRetentionDays` (default 90) | `PerfStats.kt` |
+| `~/.splice/<head>-compact-stats.jsonl` | Per request, a classifier's counts: tool count, prompt length, outcome | Only you | Rolled at 64 MB, one older copy kept | `Compact.kt` |
+| `~/.splice/state/<head>-session-totals.json` | Tokens and dollars per session, by model | Only you (0600) | A session idle 30 days is dropped; 256 sessions at most | `SessionTotals.kt` |
+| `~/.splice/state/<head>-economics.json` | Tokens, bytes and dollars per hour | Only you (0600) | 8 days | `EconomicsStore.kt` |
+| `~/.splice/state/<head>-usage.json`, `-ratelimit.json`, `-quota.json` | Output tokens per minute; the provider's latest rate-limit and quota readings | Only you (0600) | Replaced as they change; usage covers the last 5 hours | `UsageRingFile.kt`, `RateLimitFile.kt`, `QuotaTracker.kt` |
+| `~/.splice/state/<head>-client-windows.json` | The context window Claude Code reported for each session | Only you | The 512 most recent sessions | `ClientWindows.kt` |
+| `~/.splice/state/<head>-models.json` | The model list the head's endpoint last published | Only you (0600) | Replaced at each discovery | `RosterCache.kt` |
+| `~/.splice/state/login-outcome-<head>.txt` | One line saying how a sign-in ended | Only you (0600) | Deleted when read; ignored after 10 minutes | `LoginOutcomeFile.kt` |
+| `~/.splice/state/daemon.lock` | An empty file only one daemon can hold | Only you | Never removed; always empty | `DaemonLock.kt` |
+
+### Claude Code's directories
+
+| File | What it holds | Who can read it | How long it stays | Written by |
+| --- | --- | --- | --- | --- |
+| `~/.claude-<head>/settings.json` and `.claude.json` | The head's settings: its models, status line and hooks. `.claude.json` carries Claude Code's own keys forward | Only you (0600) | Rewritten at each launch | `ClaudeConfigMaterializer.kt` |
+| Links in `~/.claude-<head>/` to `~/.claude/` | The config a head shares: agents, commands, skills, hooks, plugins, `CLAUDE.md`, and, when shared, `sessions` and `projects`, whose existing files are merged into `~/.claude` the first time | Links only | Until you change what the head shares | `ClaudeConfigMaterializer.kt`, `SessionRegistryLink.kt`, `ProjectsLink.kt` |
+| `~/.claude-<head>/splice-*-hook.sh` | The sign-in, key-capture and resume hook scripts. They hold the daemon's local address and a path to the turn key's file, never a key | Only you (0700) | Rewritten at each launch | `HookScriptFiles.kt` |
+| `~/.claude-<head>/commands/login.md`, and links to your own commands | The head's `/login` command | Only you (0600) | Rewritten at each launch | `HeadCommandsDir.kt` |
+| `~/.claude-<head>/splice-sessions.json` | The sessions this head started: id, directory, transcript path and time | Your umask | The newest 500 | `SessionOwnership.kt` |
+| `~/.splice/state/claude-head-wrap.json`, the `~/.claude/*.splice-wrap-backup-<time>` copies and `~/.local/bin/claude` | While `claude` itself is wrapped: what was wrapped, backups of `~/.claude/settings.json` and `.claude.json`, and the `claude` command pointed at splice | Only you for the state (0600); the backups keep the originals' permissions | Until unwrap, which puts every one back | `WrappedHead.kt` |
+
+### Install, upgrade and diagnostics
+
+| File | What it holds | Who can read it | How long it stays | Written by |
+| --- | --- | --- | --- | --- |
+| `~/.local/bin/splice` and one command per head | Links to the launcher | Links only | Until `splice uninstall` | `InstallLinker.kt` |
+| `~/.local/share/splice/releases/` | The installed releases (`splice.jar`, `splice-launch`), `current` and `previous`, a lock, and a hand-edited launcher saved as `splice-launch.edited` | Your umask | The current and previous release; older ones are deleted at each upgrade | `UpgradeRelease.kt`, `UpgradeCommand.kt`, `UpgradeLayout.kt`, `UpgradeActivation.kt`, `UpgradeWrapper.kt`, `UpgradeLock.kt` |
+| `~/.local/share/splice/upgrade-runs/<run>/` | An upgrade started from the console: its arguments, output, process id and exit code | Your umask | The newest 5 | `UpgradeRuns.kt`, `SystemdUpgradeLauncher.kt` |
+| The file you name in `splice doctor --json --out <file>` | The doctor report, redacted; with `--with-logs`, a tail of `daemon.log` | Your umask | Yours | `DoctorJsonReport.kt` |
+| Probe files | `splice doctor` and a head's launch write a small file to prove a directory is writable, or a hook runnable | — | Deleted at once | `DoctorProbeWrite.kt`, `DoctorReportFiles.kt` |
+
+Kept in memory only, never on disk: the wire tap and the reasoning cache (see
+[SECURITY.md](.github/SECURITY.md)). A program splice starts writes its own files: `splice setup`
+can run rig's installer.
+
 ## Provider support
 
 | Route | Auth | Status |
 | --- | --- | --- |
-| Claude (`claude-splice`) | `client` (Claude Code native login) | **Primary** — Anthropic passthrough; splice stores no credential |
+| Claude (`claude-splice`) | `client` (Claude Code native login) | **Primary** — Anthropic passthrough; Claude Code signs in itself, and splice keeps a copy only of a login you save under a label |
 | OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported** — pay-per-token, any OpenAI-compatible vendor |
 | Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported** — pay-per-token Anthropic base |
 | codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for; unofficial, at your own risk |

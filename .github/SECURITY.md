@@ -51,8 +51,12 @@ a conversation's envelopes are kept while that conversation stays active and exp
 after 30 minutes of inactivity — a session in continuous use retains its envelopes for the
 session's lifetime. Hard caps bound the worst case: 256 rounds / 64 MB across all conversations
 on a head, enforced by whole-conversation eviction. The envelopes are opaque ciphertext (the
-upstream holds the keys); plaintext reasoning is never retained. They are process-memory only —
-never written to disk — and vanish on restart. Entries are scoped to their conversation (a stable
-first-message key), so concurrent conversations sharing one head can never receive each other's
-envelopes; staleness eviction is deliberately unscoped, which can only over-evict (a cache miss),
-never cross-inject. Set `quirks = { reasoning_cache = false }` to disable.
+upstream holds the keys); this cache never retains plaintext reasoning. They are process-memory
+only — never written to disk — and vanish on restart. Entries are scoped to their conversation (a
+stable first-message key), so concurrent conversations sharing one head can never receive each
+other's envelopes; staleness eviction is deliberately unscoped, which can only over-evict (a cache
+miss), never cross-inject. Set `quirks = { reasoning_cache = false }` to disable.
+
+Code mode is separate from this cache: its records keep the model's reasoning summaries in
+plaintext on disk for up to 24 hours. [What splice keeps on your disk](../README.md#what-splice-keeps-on-your-disk)
+lists every file splice writes, what it holds and how long it stays.

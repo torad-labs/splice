@@ -3,12 +3,17 @@
 // prints every declared row with its verdict and collapses the models no row declares behind a reveal,
 // as the verb shows eight and counts the rest; a provider that publishes no list, or could not be
 // read, says why.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import type { UpstreamModelsPayload } from '../src/entities/model';
+import type { UpstreamModelsPayload, UpstreamProvider, UpstreamRow } from '../src/entities/model';
 import { ModelsBoard } from '../src/pages/models';
 import { compareUpstream, UpstreamBoard } from '../src/pages/models/upstream';
+
+import { keysPut } from './lib/kotlin-views';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -115,5 +120,29 @@ describe('the comparison', () => {
 
   test('no provider declared is an empty state, never an empty board', () => {
     expect(render(h(UpstreamBoard, { payload: { path: '/x', providers: [] } }))).toContain('No providers');
+  });
+});
+
+// GET /api/models/upstream asks every provider's model endpoint on each call, which a CI probe must
+// not do, so the wire-keys probe dispositions it to this test (tools/e2e/probes/console-wire-keys.ts),
+// which holds the payload's types to the route that writes them.
+describe('the comparison\'s keys are the route\'s own', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const ROUTE = 'features/models/src/main/kotlin/splice/models/list/UpstreamModelsRoute.kt';
+  const source = readFileSync(path.join(repoRoot, ROUTE), 'utf8');
+  const keys = (declared: object): string[] => Object.keys(declared).sort();
+  // Every key each type declares, optional ones included, held exact by the typecheck.
+  const PAYLOAD_KEYS: Record<keyof UpstreamModelsPayload, true> = { path: true, providers: true };
+  const PROVIDER_KEYS: Record<keyof UpstreamProvider, true> = {
+    key: true, dialect: true, url: true, roster: true, reason: true, agrees: true, rows: true,
+  };
+  const ROW_KEYS: Record<keyof UpstreamRow, true> = {
+    id: true, verdict: true, declared_window: true, upstream_window: true, note: true,
+  };
+
+  test('the payload, each provider and each row put exactly the keys their types declare', () => {
+    expect(keysPut(source, 'json(', ROUTE)).toEqual(keys(PAYLOAD_KEYS));
+    expect(keysPut(source, 'provider(', ROUTE)).toEqual(keys(PROVIDER_KEYS));
+    expect(keysPut(source, 'row(', ROUTE)).toEqual(keys(ROW_KEYS));
   });
 });

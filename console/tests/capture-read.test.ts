@@ -3,11 +3,16 @@
 // answers as the routes build them); the views are proven to keep every body and every header set
 // out of the document until its reveal is pressed, to label files kept from a capture since turned
 // off, and to print a tap that is off as the daemon's sentence, never as an empty list.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import type { TracedTurnWire, TraceListWire, TraceTurnWire, WireRead } from '../src/entities/perf';
+import type { TracedTurnWire, TraceListWire, TraceRecord, TraceTurnWire, WireRead } from '../src/entities/perf';
 import { CaptureRead, openTrace, openTraceTurn, openWire, TraceList, TraceTurn, WireList } from '../src/features/capture-read';
+
+import { keysPut } from './lib/kotlin-views';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -185,5 +190,34 @@ describe('what the views print', () => {
     const out = render(h(WireList, { read: { off: OFF } }));
     expect(out).toContain('Tap off');
     expect(out).toContain('[heads.claudex.overrides] wireTap = N');
+  });
+});
+
+// The wire-keys probe reads the trace LIST live, but its isolated boot records no trace, so no turn id
+// ever exists there to read `?turn=` with: that call site is dispositioned to this test
+// (tools/e2e/probes/console-wire-keys.ts), which holds TraceTurnWire to the serializers that write it.
+describe('a trace turn read is the daemon\'s own keys', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const ROUTE = 'features/turns/src/main/kotlin/splice/head/trace/TraceRoute.kt';
+  const STORE = 'features/turns/src/main/kotlin/splice/head/wire/TraceStore.kt';
+  const read = (file: string): string => readFileSync(path.join(repoRoot, file), 'utf8');
+  const keys = (declared: object): string[] => Object.keys(declared).sort();
+  // Every key each type declares, held exact by the typecheck: a key added to or dropped from the
+  // type is a compile error here until this list says it too.
+  const TURN_KEYS: Record<keyof TraceTurnWire, true> = { head: true, turn: true, records: true };
+  const SUMMARY_KEYS: Record<keyof TracedTurnWire, true> = {
+    id: true, ts: true, session: true, model: true, compact: true, open: true, outcome: true, rounds: true,
+    attempts: true, total_ms: true,
+  };
+  // A record's required keys only: the rest are optional, and the probe checks presence, never absence.
+  const RECORD_REQUIRED: TraceRecord = { kind: 'turn', turn: 'turn-1', ts: 0 };
+
+  test('the turn read puts exactly TraceTurnWire\'s keys, and its turn is the summary the list prints', () => {
+    expect(keysPut(read(ROUTE), 'turnJson(', ROUTE)).toEqual(keys(TURN_KEYS));
+    expect(keysPut(read(ROUTE), 'summary(', ROUTE)).toEqual(keys(SUMMARY_KEYS));
+  });
+
+  test('every record the store writes carries the keys a TraceRecord requires', () => {
+    expect(keysPut(read(STORE), 'stamp(', STORE)).toEqual(expect.arrayContaining(keys(RECORD_REQUIRED)));
   });
 });

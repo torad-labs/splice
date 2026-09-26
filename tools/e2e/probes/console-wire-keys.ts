@@ -94,6 +94,9 @@ const QUERY_FILL: Record<string, string> = {
 const PATH_OF_CALL: Record<string, string> = {
   "entities/transcript/api/index.ts|pagePath(sessionId, null)":
     "/api/sessions/${encodeURIComponent(sessionId)}/transcript",
+  // V4-239: what `splice trace` and `splice wire` print, read live; the boot turns the tap on.
+  "entities/perf/api/index.ts|headPath(head, 'trace')": "/api/heads/${encodeURIComponent(head)}/trace",
+  "entities/perf/api/index.ts|headPath(head, 'wire')": "/api/heads/${encodeURIComponent(head)}/wire",
 };
 
 // ── input: call sites dispositioned rather than checked, each with its reason ─────────────────
@@ -110,6 +113,14 @@ const DISPOSITIONED: Record<string, string> = {
     "The writes are POST, PATCH and DELETE; the poll (GET /api/auth/{head}/login/{id}) has a login " +
     "id only after a POST that reaches a real provider, so its keys and states are held against the " +
     "daemon's own serializers by console/tests/login-wire.test.ts",
+  "entities/perf/api/index.ts|`${headPath(head, 'trace')}?turn=${encodeURIComponent(turn)}`":
+    "one turn of the trace the list read above checks; a turn id exists only after a head traced a " +
+    "turn, which the isolated boot never runs, so TraceTurnWire's keys are held against TraceRoute's " +
+    "turnJson and summary and TraceStore's stamp by console/tests/capture-read.test.ts",
+  "entities/model/api/index.ts|`/api/models/upstream${query}`":
+    "each call asks every provider's model endpoint, which a CI probe must not do, so " +
+    "UpstreamModelsPayload's keys are held against UpstreamModelsRoute's json, provider and row by " +
+    "console/tests/models-upstream.test.ts",
 };
 /** Non-request fetch() sites in console/src, which the same scan enumerates. */
 const FETCH_DISPOSITIONED: Record<string, string> = {
@@ -591,6 +602,10 @@ async function boot(jar: string): Promise<Daemon> {
     'discovery_prefix = "claude-openrouter--"',
     'pinned_model = "wire/keys-model"',
     'models = [{ id = "wire/keys-model", slot = "sonnet" }]',
+    "",
+    // The wire tap on, so GET /api/heads/{head}/wire answers the tap's payload and not its 409 (V4-239).
+    "[heads.openrouter.overrides]",
+    "wireTap = 8",
     "",
     // One rule, so the compaction rows the console declares carry a live element to read: the
     // instructions route lists it, and the seeded project resolves to it (M4-09).

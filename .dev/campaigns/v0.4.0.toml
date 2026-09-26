@@ -6824,9 +6824,12 @@ id = "V4-249"
 phase = "release"
 title = "The Teams board's day is the viewer's local day, never a UTC date (film team-take planning, 2026-09-25). TeamsReads.kt reads ?day= as a UTC calendar date and defaults to today's (TeamsReads.kt:46,106), and the console says 'THE DAY IS UTC, because the daemon's is' (console/src/pages/teams/board.ts:7), so in Chicago the board's chat and activity turn over at 19:00 CDT, mid-evening, and a take that crosses it loses its first half from the board. FIX: the daemon's day reads take a from/to instant range beside ?day=, and the console sends the viewer's local day, so the board turns over at the viewer's midnight. Held until after the film's team take, which stays inside one UTC day (Fin's take list item 6). console."
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt", "console/src/pages/teams/board.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a Teams read for a local day that spans two UTC dates misses the rows before UTC midnight; green after: the range read returns both halves and ?day= keeps its meaning; the console test holds a board at 20:00 CDT showing the evening's rows; CI gate on the train sha."
 # [2026-09-26] Marlin, 2026-09-26: take 2's board read Created and Updated 2026-09-26 for a team created at Sep 25 9:35 PM CT: the UTC day shown as the user's date. Same class as this row, folded here.
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T07:42:57.107Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T07:42:57Z
 
 [[items]]
 id = "V4-250"

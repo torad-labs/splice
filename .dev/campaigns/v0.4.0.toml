@@ -6641,6 +6641,7 @@ verify = "red first against what splice models --all lists today, green after; C
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T20:38:20.877Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T20:38:20Z
+# [2026-09-26] RECEIPT cmd="CI gate run 36182954305 on 741f9784d (PR #297, merged 71f93fb7c into train 20); locally :features-configuration:test :integrations-topology:test, the app setup+example tests, ModelCatalogsSingleSourceLawTest and SilentConstants, detekt, walls, census" exit=0 tests=184 touched=app/src/main/resources/splice.example.toml,app/src/test/kotlin/splice/app/cli/setup/SetupCommandTest.kt,features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt,features/configuration/src/test/kotlin/splice/configuration/add/AddModelsTest.kt,features/configuration/src/test/kotlin/splice/configuration/add/OpenRouterProfileTest.kt,integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt tail="all three copies. Red: OpenRouterProfileTest 'expected <{opus=(anthropic/claude-opus-5.5, 1000000), fable=(openai/gpt-6-sol, 1050000)}> but was <{opus=(anthropic/claude-opus-5, 1000000), fable=(openai/gpt-5.6-sol, 1050000)}>'. Green: features-configuration 50/50, integrations-topology 34/34, app setup+example 86/86, ModelCatalogs and SilentConstants laws 14/14, detekt clean, walls 71/71, census 0."
 
 [[items]]
 id = "V4-229"

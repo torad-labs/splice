@@ -4,15 +4,18 @@
 // Moved from app's AdminSupportTest with the cold start (LAYOUT-01); the selfJar arms stayed there.
 package splice.lifecycle.start
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonSettings
 import java.net.ServerSocket
+import java.nio.file.Files
 import java.nio.file.Path
 
 class DaemonLaunchTest {
@@ -82,10 +85,39 @@ class DaemonLaunchTest {
         val script = argv[argv.indexOf("-c") + 1]
         assertTrue(script.contains("B=\"\$L/daemon-boot.log\""), "the boot log is named off the logs dir: $script")
         assertTrue(
-            script.contains("daemon >>\"\$B\" 2>&1"),
+            script.contains("daemon $BOOT_LOG_FLAG >>\"\$B\" 2>&1"),
             "the JVM's stdout and stderr append to the boot log: $script",
         )
         val fallback = script.indexOf("daemon >/dev/null 2>&1")
         assertTrue(fallback > script.indexOf("else"), "/dev/null is reachable only through the else branch: $script")
+    }
+
+    // V4-258: the daemon printed every daemon.log line to its stderr, which this launch sends into
+    // daemon-boot.log, so the boot log grew as a second, unbounded copy of daemon.log. The launch
+    // says so with BOOT_LOG_FLAG (splice-launch's twin is rehearsed in tools/release's launcher
+    // harness). Run for real: the java on PATH prints the argv the script gave it into the boot log.
+    @Test
+    fun `the raw spawn tells the daemon its stderr is the boot log - V4-258`(@TempDir tmp: Path) {
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val java = Files.writeString(bin.resolve("java"), "#!/bin/sh\nprintf 'argv:%s\\n' \"\$@\"\necho argv-end\n")
+        assertTrue(java.toFile().setExecutable(true), "the java stub must be executable")
+        val logs = tmp.resolve("logs")
+        val script = ProcessBuilder(launch().daemonLaunchArgv(tmp.resolve("splice.jar"), logs))
+        script.environment().apply {
+            put("PATH", "$bin:/usr/bin:/bin")
+            remove("SPLICE_JVM_OPTS")
+        }
+        assertEquals(0, script.start().waitFor(), "the launch script itself exits 0")
+
+        // The JVM runs in the background (nohup … &), so its argv lands after the script returns.
+        val bootLog = logs.resolve("daemon-boot.log")
+        val deadline = System.nanoTime() + STUB_WAIT_NANOS
+        while (!Files.readString(bootLog).contains("argv-end") && System.nanoTime() < deadline) Thread.onSpinWait()
+        val argv = Files.readAllLines(bootLog).filter { it.startsWith("argv:") }.map { it.removePrefix("argv:") }
+        assertEquals(listOf("daemon", BOOT_LOG_FLAG), argv.dropWhile { it != "daemon" }, "the daemon's argv: $argv")
+    }
+
+    private companion object {
+        const val STUB_WAIT_NANOS = 5_000_000_000L
     }
 }

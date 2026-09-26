@@ -72,7 +72,16 @@ internal class DaemonBoundary {
     // line in daemon.log. /mgmt/logs splits on "\n" (ControlServer.logsJson), so the endpoint this
     // whole change exists to feed emitted concatenated garbage. Exactly one terminator is appended
     // here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
-    internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink {
+    //
+    // V4-258: [echoToStderr] is false when stderr IS daemon-boot.log (the cold-start launchers say so,
+    // BOOT_LOG_FLAG). The copy made the boot log a second daemon.log that only a spawn ever rolled, so
+    // it grew for the daemon's whole life. A line daemon.log refused still goes to stderr: it is the
+    // only lane left for that line.
+    internal fun persistentLogger(
+        logsDir: Path,
+        maxBytes: Long = MAX_LOG_BYTES,
+        echoToStderr: Boolean = true,
+    ): LogSink {
         // v0.4.0: owner-only, and re-asserted each start (SecureFile.ownerOnlyDirectory): the dir is
         // the boundary, so daemon.log and the per-head logs need no mode of their own. A dir left
         // open, or never made, is said in the log itself once the sink below exists.
@@ -89,7 +98,7 @@ internal class DaemonBoundary {
         val sink = LogSink { msg ->
             val line = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
             AsyncFileIo.submit {
-                System.err.print(line)
+                if (echoToStderr) System.err.print(line)
                 Cancellables.runCatchingCancellable {
                     if (written >= maxBytes) {
                         writer?.close()
@@ -116,6 +125,7 @@ internal class DaemonBoundary {
                         "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}); " +
                             "size reconciled to $written\n",
                     )
+                    if (!echoToStderr) System.err.print(line)
                 }
             }
         }

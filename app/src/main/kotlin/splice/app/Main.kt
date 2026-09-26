@@ -15,6 +15,7 @@ import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.launch.install.InstallShim
+import splice.lifecycle.start.BOOT_LOG_FLAG
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Path
@@ -54,7 +55,7 @@ public fun main(args: Array<String>) {
     // any engine exists. One property covers every embeddedServer in the process, head engines AND
     // ControlServer's, which is why this is a process-wide line and not a per-engine flag.
     when (args.firstOrNull()) {
-        null, "daemon", "start" -> DaemonProcess().runDaemon()
+        null, "daemon", "start" -> DaemonProcess(args.toList()).runDaemon()
         else -> exitProcess(splice.app.cli.Cli().runCli(args))
     }
 }
@@ -63,7 +64,7 @@ public fun main(args: Array<String>) {
  *  exist before anything that can throw. A constructed collaborator rather than a set of free
  *  functions (Kotlin style law, 2026-08-15); `fun main` above stays top-level because the JVM
  *  entry point must be static, which the law exempts. */
-internal class DaemonProcess {
+internal class DaemonProcess(private val args: List<String> = emptyList()) {
 
     private val boundary = DaemonBoundary()
 
@@ -246,8 +247,10 @@ internal class DaemonProcess {
         watchdog.shutdownNow()
     }
 
+    /** V4-258: a launcher that sends this daemon's stderr into daemon-boot.log passes [BOOT_LOG_FLAG],
+     *  and daemon.log's lines then stay out of it. */
     internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink =
-        boundary.persistentLogger(logsDir, maxBytes)
+        boundary.persistentLogger(logsDir, maxBytes, echoToStderr = BOOT_LOG_FLAG !in args)
 
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         boundary.bootFailureHandler(statePaths)

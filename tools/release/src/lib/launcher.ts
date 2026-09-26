@@ -255,6 +255,24 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // V4-258: the daemon printed every daemon.log line to its stderr, which the raw spawn sends into
+    // daemon-boot.log, so the boot log grew as a second, unbounded copy of daemon.log. The shim tells
+    // the daemon its stderr is the boot log with the flag DaemonLaunch's argv passes too
+    // (BOOT_LOG_FLAG), and the daemon then keeps daemon.log's lines out of it.
+    name: "V4-258 the raw spawn tells the daemon its stderr is the boot log",
+    run: async (ctx) => {
+      ctx.cold();
+      rmSync(ctx.captures.javaArgv, { force: true });
+      await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
+      const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+      const daemon = runs.find((javaArgv) => javaArgv.includes("daemon"));
+      if (daemon === undefined) return `the raw spawn never ran the daemon: ${JSON.stringify(runs)}`;
+      return daemon.slice(daemon.indexOf("daemon")).join(" ") === "daemon --stderr-is-boot-log"
+        ? null
+        : `the daemon must be told its stderr is the boot log, argv: ${JSON.stringify(daemon)}`;
+    },
+  },
+  {
     // v0.4.0 review: the CLI asks System.console() whether a person is at a terminal, and on JDK 22-24
     // it answers yes into a pipe unless java runs with -Djdk.console=java.base: `splice dashboard` then
     // prints the management key into an agent's transcript. Both paths that run the CLI must carry it.

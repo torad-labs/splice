@@ -55,7 +55,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-7";
+const SPLICE_SHIM_VERSION = "shim-8";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -132,6 +132,9 @@ const CLI_CONSOLE = "-Djdk.console=java.base";
 // tailable stack trace. One rolled generation at 1MB, same cap discipline as daemon.log.
 const LOGS_DIR = path.join(STATE_DIR, "..", "logs");
 const BOOT_LOG = path.join(LOGS_DIR, "daemon-boot.log");
+// V4-258: the daemon printed every daemon.log line to stderr, so the boot log grew as a second copy of
+// daemon.log. This is DaemonLaunch.kt's BOOT_LOG_FLAG, the argument both cold-start paths pass.
+const BOOT_LOG_FLAG = "--stderr-is-boot-log";
 const KEY_FILE = path.join(STATE_DIR, "mgmt-key");
 // Safe by default: the daemon never adds --dangerously-skip-permissions unless explicitly told to.
 // CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS=1 is the named opt-in; the old CLAUDEX_SAFE is a harmless no-op.
@@ -362,7 +365,6 @@ async function coldStart() {
   } catch {
     // no log yet, or it cannot be rolled: the append below decides
   }
-  const argv = [...SPLICE_JVM_OPTS.split(/\s+/).filter(Boolean), "-jar", JAR, "daemon"];
   let stdio = "ignore";
   try {
     const log = fs.openSync(BOOT_LOG, "a");
@@ -370,6 +372,9 @@ async function coldStart() {
   } catch {
     // a read-only home must degrade the redirect, never break launching (JW-01 risk note)
   }
+  // V4-258: a daemon whose stderr is the boot log is told so, and keeps daemon.log's lines out of it.
+  const bootLogged = Array.isArray(stdio) ? [BOOT_LOG_FLAG] : [];
+  const argv = [...SPLICE_JVM_OPTS.split(/\s+/).filter(Boolean), "-jar", JAR, "daemon", ...bootLogged];
   const daemon = spawn("java", argv, { detached: true, stdio });
   daemon.on("error", (failure) => {
     // A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used

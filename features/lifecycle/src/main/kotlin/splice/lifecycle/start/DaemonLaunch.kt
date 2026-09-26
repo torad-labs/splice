@@ -72,13 +72,14 @@ internal class DaemonLaunch(
             // JW-01: the spawned JVM's output lands in daemon-boot.log (rolled at 1MB, one
             // generation), never /dev/null; an unwritable logs dir degrades the redirect
             // instead of breaking the launch. Mirrors app/src/main/dist/bin/splice-launch byte-for-byte in
-            // behaviour — the two cold-start paths must not drift.
+            // behaviour — the two cold-start paths must not drift. V4-258: [BOOT_LOG_FLAG] tells the
+            // daemon its stderr is that file, so daemon.log's lines are not copied into it.
             "L=\"\$2\"; " +
                 "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +
                 "[ -f \"\$B\" ] && [ \"\$(wc -c <\"\$B\" 2>/dev/null || echo 0)\" -gt 1048576 ] " +
                 "&& mv -f \"\$B\" \"\$B.1\" 2>/dev/null; " +
                 "if ( : >>\"\$B\" ) 2>/dev/null; then " +
-                "nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon >>\"\$B\" 2>&1 & " +
+                "nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon $BOOT_LOG_FLAG >>\"\$B\" 2>&1 & " +
                 "else nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon >/dev/null 2>&1 & fi",
             "sh",
             jar.toString(),
@@ -166,6 +167,10 @@ internal class DaemonLaunch(
 // the floor: a spawner that gave up first would report a failure for a restart that was working.
 internal const val STARTUP_POLLS = 248
 private const val POLL_INTERVAL_MS = 250L
+
+/** V4-258: the daemon argument both cold-start launchers pass (this argv and splice-launch) to say the
+ *  daemon's stderr is daemon-boot.log, so the daemon keeps daemon.log's lines out of it. */
+public const val BOOT_LOG_FLAG: String = "--stderr-is-boot-log"
 
 // Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
 // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.

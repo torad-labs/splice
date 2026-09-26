@@ -13,12 +13,14 @@ package splice.app
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.KeyStore
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
+import splice.lifecycle.start.BOOT_LOG_FLAG
 import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
@@ -215,5 +217,54 @@ class DaemonLogWiringTest {
         val stderr = captured.toString()
         assertTrue(stderr.contains("[daemon-log] write/rotate failed"), "the failure is announced, got: $stderr")
         assertTrue(stderr.contains("size reconciled to 0"), "the reconciled size is named, got: $stderr")
+    }
+
+    // V4-258: both cold-start launchers send the daemon's stderr into daemon-boot.log, and the daemon
+    // printed every daemon.log line there too, so the boot log was a second, unbounded copy of
+    // daemon.log (a live one: 15,276 of 15,280 lines). Told so with BOOT_LOG_FLAG, the daemon keeps
+    // its lines in daemon.log alone; stderr keeps what only it can carry.
+    @Test
+    fun `a daemon told its stderr is the boot log writes each line to daemon-log alone - V4-258`(@TempDir logs: Path) {
+        val stderr = capturingStderr {
+            DaemonProcess(listOf("daemon", BOOT_LOG_FLAG)).persistentLogger(logs)("[v4-258] a turn line")
+            drainToDisk()
+        }
+
+        assertTrue(Files.readString(logs.resolve("daemon.log")).contains("[v4-258] a turn line"), "daemon.log keeps it")
+        assertFalse(stderr.contains("[v4-258] a turn line"), "the line was copied into the boot log: $stderr")
+    }
+
+    @Test
+    fun `a daemon on a terminal or under its unit still prints each line to stderr`(@TempDir logs: Path) {
+        val stderr = capturingStderr {
+            DaemonProcess(listOf("daemon")).persistentLogger(logs)("[v4-258] a turn line")
+            drainToDisk()
+        }
+
+        assertTrue(stderr.contains("[v4-258] a turn line"), "stderr is the only view there: $stderr")
+    }
+
+    @Test
+    fun `a line daemon-log could not take still reaches the boot log`(@TempDir tmp: Path) {
+        val notADir = tmp.resolve("logs").also { Files.writeString(it, "a file where the logs dir belongs") }
+
+        val stderr = capturingStderr {
+            DaemonProcess(listOf("daemon", BOOT_LOG_FLAG)).persistentLogger(notADir)("[v4-258] nowhere else")
+            drainToDisk()
+        }
+
+        assertTrue(stderr.contains("[v4-258] nowhere else"), "a line daemon.log refused is not lost: $stderr")
+    }
+
+    private fun capturingStderr(block: () -> Unit): String {
+        val captured = java.io.ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(java.io.PrintStream(captured, true, Charsets.UTF_8))
+        try {
+            block()
+        } finally {
+            System.setErr(realErr)
+        }
+        return captured.toString(Charsets.UTF_8)
     }
 }

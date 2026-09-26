@@ -732,17 +732,17 @@ command = "claude-splice"
 #
 # chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
 # codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
-# progressLine = true                                       # bool; splice's own status line on a quiet wire
+# progressLine = "true"                                     # bool; splice's own status line on a quiet wire
 # foldReasoningModels = "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5" # comma-separated upstream ids eligible to fold
-# foldMaxContinue = 3                                       # rounds; max hidden continuation rounds per fold
+# foldMaxContinue = "3"                                     # rounds; max hidden continuation rounds per fold
 # foldMarkerText = "Continue thinking..."                   # the marker instruction that continues a cut turn
-# foldMaxTier = 6                                           # n; the deepest truncation tier that still folds
+# foldMaxTier = "6"                                         # n; the deepest truncation tier that still folds
 # toolSurface = "auto"                                      # "auto" lets splice arm tool_search per backend
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
-# quotaPollIntervalMs = 300000                              # ms; how often a subscription head re-polls usage
-# maxQueued = 512                                           # requests; admission queue cap, 0 = unlimited (HOT)
-# upstreamRetries = 4                                       # attempts; upstream re-POSTs per round before failing
-# wireTap = 0                                               # bodies; how many of this head's most recent upstream
+# quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage
+# maxQueued = "512"                                         # requests; admission queue cap, 0 = unlimited (HOT)
+# upstreamRetries = "4"                                     # attempts; upstream re-POSTs per round before failing
+# wireTap = "0"                                             # bodies; how many of this head's most recent upstream
 #                                                           #     REQUEST BODIES to keep, in memory only, for
 #                                                           #     `splice wire <head>`. 0 (the default) keeps none.
 #                                                           #     OPT-IN ON PURPOSE: a body carries the whole
@@ -753,7 +753,7 @@ command = "claude-splice"
 #                                                           #     restart forgets it, and `splice doctor` names the
 #                                                           #     head on every run while it is on. PER HEAD ONLY:
 #                                                           #     in [defaults], env or a PATCH it is refused.
-# trace = false                                             # the FULL request/response trace of this head, on disk:
+# trace = "false"                                           # the FULL request/response trace of this head, on disk:
 #                                                           #     every request it receives, every upstream attempt
 #                                                           #     with the exact body it sent (credentials redacted)
 #                                                           #     and the raw response, every frame streamed back,
@@ -763,17 +763,17 @@ command = "claude-splice"
 #                                                           #     wireTap: a record carries whole conversations.
 #                                                           #     Read with `splice trace <head>`; `--purge` deletes.
 #                                                           #     PER HEAD ONLY, like wireTap.
-# traceRetentionDays = 7                                    # days; whole day files older than this are deleted
-# traceMaxBodyChars = 4194304                               # chars; a longer body is cut and the record says so
-# retryBackoffBaseMs = 200                                  # ms; the generic retry curve's base, doubled each attempt
-# retryBackoffCapMs = 10000                                 # ms; the generic retry curve's ceiling
-# retryBackoffJitterPct = 10                                # percent; the generic retry curve's plus-or-minus jitter
-# firstByteTimeoutMs = 90000                                # ms; (through WatchdogBudget) the watchdog's
+# traceRetentionDays = "7"                                  # days; whole day files older than this are deleted
+# traceMaxBodyChars = "4194304"                             # chars; a longer body is cut and the record says so
+# retryBackoffBaseMs = "200"                                # ms; the generic retry curve's base, doubled each attempt
+# retryBackoffCapMs = "10000"                               # ms; the generic retry curve's ceiling
+# retryBackoffJitterPct = "10"                              # percent; the generic retry curve's plus-or-minus jitter
+# firstByteTimeoutMs = "90000"                              # ms; (through WatchdogBudget) the watchdog's
 #                                                           #     FIRST-OUTPUT tier: silence before the first frame
 #                                                           #     past this is a PROBE, like streamIdleMs below.
 #                                                           #     Not a socket timeout: a read waits up to
 #                                                           #     upstreamTimeoutMs (V4-125)
-# streamIdleMs = 90000                                      # ms; stream silence before the stall watchdog ASKS.
+# streamIdleMs = "90000"                                    # ms; stream silence before the stall watchdog ASKS.
 #                                                           #     Since V4-125 a breach is a PROBE, not a verdict:
 #                                                           #     the round's path is asked whether it is alive, a live
 #                                                           #     path is HELD (polled on, never reaped short of
@@ -786,7 +786,7 @@ command = "claude-splice"
 #                                                           #     (2026-09-01) at 180s; it was safe then because a
 #                                                           #     breach was fatal. It no longer is. A head that
 #                                                           #     genuinely needs the long wait names 300000 here.
-# stallReanchorMs = 20000                                   # ms; mid-output silence (content already delivered)
+# stallReanchorMs = "20000"                                 # ms; mid-output silence (content already delivered)
 #                                                           #     before splice CANCELS the round and re-anchors it
 #                                                           #     itself (re-POST from the salvage). Only arm it for a
 #                                                           #     head whose upstream is MEASURED to continue from an
@@ -794,20 +794,20 @@ command = "claude-splice"
 #                                                           #     cannot be prefilled has nothing to resume into, so
 #                                                           #     streamIdleMs stays its floor. Not consulted before the
 #                                                           #     first content frame. 0 disables the tier for this head.
-# authCacheMs = 60000                                       # ms; how long an OAuth snapshot is reused
-# debug = false                                             # bool; verbose logging
-# contextWindowOverride = 200000                            # tokens; unset by default, pins the client window
-# grokPort = 3100                                           # TCP port; the grok head's listener
+# authCacheMs = "60000"                                     # ms; how long an OAuth snapshot is reused
+# debug = "false"                                           # bool; verbose logging
+# contextWindowOverride = "200000"                          # tokens; unset by default, pins the client window
+# grokPort = "3100"                                         # TCP port; the grok head's listener
 # grokModel = "grok-4.6"                                    # the grok model id the head pins
 # xaiApiBase = "https://api.x.ai/v1"                        # base URL of the xAI backend
 # grokAuthPath = "~/.grok/auth.json"                        # where the grok OAuth credential file lives
-# usageWarnPct = 80                                         # percent; plan-window usage that triggers the warning
-# usageWarnTokens5h = 0                                     # tokens; absolute 5h threshold, 0 disables the warning
+# usageWarnPct = "80"                                       # percent; plan-window usage that triggers the warning
+# usageWarnTokens5h = "0"                                   # tokens; absolute 5h threshold, 0 disables the warning
 # statuslineGitRoots = ""                                   # extra git roots the status line inspects
-# mcpIdleTimeoutMs = 1800000                                # ms; a hosted MCP server with no open stream is closed after this
-# mcpMaxServers = 32                                        # count; most MCP server processes hosted at once (daemon-wide)
-# mcpRequestTimeoutMs = 1800000                             # ms; how long one forwarded MCP request may wait for the child
-# mcpInitializeTimeoutMs = 60000                            # ms; the child initialize handshake budget
+# mcpIdleTimeoutMs = "1800000"                              # ms; a hosted MCP server with no open stream is closed after this
+# mcpMaxServers = "32"                                      # count; most MCP server processes hosted at once (daemon-wide)
+# mcpRequestTimeoutMs = "1800000"                           # ms; how long one forwarded MCP request may wait for the child
+# mcpInitializeTimeoutMs = "60000"                          # ms; the child initialize handshake budget
 # mcpSlice = "app-mcp.slice"                                # the systemd slice hosted MCP servers are spawned into
 # supervisorUnit = "splice.service"                         # the systemd user unit that restarts this daemon
 #
@@ -819,13 +819,13 @@ command = "claude-splice"
 #   treated as some. Supply them however you like: a packaged unit, your own hand-written one, a
 #   container runtime's restart policy. Change the names here only if yours are called something
 #   else; the defaults are what this repo's install.sh layout produces.
-# maxRequestBytes = 8388608                                 # bytes; largest request body the gateway decodes (413 past this)
-# requestReadTimeoutMs = 30000                              # ms; how long one client request body read may take
-# materializationPermits = 16                               # count; PROCESS-SHARED concurrent decode/translate permits
-# activityRetentionDays = 90                                # days; message edges kept, whole days, at least 2 (activity labels: today and yesterday)
+# maxRequestBytes = "8388608"                               # bytes; largest request body the gateway decodes (413 past this)
+# requestReadTimeoutMs = "30000"                            # ms; how long one client request body read may take
+# materializationPermits = "16"                             # count; PROCESS-SHARED concurrent decode/translate permits
+# activityRetentionDays = "90"                              # days; message edges kept, whole days, at least 2 (activity labels: today and yesterday)
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
-# perfArchiveRetentionDays = 90                              # days; retired perf generations kept in <state>/perf-archive; 0 = off
+# perfArchiveRetentionDays = "90"                            # days; retired perf generations kept in <state>/perf-archive; 0 = off
 
 # ── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────────
 # Precedence for every name below is env > TOML > default: an environment variable beats the TOML

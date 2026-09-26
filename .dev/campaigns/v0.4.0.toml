@@ -7212,6 +7212,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T07:37:27.560Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T07:37:27Z
 # [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-277 -- :integrations-dialects-openai-chat:test :integrations-dialects-openai-chat:detekt --continue" exit=0 tests=124 touched=integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt,integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatSystemPromptTest.kt tail="lock, sha e839a213 re-checked): exit 1, 9 tests 1 failed, the same line: 'expected: <[system, user, system, assistant, user, system]> but was: <[system, user, assistant, user]>'. Replace now drops only the leading run of system messages (ChatWireMapper.messagesArray puts the system field first, ChatWireMapper.kt:38-43); every system message after the first non-system one keeps its place and bytes."
+# [2026-09-26] verified live by rig-lead on 32b5c25e9 (daemon pid 1844512): the fake-upstream repro through claude-bonsai -> 3108 -> fake llama-server ran twice with RESULT-SEEN (the background subagent's result reached the model as a role=system message at index 6 of the forwarded chat body; RESULT-NOT-SEEN before the fix), and a live cross-session message to grail-bonsai (bonsai-vast via 3109) at 3:37 AM CT arrived and was acted on
 
 [[items]]
 id = "V4-278"

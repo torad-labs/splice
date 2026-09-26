@@ -1,0 +1,19 @@
+id: store-selector-fresh-value
+valid:
+  - 'const NO_ROWS: Row[] = []; const rows = useStore((s) => s.rows ?? NO_ROWS);'
+  - 'const data = useSessionRegistry((state) => state.data); const sessions = data?.sessions ?? [];'
+  - 'const topology = useTopology((state) => state);'
+  - 'const count = useStore((s) => s.count || 0);'
+  - 'const picked = useStore(useShallow((s) => ({ a: s.a, b: s.b })));'
+  - 'const pair = useMemo(() => [a, b], [a, b]);'
+  - 'const make = useCallback((x) => ({ x }), []);'
+  - 'const [rows, setRows] = useState(() => []);'
+invalid:
+  - 'const sessions = useSessionRegistry((state) => state.data?.sessions ?? []);'
+  - 'const byId = useStore((s) => s.byId ?? {});'
+  - 'const rows = useStore((s) => s.rows || []);'
+  - 'const byId = useStore((s) => s.byId || {});'
+  - 'const pair = useStore((s) => [s.a, s.b]);'
+  - 'const picked = useStore((s) => ({ a: s.a }));'
+  - 'const rows = useStore(s => s.rows ?? []);'
+  - 'const rows = useStore((state: State) => state.rows ?? []);'

@@ -1,0 +1,52 @@
+# A store selector returns a value the store holds, never one it builds (V4-318, 2026-09-26). Under
+# zustand 5 a hook's selector IS useSyncExternalStore's getSnapshot (console/package.json: zustand
+# ^5.0.15), so a selector answering a fresh [] or {} on every call, as `s.data?.rows ?? []` does
+# while the store is unread, is a new snapshot each render: React re-renders until it gives up, and
+# the component unmounts. The projects detail vanished this way (standing.tsx, gate run
+# 36256681397). No unit test sees it: renderToStaticMarkup in environment 'node' takes one snapshot
+# and never subscribes.
+#
+# So a `use*` hook called with a one-parameter selector may not answer an array or object literal,
+# nor end in `?? []`, `?? {}`, `|| []` or `|| {}`. The held forms pass: a module constant for the
+# empty case (features/views/index.tsx: `const NO_VIEWS: View[] = []`), or select the field and
+# derive outside the selector. useShallow is zustand's own answer for a selector that builds an
+# object, and is exempt; useMemo and useCallback take a second argument and are never matched.
+# Components are .tsx, where every store hook is called today; no .ts file calls one with a selector.
+id: store-selector-fresh-value
+language: tsx
+severity: error
+message: "A store selector returns a held value: a fresh [] or {} re-renders forever under zustand 5."
+note: |
+  Select the field and default outside the selector
+  (`const data = useX((s) => s.data); const rows = data?.rows ?? [];`), or default to a module
+  constant (`const NO_ROWS: Row[] = []; ... ?? NO_ROWS`).
+files:
+  - console/src/**/*.tsx
+rule:
+  any:
+    - pattern: $HOOK(($S) => $BODY)
+    - pattern: $HOOK($S => $BODY)
+constraints:
+  HOOK:
+    regex: '^use[A-Z]\w*$'
+    not:
+      regex: '^useShallow$'
+  S:
+    not:
+      regex: '^\(\s*\)$'
+  BODY:
+    any:
+      - kind: array
+      - kind: parenthesized_expression
+        has:
+          kind: object
+      - kind: binary_expression
+        all:
+          - has:
+              field: operator
+              regex: '^(\?\?|\|\|)$'
+          - has:
+              field: right
+              any:
+                - kind: array
+                - kind: object

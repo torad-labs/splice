@@ -182,7 +182,10 @@ export function StandingForm({ topology, root, live, busy = false, fault = null,
  *  save written through the daemon, and the topology read again after it so the form shows the file. */
 export function ProjectStanding({ root }: { root: string }) {
   const topology = useTopology((state) => state);
-  const sessions = useSessionRegistry((state) => state.data?.sessions ?? []);
+  // The registry as the store holds it, defaulted here: a selector answering a fresh [] is a new
+  // snapshot every render under zustand 5, and the panel re-rendered until it unmounted (V4-318).
+  const registry = useSessionRegistry((state) => state.data);
+  const sessions = registry?.sessions ?? [];
   const [busy, setBusy] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [result, setResult] = useState<TopologyWriteResult | null>(null);

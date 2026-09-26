@@ -7219,6 +7219,7 @@ verify = "red first: a console edit and a splice add through a symlinked splice.
 claimed_by = "console"
 claimed_at = "2026-09-26T07:55:57.372Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T07:55:57Z
+# [2026-09-26] RECEIPT cmd="umask 022; bun tools/gate slot V4-279 -- :core:test :core:detekt :features-configuration:test :features-configuration:detekt --continue; bun tools/gate slot V4-279 -- :quality-architecture:test; bun tools/gate rules" exit=0 tests=732 touched=core/src/main/kotlin/splice/core/topology/TopologyWriter.kt,features/configuration/src/main/kotlin/splice/configuration/add/AddWrite.kt,core/src/test/kotlin/splice/core/topology/TopologyWriterOwnerOnlyTest.kt,features/configuration/src/test/kotlin/splice/configuration/add/AddWriteOwnerOnlyTest.kt tail=".of in TopologyWriter.kt, used by both writers: a configured link is written at toRealPath(), the link stays; the console edit's backup stays beside the configured path and nothing lands in the target's directory but the file itself (asserted). SecureFile unchanged: it still does not follow links. The red run is the mutant of TopologyFileTarget.of returning the configured path (the old behaviour)."
 
 [[items]]
 id = "V4-280"

@@ -6946,11 +6946,12 @@ id = "V4-265"
 phase = "release"
 title = "BOARD: Activity shows a working team's activity (take 2's board.webm at Sep 25 9:42:01 and 9:43:19 PM CT (Marlin, 2026-09-26); the release highlight says the board shows hand-offs, activity and cost per role). It read 'Nothing sampled today' while the team worked for five minutes, and the store is on for every head (Knob.kt:465). Trace why nothing reached the team's Activity."
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt"]
-status = "in_flight"
+status = "done"
 verify = "the trace names where the samples stop; red first: a bound member's sampled activity appears in the team's Activity the same day; CI gate on the train sha."
 claimed_by = "console"
 claimed_at = "2026-09-26T03:32:19.263Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T03:32:19Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4265-green -- :features-turns:test (ActivityLabelTest, HeadEventsTest, MessageEdgesTest) :features-sessions:test (splice.sessions.http.*) :app:test (TeamActivitySampleTest, ConsoleActivityPublishTest) :features-turns:detekt :features-sessions:detekt :app:detekt" exit=0 tests=52 touched=features/turns/src/main/kotlin/splice/head/ActivityLabel.kt,features/turns/src/main/kotlin/splice/head/turn/TurnPreparation.kt,features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt,console/src/widgets/activity-feed/index.tsx,app/src/test/kotlin/splice/app/TeamActivitySampleTest.kt,features/turns/src/test/kotlin/splice/head/ActivityLabelTest.kt,features/turns/src/test/kotlin/splice/head/HeadEventsTest.kt,features/sessions/src/test/kotlin/splice/sessions/http/TeamsRoutesTest.kt,.dev/restructure/capabilities.tsv tail="nd nothing reached TurnPreparation. On the live daemon, labels come only from claudex and claude-deepseek sessions that run background agents, and never from claude-splice. Fix: each ordinary turn's transcript tail is sampled into the same label (ActivityLabel.sampleOf), one per session per 30 s (ActivitySamples), and the client's own label counts as the sample. Census 0 findings, gate rules PASS."
 
 [[items]]
 id = "V4-266"

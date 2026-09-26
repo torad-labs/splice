@@ -191,6 +191,8 @@ class HeadEventsTest {
                     listOf(
                         "edge $SESSION uds:/run/peer.sock toolu_a",
                         "edge $SESSION builder toolu_b",
+                        // V4-265: the session's own turn is its sample; the retry is inside the interval.
+                        "label $SESSION Messaging a peer session",
                         "start $SESSION",
                         "end ${rows[0].first} ${rows[0].second}",
                         "start $SESSION",
@@ -201,7 +203,8 @@ class HeadEventsTest {
                         "end ${rows[2].first} ${rows[2].second}",
                     ),
                     rig.events.turnCalls(),
-                    "each call reported once; the exact query answered locally with no turn; the near miss served AND counted",
+                    "each call reported once; the exact query answered locally with no turn; the near miss served AND " +
+                        "counted; one turn sample in the interval",
                 )
             } finally {
                 rig.close()

@@ -1,13 +1,13 @@
-// The activity feed: what each session of the team was doing, as a label the daemon asks its
-// client for about every 30 seconds (GET /api/teams/{id}/activity, served since V4-131).
+// The activity feed: what each session of the team was doing, as a label the daemon samples from
+// the session's latest tool call about every 30 seconds (GET /api/teams/{id}/activity, V4-131, V4-265).
 //
 // IT IS A SAMPLE AND SAYS SO. A row is what the client reported at that instant, not a log of
 // everything it did between samples, so the section's help says it is sampled and the rows print
 // newest first, the way a reading is read. A day of samples runs to thousands of rows, so the feed
 // prints the newest and counts the rest.
 //
-// TWO EMPTIES THAT ARE NOT THE SAME ANSWER. "Nothing sampled" means the sampler ran and the client
-// had no label to give; "client not matching" means the sampler cannot find the client that
+// TWO EMPTIES THAT ARE NOT THE SAME ANSWER. "Nothing sampled" means the sampler ran and no session
+// called a tool; "client not matching" means the sampler cannot find the client that
 // session was bound to any more (it was closed, or re-attached elsewhere), so no sample CAN arrive.
 // Printing one for the other would tell the operator to wait for something that is not coming.
 import { Empty, Section } from '@shared/ui';

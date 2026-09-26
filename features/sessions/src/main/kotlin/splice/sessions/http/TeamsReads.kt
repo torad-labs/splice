@@ -21,8 +21,9 @@ import java.time.format.DateTimeParseException
 
 internal const val TEAM_ID = "team_id"
 internal const val PACKET_NOTE = "no wire source: a SendMessage call carries no dispatch unit"
-internal const val ACTIVITY_SAMPLE_NOTE = "labels are samples: one per activity side query the client sends, " +
-    "about every 30 seconds while a session works; a gap is a session that sent none"
+internal const val ACTIVITY_SAMPLE_NOTE = "labels are samples: at most one per session every 30 seconds, " +
+    "from its latest tool call while it works or from its client's own activity query; a gap is a session " +
+    "that called no tool"
 
 // why: milliseconds in a day. The reads are day-scoped because the activity store writes one
 // file per day; this converts a day index to the epoch-millis window that file covers.

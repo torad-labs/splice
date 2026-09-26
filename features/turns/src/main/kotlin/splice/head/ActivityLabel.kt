@@ -14,15 +14,55 @@
 // V4-130: THE NEAR MISS IS COUNTED. [looksLikeSideQuery] is a looser test (both key phrases, any case,
 // anywhere in the last user text) run only when the exact match failed, so a reworded prompt shows up
 // as label queries sent upstream (HeadEvents.labelQueryUpstream) instead of as silence.
+//
+// V4-265: THE SIDE QUERY IS NOT EVERY SESSION'S. Claude Code 2.1.282 starts that timer (AgentSummary,
+// `xa=30000`) only inside its background-agent runner, so a session's own loop never sends the query.
+// The film's take 2 had four members working for five minutes and recorded no label at all. Every
+// ordinary turn carries the same transcript tail, so [sampleOf] composes the same label from it, and
+// [ActivitySamples] holds it to the client's pace: one sample per session per interval, with the
+// client's own label counting as that session's sample.
 package splice.head
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.util.ElapsedClock
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ContentBlock.TextBlock
 import splice.core.wire.ContentBlock.ToolUseBlock
 
+/** One activity sample per session per [SAMPLE_INTERVAL_MS] on [clock], for the last
+ *  [REMEMBERED_SESSIONS] sessions seen. */
+internal class ActivitySamples(private val clock: ElapsedClock) {
+    private val lastAt = object : LinkedHashMap<String, Long>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean =
+            size > REMEMBERED_SESSIONS
+    }
+
+    /** [session] was sampled now: the client answered its own side query. */
+    fun sampled(session: String): Unit = synchronized(lastAt) {
+        lastAt.remove(session)
+        lastAt[session] = clock()
+    }
+
+    /** True, and [session] counted as sampled now, when its last sample is an interval old or it has none. */
+    fun due(session: String): Boolean = synchronized(lastAt) {
+        val now = clock()
+        val last = lastAt[session]
+        if (last != null && now - last < SAMPLE_INTERVAL_MS) return false
+        lastAt.remove(session)
+        lastAt[session] = now
+        true
+    }
+}
+
 internal class ActivityLabel {
+
+    /** An ordinary turn's sample: its transcript's last tool call, described as the side query would
+     *  be answered. Null when the last assistant message called no tool, or there is none. */
+    fun sampleOf(request: AnthropicRequest): String? =
+        request.messages.lastOrNull { it.role == ROLE_ASSISTANT }
+            ?.content?.filterIsInstance<ToolUseBlock>()?.lastOrNull()
+            ?.let(::describe)
 
     /** The label to answer with, or null when the request is not the activity side query. */
     fun labelFor(request: AnthropicRequest): String? {
@@ -90,6 +130,11 @@ internal class ActivityLabel {
         text?.takeIf { it.isNotBlank() }?.let { if (it.length > MAX_ARG_CHARS) it.take(MAX_ARG_CHARS) + "…" else it }
 }
 
+/** The client's own interval between side queries (`xa=30000` in Claude Code 2.1.282). */
+private const val SAMPLE_INTERVAL_MS = 30_000L
+
+/** How many sessions' last sample a head remembers; a session past it is sampled again at once. */
+private const val REMEMBERED_SESSIONS = 512
 private const val ROLE_USER = "user"
 private const val ROLE_ASSISTANT = "assistant"
 private const val MCP_PREFIX = "mcp__"

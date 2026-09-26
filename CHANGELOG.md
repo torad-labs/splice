@@ -686,6 +686,12 @@ origin.
   growing toward five minutes. It now asks systemd to restart the unit, which drains in-flight turns
   the same way, starts the new daemon at once and resets the delay. A daemon the unit isn't running
   is stopped and started as before.
+- **Resuming a session on another head can no longer cut its transcript short.** To resume a
+  session on a head that serves another model, splice moves the transcript's assistant rows onto that
+  head's model, in your own Claude Code transcript. It rewrote the file in place, so a crash or a full
+  disk in the middle of the write left the transcript truncated. The new transcript is now written
+  beside the old one and moved over it in one atomic step, so an interrupted write leaves the original
+  as it was (V4-259).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

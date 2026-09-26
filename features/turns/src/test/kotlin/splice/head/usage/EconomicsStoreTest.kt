@@ -4,6 +4,7 @@
 package splice.head.usage
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -338,5 +339,22 @@ class EconomicsStoreTest {
         store.record(turn(inTokens = 7)) // and recording still works afterwards
         assertNotNull(store.read().single())
         assertEquals(7, store.read().single().inTokens)
+    }
+
+    /** V4-330. A record schedules the coalesced write a second out, and flushNow (a head's stop, a
+     *  test's teardown) persists that version first, so the pending write finds nothing newer and
+     *  must write nothing: the version guard in EconomicsStore.persist. Without it the late write
+     *  lands after the stop, and at a teardown it re-created the deleted @TempDir (V4-329). The
+     *  pending write runs here by its own method, not by waiting out its second. */
+    @Test
+    fun `the coalesced write after flushNow writes nothing - V4-330`(@TempDir tmp: Path) {
+        val file = tmp.resolve("e.json")
+        val store = EconomicsStore(file, UNPRICED, WallClock { 10 * HOUR })
+        store.record(turn(inTokens = 7))
+        store.flushNow()
+        Files.delete(file)
+
+        EconomicsStore::class.java.getDeclaredMethod("flushScheduled").apply { isAccessible = true }.invoke(store)
+        assertFalse(Files.exists(file), "the pending write found nothing newer than flushNow's and wrote nothing")
     }
 }

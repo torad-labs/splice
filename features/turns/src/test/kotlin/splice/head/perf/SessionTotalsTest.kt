@@ -5,6 +5,7 @@
 package splice.head.perf
 
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -196,6 +197,26 @@ class SessionTotalsTest {
 
         totals.add(TAG, OPUS, COLD, 3_000L)
         assertTrue("\"clean\":false" in Files.readString(file), "written through before add returns")
+    }
+
+    /** V4-330. An add schedules the coalesced write a second out, and flushNow, a head stop's write,
+     *  marks the file clean at the version it holds, so the pending write finds nothing newer and
+     *  must leave the file alone: the version guard in SessionTotals.persist. Without it the late
+     *  write lays "clean":false over the stop's mark, and the next start throws the totals away. The
+     *  pending write runs here by its own method, not by waiting out its second. */
+    @Test
+    fun `the coalesced write after the stop's flush leaves the file and its clean mark alone - V4-330`(
+        @TempDir tmp: Path,
+    ) {
+        val file = tmp.resolve("t.json")
+        val totals = store(file)
+        totals.add(TAG, OPUS, COLD, 2_000L)
+        totals.flushNow()
+        val stopped = Files.readAllBytes(file)
+
+        SessionTotals::class.java.getDeclaredMethod("flushScheduled").apply { isAccessible = true }.invoke(totals)
+        assertArrayEquals(stopped, Files.readAllBytes(file), "the pending write found nothing newer and wrote nothing")
+        assertTrue("\"clean\":true" in Files.readString(file))
     }
 
     @Test

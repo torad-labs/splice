@@ -651,6 +651,11 @@ origin.
   printed `could not be asked: failure (message withheld: it may quote file bytes)`. A list that does
   not arrive within the 10-second budget, a TLS failure and a URL that does not parse now say so;
   any other failure is still withheld (V4-268).
+- **A team's Activity shows what its members are doing.** Claude Code 2.1.282 sends its 30-second
+  "describe your most recent action" query only from background agents, so a team whose members
+  worked in their own sessions read `Nothing sampled today`. splice now samples each session's
+  latest tool call from its own turns, at most once every 30 seconds, and the client's answer to its
+  own query counts as the sample when one comes (V4-265).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

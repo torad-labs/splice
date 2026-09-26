@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { discardAdd, openAdd, saveAdd, verifyAdd } from '../src/entities/add';
 import type { AddCheck, AddModel, AddProfile, AddRestart, AddSaved, AddView } from '../src/entities/add';
-import { OpenAdd, ProfileForm, SavedAdd } from '../src/widgets/add-backend';
+import { OpenAdd, ProfileForm, readOpenAdd, SavedAdd } from '../src/widgets/add-backend';
 import { draftFor, ready, requestOf } from '../src/widgets/add-backend/model';
 import { H, S } from '../src/widgets/add-backend/strings';
 import { S as KEY_WORDS } from '../src/features/api-key/strings';
@@ -168,5 +168,40 @@ describe('an open add and a saved one', () => {
     const refused = saved({ status: 'refused', error: 'nothing will restart this daemon' }, { linked: false, error: 'The claude-grok command was not linked; run splice install claude-grok.' });
     expect(refused).toContain('nothing will restart this daemon');
     expect(refused).toContain('run splice install claude-grok');
+  });
+});
+
+// V4-306: the open add's poll dropped a failed read (`readAdd(openId).then(setView, () => undefined)`),
+// so while the daemon was down the panel kept its last view, a Sign in button and a credential state,
+// with no fault for as long as reads kept failing.
+describe('the open add\'s poll', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const DOWN = 'the daemon is shutting down';
+
+  async function poll(): Promise<{ views: AddView[]; faults: (string | null)[] }> {
+    const views: AddView[] = [];
+    const faults: (string | null)[] = [];
+    await readOpenAdd('a1', (view) => views.push(view), (fault) => faults.push(fault));
+    return { views, faults };
+  }
+
+  test('a failed read is a fault, and the view the panel holds is left as it is', async () => {
+    daemon(503, { error: DOWN }, []);
+    expect(await poll()).toEqual({ views: [], faults: [DOWN] });
+  });
+
+  test('the next good read takes its view and clears the fault', async () => {
+    const sent: Sent[] = [];
+    daemon(200, VIEW, sent);
+    expect(await poll()).toEqual({ views: [VIEW], faults: [null] });
+    expect(sent).toEqual([{ path: '/api/add/a1', method: 'GET', body: undefined }]);
+  });
+
+  test('the open add prints the read\'s failure over the view it holds', () => {
+    const out = renderToStaticMarkup(createElement(OpenAdd, {
+      view: VIEW, checks: null, busy: false, readFault: DOWN, onSignIn: () => undefined, onVerify: () => undefined, onSave: () => undefined, onDiscard: () => undefined,
+    }));
+    expect(out).toContain(DOWN);
   });
 });

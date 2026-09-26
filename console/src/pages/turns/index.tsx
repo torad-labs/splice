@@ -165,6 +165,11 @@ export interface TokenRow {
   cached: number;
   write: number;
   out: number;
+  /** The head's turns, and how many reported their input and their output counts. A turn that failed
+   *  before the daemon wrote its telemetry carries none, so a sum over fewer turns is a floor (V4-306). */
+  turns: number;
+  inReported: number;
+  outReported: number;
 }
 
 /** The four token classes per head: what the operator pays for, since a cache read and a cache
@@ -172,14 +177,28 @@ export interface TokenRow {
 export function tokenRowsOf(rows: readonly TurnRow[]): TokenRow[] {
   const heads = new Map<string, TokenRow>();
   for (const row of rows) {
-    const at = heads.get(row.head) ?? { head: row.head, in: 0, cached: 0, write: 0, out: 0 };
-    at.in += row.in_tokens ?? 0;
+    const at = heads.get(row.head) ?? { head: row.head, in: 0, cached: 0, write: 0, out: 0, turns: 0, inReported: 0, outReported: 0 };
+    at.turns += 1;
+    if (row.in_tokens !== undefined) {
+      at.in += row.in_tokens;
+      at.inReported += 1;
+    }
     at.cached += row.cached_tokens ?? 0;
     at.write += row.cache_write_tokens ?? 0;
-    at.out += row.out_tokens ?? 0;
+    if (row.out_tokens !== undefined) {
+      at.out += row.out_tokens;
+      at.outReported += 1;
+    }
     heads.set(row.head, at);
   }
   return [...heads.values()];
+}
+
+/** A head's token sum as the table prints it: the absence when none of its turns reported, never a
+ *  0 that claims no traffic, and the status line's lower-bound mark `≥` when only some did. */
+export function sumText(sum: number, reported: number, turns: number): string {
+  if (reported === 0) return S.absent;
+  return reported < turns ? `≥${fmtTokens(sum)}` : fmtTokens(sum);
 }
 
 /** The input's three parts: `in_tokens` holds the cache read and the cache write (PerfKeys), and
@@ -197,7 +216,7 @@ function tokenColumns(scale: number, nameOf: (key: string) => string): Column<To
       key: 'input',
       label: S.input,
       width: '40%',
-      cell: (row) => (
+      cell: (row) => (row.inReported === 0 ? S.absent : (
         <span className="myx-tn-split">
           <StackedBar
             label={S.input}
@@ -209,9 +228,9 @@ function tokenColumns(scale: number, nameOf: (key: string) => string): Column<To
               { key: 'miss', label: S.uncached, value: Math.max(0, row.in - row.cached - row.write), mark: INPUT_KEY[2].mark },
             ]}
           />
-          <span className="myx-tn-figure">{fmtTokens(row.in)}</span>
+          <span className="myx-tn-figure">{sumText(row.in, row.inReported, row.turns)}</span>
         </span>
-      ),
+      )),
     },
     {
       key: 'hit',
@@ -221,7 +240,7 @@ function tokenColumns(scale: number, nameOf: (key: string) => string): Column<To
         <Meter tone="neutral" value={row.cached / row.in} label={`${S.cacheHit} ${fmtShare(row.cached / row.in)}`} figure={fmtShare(row.cached / row.in)} />
       )),
     },
-    { key: 'out', label: S.output, width: '14%', align: 'end', mono: true, cell: (row) => fmtTokens(row.out) },
+    { key: 'out', label: S.output, width: '14%', align: 'end', mono: true, cell: (row) => sumText(row.out, row.outReported, row.turns) },
   ];
 }
 

@@ -135,10 +135,12 @@ function SignIn({ view, busy, onSignIn }: { view: AddView; busy: boolean; onSign
 }
 
 /** The open add: who it will be, how it signs in, its checks, and save or discard. */
-export function OpenAdd({ view, checks, busy, onSignIn, onVerify, onSave, onDiscard }: {
+export function OpenAdd({ view, checks, busy, readFault = null, onSignIn, onVerify, onSave, onDiscard }: {
   view: AddView;
   checks: readonly AddCheck[] | null;
   busy: boolean;
+  /** The last poll of this add failed, in the daemon's words: the view below is the last one read. */
+  readFault?: string | null;
   onSignIn: () => void;
   onVerify: (liveTurn: boolean) => void;
   onSave: () => void;
@@ -147,6 +149,7 @@ export function OpenAdd({ view, checks, busy, onSignIn, onVerify, onSave, onDisc
   const present = view.credential.present;
   return (
     <div className="myx-add">
+      {readFault === null ? null : <Fault message={readFault} />}
       <KeyValue rows={[
         [S.head, view.key],
         [S.command, view.command],
@@ -198,12 +201,25 @@ export function SavedAdd({ view }: { view: AddView }) {
   );
 }
 
+/** One read of the open add, as the poll keeps it: the view it read, which clears the read's fault,
+ *  or the read's failure in the daemon's words, over the view the panel holds (V4-306). */
+export function readOpenAdd(id: string, onView: (view: AddView) => void, onFault: (fault: string | null) => void): Promise<void> {
+  return readAdd(id).then(
+    (view) => {
+      onView(view);
+      onFault(null);
+    },
+    (err: unknown) => onFault(messageOf(err)),
+  );
+}
+
 export function AddBackend({ onDone }: { onDone: () => void }) {
   const [profiles, setProfiles] = useState<AddProfile[] | null>(null);
   const [draft, setDraft] = useState<AddDraft | null>(null);
   const [view, setView] = useState<AddView | null>(null);
   const [checks, setChecks] = useState<AddCheck[] | null>(null);
   const [fault, setFault] = useState<string | null>(null);
+  const [readFault, setReadFault] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -216,12 +232,12 @@ export function AddBackend({ onDone }: { onDone: () => void }) {
     );
   }, []);
 
-  // Read the open add again while it is unsaved: a failed read keeps the view it has, and the next
-  // read or the operator's next write says what changed.
+  // Read the open add again while it is unsaved: a failed read keeps the view it has and says so, and
+  // the next good read clears it. Its own fault, because a good read must not clear a write's.
   const openId = live(view) && view !== null ? view.id : null;
   useEffect(() => {
     if (openId === null) return;
-    return poll(() => readAdd(openId).then(setView, () => undefined), POLL_MS);
+    return poll(() => readOpenAdd(openId, setView, setReadFault), POLL_MS);
   }, [openId]);
 
   const run = (work: Promise<void>) => {
@@ -262,6 +278,7 @@ export function AddBackend({ onDone }: { onDone: () => void }) {
         view={view}
         checks={checks}
         busy={busy}
+        readFault={readFault}
         onSignIn={() => run(signInAdd(id).then(setView))}
         onVerify={(liveTurn) => run(verifyAdd(id, liveTurn).then(settle))}
         onSave={() => run(saveAdd(id).then(settle))}

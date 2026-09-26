@@ -32,6 +32,7 @@ import { barRows, totalOf } from '../src/widgets/waterfall/model';
 import { counterRows, RequestDrawer, TurnWaterfall } from '../src/widgets/waterfall';
 import { LogLine } from '../src/widgets/log-tail';
 import { LIVE_BINDINGS } from '../src/widgets/rule/wire';
+import { ABSENT } from '../src/shared/lib';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -399,7 +400,7 @@ describe('turns board', () => {
 
   test('the tokens split each head\'s input into what the cache served, wrote and missed', () => {
     const rows = [turn({ in_tokens: 1000, cached_tokens: 700, cache_write_tokens: 100, out_tokens: 50 }), turn({ in_tokens: 500, cached_tokens: 500, cache_write_tokens: 0, out_tokens: 10 })];
-    expect(tokenRowsOf(rows)).toEqual([{ head: 'claudex', in: 1500, cached: 1200, write: 100, out: 60 }]);
+    expect(tokenRowsOf(rows)).toEqual([{ head: 'claudex', in: 1500, cached: 1200, write: 100, out: 60, turns: 2, inReported: 2, outReported: 2 }]);
     const out = board({ landed: { inflight: [], landed: rows, unread: [], truncated: [] } });
     expect(out).toContain('aria-label="Input: Cached 1.2k, Cache write 100, Uncached 200"');
   });
@@ -407,6 +408,49 @@ describe('turns board', () => {
   test('nothing in flight is one line, not an empty table', () => {
     const out = board({ inflight: [], slots: [] });
     expect(out).toContain('Nothing in flight');
+  });
+});
+
+// V4-306: the Tokens table summed each head's counts with `?? 0`, so a head whose turns reported no
+// counts (turns that failed before the daemon wrote telemetry) read Input 0 and Output 0, a claim of
+// no traffic, while its Cache hit cell printed the absence for the same state; and a head where only
+// some turns reported printed a partial sum as the whole.
+describe('the token sums count only the turns that reported', () => {
+  const board = (landed: TurnRow[]) =>
+    render(h(TurnsBoard, { inflight: [], landed: { inflight: [], landed, unread: [], truncated: [] }, summary: null, capture: null }));
+
+  const tokens = (out: string): string => out.slice(out.indexOf('aria-label="Tokens"')).split('</table>')[0] ?? '';
+
+  /** The Tokens table's cells for its one head: head, input, cache hit, output. */
+  function cells(out: string): string[] {
+    const table = tokens(out);
+    const row = table.slice(table.indexOf('<tbody')).split('</tr>')[0] ?? '';
+    return row.split('<td').slice(1).map((cell) => cell.replace(/<[^>]*>/g, ' ').replace(/^[^>]*>/, '').replace(/\s+/g, ' ').trim());
+  }
+
+  const uncounted = (): TurnRow => turn({ outcome: 'upstream_error' });
+
+  test('a head none of whose turns reported prints the absence, never 0', () => {
+    const out = board([uncounted(), uncounted()]);
+    const [, input, hit, output] = cells(out);
+    // No bar either: its accessible name would read every part as 0.
+    expect(tokens(out)).not.toContain('aria-label="Input:');
+    expect(input).toBe(ABSENT);
+    expect(hit).toBe(ABSENT);
+    expect(output).toBe(ABSENT);
+  });
+
+  test('a head some of whose turns reported prints the sum as a lower bound, marked', () => {
+    const [, input, , output] = cells(board([turn({ in_tokens: 1000, cached_tokens: 700, cache_write_tokens: 100, out_tokens: 50 }), uncounted()]));
+    expect(input).toContain('≥1.0k');
+    expect(output).toBe('≥50');
+  });
+
+  test('a head every turn of which reported prints the sum unmarked', () => {
+    const [, input, , output] = cells(board([turn({ in_tokens: 1000, cached_tokens: 700, cache_write_tokens: 100, out_tokens: 50 }), turn({ in_tokens: 500, out_tokens: 10 })]));
+    expect(input).toContain('1.5k');
+    expect(input).not.toContain('≥');
+    expect(output).toBe('60');
   });
 });
 

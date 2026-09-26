@@ -7443,3 +7443,11 @@ title = "The e2e harnesses keep their own state and no turn key in the receipts 
 files = ["tools/e2e/src/commands/code-mode.ts", "tools/e2e/src/commands/heads.ts", "tools/e2e/docker/lib.sh", "tools/e2e/docker/upgrade.sh", "tools/e2e/docker/inside.sh", "tools/e2e/test/code-mode.test.ts"]
 status = "todo"
 verify = "red first: with SPLICE_STATE_DIR=<sentinel> in the environment, the env each of the three builders returns still names the sentinel (quoted from a bun test); a head_contract run leaves recipe-<head>.json under $OUT holding ANTHROPIC_AUTH_TOKEN (grep count, on a scratch $OUT); green: the builders' env names only the scratch state dir, and no file under $OUT holds the turn key; bun test for tools/e2e, bash -n and shellcheck on the docker scripts, receipt-selftest exit 0"
+
+[[items]]
+id = "V4-295"
+phase = "release"
+title = "A webhook's URL, where its secret lives, never reaches the console or the daemon log (5-day review, G shard, 2026-09-26). On a timeout Ktor 3.5.1 throws with the URL in its message ('Request timeout has expired [url=…', and the connect and socket timeouts the same, read from ktor-client-core-jvm-3.5.1.jar), so POST /api/alerts/test answers 'webhook test failed: <that message>' (AlertRoutes.kt:106-108) and a budget alert that times out logs failure.toString() (AlertDelivery.kt:78, LogSafe escapes but does not redact), against AlertStore.kt:61's 'the URL is not echoed: a webhook often carries its secret in the path'. Name the failure's class and the host at most, never the message"
+files = ["features/usage/src/main/kotlin/splice/usage/alerts/AlertRoutes.kt", "features/usage/src/main/kotlin/splice/usage/alerts/AlertDelivery.kt", "features/usage/src/test/kotlin/splice/usage/alerts/AlertDeliveryTest.kt", "features/usage/src/test/kotlin/splice/usage/alerts/AlertRoutesTest.kt"]
+status = "todo"
+verify = "red first: a webhook whose server never answers, at a URL with a secret path segment, puts the segment in the test route's body and in the logged alert failure (both quoted); green: neither carries any part of the path, and each still names what failed (a timeout, a refused connection); :features-usage:test and detekt through the slot; a mutant that logs failure.toString() goes red"

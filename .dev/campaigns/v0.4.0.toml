@@ -7177,7 +7177,7 @@ id = "V4-277"
 phase = "release"
 title = "A replace-mode chat head keeps the system messages Claude Code sends mid-conversation (rig-lead, 2026-09-26): ChatSystemPrompt.replaced() drops EVERY role=system message (ChatSystemPrompt.kt:62), so background-subagent task notifications, SessionStart hook context and peer messages never reach bonsai, bonsai-vast or bonsai-second. Replace drops only the leading system run, which is the client's system field; STRIP and APPEND already keep the rest"
 files = ["integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt", "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatSystemPromptTest.kt"]
-status = "in_flight"
+status = "done"
 verify = "red first: a ChatSystemPromptTest case where a REPLACE request [system(field), user, system(mid), assistant, user(tool_result), system(task notification)] keeps both mid-conversation system messages and drops only the leading run fails on today's replaced(); green: bun tools/gate slot V4-277 -- :integrations-dialects-openai-chat:test :integrations-dialects-openai-chat:detekt --continue"
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T07:37:27.560Z"

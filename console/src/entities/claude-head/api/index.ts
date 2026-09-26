@@ -31,8 +31,8 @@ export async function fetchClaudeHead(): Promise<void> {
  * screen must be the daemon's, not the one the click hoped for.
  *
  * A REFUSAL throws, and that is the point: the daemon answers 409 with the reason in words
- * ("claude is not currently wrapped", "the 'claude-splice' head is not configured — wrap needs its
- * catalog to materialize"), and the sentence is the whole content of the answer. There is no
+ * ("claude is not currently wrapped", "the 'claude-splice' head is not configured, and wrap needs
+ * its catalog to materialize"), and the sentence is the whole content of the answer. There is no
  * honest empty for an action, so the page must be told, and must print what it was told.
  */
 export async function wrapClaudeHead(): Promise<ClaudeHeadActionResult> {

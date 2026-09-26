@@ -192,6 +192,19 @@ private class TelemetryRig(tmp: Path, private val tag: String) {
         AsyncFileIo.drain()
         return Files.readString(perfFile).trim().lines().first { it.isNotBlank() }
     }
+
+    /** V4-329. JUnit deletes the @TempDir as soon as the test returns, and two of this rig's writes
+     *  could still be on their way into it. PerfStats.record's append waits on the process-wide file
+     *  lane; one that landed after JUnit's walk had listed the directory failed its rmdir with
+     *  DirectoryNotEmptyException. EconomicsStore's coalesced flush is due a second after the turn
+     *  and re-created the deleted directory every run. The drain waits for the append, and flushNow
+     *  persists the store's current version, so the pending flush finds nothing newer to write
+     *  (EconomicsStore.persist). */
+    fun close(drive: TurnDrive) {
+        drive.slot.release()
+        economics.flushNow()
+        assertTrue(AsyncFileIo.drain(), "the file lane drains before the rig's tmp is deleted")
+    }
 }
 
 class HeadEconomicsSeamTest {
@@ -277,7 +290,7 @@ class HeadEconomicsSeamTest {
             assertEquals(12_000L, fromPerf, "the JSONL row carries it too: one snapshot, two sinks")
             assertEquals(fromPerf, bucket.cacheWriteTokens, "the two sinks may never disagree")
         } finally {
-            drive.slot.release()
+            rig.close(drive)
         }
     }
 
@@ -301,7 +314,31 @@ class HeadEconomicsSeamTest {
             assertEquals(0, bucket.cacheWriteTokens, "an absent counter is 0, never a dropped turn")
             assertEquals(1_000, bucket.inTokens)
         } finally {
-            drive.slot.release()
+            rig.close(drive)
         }
+    }
+
+    /** V4-329: what [TelemetryRig.close] promises, read from the tmp itself. JUnit starts deleting
+     *  the @TempDir the moment a test returns, so at close the directory must already hold every
+     *  file the turn writes, each with what it will end up holding: nothing is left to land in it. */
+    @Test
+    fun `the telemetry rig's close leaves nothing still to land in its tmp - V4-329`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val rig = TelemetryRig(tmp, "quiet")
+        val drive = rig.drive()
+        drive.perf.setCount(PerfKeys.IN_TOKENS, 1_000)
+        rig.telemetry.recordPerf(drive, "ok")
+
+        rig.close(drive)
+
+        val landed = Files.list(tmp).use { it.toList() }.map { it.fileName.toString() }.sorted()
+        // The .lock is JsonlSink's cross-process append lock (JsonlSink.kt:80), created on the first
+        // append and left in place.
+        val written = listOf("economics-quiet.json", "perf-quiet.jsonl", "perf-quiet.jsonl.lock")
+        assertEquals(written, landed, "every write the turn made")
+        assertEquals(1, Files.readAllLines(rig.perfFile).count { it.isNotBlank() }, "the perf row is on disk")
+        val onDisk = EconomicsStore(tmp.resolve("economics-quiet.json"), TurnPrice(null)).read()
+        assertEquals(rig.economics.read(), onDisk, "the economics file holds the store's current buckets")
     }
 }

@@ -4,6 +4,7 @@
 // the total did not count, even after a session's total was dropped and its tag came back.
 package splice.head.perf
 
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -44,9 +45,20 @@ class SessionTotalsTest {
 
     private var now = 1_000L
     private val lines = mutableListOf<String>()
+    private val opened = mutableListOf<SessionTotals>()
 
     private fun store(file: Path, price: TurnPrice = PRICE) =
-        SessionTotals(file, price, WallClock { now }, LogSink { lines += it })
+        SessionTotals(file, price, WallClock { now }, LogSink { lines += it }).also { opened += it }
+
+    /** V4-329. Each add schedules the store's coalesced write a second out, and JUnit deletes the
+     *  @TempDir as soon as the test returns: the late write re-created the deleted directory (152
+     *  /tmp/junit-* dirs holding only t.json on 2026-09-26), and one landing mid-delete fails the
+     *  teardown with DirectoryNotEmptyException. flushNow persists the current version, so the
+     *  pending write finds nothing newer and does nothing (SessionTotals.persist). */
+    @AfterEach
+    fun close() {
+        opened.forEach { it.flushNow() }
+    }
 
     @Test
     fun `each turn is priced at the card of the model it ran on when its row is appended`(@TempDir tmp: Path) {

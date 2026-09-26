@@ -8126,3 +8126,11 @@ title = "splice trace <head> --last N --json answers without reading the whole t
 files = ["app/src/main/kotlin/splice/app/cli/"]
 status = "todo"
 verify = "red first: a test over a generated trace store larger than the CLI heap asserts --last 3 returns 3 records, failing on today's tree with the OOM; green: the read streams from the newest day file backwards and holds at most N records; live: splice trace claudex --last 3 --json exits 0"
+
+[[items]]
+id = "V4-339"
+phase = "release"
+title = "A re-anchored turn replays the partial prose the client already saw with phase commentary, not as a bare assistant message: it was mid-turn text, so by V4-335's rule it is commentary (ResponsesReanchorController.kt:74-77 assistantText; console's V4-335 receipt 2026-09-26)"
+files = ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorController.kt", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorTest.kt"]
+status = "todo"
+verify = "red first: ResponsesReanchorTest asserts the replayed partial prose carries phase commentary on a lite turn, failing on today's tree; green: passes, non-lite shape unchanged, dialect tests and detekt green"

@@ -49,6 +49,8 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.diagnostics.doctor.DaemonAnswers
+import splice.diagnostics.doctor.DaemonAnswersSource
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.sessions.registry.SessionSource
@@ -120,7 +122,17 @@ public class ControlServer(
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val sessionMount = SessionsMount(sessions, heads, config, ports, guard)
     private val events = EventsMount(ports, guard)
-    private val diagnostics = DiagnosticsMount(resolver, ports, guard, log)
+
+    // V4-230: the daemon's doctor reads these three answers in process; over loopback, from inside the
+    // request it was serving, it read its own /health as "stopped" in 3 page loads of 6.
+    private val diagnostics = DiagnosticsMount(
+        resolver,
+        ports,
+        guard,
+        log,
+        DaemonAnswersSource { DaemonAnswers(payloads.controlHealthJson(), fleet.headsJson(), accounts.authJson()) },
+    )
+
     private val models = ModelsMount(heads, ports, guard)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard)
     private val mcp = mcpHost?.let { McpMount(it, guard) }

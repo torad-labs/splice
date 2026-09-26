@@ -82,6 +82,12 @@ public class PerfStats(
      *  construction site this row did not touch, injectable so a test can force a rotation (and
      *  therefore the archive hook) without writing 64 MB of turns. */
     private val maxBytes: Long = JsonlSink.DEFAULT_MAX_BYTES,
+    /** V4-244: each session's running total, fed by [record] with the row it appends and by nothing
+     *  else, so a total is the sum of its session's rows. Null (every construction site but the
+     *  managed head's) keeps none, and the status line reads the tail. Public for its readers (the
+     *  status line's source, and the head's stop flush): a property read costs this class none of
+     *  detekt's 15 functions, which a wrapper for each would. */
+    public val totals: SessionTotals? = null,
 ) {
     private val archiveName = PerfArchiveName(file.fileName.toString())
 
@@ -131,6 +137,12 @@ public class PerfStats(
             snap.marks.forEach { (k, v) -> put(k, v) }
             snap.counters.forEach { (k, v) -> put(k, v) }
         }.toString()
+        meta.session?.let { session ->
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { totals?.add(session, meta.model, snap.counters, ts) },
+                "telemetry is best-effort; a turn must never fail on its session's running total",
+            )
+        }
         AsyncFileIo.submit {
             Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)

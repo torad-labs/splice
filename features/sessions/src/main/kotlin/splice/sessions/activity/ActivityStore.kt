@@ -12,6 +12,12 @@
 // THE PER-HEAD SWITCH is the activityStoreHeads knob: `*` stores every head, an empty value stores
 // none, otherwise a comma-separated list of head keys. A head outside the switch records neither
 // labels nor upstream rows, so its empty view means "not stored", which the knob's value states.
+//
+// LABELS ARE KEPT FOR TODAY ONLY (V4-261). A label names the file a session read, the program it ran
+// or the pattern it searched, 32 characters of each (ActivityLabel), and one console view reads them:
+// the Teams page's Activity feed, which asks for today's UTC day (TeamsReads.activity; the console's
+// fetchTeamPanels names no other day). So the label store keeps one day, today, whatever
+// activityRetentionDays says: that knob is the message edges' window, metadata with no text.
 package splice.sessions.activity
 
 import kotlinx.serialization.json.Json
@@ -28,6 +34,9 @@ import java.nio.file.Path
 
 /** The day-file prefix activity rows are written under. */
 internal const val ACTIVITY_PREFIX: String = "activity"
+
+/** The days of labels kept, today counted: the window of the one console view that reads them. */
+private const val LABEL_RETENTION_DAYS = 1
 
 /** The activityStoreHeads value that stores every head. */
 public const val ALL_HEADS: String = "*"
@@ -51,8 +60,9 @@ public class ActivityHeads(value: String) {
 }
 
 /** The console's two activity stores, opened once by the daemon under [activityDir] (the state dir's
- *  ACTIVITY_DIRECTORY) with the activityRetentionDays and activityStoreHeads knob values. The writer
- *  (the console publisher) and the readers (the sessions routes) hold this one instance. */
+ *  ACTIVITY_DIRECTORY) with the activityStoreHeads knob value and [retentionDays], the edges' window
+ *  (activityRetentionDays); the labels keep LABEL_RETENTION_DAYS. The writer (the console publisher)
+ *  and the readers (the sessions routes) hold this one instance. */
 public class ActivityStores(
     activityDir: Path,
     retentionDays: Int,
@@ -60,8 +70,10 @@ public class ActivityStores(
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     public val edges: MessageEdgeStore = MessageEdgeStore(ActivityDays(activityDir, EDGES_PREFIX, retentionDays, clock))
-    public val activity: ActivityStore =
-        ActivityStore(ActivityDays(activityDir, ACTIVITY_PREFIX, retentionDays, clock), ActivityHeads(storeHeads))
+    public val activity: ActivityStore = ActivityStore(
+        ActivityDays(activityDir, ACTIVITY_PREFIX, LABEL_RETENTION_DAYS, clock),
+        ActivityHeads(storeHeads),
+    )
 }
 
 public class ActivityStore(private val days: ActivityDays, private val heads: ActivityHeads) {

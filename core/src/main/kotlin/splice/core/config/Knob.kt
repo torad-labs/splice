@@ -448,9 +448,12 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // V4-130 (FEATURES.md 6): how many UTC days of the console's activity stores (message edges and
-    // activity labels, `activity/<store>-YYYY-MM-DD.jsonl` under the state dir) are kept. Whole day
-    // files older than the window are deleted; today counts as one of the days. Daemon-wide.
+    // V4-130 (FEATURES.md 6): how many UTC days of message edges (`activity/edges-YYYY-MM-DD.jsonl`
+    // under the state dir) are kept. Whole day files older than the window are deleted; today counts as
+    // one of the days. Daemon-wide. V4-261: activity labels (`activity/activity-YYYY-MM-DD.jsonl`) are
+    // not governed here. They are kept for today only, the window of the one console view that reads
+    // them, the Teams page's Activity feed (today's UTC day, TeamsReads.activity), because a label
+    // carries file names, commands and search patterns (ActivityStore.kt).
     ACTIVITY_RETENTION_DAYS(
         "activityRetentionDays",
         KnobKind.NUMBER,

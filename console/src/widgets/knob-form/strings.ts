@@ -65,7 +65,7 @@ export const GROUP_LABELS = {
  *  it is what splice.toml, the env and the CLI spell. The completeness test ties this table to
  *  Knob.kt in both directions. */
 export const KNOB_LABELS = {
-  activityRetentionDays: 'Activity history',
+  activityRetentionDays: 'Message history',
   activityStoreHeads: 'Activity heads',
   authCacheMs: 'Login cache',
   budgetDefaultAction: 'Budget default',

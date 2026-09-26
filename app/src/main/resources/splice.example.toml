@@ -823,7 +823,7 @@ command = "claude-splice"
 # maxRequestBytes = 8388608                                 # bytes; largest request body the gateway decodes (413 past this)
 # requestReadTimeoutMs = 30000                              # ms; how long one client request body read may take
 # materializationPermits = 16                               # count; PROCESS-SHARED concurrent decode/translate permits
-# activityRetentionDays = 90                                # days; message edges and activity labels kept, whole days
+# activityRetentionDays = 90                                # days; message edges kept, whole days (activity labels: today only)
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
 # perfArchiveRetentionDays = 90                              # days; retired perf generations kept in <state>/perf-archive; 0 = off

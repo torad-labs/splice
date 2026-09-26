@@ -57,7 +57,7 @@ export const KNOB_HELP: Record<string, string> = {
   traceRetentionDays: 'Days of trace files kept; older days are deleted.',
   traceMaxBodyChars: 'Longer bodies are cut in the trace and marked as cut.',
   wireTap: 'Recent provider requests kept in memory for splice wire; 0 keeps none.',
-  activityRetentionDays: 'Days of session activity and message history kept for the console.',
+  activityRetentionDays: 'Days of message history kept; activity labels are kept for today only.',
   activityStoreHeads: 'Heads storing activity labels: * for all, empty for none, or keys.',
   perfArchiveRetentionDays: 'Days of past turn statistics kept; 0 keeps only the current file.',
   debug: 'Write detailed debug lines to the daemon log.',

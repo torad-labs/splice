@@ -746,7 +746,7 @@ describe('account excluded on the rack', () => {
 });
 
 describe('the coverage manifest', () => {
-  test('takes over exactly the eight routes the baseline held for this row, and the six add routes', () => {
+  test('takes over exactly the eight routes the baseline held for this row, the six add routes and the two live-turn routes', () => {
     // Routes only: the page also answers CLI verbs (V4-219), which the coverage wall counts.
     expect(dispositions.filter((entry) => entry.kind === 'route').map((entry) => entry.name).sort()).toEqual([
       '/api/add',
@@ -760,6 +760,8 @@ describe('the coverage manifest', () => {
       '/api/heads/{head}/restart',
       '/api/heads/{head}/start',
       '/api/heads/{head}/stop',
+      '/api/heads/{head}/turns/live',
+      '/api/heads/{head}/turns/{id}/stop',
       '/api/status',
       '/api/usage',
       '/health',

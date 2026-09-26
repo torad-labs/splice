@@ -56,6 +56,7 @@ import splice.events.bus.ConsoleEvent
 import splice.events.bus.EventBus
 import splice.head.HeadEvents
 import splice.head.HeadLifecycle
+import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.lifecycle.upgrade.ConsoleUpgradeStatus
 import splice.lifecycle.upgrade.UpgradeStatus
@@ -147,7 +148,8 @@ internal object ConsoleWiring {
      *  The comparison reads the file this daemon booted from (none booted, none to compare: the route
      *  answers its named 503); the trace dir is the one every head's TraceStore writes under
      *  [statePaths]; the wire taps are [console]'s, the registry HeadServerFactory fills as it builds
-     *  each head, so the route and the heads cannot hold different registries. */
+     *  each head, so the route and the heads cannot hold different registries. V4-319: the live turns
+     *  the same way, so the stop reaches the turn the head is running. */
     internal fun wireVerbReads(
         srv: ControlServer,
         topology: BootedTopology,
@@ -157,6 +159,7 @@ internal object ConsoleWiring {
         srv.ports.upstreamModels = topology.path?.let { ModelsWiring.reporter(it) }
         srv.ports.traceDir = statePaths.traceDir
         srv.ports.wires = console.wires
+        srv.ports.liveTurns = console.liveTurns
     }
 
     /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory, with
@@ -241,6 +244,10 @@ internal class ConsoleEventPublisher(
      *  GET /api/heads/{head}/wire. Here for the reason [slots] is: this is the one console object every
      *  head's factory already receives. */
     internal val wires: WireTaps = WireTaps()
+
+    /** V4-319: every head's live turns, registered by HeadServerFactory as it builds the head and read
+     *  by the console's live-turn routes, here for the reason [wires] is. */
+    internal val liveTurns: LiveTurnsByHead = LiveTurnsByHead()
 
     /** Session id -> the head its latest turn ran on, in least-recently-used order. */
     private val sessionHeads = LinkedHashMap<String, String>()

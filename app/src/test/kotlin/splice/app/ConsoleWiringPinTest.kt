@@ -177,6 +177,23 @@ class ConsoleWiringPinTest {
         )
     }
 
+    /** V4-319: the live turns and their stop, wired as the wire reads are (the call above carries both).
+     *  The registry must be the ONE the heads register their turns in, or the console lists no turn and
+     *  every stop answers 404 while the heads run turns nobody can stop. */
+    @Test
+    fun `the control plane wires the live-turn routes to the registry the heads register in`() {
+        assertTrue(
+            consoleWiringSource().contains("srv.ports.liveTurns = console.liveTurns"),
+            "ConsoleWiring must assign `srv.ports.liveTurns = console.liveTurns`, or /api/heads/{head}/turns/live " +
+                "answers a named 503 and no turn can be stopped",
+        )
+        assertTrue(
+            source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt")
+                .contains("LiveTurns().also { console?.liveTurns?.put(key, it) }"),
+            "HeadServerFactory must register each head's live turns in the console's registry as it builds the head",
+        )
+    }
+
     /** The roster is a MAP so an absent key and a present-key-null stay different facts — a head the
      *  wiring never named versus a head whose operator declared no tiers. Collapsing them is what a
      *  per-head nullable list would have done, and the page exists to show the second. */

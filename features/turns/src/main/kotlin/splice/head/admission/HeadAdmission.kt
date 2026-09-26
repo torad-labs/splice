@@ -115,6 +115,9 @@ internal class HeadAdmission(
                 // an attached drive, inside TurnStreamer for a detached one. One registration
                 // covers every exit, because the slot already has to be released on each of them.
                 prepared.built.onEnd?.let(admitted.slot::onRelease)
+                // V4-319: a streaming turn is listed, and the operator can stop it, from here until
+                // the same release ends it. A collect has no open stream a stop could end with a frame.
+                if (prepared.stream) deps.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash)
                 serveReady(call, prepared, admitted)
             }
         }

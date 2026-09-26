@@ -1,6 +1,6 @@
 import { headsStore } from './model/store';
 
-export { fetchHeads, startHeadsPolling, startHead, stopHead, restartHead } from './api';
+export { fetchHeads, fetchLiveTurns, startHeadsPolling, startHead, stopHead, stopTurn, restartHead } from './api';
 export {
   headAttention,
   inflightText,
@@ -22,4 +22,5 @@ export type {
   ProviderFamily,
 } from './model/derive';
 export { LIVE_KINDS } from './model/live';
+export type { LiveTurn, LiveTurnsPayload, StopTurnResult } from './model/turns';
 export const useHeads = headsStore.use;

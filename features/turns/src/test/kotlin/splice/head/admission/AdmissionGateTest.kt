@@ -25,6 +25,7 @@ import splice.head.RequestBodyReader
 import splice.head.TestResponsesProvider
 import splice.head.headStores
 import splice.head.noQuota
+import splice.head.turn.LiveTurns
 import splice.upstream.ProviderTuning
 import splice.upstream.failure.SseSpuriousWakeupException
 import splice.upstream.retry.InflightGate
@@ -46,6 +47,7 @@ private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
     inferenceToken = "test-inference-token",
     operatorToken = "test-operator-token",
     gate = InflightGate({ 1 }),
+    liveTurns = LiveTurns(),
     log = {},
     stores = headStores(tmp),
     quotaBundle = noQuota(),

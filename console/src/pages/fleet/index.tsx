@@ -6,9 +6,9 @@
 // split bar for the fleet. Latency does have a history, the landed turns (GET /api/perf/turns), so
 // each head draws its time to first byte as a sparkline over its recent turns.
 //
-// An opened head holds its facts, the step that clears its state, the lifecycle keys, the settings
-// it overrides and the accounts it rides (GET /api/accounts, M4-02), drawn by the same account rows
-// the accounts page prints.
+// An opened head holds its facts, the step that clears its state, the lifecycle keys, its live turns
+// with the stop (V4-319), the settings it overrides and the accounts it rides (GET /api/accounts,
+// M4-02), drawn by the same account rows the accounts page prints.
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { poolOf, selectedExcluded, startAccountsPolling, useAccounts } from '@entities/account';
@@ -45,6 +45,7 @@ import { NextRule, accountColumns, accountKey, accountName, accountTone } from '
 import { AddBackend } from '@widgets/add-backend';
 import { KnobReadout } from '@widgets/knob-form';
 import { dispositions } from './coverage';
+import { LiveTurns } from './live-turns';
 import {
   EMPTIES, HEAD_FIELDS, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
   inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone, windowTone,
@@ -473,6 +474,11 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
                   same control the doctor mounts. */}
               <DaemonRestart />
             </Section>
+            {opened.head.running ? (
+              <Section title={S.liveTurns} info={{ text: H.liveTurns, label: S.aboutLiveTurns }}>
+                <LiveTurns key={opened.head.key} head={opened.head.key} />
+              </Section>
+            ) : null}
             {/* The count is the state: a head that overrides nothing is a 0, not a box saying so. */}
             <Section title={S.knobs} {...(sources.overridesError == null ? { count: sources.overrides.length } : {})}>
               {sources.overridesError == null ? null : <Fault message={sources.overridesError} />}

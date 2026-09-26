@@ -23,6 +23,7 @@ import splice.head.compact.CompactStats
 import splice.head.compact.ShadowClassifier
 import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
+import splice.head.turn.LiveTurns
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -93,6 +94,9 @@ public fun headDeps(
     inferenceToken = "test-inference-token",
     operatorToken = "test-operator-token",
     gate = gate,
+    // V4-319: a head's own registry, as a head nobody lists turns of is built; a test that stops a turn
+    // passes its own with `.copy(liveTurns = …)`, the way the rare economics site passes its stores.
+    liveTurns = LiveTurns(),
     log = log,
     stores = headStores(tmp),
     quotaBundle = quota,

@@ -25,6 +25,9 @@
 // prompt layers) moved verbatim to ProviderTurnBuild.kt, which also owns the guard that gives back
 // what a provider's turn holds (BuiltTurn.onEnd) when preparation fails before the drive. A replayed
 // compaction is never driven, so its build's hold ends here.
+//
+// V4-319: the re-send Claude Code makes of a stream the operator stopped is refused here, before it is
+// built, so the stopped work never runs again upstream (LiveTurns' header has the probe behind it).
 package splice.head.turn
 
 import io.ktor.http.HttpHeaders
@@ -53,8 +56,15 @@ import splice.upstream.transport.HeaderRedaction
 
 internal sealed class Preparation {
     /** [inbound] is the request as it arrived, kept ONLY for a head whose trace is on (V4-174):
-     *  null on every other head, so the body is not held twice for a turn nothing will read. */
-    data class Ready(val built: BuiltTurn, val stream: Boolean, val inbound: ClientInbound?) : Preparation()
+     *  null on every other head, so the body is not held twice for a turn nothing will read.
+     *  [messagesHash] is what a stop of this turn marks (V4-319, [MessagesHash]): a streaming turn's
+     *  with a session, null otherwise, since only that turn's re-send can be told apart. */
+    data class Ready(
+        val built: BuiltTurn,
+        val stream: Boolean,
+        val inbound: ClientInbound?,
+        val messagesHash: String?,
+    ) : Preparation()
     data class Rejected(val message: String) : Preparation()
 
     /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */
@@ -94,10 +104,7 @@ internal class TurnPreparation(
         val parsing = bodyParse.parse(body.text)
         val parsed = parsing.getOrNull() ?: return rejectedBody(call, body, parsing.exceptionOrNull())
         val inbound = deps.stores.trace?.let { inbound(call, body.text) }
-        val unwrappedModel = provider.catalog.unwrap(parsed.typed.model)
-        if (!provider.catalog.contains(parsed.typed.model)) {
-            return Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
-        }
+        refusalOf(parsed, sessionId)?.let { return it }
         messageEdges.observe(sessionId, parsed.typed)
         val label = activityLabel.labelFor(parsed.typed)
         if (label == null) nearMissLabelQuery(parsed.typed, sessionId)
@@ -107,6 +114,22 @@ internal class TurnPreparation(
             sampleActivity(parsed.typed, sessionId)
             build(call, parsed, Arrival(sessionId, inbound), perf)
         }
+    }
+
+    /** The requests refused before anything is recorded of them: a model this head does not proxy, and
+     *  (V4-319) the one stream=false re-send of a turn the operator stopped, which LiveTurns tells by its
+     *  session and messages. The re-send is answered here and never built or sent upstream; the 400
+     *  ends the client's turn with no further request (the probe on Claude Code 2.1.283). */
+    private fun refusalOf(parsed: AnthropicTurnBody, sessionId: String?): Preparation.Rejected? = when {
+        !provider.catalog.contains(parsed.typed.model) -> {
+            val unwrappedModel = provider.catalog.unwrap(parsed.typed.model)
+            Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
+        }
+        !parsed.typed.stream && deps.liveTurns.refusesResend(sessionId, parsed.raw) -> {
+            deps.log("[${provider.key}] re-send of a stopped turn refused (${who(sessionId)}no upstream turn)\n")
+            Preparation.Rejected("${provider.key}: $OPERATOR_STOPPED")
+        }
+        else -> null
     }
 
     /** V4-265: a working session's own turn is its activity sample, at the side query's pace; see
@@ -194,8 +217,13 @@ internal class TurnPreparation(
         val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
-        return replayed ?: Preparation.Ready(built, parsed.typed.stream, arrival.inbound)
+        return replayed ?: Preparation.Ready(built, parsed.typed.stream, arrival.inbound, marked(parsed, sessionId))
     }
+
+    /** V4-319: what a stop of this turn would mark, the hash of its messages. A streaming turn with a
+     *  session only: without a session no re-send can be told apart, and a collect is never listed. */
+    private fun marked(parsed: AnthropicTurnBody, sessionId: String?): String? =
+        if (parsed.typed.stream && sessionId != null) MessagesHash.of(parsed.raw) else null
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn
      *  has no recording, so a non-stream compaction is served attached, as every turn was before

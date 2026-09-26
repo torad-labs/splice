@@ -52,6 +52,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 **Actions.**
 
 - Start, stop or restart a head
+- Stop a live turn
 - Restart the daemon
 - Add a backend
 

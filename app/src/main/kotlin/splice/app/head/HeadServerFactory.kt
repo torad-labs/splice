@@ -25,6 +25,7 @@ import splice.head.compact.ShadowClassifier
 import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
+import splice.head.turn.LiveTurns
 import splice.head.wire.WireTap
 import splice.upstream.Provider
 import splice.upstream.retry.InflightGate
@@ -108,6 +109,7 @@ internal class HeadServerFactory(
                     maxInflight = { config.getConfig(key).maxInflight },
                     maxQueued = { config.getConfig(key).maxQueued },
                 ),
+                liveTurns = liveTurnsFor(key),
                 compactionTail = compactionTail,
                 log = log,
             ),
@@ -136,6 +138,10 @@ internal class HeadServerFactory(
         trace = stores.trace,
         compactionRecordings = compactionRecordings,
     )
+
+    /** V4-319: this head's live turns, registered in the console's registry as the head is built, the
+     *  way its wire tap is, so the console's live-turn routes read and stop this head's own turns. */
+    private fun liveTurnsFor(key: String): LiveTurns = LiveTurns().also { console?.liveTurns?.put(key, it) }
 
     /** The head's shared and per-head seams. Its own function since V4-134 added the console reporter,
      *  which took [headServerFor] past detekt's method-length ceiling. */

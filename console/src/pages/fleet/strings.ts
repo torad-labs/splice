@@ -33,6 +33,16 @@ export const S = {
   stopNow: 'Stop now',
   restartNow: 'Restart now',
   sent: 'Sent',
+  /** The opened head's streaming turns and the stop (V4-319). */
+  liveTurns: 'Live turns',
+  aboutLiveTurns: 'About live turns',
+  session: 'Session',
+  age: 'Age',
+  noSession: 'No session',
+  noLiveTurns: 'No live turns',
+  compactTurn: 'Compact',
+  stopped: 'Stopped',
+  stopTurnNow: 'Stop turn',
   /** The opened head's own values, the ones it sets over the global settings. */
   knobs: 'Own settings',
   pool: 'Account pool',
@@ -74,6 +84,7 @@ export const S = {
 export const H = {
   about: 'Every head, its health, and the account each will use next.',
   firstByte: "Time to first byte over the fleet's recent turns.",
+  liveTurns: 'Turns streaming now; a stopped turn ends with an error.',
   noHeads: 'Run splice setup, then splice add for each further provider.',
   fields: 'This splice version does not serve the topology or model list.',
   pools: 'This splice version does not serve accounts.',

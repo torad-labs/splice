@@ -22,6 +22,9 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/heads/{head}/start', disposition: 'editable' },
   { kind: 'route', name: '/api/heads/{head}/stop', disposition: 'editable' },
   { kind: 'route', name: '/api/heads/{head}/restart', disposition: 'editable' },
+  // V4-319: the opened head's live turns, and the stop of one of them.
+  { kind: 'route', name: '/api/heads/{head}/turns/live', disposition: 'read-only' },
+  { kind: 'route', name: '/api/heads/{head}/turns/{id}/stop', disposition: 'editable' },
   // The draining restart, written through from the head detail (features/daemon-restart).
   { kind: 'route', name: '/api/daemon/restart', disposition: 'editable' },
   { kind: 'route', name: '/api/usage', disposition: 'read-only' },
@@ -47,6 +50,7 @@ export const job: PageJob = {
   leaves: 'Each head\'s health, pinned model, turns in flight and account pool, with the next target marked.',
   actions: [
     { name: 'Start, stop or restart a head' },
+    { name: 'Stop a live turn' },
     { name: 'Restart the daemon' },
     { name: 'Add a backend' },
   ],

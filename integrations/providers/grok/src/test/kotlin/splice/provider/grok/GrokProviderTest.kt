@@ -41,6 +41,7 @@ import splice.head.compact.CompactStats
 import splice.head.compact.ShadowClassifier
 import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
+import splice.head.turn.LiveTurns
 import splice.head.usage.UsageStore
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
@@ -253,6 +254,7 @@ private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
     inferenceToken = "test-inference-token",
     operatorToken = "test-operator-token",
     gate = InflightGate({ 0 }),
+    liveTurns = LiveTurns(),
     log = {},
     stores = HeadDeps.HeadStores(
         usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),

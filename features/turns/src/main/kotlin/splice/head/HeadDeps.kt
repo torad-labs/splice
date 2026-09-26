@@ -24,6 +24,7 @@ import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.perf.PerfStats
+import splice.head.turn.LiveTurns
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -70,6 +71,11 @@ public data class HeadDeps(
      *  environment cannot read what the head sent upstream on other sessions' behalf. */
     val operatorToken: String,
     val gate: InflightGate,
+    /** V4-319: the head's live streaming turns, which the console lists and the operator stops, and
+     *  the marks that refuse a stopped turn's re-send. Beside [gate] because it is keyed by the gate's
+     *  slots. No default, like the bundles below: a head built without the daemon's registry would run
+     *  turns no console can see or stop, and compile. */
+    val liveTurns: LiveTurns,
     /** WHAT THE HEAD STORES (V4-105 item 1): everything it writes observations into. */
     val stores: HeadStores,
     /** WHICH ACCOUNT A TURN SPENDS: the quota trackers, and the pool that decides eligibility. */

@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
@@ -36,7 +37,7 @@ internal class CancellationSeal(
      *  error is retained on [original], while the caller still rethrows that exact cancellation. */
     suspend fun sealAndStamp(drive: TurnDrive, seal: Boolean, original: CancellationException) {
         try {
-            seal(drive, seal)
+            seal(drive, seal, original)
         } catch (cleanup: CancellationException) {
             retainCleanup(original, cleanup)
         } catch (cleanup: IOException) {
@@ -58,16 +59,9 @@ internal class CancellationSeal(
     /** [seal] gates the cancellation seal to the STREAM path only: collect passes seal=false —
      *  it never commits a 200 before its terminal respondText, so a cancelled collect has no
      *  half-open response to rescue; sealing there only wrote an error body nobody reads while
-     *  polluting localOriginErrors (review 2026-07-22 round 3). */
-    suspend fun seal(drive: TurnDrive, seal: Boolean) {
-        // NF-03: a watchdog-fired cancellation names its reason. Pre-stream reaps (total cap
-        // during connect/backoff/refresh) land HERE, not in a translator's watchdogOutcome —
-        // the generic "cancelled" hid them.
-        val cancelMsg = if (drive.watchdog.fired != null) {
-            "${provider.key}: upstream stalled (watchdog), aborted; retry"
-        } else {
-            "${provider.key}: turn cancelled; retry"
-        }
+     *  polluting localOriginErrors (review 2026-07-22 round 3). [cause] is the cancellation being
+     *  sealed, which says whether it was the operator's stop (V4-319, [endingOf]). */
+    suspend fun seal(drive: TurnDrive, seal: Boolean, cause: Throwable) {
         // Flat when (not nested if) so the still-connected try/catch stays shallow:
         // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
         when {
@@ -91,23 +85,67 @@ internal class CancellationSeal(
             // SseEmitter.emitError releases its seal claim on cancellation "so a later seal can
             // still retry" — this IS that later seal, and nothing runs after it. Same leak-safe
             // teardown idiom as the slot release in HeadAdmission/AdmissionGate.
-            else ->
-                withContext(NonCancellable) {
-                    try {
-                        drive.emitter.emitError(ErrorType.OVERLOADED, cancelMsg)
-                        log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
-                        telemetry.recordPerf(drive, OutcomeTag.CANCELLED.wire)
-                        health.local()
-                    } catch (io: IOException) {
-                        // emitError's error frame could not reach the wire — the cancel WAS a client
-                        // disconnect the ping/write path hadn't flagged. Reclassify as a benign
-                        // abandon (emitError already sealed on IOException; the set is idempotent),
-                        // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
-                        log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}); client gone\n")
-                        drive.emitter.abandon()
-                        telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
-                    }
-                }
+            else -> withContext(NonCancellable) { sealConnected(drive, endingOf(drive, cause)) }
+        }
+    }
+
+    /** What a still-connected cancelled turn tells its client, and how it is journalled and counted.
+     *  [local] bumps the head's own error count: a cancel the head or its watchdog caused, never the
+     *  operator's stop. */
+    private data class Ending(
+        val type: ErrorType,
+        val message: String,
+        val kind: String,
+        val detail: String,
+        val outcome: String,
+        val local: Boolean,
+    )
+
+    private fun endingOf(drive: TurnDrive, cause: Throwable): Ending = when {
+        // V4-319: the operator's stop says so, as a request error no retry changes, and never "retry".
+        // Read down the cause chain because coroutine stack recovery may hand the seal a wrapped copy.
+        generateSequence(cause) { it.cause }.take(CAUSE_DEPTH).any { it is OperatorStop } -> Ending(
+            type = ErrorType.INVALID_REQUEST,
+            message = "${provider.key}: $OPERATOR_STOPPED",
+            kind = "stopped",
+            detail = ": the operator stopped the turn",
+            outcome = OutcomeTags.error("stopped"),
+            local = false,
+        )
+        // NF-03: a watchdog-fired cancellation names its reason. Pre-stream reaps (total cap
+        // during connect/backoff/refresh) land HERE, not in a translator's watchdogOutcome —
+        // the generic "cancelled" hid them.
+        drive.watchdog.fired != null -> cancelled("${provider.key}: upstream stalled (watchdog), aborted; retry")
+        else -> cancelled("${provider.key}: turn cancelled; retry")
+    }
+
+    private fun cancelled(message: String): Ending = Ending(
+        type = ErrorType.OVERLOADED,
+        message = message,
+        kind = "cancelled",
+        detail = ": turn cancelled before terminal",
+        outcome = OutcomeTag.CANCELLED.wire,
+        local = true,
+    )
+
+    private suspend fun sealConnected(drive: TurnDrive, ending: Ending) {
+        try {
+            drive.emitter.emitError(ending.type, ending.message)
+            log(telemetry.errTurn(ending.kind, drive, ending.detail))
+            telemetry.recordPerf(drive, ending.outcome)
+            if (ending.local) health.local()
+        } catch (io: IOException) {
+            // emitError's error frame could not reach the wire — the cancel WAS a client
+            // disconnect the ping/write path hadn't flagged. Reclassify as a benign
+            // abandon (emitError already sealed on IOException; the set is idempotent),
+            // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
+            log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}); client gone\n")
+            drive.emitter.abandon()
+            telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
         }
     }
 }
+
+/** How far down a cancellation's causes the seal looks for an [OperatorStop]: the throw itself, and the
+ *  copies coroutine stack recovery wraps around it. */
+private const val CAUSE_DEPTH = 4

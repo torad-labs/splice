@@ -1,10 +1,12 @@
 // NEW: LAYOUT-01 — the turns capability's routes: compaction state, the compaction instructions, and the
-// opt-in body capture (features/turns). V4-239: and what `splice trace` and `splice wire` print.
+// opt-in body capture (features/turns). V4-239: and what `splice trace` and `splice wire` print. V4-319:
+// and a head's live turns, with the operator's stop.
 package splice.app.control.mount
 
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
@@ -17,6 +19,8 @@ import splice.head.compaction.CompactionInstructionsRoute
 import splice.head.trace.TraceDirPort
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
+import splice.head.turn.LiveTurnsRoutes
+import splice.head.turn.LiveTurnsSource
 import splice.head.wire.CaptureRoutes
 import splice.head.wire.WireRoutes
 import splice.head.wire.WireTapsSource
@@ -37,6 +41,7 @@ internal class TurnsMount(
     private val captureRoutes = CaptureRoutes(turnsLookup, config, TopologyWriterSource { ports.topology })
     private val traceRoute = TraceRoute(turnsLookup, TraceDirPort { ports.traceDir }, ProcessDispatchers().io())
     private val wireRoutes = WireRoutes(turnsLookup, WireTapsSource { ports.wires })
+    private val liveTurnsRoutes = LiveTurnsRoutes(turnsLookup, LiveTurnsSource { ports.liveTurns })
 
     fun register(route: Route) {
         route.get("/api/compact") {
@@ -67,6 +72,15 @@ internal class TurnsMount(
         route.get("/api/heads/{head}/wire") {
             guard.guarded(call) {
                 wireRoutes.read(call.parameters["head"].orEmpty(), call.request.queryParameters["last"]).send(call)
+            }
+        }
+        // V4-319: a head's live turns, and the operator's stop of one (LiveTurnsRoutes' header).
+        route.get("/api/heads/{head}/turns/live") {
+            guard.guarded(call) { liveTurnsRoutes.live(call.parameters["head"].orEmpty()).send(call) }
+        }
+        route.post("/api/heads/{head}/turns/{id}/stop") {
+            guard.guarded(call) {
+                liveTurnsRoutes.stop(call.parameters["head"].orEmpty(), call.parameters["id"].orEmpty()).send(call)
             }
         }
     }

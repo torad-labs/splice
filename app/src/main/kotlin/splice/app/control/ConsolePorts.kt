@@ -12,6 +12,7 @@ import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.events.bus.EventBus
+import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.lifecycle.restart.DaemonSupervised
 import splice.lifecycle.upgrade.UpgradeRuns
@@ -158,4 +159,8 @@ public class ConsolePorts {
     /** V4-239: the daemon's ONE wire-tap registry, the one HeadServerFactory registers each head's tap
      *  in, behind GET /api/heads/{head}/wire. Null answers a named 503, never "the tap is off". */
     public var wires: WireTaps? = null
+
+    /** V4-319: the daemon's ONE live-turn registry, the one HeadServerFactory registers each head's turns
+     *  in, behind GET /api/heads/{head}/turns/live and the stop. Null answers a named 503. */
+    public var liveTurns: LiveTurnsByHead? = null
 }

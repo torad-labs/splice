@@ -26,6 +26,8 @@ internal class TurnOneDrive(
         // CompletableJob completed in finally: a plain child Job never completes on its own and
         // would park the PARENT call forever after the turn returns.
         val turnJob = Job(parent)
+        // V4-319: the operator's stop cancels exactly this job, the one the watchdog cancels (LiveTurns).
+        deps.liveTurns.driving(drive.slot, turnJob)
         // Per TURN: the line remembers whether it has spoken, so the first one explains itself.
         val progress = TurnProgressLine()
         try {

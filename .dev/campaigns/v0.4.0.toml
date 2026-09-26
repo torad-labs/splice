@@ -7399,6 +7399,7 @@ claimed_at = "2026-09-26T11:07:25.112Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T11:07:25Z
 # [2026-09-26] amend by=orchestrator: files were ["console/src/pages/turns/index.tsx", "console/src/entities/perf/api/index.ts", "console/tests/turns.test.ts"]
 # [2026-09-26] RECEIPT cmd="umask 022; bun tools/gate slot V4-290-green -- :console:lint :console:typecheck :console:test --continue" exit=0 tests=1429 touched=console/src/entities/perf/api/index.ts,console/src/entities/perf/model/types.ts,console/src/pages/turns/index.tsx,console/src/pages/turns/strings.ts,console/tests/turns.test.ts tail="BUILD SUCCESSFUL in 14s; :console:lint, :console:typecheck, :console:test executed; vitest 75 files, 1429 tests passed; fix 26ab73bed; red 3/4 on HEAD (201 turns printed '24h window, 22 idle hours', no mark); 9 mutants killed and restored"
+# [2026-09-26] INSTALL (orchestrator): d2a1be20b (CI gate run 36237916258) installed 6:45 AM CT, pid 1378440, jar sha256 3205313967…01e0c9f3 = /proc fd 4, backup ~/.local/share/splice/splice.jar.bak-20260926-0638-pre-d2a1be20b. Then 2d17a5fa6 (V4-290 + V4-291; CI gate run 36239415367 success on that sha) installed 6:59 AM CT after the 8102 gauges read running=0 waiting=0 at 6:58:30 AM CT: pid 2167011, jar sha256 45a03a37dc95ae8568ab127150cc6b808ccdf6da009851e8de5211758cb1d597 = /proc/2167011/fd/5, backup ~/.local/share/splice/splice.jar.bak-20260926-0658-pre-2d17a5fa6
 
 [[items]]
 id = "V4-291"

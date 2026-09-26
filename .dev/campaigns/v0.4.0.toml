@@ -7510,3 +7510,11 @@ title = "The Sessions timeline's hours are real hours, the same way V4-300 makes
 files = ["console/src/pages/sessions/select.ts", "console/src/pages/sessions/index.tsx", "console/src/entities/session/model/derive.ts", "console/src/shared/lib/index.ts", "console/src/pages/turns/select.ts", "console/tests/sessions.test.ts", "console/tests/entities-sessions.test.ts"]
 status = "todo"
 verify = "red first in vitest, quoted: with now at 14:37 a session started at 15:10 on the previous day files under a row titled 14:00; a 40-minute bucket size titles a bucket with a start it does not have; green: every row's title is the clock start of the span it holds, the Turns page reads the same helper and its V4-300 tests stay green; console eslint, typecheck and vitest through the gate's console legs"
+
+[[items]]
+id = "V4-303"
+phase = "release"
+title = "Saving a head's knob and writing the topology draft cannot undo each other (5-day review, B shard code-reviewer, 2026-09-26). Both PUT the whole topology document (entities/topology/api/index.ts:37-42) but from different snapshots: saveForHead writes loaded plus the override (settings/index.tsx:181) and, when the form holds edits, leaves the draft alone (:182, :189), while writeTopology writes the draft (:212), which was seeded before the override existed. Edit a topology field, save a knob in that head's rack, then press Write: the Write PUTs the pre-knob draft and silently reverts the knob the page just reported saved. Both writes start from the same base: when the draft holds edits, the knob save applies the same override to the draft as well as to what it writes, so the next Write carries it; when it holds none the draft re-seeds from the re-read file as today"
+files = ["console/src/pages/settings/index.tsx", "console/tests/settings.test.ts"]
+status = "todo"
+verify = "red first in vitest, quoted: with a pending topology edit, a knob save followed by a Write sends a document without the knob's override; green: the Write's body carries both the pending edit and the override, and a knob save with no pending edit still re-seeds the draft from the re-read file; console eslint, typecheck and vitest through the gate's console legs"

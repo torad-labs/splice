@@ -79,26 +79,9 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
         // pre-logger stack trace died in /dev/null and the operator saw only "failed version
         // handshake (got <none>)".
         Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler(bootstrapPaths))
-        // The topology is read BEFORE the lock so a loser can health-check the winner's control
-        // port (DaemonLockWait): reading is what the winner does next anyway, and a materialized
-        // example is idempotent between the two.
-        val topologyPath = TopologyLoader.configPath()
-        val loaded = TopologyLoader.loadOrMaterializeWithDigest(topologyPath)
-        val topology = loaded.topology
-        // V4-109: [daemon].state_dir is HONOURED from here on. It could not be applied before this
-        // point: the boot-failure net is armed at the top with a StatePaths because it must exist
-        // before anything that can throw (JW-01), and the state dir is what the lock, config.json
-        // and the per-head stat files are rooted at — so the override is resolved the moment the
-        // topology has parsed and then used by EVERY later step. The one visible consequence of
-        // that ordering is stated rather than left to be discovered: an overriding daemon moves its
-        // state but not the crash log, which the net already captured against the default.
-        // The same resolver every CLI reader of this state uses (TopologyStatePaths), so `splice
-        // restart`, doctor and logs look where this daemon writes.
-        val statePaths = TopologyStatePaths().of(topology)
-        // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock), and
-        // (V4-278) so are splice.toml and its backups, which can hold header secrets and which an older
-        // splice left at the umask. What they say is logged once the logger below exists.
-        val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath)
+        val start = prepare()
+        val topology = start.loaded.topology
+        val statePaths = start.statePaths
         val lock = DaemonLock(statePaths.daemonLockFile)
         val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
         val lockWait = DaemonLockWait()
@@ -124,7 +107,7 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
         // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore
         // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
         DaemonLog.install(log)
-        ownerOnlyLines.forEach { log(it) }
+        start.ownerOnlyLines.forEach { log(it) }
         val shutdownSignal = CompletableDeferred<Unit>()
         InstallShim().shimStalenessWarning(EnvReader(System::getenv))?.let { log("$it\n") }
         val daemon = Daemon(
@@ -135,8 +118,8 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
             shutdownDaemon = { shutdownSignal.complete(Unit) },
             // JW-04: the booted config identity, published on /health so an edited-but-inert
             // splice.toml is visible to the shim, doctor, and the dashboard.
-            topologyDigest = loaded.digest,
-            topologyPath = topologyPath,
+            topologyDigest = start.loaded.digest,
+            topologyPath = start.topologyPath,
         )
 
         // `addShutdownHook` takes an unstarted Thread — the one place in this process where the JVM
@@ -256,10 +239,45 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         boundary.bootFailureHandler(statePaths)
 
+    /** The start up to its lock (V4-280: split out of [runDaemon] so a test drives the steps the start
+     *  itself runs; a start that dropped a secure call used to pass every test). [env] is the process's
+     *  environment, a test's own map under test. */
+    internal fun prepare(env: EnvReader = EnvReader(System::getenv)): StartState {
+        // The topology is read BEFORE the lock so a loser can health-check the winner's control
+        // port (DaemonLockWait): reading is what the winner does next anyway, and a materialized
+        // example is idempotent between the two.
+        val topologyPath = TopologyLoader.configPath(env)
+        val loaded = TopologyLoader.loadOrMaterializeWithDigest(topologyPath)
+        // V4-109: [daemon].state_dir is HONOURED from here on. It could not be applied before this
+        // point: the boot-failure net is armed at the top with a StatePaths because it must exist
+        // before anything that can throw (JW-01), and the state dir is what the lock, config.json
+        // and the per-head stat files are rooted at — so the override is resolved the moment the
+        // topology has parsed and then used by EVERY later step. The one visible consequence of
+        // that ordering is stated rather than left to be discovered: an overriding daemon moves its
+        // state but not the crash log, which the net already captured against the default.
+        // The same resolver every CLI reader of this state uses (TopologyStatePaths), so `splice
+        // restart`, doctor and logs look where this daemon writes.
+        val statePaths = TopologyStatePaths(env).of(loaded.topology)
+        // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock), and
+        // (V4-278) so are splice.toml and its backups, which can hold header secrets and which an older
+        // splice left at the umask. What they say is logged once the logger exists.
+        val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath)
+        return StartState(topologyPath, loaded, statePaths, ownerOnlyLines)
+    }
+
     internal fun secureStateDirs(statePaths: StatePaths): List<String> = boundary.secureStateDirs(statePaths)
 
     internal fun secureConfig(configPath: Path): List<String> = boundary.secureConfig(configPath)
 }
+
+/** What the start knows when it takes the lock: the topology it read and where, where its state
+ *  lives, and the owner-only step's lines, logged once the logger exists. */
+internal data class StartState(
+    val topologyPath: Path,
+    val loaded: TopologyLoader.LoadedTopology,
+    val statePaths: StatePaths,
+    val ownerOnlyLines: List<String>,
+)
 
 // The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 57s — must stay BELOW the CLI's
 // graceful stop rung (GRACEFUL_POLLS in features/lifecycle's DaemonStop.kt, 60s), so a bounded stop

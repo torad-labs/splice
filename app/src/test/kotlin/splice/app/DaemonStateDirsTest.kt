@@ -1,7 +1,8 @@
 // NEW: v0.4.0 review — the daemon's first act on its state is to hold what splice owns at 0700
 // (DaemonProcess.secureStateDirs, called before the lock is written). It held state/ and left the
 // ROOT above it at the umask's 775, where the compact-stats files sit at 664; and nothing pinned the
-// step at all, so a start that skipped it would have passed every test.
+// step at all, so a start that skipped it would have passed every test. V4-280: the start's own
+// steps up to the lock are DaemonProcess.prepare, which runDaemon runs and the first test drives.
 package splice.app
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -26,6 +27,28 @@ class DaemonStateDirsTest {
         val created = Files.createDirectories(dir)
         Files.setPosixFilePermissions(created, PosixFilePermissions.fromString("rwxrwxr-x"))
         return created
+    }
+
+    /** V4-280: the start itself, not the two steps called one by one. Without secureStateDirs in it the
+     *  state dir stays open; without secureConfig, splice.toml does. */
+    @Test
+    fun `the start holds an open state dir and an open splice toml owner-only before its lock - V4-280`(
+        @TempDir tmp: Path,
+    ) {
+        val state = tmp.resolve("state")
+        Files.setPosixFilePermissions(Files.createDirectories(state), PosixFilePermissions.fromString("rwxr-xr-x"))
+        val config = tmp.resolve("config/splice.toml")
+        Files.createDirectories(config.parent)
+        Files.writeString(config, "[daemon]\nstate_dir = \"$state\"\n")
+        Files.setPosixFilePermissions(config, PosixFilePermissions.fromString("rw-r--r--"))
+
+        val start = process.prepare(EnvReader { if (it == "SPLICE_CONFIG") config.toString() else null })
+
+        assertEquals(config, start.topologyPath)
+        assertEquals(state.resolve("daemon.lock"), start.statePaths.daemonLockFile, "the lock it takes next")
+        assertEquals("rwx------", mode(state))
+        assertEquals("rw-------", mode(config))
+        assertTrue(start.ownerOnlyLines.any { "rw-r--r--" in it }, "the log names splice.toml's old mode")
     }
 
     @Test

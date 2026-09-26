@@ -7560,6 +7560,7 @@ claimed_by = "console"
 claimed_at = "2026-09-26T12:18:22.842Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T12:18:22Z
 # [2026-09-26] amend by=orchestrator: files were ["console/src/pages/sessions/index.tsx", "console/src/entities/session/api/index.ts", "console/src/entities/session/model/store.ts", "console/src/entities/session/index.ts", "console/src/shared/lib/index.ts", "console/tests/session-edges.test.ts"]
+# [2026-09-26] SCOPE (orchestrator): console's source-derived denominator (every entities/*/api export that takes a key and writes a store) adds loadTranscript, fetchLogs (setLogHead), putCapture, fetchPerfSummary and fetchPerf to the row's seven. Unsafe, checked at the tip: fetchSessionEdges (sessions/index.tsx:535), fetchConfig (settings:176, fleet:537, mcp:269), fetchProject (projects/detail.tsx:75 error and lastUpdated ungated), fetchProjectFiles (file-view:34-35), loadTranscript (conversation:39-40), fetchLogs (logs:278). One keyed cell in shared/lib (createKeyed + readFor) with no top-level data or error, so an ungated read stops compiling; capture moves onto it. fetchPerf, startPerfPolling, usePerf and perfStore have no consumer outside the entity (grep, 2026-09-26): removed in this row (constitution III.1), not left
 
 [[items]]
 id = "V4-305"

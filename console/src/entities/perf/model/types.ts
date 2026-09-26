@@ -289,7 +289,11 @@ export interface TurnsState {
    *  head that failed is named rather than silently dropped from a list that would then look
    *  complete. */
   unread: UnreadHead[];
-  /** Heads the route clamped: their earliest rows in the asked window are missing from `landed`.
-   *  A tail read asks for the newest rows only, so there it is the ask, not a gap. */
+  /** Heads the route clamped: their earliest rows in the asked window are missing from `landed`. A
+   *  tail read's window is the daemon's default, the last 24 hours, so there too it is a gap. */
   truncated: TruncatedHead[];
+  /** The instant from which `landed` holds every turn the read asked for, set only when a cap cut
+   *  earlier ones: a clamped head's oldest row, or the oldest row a tail read's fleet cut kept. Before
+   *  it the list is short, so an hour there with no rows is unread, not idle (V4-290). */
+  completeFrom?: number;
 }

@@ -88,6 +88,8 @@ export const H = {
 
 export const U = {
   window: 'window',
+  /** Before the clock where a cut timeline starts holding every turn. */
+  completeFrom: 'complete from',
   idle: 'idle hours',
   retries: 'retries',
   queued: 'queued',

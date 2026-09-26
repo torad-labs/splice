@@ -73,6 +73,11 @@ async function readHeadTurns(head: string, n: number, since: number | undefined)
  * A read without `since` is a tail, the fleet's newest `n` (the Turns page); a read with `since` is
  * a window (the Teams day), and keeps every row each head served, the route's cap being per head
  * (V4-288: every read was cut to `n` across all heads, so a busy day began partway through).
+ *
+ * Either cap can leave the list short of what was asked. The daemon answers a tail read from its
+ * own default window, the last 24 hours (PerfRoutes.askedWindow), which the Turns timeline draws in
+ * full, so `completeFrom` says where the list starts holding every turn: the later of each clamped
+ * head's oldest row and the oldest row the fleet cut kept (V4-290).
  */
 export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: number): Promise<void> {
   perfTurnsStore.startLoading();
@@ -86,7 +91,17 @@ export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: nu
     const merged = mergeTurns(reads.flatMap((read) => (read.ok ? [read.wire] : [])));
     const unread = [...merged.unread, ...failed.map((read) => ({ head: read.head, reason: messageOf(read.err) }))];
     const landed = since === undefined ? merged.landed.slice(-n) : merged.landed;
-    perfTurnsStore.setData({ inflight: inflightFrom(heads.heads), landed, unread, truncated: merged.truncated });
+    const cuts = [
+      ...merged.truncated.flatMap(({ head }) => merged.landed.find((row) => row.head === head)?.ts ?? []),
+      ...(landed.length < merged.landed.length ? [landed[0].ts] : []),
+    ];
+    perfTurnsStore.setData({
+      inflight: inflightFrom(heads.heads),
+      landed,
+      unread,
+      truncated: merged.truncated,
+      ...(cuts.length === 0 ? {} : { completeFrom: Math.max(...cuts) }),
+    });
   } catch (err) {
     const pending = routePendingOf(err, PENDING_TURNS);
     if (pending !== null) {

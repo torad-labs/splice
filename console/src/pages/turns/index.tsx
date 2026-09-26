@@ -53,7 +53,7 @@ import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter,
 import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import { fmtMs, fmtShare, fmtTokens, timeAgo } from '@shared/lib';
-import { badgesOf, Gates, inflightColumns, landedColumns, landedKeysOf, lengthOf, slotsFrom, summaryColumns } from './columns';
+import { atText, badgesOf, Gates, inflightColumns, landedColumns, landedKeysOf, lengthOf, slotsFrom, summaryColumns } from './columns';
 import type { HeadSlots } from './columns';
 import { clockOf, groupByOf, rowKeyer, selectionOf } from './select';
 import { H, S, U } from './strings';
@@ -364,9 +364,16 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, cap
       ]
       : null;
 
+  // Where the loaded turns stop being every turn (V4-290): a busy day holds more than the read's cap,
+  // so the timeline is drawn from there, and an hour before it with no rows is unread, not idle.
+  const completeFrom = landed !== null && !pending ? landed.completeFrom : undefined;
+  const cutAt = selection.kind === 'timeline' && completeFrom !== undefined && completeFrom > selection.window.from
+    ? completeFrom
+    : null;
   const idleHours = selection.kind === 'timeline'
-    ? selection.timeline.buckets.filter((bucket) => bucket.rows.length === 0).length
+    ? selection.timeline.buckets.filter((bucket) => bucket.rows.length === 0 && (cutAt === null || bucket.start >= cutAt)).length
     : 0;
+  const cutText = cutAt === null ? '' : `, ${U.completeFrom} ${atText(cutAt) ?? S.absent}`;
   const ran = summary?.heads.filter((head) => !head.empty) ?? [];
   const counted = slots.reduce((held, head) => held + head.inflight, 0);
   const unlisted = Math.max(0, counted - inflight.length);
@@ -463,7 +470,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, cap
         <Section
           title={S.landed}
           {...(pending ? {} : { count: rows.length })}
-          {...(selection.kind === 'timeline' ? { meta: `${selection.window.hours}h ${U.window}, ${idleHours} ${U.idle}` } : {})}
+          {...(selection.kind === 'timeline' ? { meta: `${selection.window.hours}h ${U.window}${cutText}, ${idleHours} ${U.idle}` } : {})}
           actions={listed.length === 0 ? undefined : <Legend items={[
             { mark: STAGE_MARKS.ingest, label: STAGE_NAMES.ingest },
             { mark: STAGE_MARKS.upstream, label: S.waits },

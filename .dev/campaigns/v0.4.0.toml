@@ -6689,6 +6689,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T21:57:13.797Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T21:57:13Z
 # [2026-09-26] amend by=orchestrator: files were ["app/src/main/dist/bin/splice-launch", "features/launch/src/main/kotlin/splice/launch/", "features/configuration/src/main/kotlin/splice/configuration/add/"]
+# [2026-09-26] design accepted (claude-builder 2026-09-26, bundle evidence on 2.1.283): the client prints unrecognized_model for any id outside its catalog unless settings modelOverrides maps a Claude id to it; per-row client_model knob on ModelEntry, materialized as modelOverrides {client_model: id} into the head's settings.json (two rows naming one client_model refused), clientContextWindowFor returns the canonical's 200k for such a row with the counts scaled 200000/declared (§22), RuntimeHeadAdd writes client_model for a fresh runtime row. The new key needs its console settings disposition (coverage.ts) and SchemaKeysConsumedLawTest's consumer. tools/e2e/docker/run.sh and capabilities.tsv join this fence when V4-233 releases them. FOLLOW-UP (not this row): every foreign head (claudex, kimi, grok) prints the same line in -p; presenting them needs a capability-matched canonical per head.
 
 [[items]]
 id = "V4-233"

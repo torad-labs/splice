@@ -96,7 +96,7 @@ public class AddRoutes(
             is AddSignInOutcome.Started -> view(call, adds, s)
             is AddSignInOutcome.ByKey -> refuse(
                 call,
-                "'$key' reads its key from ${outcome.env}: set it on the Keys page, then verify.",
+                "'$key' reads its key from ${outcome.env}: set it on the Accounts page, then verify.",
                 HttpStatusCode.Conflict,
             )
             AddSignInOutcome.NoSignIn -> refuse(

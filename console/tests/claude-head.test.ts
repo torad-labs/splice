@@ -13,6 +13,9 @@
 // refusal reaches the caller as the daemon's own sentence. The field NAMES are pinned against the
 // daemon itself, in WebuiContractTest ("claude-head payload matches ClaudeHeadPayload") — the only
 // place the denominator comes from outside.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchClaudeHead, unwrapClaudeHead, wrapClaudeHead } from '../src/entities/claude-head';
 import type { ClaudeHeadPayload } from '../src/entities/claude-head';
@@ -125,7 +128,11 @@ describe('the claude-head slice reads the daemon, not an expectation', () => {
 
   test('an unconfigured head refuses with the head named', async () => {
     storeKey('k');
-    const reason = "the 'claude-splice' head is not configured — wrap needs its catalog to materialize";
+    // The daemon's own sentence, read from the route that writes it: a copy kept here kept the em
+    // dash V4-238 took out of the daemon's (#312).
+    const reason = "the 'claude-splice' head is not configured, and wrap needs its catalog to materialize";
+    const routes = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../features/launch/src/main/kotlin/splice/launch/wrap/ClaudeHeadRoutes.kt'), 'utf8');
+    expect(routes).toContain(reason.replace("'claude-splice'", "'$CLAUDE_HEAD_KEY'"));
     vi.stubGlobal('fetch', serves({ error: reason }, { ok: false, status: 503 }));
 
     await expect(wrapClaudeHead()).rejects.toThrow(reason);

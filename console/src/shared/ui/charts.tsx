@@ -51,13 +51,31 @@ function useTipBody(side: TipSide) {
       const tip = body.current;
       if (at === null || tip === null || tip.matches(':popover-open')) return;
       tip.showPopover();
-      placeTip(at.getBoundingClientRect(), tip, side);
-      // A fixed body would stay behind while the page moved under it: any scroll closes it.
+      followTip(at, tip, side);
+      // A scroll carries the mark out from under a clip the body is not cut by: any scroll closes it.
       window.addEventListener('scroll', hide, true);
     };
     return { show, hide };
   }, [side]);
   return { anchor, body, ...handlers };
+}
+
+/** Places [tip] against [at], and again on every frame the mark's box or the window moved while it
+ *  stays open. Placed once, a fixed body stayed where the mark had been when the page moved without
+ *  scrolling (a poll re-flowing a table, a fault landing above), over whatever moved under it. */
+function followTip(at: HTMLElement, tip: HTMLElement, side: TipSide) {
+  let placed = '';
+  const frame = () => {
+    if (!tip.isConnected || !tip.matches(':popover-open')) return;
+    const box = at.getBoundingClientRect();
+    const where = `${box.left} ${box.top} ${box.width} ${box.height} ${document.documentElement.clientWidth} ${window.innerHeight}`;
+    if (where !== placed) {
+      placed = where;
+      placeTip(box, tip, side);
+    }
+    requestAnimationFrame(frame);
+  };
+  frame();
 }
 
 /** Centred on the trigger, on [side] unless the window has no room there, never past an edge. */

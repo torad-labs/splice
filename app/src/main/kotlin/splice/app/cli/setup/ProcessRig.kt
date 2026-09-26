@@ -16,6 +16,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
+import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.TimeUnit
 
 /** What a JVM reports for a command it could not start: the shell's own "command not found" code,
@@ -78,18 +80,25 @@ internal class NvidiaSmi(private val processes: ChildProcesses = ChildProcesses(
     }
 }
 
-/** Runs one child with its stdin closed (nothing here answers a prompt) and both streams captured. */
-internal class ChildProcesses {
+/** Runs one child with its stdin closed (nothing here answers a prompt) and both streams captured.
+ *  Each stream drains on [drains]: a read there blocks until every process holding the pipe is gone. */
+internal class ChildProcesses(private val drains: Executor = ForkJoinPool.commonPool()) {
 
-    /** Bounded: at [timeoutMs] the child is killed and the run answers [KILLED_AT_DEADLINE]. Both
-     *  streams drain on their own threads, so a chatty child cannot fill a pipe and stall. */
+    /** Bounded: at [timeoutMs] the child and every process it started are killed and the run answers
+     *  [KILLED_AT_DEADLINE]. Both streams drain on their own threads, so a chatty child cannot fill a
+     *  pipe and stall. */
     fun run(command: List<String>, timeoutMs: Long): RigRun = started(command) { process ->
-        val out = CompletableFuture.supplyAsync { process.inputStream.bufferedReader().readText() }
-        val err = CompletableFuture.supplyAsync { process.errorStream.bufferedReader().readText() }
+        val out = CompletableFuture.supplyAsync({ process.inputStream.bufferedReader().readText() }, drains)
+        val err = CompletableFuture.supplyAsync({ process.errorStream.bufferedReader().readText() }, drains)
         if (process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
             RigRun(process.exitValue(), out.get(), err.get())
         } else {
+            // The whole tree, not the child alone (V4-291): `sh -c 'curl ... | sh'` killed at the shell
+            // left curl and the installer running and holding both pipes. Collected before the kill,
+            // since an orphan is no longer the child's descendant.
+            val tree = process.descendants().toList()
             process.destroyForcibly()
+            tree.forEach(ProcessHandle::destroyForcibly)
             val seconds = TimeUnit.MILLISECONDS.toSeconds(timeoutMs)
             RigRun(KILLED_AT_DEADLINE, "", "${label(command)} did not finish within $seconds s")
         }
@@ -97,7 +106,7 @@ internal class ChildProcesses {
 
     /** Unbounded, with stderr handed to [progress] line by line as the child writes it. */
     fun streamed(command: List<String>, progress: RigProgress): RigRun = started(command) { process ->
-        val out = CompletableFuture.supplyAsync { process.inputStream.bufferedReader().readText() }
+        val out = CompletableFuture.supplyAsync({ process.inputStream.bufferedReader().readText() }, drains)
         val err = StringBuilder()
         process.errorStream.bufferedReader().useLines { lines ->
             lines.forEach { line ->

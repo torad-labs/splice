@@ -6951,28 +6951,34 @@ id = "V4-266"
 phase = "release"
 title = "SPLICE ADD: a passing base url check says what the pass means (on camera in the plans take, so the re-shoot waits for it, as for V4-251 (Marlin, 2026-09-26)). AddChecks.kt:76-79 prints 'HTTP 403 from https://chatgpt.com/backend-api/codex' (grok: 'HTTP 404 from https://api.x.ai/v1') beside a green check, so a new user reads an error code marked as passing. Print 'reachable at <url>'; the status code stays in doctor."
 files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt"]
-status = "in_flight"
+status = "done"
 verify = "red first: a base url answering 403 prints 'reachable at <url>' with no status code in the add output; doctor still shows the code; CI gate on the train sha."
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T03:13:49.718Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T03:13:49Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4266 -- :features-configuration:test :features-models:test :features-configuration:detekt :features-models:detekt :app:test --tests splice.app.control.api.fleet.AddBackendRouteTest --tests splice.app.cli.setup.SetupLocalModelTest --tests splice.app.AddWrapperRefusalTest :quality-architecture:test" exit=0 tests=372 touched=features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt,features/configuration/src/test/kotlin/splice/configuration/add/AddChecksWordingTest.kt,CHANGELOG.md,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL in 41s (committed as 962b7e8e2 with V4-267 and V4-268)"
 
 [[items]]
 id = "V4-267"
 phase = "release"
 title = "SPLICE ADD: the models check says where the rows come from, in plain words (on camera in the plans take, so the re-shoot waits for it, as for V4-251 (Marlin, 2026-09-26)). AddChecks.kt:105-106 prints 'no model list on OPENAI_RESPONSES; 4 row(s) trusted': an internal dialect name plus jargon. Print '4 models from splice's catalog; this provider publishes no list to check them against'."
 files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt"]
-status = "todo"
+status = "done"
 verify = "red first: a provider without a published list prints the new sentence with its count and no dialect name; CI gate on the train sha."
 # [2026-09-26] Waits on V4-266 by the seat law (same file, AddChecks.kt). claude-builder takes it the moment V4-266 is done, in the same PR.
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T03:31:16.094Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T03:31:16Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4266 -- :features-configuration:test :features-models:test :features-configuration:detekt :features-models:detekt :app:test --tests splice.app.control.api.fleet.AddBackendRouteTest --tests splice.app.cli.setup.SetupLocalModelTest --tests splice.app.AddWrapperRefusalTest :quality-architecture:test" exit=0 tests=372 touched=features/configuration/src/main/kotlin/splice/configuration/add/AddChecks.kt,features/configuration/src/test/kotlin/splice/configuration/add/AddChecksWordingTest.kt,CHANGELOG.md,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL in 41s (committed as 962b7e8e2 with V4-266 and V4-268)"
 
 [[items]]
 id = "V4-268"
 phase = "release"
 title = "splice models names why a provider's list could not be asked (splice-lead, film stack, 2026-09-26 03:07Z): the codex row read 'could not be asked: failure (message withheld: it may quote file bytes)', and two retries listed it (captures/film/team-storefront-3/models-check.txt). JdkModelsHttp.classify renders every failure through SafeFailureText.render (ModelsHttp.kt:69-73), which withholds java.net.http.HttpTimeoutException and every other client failure outside its allowlist, so a slow endpoint and a TLS fault print the same nothing. Classify the failures the client names (a timeout after LIST_TIMEOUT_S, TLS, a URL that does not parse) in splice's own words; V4-255's class."
 files = ["features/models/src/main/kotlin/splice/models/list/ModelsHttp.kt"]
-status = "in_flight"
+status = "done"
 verify = "red first: an HttpTimeoutException renders as a timeout naming the seconds, not the withheld text; an unclassified failure still renders withheld; CI gate on the train sha."
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T03:13:49.865Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T03:13:49Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4266 -- :features-configuration:test :features-models:test :features-configuration:detekt :features-models:detekt :app:test --tests splice.app.control.api.fleet.AddBackendRouteTest --tests splice.app.cli.setup.SetupLocalModelTest --tests splice.app.AddWrapperRefusalTest :quality-architecture:test" exit=0 tests=372 touched=features/models/src/main/kotlin/splice/models/list/ModelsHttp.kt,features/models/src/test/kotlin/splice/models/list/ModelsHttpTest.kt,CHANGELOG.md,.dev/restructure/capabilities.tsv tail="BUILD SUCCESSFUL in 41s (committed as 962b7e8e2 with V4-266 and V4-267)"

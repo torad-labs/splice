@@ -113,7 +113,9 @@ public class QuotaPoller(
             .onSuccess { snapshot -> snapshot?.let(::accept) }
             .onFailure { failure ->
                 if (failureLogged.compareAndSet(false, true)) {
-                    val why = SafeFailureText.render(failure)
+                    // A refusal carries only its status, safe to say; any other failure may quote a body (V4-296).
+                    val refused = failure as? QuotaEndpointRefused
+                    val why = refused?.let { "HTTP ${it.status}" } ?: SafeFailureText.render(failure)
                     log(
                         "[${LogSafe.str(head)}][quota] usage probe failed (${LogSafe.str(why)}); " +
                             "bars keep the last snapshot\n",

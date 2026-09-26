@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.ConfigService
+import splice.core.config.StatePaths
+import splice.core.util.DaemonLog
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -68,6 +71,39 @@ class BudgetStoreTest {
 
         val recovered = store.replace(listOf(Budget(head = "grok", action = BudgetActions.WARN)))
         assertEquals(recovered, store.budgets())
+    }
+
+    // V4-296: a budgets.json that does not parse turned every budget off, block and warn alike, and nothing
+    // said so. The store is built as ConsoleWiring builds it, so the line goes where the daemon's log does.
+    @Test
+    fun `a file that does not parse is logged once per version and GET names it - V4-296`(@TempDir tmp: Path) {
+        val file = tmp.resolve("budgets.json")
+        val seen = mutableListOf<String>()
+        DaemonLog.install { seen += it }
+        try {
+            val store = BudgetStore(file)
+            store.replace(listOf(Budget(head = "claude", dailyUsd = 5.0, action = BudgetActions.BLOCK)))
+            breakOneByte(file, 5_000)
+            repeat(3) { assertEquals(emptyList<Budget>(), store.budgets(), "enforcement reads no budgets") }
+            val get = BudgetRoutes({ store }, ConfigService(StatePaths(baseOverride = tmp.resolve("state")))).read()
+            breakOneByte(file, 10_000)
+            store.budgets()
+
+            val lines = seen.filter { "could not be read" in it }
+            assertEquals(2, lines.size, "one line for each version that does not parse: $seen")
+            assertTrue(lines.all { "$file" in it && "every head runs with no budget" in it }, "$lines")
+            assertTrue("\"unreadable\":\"$file could not be read" in get.body, get.body)
+        } finally {
+            DaemonLog.install {}
+        }
+    }
+
+    /** Swaps the first `"` on disk for a byte JSON cannot read, stamped [aheadMs] later so it reads as a
+     *  new version. */
+    private fun breakOneByte(file: Path, aheadMs: Long) {
+        val stamp = Files.getLastModifiedTime(file).toMillis()
+        Files.writeString(file, Files.readString(file).replaceFirst("\"", "#"))
+        Files.setLastModifiedTime(file, FileTime.fromMillis(stamp + aheadMs))
     }
 
     @Test

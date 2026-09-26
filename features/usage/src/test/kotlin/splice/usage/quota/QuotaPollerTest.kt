@@ -10,6 +10,10 @@
 // ticker rather than being deleted.
 package splice.usage.quota
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -23,10 +27,15 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.auth.AuthDescription
+import splice.core.auth.AuthProvider
+import splice.core.auth.Credentials
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.WallClock
 import splice.upstream.Ticker
 import java.util.concurrent.atomic.AtomicInteger
+
+private const val CODEX_BODY = """{"rate_limit":{"primary_window":{"used_percent":1,"limit_window_seconds":18000}}}"""
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class QuotaPollerTest {
@@ -129,6 +138,33 @@ class QuotaPollerTest {
         assertEquals(2, calls.get())
         assertEquals(1.0, recorded.last().sevenDay!!.usedPercent, 1e-9)
         assertNull(recorded.last().sevenDay!!.resetsAt)
+    }
+
+    // V4-296: a usage endpoint answering 401 on every poll read as "nothing to record", so the bars froze on
+    // the last snapshot and no line said why, while a thrown failure logged once.
+    @Test
+    fun `a usage endpoint refusing every poll logs once with its status and keeps the bars - V4-296`() = runTest {
+        var calls = 0
+        val engine = MockEngine {
+            calls++
+            if (calls == 1) respond(CODEX_BODY, HttpStatusCode.OK) else respond("", HttpStatusCode.Unauthorized)
+        }
+        val logs = mutableListOf<String>()
+        val recorded = mutableListOf<QuotaSnapshot>()
+        val probe = CodexQuotaProbe(HttpClient(engine), "https://chatgpt.com/backend-api/codex", BearerAuth(), { 0L })
+        val poller = QuotaPoller(this, "codex", probe, QuotaSnapshotSink(recorded::add), logs::add, clock = { 0L })
+
+        repeat(4) { poller.pollOnce() }
+
+        assertEquals(1, recorded.size, "the bars keep the last snapshot: $recorded")
+        val failed = logs.filter { "usage probe failed" in it }
+        assertEquals(1, failed.size, "one line for three refused polls: $logs")
+        assertTrue("HTTP 401" in failed.single(), failed.single())
+    }
+
+    private class BearerAuth : AuthProvider {
+        override suspend fun credentials(): Credentials = Credentials.Bearer("tok")
+        override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
     }
 
     /** Fails on its first two calls, then returns a SNAPSHOT — which is what re-arms the once-log,

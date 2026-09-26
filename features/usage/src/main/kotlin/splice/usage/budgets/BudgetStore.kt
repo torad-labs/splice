@@ -8,8 +8,9 @@
 // only when the file's mtime moves (a hand edit is seen without a restart). Unlike TeamStore this
 // route is a WHOLE-SET REPLACE (the console always PUTs the complete list it wants), so there is
 // no delta to protect: a read degrades to empty on a file that will not parse (GET must always
-// answer something) and a write always lands the validated set handed to it, which is the recovery
-// path for that same broken file, not a second way to lose data.
+// answer something, and names why beside it; the daemon's log says it once per version, V4-296) and
+// a write always lands the validated set handed to it, which is the recovery path for that same
+// broken file, not a second way to lose data.
 //
 // NO BUDGET IS THE STATE EVERY HEAD STARTS IN. [Budget.dailyUsd] null is not zero: a head with a
 // zero-dollar budget would block its first turn, so "no row for this head" is what "unbudgeted"
@@ -20,6 +21,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
@@ -50,7 +55,14 @@ public object BudgetActions {
     public val VALID: Set<String> = setOf(WARN, BLOCK)
 }
 
-public class BudgetStore(private val file: Path) {
+/** The budgets as read, and why there are none when the file does not parse ([unreadable], else null). */
+public data class BudgetsRead(val budgets: List<Budget>, val unreadable: String?)
+
+public class BudgetStore(
+    private val file: Path,
+    /** Where a file that does not parse is said; the daemon's log unless the caller catches it. */
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
@@ -59,9 +71,32 @@ public class BudgetStore(private val file: Path) {
     private var cached: List<Budget> = emptyList()
     private var cachedStamp: Long? = null
 
+    /** The stamp of the version that does not parse whose line was logged, so each is said once. */
+    private var saidStamp: Long? = null
+
     /** Every budget, in the order the operator last saved them. */
     @Synchronized
-    public fun budgets(): List<Budget> = load().getOrElse { emptyList() }
+    public fun budgets(): List<Budget> = read().budgets
+
+    /** [budgets], with the reason there are none when the file does not parse. Enforcement then runs
+     *  every head with no budget, so the first read of each such version logs it (V4-296); GET
+     *  /api/budgets answers the reason beside the empty list. */
+    @Synchronized
+    public fun read(): BudgetsRead = load().fold(
+        onSuccess = { BudgetsRead(it, null) },
+        onFailure = { failure -> BudgetsRead(emptyList(), unreadable(failure)) },
+    )
+
+    private fun unreadable(failure: Throwable): String {
+        val why = "$file could not be read (${SafeFailureText.render(failure)}); every head runs with no " +
+            "budget, block and warn alike, until it parses again or PUT /api/budgets replaces it"
+        val stamp = stamp()
+        if (stamp != saidStamp) {
+            saidStamp = stamp
+            log("[budget] ${LogSafe.str(why)}\n")
+        }
+        return why
+    }
 
     /** Replaces the whole set. One row per head: a duplicate head in [budgets] is refused rather
      *  than silently keeping the last one, which would discard the operator's edit with no trace. */

@@ -102,6 +102,23 @@ class CodexQuotaProbeTest {
         assertTrue(iAuth >= 0 && iAccept > iAuth && iAcct > iAccept)
     }
 
+    // V4-296: a non-200 read as "nothing to record", so a 401 or 429 on every poll froze the bars silently.
+    @Test
+    fun `a usage endpoint that answers 401 fails the probe with its status - V4-296`() = runTest {
+        val engine = MockEngine { respond(content = "", status = HttpStatusCode.Unauthorized) }
+        val probe = CodexQuotaProbe(
+            HttpClient(engine),
+            "https://chatgpt.com/backend-api/codex",
+            FixedAuth(Credentials.Bearer("tok")),
+            WallClock { now },
+        )
+
+        val outcome = runCatching { probe.probe() }
+
+        val said = outcome.exceptionOrNull()?.message.orEmpty()
+        assertTrue("HTTP 401" in said, "a refusal is a failure naming its status, not nothing to record: $outcome")
+    }
+
     private fun probeHeaders(headers: io.ktor.http.Headers): Map<String, String> {
         val names = listOf(
             "Authorization",

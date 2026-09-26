@@ -1,7 +1,8 @@
 // NEW: V4-133, FEATURES.md §5/§6 — GET/PUT /api/budgets. "spend budgets per head and per day with
 // warn and block", one of the table-stakes items the operator kept in.
 //
-//   GET /api/budgets   {budgets: Budget[]}
+//   GET /api/budgets   {budgets: Budget[], unreadable: string|null} — unreadable names why the list is
+//                       empty when budgets.json does not parse (V4-296); every head runs unbudgeted then
 //   PUT /api/budgets   body {budgets: Budget[]} -> the set as SAVED (console/src/entities/budget/api:
 //                       "the store takes what the daemon now holds, rather than the request: a
 //                       value the daemon clamped or refused must not read as applied")
@@ -48,8 +49,9 @@ private data class BudgetWire(
 @Serializable
 private data class BudgetsWireBody(val budgets: List<BudgetWire> = emptyList())
 
+/** [unreadable] is why [budgets] is empty when budgets.json does not parse (V4-296), else null. */
 @Serializable
-private data class BudgetsPayload(val budgets: List<Budget>)
+private data class BudgetsPayload(val budgets: List<Budget>, val unreadable: String? = null)
 
 public class BudgetRoutes(private val source: BudgetSource, private val config: ConfigService) {
     private val json = Json {
@@ -57,7 +59,10 @@ public class BudgetRoutes(private val source: BudgetSource, private val config: 
         encodeDefaults = true
     }
 
-    public fun read(): JsonReply = withStore { store -> JsonReply(HttpStatusCode.OK, payloadJson(store.budgets())) }
+    public fun read(): JsonReply = withStore { store ->
+        val read = store.read()
+        JsonReply(HttpStatusCode.OK, payloadJson(read.budgets, read.unreadable))
+    }
 
     public fun write(body: String): JsonReply = withStore { store ->
         // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape expected, so the failure has nothing more to say
@@ -72,8 +77,8 @@ public class BudgetRoutes(private val source: BudgetSource, private val config: 
         )
     }
 
-    private fun payloadJson(budgets: List<Budget>): String =
-        json.encodeToString(BudgetsPayload.serializer(), BudgetsPayload(budgets))
+    private fun payloadJson(budgets: List<Budget>, unreadable: String? = null): String =
+        json.encodeToString(BudgetsPayload.serializer(), BudgetsPayload(budgets, unreadable))
 
     /** [Knob.BUDGET_DEFAULT_ACTION]'s live value — see the file header for why this reads live. */
     private fun defaultAction(): String =

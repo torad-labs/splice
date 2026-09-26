@@ -6541,6 +6541,7 @@ files = ["docs/design/PRODUCT.md", "docs/design/JOBS.md", "console/src/pages/", 
 status = "todo"
 verify = "bun tools/gate run --only console"
 # [2026-09-25] Steps 1, 2 and 4 ride train 21 in #279 (feat/v4-219-console-jobs at b32731548): each page's job in coverage.ts, rendered to docs/design/JOBS.md; Needs you, the first screen, ranks every item that needs the operator with its fix; PRODUCT.md Principle 2 rewritten; every CLI verb has a disposition. Marlin's review items are in too. Gate run 36184525303 went red on two things, fixed forward in b32731548. The masked-fix tip e2e had lost its subject once V4-220 turned the api-key fix into 'splice key set', so it now adds a masked check to /api/doctor. With no claude on the runner, the Claude Code tile printed the daemon's probe sentence as its figure; it now reads Unknown, with the sentence under it. STILL OPEN: step 3, the actions on Sessions, Turns, Teams and Projects.
+# [2026-09-26] LOOK GATE open (console inventory 2026-09-26): look-gate.md:130 layer 4, the operator sees renders of Needs you, Sessions and Fleet before the rollout; no record of it in these notes or in git. The orchestrator prepares the three renders from the installed daemon and puts them in front of the operator as one act (about ten minutes) before promotion
 
 [[items]]
 id = "V4-220"

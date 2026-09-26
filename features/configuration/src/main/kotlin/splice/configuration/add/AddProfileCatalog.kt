@@ -282,8 +282,8 @@ internal class AddProfileCatalog {
             // 2026-09-25): input $4, cache hits $0.20, output $20 per 1M tokens, 5-minute cache writes $5
             // and 1-hour writes $8, and Claude 4.6 and later carry "the full 1M token context window at
             // standard pricing", so no tier. Writes are declared at the 1-hour rate: Claude Code asks for
-            // the 1-hour cache on a subscriber's login (the pinned 2.1.282's bundle: ttl "1h", reason
-            // "subscriber"), and this profile forwards that login.
+            // the 1-hour cache on a subscriber's login (the pinned 2.1.283's bundle, as 2.1.282's: ttl
+            // "1h", reason "subscriber"), and this profile forwards that login.
             //
             // V4-270 RATES: the other three rows' cards from the same page (read 2026-09-25), per 1M tokens as
             // input / cache hits / 1-hour writes / output: Fable 5.1 $10 / $0.25 / $20 / $50, Sonnet 5

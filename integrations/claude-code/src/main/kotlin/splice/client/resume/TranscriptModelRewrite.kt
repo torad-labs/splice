@@ -19,7 +19,8 @@
 // head's stream has already answered 200, so the retag is the last moment the block is known to be
 // foreign. A row that held only thinking keeps its place (its uuid is the next row's parentUuid) with
 // the text block Claude Code itself writes when that recovery strips a message bare (kcr in 2.1.281,
-// xmr in 2.1.282, the same bytes), a shape it already loads, merges by message.id and replays.
+// xmr in 2.1.282, wwr in 2.1.283, the same bytes), a shape it already loads, merges by message.id and
+// replays.
 //
 // Rows are re-encoded only when they change, so history this head did not touch stays
 // byte-identical; an unparseable line is history too and is never dropped. A read or write failure
@@ -84,8 +85,8 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
     /** The blocks a signature rides on — the two Claude Code's own strip removes (aEt/Tcr). */
     private val thinkingTypes = setOf("thinking", "redacted_thinking")
 
-    /** Claude Code's stand-in for a message its signature recovery leaves empty: kcr() in 2.1.281
-     *  and xmr() in 2.1.282, byte for byte. */
+    /** Claude Code's stand-in for a message its signature recovery leaves empty: kcr() in 2.1.281,
+     *  xmr() in 2.1.282 and wwr() in 2.1.283, byte for byte. */
     private val thinkingRemoved =
         json.parseToJsonElement("""{"type":"text","text":"[Thinking removed]","citations":[]}""")
 

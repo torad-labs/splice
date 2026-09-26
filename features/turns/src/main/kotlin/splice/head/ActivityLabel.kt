@@ -130,7 +130,8 @@ internal class ActivityLabel {
         text?.takeIf { it.isNotBlank() }?.let { if (it.length > MAX_ARG_CHARS) it.take(MAX_ARG_CHARS) + "…" else it }
 }
 
-/** The client's own interval between side queries (`xa=30000` in Claude Code 2.1.282). */
+/** The client's own interval between side queries (`xa=30000` in Claude Code 2.1.282, `Fa=30000` in
+ *  2.1.283, each read as the AgentSummary timer's `intervalMs` default). */
 private const val SAMPLE_INTERVAL_MS = 30_000L
 
 /** How many sessions' last sample a head remembers; a session past it is sampled again at once. Its

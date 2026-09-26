@@ -101,7 +101,7 @@ origin.
   is cut, and Claude Code does not retry a turn cut after its text began. `splice upgrade` waits
   until every head is idle unless you pass `--now`.
 - **Anthropic treats routing Claude Code through a custom gateway as unsupported.** splice is
-  tested against Claude Code 2.1.282. When a session runs a newer one, doctor, `splice status`
+  tested against Claude Code 2.1.283. When a session runs a newer one, doctor, `splice status`
   and the status line say so once.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any

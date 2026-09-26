@@ -49,6 +49,20 @@ class ClaudeArgvTest {
         assertEquals(listOf("claude", "--cloud", "<4 chars withheld>"), logged("--cloud", "task"))
     }
 
+    // 2.1.283's --help added --client-data-url: a signed URL the client itself keeps out of the process
+    // list, so the launch audit never logs it either, and the word after it is placed as usual.
+    @Test
+    fun `a signed client-data URL is withheld in every spelling`() {
+        assertEquals(
+            listOf("claude", "--client-data-url", "<12 chars withheld>", "--model", "opus"),
+            logged("--client-data-url", "https://h/?s", "--model", "opus"),
+        )
+        assertEquals(
+            listOf("claude", "--client-data-url=<12 chars withheld>"),
+            logged("--client-data-url=https://h/?s"),
+        )
+    }
+
     @Test
     fun `a flag the client does not list fails closed`() {
         assertEquals(listOf("claude", "--x-unlisted", "<3 chars withheld>"), logged("--x-unlisted", "fix"))

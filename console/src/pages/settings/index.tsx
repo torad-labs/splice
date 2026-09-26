@@ -79,6 +79,22 @@ const PAGE_ID = 'settings';
 const POLL_MS = 30000;
 
 /**
+ * Save one knob in the global view, and what to print under it: the daemon's refusal of this key,
+ * or why the request failed; null when it was applied (V4-305). This was `void
+ * applyConfigPatch(...).finally(...)`, the shape V4-175 removed from the page's other writes: a
+ * failed PATCH was an unhandled rejection behind a spinner that cleared as if saved, and a 200 whose
+ * `rejected` named the key read as saved.
+ */
+export async function saveGlobalKnob(key: string, value: ConfigValue): Promise<string | null> {
+  try {
+    const result = await applyConfigPatch({ [key]: value });
+    return result.rejected[key] ?? null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+/**
  * The draft a head's knob save leaves once its write has answered (V4-303). The save PUTs the loaded
  * file plus the override, never the draft, and a draft holding edits of its own was kept as it was,
  * seeded before the override existed: the next Write PUT it and reverted the knob the page had just
@@ -108,6 +124,7 @@ export function SettingsPage() {
   const [head, setHead] = useState('global');
   const [query, setQuery] = useState('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [knobFaults, setKnobFaults] = useState<ReadonlyMap<string, string>>(new Map());
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   const [writeResult, setWriteResult] = useState<TopologyWriteResult | null>(null);
   const [busyTopology, setBusyTopology] = useState(false);
@@ -191,7 +208,14 @@ export function SettingsPage() {
   // comment and untouched line; saving the global value drops the override instead.
   const saveGlobal = (key: string, value: ConfigValue) => {
     setBusyKey(key);
-    void applyConfigPatch({ [key]: value }).finally(() => setBusyKey(null));
+    void saveGlobalKnob(key, value)
+      .then((fault) => setKnobFaults((held) => {
+        const next = new Map(held);
+        if (fault === null) next.delete(key);
+        else next.set(key, fault);
+        return next;
+      }))
+      .finally(() => setBusyKey(null));
   };
 
   const saveForHead = (key: string, value: ConfigValue) => {
@@ -301,7 +325,7 @@ export function SettingsPage() {
             busyKey={busyKey}
             onSave={perHeadView ? saveForHead : saveGlobal}
             scopeNote={scopeNote}
-            {...(perHeadView ? { wording: HEAD_WORDING } : {})}
+            {...(perHeadView ? { wording: HEAD_WORDING } : { faultOf: (knob: KnobDisposition) => knobFaults.get(knob.key) ?? null })}
             perHead={perHeadView}
           />
         )}

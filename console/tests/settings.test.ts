@@ -21,7 +21,7 @@ import { SOURCE_LABELS } from '../src/widgets/knob-form/strings';
 import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
 import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withHeadOverride } from '../src/pages/settings/model';
-import { draftAfterKnobSave } from '../src/pages/settings';
+import { draftAfterKnobSave, saveGlobalKnob } from '../src/pages/settings';
 import { saveTopology } from '../src/entities/topology';
 import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
 import { KNOB_SOURCE, TOPOLOGY_SOURCES, parseKnobNames, parseSerialNames } from '../src/shared/coverage/denominator';
@@ -245,6 +245,54 @@ describe('settings: a knob save and a Write start from one base (V4-303)', () =>
   test('with no edit pending, the draft re-seeds from the file the save wrote', () => {
     expect(draftAfterKnobSave(loaded, loaded, 'claudex', 'stream_idle_ms', 120000, true)).toBeNull();
     expect(draftAfterKnobSave(loaded, null, 'claudex', 'stream_idle_ms', 120000, true)).toBeNull();
+  });
+});
+
+describe('settings: a global knob save says when it failed or was refused (V4-305)', () => {
+  // saveGlobal was `void applyConfigPatch(...).finally(...)`, the shape V4-175 removed from the page's
+  // other writes: a daemon down or answering non-2xx left an unhandled rejection and a spinner that
+  // cleared as if saved, and a 200 whose `rejected` named the key was dropped, so a value the daemon
+  // refused read as saved.
+  afterEach(() => vi.unstubAllGlobals());
+  /** A daemon whose PATCH /api/config answers `patch`, and whose GET answers the sample config. */
+  function daemon(patch: { status: number; body: unknown } | 'down'): void {
+    vi.stubGlobal('fetch', (_input: unknown, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'PATCH' && patch === 'down') return Promise.reject(new TypeError('Failed to fetch'));
+      const answer = init?.method === 'PATCH' && patch !== 'down' ? patch : { status: 200, body: fixtureConfig };
+      return Promise.resolve(new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } }));
+    });
+  }
+  const applied = { applied: {}, restart_required: [], targets: [], persisted: 'state', rejected: {} };
+
+  test('a PATCH that fails says so in its own words', async () => {
+    daemon({ status: 503, body: { error: 'the daemon is shutting down' } });
+    expect(await saveGlobalKnob('streamIdleMs', 120000)).toBe('the daemon is shutting down');
+  });
+
+  test('a daemon that does not answer says so', async () => {
+    daemon('down');
+    expect(await saveGlobalKnob('streamIdleMs', 120000)).toMatch(/not answering/i);
+  });
+
+  test("a 200 whose rejected names the key prints the daemon's sentence", async () => {
+    daemon({ status: 200, body: { ...applied, rejected: { streamIdleMs: 'streamIdleMs must be at least 1000' } } });
+    expect(await saveGlobalKnob('streamIdleMs', 12)).toBe('streamIdleMs must be at least 1000');
+  });
+
+  test("the rack prints a knob's refusal under that knob as a fault, and under no other", () => {
+    const reason = 'usageWarnPct must be between 1 and 100';
+    const knobs = knobDispositions(fixtureConfig);
+    const html = render(h(KnobRack, {
+      dispositions: knobs, pending: [], busyKey: null, onSave: () => undefined,
+      faultOf: (knob: { key: string }) => (knob.key === 'usageWarnPct' ? reason : null),
+    }));
+    expect(rowOf(html, 'usageWarnPct')).toMatch(new RegExp(`role="alert"[^>]*aria-label="${reason}"`));
+    expect(html.split(reason)).toHaveLength(3); // the fault's label and its text, in that one row
+  });
+
+  test('a save the daemon applied prints nothing', async () => {
+    daemon({ status: 200, body: applied });
+    expect(await saveGlobalKnob('streamIdleMs', 120000)).toBeNull();
   });
 });
 

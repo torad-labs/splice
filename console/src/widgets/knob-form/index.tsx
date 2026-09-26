@@ -22,7 +22,7 @@ import { LightningIcon } from '@phosphor-icons/react/dist/csr/Lightning';
 import type { ConfigValue } from '@shared/api';
 import { PROVENANCE_LAYERS, parseConfigInput } from '@entities/config';
 import type { KnobDisposition, Provenance } from '@entities/config';
-import { Choice, Flag, Key } from '@shared/controls';
+import { Choice, Fault, Flag, Key } from '@shared/controls';
 import { Badge, LayerChip, Tip } from '@shared/ui';
 import { KNOB_HELP } from './copy';
 import { KNOB_META, unitText } from './knobs';
@@ -191,7 +191,7 @@ export function KnobReadout({ knob }: { knob: KnobDisposition }) {
   );
 }
 
-export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wording, perHead = false }: {
+export function KnobForm({ disposition, pending, busy, onSave, scopeNote, fault = null, wording, perHead = false }: {
   disposition: KnobDisposition;
   /** Saved in this console session and not read by the running daemon yet. */
   pending: boolean;
@@ -199,6 +199,8 @@ export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wordin
   onSave: (key: string, value: ConfigValue) => void;
   /** One sentence on what saving here reaches, when that is not simply "this knob". */
   scopeNote?: string | null;
+  /** Why the last save of this knob did not land, in the daemon's words (V4-305). */
+  fault?: string | null;
   /** The words for "differs from the reference" and "go back to it", when the reference is not
    *  the daemon's default (a head's view measures against the global value). */
   wording?: Wording;
@@ -279,6 +281,7 @@ export function KnobForm({ disposition, pending, busy, onSave, scopeNote, wordin
         {dirty ? <Key busy={busy ?? false} onClick={() => save(parsed)}>{S.save}</Key> : null}
       </span>
       {scopeNote === undefined || scopeNote === null ? null : <p className="myx-knob-scope">{scopeNote}</p>}
+      {fault === null ? null : <Fault message={fault} />}
     </div>
   );
 }
@@ -296,7 +299,7 @@ export function knobMatches(key: string, query: string): boolean {
  * by the page's active view and finder; the widget groups and never hides anything on its own, so
  * what the operator sees is what the page asked for.
  */
-export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wording, perHead = false }: {
+export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, faultOf, wording, perHead = false }: {
   dispositions: readonly KnobDisposition[];
   /** Keys saved and not yet in force, for the row's holder edge. */
   pending: readonly string[];
@@ -304,6 +307,8 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wo
   onSave: (key: string, value: ConfigValue) => void;
   /** Per knob: what saving it reaches, when that needs saying. */
   scopeNote?: (knob: KnobDisposition) => string | null;
+  /** Per knob: why its last save did not land, printed under it as a fault. */
+  faultOf?: (knob: KnobDisposition) => string | null;
   wording?: Wording;
   /** Saving writes one head's overrides rather than the global PATCH (see KnobForm). */
   perHead?: boolean;
@@ -342,6 +347,7 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, wo
                 busy={busyKey === disposition.key}
                 onSave={onSave}
                 scopeNote={scopeNote?.(disposition) ?? null}
+                fault={faultOf?.(disposition) ?? null}
                 {...(wording === undefined ? {} : { wording })}
                 perHead={perHead}
               />

@@ -7470,6 +7470,7 @@ verify = "red first: a budgets.json with one broken byte reads as no budgets wit
 claimed_by = "claude-builder"
 claimed_at = "2026-09-26T12:15:55.265Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T12:15:55Z
+# [2026-09-26] RECEIPT cmd="bun tools/gate slot v4-296-green -- :features-usage:test :features-usage:detekt :quality-architecture:test :app:test --tests 'splice.app.control.api.usage.ConsoleV4133RoutesTest' --continue (shared checkout; user@1000 MainPID 109200 before and after)" exit=0 tests=394 touched=features/usage/src/main/kotlin/splice/usage/budgets/BudgetStore.kt,features/usage/src/main/kotlin/splice/usage/budgets/BudgetRoutes.kt,features/usage/src/test/kotlin/splice/usage/budgets/BudgetStoreTest.kt,features/usage/src/main/kotlin/splice/usage/quota/QuotaProbes.kt,features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt,features/usage/src/test/kotlin/splice/usage/quota/QuotaPollerTest.kt,features/usage/src/test/kotlin/splice/usage/quota/CodexQuotaProbeTest.kt tail="[],\"unreadable\":null}) in v4-296-mutC exit 1. Outside the row's fence: QuotaPoller.kt (SafeFailureText withholds any class outside its allowlist, so the log-once path renders the typed refusal by its status) and BudgetRoutes.kt (the console-facing unreadable field the row asks for; the console seat can render it). gate rules exit 0, census 0 findings; user@1000 MainPID 109200 across all five runs."
 
 [[items]]
 id = "V4-297"

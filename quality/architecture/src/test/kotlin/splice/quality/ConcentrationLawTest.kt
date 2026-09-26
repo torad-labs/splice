@@ -137,9 +137,16 @@ internal object Concentration {
      *  2.5 to read the leaver). Watchdog.kt 3.00 -> 2.89 left the band, the file unchanged: the row
      *  added RequestWriteBound.kt and RequestWriteStalled to splice.upstream.transport, which imports
      *  splice.upstream.retry. The bound first sat on UpstreamTransport.kt's tail (2.53), and the band read 16;
-     *  in its own file UpstreamTransport.kt reads 2.07. */
+     *  in its own file UpstreamTransport.kt reads 2.07.
+     *
+     *  2026-09-26, 17 -> 15, V4-289, cause `neighbourhood`, measured with this law's census on an export of
+     *  4e6022d67 (17, a scratch band of 0 to list them) and of the same with the row's six main files (15).
+     *  Both leavers are unchanged: LocalRuntimeProbe.kt 3.05 -> 2.32 (it imports splice.upstream.transport's
+     *  LocalHttp) and TurnPreparation.kt 3.46 -> 2.96 (its HeaderRedaction). The row raised that package's
+     *  median: it added SendQueues.kt (the counted socket and the kernel's send-queue table) and grew
+     *  RequestWriteBound.kt into the watch that reads it. */
     const val RATCHET_RECORDED = "2026-09-26"
-    const val RATCHET_MAX_HIGH = 17
+    const val RATCHET_MAX_HIGH = 15
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

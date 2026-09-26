@@ -32,6 +32,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import jdk.net.ExtendedSocketOptions
 import kotlinx.coroutines.asCoroutineDispatcher
+import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Protocol
 import splice.core.config.Knob
@@ -51,6 +52,9 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.SocketFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.X509TrustManager
 import kotlin.random.Random
 
 public class UpstreamTransport {
@@ -58,15 +62,25 @@ public class UpstreamTransport {
         totalTimeoutMs: Long,
         log: LogSink = LogSink {},
         noDelayGuard: AtomicBoolean = nodelayLogged,
-        // V4-272: how long a request's write may take none of its bytes (RequestWriteBound). The head
-        // passes its firstByteTimeout; the default keeps the whole-turn cap, as before the row.
+        // V4-272: how long the upstream may take none of a request's bytes before the request is cut
+        // (RequestWriteBound; V4-289: none it ACKNOWLEDGES). The head passes its firstByteTimeout; the
+        // default keeps the whole-turn cap, as before the row.
         requestWriteTimeoutMs: Long = totalTimeoutMs,
+    ): HttpClient = client(totalTimeoutMs, log, noDelayGuard, requestWriteTimeoutMs, UpstreamSockets())
+
+    /** [defaultClient] over [sockets], whose TLS trust and send buffer a test sets (V4-289). */
+    internal fun client(
+        totalTimeoutMs: Long,
+        log: LogSink,
+        noDelayGuard: AtomicBoolean,
+        requestWriteTimeoutMs: Long,
+        sockets: UpstreamSockets,
     ): HttpClient {
         if (noDelayGuard.compareAndSet(false, true)) {
             log(
                 "[upstream] tcp_nodelay(client)=set keepalive(client)=${KEEPALIVE_IDLE_S}s/" +
                     "${KEEPALIVE_INTERVAL_S}s/x$KEEPALIVE_PROBES: every upstream socket is armed by " +
-                    "KeepaliveSocketFactory before it connects (V4-141)\n",
+                    "KeepaliveSocketFactory before it connects (V4-141); ${writeBoundLine(sockets.queues)}\n",
             )
         }
         // Built ONCE per client, outside the config block: ktor's OkHttp engine re-runs that block
@@ -74,7 +88,12 @@ public class UpstreamTransport {
         // inside it would give each cached client its own executor and its own per-host budget.
         val threads = upstreamThreads()
         val dispatcher = upstreamDispatcher(threads)
-        val sockets = KeepaliveSocketFactory()
+        // V4-289: this client's own pool, not the one every ktor OkHttp client shares through its prototype,
+        // so a stall evicts only this head's idle connections, and the retry dials a new one.
+        val pool = ConnectionPool()
+        val ledger = SocketLedger()
+        val factory = KeepaliveSocketFactory(ledger = ledger, sendBufferBytes = sockets.sendBufferBytes)
+        val bound = RequestWriteBound(requestWriteTimeoutMs, pool, ledger, sockets.queues)
         return HttpClient(OkHttp) {
             install(HttpTimeout) {
                 connectTimeoutMillis = CONNECT_TIMEOUT_MS
@@ -96,12 +115,23 @@ public class UpstreamTransport {
                     // (macOS/kqueue, 2026-07-18); OkHttp blocks a virtual thread per call instead,
                     // and the 1000-stream load test is the gate that says it scales.
                     protocols(listOf(Protocol.HTTP_1_1))
-                    socketFactory(sockets)
+                    socketFactory(factory)
+                    sockets.trust?.let { trust -> sslSocketFactory(sockets.tlsFactory(trust), trust) }
                     dispatcher(dispatcher)
-                    addInterceptor(RequestWriteBound(requestWriteTimeoutMs))
+                    connectionPool(pool)
+                    addInterceptor(bound.untimedWrite)
+                    addNetworkInterceptor(bound)
                 }
             }
         }
+    }
+
+    /** V4-289: what the once-per-process line says about the request-write bound on this system. */
+    private fun writeBoundLine(queues: SendQueues): String = if (queues.read() != null) {
+        "a request the upstream stops acknowledging is cut at the head's firstByteTimeout (V4-289)"
+    } else {
+        "this system has no send-queue table (/proc/net/tcp), so only a write waiting in the kernel is " +
+            "cut at firstByteTimeout, and a request that fits in the socket buffers waits for the turn cap (V4-289)"
     }
 
     /** The one thread source under the upstream client — OkHttp's calls AND ktor's body readers —
@@ -302,10 +332,15 @@ internal class KeepaliveSocketFactory(
     private val idleSeconds: Int = KEEPALIVE_IDLE_S,
     private val intervalSeconds: Int = KEEPALIVE_INTERVAL_S,
     private val probes: Int = KEEPALIVE_PROBES,
+    /** V4-289: a fixed send buffer, for a test that needs the writer to block; null leaves the
+     *  kernel's autotuning, which production always does. */
+    private val sendBufferBytes: Int? = null,
+    /** V4-289: where this client's sockets are found by their addresses, for the request-write watch. */
+    private val ledger: SocketLedger = SocketLedger(),
 ) : SocketFactory() {
 
-    /** The one overload OkHttp calls: an unconnected socket it connects itself. */
-    override fun createSocket(): Socket = arm(Socket())
+    /** The one overload OkHttp calls: an unconnected socket it connects itself, counting what it writes. */
+    override fun createSocket(): Socket = arm(CountedSocket(ledger))
 
     override fun createSocket(host: String, port: Int): Socket =
         createSocket().also { it.connect(InetSocketAddress(host, port)) }
@@ -333,11 +368,25 @@ internal class KeepaliveSocketFactory(
         setIfSupported(this, ExtendedSocketOptions.TCP_KEEPIDLE, idleSeconds)
         setIfSupported(this, ExtendedSocketOptions.TCP_KEEPINTERVAL, intervalSeconds)
         setIfSupported(this, ExtendedSocketOptions.TCP_KEEPCOUNT, probes)
+        sendBufferBytes?.let { sendBufferSize = it }
     }
 
     private fun setIfSupported(socket: Socket, option: SocketOption<Int>, value: Int) {
         if (option in socket.supportedOptions()) socket.setOption(option, value)
     }
+}
+
+/** V4-289: what a test sets on the client's sockets: the TLS trust for a loopback certificate, a fixed send
+ *  buffer and the send-queue table. Production passes none, so its sockets keep the platform trust, autotuned
+ *  buffers and the kernel's own table. */
+internal class UpstreamSockets(
+    val trust: X509TrustManager? = null,
+    val sendBufferBytes: Int? = null,
+    /** V4-289: the kernel's send queues; a test hands a missing table to pin the macOS path. */
+    val queues: SendQueues = ProcNetTcp,
+) {
+    fun tlsFactory(trust: X509TrustManager): SSLSocketFactory =
+        SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }.socketFactory
 }
 
 // The three keepalive timings, 30 + 3 x 10: a dead peer is known within 60s of its last byte, and a

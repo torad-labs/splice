@@ -123,6 +123,26 @@ class TransportFailureReasonTest {
         assertFalse(text.contains("/v1"), text)
     }
 
+    // V4-289 (4): a write can stall after the upstream took part of the request, so "took none" was false
+    // there; and the stall's own line is the turn's ending too, where no resend follows (5).
+    private val stall = RequestWriteStalled(90_000, java.net.SocketTimeoutException("timeout"))
+
+    @Test
+    fun `a stalled write is never said to have taken none of the request - V4-289 (4)`() {
+        val text = reason(stall, "https://api.x.ai/v1/responses")
+
+        assertFalse(text.contains("took none"), text)
+        assertTrue(text.startsWith("api.x.ai:443 stopped taking the request for 90s"), text)
+    }
+
+    @Test
+    fun `a stalled write's line promises no resend, because the last attempt's ending says it too - V4-289 (5)`() {
+        val text = reason(stall, "https://api.x.ai/v1/responses")
+
+        assertFalse(text.contains("resend"), text)
+        assertTrue(text.contains("the write stalled"), text)
+    }
+
     // The floor: an unknown class keeps its own text, and with none it is named — never "no detail".
     @Test
     fun `an unknown failure keeps its text, and without one names its class`() {

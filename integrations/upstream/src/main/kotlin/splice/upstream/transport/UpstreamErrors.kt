@@ -33,13 +33,15 @@ public class UpstreamAuthMissing : RuntimeException("no upstream credentials")
 public class StreamTornBeforeClient(cause: Throwable) :
     RuntimeException("stream torn before first client frame", cause)
 
-/** V4-272: the upstream took none of the request's next bytes for [stalledMs] (OkHttp's write timeout,
- *  which UpstreamTransport sets to the head's firstByteTimeout). A SocketTimeoutException so every
- *  transport classifier still sees a socket timeout; its own type so it is not mistaken for a read one.
- *  Its text must not say "connect": ktor reads that word as a connect timeout (OkHttpEngine). The retry
- *  loop retries it on a fresh connection; a turn out of attempts ends like any other IOException. */
+/** V4-272: the upstream took no more of the request for [stalledMs], the head's firstByteTimeout, while
+ *  bytes of it were still unacknowledged (V4-289: RequestWriteBound's watch reads the kernel's send queue;
+ *  where it cannot, a write waiting in the kernel). "No more", never "none": it may have taken part of it.
+ *  A SocketTimeoutException so every transport classifier still sees a socket timeout; its own type so it
+ *  is not mistaken for a read one. Its text must not say "connect": ktor reads that word as a connect
+ *  timeout (OkHttpEngine). The retry loop retries it on a new connection; a turn out of attempts ends like
+ *  any other IOException. */
 public class RequestWriteStalled(public val stalledMs: Long, cause: Throwable) :
-    java.net.SocketTimeoutException("the upstream took none of the request for ${stalledMs}ms; the write stalled") {
+    java.net.SocketTimeoutException("the upstream took no more of the request for ${stalledMs}ms; the write stalled") {
     init {
         initCause(cause)
     }

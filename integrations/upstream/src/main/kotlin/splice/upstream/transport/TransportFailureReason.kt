@@ -57,9 +57,11 @@ public object TransportFailureReason {
         val stalled = chain.firstNotNullOfOrNull { it as? RequestWriteStalled }
         return when {
             chain.any(::unresolved) -> "cannot resolve the host of $where"
+            // V4-289: "stopped taking", because it may have taken part of it; and no promise of a resend,
+            // because this line also ends the turn when the last attempt stalls.
             stalled != null ->
-                "$where took none of the request for ${stalled.stalledMs / MS_PER_S}s: the write stalled " +
-                    "(the network dropped, or the upstream stopped reading); a fresh connection resends it"
+                "$where stopped taking the request for ${stalled.stalledMs / MS_PER_S}s: the write stalled " +
+                    "(the network dropped, or the upstream stopped reading)"
             else -> chain.firstNotNullOfOrNull { reasonOf(it, chain, where) }
         }
     }

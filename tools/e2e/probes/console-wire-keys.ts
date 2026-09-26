@@ -604,8 +604,10 @@ async function boot(jar: string): Promise<Daemon> {
     'models = [{ id = "wire/keys-model", slot = "sonnet" }]',
     "",
     // The wire tap on, so GET /api/heads/{head}/wire answers the tap's payload and not its 409 (V4-239).
+    // Quoted: overrides is a string map (HeadConfig.overrides), and ktoml refuses a bare integer there,
+    // which kept this boot from ever answering /health (CI run 36253801306).
     "[heads.openrouter.overrides]",
-    "wireTap = 8",
+    'wireTap = "8"',
     "",
     // One rule, so the compaction rows the console declares carry a live element to read: the
     // instructions route lists it, and the seeded project resolves to it (M4-09).

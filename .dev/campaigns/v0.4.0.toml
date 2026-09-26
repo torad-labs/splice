@@ -7177,8 +7177,11 @@ id = "V4-276"
 phase = "release"
 title = "A labelled Claude login can be saved, or the promise of one goes (console, V4-262's audit, 2026-09-26): ClaudeLogins.store and select have no caller in main code, only materializeSelected, labels and selected, so the labelled-login save that V4-129 built and the README's disk section describes cannot be reached from the CLI or the console, while splice's usage line still offers 'login <head> [--label <name>]'."
 files = ["integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt"]
-status = "todo"
+status = "in_flight"
 verify = "the trace of 'splice login <head> --label <name>' from the verb to its store, with file:line; red first: a test that runs that verb and finds no labelled copy today; green: the verb saves the label (0600) and a launch selects it, or the verb and the README lines go together; CI gate on the pushed sha."
+claimed_by = "console"
+claimed_at = "2026-09-26T07:53:35.511Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T07:53:35Z
 
 [[items]]
 id = "V4-277"

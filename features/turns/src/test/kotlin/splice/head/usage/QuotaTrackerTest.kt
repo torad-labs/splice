@@ -9,12 +9,14 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.usage.QuotaHeaderRead
+import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaSlots
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.upstream.retry.QuotaHeaderFamily
+import java.nio.file.Files
 import java.nio.file.Path
 
 class QuotaTrackerTest {
@@ -126,5 +128,55 @@ class QuotaTrackerTest {
             t.clientHeaders()["anthropic-ratelimit-unified-status"],
             "and the allowed path is unmoved by a refusal having been built",
         )
+    }
+
+    // V4-327, the observed shape: take-resume-5's first status rows read "5h 0%  7d 52%" from the
+    // snapshot an earlier daemon run persisted, while the plan stood at 71% and 98%.
+    @Test
+    fun `a snapshot the last run persisted hours ago rides no client response`() {
+        persist(
+            QuotaSnapshot(
+                fiveHour = QuotaWindow(95.0, now / 1_000L - 3_600L, 18_000L),
+                sevenDay = QuotaWindow(52.0, now / 1_000L + 345_600L, 604_800L),
+                updatedAt = now - 8 * 3_600_000L,
+            ),
+        )
+        val t = tracker()
+        assertEquals(52.0, t.snapshot()?.sevenDay?.usedPercent, "the file still restores it")
+        assertEquals(emptyMap<String, String>(), t.clientHeaders(), "but nothing hours old is stated as now")
+        assertEquals(
+            setOf("anthropic-ratelimit-unified-status", "anthropic-ratelimit-unified-reset"),
+            t.clientHeadersRejected(1_788_030_000L).keys,
+            "nor on a refusal",
+        )
+    }
+
+    @Test
+    fun `a reading from a minute ago is stated, less a window whose reset has passed`() {
+        persist(
+            QuotaSnapshot(
+                fiveHour = QuotaWindow(95.0, now / 1_000L - 60L, 18_000L),
+                sevenDay = QuotaWindow(98.0, now / 1_000L + 345_600L, 604_800L),
+                updatedAt = now - 60_000L,
+            ),
+        )
+        val out = tracker().clientHeaders()
+        assertEquals("0.9800", out["anthropic-ratelimit-unified-7d-utilization"])
+        assertNull(out["anthropic-ratelimit-unified-5h-utilization"], "the 5h window started over: $out")
+    }
+
+    @Test
+    fun `a reading stands for fifteen minutes and not a second more`() {
+        val week = QuotaWindow(98.0, now / 1_000L + 345_600L, 604_800L)
+        persist(QuotaSnapshot(sevenDay = week, updatedAt = now - 900_000L))
+        assertEquals("0.9800", tracker().clientHeaders()["anthropic-ratelimit-unified-7d-utilization"])
+        persist(QuotaSnapshot(sevenDay = week, updatedAt = now - 901_000L))
+        assertEquals(emptyMap<String, String>(), tracker().clientHeaders())
+        persist(QuotaSnapshot(sevenDay = week))
+        assertEquals(emptyMap<String, String>(), tracker().clientHeaders(), "a reading with no time is not current")
+    }
+
+    private fun persist(snapshot: QuotaSnapshot) {
+        Files.writeString(dir.resolve("codex-quota.json"), QuotaJson().encode(snapshot))
     }
 }

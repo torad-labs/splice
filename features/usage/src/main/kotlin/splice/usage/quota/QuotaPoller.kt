@@ -118,7 +118,7 @@ public class QuotaPoller(
                     val why = refused?.let { "HTTP ${it.status}" } ?: SafeFailureText.render(failure)
                     log(
                         "[${LogSafe.str(head)}][quota] usage probe failed (${LogSafe.str(why)}); " +
-                            "bars keep the last snapshot\n",
+                            "bars keep the last snapshot until it is 15 minutes old\n",
                     )
                 }
             }

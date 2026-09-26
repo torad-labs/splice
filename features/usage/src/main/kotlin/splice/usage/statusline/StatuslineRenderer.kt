@@ -133,6 +133,7 @@ internal class StatuslineRenderer(
         }
         val modelId = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
         val spend = sessionCost?.spendFor(sessionId, modelId, blob.sessionStartMs(root, now()))
+        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(now())
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
@@ -144,7 +145,7 @@ internal class StatuslineRenderer(
                 lowerBound = spend?.lowerBound == true,
             ),
         ) +
-            bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
+            bars.limitSegments(root, selectedQuota ?: snapshot?.quota, selectedQuota != null, nowSeconds) +
             listOfNotNull(
                 contextSegment(root, unanswered),
                 cacheSegment(root, unanswered),

@@ -488,6 +488,8 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
         fiveHour = QuotaWindow(used, resetEpochSeconds, 18_000L),
         sevenDay = QuotaWindow(20.0, resetEpochSeconds + 82_800L, 604_800L),
         plan = "plus",
+        // V4-327: only a current reading rides a client response, so this one was just read.
+        updatedAt = System.currentTimeMillis(),
     )
 
     private fun provider(): CodexProvider {

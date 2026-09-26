@@ -16,6 +16,7 @@ import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.core.auth.AuthDescription
+import splice.core.util.WallClock
 
 class AccountSurfacesTest {
     @Test
@@ -97,15 +98,28 @@ class AccountSurfacesTest {
     @Test
     fun `statusline names the selected account and uses its quota for the session`() {
         var seenSession: String? = null
+        // V4-327: the selected account's windows draw only while current, so this pool was read a
+        // minute before the tick and its windows reset later.
+        val current = poolView().let { pool ->
+            pool.copy(
+                accounts = pool.accounts.map {
+                    it.copy(
+                        fiveHourResetEpochSeconds = NOW_S + 3_600L,
+                        sevenDayResetEpochSeconds = NOW_S + 86_400L,
+                        quotaObservedAtEpochSeconds = NOW_S - 60L,
+                    )
+                },
+            )
+        }
         val source = HeadAccountPoolSource { sessionId ->
             seenSession = sessionId
-            poolView()
+            current
         }
-        val renderer = StatuslineRenderer(label = "Codex", accountPool = source)
+        val renderer = StatuslineRenderer(label = "Codex", now = WallClock { NOW_S * 1_000L }, accountPool = source)
         val stdin = """{
             "session_id":"session-7",
             "model":{"display_name":"Codex"},
-            "rate_limits":{"five_hour":{"used_percentage":1,"resets_at":100}}
+            "rate_limits":{"five_hour":{"used_percentage":1,"resets_at":${NOW_S + 3_600L}}}
         }"""
 
         val line = renderer.render(stdin, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = "session-7")
@@ -128,9 +142,9 @@ class AccountSurfacesTest {
             lastSwitch = null,
         )
         assertEquals(null, fresh.selectedQuota(), "no windows means no view: /api/usage falls through")
-        val renderer = StatuslineRenderer(label = "Codex", accountPool = { fresh })
+        val renderer = StatuslineRenderer(label = "Codex", now = WallClock { NOW_S * 1_000L }, accountPool = { fresh })
         val stdin = """{"model":{"display_name":"Codex"},""" +
-            """"rate_limits":{"five_hour":{"used_percentage":1,"resets_at":100}}}"""
+            """"rate_limits":{"five_hour":{"used_percentage":1,"resets_at":${NOW_S + 3_600L}}}}"""
 
         val line = renderer.render(stdin, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = "s")
 
@@ -161,3 +175,6 @@ class AccountSurfacesTest {
         ),
     )
 }
+
+/** A fixed tick for the status-line cases (V4-327 draws a window only while current). */
+private const val NOW_S = 1_790_449_350L

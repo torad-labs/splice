@@ -30,6 +30,30 @@ public data class QuotaSnapshot(
      *  is what a file written before `updated_at` decodes to, and it would read as 1970. */
     public val observedAtEpochSeconds: Long?
         get() = updatedAt.takeIf { it > 0L }?.let(TimeUnit.MILLISECONDS::toSeconds)
+
+    /** The windows that may be shown as the plan's usage at [nowMillis] ([QuotaFreshness]), or null
+     *  when none may. What a client response and the status line carry: never the snapshot a
+     *  previous daemon run persisted, hours old (V4-327). */
+    public fun currentAt(nowMillis: Long): QuotaSnapshot? {
+        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(nowMillis)
+        val observed = observedAtEpochSeconds
+        val current = { w: QuotaWindow -> w.takeIf { QuotaFreshness.current(observed, it.resetsAt, nowSeconds) } }
+        return copy(fiveHour = fiveHour?.let(current), sevenDay = sevenDay?.let(current)).takeUnless { it.isEmpty }
+    }
+}
+
+/** V4-327: a window reading is shown as current only while it is younger than [FOR_SECONDS] and its
+ *  window has not reset. A reading of unknown age is not current, and a window past its reset has
+ *  started over with nothing read since: its figure is neither the old one nor 0. Take-resume-5's
+ *  first status rows read "5h 0%  7d 52%" from a snapshot hours old while the plan stood at 71% and
+ *  98%, beside Claude Code's own "98% of your weekly limit". All times in epoch SECONDS. */
+internal object QuotaFreshness {
+    /** Three of QuotaPoller's five-minute polls. A passthrough head reads the windows off every
+     *  round, so only an idle head or a failing probe gets this old. */
+    const val FOR_SECONDS: Long = 15 * 60L
+
+    fun current(observedAt: Long?, resetsAt: Long?, nowSeconds: Long): Boolean =
+        observedAt != null && nowSeconds - observedAt <= FOR_SECONDS && (resetsAt == null || resetsAt > nowSeconds)
 }
 
 /** Sorts a provider's windows into the two slots by length: anything up to six hours is the

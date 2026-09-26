@@ -3,7 +3,8 @@
 // spend, and the 5h / 7d windows as bars with the reset time once a bar is worth acting on.
 // Sources, in order: Claude Code's own `rate_limits` (it read them off the unified headers the head
 // sent, so they are already this head's windows), else the head's tracked quota straight from the
-// daemon (the first tick of a session, before any response carried headers).
+// daemon (the first tick of a session, before any response carried headers). Either only while
+// current (V4-327): a stale or reset window draws nothing, never an old figure.
 package splice.usage.statusline
 
 import kotlinx.serialization.json.JsonObject
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindowView
 import splice.usage.ApiCostText
 import java.time.Instant
 import java.time.ZoneId
@@ -78,21 +80,29 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
     }
 
     /** [quotaFirst]: the line is pooled, so the tracked windows are the SELECTED account's and win;
-     *  the client's rate_limits (possibly another account's) fill only a window the tracker lacks. */
-    fun limitSegments(root: JsonObject, quota: QuotaView?, quotaFirst: Boolean = false): List<String> {
+     *  the client's rate_limits (possibly another account's) fill only a window the tracker lacks.
+     *
+     *  V4-327: only a current window is drawn, else none. A tracked window must pass
+     *  [QuotaWindowView.currentAt] (read within the last 15 minutes, before its reset); a client
+     *  window carries no read time, so it goes once its own reset has passed. */
+    fun limitSegments(root: JsonObject, quota: QuotaView?, quotaFirst: Boolean, nowSeconds: Long): List<String> {
         val limits = root["rate_limits"] as? JsonObject
-        val five = pick(window(limits, "five_hour"), quota?.fiveHour?.let { it.usedPct to it.resetsAt }, quotaFirst)
-        val seven = pick(window(limits, "seven_day"), quota?.sevenDay?.let { it.usedPct to it.resetsAt }, quotaFirst)
+        val five = pick(window(limits, "five_hour", nowSeconds), tracked(quota?.fiveHour, nowSeconds), quotaFirst)
+        val seven = pick(window(limits, "seven_day", nowSeconds), tracked(quota?.sevenDay, nowSeconds), quotaFirst)
         return listOfNotNull(segment("5h", five), segment("7d", seven))
     }
+
+    private fun tracked(w: QuotaWindowView?, nowSeconds: Long): Pair<Int, Long?>? =
+        w?.currentAt(nowSeconds)?.let { it.usedPct to it.resetsAt }
 
     private fun pick(client: Pair<Int, Long?>?, tracked: Pair<Int, Long?>?, quotaFirst: Boolean): Pair<Int, Long?>? =
         if (quotaFirst) tracked ?: client else client ?: tracked
 
-    private fun window(limits: JsonObject?, key: String): Pair<Int, Long?>? {
+    private fun window(limits: JsonObject?, key: String, nowSeconds: Long): Pair<Int, Long?>? {
         val w = limits?.get(key) as? JsonObject ?: return null
         val pct = num(w["used_percentage"])?.toInt() ?: return null
-        return pct to (w["resets_at"] as? JsonPrimitive)?.longOrNull
+        val resetsAt = (w["resets_at"] as? JsonPrimitive)?.longOrNull
+        return (pct to resetsAt).takeIf { resetsAt == null || resetsAt > nowSeconds }
     }
 
     private fun segment(label: String, window: Pair<Int, Long?>?): String? {

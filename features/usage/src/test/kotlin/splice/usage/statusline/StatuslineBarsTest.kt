@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
+import splice.core.util.WallClock
 import splice.usage.perf.HeadPerfSkipSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
@@ -26,15 +27,64 @@ class StatuslineBarsTest {
         return line.replace(ansi, "")
     }
 
+    private fun renderAt(nowMs: Long, stdin: String, quota: QuotaView?): String {
+        val usage = HeadUsageSource { UsageView(0L, 0, null, quota) }
+        val line = StatuslineRenderer(label = "claude-splice", now = WallClock { nowMs })
+            .render(stdin, usage, warnPct = 0, warnTokens5h = 0)
+        return line.replace(ansi, "")
+    }
+
+    // V4-327, the observed shape: take-resume-5's first rows, before any response carried headers,
+    // read "5h 0%  7d 52%" while the plan stood at 71% and 98% and Claude Code's own notice two rows
+    // below said 98%.
+    @Test
+    fun `a tracked quota read hours ago draws no bars, and one read a minute ago does`() {
+        val nowMs = 1_790_449_350_000L
+        val nowS = nowMs / 1_000L
+        val blob = """{"model":{"id":"claude-opus-5-5","display_name":"Opus 5.5"}}"""
+        val hoursOld = QuotaView(
+            QuotaWindowView(95, nowS - 3_600L, observedAt = nowS - 28_800L),
+            QuotaWindowView(52, nowS + 345_600L, observedAt = nowS - 28_800L),
+            "max",
+        )
+        val stale = renderAt(nowMs, blob, hoursOld)
+        assertFalse("5h" in stale || "7d" in stale, "no bar from a reading eight hours old: $stale")
+        val current = QuotaView(
+            QuotaWindowView(71, nowS + 3_600L, observedAt = nowS - 60L),
+            QuotaWindowView(98, nowS + 345_600L, observedAt = nowS - 60L),
+            "max",
+        )
+        val line = renderAt(nowMs, blob, current)
+        assertTrue("5h ██████░░ 71%" in line && "7d ████████ 98%" in line, line)
+    }
+
+    @Test
+    fun `a window past its reset draws nothing, from the tracker or from the client`() {
+        val nowMs = 1_790_449_350_000L
+        val nowS = nowMs / 1_000L
+        val tracked = QuotaView(
+            QuotaWindowView(95, nowS - 60L, observedAt = nowS - 30L),
+            QuotaWindowView(98, nowS + 345_600L, observedAt = nowS - 30L),
+            "max",
+        )
+        val trackedLine = renderAt(nowMs, """{"model":{"id":"claude-opus-5-5"}}""", tracked)
+        assertTrue("5h" !in trackedLine && "7d ████████ 98%" in trackedLine, trackedLine)
+        val client = """{"model":{"id":"claude-opus-5-5"},
+            "rate_limits":{"five_hour":{"used_percentage":95,"resets_at":${nowS - 60L}},"seven_day":{"used_percentage":98,"resets_at":${nowS + 345_600L}}}}"""
+        val clientLine = renderAt(nowMs, client, null)
+        assertTrue("5h" !in clientLine && "7d ████████ 98%" in clientLine, clientLine)
+    }
+
     @Test
     fun `on a pooled line the selected account's window wins and the client fills a missing one`() {
         val root = Json.parseToJsonElement(
             """{"rate_limits":{"five_hour":{"used_percentage":14},"seven_day":{"used_percentage":42}}}""",
         ).jsonObject
-        val tracked = QuotaView(QuotaWindowView(72, null), null, "pro")
-        val pooled = StatuslineBars().limitSegments(root, tracked, quotaFirst = true).map { it.replace(ansi, "") }
+        val nowS = 1_790_449_350L
+        val tracked = QuotaView(QuotaWindowView(72, null, observedAt = nowS - 60L), null, "pro")
+        val pooled = StatuslineBars().limitSegments(root, tracked, quotaFirst = true, nowS).map { it.replace(ansi, "") }
         assertEquals(listOf("5h ██████░░ 72%", "7d ███░░░░░ 42%"), pooled)
-        val plain = StatuslineBars().limitSegments(root, tracked).map { it.replace(ansi, "") }
+        val plain = StatuslineBars().limitSegments(root, tracked, quotaFirst = false, nowS).map { it.replace(ansi, "") }
         assertEquals(listOf("5h █░░░░░░░ 14%", "7d ███░░░░░ 42%"), plain, "unpooled: the client's own headers win")
     }
 
@@ -54,8 +104,13 @@ class StatuslineBarsTest {
 
     @Test
     fun `the head's own quota fills the bars before any response carried headers, and 60 percent shows the reset`() {
-        val quota = QuotaView(QuotaWindowView(72, 1_788_010_000L), QuotaWindowView(9, null), "pro")
-        val line = render("""{"model":{"id":"gpt-5.6-sol"}}""", quota)
+        val nowS = 1_788_000_000L
+        val quota = QuotaView(
+            QuotaWindowView(72, 1_788_010_000L, observedAt = nowS - 60L),
+            QuotaWindowView(9, null, observedAt = nowS - 60L),
+            "pro",
+        )
+        val line = renderAt(nowS * 1_000L, """{"model":{"id":"gpt-5.6-sol"}}""", quota)
         assertTrue("5h ██████░░ 72%→" in line, "5h from the tracker with a reset time: $line")
         assertTrue("7d █░░░░░░░ 9%" in line, "7d from the tracker: $line")
     }

@@ -47,8 +47,12 @@ public class QuotaTracker(
         (headers.fromUpstream(read) ?: extraFamily?.snapshot(read, clock))?.let(::record)
     }
 
-    /** What every client response carries so Claude Code's rate_limits show this head's windows. */
-    public fun clientHeaders(): Map<String, String> = latest.get()?.let(headers::forClient).orEmpty()
+    /** What every client response carries so Claude Code's rate_limits show this head's windows: the
+     *  current ones only (V4-327). The response's headers go out before its round reaches the
+     *  upstream, so the first response after a restart would otherwise carry the snapshot the last
+     *  run persisted as if it were now. */
+    public fun clientHeaders(): Map<String, String> =
+        latest.get()?.currentAt(clock())?.let(headers::forClient).orEmpty()
 
     /** V4-51: the REFUSAL variant, for the admission-side 429 V4-50 sends. Same family, with
      *  `-status: rejected` and the plain `anthropic-ratelimit-unified-reset` naming
@@ -59,7 +63,7 @@ public class QuotaTracker(
      *  message and the window members are optional; [resetEpochSeconds] null simply omits the
      *  deadline rather than inventing one. */
     public fun clientHeadersRejected(resetEpochSeconds: Long?): Map<String, String> =
-        headers.forClient(latest.get() ?: QuotaSnapshot(), QuotaStatus.REJECTED, resetEpochSeconds)
+        headers.forClient(latest.get()?.currentAt(clock()) ?: QuotaSnapshot(), QuotaStatus.REJECTED, resetEpochSeconds)
 
     // V4-151 (DR-60 class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
     // no-snapshot null; an inaccessible quota file degrades the same but leaves a trace. (Corrupt

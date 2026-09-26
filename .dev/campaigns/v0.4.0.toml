@@ -7391,12 +7391,13 @@ claimed_at = "2026-09-26T09:23:02.132Z"
 id = "V4-290"
 phase = "release"
 title = "The Turns page's 24h timeline covers its whole window or says it doesn't (found by console on V4-288, 2026-09-26): the page polls the fleet's newest 200 turns (console/src/entities/perf/api/index.ts:24,73: fetchPerfTurns(undefined, DEFAULT_TAIL=200), no since; pages/turns/index.tsx:555) while its default 'timeline' view draws a 24h window in 1h buckets (pages/turns/index.tsx:75), so on any day past 200 fleet turns the timeline and its idle-hours meta silently start partway through the window. Read the view's window with since (per-head cap, as V4-288 makes the Teams day), or mark the timeline short with the hour it starts from"
-files = ["console/src/pages/turns/index.tsx", "console/src/entities/perf/api/index.ts", "console/tests/turns.test.ts"]
+files = ["console/src/pages/turns/index.tsx", "console/src/entities/perf/api/index.ts", "console/tests/turns.test.ts", "console/src/entities/perf/model/types.ts", "console/src/pages/turns/strings.ts"]
 status = "in_flight"
 verify = "red first in vitest: 201 turns inside the last 24h render a 24h timeline that starts at the 201st-newest turn with no mark; green: the window is complete (or its start is marked), the idle-hours meta counts only the covered hours; console eslint, typecheck and vitest through the gate's console legs"
 claimed_by = "console"
 claimed_at = "2026-09-26T11:07:25.112Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T11:07:25Z
+# [2026-09-26] amend by=orchestrator: files were ["console/src/pages/turns/index.tsx", "console/src/entities/perf/api/index.ts", "console/tests/turns.test.ts"]
 
 [[items]]
 id = "V4-291"

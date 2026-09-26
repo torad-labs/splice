@@ -7941,3 +7941,11 @@ claimed_by = "splice-lead"
 claimed_at = "2026-09-26T20:03:26.855Z"
 # [2026-09-26] CLAIM: owner=splice-lead at=2026-09-26T20:03:26Z
 # [2026-09-26] amend by=orchestrator: files were ["core/src/main/kotlin/splice/core/usage/Quota.kt", "core/src/main/kotlin/splice/core/usage/QuotaView.kt", "features/turns/src/main/kotlin/splice/head/usage/QuotaTracker.kt", "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt", "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt", "features/usage/src/main/kotlin/splice/usage/quota/QuotaPoller.kt", "features/turns/src/test/kotlin/splice/head/usage/QuotaTrackerTest.kt", "features/usage/src/test/kotlin/splice/usage/statusline/StatuslineBarsTest.kt"]
+
+[[items]]
+id = "V4-328"
+phase = "release"
+title = "README: the OpenRouter section says any OpenRouter model id works (a provider row shaped like splice.example.toml's, plus the head's models list when it declares one, then splice restart), or splice add-model for the curated list (marlin, 2026-09-26: the film's caption says 'on any model through OpenRouter')"
+files = ["README.md"]
+status = "todo"
+verify = "the line is on feat/v0.4.0; the row shape it points to is the example's own rows, which ExampleConfigTest parses; the roster rule it states is AddModelPlan.kt:32-36; docs lints in the gate pass"

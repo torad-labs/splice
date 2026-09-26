@@ -1,7 +1,9 @@
 // PORT-OF: server/src/upstream/{fetch,gate}.mjs retry loop @ pre-public-port-baseline — invariants: one shared
-// HTTP/1.1 client (undici allowH2:false → Ktor CIO); headers-phase (first-byte) timeout is the
-// long firstByteTimeout (a near-window prompt / compaction prefills for minutes); the body phase
-// is governed by the stream watchdog, NOT here; retry on 502/503/529/429 with exponential
+// HTTP/1.1 client (undici allowH2:false → Ktor CIO); the request's WRITE is bounded by the long
+// firstByteTimeout (V4-272, RequestWriteBound: a write the upstream takes nothing of for that long is
+// cut, named RequestWriteStalled and retried here on a fresh connection), while the wait for headers
+// after a whole request is bounded only by the turn cap (a near-window prompt / compaction prefills
+// for minutes); the body phase is governed by the stream watchdog, NOT here; retry on 502/503/529/429 with exponential
 // backoff; a 401 triggers a SINGLE single-flight refresh that does not consume a normal attempt;
 // abort() is the only lock-safe kill (Ktor: cancel the calling coroutine → channel closes).
 //

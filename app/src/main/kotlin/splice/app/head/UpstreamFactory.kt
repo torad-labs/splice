@@ -22,7 +22,12 @@ internal class UpstreamFactory {
         // hardcoded check compressed the oracle's bodies and crashed its vendored
         // mock's JSON.parse, which was the source of every leaked harness daemon.
         zstdRequestBody = ctx.providerCfg.quirks.zstdRequestBody == true,
-        client = UpstreamTransport().defaultClient(cfg.upstreamTimeoutMs, log),
+        // V4-272: a request the upstream stops taking is cut at firstByteTimeout, not the turn cap.
+        client = UpstreamTransport().defaultClient(
+            cfg.upstreamTimeoutMs,
+            log,
+            requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
+        ),
         // V4-110 retry curve: read per head from the merged+normalized map (seeded with the Knob
         // defaults, so absent config keeps the generic 200ms/10s/±10% curve). The map is always
         // seeded, so `as Long` is safe.

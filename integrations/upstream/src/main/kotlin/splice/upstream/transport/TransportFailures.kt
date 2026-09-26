@@ -37,7 +37,8 @@ public fun interface CausePredicate {
 }
 
 /** G16: which side of the request write the transport failure happened on — CONNECT never
- *  got a byte onto the wire (DNS/refused/connect-timeout); POST_SEND may have already
+ *  got a byte onto the wire (DNS/refused/connect-timeout), or (V4-272) stalled before the body's
+ *  end, so the upstream cannot hold the whole request; POST_SEND may have already
  *  handed the upstream a full request (SocketException reset, socket-level timeout) —
  *  retrying that one risks a double token burn, so it needs a distinct log class. */
 internal enum class TransportFailurePhase { CONNECT, POST_SEND }
@@ -76,7 +77,13 @@ internal class TransportFailures {
      *  fails the turn. Not an added/removed exception type — a pure reclassification of the
      *  existing retryable set (G16). */
     internal fun classifyTransport(e: Throwable): TransportFailurePhase? =
-        causeChain(e).firstNotNullOfOrNull { transportPhaseOf(it) }
+        // V4-272: found anywhere in the chain, because ktor wraps it in its own socket timeout, which
+        // alone reads POST_SEND.
+        if (causeChain(e).any { it is RequestWriteStalled }) {
+            TransportFailurePhase.CONNECT
+        } else {
+            causeChain(e).firstNotNullOfOrNull { transportPhaseOf(it) }
+        }
 
     /**
      * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,

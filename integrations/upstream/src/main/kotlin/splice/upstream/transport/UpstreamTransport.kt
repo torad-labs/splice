@@ -58,6 +58,9 @@ public class UpstreamTransport {
         totalTimeoutMs: Long,
         log: LogSink = LogSink {},
         noDelayGuard: AtomicBoolean = nodelayLogged,
+        // V4-272: how long a request's write may take none of its bytes (RequestWriteBound). The head
+        // passes its firstByteTimeout; the default keeps the whole-turn cap, as before the row.
+        requestWriteTimeoutMs: Long = totalTimeoutMs,
     ): HttpClient {
         if (noDelayGuard.compareAndSet(false, true)) {
             log(
@@ -95,6 +98,7 @@ public class UpstreamTransport {
                     protocols(listOf(Protocol.HTTP_1_1))
                     socketFactory(sockets)
                     dispatcher(dispatcher)
+                    addInterceptor(RequestWriteBound(requestWriteTimeoutMs))
                 }
             }
         }

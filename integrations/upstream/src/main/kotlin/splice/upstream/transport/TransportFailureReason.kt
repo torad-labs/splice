@@ -16,6 +16,7 @@
 // carries "[url=<the full request url>", which the detail now reports as host and port only.
 package splice.upstream.transport
 
+import splice.upstream.retry.MS_PER_S
 import java.io.EOFException
 import java.io.IOException
 import java.net.ConnectException
@@ -39,12 +40,7 @@ public object TransportFailureReason {
         val root = if (e is StreamTornBeforeClient) e.cause ?: e else e
         val chain = generateSequence(root) { it.cause }.take(MAX_CAUSE_DEPTH).toList()
         val where = endpoint(upstreamUrl)
-        // A failed resolve is named wherever it sits: the JDK buries it under two ConnectExceptions.
-        val named = if (chain.any(::unresolved)) {
-            "cannot resolve the host of $where"
-        } else {
-            chain.firstNotNullOfOrNull { reasonOf(it, chain, where) }
-        }
+        val named = headline(chain, where)
         val detail = chain.firstNotNullOfOrNull { t -> t.message?.trim()?.takeIf { it.isNotEmpty() } }
             ?.replace(KTOR_URL, "url=$where")
         return when {
@@ -52,6 +48,19 @@ public object TransportFailureReason {
             named == null -> detail ?: "$root from $where, with no message"
             detail == null || named.contains(detail, ignoreCase = true) -> named
             else -> "$named: $detail"
+        }
+    }
+
+    // A failed resolve is named wherever it sits: the JDK buries it under two ConnectExceptions.
+    // So is a stalled write (V4-272): ktor wraps it in a socket timeout that would read as a read one.
+    private fun headline(chain: List<Throwable>, where: String): String? {
+        val stalled = chain.firstNotNullOfOrNull { it as? RequestWriteStalled }
+        return when {
+            chain.any(::unresolved) -> "cannot resolve the host of $where"
+            stalled != null ->
+                "$where took none of the request for ${stalled.stalledMs / MS_PER_S}s: the write stalled " +
+                    "(the network dropped, or the upstream stopped reading); a fresh connection resends it"
+            else -> chain.firstNotNullOfOrNull { reasonOf(it, chain, where) }
         }
     }
 

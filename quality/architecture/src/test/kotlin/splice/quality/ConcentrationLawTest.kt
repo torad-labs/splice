@@ -130,9 +130,16 @@ internal object Concentration {
      *  2026-09-25, 19 -> 18, V4-220 item 6b, cause `neighbourhood`, measured with this law's census at
      *  7ceed1b8b (19, a scratch baseline of 0 to list them) and at 0c8ce9393 (18). StatuslineRenderer.kt
      *  3.05 -> 2.59 left the band, the file unchanged: of the packages it imports, splice.accounts.pool is
-     *  the one the change touched (AccountPoolJson now writes each account's credential verdict). */
-    const val RATCHET_RECORDED = "2026-09-25"
-    const val RATCHET_MAX_HIGH = 18
+     *  the one the change touched (AccountPoolJson now writes each account's credential verdict).
+     *
+     *  2026-09-26, 18 -> 17, V4-272, cause `neighbourhood`, measured with this law's census on archive
+     *  exports of 914d7fa49 (18) and of 2e80b9296 with the row's seven main files (17; a scratch band of
+     *  2.5 to read the leaver). Watchdog.kt 3.00 -> 2.89 left the band, the file unchanged: the row
+     *  added RequestWriteBound.kt and RequestWriteStalled to splice.upstream.transport, which imports
+     *  splice.upstream.retry. The bound first sat on UpstreamTransport.kt's tail (2.53), and the band read 16;
+     *  in its own file UpstreamTransport.kt reads 2.07. */
+    const val RATCHET_RECORDED = "2026-09-26"
+    const val RATCHET_MAX_HIGH = 17
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

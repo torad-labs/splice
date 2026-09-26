@@ -33,6 +33,18 @@ public class UpstreamAuthMissing : RuntimeException("no upstream credentials")
 public class StreamTornBeforeClient(cause: Throwable) :
     RuntimeException("stream torn before first client frame", cause)
 
+/** V4-272: the upstream took none of the request's next bytes for [stalledMs] (OkHttp's write timeout,
+ *  which UpstreamTransport sets to the head's firstByteTimeout). A SocketTimeoutException so every
+ *  transport classifier still sees a socket timeout; its own type so it is not mistaken for a read one.
+ *  Its text must not say "connect": ktor reads that word as a connect timeout (OkHttpEngine). The retry
+ *  loop retries it on a fresh connection; a turn out of attempts ends like any other IOException. */
+public class RequestWriteStalled(public val stalledMs: Long, cause: Throwable) :
+    java.net.SocketTimeoutException("the upstream took none of the request for ${stalledMs}ms; the write stalled") {
+    init {
+        initCause(cause)
+    }
+}
+
 // V4-114 disposition: the upstream host's own HTTP failure after retries — not a decision this side
 // made. TurnFailures.kt:28 / TurnKnownEnd.kt:44 classify [status]/[body] and emit an error terminal;
 // no caller continues the turn.

@@ -5,7 +5,9 @@
 // these files (LAYOUT-01): app supplies the topology read and the two terminal streams.
 package splice.head.trace
 
+import splice.core.storage.DayPurge
 import splice.core.terminal.TerminalOutput
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import java.nio.file.Path
@@ -44,7 +46,11 @@ public class TraceCommand(
     }
 
     private fun show(opts: TraceOpts, traceDir: Path): Boolean {
-        val read = rows.read(traceDir, opts.head)
+        // V4-286: a trace dir or day that cannot be read is said, never an empty table blaming the knob.
+        val read = Cancellables.runCatchingCancellable { rows.read(traceDir, opts.head) }
+            .getOrElse { failure ->
+                return fail("cannot read ${opts.head}'s trace under $traceDir: ${SafeFailureText.render(failure)}")
+            }
         val selected = read.turns
             .filter { opts.session == null || it.session?.startsWith(opts.session) == true }
             .filter { opts.turn == null || it.id == opts.turn }
@@ -56,17 +62,26 @@ public class TraceCommand(
         }
     }
 
-    /** Deletes the head's day files and says what went; nothing else in the directory is touched. */
-    private fun purge(head: String, traceDir: Path): Boolean {
-        val gone = rows.days(traceDir, head).purge()
-        if (gone.isEmpty()) {
-            output.line("splice trace: nothing to purge; no trace files for $head under $traceDir")
-        } else {
-            output.line("splice trace: purged ${gone.size} day file(s) of $head:")
-            gone.forEach { output.line("  $it") }
+    /** Deletes the head's day files and says what went and what stayed; nothing else in the directory
+     *  is touched. A file that stayed, or a directory that could not be listed, fails the command. */
+    private fun purge(head: String, traceDir: Path): Boolean =
+        when (val purge = rows.days(traceDir, head).purge()) {
+            is DayPurge.Unlisted ->
+                fail("cannot list $traceDir: ${SafeFailureText.render(purge.failure)}; nothing was purged")
+            is DayPurge.Listed -> {
+                if (purge.deleted.isEmpty() && purge.failed.isEmpty()) {
+                    output.line("splice trace: nothing to purge; no trace files for $head under $traceDir")
+                }
+                if (purge.deleted.isNotEmpty()) {
+                    output.line("splice trace: purged ${purge.deleted.size} day file(s) of $head:")
+                    purge.deleted.forEach { output.line("  $it") }
+                }
+                purge.failed.forEach { (file, failure) ->
+                    errors.line("splice trace: could not delete $file: ${SafeFailureText.render(failure)}")
+                }
+                purge.failed.isEmpty()
+            }
         }
-        return true
-    }
 
     /** The head must be configured; a misspelt one is refused with the heads that exist. */
     private fun headExists(head: String, envReader: EnvReader): Boolean =

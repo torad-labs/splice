@@ -75,13 +75,11 @@ class ActivityDaysOwnerOnlyTest {
 
         val gone = DayFiles(dir, "kimi").purge()
 
-        assertEquals(
-            listOf(dir.resolve("kimi-2026-09-18.jsonl"), dir.resolve("kimi-2026-09-19.jsonl")),
-            gone,
-        )
+        val both = listOf(dir.resolve("kimi-2026-09-18.jsonl"), dir.resolve("kimi-2026-09-19.jsonl"))
+        assertEquals(DayPurge.Listed(both, emptyMap()), gone)
         assertEquals(0, days.lines().count())
         assertTrue(Files.list(dir).use { it.toList() }.isEmpty(), "the lock siblings went with the files")
-        assertEquals(emptyList<Path>(), DayFiles(dir, "kimi").purge(), "a second purge has nothing to name")
+        assertEquals(DayPurge.Listed(emptyList(), emptyMap()), DayFiles(dir, "kimi").purge(), "a second has nothing")
     }
 
     /** A umask of 077 would make the plain directory 0700 too; the plain-mode cell must not fail there. */

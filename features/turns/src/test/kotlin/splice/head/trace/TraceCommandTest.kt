@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
@@ -29,6 +30,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermissions
 
 private const val DAY_ONE = 1_789_725_600_000L // 2026-09-18T10:00Z
 
@@ -218,6 +220,66 @@ class TraceCommandTest {
         assertFalse(Files.exists(dayFile))
         val (_, again, _) = run(env, "openrouter", "--purge")
         assertTrue(again.contains("nothing to purge"), again)
+    }
+
+    /** [block] with [path] held at [mode], restored to owner rwx after; skipped where the mode does not bind. */
+    private fun <T> withMode(path: Path, mode: String, block: () -> T): T {
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(mode))
+        try {
+            assumeFalse(Files.isWritable(path) && Files.isReadable(path), "root reads and writes whatever the mode")
+            return block()
+        } finally {
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    @Test
+    fun `--purge that cannot delete or cannot list says what stayed and fails - V4-286`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        val traceDir = StatePaths(envReader = env).traceDir
+        val dayFile = traceDir.resolve("openrouter-2026-09-18.jsonl")
+
+        val (keptOk, keptOut, keptErr) = withMode(traceDir, "r-x------") { run(env, "openrouter", "--purge") }
+        assertFalse(keptOk, "a purge that deleted nothing succeeded: $keptOut")
+        assertFalse(keptOut.contains("purged"), keptOut)
+        assertTrue(keptErr.contains("splice trace: could not delete $dayFile"), keptErr)
+
+        val (unlistedOk, unlistedOut, unlistedErr) = withMode(traceDir, "-wx------") {
+            run(env, "openrouter", "--purge")
+        }
+        assertFalse(unlistedOk, "an unlistable trace dir read as nothing to purge: $unlistedOut")
+        assertTrue(unlistedErr.contains("splice trace: cannot list $traceDir"), unlistedErr)
+        assertTrue(Files.exists(dayFile), "neither purge deleted the day")
+    }
+
+    @Test
+    fun `a trace day that cannot be read fails in words, never an empty table naming the knob - V4-286`(
+        @TempDir tmp: Path,
+    ) {
+        val env = env(tmp)
+        writeTrace(env)
+        val dayFile = StatePaths(envReader = env).traceDir.resolve("openrouter-2026-09-18.jsonl")
+
+        val (ok, out, err) = withMode(dayFile, "---------") { run(env, "openrouter") }
+
+        assertFalse(ok, "an unreadable day read as no turns: $out")
+        assertEquals("", out, "a refusal never reaches the stream `--json | jq` reads")
+        assertTrue(err.contains("splice trace: cannot read openrouter's trace under"), err)
+    }
+
+    @Test
+    fun `a character a disk-full append cut short costs one line, never the day's turns - V4-286`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        val day = StatePaths(envReader = env).traceDir.resolve("openrouter-2026-09-18.jsonl")
+        Files.write(day, byteArrayOf(0xE2.toByte(), 0x82.toByte(), '\n'.code.toByte()), StandardOpenOption.APPEND)
+
+        val (ok, out, _) = run(env, "openrouter")
+
+        assertTrue(ok, out)
+        assertTrue(out.contains("2 of 2 turn(s) on disk"), out)
+        assertTrue(out.contains("1 line(s) skipped"), out)
     }
 
     @Test

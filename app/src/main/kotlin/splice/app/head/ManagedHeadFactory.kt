@@ -73,7 +73,12 @@ internal class ManagedHeadFactory(
     internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
         val key = ctx.key
         val cfg = ctx.cfg
-        keptFiles.atStart(key, codeMode = ctx.providerCfg.codeModeEnabled, trace = cfg.trace)
+        keptFiles.atStart(
+            key,
+            codeMode = ctx.providerCfg.codeModeEnabled,
+            trace = cfg.trace,
+            traceWritten = ctx.head.overrides[Knob.TRACE.key],
+        )
         val wired = providerAssembly.buildProvider(ctx)
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary }

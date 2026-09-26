@@ -3,7 +3,8 @@
 // ConfigService.kt's header, because this is where they are enforced): normalization floors
 // (upstreamTimeout >= 30s, firstByte >= 10s, streamIdle >= 30s or 250ms under CODEX_PROXY_TEST=1,
 // authCache >= 5s); showReasoning alias folding; trailing-slash strip on base urls;
-// maxInflight >= 0; bool coercion is /^(1|true|yes|on)$/i.
+// maxInflight >= 0; bool coercion is /^(1|true|yes|on)$/i for true and /^(0|false|no|off)$/i for
+// false, anything else refused by name ([BoolKnobWords], V4-286).
 // Split out of ConfigService.kt as a CLASS at HD-M8 (2026-08-16) because that class sat on the
 // 14-function ceiling; given its own FILE at HD-25 (2026-08-18) because it was never ConfigService
 // state — it holds zero, takes [EnvReader] in its constructor, and the shared file was the only
@@ -33,6 +34,25 @@ private const val MAX_RETRIES = 100L
 private const val MAX_FOLD_ROUNDS = 100L
 private const val MAX_FOLD_TIER = 100L
 
+/** The words a BOOL knob reads, any case, around whitespace. Anything else is no value: every layer
+ *  refuses it by name (ConfigService.coerceRejects, the env log line, PATCH's rejected map) and the knob
+ *  keeps its default. V4-286: anything but a true word read as false, so `trace = "enabled"` turned a
+ *  head's trace off in silence and the next start deleted its history. */
+public object BoolKnobWords {
+    private val truth = Regex("^(1|true|yes|on)$", RegexOption.IGNORE_CASE)
+    private val falsity = Regex("^(0|false|no|off)$", RegexOption.IGNORE_CASE)
+
+    /** True or false for a bool word, null for anything else. */
+    public fun of(raw: String): Boolean? {
+        val word = raw.trim()
+        return when {
+            truth.matches(word) -> true
+            falsity.matches(word) -> false
+            else -> null
+        }
+    }
+}
+
 /**
  * The knob COERCION + NORMALIZATION half of [ConfigService], split out because the class is at the
  * 14-function ceiling and cannot absorb the dissolved companion (Kotlin style law, 2026-08-16 —
@@ -48,11 +68,11 @@ private const val MAX_FOLD_TIER = 100L
  */
 internal class ConfigCoercion(private val envReader: EnvReader) {
 
-    // HD-25: these three were constructed INSIDE [coerce], so every call rebuilt a compiled Regex
-    // and two sets — and coerce runs once per knob per layer, i.e. hundreds of times per merge, on
-    // a path that merges FRESH on every read (this engine's founding invariant). They are constants
-    // with no dependency on the arguments, so a property is their right home. Values unchanged.
-    private val boolTruth = Regex("^(1|true|yes|on)$", RegexOption.IGNORE_CASE)
+    // HD-25: these were constructed INSIDE [coerce], so every call rebuilt a compiled Regex and two
+    // sets — and coerce runs once per knob per layer, i.e. hundreds of times per merge, on a path that
+    // merges FRESH on every read (this engine's founding invariant). They are constants with no
+    // dependency on the arguments, so a property is their right home; the bool words are
+    // [BoolKnobWords]'s since V4-286.
     private val unlimitedKnobs = setOf(Knob.MAX_INFLIGHT, Knob.MAX_QUEUED)
     private val unlimitedWords = setOf("", "unlimited", "off", "none")
 
@@ -188,9 +208,9 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         }
     }
 
-    private fun coerceBool(raw: Any?): Boolean = when (raw) {
+    private fun coerceBool(raw: Any?): Boolean? = when (raw) {
         is Boolean -> raw
-        else -> boolTruth.matches(raw.toString().trim())
+        else -> BoolKnobWords.of(raw.toString())
     }
 
     private fun coerceNumber(knob: Knob, raw: Any?): Long? {

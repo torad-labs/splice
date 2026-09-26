@@ -2,8 +2,9 @@
 // 99244e63a). A REAL daemon starts over a state dir seeded the way earlier runs left it: an expired
 // compaction answer beside a fresh one, code-mode state for a head whose provider has code mode off
 // and for a head the topology no longer names, and trace days for a head with trace off, one with
-// trace on and one removed. Heads are assembled only at the daemon's start, so that start is every
-// head's start and the moment a removed head is first known to be gone. One test per store.
+// trace on, one removed and one whose trace value is not a bool (V4-286). Heads are assembled only
+// at the daemon's start, so that start is every head's start and the moment a removed head is first
+// known to be gone. One test per store.
 package splice.app
 
 import kotlinx.coroutines.runBlocking
@@ -35,11 +36,13 @@ class KeptFilesLifetimeTest {
     private val controlPort = TestPorts.reserve()
     private val codexPort = TestPorts.reserve()
     private val plainPort = TestPorts.reserve()
+    private val typoPort = TestPorts.reserve()
     private val today = LocalDate.now(ZoneOffset.UTC).toString()
     private lateinit var paths: StatePaths
     private lateinit var daemon: Daemon
 
     // claudex: code mode on (the chatgpt-oauth default), trace off. plain: code mode off, trace on.
+    // typo (V4-286): a trace value that is not a bool, which runs the head untraced and keeps its days.
     private fun topologyToml(authFile: String) = """
         [daemon]
         control_port = $controlPort
@@ -79,6 +82,15 @@ class KeptFilesLifetimeTest {
 
         [heads.plain.overrides]
         trace = "true"
+
+        [heads.typo]
+        provider = "plain"
+        port = $typoPort
+        discovery_prefix = "claude-typo--"
+        pinned_model = "gpt-5.6-sol"
+
+        [heads.typo.overrides]
+        trace = "enabled"
     """.trimIndent()
 
     @BeforeAll
@@ -95,6 +107,7 @@ class KeptFilesLifetimeTest {
             seed(paths.traceDir.resolve("$head-$today.jsonl"))
         }
         seed(paths.traceDir.resolve("removed-$today.jsonl.lock"))
+        seed(paths.traceDir.resolve("typo-$today.jsonl"))
         daemon = Daemon(
             topology = TopologyLoader.parse(topologyToml(authFile.toString().replace("\\", "/"))),
             statePaths = paths,
@@ -103,7 +116,7 @@ class KeptFilesLifetimeTest {
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
-        awaitListening(controlPort, codexPort, plainPort)
+        awaitListening(controlPort, codexPort, plainPort, typoPort)
     }
 
     @AfterAll
@@ -133,6 +146,11 @@ class KeptFilesLifetimeTest {
         assertTrue(Files.exists(paths.traceDir.resolve("plain-$today.jsonl")), "trace is on for plain")
         assertFalse(Files.exists(paths.traceDir.resolve("removed-$today.jsonl")), "that head is removed")
         assertFalse(Files.exists(paths.traceDir.resolve("removed-$today.jsonl.lock")), "a day's lock goes with it")
+    }
+
+    @Test
+    fun `a trace value that is not a bool keeps the head's trace days - V4-286`() {
+        assertTrue(Files.exists(paths.traceDir.resolve("typo-$today.jsonl")), "trace = \"enabled\" was read as off")
     }
 
     private fun seed(file: Path, ageMs: Long = 0) {

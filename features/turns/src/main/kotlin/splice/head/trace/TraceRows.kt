@@ -13,6 +13,7 @@ import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.head.wire.TraceKinds
+import java.io.IOException
 import java.nio.file.Path
 
 /** Every record of one turn, in the order they were written: the attempts, then the turn record
@@ -38,7 +39,9 @@ internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = tru
     internal fun days(traceDir: Path, head: String): DayFiles = DayFiles(traceDir, head)
 
     /** Every turn on disk for [head], oldest first; a turn's records may straddle a UTC midnight,
-     *  which is why grouping happens over the whole read rather than per file. */
+     *  which is why grouping happens over the whole read rather than per file. A trace dir or a day
+     *  that cannot be read throws why (V4-286), so no turns means none on disk. */
+    @Throws(IOException::class)
     internal fun read(traceDir: Path, head: String): TraceRead {
         var skipped = 0
         val byTurn = LinkedHashMap<String, Pair<MutableList<JsonObject>, JsonObject?>>()

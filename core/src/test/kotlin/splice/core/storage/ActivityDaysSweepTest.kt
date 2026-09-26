@@ -25,6 +25,9 @@ private val TODAY = LocalDate.parse("2026-09-18")
 // re-arms this far out, and the test moves the clock past that midnight inside the window.
 private const val SECOND_WAIT_MS = 2_000L
 
+// A store's longest wait for its sweep in the sleep test (V4-286): the timer floor, so the test waits a second.
+private const val TEST_WAIT_CAP_MS = 1_000L
+
 class ActivityDaysSweepTest {
 
     @TempDir
@@ -93,6 +96,49 @@ class ActivityDaysSweepTest {
         now.set(MIDNIGHT + DAY_MS + 1)
         awaitUntil("each store's sweep armed the next midnight, and its second day went there") {
             days.none { (_, _, second) -> Files.exists(second) }
+        }
+    }
+
+    @Test
+    fun `a file named for a date not on the calendar neither fails the store's open nor keeps its days - V4-286`() {
+        val dir = tmp.resolve("edges")
+        val past = seed(dir, "edges", TODAY.minusDays(2))
+        val notADay = dir.resolve("edges-2026-02-29.jsonl")
+        Files.writeString(notADay, "{}\n")
+
+        val _ = ActivityDays(dir, "edges", 2, WallClock { DAY_ONE })
+
+        assertFalse(Files.exists(past), "the day past the window went at open")
+        assertTrue(Files.exists(notADay), "a name that is no day is not one of this store's files")
+    }
+
+    @Test
+    fun `a file named for a date not on the calendar does not stop an idle store's midnight sweeps - V4-286`() {
+        val now = AtomicLong(MIDNIGHT - 1)
+        val dir = tmp.resolve("labels")
+        val first = seed(dir, "labels", TODAY.minusDays(1))
+        val _ = ActivityDays(dir, "labels", 2, WallClock { now.get() })
+        Files.writeString(dir.resolve("labels-2026-02-29.jsonl"), "{}\n")
+
+        now.set(MIDNIGHT + DAY_MS - SECOND_WAIT_MS)
+        awaitUntil("the day that left the window went at midnight, past the impossible name") { !Files.exists(first) }
+        val second = seed(dir, "labels", TODAY)
+        now.set(MIDNIGHT + DAY_MS + 1)
+        awaitUntil("the sweep armed the next midnight too, and the next day went there") { !Files.exists(second) }
+    }
+
+    @Test
+    fun `an idle store asleep across midnight sweeps within its longest wait of waking - V4-286`() {
+        val now = AtomicLong(DAY_ONE)
+        val dir = tmp.resolve("edges")
+        val first = seed(dir, "edges", TODAY.minusDays(1))
+        val _ = ActivityDays(dir, "edges", 2, WallClock { now.get() }, maxSweepWaitMs = TEST_WAIT_CAP_MS)
+
+        // The machine sleeps: the wall clock passes midnight, and the timer, which counts only time awake,
+        // has 14 hours still to wait.
+        now.set(MIDNIGHT + 1)
+        awaitUntil("the day that left the window went within the longest wait, not 14 hours on") {
+            !Files.exists(first)
         }
     }
 }

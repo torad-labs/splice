@@ -14,8 +14,6 @@ import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
 import splice.upstream.TurnSignals
 import splice.upstream.WsRoundRunner
-import splice.upstream.failure.TearWords
-import java.io.IOException
 
 internal class WsRoundDrive(
     private val provider: Provider,
@@ -36,14 +34,10 @@ internal class WsRoundDrive(
         // non-SSE dead-head BODY (an HTML login page arriving where SSE was expected), and a
         // WebSocket round has no body to misread. An empty snippet makes the classifier keep the
         // translator's own verdict, which is the honest answer here.
-        // V4-242: a round the upstream TORE before any client frame is re-served over SSE too, the same
-        // round a failure terminal sends there, and by the rule SSE's own pre-frame tear follows
-        // (TearAwareEvents.reissuable): an I/O failure, before any client frame, that the watchdog did
-        // not cause. Read as a truncated round instead, a tear was re-anchored on this same transport
-        // five times — every socket of the Codex outage of 2026-09-25 closed 1011 before output — and
-        // the HTTP answer that could have named the cause was never asked. Caught here, upstream of
-        // the translator, because the translator folds an I/O failure into its honest terminal.
-        val instrumented = events.catch { torn -> throw reissuedOrItself(torn, inputs) }.onEach { evt ->
+        // V4-242: a round the upstream TORE before any client frame is re-served over SSE too
+        // (PreContentTear). Caught here, upstream of the translator, because the translator folds an
+        // I/O failure into its honest terminal.
+        val instrumented = events.catch { torn -> throw reissued(torn, inputs) ?: torn }.onEach { evt ->
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
                 throw RoundNeedsSse(failureDetail(evt))
             }
@@ -106,33 +100,12 @@ internal class WsRoundDrive(
             .take(FAILURE_DETAIL_MAX_CHARS)
     }
 
-    /** V4-242: what [drive]'s collection rethrows for [torn]: the re-serve over SSE when the round tore
-     *  before the client saw anything of it, else [torn] itself, untouched. */
-    private fun reissuedOrItself(torn: Throwable, inputs: WsRoundInputs): Throwable =
-        if (tornBeforeContent(torn, inputs)) RoundNeedsSse(tearDetail(torn)) else torn
-
-    /** V4-242: [torn] is the transport's tear of a round the client has seen nothing of, which neither
-     *  the watchdog, a departed client nor the turn's own cancellation caused. The last two are this
-     *  path's own: the client's message_start is written inside this round's flow (WsRoundDriver's
-     *  ensureStarted), so a dead client's IOException arrives here too, and ClientChannel sets
-     *  clientGone before it throws; and a cancelled turn aborts its round (WsRoundDriver's round job),
-     *  which reads here as a tear the upstream never made. */
-    private fun tornBeforeContent(torn: Throwable, inputs: WsRoundInputs): Boolean =
-        torn is IOException &&
-            !inputs.frameEmittedThisRound() &&
-            inputs.drive.watchdog.fired == null &&
-            !inputs.drive.channel.clientGone.get() &&
-            inputs.turnJob.isActive
-
-    /** The tear in its deepest words (TearWords), which for a peer's close are the close itself: its
-     *  code, its reason and the events the round had received (InboxListener). One line, clipped like
-     *  [failureDetail]. */
-    private fun tearDetail(torn: Throwable): String =
-        TearWords.of(torn)
-            .orEmpty()
-            .ifEmpty { torn::class.simpleName.orEmpty() }
-            .replace(oneLine, " ")
-            .take(FAILURE_DETAIL_MAX_CHARS)
+    /** V4-242: the re-serve over SSE of a round [torn] before the client saw anything of it, named by the
+     *  tear's words (PreContentTear), one line and clipped like [failureDetail]; null when it is not one. */
+    private fun reissued(torn: Throwable, inputs: WsRoundInputs): RoundNeedsSse? =
+        PreContentTear.words(torn, inputs)?.let { words ->
+            RoundNeedsSse(words.replace(oneLine, " ").take(FAILURE_DETAIL_MAX_CHARS))
+        }
 
     private val oneLine = Regex("\\s+")
 

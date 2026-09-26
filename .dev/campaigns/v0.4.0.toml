@@ -7236,3 +7236,11 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-26T07:55:58.729Z"
 # [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T07:55:58Z
 # [2026-09-26] RECEIPT cmd="bun tools/gate slot V4-280 -- :app:test :app:detekt --continue" exit=0 tests=637 touched=app/src/main/kotlin/splice/app/Main.kt,app/src/test/kotlin/splice/app/DaemonStateDirsTest.kt tail=" detekt clean (runDaemon shorter; StartState a data class per UseDataClass); :quality-architecture:test exit 0 (ratchet holds). MUTANT 1 (runDaemon's start without secureStateDirs): exit 1, 'expected: <rwx------> but was: <rwxr-xr-x>'. MUTANT 2 (without secureConfig): exit 1, 'expected: <rw-------> but was: <rw-r--r-->'. Both restored in the same block, sha re-checked before the UseDataClass edit."
+
+[[items]]
+id = "V4-281"
+phase = "release"
+title = "The quota-429 reset test cannot straddle a second (CI run 36228211391 on 202c22eb0, 2026-09-26): UpstreamFailureClassifierTest:55 builds resets_at from one clock read as now + 6d 4h exactly, and the classifier subtracts a second read (UpstreamFailureClassifier.kt:219); a wall-clock second between the two leaves 6d 3h 59m 59s, humanized to '6d 3h', so the gate went red on no code change (the same test passed on 1e7f05a66 twenty minutes earlier). The offset sits mid-hour, so any drift under 30 minutes still reads 6d 4h"
+files = ["integrations/upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailureClassifierTest.kt"]
+status = "todo"
+verify = "red first: the old offset with a 1 s pause between the two clock reads fails with 'resets in 6d 3h' every run; green: the mid-hour offset passes with the same pause; bun tools/gate slot V4-281 -- :integrations-upstream:test --continue"

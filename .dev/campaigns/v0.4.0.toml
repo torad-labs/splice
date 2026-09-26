@@ -7568,6 +7568,7 @@ claimed_by = "console"
 claimed_at = "2026-09-26T12:15:16.680Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T12:15:16Z
 # [2026-09-26] amend by=orchestrator: files were ["console/src/pages/settings/index.tsx", "console/tests/settings.test.ts"]
+# [2026-09-26] RECEIPT cmd="umask 022; bun tools/gate slot V4-305-green -- :console:lint :console:typecheck :console:test --continue" exit=0 tests=1452 touched=console/src/pages/settings/index.tsx,console/tests/settings.test.ts,console/src/widgets/knob-form/index.tsx tail="FUL in 14s; :console:lint, :console:typecheck, :console:test executed; vitest 75 files, 1452 tests passed; fix aaabe4ef5; reds on HEAD's behaviour (a 503 escaped as 'the daemon is shutting down' with nothing printed; a down daemon escaped as 'Splice is not answering.'; a 200 with rejected {streamIdleMs} returned nothing; HEAD's widget printed no fault under the knob); 5 mutants killed and restored"
 
 [[items]]
 id = "V4-306"

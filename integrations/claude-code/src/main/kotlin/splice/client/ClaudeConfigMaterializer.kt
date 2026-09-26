@@ -85,12 +85,16 @@ public class ClaudeConfigMaterializer(
     }
     private val sessionRegistry = SessionRegistryLink()
     private val jsonReads = JsonStateReads(json, log)
+    private val folderTrust = FolderTrust(home, jsonReads)
     private val hookExecProbe: HookExecProbe? = hookExec?.let { exec ->
         HookExecProbe { dir, chmod -> HookScriptFiles.probeExecutability(dir, chmod, exec) }
     }
 
-    /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
-    public fun materialize(spec: MaterializeSpec): MaterializeResult {
+    /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. [trust] carries the folder-trust
+     *  records the operator already granted for the launch's cwd into the head (V4-283, FolderTrust);
+     *  null carries none. Beside the spec, not in it: MaterializeSpec is at its constructor-width
+     *  baseline. */
+    public fun materialize(spec: MaterializeSpec, trust: TrustedLaunch? = null): MaterializeResult {
         requireIsolatedDir(spec.configDir)
         // Validate every ABORTING source BEFORE any mutation (DR-11 redo, codex ordering catch).
         // The local .claude.json is the one strict read — an unparseable one fails the launch — and
@@ -142,6 +146,7 @@ public class ClaudeConfigMaterializer(
             spec.modelOptionsCache,
             shareMcp = spec.policy.sharesMcp(),
             local = localClaudeJson,
+            trust = trust,
         )
         return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
     }
@@ -156,8 +161,8 @@ public class ClaudeConfigMaterializer(
      *  hook SCRIPT files, no sessions/projects migration. WrappedHead backs up whatever already sits
      *  at these two paths before calling this, and [spec.policy] deciding whether settings.json's
      *  "global" layer (here, the very file about to be overwritten) is carried forward is the
-     *  caller's call, not this method's. */
-    public fun materializeWrap(spec: MaterializeSpec): MaterializeResult {
+     *  caller's call, not this method's. [trust] as for [materialize]. */
+    public fun materializeWrap(spec: MaterializeSpec, trust: TrustedLaunch? = null): MaterializeResult {
         val localClaudeJson = jsonReads.strict(spec.configDir.resolve(Keys.CLAUDE_JSON))
         val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
         Files.createDirectories(spec.configDir)
@@ -167,6 +172,7 @@ public class ClaudeConfigMaterializer(
             spec.modelOptionsCache,
             shareMcp = false,
             local = localClaudeJson,
+            trust = trust,
         )
         return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
     }
@@ -381,13 +387,14 @@ public class ClaudeConfigMaterializer(
         modelOptionsCache: JsonElement,
         shareMcp: Boolean,
         local: JsonObject,
+        trust: TrustedLaunch?,
     ): Int {
         val statePath = configDir.resolve(Keys.CLAUDE_JSON)
         val global = jsonReads.tolerant(home.resolve(Keys.CLAUDE_JSON))
         // [local] is the strict read of statePath, hoisted to materialize() and validated BEFORE any
         // mutation (DR-11 redo). global stays a tolerant SOURCE read here — it never aborts.
         var mcpCount = 0
-        val next = buildJsonObject {
+        val built = buildJsonObject {
             local.forEach { (k, v) -> put(k, v) }
             put("additionalModelOptionsCache", modelOptionsCache)
             val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { shareMcp }
@@ -405,6 +412,8 @@ public class ClaudeConfigMaterializer(
             put(Keys.CUSTOM_API_KEY_RESPONSES, customApiKeyResponses(local))
             put(Keys.ONBOARDING, true)
         }
+        // V4-283: in this same one write, so no second writer of the head's state file is added.
+        val next = folderTrust.seed(built, trust, global)
         // Atomic for the same reason as writeSettings (DR-11b): terminal B materializing while a
         // session in terminal A reads .claude.json must never expose a truncated file.
         SecureFile.writeAtomic0600(statePath, json.encodeToString(JsonObject.serializer(), next) + "\n")

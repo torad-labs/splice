@@ -9,6 +9,7 @@ import splice.client.ClaudePolicy
 import splice.client.Keys
 import splice.client.MaterializeResult
 import splice.client.MaterializeSpec
+import splice.client.TrustedLaunch
 import java.nio.file.Path
 
 /** [splice.launch.recipe.LaunchService]'s read seam: the real absolute claude binary when the default
@@ -41,10 +42,12 @@ public class WrappedLaunch internal constructor(
      *  vanilla dir is the only target, and the policy carries settings.json's "global" layer (the very
      *  file being rewritten) forward whatever the source head's share/isolate says. The door is the
      *  materializer's narrow one ([ClaudeConfigMaterializer.materializeWrap]), never a bypass of the
-     *  DR-102 guard. */
-    public fun materialize(spec: MaterializeSpec): MaterializeResult = materializer.materializeWrap(
-        spec.copy(configDir = configDir, policy = ClaudePolicy(share = setOf(Keys.SETTINGS), isolate = emptySet())),
-    )
+     *  DR-102 guard. [trust] is carried as for any head (V4-283). */
+    public fun materialize(spec: MaterializeSpec, trust: TrustedLaunch? = null): MaterializeResult =
+        materializer.materializeWrap(
+            spec.copy(configDir = configDir, policy = ClaudePolicy(share = setOf(Keys.SETTINGS), isolate = emptySet())),
+            trust,
+        )
 }
 
 public data class ClaudeHeadStatus(

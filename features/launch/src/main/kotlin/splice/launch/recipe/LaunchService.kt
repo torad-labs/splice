@@ -14,6 +14,7 @@ package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
 import splice.client.MaterializeSpec
+import splice.client.TrustedLaunch
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
@@ -99,7 +100,10 @@ public class LaunchService(
             loginOutcomeFile = effective.loginOutcomeFile,
             headKey = effective.headKey,
         )
-        if (wrapped != null) wrapped.materialize(materialize) else materializer.materialize(materialize)
+        // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in.
+        val trust = cwd?.let { Paths.get(it) }?.takeIf { it.isAbsolute }
+            ?.let { TrustedLaunch(it, effective.trees.siblings) }
+        if (wrapped != null) wrapped.materialize(materialize, trust) else materializer.materialize(materialize, trust)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is

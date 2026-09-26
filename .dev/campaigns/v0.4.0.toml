@@ -6950,9 +6950,13 @@ verify = "red first, one test per store: an expired recording, a removed head's 
 id = "V4-261"
 phase = "release"
 title = "PRIVACY: activity labels are kept only as long as a console view reads them (Marlin's audit, 2026-09-26, at 99244e63a; inventory in Splice-CPO/me/research/disk-writes-99244e63a.md). Labels carry file names, commands and search patterns, 32 chars each, and are kept 90 days (Knob.kt:454). Match the retention to the longest view that reads them."
-files = ["core/src/main/kotlin/splice/core/config/Knob.kt"]
-status = "todo"
+files = ["core/src/main/kotlin/splice/core/config/Knob.kt", "features/sessions/src/main/kotlin/splice/sessions/activity/ActivityStore.kt", "features/sessions/src/test/kotlin/splice/sessions/activity/ActivityStoresTest.kt"]
+status = "in_flight"
 verify = "the retention equals the longest console view's window, named in the knob's doc; a test pins that a label older than it is gone; CI gate on the train sha."
+# [2026-09-26] amend by=unattributed: files were ["core/src/main/kotlin/splice/core/config/Knob.kt"]
+claimed_by = "console"
+claimed_at = "2026-09-26T05:50:50.230Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T05:50:50Z
 
 [[items]]
 id = "V4-262"

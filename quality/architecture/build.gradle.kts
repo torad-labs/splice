@@ -146,6 +146,19 @@ tasks.withType<Test>().configureEach {
             repoRoot.dir("$dir/src/testFixtures/kotlin").asFileTree.matching { include("**/*.kt") }
         },
     ).withPropertyName("scannedTestFixtureSources")
+    // V4-297: three laws walk TEST trees too: CompactionIsATurnLawTest every module's src/test
+    // (CompactionIsATurnLawTest.kt:118), AutoCloseableClosedLawTest its src/test, and the request-byte
+    // contract law a module's src/test/kotlin *ContractTest.kt beside src/test/resources/contract/*.json
+    // (ArchitectureLawsTest.kt:325-330). None was an input, so a test-only edit left this task
+    // UP-TO-DATE and those laws graded a tree they never re-read.
+    inputs.files(
+        moduleDirectories.values.map { dir ->
+            repoRoot.dir("$dir/src/test").asFileTree.matching {
+                include("**/*.kt")
+                include("resources/contract/*.json")
+            }
+        },
+    ).withPropertyName("scannedTestSources")
     // The ratchets' recorded censuses, moved here from checks/config/ with their checkers. They are
     // the OTHER half of every one of those laws' verdicts: a baseline lowered by hand must re-run
     // the law that grades against it, or the win is recorded against a run that never happened.

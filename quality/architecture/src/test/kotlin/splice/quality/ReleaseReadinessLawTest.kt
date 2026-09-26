@@ -202,7 +202,10 @@ internal object ReleaseReadiness {
     private const val GIT_SECONDS = 30L
     private val ENV_IGNORED = Regex("""^\.env""", RegexOption.MULTILINE)
     private val UNPINNED_ACTION = Regex("""uses: .*@v[0-9]+(?:[.][0-9]+)*[ \t]*$""", RegexOption.MULTILINE)
-    private val FIXED_PORT = Regex("""= 39[0-9]{3}""")
+
+    // A 39xxx literal where a port is given: after `=`, `(` or `,`, with Kotlin's optional `_` between
+    // the groups (V4-297: only `= 39xxx` was read). A trailing L, `.` or digit is a duration, not a port.
+    private val FIXED_PORT = Regex("""[=(,]\s*39_?[0-9]{3}(?![0-9_.Ll])""")
     private val SLEEP_1100 = Regex("""Thread\.sleep\(1100\)""")
     private val FORK_RECORD = Regex("""UNRESOLVED|upstream""", RegexOption.IGNORE_CASE)
     private val FONT_LICENSE = Regex("""OFL|LICENSE""", RegexOption.IGNORE_CASE)
@@ -376,8 +379,9 @@ private const val INSTALL_HOME = "run_jar() {\n  $INSTALL_RUN_JAR\n}\n" +
     "run_jar \"\$JAR_DST\" init\nrun_jar \"\$JAR_DST\" install --all\nrun_jar \"\$JAR_DST\" doctor\n"
 
 // The Kotlin fixtures are assembled at runtime so this file, which the live rules also scan, does
-// not trip its own port and sleep rules.
-private const val A_FIXED_PORT = 39_100
+// not trip its own port and sleep rules: a port is written as its two halves, never as one literal.
+private const val PORT_HIGH = "39"
+private const val PORT_LOW = "100"
 private const val A_SLEEP_MS = 1100
 private const val CONSOLE_STRINGS = "console/src/pages/home/strings.ts"
 private const val SETUP_TEST = "app/src/test/kotlin/splice/app/cli/setup/SetupCommandTest.kt"
@@ -615,7 +619,15 @@ private fun packagingMutations(): List<Mutation> = listOf(
 
 private fun kotlinMutations(): List<Mutation> = listOf(
     Mutation("a Kotlin file hardcoding a 39xxx port", "kotlin-no-fixed-ports", "core/src/test/kotlin/PortTest.kt") {
-        file("core/src/test/kotlin/PortTest.kt", "val port = $A_FIXED_PORT\n")
+        file("core/src/test/kotlin/PortTest.kt", "val port = $PORT_HIGH$PORT_LOW\n")
+    },
+    // V4-297: the rule read only `= 39xxx`, so the underscore spelling this file's own fixture used and
+    // a port given as an argument both passed; the Int fixture printed 39100 and never exercised either.
+    Mutation("a 39xxx port spelled with an underscore", "kotlin-no-fixed-ports", "core/src/test/kotlin/PortTest.kt") {
+        file("core/src/test/kotlin/PortTest.kt", "val port = ${PORT_HIGH}_$PORT_LOW\n")
+    },
+    Mutation("a 39xxx port passed as an argument", "kotlin-no-fixed-ports", "core/src/test/kotlin/PortTest.kt") {
+        file("core/src/test/kotlin/PortTest.kt", "fun serve() { listen($PORT_HIGH$PORT_LOW) }\n")
     },
     Mutation("no TestNet fixture", "testnet-fixture", "TestNet.kt") { delete(TESTNET) },
     Mutation("a Kotlin file sleeping 1100 ms", "kotlin-no-sleep-1100", "core/src/test/kotlin/SleepTest.kt") {

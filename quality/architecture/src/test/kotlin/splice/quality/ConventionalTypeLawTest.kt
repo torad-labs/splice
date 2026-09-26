@@ -130,18 +130,23 @@ internal object ConventionalType {
 
     /** The paths among [files] (relative to [root]) that restate a run of 3+ [types] — SOURCE is
      *  excluded even when [files] carries it, because it necessarily holds the list this hunts for.
-     *  An unreadable path is skipped, exactly as the checker's `try { readFileSync } catch { continue }`. */
+     *  An unreadable path is a problem of its own, named (V4-297): it was skipped, as the retired
+     *  checker's `catch { continue }` did, so a copy the law could not read passed as no copy. */
     fun secondCopies(root: File, files: List<String>, types: List<String>): List<String> {
         val pattern = runPattern(types)
         return files.filter { it != SOURCE }.mapNotNull { rel ->
-            val text = runCatching { File(root, rel).readText() }.getOrNull()
-            val hit = text != null && hasHit(text, pattern)
-            if (!hit) {
-                null
-            } else {
-                "$rel restates 3+ conventional types; the list lives once in $SOURCE. " +
-                    "Remedy: delete the copy and point readers at bun tools/gate title \"feat(scope): subject\""
-            }
+            runCatching { File(root, rel).readText() }.fold(
+                onSuccess = { text ->
+                    if (!hasHit(text, pattern)) {
+                        null
+                    } else {
+                        "$rel restates 3+ conventional types; the list lives once in $SOURCE. " +
+                            "Remedy: delete the copy and point readers at " +
+                            "bun tools/gate title \"feat(scope): subject\""
+                    }
+                },
+                onFailure = { why -> "$rel: unreadable ($why)" },
+            )
         }
     }
 
@@ -221,6 +226,9 @@ class ConventionalTypeLawTest {
             "missing source is a violation, never a skip" to { dir: File -> missingSourceIsRed(dir, source) },
             "the law's own file is not a second copy" to { dir: File -> lawFileIsNotASecondCopy(dir, source) },
             "untracked copy green, tracked copy reds, named" to { dir: File -> gitDenominatorArm(dir, source, types) },
+            "an unreadable file is named, never read as no copy" to { dir: File ->
+                unreadableIsNamed(dir, source, types)
+            },
         )
         return arms.mapIndexed { index, (name, run) ->
             DynamicTest.dynamicTest(name) { run(File(root, index.toString()).apply { mkdirs() }) }
@@ -269,6 +277,20 @@ class ConventionalTypeLawTest {
         assertEquals(emptyList<String>(), tree.audit(), "untracked scratch is not in the git denominator")
         tree.git(listOf("add", SCRATCH))
         assertHit(tree.audit(), SCRATCH) { "a copy has to be tracked to reach main; once staged it must be RED" }
+    }
+
+    // V4-297: a tracked file the law cannot read was counted as "no hit", so a copy behind chmod 000
+    // (or a delete racing git ls-files) was never checked and the law went green over it.
+    private fun unreadableIsNamed(dir: File, source: String, types: List<String>) {
+        val tree = ConventionalTree(dir, source)
+        tree.file(DOCS, typesPhrase(types))
+        val docs = File(dir, DOCS)
+        check(docs.setReadable(false, false)) { "chmod 000 did not take on $docs" }
+        try {
+            assertHit(tree.audit(), DOCS, "unreadable") { "a copy the law cannot read must be RED, named" }
+        } finally {
+            docs.setReadable(true, false)
+        }
     }
 
     private fun typesPhrase(types: List<String>): String = types.joinToString(" ") + "\n"

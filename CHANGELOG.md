@@ -620,6 +620,12 @@ origin.
   attempt carries that attempt's state, and splice rightly ignores it, but it used to do so without a
   word: the pane sat silent until the 300-second timeout. The pane and the tab's page now say the
   sign-in came from an earlier attempt and to finish it in the newest tab.
+- **The prompt after a browser sign-in takes the first answer typed.** While a browser sign-in waits,
+  splice also reads the terminal, for a redirect URL pasted by someone whose browser cannot reach the
+  machine. That reader stayed parked on the terminal after the browser won, so it took the next line
+  typed and threw it away: the live-turn question after `splice add codex` needed its answer typed
+  twice. The reader now reads only what is already typed while the sign-in waits, and stops before
+  the next prompt asks (V4-251).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

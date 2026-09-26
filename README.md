@@ -187,7 +187,7 @@ For Claude itself, `claude-splice` preserves Claude Code's native Anthropic logi
 
 ### The billing word in Claude Code's header
 
-Claude Code's header prints a billing word beside the model. On `claude-splice` it names your Claude plan, for example `Claude Max`, because Claude Code signs in itself. On every other head it reads `API Usage Billing`: Claude Code only has names for Anthropic's own plans and clouds, so it prints that for any other service. It does not mean Anthropic is billing you. Each head uses the plan or key you set it up with, and splice's status line shows an estimate at API rates, labelled `API est.`, where splice has a rate card for the model.
+Claude Code's header prints a billing word beside the model. On `claude-splice` it names your Claude plan, for example `Claude Max`, because Claude Code signs in itself. On every other head it reads `API Usage Billing`: Claude Code only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any other service. It does not mean Anthropic is billing you. Each head uses the plan, key or GPU you set it up with, and splice's status line shows an estimate at API rates, labelled `API est.`, where splice has a rate card for the model.
 
 ## Manage your sessions
 

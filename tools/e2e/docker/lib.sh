@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # tools/e2e/docker/lib.sh — sourced by the container scenarios (inside.sh: a fresh machine;
 # upgrade.sh: a published release upgraded in place). Definitions only: the receipt plumbing, the
 # mock upstreams and their topology, and the checks both scenarios run. A scenario sets its options,
@@ -33,6 +34,10 @@ resolve_state_dir() {
 ARTIFACTS="${ARTIFACTS:-/artifacts}"
 REPO="${REPO:-/repo}"
 OUT="${OUT:-/out}"
+# Anything carrying a key (a /launch recipe holds the turn key in ANTHROPIC_AUTH_TOKEN) lives here, a
+# 0700 directory under $HOME, never under $OUT: run.sh copies /out into the checkout's receipts and
+# e2e-docker.yml uploads that tree as an artifact (V4-294).
+PRIVATE="${PRIVATE:-$HOME/.e2e-private}"
 CONTROL_PORT=3096
 CODEX_HEAD_PORT=3099
 CHAT_HEAD_PORT=3101
@@ -97,7 +102,8 @@ finish() {
 # `Authorization: Bearer ` and the run reported a wall of 401s — "no key at this path" told as an
 # auth failure, which sends the reader looking at the wrong half of the system.
 mgmt() {
-  local key="$(resolve_state_dir)/mgmt-key"
+  local key
+  key="$(resolve_state_dir)/mgmt-key"
   [ -r "$key" ] || { echo "no mgmt-key at $key" >&2; return 1; }
   cat "$key"
 }
@@ -290,11 +296,14 @@ api_heads() { curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" | bun "$LIB_T
 # that runs the head's sign-in when it is submitted. Splice is the whole package, so a head that
 # launches without any of these is a failed install, not a cosmetic gap.
 head_contract() { # head pinned-model pinned-window rows("id:window,...")
-  curl_mgmt -X POST -H 'Content-Type: application/json' \
-    --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
-    > "$OUT/recipe-$1.json" || return 1
+  # The recipe carries the turn key, so it is written under $PRIVATE, 0600 from its first byte.
+  mkdir -p "$PRIVATE" && chmod 0700 "$PRIVATE" || return 1
+  ( umask 077
+    curl_mgmt -X POST -H 'Content-Type: application/json' \
+      --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
+      > "$PRIVATE/recipe-$1.json" ) || return 1
   # The management key goes by FILE, never on argv, where a process listing would show it.
-  bun "$LIB_TS" head-contract "$1" "$2" "$3" "$4" "$HOME" "$OUT/recipe-$1.json" "$CONTROL_PORT" \
+  bun "$LIB_TS" head-contract "$1" "$2" "$3" "$4" "$HOME" "$PRIVATE/recipe-$1.json" "$CONTROL_PORT" \
     "$(resolve_state_dir)/mgmt-key"
 }
 
@@ -321,7 +330,8 @@ status_step() {
   # PORT", or "daemon stopped (starts on first launch)"); the old labelled row is gone.
   printf '%s\n' "$out" | grep -qE "^\s*splice \S+\s+daemon running on $CONTROL_PORT\s*$" ||
     { echo "status does not report the daemon running on :$CONTROL_PORT"; return 1; }
-  printf '%s\n' "$out" | grep -q 'claudex' && printf '%s\n' "$out" | grep -q 'claude-mockchat2' || { echo "status lacks a head row"; return 1; }
+  { printf '%s\n' "$out" | grep -q 'claudex' && printf '%s\n' "$out" | grep -q 'claude-mockchat2'; } ||
+    { echo "status lacks a head row"; return 1; }
 }
 
 uninstall_step() {

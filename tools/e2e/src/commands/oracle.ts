@@ -67,6 +67,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { layout } from "../../../gate/src/lib/repo.ts";
+import { daemonEnv } from "../daemon-env.ts";
 
 export const usage =
   "oracle [replay] [--scenario NAME] [--keep] [--json OUT] [--artifact JAR] [--fixtures DIR]   " +
@@ -710,10 +711,7 @@ command = "claudex"
 `,
   );
 
-  const env: Record<string, string> = Object.fromEntries(
-    Object.entries(process.env).filter((kv): kv is [string, string] => kv[1] !== undefined && !/^(CLAUDEX_|CODEX_|SPLICE_|CHATGPT_)/.test(kv[0])),
-  );
-  Object.assign(env, {
+  const env = daemonEnv({
     SPLICE_CONFIG: join(tmp, "splice.toml"),
     CLAUDEX_STATE_DIR: join(tmp, "state"),
     CLAUDEX_STREAM_IDLE_MS: "700",

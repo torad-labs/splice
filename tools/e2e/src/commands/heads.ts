@@ -69,6 +69,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exitStatusOf } from "../../../gate/src/lib/status.ts";
 import { layout } from "../../../gate/src/lib/repo.ts";
+import { daemonEnv } from "../daemon-env.ts";
 
 export const usage =
   "heads [--tier 1|2|all|perf-oracle|mcp-oracle|plant-oracle] [--head KEY] [--list] [--selftest] [--probe reasoning-cache]   " +
@@ -1319,6 +1320,12 @@ async function probeClient(port: number, scenario: string, expectFinal: string, 
   note(`  client[${scenario}]: ${expectTools} tool(s) executed, final ${JSON.stringify(expectFinal)} — ok`);
 }
 
+/** The reasoning-cache probe daemon's environment: its own splice.toml and state dir, and none of the
+ *  caller's SPLICE_STATE_DIR family (V4-294, daemon-env.ts). */
+export function reasoningCacheDaemonEnv(config: string, stateDir: string): Record<string, string> {
+  return daemonEnv({ SPLICE_CONFIG: config, CLAUDEX_STATE_DIR: stateDir });
+}
+
 async function reasoningCacheProbe(): Promise<number> {
   const controlPort = Number(process.env.RCP_CONTROL_PORT || 3496);
   const headPort = Number(process.env.RCP_HEAD_PORT || 3499);
@@ -1387,7 +1394,7 @@ async function reasoningCacheProbe(): Promise<number> {
     const opts = (process.env.SPLICE_JVM_OPTS || "-Xmx512m").split(/\s+/).filter(Boolean);
     const out = Bun.file(log).writer();
     daemon = Bun.spawn(["java", ...opts, "-jar", jar, "daemon"], {
-      env: { ...process.env, SPLICE_CONFIG: config, CLAUDEX_STATE_DIR: stateDir },
+      env: reasoningCacheDaemonEnv(config, stateDir),
       stdio: ["ignore", "pipe", "pipe"],
     });
     void (async () => {

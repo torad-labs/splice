@@ -34,7 +34,6 @@ trap finish EXIT
 
 FROM="${FROM:-/from}"
 FROM_TAG="${SPLICE_UPGRADE_FROM:-}"
-PRIVATE="$HOME/.e2e-private"
 CONFIG="$HOME/.config/splice"
 # The pre-upgrade session: a fixed id, so the resume after the upgrade names it rather than finds it.
 SID="5e55a0d1-0000-4000-8000-000000000001"
@@ -69,7 +68,7 @@ step "Claude Code version matches the splice tested pin" client_version_receipt
 # markers; this is the same check against what the jars themselves report.
 versions_differ() {
   echo "from ${FROM_TAG:-<unnamed>}: jar reports ${FROM_VERSION:-<none>}; candidate jar reports ${CANDIDATE_VERSION:-<none>}"
-  [ -n "$FROM_VERSION" ] && [ -n "$CANDIDATE_VERSION" ] || { echo "a jar did not report its version"; return 1; }
+  { [ -n "$FROM_VERSION" ] && [ -n "$CANDIDATE_VERSION" ]; } || { echo "a jar did not report its version"; return 1; }
   [ "${FROM_TAG#v}" = "$FROM_VERSION" ] || { echo "/from is not $FROM_TAG: its jar reports $FROM_VERSION"; return 1; }
   [ "$FROM_VERSION" != "$CANDIDATE_VERSION" ] ||
     { echo "the candidate reports $FROM_VERSION too, so the running daemon would never be replaced"; return 1; }
@@ -144,6 +143,7 @@ upgrade_install() {
   echo "installer: $installer (piped into bash like the one-liner, release base file://$ARTIFACTS)"
   # A PIPE, as curl gives it: a command inside install.sh that reads stdin would eat the rest of the
   # script here exactly as it would for a user, instead of a file bash can seek back into.
+  # shellcheck disable=SC2002  # the pipe is the point, above
   out="$(cat "$installer" | SPLICE_RELEASE_BASE_URL="file://$ARTIFACTS" bash 2>&1)"; rc=$?
   printf '%s\n' "$out" | tail -25
   [ $rc -eq 0 ] || { echo "the release-mode install exited $rc"; return 1; }
@@ -194,7 +194,8 @@ handover() {
   echo "daemon pid $pid (was $old); /health version $version; open jar ${jar_sha:0:16}…, candidate ${want:0:16}…"
   ! kill -0 "$old" 2>/dev/null || { echo "the $FROM_TAG daemon (pid $old) is still alive"; return 1; }
   [ "$version" = "$CANDIDATE_VERSION" ] || { echo "/health reports $version, not the candidate's $CANDIDATE_VERSION"; return 1; }
-  [ -n "$jar_sha" ] && [ "$jar_sha" = "$want" ] || { echo "the serving daemon does not hold the candidate jar open"; return 1; }
+  { [ -n "$jar_sha" ] && [ "$jar_sha" = "$want" ]; } ||
+    { echo "the serving daemon does not hold the candidate jar open"; return 1; }
 }
 step "first launch after the upgrade: the shim replaces the $FROM_TAG daemon with the candidate" in_dir "$HOME" handover
 
@@ -239,7 +240,7 @@ step "head contract after relaunch: claudex (turn key, 0600 header file, roster,
 # The same relaunch, from the release notes' side: the key lives in <state>/turn-auth-header and
 # nowhere a process listing or a settings file would show it.
 turn_key_placement() {
-  bun "$LIB_TS" turn-key-placement "$OUT/recipe-claudex.json" "$HOME/.claude-claudex/settings.json" "$(resolve_state_dir)"
+  bun "$LIB_TS" turn-key-placement "$PRIVATE/recipe-claudex.json" "$HOME/.claude-claudex/settings.json" "$(resolve_state_dir)"
 }
 step "after relaunch: turn key in the env, no key in settings.json or the status line, <state>/turn-auth-header 0600" turn_key_placement
 

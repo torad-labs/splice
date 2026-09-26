@@ -67,6 +67,7 @@ import {
 } from "../compat/python-values.ts";
 import { exitStatusOf } from "../../../gate/src/lib/status.ts";
 import { findRepoRoot } from "../../../gate/src/lib/repo.ts";
+import { daemonEnv } from "../daemon-env.ts";
 
 // =============================================================================================
 // PROBE — the budget proxy, the synthetic workspace and the bounded A/B comparison.
@@ -1871,12 +1872,11 @@ command = "claude-${name}"
   }
   const config = join(root, "splice.toml");
   writeFileSync(config, blocks.join("\n"));
-  return {
-    ...(process.env as Record<string, string>),
+  return daemonEnv({
     SPLICE_CONFIG: config, CLAUDEX_STATE_DIR: state, CLAUDEX_QUOTA_POLL: "off",
     CODEX_AUTH_PATH: join(root, "missing-legacy-auth.json"),
     CODEX_OAUTH_TOKEN_URL: `http://127.0.0.1:${upstream}/oauth/token`, SPLICE_PROBE_BEARER: bearer,
-  };
+  });
 }
 
 export async function startDaemon(root: string, artifact: string, env: Record<string, string>, control: number): Promise<[Proc, number]> {
@@ -2085,11 +2085,10 @@ export async function compareConfigure(root: string, authFile: string, proxyPort
   }
   const config = join(root, "splice.toml");
   writeFileSync(config, lines.join("\n") + "\n");
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
+  const env = daemonEnv({
     SPLICE_CONFIG: config, CLAUDEX_STATE_DIR: state, CLAUDEX_QUOTA_POLL: "off",
     CODEX_OAUTH_TOKEN_URL: `http://127.0.0.1:${proxyPort}/oauth/token`, SPLICE_PROBE_BEARER: bearer,
-  };
+  });
   return [env, control, baseline, codeMode];
 }
 

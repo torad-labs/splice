@@ -11,13 +11,16 @@
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { check, FileNotFoundError, get, OSError, ValueError } from "../src/compat/python-values.ts";
 import { loads, obj, type PyValue } from "../src/compat/python-json.ts";
-import { Budget, compareSeams as seams, runCompare as run, type RunArgs } from "../src/commands/code-mode.ts";
+import {
+  Budget, compareConfigure, compareSeams as seams, mockConfigure, runCompare as run, type RunArgs,
+} from "../src/commands/code-mode.ts";
+import { reasoningCacheDaemonEnv } from "../src/commands/heads.ts";
 
 const CLI = resolve(import.meta.dir, "../index.ts");
 
@@ -236,5 +239,47 @@ describe("comparison receipts", () => {
     expect(r.stderr).toContain("bun tools/gate slot <label> -- :app:shadowJar");
     expect(r.stdout).toBe("");
     expect(existsSync(receipt)).toBe(false);
+  });
+});
+
+// V4-294: each harness daemon is "isolated" by a scratch state dir, but its env spread process.env
+// and set only CLAUDEX_STATE_DIR, which StatePaths reads AFTER SPLICE_STATE_DIR (StatePaths.kt:46,50).
+// A shell that exports SPLICE_STATE_DIR booted the scratch daemon on the operator's real state
+// (mgmt-key, config.json, logs) beside the live one. oracle.ts already drops the whole family.
+const mkdirIn = (root: string, name: string): string => {
+  mkdirSync(join(root, name));
+  return join(root, name);
+};
+
+describe("the harness daemons' environment - V4-294", () => {
+  test("no builder hands its daemon the caller's SPLICE_STATE_DIR, or anything else of that family", async () => {
+    const sentinel = "/operator/real/state-294";
+    const family = ["SPLICE_STATE_DIR", "CLAUDEX_HOME", "CODEX_HOME", "CHATGPT_ACCOUNT_ID"];
+    const saved = family.map((name) => [name, process.env[name]] as const);
+    for (const name of family) process.env[name] = sentinel;
+    const root = mkdtempSync(join(tmpdir(), "harness-env-"));
+    try {
+      const source = join(root, "source-auth.json");
+      writeFileSync(source, '{"tokens":{"access_token":"synthetic"}}');
+      // Each builder makes its own state/ under the root it is given, so each gets its own root.
+      const [compared] = await compareConfigure(mkdirIn(root, "compare"), source, 12345);
+      const envs: Record<string, Record<string, string | undefined>> = {
+        mockConfigure: mockConfigure(mkdirIn(root, "mock"), 1, 2, 3, 4, null),
+        compareConfigure: compared,
+        reasoningCacheDaemonEnv: reasoningCacheDaemonEnv(join(root, "splice.toml"), join(root, "state")),
+      };
+      const leaked = Object.entries(envs).flatMap(([builder, env]) =>
+        Object.entries(env).filter(([, value]) => value === sentinel).map(([name]) => `${builder}: ${name}`));
+      expect(leaked).toEqual([]);
+      for (const [builder, env] of Object.entries(envs)) {
+        expect(env.CLAUDEX_STATE_DIR ?? "", builder).toStartWith(root);
+      }
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

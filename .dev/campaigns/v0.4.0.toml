@@ -8019,3 +8019,11 @@ files = ["features/turns/src/test/kotlin/splice/head/usage/EconomicsStoreTest.kt
 status = "todo"
 verify = "red first: a mutant that drops each guard (EconomicsStore.kt:240, SessionTotals.kt:219 minus its clean arm) survives today's suite, quoted; green: per store, record, flushNow, then run the pending coalesced flush deterministically (no wall-clock sleep: kt-tests-no-wall-clock) and assert no write happened (file bytes and mtime unchanged, or an injected writer counts 0); both mutants now killed by name; :features-turns:test under the slot"
 # [2026-09-26] amend by=orchestrator: files were ["features/turns/src/test/kotlin/splice/head/usage/EconomicsStoreTest.kt", "features/turns/src/test/kotlin/perf/SessionTotalsTest.kt"]
+
+[[items]]
+id = "V4-331"
+phase = "release"
+title = "The operator's look at Needs you, Sessions and Fleet before the rollout (V4-219's last clause, look-gate.md:130 layer 4): three renders from a scratch daemon on 62f49b194 with fake credentials and seeded sessions, turns and hand-offs, kept under mythos/captures/console-v4219/ outside the repo (split from V4-219 so it needs no repo fence; console 2026-09-26)"
+files = []
+status = "todo"
+verify = "the scratch daemon's open-jar sha256 is 62f49b194's (6e5922b2...); seed script and three PNGs under mythos/captures/console-v4219/ with sha256 each; each screen's job line quoted; fake credentials only, nothing from the operator's live login or transcripts; browser via agent-browser after the browser gate frees; nothing leaves the machine"

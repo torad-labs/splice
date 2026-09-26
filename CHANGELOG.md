@@ -665,6 +665,10 @@ origin.
   with no card, such as Claude Code's background haiku calls, nulled that member's dollars and the
   team's total, and the tile read `Unpriced`. The cost is now the priced turns' dollars, with
   `1 turn unpriced` beside it, and reads `Unpriced` only when no turn was priced (V4-264).
+- **A project's API cost today counts the turns it could not price.** The project row applies the
+  same rule: `cost_today_usd` is the priced turns' dollars and `unpriced_turns_today` counts the
+  rest, and the Projects page's summary counts those turns rather than the repos that had one. The
+  Usage page says `1 turn unpriced` for a single turn (V4-269).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

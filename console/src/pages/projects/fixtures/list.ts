@@ -21,6 +21,7 @@ const projects: ProjectRow[] = [
     teams: 1,
     turns_today: 218,
     cost_today_usd: 12.84,
+    unpriced_turns_today: 0,
     day_start: midnight,
     last_activity: now - 4_000,
     compaction: [
@@ -38,6 +39,7 @@ const projects: ProjectRow[] = [
     teams: 1,
     turns_today: 96,
     cost_today_usd: 4.1,
+    unpriced_turns_today: 0,
     day_start: midnight,
     last_activity: now - 2 * 60_000,
     compaction: [
@@ -59,6 +61,7 @@ const projects: ProjectRow[] = [
     // No head that ran here declares rates, so the cost is an absence rather
     // than a figure of zero.
     cost_today_usd: null,
+    unpriced_turns_today: 41,
     day_start: midnight,
     last_activity: now - 51 * 60_000,
     compaction: [],
@@ -71,6 +74,7 @@ const projects: ProjectRow[] = [
     teams: 0,
     turns_today: 0,
     cost_today_usd: 0,
+    unpriced_turns_today: 0,
     day_start: midnight,
     last_activity: now - 3 * HOUR,
     // The daemon never wired its compaction table: a sample of the null that is not "no rule".

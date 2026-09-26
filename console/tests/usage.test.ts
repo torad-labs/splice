@@ -136,6 +136,23 @@ describe('usage page', () => {
     expect(markup).not.toContain('$0.000');
   });
 
+  // V4-269: the stat printed "1 turns unpriced" for a single turn.
+  test('one turn the board could not price is counted in the singular', () => {
+    const end = Math.floor(FIXTURE_NOW / HOUR_MS) * HOUR_MS;
+    const priced = fixtureEconomics.heads.filter((head) => head.key !== 'claude-splice');
+    const lone = {
+      ...priced[0], key: 'lone', label: 'lone',
+      buckets: [{
+        hour: end, turns: 1, in_tokens: 1000, cached_tokens: 0, cache_write_tokens: 0, out_tokens: 10, req_bytes: 0,
+        upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0, deferral_turns: 0, rate_limited: 0,
+        cost_usd: null, unpriced_turns: 1,
+      }],
+    };
+    const markup = render(h(UsageBoard, { payload: { ...fixtureEconomics, heads: [...priced, lone] }, catalog: fixtureModels, now: FIXTURE_NOW }));
+    expect(markup).toContain('1 turn unpriced');
+    expect(markup).not.toContain('1 turns unpriced');
+  });
+
   test('the cost inset counts the turns it could not price beside the dollars', () => {
     const end = Math.floor(FIXTURE_NOW / HOUR_MS) * HOUR_MS;
     const hour = (at: number, turns: number, cost: number | null, unpriced: number) => ({

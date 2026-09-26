@@ -108,6 +108,19 @@ describe('projects declares its table', () => {
     for (const row of body) expect([...row.matchAll(/<td/g)].length).toBe(names.length);
   });
 
+  // V4-269: the day's cost counted the REPOS it left out; a repo's dollars now leave out only the
+  // turns no card priced, and those are what the figure counts.
+  test("the day's cost is the priced dollars, and it counts the turns no card priced", () => {
+    const counted = [
+      project({ cost_today_usd: 2.5, unpriced_turns_today: 1 }),
+      project({ id: '/dev/relay', root: '/dev/relay', cost_today_usd: 0.5, unpriced_turns_today: 0 }),
+    ];
+    const html = renderToStaticMarkup(h(ProjectsBoard, { payload: { projects: counted } } as never));
+    expect(html).toContain('$3.00');
+    expect(html).toContain('1 turn unpriced');
+    expect(html).not.toContain('1 turns unpriced');
+  });
+
   test('a repo with no rates prints the absence, and a quiet one says so', () => {
     const relay = markup().split('</thead>')[1]?.split('<tr').slice(1)[1] ?? '';
     expect(relay).toContain('>–<');

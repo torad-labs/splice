@@ -7699,6 +7699,7 @@ files = ["console/src/shared/coverage/denominator.ts", "console/src/shared/cover
 status = "todo"
 verify = "red first: with the manifest in place, the wall names every topology element it has no disposition for (quoted); a Kotlin test that walks Topology.serializer().descriptor (recursively through the table types) fails BY NAME when the checked-in manifest omits or adds an element; a mutant that adds a field to CompactionScope reds both; cd console && bun test tests/coverage.test.ts; the module's detekt and test"
 # [2026-09-26] amend by=orchestrator: files were ["console/src/shared/coverage/denominator.ts", "console/src/shared/coverage/baseline.ts", "console/tests/coverage.test.ts", ".dev/restructure/capabilities.tsv"]
+# [2026-09-26] From console's inventory (2026-09-26): the topology dispositions live in pages/settings/coverage.ts:73-133 (not baseline.ts), and the Dialect/SystemPromptMode ones enforce picker parity with TOPOLOGY_CHOICES, so the manifest keeps enum values per path (path<TAB>enum values) or that check regresses; entities/topology/model/schema.ts:137-151 has no projects key, so the validator flags a legal [projects] table as unknown key (in scope: the manifest is what schema.ts is held to)
 
 [[items]]
 id = "V4-313"

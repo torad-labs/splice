@@ -7804,3 +7804,11 @@ title = "Stop a turn from the console: each head lists its live turns and stops 
 files = ["features/turns/src/main/kotlin/splice/head/turn/TurnOneDrive.kt", "features/turns/src/main/kotlin/splice/head/turn/CancellationSeal.kt", "features/turns/src/main/kotlin/splice/head/turn/LiveTurns.kt", "app/src/main/kotlin/splice/app/control/mount/TurnsMount.kt", ".dev/restructure/capabilities.tsv"]
 status = "todo"
 verify = "probe first: a real Claude Code (fake credentials) given invalid_request_error mid-stream does not retry, quoted from its own screen or transcript; red: POST /api/heads/{head}/turns/{id}/stop and GET /api/heads/{head}/turns/live answer 404; green: a test head with a stalled upstream lists the turn, stop answers {stopped, head, session}, the client gets the non-retryable frame, the journal outcome is stopped, the gate slot is released, a landed turn answers 404; tests and console files named at claim"
+
+[[items]]
+id = "V4-320"
+phase = "release"
+title = "Resume a session on another head: a read-only recipe route names the command, the transcript found, the tree it goes to, the model it is rewritten to, and whether the original still runs (V4-247)"
+files = ["app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt", "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt"]
+status = "todo"
+verify = "red: GET /api/sessions/{id}/resume?head=<h> answers 404; green: a registry session with a transcript under head A asked for head B answers argv, head, from, to_tree, model, live; an unlinked head is refused naming splice install claude-<h>; live follows the registry; nothing is copied by the read; route and console files named at claim"

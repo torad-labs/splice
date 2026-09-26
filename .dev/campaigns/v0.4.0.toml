@@ -7699,3 +7699,11 @@ title = "The Projects page edits a project's standing prompt and its compaction 
 files = ["console/src/pages/projects/index.tsx", "console/src/pages/projects/detail.tsx", "console/src/pages/projects/strings.ts", "console/src/pages/projects/projects.css", "console/src/pages/projects/coverage.ts", "console/tests/projects.test.ts", "docs/design/JOBS.md"]
 status = "todo"
 verify = "red first: a projects test that saves a prompt and a compaction instruction through the page and reads the PUT /api/topology body naming both (quoted); green with a confirm that names the live sessions of that project the change reaches at their next turn, and the daemon's refusal shown verbatim; cd console && bun test; the wall's projects job lists the edit as built"
+
+[[items]]
+id = "V4-314"
+phase = "release"
+title = "A session's hand-off edges carry the text that was handed off (V4-219 step 3, sessions/coverage.ts:38; console 2026-09-26): /api/sessions/{id}/edges serves only from, to, at and direction (ActivityRoutes.kt:96-100) while the redacted read by tool_use id already exists (TranscriptReader.kt:115-135 sentTexts, used by team chat through TeamsReads.kt:74 and TeamsEdges.kt:48); each edge gets its text through the same SentTextSource (SessionsMount.kt:54), and the Sessions page shows it behind a Reveal"
+files = ["features/sessions/src/main/kotlin/splice/sessions/http/ActivityRoutes.kt", "app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt", "console/src/pages/sessions/index.tsx", "console/src/pages/sessions/strip.tsx", "console/src/pages/sessions/strings.ts", "console/src/pages/sessions/coverage.ts", "console/tests/sessions.test.ts"]
+status = "todo"
+verify = "red first: a route test where an edge's tool_use id has a sent text and the edges answer lacks it (quoted); green: the edge carries the redacted text, an edge with no text says so rather than an empty string, unauthenticated reads stay 401; the console test shows the text only after Reveal; the module's test and detekt; cd console && bun test"

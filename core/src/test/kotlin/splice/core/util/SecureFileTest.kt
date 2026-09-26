@@ -82,4 +82,31 @@ class SecureFileTest {
             assertEquals("[daemon]\n", Files.readString(file))
         }
     }
+
+    // V4-278: the start's hold on splice.toml and its backups. Group and other bits go, the owner's stay.
+    @Test
+    fun `ownerOnlyFile drops what others could read, keeps the owner's bits, and says what it did`(@TempDir tmp: Path) {
+        assumeTrue(Files.getFileStore(tmp).supportsFileAttributeView("posix"), "POSIX modes")
+        val open = Files.writeString(tmp.resolve("open.toml"), "x")
+        Files.setPosixFilePermissions(open, PosixFilePermissions.fromString("rw-rw-r--"))
+        val readOnly = Files.writeString(tmp.resolve("read-only.toml"), "x")
+        Files.setPosixFilePermissions(readOnly, PosixFilePermissions.fromString("r--------"))
+
+        assertEquals(FileTightening.Tightened("rw-rw-r--", "rw-------"), SecureFile.ownerOnlyFile(open))
+        assertEquals(FileTightening.Held, SecureFile.ownerOnlyFile(open), "a second hold has nothing to do")
+        assertEquals(FileTightening.Held, SecureFile.ownerOnlyFile(readOnly))
+        assertEquals("r--------", PosixFilePermissions.toString(Files.getPosixFilePermissions(readOnly)))
+    }
+
+    @Test
+    fun `ownerOnlyFile answers why a file stayed open, never throws`(@TempDir tmp: Path) {
+        val missing = SecureFile.ownerOnlyFile(tmp.resolve("gone.toml"))
+        assertTrue(missing is FileTightening.Open, "a file that is not there: $missing")
+        val zip = URI.create("jar:${tmp.resolve("config.zip").toUri()}")
+        FileSystems.newFileSystem(zip, mapOf("create" to "true")).use { fs ->
+            val file = Files.writeString(fs.getPath("/splice.toml"), "x")
+
+            assertEquals(FileTightening.Open("its filesystem keeps no POSIX modes"), SecureFile.ownerOnlyFile(file))
+        }
+    }
 }

@@ -95,9 +95,10 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
         // The same resolver every CLI reader of this state uses (TopologyStatePaths), so `splice
         // restart`, doctor and logs look where this daemon writes.
         val statePaths = TopologyStatePaths().of(topology)
-        // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock);
-        // a directory that stays open is logged once the logger below exists.
-        val stateOpen = secureStateDirs(statePaths)
+        // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock), and
+        // (V4-278) so are splice.toml and its backups, which can hold header secrets and which an older
+        // splice left at the umask. What they say is logged once the logger below exists.
+        val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath)
         val lock = DaemonLock(statePaths.daemonLockFile)
         val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
         val lockWait = DaemonLockWait()
@@ -123,7 +124,7 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
         // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore
         // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
         DaemonLog.install(log)
-        stateOpen.forEach { log(it) }
+        ownerOnlyLines.forEach { log(it) }
         val shutdownSignal = CompletableDeferred<Unit>()
         InstallShim().shimStalenessWarning(EnvReader(System::getenv))?.let { log("$it\n") }
         val daemon = Daemon(
@@ -256,6 +257,8 @@ internal class DaemonProcess(private val args: List<String> = emptyList()) {
         boundary.bootFailureHandler(statePaths)
 
     internal fun secureStateDirs(statePaths: StatePaths): List<String> = boundary.secureStateDirs(statePaths)
+
+    internal fun secureConfig(configPath: Path): List<String> = boundary.secureConfig(configPath)
 }
 
 // The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 57s — must stay BELOW the CLI's

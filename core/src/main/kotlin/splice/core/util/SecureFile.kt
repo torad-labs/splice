@@ -13,7 +13,20 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+
+/** V4-278: what [SecureFile.ownerOnlyFile] did to one existing file. */
+public sealed class FileTightening {
+    /** Nothing in it was open to other accounts. */
+    public data object Held : FileTightening()
+
+    /** It was [was] and is [now], owner-only. */
+    public data class Tightened(val was: String, val now: String) : FileTightening()
+
+    /** Still open, or not known to be closed: [why]. */
+    public data class Open(val why: String) : FileTightening()
+}
 
 // v0.4.0 review round 2: every result here is a verdict the caller must act on (ownerOnlyDirectory's
 // "why it is still open"); with RETURN_VALUE_NOT_USED an error, dropping one does not compile.
@@ -62,6 +75,45 @@ public object SecureFile {
             onFailure = { failure -> SafeFailureText.render(failure) },
         )
     }
+
+    /**
+     * V4-278: the FILE form of [ownerOnlyDirectory], for a file that already exists and was written
+     * before splice wrote it owner-only (splice.toml and its backups, which can hold header secrets).
+     * Every group and other bit is dropped and the owner's are kept, so 0644 becomes 0600 and an
+     * operator's 0400 stays 0400. A link is followed to its target. The answer is read off the mode
+     * the file ends with: another account's file, a read-only filesystem and a filesystem with no
+     * POSIX modes all answer [FileTightening.Open] with why, never a throw.
+     */
+    public fun ownerOnlyFile(file: Path): FileTightening {
+        val read = try {
+            Cancellables.runCatchingCancellable { Files.getPosixFilePermissions(file) }
+        } catch (_: UnsupportedOperationException) {
+            // Passed through by runCatchingCancellable, so caught here by name (see ownerOnlyDirectory).
+            return FileTightening.Open("its filesystem keeps no POSIX modes")
+        }
+        return read.fold(
+            onSuccess = { before ->
+                if (before.none { it in OPEN_TO_OTHERS }) FileTightening.Held else tighten(file, before)
+            },
+            onFailure = { failure -> FileTightening.Open(SafeFailureText.render(failure)) },
+        )
+    }
+
+    private fun tighten(file: Path, before: Set<PosixFilePermission>): FileTightening =
+        Cancellables.runCatchingCancellable {
+            Files.setPosixFilePermissions(file, before - OPEN_TO_OTHERS)
+            Files.getPosixFilePermissions(file)
+        }.fold(
+            onSuccess = { after ->
+                val now = PosixFilePermissions.toString(after)
+                if (after.any { it in OPEN_TO_OTHERS }) {
+                    FileTightening.Open("its mode stayed $now")
+                } else {
+                    FileTightening.Tightened(PosixFilePermissions.toString(before), now)
+                }
+            },
+            onFailure = { failure -> FileTightening.Open(SafeFailureText.render(failure)) },
+        )
 
     /**
      * Write [content] to [path] with owner-only (0600) perms from the instant the file exists — no

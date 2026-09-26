@@ -7,6 +7,7 @@ package splice.app
 import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
+import splice.core.util.FileTightening
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -152,6 +153,36 @@ internal class DaemonBoundary {
      *  still open; the caller writes them once its logger exists, which is after the lock. */
     internal fun secureStateDirs(statePaths: StatePaths): List<String> =
         statePaths.ownedDirs.mapNotNull { dir -> SecureFile.ownerOnlyDirectory(dir)?.let { ownerOnlyRefusal(dir, it) } }
+
+    /** V4-278: splice.toml and every backup of it held owner-only on every start, beside
+     *  [secureStateDirs]. V4-275 writes them 0600, but an older splice left them at the umask, and
+     *  they can hold header secrets (extra_headers). A linked config is tightened at its target; the
+     *  backups are the ones the console's writer keeps beside the path splice reads. Returns one line
+     *  per file whose mode changed, naming the mode it had, and one warning per file still open; a
+     *  file that cannot be tightened never stops the start. */
+    internal fun secureConfig(configPath: Path): List<String> {
+        val backupPrefix = "${configPath.fileName}.bak-"
+        val listed = Cancellables.runCatchingCancellable {
+            Files.list(configPath.toAbsolutePath().parent).use { paths ->
+                paths.filter { it.fileName.toString().startsWith(backupPrefix) }.sorted().toList()
+            }
+        }
+        val backups = listed.getOrElse { failure ->
+            return listOfNotNull(configLine(configPath)) +
+                "[config] WARNING: the backups beside $configPath could not be listed " +
+                "(${SafeFailureText.render(failure)}), so one an older splice left open stays open"
+        }
+        return (listOf(configPath) + backups).mapNotNull(::configLine)
+    }
+
+    private fun configLine(file: Path): String? = when (val result = SecureFile.ownerOnlyFile(file)) {
+        FileTightening.Held -> null
+        is FileTightening.Tightened ->
+            "[config] $file was ${result.was}, open to other local users; it is ${result.now} now"
+        is FileTightening.Open ->
+            "[config] WARNING: $file could not be made owner-only (${result.why}), so other local users " +
+                "can read the header secrets it may hold"
+    }
 
     private fun ownerOnlyRefusal(dir: Path, why: String): String =
         "[state] $dir could not be held owner-only ($why), so other local users can read what splice keeps there"

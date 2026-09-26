@@ -1,0 +1,27 @@
+/* Store or remove a key: the secret box and its key on one row, the remove below, and the daemon's
+   answer under them, one line per head that reads the key. The controls are the world's
+   (shared/controls); nothing here re-colours them. Radius 0, tokens only. */
+.myx-akey {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-akey-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.myx-akey-read {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-1);
+  color: var(--fg-muted);
+}

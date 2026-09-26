@@ -47,7 +47,7 @@ public class CredentialPresence(private val output: TerminalOutput) {
             val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
             if (failure != null && !genuinelyAbsent) {
                 output.line(
-                    "splice: $path unreadable (${SafeFailureText.render(failure)}) — " +
+                    "splice: $path unreadable (${SafeFailureText.render(failure)}): " +
                         "treating the credential as configured; fix access, not login",
                 )
             }

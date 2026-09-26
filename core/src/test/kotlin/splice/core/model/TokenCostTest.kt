@@ -126,4 +126,50 @@ class TokenCostTest {
         assertTrue(empty.isEmpty)
         assertEquals(0.0, cost.of(empty, deepSeekOffPeak), 1e-12)
     }
+
+    // ---- V4-240: the long-context tier, one request at a time -----------------------------------
+
+    private val grok = ModelRates(
+        input = 2.0,
+        cacheRead = 0.5,
+        output = 6.0,
+        longContext = LongContextRates(overInputTokens = 199_999, input = 4.0, cacheRead = 1.0, output = 12.0),
+    )
+
+    @Test
+    fun `a request that reaches xAI's 200k line bills every token at the tier, output included`() {
+        // 150000 fresh + 50000 cache read = 200000 input tokens: "reaches 200k".
+        val at = TokenBuckets(input = 150_000, cacheRead = 50_000, output = 10_000)
+        // (150000 x 4.0 + 50000 x 1.0 + 10000 x 12.0) / 1e6
+        assertEquals(0.77, cost.of(at, grok), 1e-12)
+        val under = TokenBuckets(input = 149_999, cacheRead = 50_000, output = 10_000)
+        // (149999 x 2.0 + 50000 x 0.5 + 10000 x 6.0) / 1e6
+        assertEquals(0.384998, cost.of(under, grok), 1e-12)
+    }
+
+    @Test
+    fun `cache writes count toward the line, and a tier with no write price bills them at its input`() {
+        val writes = TokenBuckets(input = 100_000, cacheWrite = 100_000)
+        // 200000 input tokens is over 199999: (100000 x 4.0 + 100000 x 4.0) / 1e6
+        assertEquals(0.8, cost.of(writes, grok), 1e-12)
+    }
+
+    @Test
+    fun `OpenAI's line is MORE than 272K, so exactly 272000 input tokens stays at the base card`() {
+        val sol = ModelRates(
+            input = 2.0,
+            cacheRead = 0.2,
+            output = 10.0,
+            cacheWrite = 2.5,
+            longContext = LongContextRates(
+                overInputTokens = 272_000,
+                input = 4.0,
+                cacheRead = 0.4,
+                output = 15.0,
+                cacheWrite = 5.0,
+            ),
+        )
+        assertEquals(0.544, cost.of(TokenBuckets(input = 272_000), sol), 1e-12)
+        assertEquals(1.088004, cost.of(TokenBuckets(input = 272_001), sol), 1e-12)
+    }
 }

@@ -67,7 +67,7 @@ public class ClaudeLogins(
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: the null becomes the Refused below, which names the file
         val content = Cancellables.runCatchingCancellable { Files.readString(source) }.getOrNull()
         return if (content == null) {
-            ClaudeLoginResult.Refused("no readable $source to store — sign in on this head first")
+            ClaudeLoginResult.Refused("no readable $source to store; sign in on this head first")
         } else {
             SecureFile.writeAtomic0600(storeDir.resolve("$label$CREDENTIALS_FILE"), content)
             ClaudeLoginResult.Ok
@@ -80,7 +80,8 @@ public class ClaudeLogins(
         if (selected() == label) {
             Cancellables.discard(
                 Cancellables.runCatchingCancellable { Files.deleteIfExists(selectedFile()) },
-                "clearing the selection of a removed login is best-effort — a stale marker already reads as absent",
+                "clearing the selection of a removed login is best-effort, " +
+                    "since a stale marker already reads as absent",
             )
         }
         return ClaudeLoginResult.Ok
@@ -98,7 +99,7 @@ public class ClaudeLogins(
         val content = Cancellables.runCatchingCancellable { Files.readString(stored) }
             .onFailure { failure ->
                 log(
-                    "[logins] selected login '$label' NOT applied — $stored unreadable " +
+                    "[logins] selected login '$label' NOT applied: $stored unreadable " +
                         "(${SafeFailureText.render(failure)}); the head keeps its current credential\n",
                 )
             }

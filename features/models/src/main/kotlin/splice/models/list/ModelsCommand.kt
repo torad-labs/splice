@@ -62,7 +62,7 @@ public class ModelsCommand(
         private fun dead(text: String): String = palette.paint(palette.dead, text)
 
         fun header() {
-            output.line("${strong("splice models")} ${quiet("— what each provider serves, against splice.toml")}")
+            output.line("${strong("splice models")}${quiet(": what each provider serves, against splice.toml")}")
             output.line(
                 "  ${glyph(RosterVerdict.SERVED)}${quiet(" declared and served")}   " +
                     "${glyph(RosterVerdict.CAPPED)}${quiet(" this row caps a larger ceiling")}   " +
@@ -93,7 +93,7 @@ public class ModelsCommand(
             val shown = if (all) ordered else ordered.take(NEW_SHOWN)
             (declared + shown).forEach(::line)
             if (shown.size < ordered.size) {
-                val more = "… and ${ordered.size - shown.size} more — `splice models <provider> $ALL_FLAG`"
+                val more = "… and ${ordered.size - shown.size} more: `splice models <provider> $ALL_FLAG`"
                 output.line("    ${glyph(RosterVerdict.NEW)} ${quiet(more)}")
             }
             val discovered = undeclared.count { it.verdict == RosterVerdict.NEW }

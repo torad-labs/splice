@@ -69,7 +69,7 @@ internal class SessionRegistryLink(
             // quietly keeping a private non-directory `sessions` contradicted the caller's
             // "link() logs its own declines" contract and sent the visibility hunt elsewhere.
             log(
-                "[materialize] sessions registry NOT linked — $dst is unexpected non-directory " +
+                "[materialize] sessions registry NOT linked: $dst is unexpected non-directory " +
                     "content, kept as-is; move it aside to share the registry\n",
             )
             return
@@ -92,7 +92,7 @@ internal class SessionRegistryLink(
             // cause. Same rule as LoginInterception's writeHookScript teardown.
             Cancellables.discard(
                 Cancellables.runCatchingCleanup { Files.deleteIfExists(staged) },
-                "staged-link cleanup — the link outcome must stand",
+                "staged-link cleanup: the link outcome must stand",
             )
         }
     }
@@ -106,14 +106,14 @@ internal class SessionRegistryLink(
     private fun ensureGlobalRegistry(globalSessions: Path, log: LogSink): Boolean {
         if (Files.isDirectory(globalSessions, NOFOLLOW_LINKS)) return true
         if (Files.exists(globalSessions, NOFOLLOW_LINKS)) {
-            log("[sessions] $globalSessions exists but is not a directory — this head keeps private sessions\n")
+            log("[sessions] $globalSessions exists but is not a directory, so this head keeps private sessions\n")
             return false
         }
         val created = Cancellables.runCatchingCancellable { Files.createDirectories(globalSessions) }
         created.exceptionOrNull()?.let { cause ->
             log(
                 "[sessions] could not create the global registry $globalSessions " +
-                    "(${SafeFailureText.render(cause)}) — this head keeps private sessions\n",
+                    "(${SafeFailureText.render(cause)}), so this head keeps private sessions\n",
             )
         }
         return created.isSuccess
@@ -135,7 +135,7 @@ internal class SessionRegistryLink(
                 ?: "'${collision?.second?.fileName}' already exists in the global registry"
             // SAFE-RENDER-EXEMPT[2026-08-31]: `cause` here is a String this function composes from a file NAME and a fixed phrase, not a throwable — no exception text reaches it
             log(
-                "[sessions] REFUSED to migrate $dst into $globalSessions ($cause) — " +
+                "[sessions] REFUSED to migrate $dst into $globalSessions ($cause), so " +
                     "this head keeps private sessions\n",
             )
             return false
@@ -153,7 +153,7 @@ internal class SessionRegistryLink(
         if (commit.isFailure) {
             log(
                 "[sessions] migration of $dst failed " +
-                    "(${commit.exceptionOrNull()?.let { SafeFailureText.render(it) }}) — " +
+                    "(${commit.exceptionOrNull()?.let { SafeFailureText.render(it) }}); " +
                     "rolled ${moved.size} confirmed moves back; this head keeps private sessions\n",
             )
             rollback(dst, moved)

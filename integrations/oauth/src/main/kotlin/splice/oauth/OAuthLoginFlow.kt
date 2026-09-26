@@ -153,7 +153,7 @@ public class OAuthLoginFlow(
                         latch.countDown()
                         return@execute
                     }
-                    if (line.isNotBlank()) output.line("splice: that is not an authorization code — try again:")
+                    if (line.isNotBlank()) output.line("splice: that is not an authorization code; try again:")
                 }
             }
             Cancellables.discard(pasted, "stdin closed or unreadable; the loopback callback is still live")
@@ -179,7 +179,7 @@ public class OAuthLoginFlow(
     ) {
         val params = Cancellables.runCatchingCancellable { queryParams(ex.requestURI.rawQuery.orEmpty()) }
             .onFailure {
-                output.line("splice: ignoring a callback whose query does not parse — ${SafeFailureText.render(it)}")
+                output.line("splice: ignoring a callback whose query does not parse: ${SafeFailureText.render(it)}")
             }
             .getOrDefault(emptyMap())
         // Only a callback carrying OUR state ends the login. A drive-by hit on the loopback port (a
@@ -253,7 +253,7 @@ public class OAuthLoginFlow(
 
     private fun decode(s: String): String =
         Cancellables.runCatchingCancellable { URLDecoder.decode(s, Charsets.UTF_8) }
-            .onFailure { output.line("splice: a callback value is not valid percent-encoding — using it verbatim") }
+            .onFailure { output.line("splice: a callback value is not valid percent-encoding; using it verbatim") }
             .getOrDefault(s)
 
     private fun queryParams(raw: String): Map<String, String> =

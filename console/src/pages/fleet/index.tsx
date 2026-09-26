@@ -35,12 +35,13 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
 import { Blank, Confirm, Copy, Fault, Key, KeyLink } from '@shared/controls';
-import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo } from '@shared/lib';
+import { ABSENT, fmtInt, fmtMs, poll, ratio, timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import {
-  Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow, Tip,
+  Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Pips, Section, Sparkline, StackedBar, Stat, StatRow, Tip,
 } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { NextRule, accountColumns, accountKey, accountName, accountTone } from '@widgets/account-table';
+import { AddBackend } from '@widgets/add-backend';
 import { KnobReadout } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import {
@@ -70,20 +71,11 @@ export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'attention', name: S.attentionFirst, layout: 'bay', filter: {}, sort: { field: 'attention', dir: 'desc' }, group: null, fields: [] },
 ];
 
-/** How a head joins the fleet. `splice add` signs in, checks the provider answers and writes the
- *  head, and no route does that yet, so the page names the command; run bare it lists the providers
- *  it knows (AddPrepare.usage). The settings topology edits heads that exist, it cannot add one. */
-export const ADD_COMMAND = 'splice add';
-
-export function AddHead() {
-  return (
-    <span className="myx-fl-add">
-      <span className="myx-fl-add-label">{S.addHead}</span>
-      <InfoTip text={H.add} label={S.aboutAdd} side="bottom" />
-      <code className="myx-fl-command">{ADD_COMMAND}</code>
-      <Copy value={ADD_COMMAND} />
-    </span>
-  );
+/** How a head joins the fleet: `splice add` over HTTP (V4-220 item 3). The key opens the add in the
+ *  detail panel, where a head's detail would open; the settings topology edits heads that exist, it
+ *  cannot add one. */
+export function AddKey({ onAdd }: { onAdd: () => void }) {
+  return <Key onClick={onAdd}>{S.addBackend}</Key>;
 }
 
 /** Why the opened head is in the state its badge names, and the step that clears it: one line, then
@@ -368,7 +360,7 @@ export interface FleetSources {
   overrides: readonly KnobDisposition[];
 }
 
-export function FleetBoard({ heads, error = null, lastRead = null, sources, openKey, onOpen, nowMs }: {
+export function FleetBoard({ heads, error = null, lastRead = null, sources, openKey, onOpen, adding = false, onAdd = () => undefined, nowMs }: {
   /** Null while the first read is out. */
   heads: readonly HeadStatus[] | null;
   error?: string | null;
@@ -376,6 +368,9 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
   sources: FleetSources;
   openKey: string | null;
   onOpen: (key: string | null) => void;
+  /** The add form holds the detail panel; a head's detail and the add never share it. */
+  adding?: boolean;
+  onAdd?: (open: boolean) => void;
   nowMs: number;
 }) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
@@ -419,22 +414,22 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
 
   return (
     <div className="myx-fl">
-      <PageHeader title={S.title} info={{ text: H.about, label: S.about }} actions={all.length === 0 ? undefined : <AddHead />}>
+      <PageHeader title={S.title} info={{ text: H.about, label: S.about }} actions={all.length === 0 ? undefined : <AddKey onAdd={() => onAdd(true)} />}>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
 
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
-      <div className={opened === null ? 'myx-fl-board' : 'myx-fl-board myx-fl-board-open'}>
+      <div className={opened === null && !adding ? 'myx-fl-board' : 'myx-fl-board myx-fl-board-open'}>
         <div className="myx-fl-main">
           {heads === null ? <Blank strips={4} /> : heads.length === 0 ? (
-            <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} action={<AddHead />} />
+            <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} action={<AddKey onAdd={() => onAdd(true)} />} />
           ) : (
             <>
               <Figures lines={[...lines.values()]} landed={sources.landed} limit={nearestLimit({ accounts, usage: sources.usage, auth: sources.auth }, nowMs)} />
               <Section title={S.heads} count={all.length} info={{ text: H.firstByte, label: S.aboutFirstByte }}>
                 <DataTable
-                  columns={headColumns(columnsOf(active, HEAD_FIELDS), active.group, nowMs, opened !== null)}
+                  columns={headColumns(columnsOf(active, HEAD_FIELDS), active.group, nowMs, opened !== null || adding)}
                   {...(active.group === null ? { rows: groups.flatMap((group) => group.rows) } : { groups })}
                   rowKey={(line) => line.head.key}
                   label={S.heads}
@@ -452,7 +447,12 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
           )}
         </div>
 
-        {/* Unmounted at rest: no track and no empty panel until a head is opened. */}
+        {/* Unmounted at rest: no track and no empty panel until a head or the add is opened. */}
+        {!adding || opened !== null ? null : (
+          <DetailPanel title={S.addBackend} label={S.addBackend} onClose={() => onAdd(false)} closeLabel={S.close}>
+            <AddBackend onDone={() => onAdd(false)} />
+          </DetailPanel>
+        )}
         {opened === null ? null : (
           <DetailPanel
             title={opened.head.label}
@@ -514,7 +514,8 @@ export function FleetPage() {
     return () => stops.forEach((stop) => stop());
   }, []);
 
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useOpen(useLinkedId());
+  const [adding, setAdding] = useState(false);
 
   // /health's flag is the one part of the topology contract every daemon serves, so it is read from
   // the config entity's own pass-through rather than from GET /api/topology.
@@ -557,7 +558,15 @@ export function FleetPage() {
         overrides,
       }}
       openKey={openKey}
-      onOpen={setOpenKey}
+      onOpen={(key) => {
+        setAdding(false);
+        setOpenKey(key);
+      }}
+      adding={adding}
+      onAdd={(open) => {
+        setOpenKey(null);
+        setAdding(open);
+      }}
       // Read once per render: the heads poll re-renders this page every two seconds, which is finer
       // than any exclusion expiry or reset line it is compared against.
       nowMs={Date.now()}

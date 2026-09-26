@@ -25,12 +25,12 @@ internal class TraceView(private val output: TerminalOutput) {
     fun printTable(head: String, traceDir: Path, turns: List<TracedTurn>, read: TraceRead): Boolean {
         val where = "$traceDir/$head-YYYY-MM-DD.jsonl"
         output.line(
-            "${BOLD}splice trace $head$RESET $DIM— ${turns.size} of ${read.turns.size} turn(s) on disk, " +
+            "${BOLD}splice trace $head$RESET$DIM: ${turns.size} of ${read.turns.size} turn(s) on disk, " +
                 "oldest first ($where)$RESET",
         )
         if (read.turns.isEmpty()) {
             output.line(
-                "  ${DIM}no turns traced yet — is [heads.$head.overrides] trace = true (restart required)?$RESET",
+                "  ${DIM}no turns traced yet. Is [heads.$head.overrides] trace = true (restart required)?$RESET",
             )
         }
         turns.forEach { turn -> output.line("  " + line(turn)) }
@@ -42,11 +42,11 @@ internal class TraceView(private val output: TerminalOutput) {
 
     /** Every record of one turn, in order, bodies verbatim. */
     fun printTurn(head: String, turn: TracedTurn): Boolean {
-        output.line("${BOLD}splice trace $head --turn ${turn.id}$RESET $DIM— ${line(turn)}$RESET")
+        output.line("${BOLD}splice trace $head --turn ${turn.id}$RESET$DIM: ${line(turn)}$RESET")
         turn.attempts.forEach { printAttempt(it) }
         val record = turn.turn
         if (record == null) {
-            output.line("\n$YELLOW(no turn record yet — the turn has not ended, or its ending was lost)$RESET")
+            output.line("\n$YELLOW(no turn record yet: the turn has not ended, or its ending was lost)$RESET")
             return true
         }
         val client = record["client"]?.jsonObject

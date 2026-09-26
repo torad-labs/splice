@@ -192,7 +192,7 @@ class SetupCommandTest {
                 }
             }
         }
-        assertTrue("unofficial; use at your own risk" in log, log)
+        assertTrue("Unofficial; use at your own risk" in log, log)
         assertTrue("own credential file" in log, log)
     }
 
@@ -621,7 +621,7 @@ summary = "detailed"
 replay_reasoning = false
 
 # Supported starter route: create an OpenRouter API key, then EITHER export OPENROUTER_API_KEY
-# or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600 — survives restarts from
+# or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600, which survives restarts from
 # any shell; inside a claude-openrouter session you can also paste it as a bare message and the
 # token-capture hook stores it without it reaching the model).
 # Experimental vendor-OAuth examples remain opt-in in app/src/main/resources/splice.example.toml.
@@ -635,29 +635,29 @@ id = "anthropic/claude-sonnet-5"
 label = "Claude Sonnet 5"
 context_window = 1000000
 [[providers.openrouter.models]]
-id = "anthropic/claude-opus-5"
-label = "Claude Opus 5"
+id = "anthropic/claude-opus-5.5"
+label = "Claude Opus 5.5"
 context_window = 1000000
 [[providers.openrouter.models]]
 id = "z-ai/glm-5.3-flash"
 label = "GLM 5.3 Flash"
 context_window = 1310720
 [[providers.openrouter.models]]
-id = "openai/gpt-5.6-sol"
-label = "GPT-5.6 Sol"
+id = "openai/gpt-6-sol"
+label = "GPT-6 Sol"
 context_window = 1050000
 [[providers.openrouter.models]]
-id = "openai/gpt-5.6-luna"
-label = "GPT-5.6 Luna"
+id = "openai/gpt-6-luna"
+label = "GPT-6 Luna"
 context_window = 1050000
 [[providers.openrouter.models]]
 id = "google/gemini-3.8-flash"
 label = "Gemini 3.8 Flash"
 context_window = 1048576
 [[providers.openrouter.models]]
-id = "deepseek/deepseek-v4-flash-0731"
-label = "DeepSeek V4 Flash 0731"
-context_window = 1310720
+id = "deepseek/deepseek-v4.1-flash"
+label = "DeepSeek V4.1 Flash"
+context_window = 1048576
 [[providers.openrouter.models]]
 id = "z-ai/glm-5.3"
 label = "GLM 5.3"
@@ -678,9 +678,9 @@ discovery_prefix = "claude-openrouter--"
 pinned_model = "anthropic/claude-sonnet-5"
 models = [
   { id = "anthropic/claude-sonnet-5", slot = "sonnet" },
-  { id = "anthropic/claude-opus-5", slot = "opus" },
+  { id = "anthropic/claude-opus-5.5", slot = "opus" },
   { id = "z-ai/glm-5.3-flash", slot = "haiku" },
-  { id = "openai/gpt-5.6-sol", slot = "fable" },
+  { id = "openai/gpt-6-sol", slot = "fable" },
 ]
 
 [heads.openrouter.claude]

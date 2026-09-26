@@ -123,7 +123,7 @@ private class PassthroughFailureRules {
     /** NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source,
      *  three dialects). */
     fun runawayGuardMessage(providerTag: String): String =
-        "$providerTag: response exceeded max buffered size — aborting"
+        "$providerTag: response exceeded max buffered size; aborting"
 
     /**
      * CX-07 (L3): the Anthropic `stop_reason` values that are NOT a clean completion, mapped to the
@@ -152,7 +152,7 @@ private class PassthroughFailureRules {
     fun stopReasonFailure(reason: String): Pair<FailureCause, String>? = when (reason) {
         "refusal" -> FailureCause.MODEL_REFUSED to "generation refused by the model (stop_reason=refusal)"
         "pause_turn" ->
-            FailureCause.UPSTREAM_STATUS_5XX to "backend paused the turn (stop_reason=pause_turn) — retry"
+            FailureCause.UPSTREAM_STATUS_5XX to "backend paused the turn (stop_reason=pause_turn); retry"
         "model_context_window_exceeded" -> UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).let {
             it.cause to it.message
         }

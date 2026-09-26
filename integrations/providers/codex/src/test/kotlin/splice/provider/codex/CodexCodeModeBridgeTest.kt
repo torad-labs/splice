@@ -393,7 +393,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val delivered = builder.toolResults(nonTextResultBody()).single().output
         assertEquals(
             "[image from tool_result toolu_splice_test: image/png, 4 base64 chars",
-            delivered.substringBefore(" — "),
+            delivered.substringBefore(", delivered"),
         )
         assertTrue(delivered.contains("delivered to the model beside this script's output"), delivered)
         assertTrue(delivered.contains("text only"), delivered)
@@ -404,7 +404,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val omitted = builder.toolResults(unreadableResultBody()).single().output
         assertEquals(
             "[image omitted by splice code-mode from tool_result toolu_splice_test: image/png, 0 base64 chars",
-            omitted.substringBefore(" — "),
+            omitted.substringBefore(" ("),
         )
         assertTrue(omitted.contains("unsupported source"), omitted)
 

@@ -2,6 +2,8 @@
 // format, never invent.
 import { create } from 'zustand';
 
+export { OPEN_PARAM, itemHref, linkedId, useLinkedId, useOpen } from './link';
+
 export interface Resource<T> {
   data: T | null;
   error: string | null;

@@ -72,7 +72,7 @@ public class MgmtKey(
             // line is true on both paths.
             log(
                 // SAFE-RENDER-EXEMPT[2026-08-31]: readFailure is not a throwable but a String built by the when above, whose every throwable-bearing branch already renders through the sanitizer
-                "[mgmt-key] $path $readFailure — minting a NEW key: if the replacement publishes, " +
+                "[mgmt-key] $path $readFailure; minting a NEW key: if the replacement publishes," +
                     "every existing bearer (dashboard session, scripts, the launch shim's stop " +
                     "hook) becomes invalid; re-copy the key from $path\n",
             )

@@ -161,6 +161,14 @@ export function nameForAddress(rows: readonly SessionRow[], address: string): st
   return owner.name !== null && owner.name !== '' ? owner.name : address;
 }
 
+/** A session's key: its session id, else its pid. A registration with no session id still has to be
+ *  openable, and its key must not collide with "nothing is open": `session_id === openId` would
+ *  match null against null and open the first id-less row on load (found in the 2026-09-18
+ *  capture). Sessions opens by it and a link to a session carries it. */
+export function sessionKey(row: SessionRow): string {
+  return row.session_id ?? `pid:${row.pid ?? 0}`;
+}
+
 /** A session's own label: its name, else the first 8 of its session id, else its pid. */
 export function sessionLabel(row: SessionRow): string {
   if (row.name !== null && row.name !== '') return row.name;

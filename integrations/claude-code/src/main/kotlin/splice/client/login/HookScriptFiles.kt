@@ -128,7 +128,7 @@ internal object HookScriptFiles {
             if (chmodFailure != null) {
                 throw IOException(
                     // SAFE-RENDER-EXEMPT[2026-08-31]: a chmod on a copy we just wrote — the failure names that path, never the script's bytes
-                    "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}) — " +
+                    "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}); " +
                         "staged file deleted, any existing hook left untouched",
                 )
             }

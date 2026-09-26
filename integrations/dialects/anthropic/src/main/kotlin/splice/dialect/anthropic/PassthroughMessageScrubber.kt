@@ -120,7 +120,7 @@ internal class PassthroughMessageScrubber(
         if (droppedLogged.add(type)) {
             log(
                 "[${quirks.providerTag}] content block '$type' is absent from this head's " +
-                    "block_allowlist — dropped from the request, so the upstream never sees it\n",
+                    "block_allowlist; dropped from the request, so the upstream never sees it\n",
             )
         }
         return null

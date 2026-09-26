@@ -1,12 +1,13 @@
 import { MgmtError, control, pendingOf, request } from '@shared/api';
 import type { AuthActionResult, PendingRoute } from '@shared/api';
 import { poll } from '@shared/lib';
-import { authActionStore, authStore } from '../model/store';
+import { authActionStore, authStore, keysStore } from '../model/store';
 import { PENDING_AUTH_WRITES } from '../model/types';
 import type {
   AccountMutationPayload,
   AuthActionOutcome,
-  LoginStartPayload,
+  KeyState,
+  KeysPayload,
   LoginStatusPayload,
   SwitchPayload,
 } from '../model/types';
@@ -107,18 +108,19 @@ export async function unpinAccount(head: string): Promise<AuthActionOutcome | Pe
 }
 
 /** POST /api/auth/{head}/login — start a device or browser login for a new account on this head.
- *  The label is the operator's name for it and becomes the credential file's name. */
+ *  The label is the operator's name for it and becomes the credential file's name. The answer is
+ *  the login's STARTING view: its id to poll, and no code or link yet. */
 export function startLogin(head: string, label: string): Promise<AuthActionOutcome | PendingRoute> {
-  return settle<LoginStartPayload>(
+  return settle<LoginStatusPayload>(
     `/api/auth/${segment(head)}/login`,
     { method: 'POST', body: JSON.stringify({ label }) },
     (result) => ({ action: 'login', result }),
   );
 }
 
-/** GET /api/auth/{head}/login/{id} — poll one login to landed or failed. A landed login still needs
- *  the head restarted before the account is in the pool, which the payload carries as
- *  `restart_required`; the strip stays cocked until it clears. */
+/** GET /api/auth/{head}/login/{id} — poll one login: its code or link once the flow announces them,
+ *  then signed in (the credential is on disk), then live after restart (the daemon restarted the
+ *  head and the account is in its pool), or failed with the daemon's reason. */
 export function fetchLoginStatus(head: string, id: string): Promise<AuthActionOutcome | PendingRoute> {
   return settle<LoginStatusPayload>(
     `/api/auth/${segment(head)}/login/${segment(id)}`,
@@ -149,4 +151,42 @@ export function relabelAccount(
     { method: 'PATCH', body: JSON.stringify({ label: nextLabel }) },
     (result) => ({ action: 'relabel', result }),
   );
+}
+
+// ── the key store (V4-220 item 1) ────────────────────────────────────────────
+//
+// THE VALUE GOES ONE WAY: it is the PUT's body and nothing else. No store holds it and no answer
+// carries it; the daemon answers a write with the key's applied state, re-read (KeyRoutes.kt).
+
+export async function fetchKeys(): Promise<void> {
+  keysStore.startLoading();
+  try {
+    keysStore.setData(await request<KeysPayload>('/api/keys'));
+  } catch (err) {
+    keysStore.setError(messageOf(err));
+  }
+}
+
+export function startKeysPolling(intervalMs = 15000): () => void {
+  return poll(fetchKeys, intervalMs);
+}
+
+/** A write changes what the heads read, so both reads are taken again: the key list, and the auth
+ *  card whose masked key and present flag the key table prints. */
+async function afterKeyWrite(applied: KeyState): Promise<KeyState> {
+  await Promise.all([fetchKeys(), fetchAuth()]);
+  return applied;
+}
+
+/** PUT /api/keys/{ENV} — store (or replace) a key. The answer names, per head that reads it, where
+ *  that head reads it from now; a refusal (400 name or value, 409 store) throws the daemon's words. */
+export async function storeKey(name: string, value: string): Promise<KeyState> {
+  const applied = await request<KeyState>(`/api/keys/${segment(name)}`, { method: 'PUT', body: JSON.stringify({ value }) });
+  return afterKeyWrite(applied);
+}
+
+/** DELETE /api/keys/{ENV} — remove a stored key; 404 when the store did not hold it. */
+export async function removeKey(name: string): Promise<KeyState> {
+  const applied = await request<KeyState>(`/api/keys/${segment(name)}`, { method: 'DELETE' });
+  return afterKeyWrite(applied);
 }

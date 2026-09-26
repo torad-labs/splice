@@ -20,6 +20,7 @@ import splice.core.topology.AuthKindRegistry
 private const val SIGN_IN_LOGIN = "login"
 private const val SIGN_IN_KEY = "key"
 private const val SIGN_IN_NONE = "none"
+private const val MODELS = "models"
 
 internal class AddViews {
 
@@ -31,11 +32,11 @@ internal class AddViews {
         put("base_url", p.baseUrl)
         put("head_key", p.headKey)
         put("command", p.command)
-        putJsonArray("models") { p.models.forEach { add(model(it)) } }
+        putJsonArray(MODELS) { p.models.forEach { add(model(it)) } }
         putJsonArray("asks") {
             if (p.headKey.isEmpty()) add("name")
             if (p.baseUrl == null) add("base_url")
-            if (p.models.isEmpty()) add("models")
+            if (p.models.isEmpty()) add(MODELS)
         }
     }
 
@@ -49,7 +50,7 @@ internal class AddViews {
         put("command", c.command)
         put("auth_kind", kind)
         put("base_url", c.provider.baseUrl)
-        putJsonArray("models") { c.resolved.models.forEach { add(model(it)) } }
+        putJsonArray(MODELS) { c.resolved.models.forEach { add(model(it)) } }
         put("sign_in_by", signInBy(kind))
         put("key_env", if (signInBy(kind) == SIGN_IN_KEY) console.keyEnv(s) else null)
         val credential = console.credential(s)
@@ -70,6 +71,28 @@ internal class AddViews {
                 put("detail", row.detail)
             }
         }
+    }
+
+    /** GET /api/add-model: each OpenRouter head with the catalogue rows its roster does not reach yet. */
+    fun offers(listed: AddModelListed.Listed): JsonObject = buildJsonObject {
+        put("path", listed.path.toString())
+        putJsonArray("heads") {
+            listed.offers.forEach { offer ->
+                addJsonObject {
+                    put("head", offer.headKey)
+                    put("provider", offer.providerKey)
+                    putJsonArray(MODELS) { offer.remaining.forEach { add(model(it)) } }
+                }
+            }
+        }
+    }
+
+    /** POST /api/add-model: what reached the roster, and the restart that makes it reachable. */
+    fun added(a: AddModelOutcome.Added): JsonObject = buildJsonObject {
+        put("path", a.path.toString())
+        put("head", a.headKey)
+        putJsonArray("added") { a.ids.forEach { add(it) } }
+        put("restart", restart(a.restart))
     }
 
     /** A failed check as the one sentence a refusal carries. */

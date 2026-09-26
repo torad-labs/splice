@@ -207,6 +207,18 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
         put("output", rates.output)
         put("cache_read", rates.cacheRead)
         rates.cacheWrite?.let { put("cache_write", it) }
+        rates.longContext?.let { tier ->
+            put(
+                "long_context",
+                buildJsonObject {
+                    put("over_input_tokens", tier.overInputTokens)
+                    put("input", tier.input)
+                    put("output", tier.output)
+                    put("cache_read", tier.cacheRead)
+                    tier.cacheWrite?.let { put("cache_write", it) }
+                },
+            )
+        }
     }
 
     private suspend fun refuse(call: ApplicationCall, message: String, status: HttpStatusCode) {

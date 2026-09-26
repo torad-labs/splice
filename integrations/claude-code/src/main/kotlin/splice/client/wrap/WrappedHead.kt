@@ -92,7 +92,7 @@ public class WrapStateStore(
     public fun clear() {
         Cancellables.discard(
             Cancellables.runCatchingCancellable { Files.deleteIfExists(file) },
-            "wrap-state clear is best-effort — an absent-or-unreadable file already reads as unwrapped",
+            "wrap-state clear is best-effort, since an absent-or-unreadable file already reads as unwrapped",
         )
     }
 }
@@ -167,7 +167,7 @@ public class WrappedHead(
         val state = stateStore.read()
         return if (state == null) {
             UnwrapResult.Refused(
-                "wrap state is missing or unreadable — cannot recover the previous '$cmd' target or " +
+                "wrap state is missing or unreadable, so splice cannot recover the previous '$cmd' target or " +
                     "the backed-up config; point $cmd at your real claude install by hand",
             )
         } else {
@@ -182,10 +182,10 @@ public class WrappedHead(
             WrapPreflight.Refused("claude is already wrapped ($cmd -> $shim)")
         !Files.exists(cmd, NOFOLLOW_LINKS) ->
             WrapPreflight.Refused(
-                "no existing '$CLAUDE_COMMAND' command found at $cmd — nothing to preserve, refusing to wrap blind",
+                "no existing '$CLAUDE_COMMAND' command found at $cmd; nothing to preserve, refusing to wrap blind",
             )
         !cmd.isSymbolicLink() ->
-            WrapPreflight.Refused("$cmd exists and is not a symlink — refusing to overwrite a real file")
+            WrapPreflight.Refused("$cmd exists and is not a symlink; refusing to overwrite a real file")
         else -> readyFromSymlink(cmd)
     }
 
@@ -197,7 +197,7 @@ public class WrappedHead(
             WrapPreflight.Ready(shadowedTarget, realBinaryPath)
         } else {
             WrapPreflight.Refused(
-                "$cmd -> $shadowedTarget does not resolve to a real file — refusing to wrap a dangling link",
+                "$cmd -> $shadowedTarget does not resolve to a real file; refusing to wrap a dangling link",
             )
         }
     }
@@ -262,7 +262,7 @@ public class WrappedHead(
         if (!Files.exists(backupFrom, NOFOLLOW_LINKS)) {
             Cancellables.discard(
                 Cancellables.runCatchingCancellable { Files.deleteIfExists(target) },
-                "restoring to absence — the pre-wrap state genuinely had nothing here",
+                "restoring to absence: the pre-wrap state genuinely had nothing here",
             )
             return
         }
@@ -281,7 +281,7 @@ public class WrappedHead(
         } finally {
             Cancellables.discard(
                 Cancellables.runCatchingCleanup { Files.deleteIfExists(staged) },
-                "staged-link cleanup — the move outcome must stand",
+                "staged-link cleanup: the move outcome must stand",
             )
         }
     }

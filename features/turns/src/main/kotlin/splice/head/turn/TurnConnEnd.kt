@@ -49,7 +49,7 @@ internal class TurnConnEnd(
             // the telemetry type are unchanged.
             drive.emitter.emitError(
                 ErrorType.API_ERROR,
-                "upstream sent an oversized streaming event — retry",
+                "upstream sent an oversized streaming event; retry",
                 permanent = false,
             )
             true
@@ -66,7 +66,7 @@ internal class TurnConnEnd(
         health.local()
         drive.emitter.emitError(
             ErrorType.OVERLOADED,
-            "${provider.key}: upstream connection failed ($boundedDetail) — retry",
+            "${provider.key}: upstream connection failed ($boundedDetail); retry",
         )
     }
 }

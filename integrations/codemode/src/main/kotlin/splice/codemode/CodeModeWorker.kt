@@ -62,9 +62,11 @@ internal object CodeModeWorker {
     }
 
     private fun runSession(input: DataInputStream, output: DataOutputStream) {
-        val start = CodeModeFrames.parseStart(CodeModeWire.read(input))
-        WorkerSession(start).use { session ->
-            var reply = session.start()
+        WorkerSession().use { session ->
+            // V4-226: ready once this JVM and its JavaScript engine are up, so the parent's advance
+            // deadline times the script alone; a start has its own budget on the parent's side.
+            CodeModeWire.write(output, CodeModeWire.readyFrame())
+            var reply = session.start(CodeModeFrames.parseStart(CodeModeWire.read(input)))
             while (true) {
                 CodeModeWire.write(output, toFrame(reply))
                 if (reply.calls == null) return
@@ -77,8 +79,9 @@ internal object CodeModeWorker {
         ?: CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
 }
 
-internal class WorkerSession(private val start: WorkerStart) : AutoCloseable {
-    private val bridge: WorkerBridge = WorkerBridge(start.tools)
+/** One cell's JavaScript engine. It is built before the start frame arrives (the expensive half of a
+ *  worker's start), and [start] runs the cell's source in it. */
+internal class WorkerSession : AutoCloseable {
     private val context: Context = Context.newBuilder("js")
         .allowHostAccess(HostAccess.NONE)
         .allowHostClassLookup { false }
@@ -89,15 +92,32 @@ internal class WorkerSession(private val start: WorkerStart) : AutoCloseable {
         .allowNativeAccess(false)
         .option("engine.WarnInterpreterOnly", "false")
         .build()
-    private val toolsJson: String = CodeModeJson.codec.encodeToString(
-        JsonArray.serializer(),
-        buildJsonArray { start.tools.sorted().forEach(::add) },
-    )
+
+    // The launcher is compiled and taken once through a whole cell here, a tool call, its settle and
+    // the completion, before the worker says ready, because a cold engine's FIRST run is the worker's
+    // start, not the script's: 1.4-1.9 s from a built context to a script's first yield, against
+    // 21-25 ms for the next session in the same JVM (three fresh JVMs, 2026-09-25). Charged to the
+    // script, it spent that much of the advance deadline on an idle box and more on a loaded one (gate
+    // run 36180689372). The run is self-contained: its state lives in the launcher's closure and a
+    // bridge nothing else holds.
+    private val launcher: Value = context.eval("js", LAUNCHER).also { launcher ->
+        val warmUp = launcher.execute(
+            "await tools.call(\"warm\", {}); return 1;",
+            "[\"warm\"]",
+            WorkerBridge(setOf("warm")).host,
+        )
+        warmUp.getMember("settle").execute("1", "{}", false)
+    }
+    private var bridge: WorkerBridge? = null
     private var settle: Value? = null
     private var pendingCalls: List<CodeModeCall> = emptyList()
 
-    fun start(): WorkerReply {
-        val launcher = context.eval("js", LAUNCHER)
+    fun start(start: WorkerStart): WorkerReply {
+        val bridge = WorkerBridge(start.tools).also { this.bridge = it }
+        val toolsJson = CodeModeJson.codec.encodeToString(
+            JsonArray.serializer(),
+            buildJsonArray { start.tools.sorted().forEach(::add) },
+        )
         val control = launcher.execute(start.source, toolsJson, bridge.host)
         settle = control.getMember("settle")
         return reply()
@@ -105,6 +125,7 @@ internal class WorkerSession(private val start: WorkerStart) : AutoCloseable {
 
     fun advance(results: List<CodeModeResult>): WorkerReply {
         CodeModeFrames.validateResultSet(pendingCalls, results)
+        val bridge = checkNotNull(bridge)
         bridge.clearCalls()
         results.forEach { result ->
             checkNotNull(settle).execute(result.id, result.output, result.isError)
@@ -117,6 +138,7 @@ internal class WorkerSession(private val start: WorkerStart) : AutoCloseable {
     }
 
     private fun reply(): WorkerReply {
+        val bridge = checkNotNull(bridge)
         val calls = bridge.calls()
         if (calls.isNotEmpty()) {
             pendingCalls = calls

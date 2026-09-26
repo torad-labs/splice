@@ -172,7 +172,7 @@ internal class UpstreamRequest(
             ctx.auth.isQuotaExhausted(realStatus, body)
         if (!exhausted) return realStatus
         ctx.onRetry(
-            "upstream $realStatus is a quota exhaustion — treating it as " +
+            "upstream $realStatus is a quota exhaustion; treating it as " +
                 "${HttpStatus.TOO_MANY_REQUESTS} so the retry, cooldown and pool layers see the " +
                 "rate limit it is",
         )

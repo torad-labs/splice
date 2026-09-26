@@ -20,8 +20,9 @@ export const S = {
 export const H = {
   signInUnavailable: 'This splice version cannot sign in here; run splice login <head>.',
   device: 'Finish signing in in the browser with this code.',
-  waiting: 'Waiting for the credential.',
-  afterRestart: 'Signed in; live after the daemon restarts.',
+  browser: 'Finish signing in at this link.',
+  waiting: 'Starting the sign-in.',
+  afterRestart: 'Signed in; the head restarts to take the account.',
   added: 'Account added.',
   failed: 'Login failed; try again, or run splice login <head>.',
   switched: 'Takes effect on the next turn; a running turn keeps its account.',

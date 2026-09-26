@@ -29,7 +29,7 @@
 [[exclusion]]
 rules = [
   "kt-cancellation-handler-total", "kt-catch-swallows-cancellation", "kt-control-route-guarded",
-  "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
+  "kt-dollar-figure-single-source", "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
   "kt-flow-over-suspend", "kt-force-strict-false-is-literal", "kt-form-encoding-single-source",
   "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-head-sse-drains-on-exit",
   "kt-http-status-single-source",
@@ -86,30 +86,6 @@ red test, never by the operator in the CLI or the console, so they are not the t
 """
 
 # ─── module scope ────────────────────────────────────────────────────────────────────────────────
-
-[[exclusion]]
-rule = "kt-no-emdash-cli-text"
-modules = [
-  "app", "core", "features-accounts", "features-configuration", "features-events", "features-heads",
-  "features-launch", "features-lifecycle", "features-models", "features-sessions", "features-turns",
-  "features-usage", "integrations-claude-code", "integrations-codemode", "integrations-daemon-client",
-  "integrations-dialects-anthropic", "integrations-dialects-openai-chat",
-  "integrations-dialects-openai-responses", "integrations-http", "integrations-mcp", "integrations-oauth",
-  "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi",
-  "integrations-providers-muse", "integrations-providers-openai", "integrations-terminal",
-  "integrations-topology", "integrations-upstream", "quality-compiler-plugin",
-]
-sourceSets = ["main"]
-date = "2026-09-25"
-reason = """
-V4-219 scoped this wall to the text doctor, logs and wire author, in features/diagnostics, because that
-is what the console's Doctor and Needs you pages print verbatim. The strings doctor QUOTES from these
-roots were rewritten in the same pass (SafeFailureText, the state-root probe, TopologyMessages,
-TomlStructurePreflight, the auth refresh note), but nothing here holds them. What remains is mostly
-daemon log lines and CLI text for other verbs (about 400 string fragments on 2026-09-25, counted with
-the rule's own matcher). Widening means rewriting those in the modules other seats are editing now; it
-is its own row, not a side effect of this one.
-"""
 
 [[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
@@ -363,6 +339,12 @@ rule = "kt-error-envelope-single-source"
 files = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
 date = "2026-09-20"
 reason = "The sole builder of the Anthropic error envelope — exempt BY PATH so no other file can claim it."
+
+[[exclusion]]
+rule = "kt-dollar-figure-single-source"
+files = ["features/usage/src/main/kotlin/splice/usage/ApiCostText.kt"]
+date = "2026-09-25"
+reason = "The sole spelling site of a dollar figure, which attaches its basis: exempt BY PATH, per the rule's own comment (V4-240)."
 
 [[exclusion]]
 rule = "kt-form-encoding-single-source"

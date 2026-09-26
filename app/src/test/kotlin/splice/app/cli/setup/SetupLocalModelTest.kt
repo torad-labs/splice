@@ -276,7 +276,7 @@ class SetupLocalModelTest {
     fun `prepare exit 4 says to update the driver and adds no head`() {
         refusedAtPrepare(
             RigRun(4, "", "driver too old\n"),
-            "the NVIDIA driver is older than the CUDA runtime the engine needs — update the driver",
+            "the NVIDIA driver is older than the CUDA runtime the engine needs; update the driver",
         )
     }
 

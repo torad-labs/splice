@@ -37,7 +37,7 @@ internal class JsonStateReads(private val json: Json, private val log: LogSink) 
             val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(path, NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
                 log(
-                    "[materialize] $path unreadable (${SafeFailureText.render(failure)}) — " +
+                    "[materialize] $path unreadable (${SafeFailureText.render(failure)}): " +
                         "global state NOT inherited by this head\n",
                 )
             }
@@ -49,7 +49,7 @@ internal class JsonStateReads(private val json: Json, private val log: LogSink) 
         // included), and the atomic rewrite would replace the operator's link with a plain file.
         if (path.isSymbolicLink()) {
             throw IOException(
-                "$path is a symlink — refusing to replace the operator's link with a materialized file; " +
+                "$path is a symlink: refusing to replace the operator's link with a materialized file; " +
                     "remove the link or point the head at a real file",
             )
         }
@@ -58,7 +58,7 @@ internal class JsonStateReads(private val json: Json, private val log: LogSink) 
                 val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(path, NOFOLLOW_LINKS)
                 if (!genuinelyAbsent) {
                     throw IOException(
-                        "$path unreadable (${SafeFailureText.render(failure)}) — " +
+                        "$path unreadable (${SafeFailureText.render(failure)}): " +
                             "refusing to rewrite it; fix or remove the file",
                     )
                 }

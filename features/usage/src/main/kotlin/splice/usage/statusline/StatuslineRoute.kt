@@ -50,6 +50,7 @@ public class StatuslineRoute(
                 // V4-45: the same checked-cast bridge sessionCostOf uses below, and captured the
                 // same way — the SOURCE, never a count, so the cached renderer reads it live.
                 perfSkips = managed.perf as? HeadPerfSkipSource,
+                anthropicUpstream = managed.anthropicUpstream,
             )
         }
         val sessionId = sessionId(stdin)

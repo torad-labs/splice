@@ -110,7 +110,7 @@ internal class RigRefusals {
         // or its VRAM against the head's floor), and a paraphrase could only lose the numbers.
         RIG_EXIT_CARD -> run.tail(STDERR_SHOWN).ifEmpty { listOf("this card is not one rig supports yet") }
         RIG_EXIT_DRIVER ->
-            listOf("the NVIDIA driver is older than the CUDA runtime the engine needs — update the driver")
+            listOf("the NVIDIA driver is older than the CUDA runtime the engine needs; update the driver")
         else -> null
     }
 }

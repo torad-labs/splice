@@ -95,7 +95,7 @@ internal object ResumeHook {
             log(
                 "[resume] resume hook NOT installed in $configDir " +
                     // SAFE-RENDER-EXEMPT[2026-09-19]: a staged hook copy — a FileSystemException over paths this code authored, never content
-                    "(${leg.exceptionOrNull()?.message}) — a session resumed on this head keeps the model " +
+                    "(${leg.exceptionOrNull()?.message}): a session resumed on this head keeps the model " +
                     "id of the head that wrote it, so Claude Code prints its restore notice once\n",
             )
         }

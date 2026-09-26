@@ -81,7 +81,7 @@ public data class ModelCatalog(
 ) {
     init {
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
-        require(discoveryPrefix.isNotEmpty()) { "discovery prefix is the picker namespace — never empty" }
+        require(discoveryPrefix.isNotEmpty()) { "discovery prefix is the picker namespace and is never empty" }
     }
 
     public val defaultModel: String get() = models.first().id

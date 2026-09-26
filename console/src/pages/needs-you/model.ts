@@ -13,13 +13,13 @@ import type { DoctorCheck, DoctorSlice } from '@entities/doctor';
 import { checkFinding, collapseChecks, fixMasked, wantsAttention } from '@entities/doctor';
 import { headAttention } from '@entities/heads';
 import { inflightFrom, isStalled } from '@entities/perf';
-import { sessionLabel, UNKNOWN_HEAD } from '@entities/session';
+import { sessionKey, sessionLabel, UNKNOWN_HEAD } from '@entities/session';
 import type { SessionRow, SessionsPayload } from '@entities/session';
 import type { TeamRow, TeamsState } from '@entities/team';
 import { nearestLimit } from '@features/nearest-limit';
-import { accountName, stateOf as accountStateOf } from '@widgets/account-table';
+import { accountKey, accountName, stateOf as accountStateOf } from '@widgets/account-table';
 import type { AuthPayload, HeadStatus, UsagePayload } from '@shared/api';
-import { ABSENT, fmtMs, timeAgo } from '@shared/lib';
+import { ABSENT, fmtMs, itemHref, timeAgo } from '@shared/lib';
 import { H, S, U } from './strings';
 
 /** One read the list rests on, as its store holds it: data kept across a failed poll, the error of
@@ -85,6 +85,9 @@ export type Fix =
   | { kind: 'copy'; command: string }
   /** A remedy the report's redaction reached: printed with why, never offered to copy. */
   | { kind: 'masked'; command: string }
+  /** A fix the daemon runs itself (V4-220 item 4): run from here, its command beside it to copy
+   *  (or printed with why, when masked). */
+  | { kind: 'doctor-fix'; id: string; command: string; masked: boolean }
   | { kind: 'open'; href: string; label: string };
 
 export interface Need {
@@ -96,6 +99,9 @@ export interface Need {
   subject: string;
   finding: string;
   fix: Fix;
+  /** Where the item itself opens: its detail on its page where the page has one, else the page;
+   *  null for the daemon, which no page opens. */
+  at: string | null;
 }
 
 export interface NeedsList {
@@ -130,7 +136,7 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null): Need
       topologyStale: false,
     });
     const need = (severity: Severity, finding: string, fix: Fix): Need[] => [
-      { key: `heads:${head.key}`, severity, source: 'heads', head: head.key, subject: head.label, finding, fix },
+      { key: `heads:${head.key}`, severity, source: 'heads', head: head.key, subject: head.label, finding, fix, at: itemHref('fleet', head.key) },
     ];
     switch (attention.cause) {
       case 'down':
@@ -168,7 +174,7 @@ function daemonNeeds(topologyStale: boolean | null, pending: readonly string[]):
     pending.length === 0 ? null : `${pending.length} ${U.waiting}`,
   ].filter((part) => part !== null);
   if (parts.length === 0) return [];
-  return [{ key: 'daemon', severity: 'warn', source: 'daemon', head: null, subject: S.daemon, finding: parts.join(' '), fix: { kind: 'restart-daemon' } }];
+  return [{ key: 'daemon', severity: 'warn', source: 'daemon', head: null, subject: S.daemon, finding: parts.join(' '), fix: { kind: 'restart-daemon' }, at: null }];
 }
 
 /** The nearest limit, the one definition the status strip, Fleet and Accounts print, when the
@@ -185,6 +191,8 @@ function planNeeds(accounts: readonly AccountRow[], usage: UsagePayload | null, 
     subject: nearest.account ?? S.nearest,
     finding: `${nearest.window} ${U.at} ${nearest.pct}%${reset}`,
     fix: ACCOUNTS,
+    // The nearest limit is the fleet's, read across every account: its page, not one row.
+    at: '#/accounts',
   }];
 }
 
@@ -203,6 +211,7 @@ function accountNeeds(accounts: readonly AccountRow[], now: number): Need[] {
       subject: accountName(account),
       finding,
       fix,
+      at: itemHref('accounts', accountKey(account)),
     }];
     if (state === 'signedOut' && account.label !== null) return need(H.accountSignedOut, SIGN_IN);
     if (state === 'excluded') return need(exclusionText(account), ACCOUNTS);
@@ -221,6 +230,8 @@ function turnNeeds(heads: readonly HeadStatus[]): Need[] {
     subject: turn.label,
     finding: `${U.idle} ${fmtMs(turn.idleMs)}, ${U.limit} ${fmtMs(turn.streamIdleMs)}`,
     fix: open('#/turns', S.openTurns),
+    // Turns opens a landed turn; a live one has no detail yet, so the page is where it is.
+    at: '#/turns',
   }));
 }
 
@@ -235,6 +246,7 @@ function sessionNeeds(rows: readonly SessionRow[], now: number): Need[] {
     subject: sessionLabel(row),
     finding: row.updated_at === null ? H.quietSince : `${U.lastHeard} ${timeAgo(row.updated_at, now)}`,
     fix: open('#/sessions', S.openSessions),
+    at: itemHref('sessions', sessionKey(row)),
   }));
 }
 
@@ -254,6 +266,7 @@ function teamNeeds(teams: readonly TeamRow[], rows: readonly SessionRow[]): Need
       subject: `${team.name} ${slot.role} ${U.seat}`,
       finding: row === undefined ? H.seatUnlisted : H.seatEnded,
       fix: open('#/teams', S.openTeams),
+      at: itemHref('teams', team.id),
     }];
   }));
 }
@@ -276,8 +289,19 @@ function doctorNeeds(checks: readonly DoctorCheck[], saidFor: ReadonlySet<string
     head: null,
     subject: row.label,
     finding: [...new Set(row.members.map(checkFinding))].join('; '),
-    fix: row.fix === null ? open('#/doctor', S.openDoctor) : { kind: fixMasked(row.fix) ? 'masked' : 'copy', command: row.fix },
+    fix: doctorFix(row.fix, row.fixId),
+    // A check id, as Doctor opens a row: the row key carries the status, and a check that got worse
+    // between this read and Doctor's would miss.
+    at: itemHref('doctor', row.members[0]?.id ?? row.key),
   }));
+}
+
+/** A doctor row's one fix: the daemon runs it, or its command is copied (printed when masked), or,
+ *  with no remedy in the row, Doctor is where to look. */
+function doctorFix(command: string | null, id: string | null): Fix {
+  if (command === null) return open('#/doctor', S.openDoctor);
+  if (id !== null) return { kind: 'doctor-fix', id, command, masked: fixMasked(command) };
+  return { kind: fixMasked(command) ? 'masked' : 'copy', command };
 }
 
 // ---- the list --------------------------------------------------------------------------------

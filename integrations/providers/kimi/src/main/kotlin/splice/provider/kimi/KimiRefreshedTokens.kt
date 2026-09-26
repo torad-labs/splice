@@ -98,7 +98,7 @@ internal class KimiAuthStore(
             !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent) {
             log(
-                "[kimi-auth] failed to read $authPath: ${SafeFailureText.render(failure)} — " +
+                "[kimi-auth] failed to read $authPath: ${SafeFailureText.render(failure)}; " +
                     "no credentials served (NOT a logged-out state)",
             )
         }
@@ -121,7 +121,7 @@ internal class KimiAuthStore(
         }
             .onFailure {
                 log(
-                    "[kimi-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
+                    "[kimi-auth] stat of $authPath failed: ${SafeFailureText.render(it)}; " +
                         "skipping peer rotation, refreshing instead",
                 )
             }

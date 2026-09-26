@@ -113,8 +113,9 @@ class RestartThroughUnitTest {
         }
         val out = TerminalOutput { lines += it }
         val supervised = SupervisedStart(ctl, EnvReader { null }, DaemonSettings(out), unitName = { UNIT })
-        val coldStart = DaemonColdStart(out, RunningJar { null }, supervised, SHORT_STARTUP_POLLS)
-        return RestartCommand(out, out, env, coldStart)
+        val coldStart =
+            DaemonColdStart(out, out, EnvReader { null }, RunningJar { null }, supervised, SHORT_STARTUP_POLLS)
+        return RestartCommand(out, out, env, RunningJar { null }, coldStart)
     }
 
     @Test

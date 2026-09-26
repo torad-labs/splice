@@ -18,19 +18,21 @@ import java.time.Duration
 
 /** The daemon cold start `splice dashboard` and `splice restart` share: the supervisor unit when this
  *  box has one, the raw spawn otherwise, then the wait for the expected version. [errors] carries the
- *  corrupt-TOML diagnostic the supervisor-unit read can raise; stdout belongs to the verb. */
-public class DaemonColdStart internal constructor(
+ *  corrupt-TOML diagnostic the supervisor-unit read can raise; stdout belongs to the verb. [supervised]
+ *  and [startupPolls] keep their defaults outside this module's tests. */
+public class DaemonColdStart(
     output: TerminalOutput,
+    errors: TerminalOutput,
+    env: EnvReader,
     jar: RunningJar,
-    supervised: SupervisedStart,
+    supervised: SupervisedStart = SupervisedStart(
+        JdkSystemctl(),
+        env,
+        DaemonSettings(errors),
+        restarter = JdkSystemctl(UNIT_RESTART_TIMEOUT_MS),
+    ),
     startupPolls: Int = STARTUP_POLLS,
 ) {
-
-    public constructor(output: TerminalOutput, errors: TerminalOutput, env: EnvReader, jar: RunningJar) : this(
-        output,
-        jar,
-        SupervisedStart(JdkSystemctl(), env, DaemonSettings(errors), JdkSystemctl(UNIT_RESTART_TIMEOUT_MS)),
-    )
 
     private val launch = DaemonHealth().let { health ->
         DaemonLaunch(output, health, DaemonSpawn(output, health, jar), supervised, startupPolls)

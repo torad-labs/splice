@@ -62,20 +62,26 @@ internal class JdkSystemctl(private val timeoutMs: Long = SYSTEMCTL_TIMEOUT_MS) 
     }.getOrElse { SYSTEMCTL_ABSENT }
 }
 
+/** The supervisor unit a cold start routes to: the operator's SPLICE_SUPERVISOR_UNIT (default
+ *  splice.service), read when a route is asked for. A test names its own unit here, so it never loads
+ *  this host's config. */
+internal fun interface SupervisorUnitName {
+    operator fun invoke(): String
+}
+
 /** [restarter] runs `systemctl restart`, which blocks until the unit's daemon has drained and
- *  stopped, so it carries a longer deadline than [systemctl]'s millisecond verbs. [unitName] is the
- *  operator's SPLICE_SUPERVISOR_UNIT, read at the call; a test names its own unit here so it never
- *  loads this host's config. */
-internal class SupervisedStart(
+ *  stopped, so it carries a longer deadline than [systemctl]'s millisecond verbs. The type is public so
+ *  [DaemonColdStart]'s one constructor can take it; only this module can build one or call it. */
+public class SupervisedStart internal constructor(
     private val systemctl: Systemctl,
     private val envReader: EnvReader,
     private val settings: DaemonSettings,
     private val restarter: Systemctl = systemctl,
-    private val unitName: () -> String = { settings.supervisorUnit(envReader) },
+    private val unitName: SupervisorUnitName = SupervisorUnitName { settings.supervisorUnit(envReader) },
 ) {
     /** [unit] is the operator's SPLICE_SUPERVISOR_UNIT (default splice.service), resolved at the
      *  call so a diagnostic that never cold-starts never loads the topology for it. */
-    fun route(unit: String = unitName()): ColdStartRoute {
+    internal fun route(unit: String = unitName()): ColdStartRoute {
         val selector = harnessSelectors.firstOrNull { !envReader(it).isNullOrEmpty() }
         if (selector != null) {
             return ColdStartRoute.Raw("$selector is set, so this shell's daemon is its own, not $unit's")
@@ -92,16 +98,16 @@ internal class SupervisedStart(
      *  systemd 257); on a unit that is still ACTIVE it is a no-op, and the daemon's exit that follows
      *  waits the whole backoff. That is why a restart of the unit's own daemon goes through [restart]
      *  and never stops the daemon and then starts the unit (V4-243). */
-    fun start(unit: String): Boolean = systemctl(listOf("start", unit)) == 0
+    internal fun start(unit: String): Boolean = systemctl(listOf("start", unit)) == 0
 
     /** V4-243: whether [unit] is active, so the daemon on the port is the one it runs. */
-    fun active(unit: String): Boolean = systemctl(listOf("is-active", "--quiet", unit)) == 0
+    internal fun active(unit: String): Boolean = systemctl(listOf("is-active", "--quiet", unit)) == 0
 
     /** V4-243: `systemctl --user restart [unit]`. systemd stops the daemon with SIGTERM, which drains
      *  its in-flight turns through the same daemon.stop() the shutdown route runs, then starts it at
      *  once; a manual restart also resets the unit's restart counter, so no backoff is waited out.
      *  Returns when the restart job is done, which is why it runs on [restarter]. */
-    fun restart(unit: String): Boolean = restarter(listOf("restart", unit)) == 0
+    internal fun restart(unit: String): Boolean = restarter(listOf("restart", unit)) == 0
 }
 
 // why: `systemctl --user cat|start` answer in milliseconds; a manager that hangs longer than this is

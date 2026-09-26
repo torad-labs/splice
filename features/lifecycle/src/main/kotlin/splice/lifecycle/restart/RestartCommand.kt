@@ -23,15 +23,13 @@ import splice.topology.TopologyStatePaths
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
-public class RestartCommand internal constructor(
+public class RestartCommand(
     private val output: TerminalOutput,
     errors: TerminalOutput,
     private val env: EnvReader,
-    private val coldStart: DaemonColdStart,
+    jar: RunningJar,
+    private val coldStart: DaemonColdStart = DaemonColdStart(output, errors, env, jar),
 ) {
-
-    public constructor(output: TerminalOutput, errors: TerminalOutput, env: EnvReader, jar: RunningJar) :
-        this(output, errors, env, DaemonColdStart(output, errors, env, jar))
 
     // The escalation ladder is a process lifecycle, not a control-plane request — it lives on
     // DaemonStop (the symmetric counterpart of DaemonLaunch), which this verb drives.

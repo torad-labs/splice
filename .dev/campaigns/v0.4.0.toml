@@ -6649,8 +6649,11 @@ id = "V4-231"
 phase = "release"
 title = "install.sh installs the wrappers where it then checks for them, under any HOME (console finding B, 2026-09-25): install.sh:343-344 runs java -jar splice.jar install --all without its BIN_DIR and SHARE_DIR (install.sh:14-15, from SPLICE_BIN_DIR / SPLICE_SHARE_DIR or HOME), so with a HOME that is not the passwd home the jar links the wrappers into the passwd home's ~/.local/bin and install.sh fails its own check at :353 and rolls back. Seen once on the console's demo install (14:16:40): four real wrappers were re-linked to the targets they already had, nothing to undo. Console seat."
 files = ["install.sh"]
-status = "todo"
+status = "in_flight"
 verify = "red first: install.sh under a scratch HOME that is not the passwd home fails today and installs into that HOME after, with nothing written under the passwd home; CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T08:05:00.367Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T08:05:00Z
 
 [[items]]
 id = "V4-232"

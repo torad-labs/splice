@@ -641,6 +641,24 @@ origin.
   printed `could not be asked: failure (message withheld: it may quote file bytes)`. A list that does
   not arrive within the 10-second budget, a TLS failure and a URL that does not parse now say so;
   any other failure is still withheld (V4-268).
+- **A team's Chat and Messages count only hand-offs between members.** A member's own subagent is
+  addressed by name (`code-review`) and answers as `main`, and the board listed those calls as team
+  messages: a team of four whose reviewer ran `/code-review` read 16 messages for 13 hand-offs. A
+  call to a name that is neither a member nor a session address is now the member's own tool work
+  (V4-263).
+- **A team's Activity shows what its members are doing.** Claude Code 2.1.282 sends its 30-second
+  "describe your most recent action" query only from background agents, so a team whose members
+  worked in their own sessions read `Nothing sampled today`. splice now samples each session's
+  latest tool call from its own turns, at most once every 30 seconds, and the client's answer to its
+  own query counts as the sample when one comes (V4-265).
+- **A team's API cost is a figure when some of its turns have no rate card.** One turn on a model
+  with no card, such as Claude Code's background haiku calls, nulled that member's dollars and the
+  team's total, and the tile read `Unpriced`. The cost is now the priced turns' dollars, with
+  `1 turn unpriced` beside it, and reads `Unpriced` only when no turn was priced (V4-264).
+- **A project's API cost today counts the turns it could not price.** The project row applies the
+  same rule: `cost_today_usd` is the priced turns' dollars and `unpriced_turns_today` counts the
+  rest, and the Projects page's summary counts those turns rather than the repos that had one. The
+  Usage page says `1 turn unpriced` for a single turn (V4-269).
 - **The console sees the turns a head has in flight.** `GET /api/heads` reported every gate's
   `acquired`, `released`, `waited`, `avg_wait_ms` and `stream_idle_ms` as 0 and its `live` list as
   empty, whatever was running. The gate now measures them: one live row per turn it holds (the

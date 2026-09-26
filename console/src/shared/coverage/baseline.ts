@@ -1,6 +1,6 @@
 // The coverage manifest as it stands before any page exists (row M1-04). Every
-// name the denominator enumerates — Knob.kt entries, the six topology files'
-// @SerialName values, and the routes of FEATURES.md sections 2.1 and 6 — gets
+// name the denominator enumerates — Knob.kt entries and the routes of FEATURES.md
+// sections 2.1 and 6 (splice.toml's fields are the settings page's, V4-312) — gets
 // exactly one disposition here, so the wall is green FROM THE FIRST PAGE and
 // turns red the moment the daemon grows a key nobody dispositioned.
 //
@@ -22,7 +22,7 @@ type ExcludedGroup = {
 };
 
 // Names are the parsed keys, exactly: enum entry names for knobs (not their
-// `"port"` strings), @SerialName values for topology, normalized routes.
+// `"port"` strings), normalized routes.
 const PENDING: readonly PendingGroup[] = [
   {
     kind: 'knob',
@@ -75,81 +75,6 @@ const PENDING: readonly PendingGroup[] = [
       'REQUEST_READ_TIMEOUT_MS',
       'MATERIALIZATION_PERMITS',
       'STATUSLINE_GIT_ROOTS',
-    ],
-  },
-  {
-    kind: 'topology',
-    where: 'M2-05',
-    names: [
-      // topology/Topology.kt — DaemonConfig
-      'control_port',
-      'state_dir',
-      'show_reasoning',
-      'replay_reasoning',
-      'mirror_reasoning',
-      'fold_reasoning_models',
-      'fold_max_continue',
-      'fold_marker_text',
-      'fold_max_tier',
-      'mcp_hosting',
-      'mcp_hosting_exclude',
-      // topology/Topology.kt — ProviderConfig
-      'base_url',
-      'extra_headers',
-      'extra_windows',
-      'window_rules',
-      'default_context_window',
-      // topology/HeadConfig.kt — HeadConfig
-      'discovery_prefix',
-      'pinned_model',
-      'context_window',
-      'system_prompt',
-      'system_prompt_file',
-      'system_prompt_mode',
-      // topology/QuirksConfig.kt — QuirksConfig
-      'account_id_header',
-      'cache_key',
-      'effort_ceiling',
-      'summary_field',
-      'compact_effort',
-      'tool_choice',
-      'reasoning_cache',
-      'parallel_tool_calls',
-      'websocket',
-      'code_mode',
-      'code_mode_workers',
-      'code_mode_timeout_ms',
-      'code_mode_heap',
-      'code_mode_models',
-      'zstd_request_body',
-      'reasoning_effort',
-      'tool_surface',
-      'mfjs',
-      'block_allowlist',
-      'strip_cache_control',
-      'synthesize_signatures',
-      'map_thinking_adaptive',
-      'strip_sampling_params',
-      'reanchor_prefill',
-      'tool_name_cap',
-      // topology/QuirksConfig.kt — ToolSurfaceConfig
-      'defer_prefixes',
-      'min_deferred',
-      'search_limit',
-      'search_rounds',
-      // topology/TopologySchema.kt — Dialect and ClaudeWrapperConfig
-      'openai-responses',
-      'openai-chat',
-      'anthropic-passthrough',
-      'config_dir',
-      // prompt/HeadSystemPrompt.kt — SystemPromptMode
-      'append',
-      'replace',
-      'strip',
-      // model/TokenCost.kt — ModelRates
-      'cache_read',
-      'cache_write',
-      // compaction/CompactionScope.kt declares no @SerialName, so it contributes none.
     ],
   },
   {

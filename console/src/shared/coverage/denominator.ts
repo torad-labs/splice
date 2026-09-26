@@ -4,7 +4,8 @@
 //
 // Parse methods (recorded on the M1-04 ledger note, printed by the wall):
 //   knobs     gateway/.../config/Knob.kt      `^    [A-Z][A-Z0-9_]*\(`        45 today
-//   topology  six files' `@SerialName("...")` values                          58 distinct today
+//   topology  core/src/test/resources/topology-fields.tsv, Topology's serializer walked and pinned by
+//             TopologyFieldsManifestTest (V4-312): every field's dotted path; the wall counts the leaves
 //   routes    .dev/campaigns/web-console/FEATURES.md sections 2.1 and 6, first column,
 //             backticked spans, normalized by the CONTRACTS.md section 4 rule  52 distinct today
 //   verbs     app/.../cli/CommandParser.kt's verb table, `"<verb>" to CommandFactory`  21 today
@@ -17,9 +18,29 @@ export function parseKnobNames(source: string): string[] {
   return [...new Set(names)].sort();
 }
 
-/** One topology source file: every `@SerialName("...")` value it declares. */
-export function parseSerialNames(source: string): string[] {
-  return [...source.matchAll(/@SerialName\("([^"]+)"\)/g)].map((match) => match[1]);
+/** One field of splice.toml as the manifest lists it: its dotted path (`*` a free key, `[]` an array of
+ *  tables) and the values it takes when it is an enum, empty otherwise. */
+export interface TopologyField {
+  readonly path: string;
+  readonly values: readonly string[];
+}
+
+/** The manifest's lines, less its `#` header. */
+export function parseTopologyManifest(tsv: string): TopologyField[] {
+  return tsv
+    .split('\n')
+    .filter((line) => line.trim() !== '' && !line.startsWith('#'))
+    .map((line) => {
+      const [path = '', values = ''] = line.split('\t');
+      return { path, values: values === '' ? [] : values.split(',') };
+    });
+}
+
+/** The fields that hold a value, which a disposition names: every path no other path extends. A table
+ *  (`daemon`, `providers.*.quirks`) is where its fields sit, not a value of its own. */
+export function topologyLeaves(fields: readonly TopologyField[]): string[] {
+  const paths = fields.map((field) => field.path);
+  return paths.filter((path) => !paths.some((other) => other.startsWith(`${path}.`) || other.startsWith(`${path}[`))).sort();
 }
 
 /** The first column of every table row in a section slice. */
@@ -96,17 +117,10 @@ export function parseCliVerbs(kotlin: string): string[] {
 /** The runtime knob enum — the denominator for `kind: 'knob'`. */
 export const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';
 
-/** The six topology sources named by M1-04, and HeadConfig.kt since HeadConfig and HeadModel left
- *  Topology.kt (concentration, 2026-09-23); CompactionScope.kt declares no @SerialName. */
-export const TOPOLOGY_SOURCES: readonly string[] = [
-  'core/src/main/kotlin/splice/core/topology/Topology.kt',
-  'core/src/main/kotlin/splice/core/topology/HeadConfig.kt',
-  'core/src/main/kotlin/splice/core/topology/QuirksConfig.kt',
-  'core/src/main/kotlin/splice/core/topology/TopologySchema.kt',
-  'core/src/main/kotlin/splice/core/prompt/HeadSystemPrompt.kt',
-  'core/src/main/kotlin/splice/core/model/TokenCost.kt',
-  'core/src/main/kotlin/splice/core/compaction/CompactionScope.kt',
-];
+/** Every field splice.toml parses (V4-312), walked from Topology's serializer. It replaced a grep of
+ *  seven sources for `@SerialName`, which never counted a field named by its property ([projects], every
+ *  [compaction] key), and counted enum values as if they were keys. */
+export const TOPOLOGY_MANIFEST = 'core/src/test/resources/topology-fields.tsv';
 
 export const FEATURES_SOURCE = '.dev/campaigns/web-console/FEATURES.md';
 

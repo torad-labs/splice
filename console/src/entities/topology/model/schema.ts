@@ -1,7 +1,8 @@
 // The documented topology key set as data, and the pure validator that checks a parsed topology
-// against it. Source of every key below: FEATURES.md section 2.3 ("Topology"), which mirrors
-// `Topology.kt`, `HeadConfig.kt`, `QuirksConfig.kt`, `TopologySchema.kt`, `CompactionScope.kt`,
-// `HeadSystemPrompt.kt` and `TokenCost.kt`.
+// against it. Written from FEATURES.md section 2.3 ("Topology"), and held to the fields Topology's own
+// serializer parses (core/src/test/resources/topology-fields.tsv) by console/tests/coverage.test.ts
+// (V4-312), both ways: a key the daemon parses that this refuses, or one this accepts that it never
+// parses, fails by name.
 //
 // What it is FOR: a topology edit is boot-only and a bad one is only discovered at the next
 // restart, draining in-flight turns on the way. Catching a typo'd key before the write is the
@@ -18,12 +19,15 @@ import type { TopologyFinding } from './types';
  *   `array`         an array of tables ([[...]]): every element is validated against this node.
  *   `open`          a bag whose child KEYS are not schema (extra_headers, overrides). Key-checking
  *                   one of these would reject legal config, which is worse than not checking it.
+ *   `names`         a list of names from a closed set ([claude] share, a head's isolate): an entry
+ *                   outside it is a finding.
  */
 export interface SchemaNode {
   keys?: Record<string, SchemaNode>;
   each?: SchemaNode;
   array?: SchemaNode;
   open?: boolean;
+  names?: readonly string[];
 }
 
 /**
@@ -44,32 +48,31 @@ export const RUNTIME_KNOBS = [
   'controlPort', 'usageWarnPct', 'usageWarnTokens5h', 'statuslineGitRoots',
 ] as const;
 
-/** The ten directories `[claude] share` / `[claude] isolate` accept by name (FEATURES 2.3). A
- *  typo in one of these is silent in the daemon — nothing is shared, and nothing says so. */
-const SHARE_KEYS = [
+/** The per-million-token rates, per model id (FEATURES 2.3). `cache_write` is optional; the absent
+ *  case means "no dollar figure", never zero. The `long_context_*` keys are a card's long-context
+ *  tier (V4-240, TomlRates in TokenCost.kt): all of them or none, `long_context_cache_write` optional. */
+/** The ten directories `share` and `isolate` name (FEATURES 2.3). The daemon matches them by name
+ *  (ClaudePolicy.shares), so a misspelled one is shared or isolated by nothing, and nothing says so. */
+const SHARE_NAMES = [
   'settings', 'mcps', 'skills', 'hooks', 'agents', 'commands', 'plugins', 'claude_md', 'sessions',
   'projects',
 ] as const;
 
-const shareTable: SchemaNode = {
-  keys: Object.fromEntries(SHARE_KEYS.map((key) => [key, {}])),
-};
+const directoryNames: SchemaNode = { names: SHARE_NAMES };
 
-/** The per-million-token rates, per model id (FEATURES 2.3). `cache_write` is optional; the absent
- *  case means "no dollar figure", never zero. The `long_context_*` keys are a card's long-context
- *  tier (V4-240, TomlRates in TokenCost.kt): all of them or none, `long_context_cache_write` optional. */
-const ratesTable: SchemaNode = {
-  each: {
-    keys: {
-      input: {}, cache_read: {}, output: {}, cache_write: {},
-      long_context_over_input_tokens: {}, long_context_input: {}, long_context_cache_read: {},
-      long_context_output: {}, long_context_cache_write: {},
-    },
+const rateCard: SchemaNode = {
+  keys: {
+    input: {}, cache_read: {}, output: {}, cache_write: {},
+    long_context_over_input_tokens: {}, long_context_input: {}, long_context_cache_read: {},
+    long_context_output: {}, long_context_cache_write: {},
   },
 };
 
+/** A head's cards, keyed by model id; a provider's model row carries its own card inline. */
+const ratesTable: SchemaNode = { each: rateCard };
+
 const providerModels: SchemaNode = {
-  array: { keys: { id: {}, label: {}, description: {}, context_window: {} } },
+  array: { keys: { id: {}, label: {}, description: {}, context_window: {}, rates: rateCard } },
 };
 
 /** Every quirk key `QuirksConfig` parses. Which ones a given provider's dialect READS depends on
@@ -82,6 +85,7 @@ const quirks: SchemaNode = {
     // being ignored in silence — which is exactly why it must stay in this key set.
     compact_effort: {},
     tool_choice: {}, reasoning_cache: {}, parallel_tool_calls: {}, websocket: {}, code_mode: {},
+    code_mode_workers: {}, code_mode_timeout_ms: {}, code_mode_heap: {}, code_mode_models: {}, tool_name_cap: {},
     zstd_request_body: {}, reasoning_effort: {}, stream_usage: {}, slot_affinity: {}, mfjs: {},
     block_allowlist: {},
     strip_cache_control: {}, synthesize_signatures: {}, map_thinking_adaptive: {},
@@ -97,7 +101,7 @@ const quirks: SchemaNode = {
 
 const provider: SchemaNode = {
   keys: {
-    dialect: {}, base_url: {}, auth: { keys: { kind: {}, env: {}, client: {}, file: {} } },
+    dialect: {}, base_url: {}, auth: { keys: { kind: {}, env: {}, file: {} } },
     quirks,
     extra_headers: { open: true },
     models: providerModels,
@@ -109,7 +113,6 @@ const provider: SchemaNode = {
     models_url: {},
     // Which published models join the picker beyond the declared rows (ModelDiscoveryConfig).
     discovery: { keys: { include: {}, exclude: {} } },
-    rates: ratesTable,
   },
 };
 
@@ -119,10 +122,17 @@ const head: SchemaNode = {
     models: { array: { keys: { id: {}, slot: {} } } },
     context_window: {},
     overrides: { open: true },
-    claude: { keys: { command: {}, share: shareTable, isolate: shareTable } },
+    claude: { keys: { command: {}, config_dir: {}, isolate: directoryNames } },
     system_prompt: {}, system_prompt_file: {}, system_prompt_mode: {},
     rates: ratesTable,
   },
+};
+
+/** A repo's standing prompt (V4-124), and a head's own inside it. */
+const standingPrompt: SchemaNode = { keys: { system_prompt: {}, system_prompt_file: {}, system_prompt_mode: {} } };
+
+const project: SchemaNode = {
+  keys: { ...standingPrompt.keys, heads: { each: standingPrompt } },
 };
 
 const compaction: SchemaNode = {
@@ -143,11 +153,12 @@ export const TOPOLOGY_SCHEMA: SchemaNode = {
         fold_marker_text: {}, fold_max_tier: {}, mcp_hosting: {}, mcp_hosting_exclude: {},
       },
     },
-    claude: { keys: { share: shareTable, isolate: shareTable, config_dir: {} } },
+    claude: { keys: { share: directoryNames } },
     compaction,
     defaults: { keys: Object.fromEntries(RUNTIME_KNOBS.map((key) => [key, {}])) },
     providers: { each: provider },
     heads: { each: head },
+    projects: { each: project },
   },
 };
 
@@ -161,6 +172,13 @@ function join(path: string, key: string): string {
 
 function walk(value: unknown, node: SchemaNode, path: string, out: TopologyFinding[]): void {
   if (node.open === true) return;
+  if (node.names !== undefined && Array.isArray(value)) {
+    const names: readonly unknown[] = node.names;
+    value.forEach((entry, index) => {
+      if (!names.includes(entry)) out.push({ path: `${path}[${index}]`, message: 'unknown name' });
+    });
+    return;
+  }
   // An array of tables is checked BEFORE the table guard: an array is not a table, so the guard
   // would silently skip every [[...]] block, which is where most of a real topology lives.
   if (node.array !== undefined && Array.isArray(value)) {

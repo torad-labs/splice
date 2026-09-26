@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
+import { TOPOLOGY_CHOICES, TOPOLOGY_SCHEMA, type SchemaNode } from '../src/entities/topology';
 import { dispositions as baseline } from '../src/shared/coverage/baseline';
 import { checkCoverage, type Disposition, type DispositionSource } from '../src/shared/coverage/checks';
 import type { PageJob } from '../src/shared/coverage/jobs';
@@ -18,14 +19,15 @@ import {
   FEATURES_SOURCE,
   KNOB_SOURCE,
   KOTLIN_MAIN,
-  TOPOLOGY_SOURCES,
+  TOPOLOGY_MANIFEST,
   parseCliVerbs,
   parseKnobNames,
   parseRouteNames,
   parseRouteSpans,
-  parseSerialNames,
+  parseTopologyManifest,
   parseServedRoutes,
   servedBy,
+  topologyLeaves,
 } from '../src/shared/coverage/denominator';
 import { denominator as missingDenominator, dispositions as missingDispositions } from './fixtures/walls/coverage-missing';
 
@@ -33,7 +35,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
 
 const knobs = parseKnobNames(read(KNOB_SOURCE));
-const topologyKeys = [...new Set(TOPOLOGY_SOURCES.flatMap((file) => parseSerialNames(read(file))))].sort();
+const topologyFields = parseTopologyManifest(read(TOPOLOGY_MANIFEST));
+const topologyKeys = topologyLeaves(topologyFields);
 const features = read(FEATURES_SOURCE);
 const routeSpans = parseRouteSpans(features);
 const routes = parseRouteNames(features);
@@ -71,7 +74,7 @@ describe('coverage wall', () => {
   test('the denominator is parsed from the source', () => {
     console.log(
       `coverage denominator: ${knobs.length} knobs (${KNOB_SOURCE}), ` +
-        `${topologyKeys.length} topology keys (${TOPOLOGY_SOURCES.length} files), ` +
+        `${topologyKeys.length} topology fields (${TOPOLOGY_MANIFEST}), ` +
         `${routes.length} routes from ${routeSpans.length} backticked spans ` +
         `(${FEATURES_SOURCE} sections 2.1 and 6)`,
     );
@@ -203,5 +206,49 @@ describe('coverage wall', () => {
       { name: '/api/events', problem: 'pending without where' },
       { name: '/api/events', problem: 'two page dispositions' },
     ]);
+  });
+});
+
+// V4-312: splice.toml's fields come from the manifest Topology's own serializer is walked into, so the
+// console's two hand-written views of the file are held to it as well: the pickers' values and the
+// validator's key set. Each was written from FEATURES 2.3 and drifted from the daemon without a sound.
+describe('the console reads splice.toml as the daemon parses it', () => {
+  test('every enum field\'s picker offers exactly the values the daemon accepts', () => {
+    const enums = topologyFields.filter((field) => field.values.length > 0);
+    expect(enums.length, 'the manifest lists an enum field').toBeGreaterThan(0);
+    for (const field of enums) {
+      // model.ts's fieldOf picks a field's choices by its key, the path's last segment.
+      const offered = TOPOLOGY_CHOICES[field.path.split('.').at(-1) ?? ''] ?? [];
+      expect([...offered].sort(), field.path).toEqual([...field.values].sort());
+    }
+  });
+
+  test('the validator accepts every field the daemon parses and no key it does not', () => {
+    // TOPOLOGY_SCHEMA in the manifest's grammar: `.key`, `.*` for `each`, `[]` for `array`; an `open`
+    // bag's keys are never checked, so anything under it passes both ways.
+    const accepted: string[] = [];
+    const open: string[] = [];
+    const flatten = (node: SchemaNode, at: string): void => {
+      if (node.open === true) open.push(at);
+      for (const [key, child] of Object.entries(node.keys ?? {})) {
+        const path = at === '' ? key : `${at}.${key}`;
+        accepted.push(path);
+        flatten(child, path);
+      }
+      if (node.each !== undefined) flatten(node.each, `${at}.*`);
+      if (node.array !== undefined) flatten(node.array, `${at}[]`);
+    };
+    flatten(TOPOLOGY_SCHEMA, '');
+    const parsed = new Set(topologyFields.map((field) => field.path));
+    const known = new Set(accepted);
+    const inOpen = (path: string): boolean => open.some((bag) => path.startsWith(`${bag}.`) || path.startsWith(`${bag}[`));
+    const parent = (path: string): string => path.slice(0, path.lastIndexOf('.'));
+    // A free-keyed map the schema narrows to named keys ([defaults] to the runtime knobs) is the one
+    // place the two may differ: `defaults.*` in the file, `defaults.port` in the schema.
+    const narrowed = (path: string): boolean => path.endsWith('.*') && accepted.some((key) => key.startsWith(`${path.slice(0, -1)}`));
+
+    const refused = [...parsed].filter((path) => !known.has(path) && !inOpen(path) && !narrowed(path));
+    const phantom = accepted.filter((path) => !parsed.has(path) && !inOpen(path) && !parsed.has(`${parent(path)}.*`));
+    expect({ refused, phantom }).toEqual({ refused: [], phantom: [] });
   });
 });

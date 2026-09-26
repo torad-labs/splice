@@ -4,13 +4,12 @@
 // The disposition says what the CONSOLE does with the name, not what the daemon does with it.
 //
 // Two vocabularies meet here and they are not the same one. The denominator parses KNOBS by their
-// enum entry name (`PORT`) and TOPOLOGY keys by their `@SerialName` value (`control_port`), because
-// those are the identifiers the sources of record declare. The console's form is keyed by the
+// enum entry name (`PORT`) and TOPOLOGY fields by their dotted path in the file
+// (`daemon.control_port`, V4-312), because those are the identifiers the sources of record declare. The console's form is keyed by the
 // config KEY (`port`), which is what the daemon's payload carries and what the operator types.
 // Both are listed below, each in its own group, because the wall counts the first and the page
 // renders the second.
 import type { Disposition, PageJob } from '@shared/coverage';
-import { TOPOLOGY_CHOICES } from '@entities/topology';
 
 type State = 'editable' | 'read-only';
 
@@ -70,52 +69,73 @@ const MCP_KNOBS = ['MCP_IDLE_TIMEOUT_MS', 'MCP_MAX_SERVERS', 'MCP_REQUEST_TIMEOU
  *  control and the topology field is the one that is never read, so the rack edits them. */
 const LEGACY_KNOBS = ['CHATGPT_API_BASE', 'GROK_PORT', 'GROK_MODEL', 'XAI_API_BASE'] as const;
 
-/** The topology keys the forms write (FEATURES 2.3). Every edit is boot-only, which is what the
- *  page's backup-and-restart note is about. */
+/** Every field of splice.toml, by its path in the manifest the wall reads (V4-312,
+ *  core/src/test/resources/topology-fields.tsv). The topology editor writes each one the file carries,
+ *  in whatever table it sits (model.ts topologyTables), and every edit is boot-only, which is what the
+ *  page's backup-and-restart note is about. A field the daemon grows is red here until it is listed. */
 const EDITABLE_TOPOLOGY = [
-  // `summary` and `effort` are `[daemon]` keys of FEATURES 2.3 but carry NO `@SerialName` in
-  // Topology.kt, so the denominator does not enumerate them and they are not declared here. The
-  // forms still show them, because the file carries them; the wall counts what the SOURCE declares.
-  'control_port', 'state_dir', 'show_reasoning', 'replay_reasoning',
-  'mirror_reasoning', 'fold_reasoning_models', 'fold_max_continue', 'fold_marker_text',
-  'fold_max_tier', 'mcp_hosting', 'mcp_hosting_exclude',
-  'base_url', 'extra_headers', 'extra_windows', 'window_rules', 'default_context_window',
-  'discovery_prefix', 'pinned_model', 'context_window', 'system_prompt', 'system_prompt_file',
-  'system_prompt_mode',
-  'account_id_header', 'cache_key', 'effort_ceiling', 'summary_field', 'tool_choice',
-  'reasoning_cache', 'parallel_tool_calls', 'websocket', 'code_mode', 'code_mode_workers',
-  'code_mode_timeout_ms', 'code_mode_heap', 'code_mode_models', 'zstd_request_body', 'reasoning_effort',
-  // Arrived with V4-163 (token reporting on local heads), the same way the two activity knobs
-  // above did: a daemon key is a red console until someone says what the console does with it.
-  // An ordinary boolean quirk the topology forms write, so it is editable like its neighbours.
-  'stream_usage',
-  // V4-165 (slot affinity on a llama-server head): an ordinary boolean quirk, editable like stream_usage.
-  'slot_affinity',
-  // d217408d (`splice models`): where a provider publishes its model list when that is not where
-  // its dialect says. A plain provider string, editable like base_url; no turn ever reads it.
-  'models_url',
-  'tool_surface', 'mfjs', 'block_allowlist', 'strip_cache_control', 'synthesize_signatures',
-  'map_thinking_adaptive', 'strip_sampling_params', 'reanchor_prefill', 'tool_name_cap',
-  'defer_prefixes', 'min_deferred', 'search_limit', 'search_rounds',
-  'config_dir', 'cache_read', 'cache_write',
-  // V4-240: a rate card's long-context tier, keys of the same rates table the forms write.
-  'long_context_over_input_tokens', 'long_context_input', 'long_context_cache_read',
-  'long_context_output', 'long_context_cache_write',
+  // [claude]: the directories every head's Claude Code shares by default.
+  'claude.share',
+  // [compaction]: the global rule, then per model and per project ([[compaction.project]]); V4-313
+  // gives the project rows an editor on the Projects page.
+  'compaction.file', 'compaction.instructions', 'compaction.model[].file', 'compaction.model[].instructions',
+  'compaction.model[].model', 'compaction.project[].file', 'compaction.project[].instructions',
+  'compaction.project[].model', 'compaction.project[].path',
+  // [daemon]: `summary` and `effort` included, which the @SerialName parse never counted.
+  'daemon.control_port', 'daemon.effort', 'daemon.fold_marker_text', 'daemon.fold_max_continue',
+  'daemon.fold_max_tier', 'daemon.fold_reasoning_models', 'daemon.mcp_hosting', 'daemon.mcp_hosting_exclude',
+  'daemon.mirror_reasoning', 'daemon.replay_reasoning', 'daemon.show_reasoning', 'daemon.state_dir',
+  'daemon.summary',
+  // [defaults]: any runtime knob by its config key.
+  'defaults.*',
+  // [heads.KEY]: the head, its tiers, its own [claude], its overrides and its rate cards.
+  'heads.*.claude.command', 'heads.*.claude.config_dir', 'heads.*.claude.isolate', 'heads.*.context_window',
+  'heads.*.discovery_prefix', 'heads.*.models[].id', 'heads.*.models[].slot', 'heads.*.overrides.*',
+  'heads.*.pinned_model', 'heads.*.port', 'heads.*.provider', 'heads.*.rates.*.cache_read',
+  'heads.*.rates.*.cache_write', 'heads.*.rates.*.input', 'heads.*.rates.*.long_context_cache_read',
+  'heads.*.rates.*.long_context_cache_write', 'heads.*.rates.*.long_context_input',
+  'heads.*.rates.*.long_context_output', 'heads.*.rates.*.long_context_over_input_tokens',
+  'heads.*.rates.*.output', 'heads.*.system_prompt', 'heads.*.system_prompt_file',
+  'heads.*.system_prompt_mode',
+  // [projects."<root>"] (V4-124): a repo's standing prompt, globally and per head.
+  'projects.*.heads.*.system_prompt', 'projects.*.heads.*.system_prompt_file',
+  'projects.*.heads.*.system_prompt_mode', 'projects.*.system_prompt', 'projects.*.system_prompt_file',
+  'projects.*.system_prompt_mode',
+  // [providers.NAME]: dialect, auth, models and their cards (V4-240 long-context tier), discovery and
+  // the quirks (stream_usage V4-163, slot_affinity V4-165); models_url is where `splice models` asks.
+  'providers.*.auth.env', 'providers.*.auth.file', 'providers.*.auth.kind', 'providers.*.base_url',
+  'providers.*.default_context_window', 'providers.*.dialect', 'providers.*.discovery.exclude',
+  'providers.*.discovery.include', 'providers.*.extra_headers.*',
+  'providers.*.extra_windows[].context_window', 'providers.*.extra_windows[].id', 'providers.*.local',
+  'providers.*.models[].context_window', 'providers.*.models[].description', 'providers.*.models[].id',
+  'providers.*.models[].label', 'providers.*.models[].rates.cache_read',
+  'providers.*.models[].rates.cache_write', 'providers.*.models[].rates.input',
+  'providers.*.models[].rates.long_context_cache_read',
+  'providers.*.models[].rates.long_context_cache_write', 'providers.*.models[].rates.long_context_input',
+  'providers.*.models[].rates.long_context_output',
+  'providers.*.models[].rates.long_context_over_input_tokens', 'providers.*.models[].rates.output',
+  'providers.*.models_url', 'providers.*.quirks.account_id_header', 'providers.*.quirks.block_allowlist',
+  'providers.*.quirks.cache_key', 'providers.*.quirks.code_mode', 'providers.*.quirks.code_mode_heap',
+  'providers.*.quirks.code_mode_models', 'providers.*.quirks.code_mode_timeout_ms',
+  'providers.*.quirks.code_mode_workers', 'providers.*.quirks.effort_ceiling',
+  'providers.*.quirks.map_thinking_adaptive', 'providers.*.quirks.mfjs',
+  'providers.*.quirks.parallel_tool_calls', 'providers.*.quirks.reanchor_prefill',
+  'providers.*.quirks.reasoning_cache', 'providers.*.quirks.reasoning_effort',
+  'providers.*.quirks.slot_affinity', 'providers.*.quirks.store', 'providers.*.quirks.stream_usage',
+  'providers.*.quirks.strip_cache_control', 'providers.*.quirks.strip_sampling_params',
+  'providers.*.quirks.summary_field', 'providers.*.quirks.synthesize_signatures',
+  'providers.*.quirks.tool_choice', 'providers.*.quirks.tool_name_cap',
+  'providers.*.quirks.tool_surface.defer', 'providers.*.quirks.tool_surface.defer_prefixes',
+  'providers.*.quirks.tool_surface.eager', 'providers.*.quirks.tool_surface.enabled',
+  'providers.*.quirks.tool_surface.min_deferred', 'providers.*.quirks.tool_surface.search_limit',
+  'providers.*.quirks.tool_surface.search_rounds', 'providers.*.quirks.websocket',
+  'providers.*.quirks.zstd_request_body', 'providers.*.window_rules[].context_window',
+  'providers.*.window_rules[].prefix',
 ] as const;
-
-/**
- * The denominator's topology names that are not keys at all: the three `Dialect` values and the
- * three `SystemPromptMode` values are what a field may BE, not fields the file carries. The forms
- * offer them as choices inside `dialect` and `system_prompt_mode`; there is nothing to set by
- * their own name, which is exactly what read-only means here.
- */
-// One list, the editor's: the picker and this wall read the same values (TOPOLOGY_CHOICES).
-const DIALECT_VALUES = TOPOLOGY_CHOICES.dialect ?? [];
-const MODE_VALUES = TOPOLOGY_CHOICES.system_prompt_mode ?? [];
 
 /** Retired in code (2026-09-05) but still PARSED, so a config carrying it fails loudly at load.
  *  The daemon's `QuirksConfig.init` refuses it by name; the console must not offer it. */
-const RETIRED_TOPOLOGY = ['compact_effort'] as const;
+const RETIRED_TOPOLOGY = ['providers.*.quirks.compact_effort'] as const;
 
 export const dispositions: readonly Disposition[] = [
   ...entries('knob', 'editable', EDITABLE_KNOBS),
@@ -128,8 +148,6 @@ export const dispositions: readonly Disposition[] = [
   ...entries('knob', 'read-only', ['WIRE_TAP', 'TRACE'], 'per head only, in [heads.KEY.overrides]'),
 
   ...entries('topology', 'editable', EDITABLE_TOPOLOGY),
-  ...entries('topology', 'read-only', DIALECT_VALUES, 'a dialect value, chosen per provider'),
-  ...entries('topology', 'read-only', MODE_VALUES, 'a system prompt mode value'),
   ...entries('topology', 'read-only', RETIRED_TOPOLOGY, 'retired, the daemon refuses it'),
 
   // The routes this page reads and writes: `/api/config` (GET and PATCH) and `/api/topology`

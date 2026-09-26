@@ -378,19 +378,18 @@ console owns (`src/shared/coverage/denominator.ts`):
 | source | what is parsed | constant |
 |---|---|---|
 | `gateway/core/.../config/Knob.kt` | every enum entry name | `KNOB_SOURCE` |
-| six schema files — `topology/Topology.kt`, `topology/QuirksConfig.kt`, `topology/TopologySchema.kt`, `prompt/HeadSystemPrompt.kt`, `model/TokenCost.kt`, `compaction/CompactionScope.kt` | every `@SerialName` value | `TOPOLOGY_SOURCES` |
+| `core/src/test/resources/topology-fields.tsv`, `Topology.serializer()`'s descriptor walked and pinned by `TopologyFieldsManifestTest` (V4-312) | every field's dotted path that holds a value (a leaf) | `TOPOLOGY_MANIFEST` |
 | `.dev/web-console/FEATURES.md` sections 2.1 and 6 | the backticked spans of each route table's FIRST column | `FEATURES_SOURCE` |
 
-Read that list from `denominator.ts`, never from memory: **half of the "topology" sources are not
-in the topology package.** `HeadSystemPrompt.kt`, `TokenCost.kt` and `CompactionScope.kt` live in
-`prompt/`, `model/` and `compaction/`, and a seat editing one of those has no reason to suspect a
-console wall is reading it. (This table said "the six `topology/*.kt` files" in its first draft —
-the right count beside the wrong glob, which would have produced exactly the miss it exists to
-prevent.)
+Read that list from `denominator.ts`, never from memory. The topology row was a grep of seven
+source files for `@SerialName` until V4-312, which missed every field named by its property
+(`[projects]`, all of `[compaction]`: 41 of 115 fields) and counted enum values as keys. The
+manifest is the serializer's own walk, so a field in any package is counted, and a daemon row that
+adds one fails `TopologyFieldsManifestTest` in its own module before the console wall sees it.
 
 That is deliberate and stays: a denominator the console writes for itself cannot fail for a key
 the console forgot. **The consequence is a one-way cross-plane dependency.** A daemon row that
-adds a `Knob` entry or a `@SerialName` reddens `webui/tests/coverage.test.ts` in the same commit,
+adds a `Knob` entry or a splice.toml field reddens `webui/tests/coverage.test.ts` in the same commit,
 and the daemon row's own verify — gradle, ast-grep, knob-keys-documented, schema-keys-consumed —
 cannot see it. Measured: `f9e19d00` added `ACTIVITY_RETENTION_DAYS` and `ACTIVITY_STORE_HEADS`,
 the wall went red, and every gate that row ran was green.

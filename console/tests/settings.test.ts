@@ -24,7 +24,7 @@ import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, parseList, 
 import { draftAfterKnobSave, saveGlobalKnob } from '../src/pages/settings';
 import { saveTopology } from '../src/entities/topology';
 import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
-import { KNOB_SOURCE, TOPOLOGY_SOURCES, parseKnobNames, parseSerialNames } from '../src/shared/coverage/denominator';
+import { KNOB_SOURCE, TOPOLOGY_MANIFEST, parseKnobNames, parseTopologyManifest, topologyLeaves } from '../src/shared/coverage/denominator';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const readSource = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
@@ -441,7 +441,8 @@ describe('settings: the coverage manifest', () => {
     // declared here that the source never declared is how this manifest once carried 60 topology
     // keys for a 58-key source, found by hand-diffing at the time.
     const knobNames = new Set(parseKnobNames(readSource(KNOB_SOURCE)));
-    const topologyNames = new Set(TOPOLOGY_SOURCES.flatMap((file) => parseSerialNames(readSource(file))));
+    // V4-312: every field splice.toml parses, from the manifest Topology's serializer is walked into.
+    const topologyNames = new Set(topologyLeaves(parseTopologyManifest(readSource(TOPOLOGY_MANIFEST))));
     expect(new Set(knobsDeclared.map((entry) => entry.name))).toEqual(knobNames);
     expect(new Set(topologyDeclared.map((entry) => entry.name))).toEqual(topologyNames);
     expect(new Set(dispositions.map((entry) => entry.name)).size).toBe(dispositions.length);
@@ -454,11 +455,14 @@ describe('settings: the coverage manifest', () => {
     // a different question than the one it is named for — V4-175 moved /api/claude-head off
     // `pending` onto a read-only status read and the arithmetic went red for a correct manifest.
     // 17 since v0.4.0 prompt-review: WIRE_TAP and TRACE are head-only (Knob.headOnly), so the daemon
-    // refuses them in PATCH and the page shows them read-only.
+    // refuses them in PATCH and the page shows them read-only. 3 since V4-312: the three dialect and
+    // three prompt-mode values were names only because the old parse counted every @SerialName; they
+    // are a field's values now, held to the pickers by coverage.test.ts, which leaves the two head-only
+    // knobs and the retired quirk.
     const readOnly = dispositions
       .filter((entry) => entry.kind !== 'route' && entry.disposition === 'read-only')
       .map((entry) => entry.name);
-    expect(readOnly).toHaveLength(9);
+    expect(readOnly).toHaveLength(3);
     for (const entry of dispositions) {
       if (entry.disposition === 'read-only' || entry.disposition === 'excluded') expect(entry.reason).toBeTruthy();
       if (entry.disposition === 'pending') expect(entry.where).toBeTruthy();

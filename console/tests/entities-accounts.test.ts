@@ -317,7 +317,7 @@ describe('the topology validator', () => {
   // a bag whose child keys are deliberately not schema.
   const EXAMPLE = {
     daemon: { control_port: 3096, show_reasoning: 'text', mcp_hosting: true, mcp_hosting_exclude: ['x'] },
-    claude: { share: { settings: true, mcps: false }, isolate: { projects: true }, config_dir: '~/.config/splice/claude' },
+    claude: { share: ['settings', 'mcps'] },
     compaction: {
       instructions: 'Keep every file path verbatim.',
       model: [{ model: 'gpt-6-astra', file: '~/compaction.md' }],
@@ -335,8 +335,7 @@ describe('the topology validator', () => {
           tool_surface: { enabled: true, defer: ['LSP'], search_limit: 8 },
         },
         extra_headers: { 'x-anything': 'a bag, not a schema' },
-        models: [{ id: 'gpt-6-astra', label: 'Astra', context_window: 400000 }],
-        rates: { 'gpt-6-astra': { input: 1.25, cache_read: 0.125, output: 10 } },
+        models: [{ id: 'gpt-6-astra', label: 'Astra', context_window: 400000, rates: { input: 1.25, cache_read: 0.125, output: 10 } }],
       },
     },
     heads: {
@@ -344,16 +343,20 @@ describe('the topology validator', () => {
         provider: 'codex',
         port: 3100,
         discovery_prefix: 'claudex-',
+        pinned_model: 'gpt-6-astra',
         models: [{ id: 'gpt-6-astra', slot: 'opus' }],
         overrides: { effort: 'max' },
-        claude: { command: 'claude', share: { settings: true } },
+        claude: { command: 'claude', config_dir: '~/.config/splice/claude', isolate: ['projects'] },
         system_prompt: 'you are',
         system_prompt_mode: 'append',
-        rates: { 'gpt-6-astra': { input: 1.25, output: 10 } },
+        rates: { 'gpt-6-astra': { input: 1.25, cache_read: 0.125, output: 10 } },
       },
     },
+    projects: { '/home/me/app': { system_prompt: 'Plan first.', heads: { claudex: { system_prompt_mode: 'append' } } } },
   };
 
+  // In the shapes the daemon's loader parses (V4-312): share and isolate are lists, a head's [claude]
+  // carries config_dir and isolate, a model row carries its own rate card, and [projects] is a table.
   test('accepts the documented example', () => {
     expect(validateTopology(EXAMPLE)).toEqual([]);
   });
@@ -381,9 +384,13 @@ describe('the topology validator', () => {
       .toEqual([{ path: 'providers.codex.models[0].typo', message: 'unknown key' }]);
   });
 
-  test('rejects a misspelled share key, the one failure the daemon reports as silence', () => {
-    expect(validateTopology({ claude: { share: { skils: true } } }))
-      .toEqual([{ path: 'claude.share.skils', message: 'unknown key' }]);
+  // V4-312: `share` and `isolate` are lists of names (TopologySchema.kt ClaudeSharingDefaults,
+  // ClaudeWrapperConfig); the daemon refuses the table form this test once used, so it never fired.
+  test('rejects a misspelled share name, the one failure the daemon reports as silence', () => {
+    expect(validateTopology({ claude: { share: ['settings', 'skils'] } }))
+      .toEqual([{ path: 'claude.share[1]', message: 'unknown name' }]);
+    expect(validateTopology({ heads: { claudex: { claude: { isolate: ['sesions'] } } } }))
+      .toEqual([{ path: 'heads.claudex.claude.isolate[0]', message: 'unknown name' }]);
   });
 
   test('rejects an unknown top-level table', () => {

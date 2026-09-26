@@ -15,6 +15,10 @@ private const val WINDOW_PAD = 9
 /** Undeclared upstream models shown by default; the remainder is counted and --all reveals it. */
 private const val NEW_SHOWN = 8
 private const val ALL_FLAG = "--all"
+private const val MODELS_USAGE = "usage: splice models [provider] [--all]"
+
+/** The flags models takes: none, or --all once. */
+private val MODELS_FLAGS = listOf(emptyList(), listOf(ALL_FLAG))
 
 /** Compare configured model rows with their providers, reporting every declared row. The comparison
  *  is [ModelsReporter]'s, the same one GET /api/models/upstream serves; this renders it as text. */
@@ -27,10 +31,17 @@ public class ModelsCommand(
 
     /** True when every provider that answered agrees with splice.toml. */
     public fun models(args: List<String>, env: EnvReader): Boolean {
+        // V4-309: [provider] and --all, once each, and nothing else. `splice models --help` dropped the
+        // flag and ran the whole report, a request to every provider; any other word prints the usage.
+        val (flags, words) = args.partition { it.startsWith("-") }
+        if (words.size > 1 || flags !in MODELS_FLAGS) {
+            output.line(MODELS_USAGE)
+            return false
+        }
         // Resolved from the caller's env like status and doctor, so NO_COLOR, a dumb TERM or a pipe
         // with no TERM gets the plain text, byte for byte.
         val report = Report(CliPalette(ColorDepthProbe(env).depth()))
-        val wanted = args.firstOrNull { !it.startsWith("-") }
+        val wanted = words.firstOrNull()
         return when (val compared = reporter.report(wanted, env)) {
             is ModelsReport.NoSuchProvider -> {
                 output.line("splice: no provider '${compared.wanted}' in ${compared.path}")
@@ -39,7 +50,7 @@ public class ModelsCommand(
             }
             is ModelsReport.Compared -> {
                 report.header()
-                val all = args.contains(ALL_FLAG)
+                val all = ALL_FLAG in flags
                 compared.providers.map { report.provider(it, all) }.all { it }
             }
         }

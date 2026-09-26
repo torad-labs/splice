@@ -11,6 +11,30 @@ import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 
 class ModelsCommandTest {
+    // V4-309: `splice models --help` dropped the flag and ran the whole report, a request to every
+    // provider. The verb takes [provider] and --all, once each; any other word prints the usage and
+    // reads neither the configuration nor a credential.
+    @Test
+    fun `a word models does not name prints usage and reaches no provider - V4-309`() {
+        val refused = listOf(
+            listOf("--help"),
+            listOf("-h"),
+            listOf("known", "-h"),
+            listOf("known", "other"),
+            listOf("--all", "--all"),
+        )
+        for (args in refused) {
+            val lines = mutableListOf<String>()
+            val command = ModelsCommand(
+                ModelConfigurationSource { error("$args must not load the configuration") },
+                ModelCredentialSource { _, _, _ -> error("$args must not read a credential") },
+                TerminalOutput { lines.add(it) },
+            )
+            assertFalse(command.models(args, EnvReader { null }), "$args")
+            assertEquals(listOf("usage: splice models [provider] [--all]"), lines, "$args")
+        }
+    }
+
     @Test
     fun `an unknown provider names its configuration without reading credentials`() {
         val lines = mutableListOf<String>()

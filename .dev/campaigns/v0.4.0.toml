@@ -6727,10 +6727,13 @@ id = "V4-239"
 phase = "release"
 title = "The console reads what `splice models`, `splice wire` and `splice trace` print (V4-220 follow-up from claude-builder's verb wall, #308, 2026-09-25). The wall's denominator holds all 21 CommandParser.kt verbs. Each covered verb names its page action and a served `via` route that covers it. Models, wire and trace are dispositioned pending on V4-220, whose title is that the console does everything the CLI does, so V4-220 stays open until they have console reads. This row owns them: each verb gets a read-only route that serves what the verb prints and a console page that shows it. As each lands, the wall's `where` for that verb names the page, and the pending disposition goes. splice-lead."
 files = ["features/models/src/main/kotlin/splice/models/roster/ModelsRoute.kt", "features/models/src/main/kotlin/splice/models/list/ModelsCommand.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/wire/WireCommand.kt", "features/turns/src/main/kotlin/splice/head/trace/TraceCommand.kt", "app/src/main/kotlin/splice/app/control/mount/ModelsMount.kt", "console/src/pages/models/", "console/src/shared/coverage/denominator.ts", "console/src/pages/models/coverage.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first: the verb wall, with models, wire and trace moved from pending to covered, fails naming each until its route is served and its page calls it; green after: all three are covered by served read-only routes, and a console page shows each verb's output; CI gate on the train sha."
 # [2026-09-26] amend by=orchestrator: files were ["app/src/main/kotlin/splice/app/cli/CommandParser.kt", "console/src/pages/models/coverage.ts", "console/src/shared/coverage/denominator.ts"]
 # [2026-09-26] SCOPE (orchestrator): CommandParser.kt leaves this row (V4-309 owns it; the verb wall only reads it). At the tip /api/models serves the declared roster only (ModelsMount.kt:20, ModelsRoute.models), not the endpoint roster 'splice models [provider]' prints beside it, and no route serves what 'splice wire' or 'splice trace' print. The seat names the remaining files (new mounts, pages, tests) from its inventory before editing, and the trace read follows the product's capture rules (FEATURES 4.13 redaction; nothing served that the operator did not turn on)
+claimed_by = "console"
+claimed_at = "2026-09-26T12:50:10.365Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T12:50:10Z
 
 [[items]]
 id = "V4-240"

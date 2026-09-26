@@ -7796,3 +7796,11 @@ claimed_at = "2026-09-26T17:03:50.887Z"
 # [2026-09-26] CLAIM: owner=console at=2026-09-26T17:03:50Z
 # [2026-09-26] RECEIPT cmd="bun tools/gate rules (75 rule tests; red before fix exit 1 at standing.tsx:185); cd console && tsc --noEmit -p . && eslint src tests e2e playwright.config.ts && vitest run (79 files)" exit=0 tests=1513 touched=console/src/pages/projects/standing.tsx,quality/rules/console/store-selector-fresh-value.yml,quality/rules/rule-tests/store-selector-fresh-value-test.yml,.dev/restructure/capabilities.tsv tail="366ee8fa4; rule test 16 cases (8 fire, 8 pass), 2 rule mutants red; census 0 findings; CI projects journey console.spec.ts:871 is the verdict"
 # [2026-09-26] INSTALLED a6b44cbf9 (V4-312, V4-313, V4-318 plus ledger) after CI gate run 36257849856 passed on that exact sha (12:18 PM CT). Jar built from a clean detached worktree through the gate slot in 38 s, sha256 9c4e01531df6954297c81aa4f26e33a5c5a7d4b6b08e89cd6c2d13f8454c0dcf; backup ~/.local/share/splice/splice.jar.bak-20260926-1251-pre-a6b44cbf9; gated restart (8102 silent, Vast lists no rig-glm53, 12:51:51 PM CT); pid 1556776 since 12:52:10 PM CT; the open jar /proc/1556776/fd/4 has the same sha256
+
+[[items]]
+id = "V4-319"
+phase = "release"
+title = "Stop a turn from the console: each head lists its live turns and stops one with a frame Claude Code does not retry (V4-247, console's design 2026-09-26)"
+files = ["features/turns/src/main/kotlin/splice/head/turn/TurnOneDrive.kt", "features/turns/src/main/kotlin/splice/head/turn/CancellationSeal.kt", "features/turns/src/main/kotlin/splice/head/turn/LiveTurns.kt", "app/src/main/kotlin/splice/app/control/mount/TurnsMount.kt", ".dev/restructure/capabilities.tsv"]
+status = "todo"
+verify = "probe first: a real Claude Code (fake credentials) given invalid_request_error mid-stream does not retry, quoted from its own screen or transcript; red: POST /api/heads/{head}/turns/{id}/stop and GET /api/heads/{head}/turns/live answer 404; green: a test head with a stalled upstream lists the turn, stop answers {stopped, head, session}, the client gets the non-retryable frame, the journal outcome is stopped, the gate slot is released, a landed turn answers 404; tests and console files named at claim"

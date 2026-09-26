@@ -7154,9 +7154,12 @@ id = "V4-275"
 phase = "release"
 title = "splice.toml and its backups are written owner-only (console, V4-262's audit, 2026-09-26): a console edit writes splice.toml.bak-<time>-<hash> at the umask and never deletes it, and the rewritten splice.toml also lands at the umask (TopologyWriter.kt:126-129: Files.write(backup), then writeString(tmp) + move), so an extra_headers secret can sit in files other accounts can read."
 files = ["core/src/main/kotlin/splice/core/topology/TopologyWriter.kt", "core/src/test/kotlin/splice/core/topology/**"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a console edit under umask 022 leaves splice.toml and its backup readable by others, and backups pile up; green: both are 0600 from creation (no chmod window) and backups are capped; the README's disk section matches; CI gate on the pushed sha."
 # [2026-09-26] amend by=unattributed: files were ["features/configuration/src/main/kotlin/splice/configuration/TopologyWriter.kt"]
+claimed_by = "console"
+claimed_at = "2026-09-26T07:36:02.566Z"
+# [2026-09-26] CLAIM: owner=console at=2026-09-26T07:36:02Z
 
 [[items]]
 id = "V4-276"

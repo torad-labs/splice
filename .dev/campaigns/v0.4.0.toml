@@ -6721,8 +6721,12 @@ id = "V4-241"
 phase = "release"
 title = "A splice head's Claude Code header names no billing it does not have (film rehearsals, 2026-09-25). Claude Code 2.1.282's welcome header on every splice head reads 'API Usage Billing' beside the model (rehearsal-resume-2 event 854: 'GPT-6-Sol with xhigh effort · API Usage Billing'; claude-splice showed it with 'Not logged in' before /login), and it is in every take's first frame. Both are Claude Code's own words for the auth it sees, so the trace finds which values splice authors that 2.1.282 reads for them (mythos CLAUDE.md section 22: the proxy writes the values the client reads), and the fix sets them so a plan head's header names the plan or no billing word, never claiming a subscription the head does not have. Queued after the rehearsals; not started before this row. splice-lead."
 files = ["integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt", "features/usage/src/main/kotlin/splice/usage/budgets/BudgetText.kt"]
-status = "todo"
+status = "in_flight"
 verify = "the trace names the 2.1.282 condition that draws each word, with the bundle function it lives in; red first: claudex launched in a throwaway HOME draws 'API Usage Billing' in its header; green after: the same launch draws the plan's name or no billing word; CI gate on the train sha."
+claimed_by = "splice-lead"
+claimed_at = "2026-09-26T02:59:30.322Z"
+# [2026-09-26] CLAIM: owner=splice-lead at=2026-09-26T02:59:30Z
+# [2026-09-26] Started Sep 25 10:00 PM CT by splice-lead. Take 3 runs on 99244e63a without it (Marlin: busy panes scroll their headers off, and the crop rule covers the rest); the plans re-shoot's film jar carries it with V4-251. Take 2's replay (captures/film/team-storefront-2/on-screen.txt) shows the cost: an idle pane keeps its header, and so 'API Usage Billing', on screen for the whole take (grok and muse, 473 s each).
 
 [[items]]
 id = "V4-242"
@@ -6811,6 +6815,7 @@ title = "A browser sign-in's paste reader never eats the next typed line (take2-
 files = ["integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginFlow.kt"]
 status = "in_flight"
 verify = "red first: with a fake console, the loopback wins, then the line 'n' reaches the prompter's confirm, failing on 99244e63a and passing after; the class: a paste before the loopback, a timeout then a line, two prompts after one sign-in; device flows unchanged; CI gate on the train sha."
+# [2026-09-26] PR #338, head a7ee9052c, CI gate run 36212769289 running (claude-builder, Sep 25 9:57 PM CT). claude-builder's receipt, not yet rerun by splice-lead: the jar of a7ee9052c (sha256 a35c52d4…1d7d) passes the pty answer check of splice add codex in a throwaway home (no-op opener, control port 47199, mock issuer via CODEX_OAUTH_ISSUER; a real GET on localhost:1455, one 'n' moves the flow to the checks and the save); the same script on b9e07281… is still waiting 10 s after the one 'n', so the check can fail. It rides the plans re-shoot's film jar with V4-241.
 
 [[items]]
 id = "V4-252"
@@ -6835,3 +6840,14 @@ title = "RELEASE TEXT truth-read (Marlin, 2026-09-26, on 99244e63a): the v0.4.0 
 files = ["CHANGELOG.md", "README.md", "tools/release/src/lib/changelog.ts"]
 status = "todo"
 verify = "release notes v0.4.0 on the release sha prints a section that passes all six points, and the README reads the same; Marlin reads both on that sha; bun test tools/release."
+
+[[items]]
+id = "V4-255"
+phase = "release"
+title = "splice add prints the linker's own sentence when it can't link a wrapper (claude-builder, 2026-09-26, in the V4-251 pty run): AddWrapperLink.kt:26 renders every link failure through SafeFailureText.render, which withholds any IllegalStateException, so an InstallRefused prints '! wrapper not linked (failure (message withheld: it may quote file bytes))' instead of, for example, 'launch shim not found at … (run install.sh)'. InstallRefused's KDoc (InstallLinker.kt:159-163) says the CLI prints it verbatim, and DoctorFixes.kt:64 already does: (failure as? InstallRefused)?.message ?: SafeFailureText.render(failure). The fix is that one rule for every render of a link failure, in one place both callers share, since the console's add reads the same AddLinked.NotLinked.why (V4-220 item 3)."
+files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddWrapperLink.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorFixes.kt", "features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt"]
+status = "in_flight"
+verify = "red first: a test where the install throws InstallRefused(\"launch shim not found at /x (run install.sh)\") fails on unmodified HEAD because NotLinked.why is the withheld text, and passes after; a non-InstallRefused IllegalStateException still renders withheld; CI gate on the train sha."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-26T02:59:30.243Z"
+# [2026-09-26] CLAIM: owner=claude-builder at=2026-09-26T02:59:30Z

@@ -19,8 +19,8 @@ import type { TopologyFinding } from './types';
  *   `array`         an array of tables ([[...]]): every element is validated against this node.
  *   `open`          a bag whose child KEYS are not schema (extra_headers, overrides). Key-checking
  *                   one of these would reject legal config, which is worse than not checking it.
- *   `names`         a list of names from a closed set ([claude] share, a head's isolate): an entry
- *                   outside it is a finding.
+ *   `names`         a list of names the daemon knows ([claude] share, a head's isolate): an entry
+ *                   outside them is a notice, since the daemon also matches any on-disk item by name.
  */
 export interface SchemaNode {
   keys?: Record<string, SchemaNode>;
@@ -57,11 +57,15 @@ export const RUNTIME_KNOBS = [
 /** The per-million-token rates, per model id (FEATURES 2.3). `cache_write` is optional; the absent
  *  case means "no dollar figure", never zero. The `long_context_*` keys are a card's long-context
  *  tier (V4-240, TomlRates in TokenCost.kt): all of them or none, `long_context_cache_write` optional. */
-/** The ten directories `share` and `isolate` name (FEATURES 2.3). The daemon matches them by name
- *  (ClaudePolicy.shares), so a misspelled one is shared or isolated by nothing, and nothing says so. */
-const SHARE_NAMES = [
+/** The names `share` and `isolate` take that the daemon knows (V4-323): ClaudeSharingDefaults' ten
+ *  (TopologySchema.kt) and the aliases ClaudePolicy.shares spells for them (ClaudeMaterializeTypes.kt:
+ *  settings.json, CLAUDE.md, claude.md, claudemd, mcp). The daemon also matches any other on-disk item
+ *  by its own name, so a name outside these is a notice, never a refusal: a misspelled one is shared or
+ *  isolated by nothing, and the daemon says nothing. Pinned to the Kotlin both ways by
+ *  entities-accounts.test.ts. */
+export const SHARE_NAMES = [
   'settings', 'mcps', 'skills', 'hooks', 'agents', 'commands', 'plugins', 'claude_md', 'sessions',
-  'projects',
+  'projects', 'settings.json', 'CLAUDE.md', 'claude.md', 'claudemd', 'mcp',
 ] as const;
 
 const directoryNames: SchemaNode = { names: SHARE_NAMES };
@@ -181,7 +185,7 @@ function walk(value: unknown, node: SchemaNode, path: string, out: TopologyFindi
   if (node.names !== undefined && Array.isArray(value)) {
     const names: readonly unknown[] = node.names;
     value.forEach((entry, index) => {
-      if (!names.includes(entry)) out.push({ path: `${path}[${index}]`, message: 'unknown name' });
+      if (!names.includes(entry)) out.push({ path: `${path}[${index}]`, message: 'no known item' });
     });
     return;
   }

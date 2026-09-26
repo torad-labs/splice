@@ -14,6 +14,9 @@
 // The pending-route cases are asserted through the REAL fetch path with a stubbed transport, not
 // through the predicate alone: a predicate that returns the right value while the store writes
 // something else is exactly the bug this is here to catch.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { ConfigPayload } from '../src/shared/api';
 import { pendingOf } from '../src/shared/api';
@@ -33,6 +36,7 @@ import {
 import type { AccountRow, AccountWindow, AccountWire } from '../src/entities/account';
 import { knobDispositions, provenanceOf } from '../src/entities/config';
 import { validateTopology } from '../src/entities/topology';
+import { SHARE_NAMES } from '../src/entities/topology/model/schema';
 
 const HOUR_5 = 18000;
 const DAY_7 = 604800;
@@ -386,11 +390,25 @@ describe('the topology validator', () => {
 
   // V4-312: `share` and `isolate` are lists of names (TopologySchema.kt ClaudeSharingDefaults,
   // ClaudeWrapperConfig); the daemon refuses the table form this test once used, so it never fired.
-  test('rejects a misspelled share name, the one failure the daemon reports as silence', () => {
+  // V4-323: the daemon matches any other on-disk item by its own name (ClaudePolicy.shares' `else ->
+  // setOf(item)`), so a name outside the known ones may be legal: it is a notice, never a refusal.
+  // A misspelling is still named, the one failure the daemon reports as silence.
+  test('names a share entry that is no known item, without refusing it', () => {
     expect(validateTopology({ claude: { share: ['settings', 'skils'] } }))
-      .toEqual([{ path: 'claude.share[1]', message: 'unknown name' }]);
+      .toEqual([{ path: 'claude.share[1]', message: 'no known item' }]);
     expect(validateTopology({ heads: { claudex: { claude: { isolate: ['sesions'] } } } }))
-      .toEqual([{ path: 'heads.claudex.claude.isolate[0]', message: 'unknown name' }]);
+      .toEqual([{ path: 'heads.claudex.claude.isolate[0]', message: 'no known item' }]);
+  });
+
+  test("takes the shipped example's own share list (splice.example.toml, V4-323)", () => {
+    const line = /^share = (\[.*\])/m.exec(fromRepo('app/src/main/resources/splice.example.toml'))?.[1];
+    const share = JSON.parse(line ?? '[]') as string[];
+    expect(share, 'the example shares a list').toContain('CLAUDE.md');
+    expect(validateTopology({ claude: { share } })).toEqual([]);
+  });
+
+  test('knows exactly the names the daemon matches, read from its Kotlin (V4-323)', () => {
+    expect([...SHARE_NAMES].sort()).toEqual(daemonShareNames().sort());
   });
 
   test('rejects an unknown top-level table', () => {
@@ -464,3 +482,24 @@ describe('knob provenance and the restart verdict', () => {
     ]);
   });
 });
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const fromRepo = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
+
+/** The share and isolate names the daemon matches: ClaudeSharingDefaults' list (TopologySchema.kt) and
+ *  every alias ClaudePolicy.shares spells (ClaudeMaterializeTypes.kt), its `Keys.X` resolved through
+ *  ClaudeConfigKeys.kt. Its `else -> setOf(item)` arm, any other item by its own name, has no list. */
+function daemonShareNames(): string[] {
+  const schema = fromRepo('core/src/main/kotlin/splice/core/topology/TopologySchema.kt');
+  const defaults = /class ClaudeSharingDefaults\([\s\S]*?listOf\(([\s\S]*?)\)/.exec(schema)?.[1] ?? '';
+  const client = 'integrations/claude-code/src/main/kotlin/splice/client/';
+  const keys = new Map([...fromRepo(`${client}ClaudeConfigKeys.kt`).matchAll(/const val (\w+) = "([^"]*)"/g)]
+    .map((match) => [`Keys.${match[1]}`, match[2]]));
+  const shares = /fun shares\(item: String\)[\s\S]*?when \(item\.lowercase\(\)\) \{([\s\S]*?)\n\s*\}/
+    .exec(fromRepo(`${client}ClaudeMaterializeTypes.kt`))?.[1] ?? '';
+  const aliases = [...shares.matchAll(/setOf\(([^)]*)\)/g)].flatMap((match) =>
+    match[1].split(',').map((arg) => arg.trim()).filter((arg) => arg !== 'item'));
+  const names = [...[...defaults.matchAll(/"([^"]+)"/g)].map((match) => match[1]),
+    ...aliases.map((arg) => keys.get(arg) ?? /^"([^"]+)"$/.exec(arg)?.[1] ?? `unresolved ${arg}`)];
+  return [...new Set(names)];
+}

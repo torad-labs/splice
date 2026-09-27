@@ -8587,6 +8587,7 @@ claimed_by = "console"
 claimed_at = "2026-09-27T19:18:16.971Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T19:18:16Z
 # [2026-09-27] Console (Sep 27, ~2:2x PM CT): edges have no switch today (Knob.kt:458-483), so the page shows edges as an honest always-on row with the real switches for labels, trace, wire tap and transcript view, and wires the edges switch when V4-367 (claude-builder) lands its messageEdges knob.
+# [2026-09-27] MARLIN'S RULING (Sep 27, 2:20 PM CT), the page's contract: (1) off stops keeping, and each row says in plain words when what is already kept ages out ('the last day kept goes on Dec 26'); (2) Delete what's kept on each splice-owned store holding anything: message edges (V4-367), activity labels (V4-367) and trace (V4-368); one confirm names what goes and how many days or entries; afterwards the row reads empty and the reader it feeds says so (Teams board, Sessions hand-offs: 'edges deleted', never a silent empty list); (3) the wire tap is memory only: its row says it is gone on restart, no delete; (4) Claude Code's own transcripts are never deleted by splice: the row says they are Claude Code's files, gives their folder, and has only the Transcript view switch; (5) delete is independent of the switch. Pass bar: 2 of 3 walkers asking 'what does splice keep about me, and how do I stop it?' end on this one page with the true answer; on a home with kept data at least 1 of 3 who wants it gone gets it gone, and Marlin verifies the files and the readers after.
 
 [[items]]
 id = "V4-365"

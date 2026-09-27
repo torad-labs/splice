@@ -87,6 +87,28 @@ class ModelCatalogTest {
         assertEquals("gpt-5.6-sol", catalog.defaultModel)
     }
 
+    // V4-350: Meta's /v1/models rows carry no display name, so a discovered muse row keeps
+    // ModelEntry's "" label, and the status line rendered an empty model name for
+    // muse-spark-1.3-contributor. A blank label is no label: the row is named by its id.
+    // Mutant: drop the blank check, and both names come back "".
+    @Test
+    fun `a row without a label is named by its id on the status line and in the picker`() {
+        val muse = ModelCatalog(
+            discoveryPrefix = "claude-muse--",
+            models = listOf(
+                ModelEntry("muse-spark-1.3[1m]", label = "Muse Spark 1.3", contextWindow = 1_000_000),
+                ModelEntry("muse-spark-1.3-contributor", contextWindow = 1_000_000),
+            ),
+            defaultContextWindow = 1_000_000,
+        )
+        assertEquals("muse-spark-1.3-contributor", muse.labelFor("muse-spark-1.3-contributor"))
+        assertEquals("Muse Spark 1.3", muse.labelFor("muse-spark-1.3[1m]"))
+        assertEquals(
+            listOf("Muse Spark 1.3", "muse-spark-1.3-contributor"),
+            muse.discoveryRows().map { it.displayName },
+        )
+    }
+
     @Test
     fun `catalog membership accepts vendor-qualified ids without name heuristics`() {
         val openRouter = ModelCatalog(

@@ -57,7 +57,12 @@ public data class ModelEntry(
      *  row whose id Claude Code does not know, which it otherwise names on every -p run with a
      *  `[claude-code:unrecognized_model]` line. Null = the client sees [id] as it is. */
     @SerialName("client_model") val clientModel: String? = null,
-)
+) {
+    /** V4-350: the name a person sees. "" is [label]'s no-label default, and a row the provider lists
+     *  without a display name (Meta's /v1/models) keeps it, so the status line and the picker showed an
+     *  empty model name; a blank label names the row by its [id]. */
+    public fun shownName(): String = label.ifBlank { id }
+}
 
 @Serializable
 public data class WindowRule(
@@ -245,11 +250,11 @@ public data class ModelCatalog(
         )
     }
 
-    public fun labelFor(id: String): String = models.firstOrNull { it.id == id }?.label ?: id
+    public fun labelFor(id: String): String = models.firstOrNull { it.id == id }?.shownName() ?: id
 
     /** /v1/models rows: every catalog model, wrapped, with display_name for the picker. */
     public fun discoveryRows(): List<DiscoveryRow> =
-        models.map { DiscoveryRow(id = wrap(it.id), displayName = it.label) }
+        models.map { DiscoveryRow(id = wrap(it.id), displayName = it.shownName()) }
 
     /** settings.json availableModels allowlist — UNWRAPPED ids. */
     public fun availableModelIds(): List<String> = models.map { it.id }

@@ -46,20 +46,32 @@ public class TraceCommand(
         return if (opts.purge) purge(opts.head, traceDir) else show(opts, traceDir)
     }
 
+    /** V4-338: only the table says how many turns are on disk, so only the table reads every line; --json
+     *  and --turn stop once they hold their turns. Either way one line is held at a time. */
     private fun show(opts: TraceOpts, traceDir: Path): Boolean {
-        // V4-286: a trace dir or day that cannot be read is said, never an empty table blaming the knob.
-        val read = Cancellables.runCatchingCancellable { rows.read(traceDir, opts.head) }
-            .getOrElse { failure ->
-                return fail("cannot read ${opts.head}'s trace under $traceDir: ${SafeFailureText.render(failure)}")
-            }
-        val selected = read.selected(opts.session, opts.turn)
+        val ask = TraceAsk(opts.last, opts.session, opts.turn)
+        return if (opts.json || opts.turn != null) records(opts, traceDir, ask) else table(opts.head, traceDir, ask)
+    }
+
+    private fun table(head: String, traceDir: Path, ask: TraceAsk): Boolean {
+        val read = Cancellables.runCatchingCancellable { rows.read(traceDir, head, ask) }
+            .getOrElse { return unreadable(head, traceDir, it) }
+        return view.printTable(head, traceDir, read)
+    }
+
+    private fun records(opts: TraceOpts, traceDir: Path, ask: TraceAsk): Boolean {
+        val turns = Cancellables.runCatchingCancellable { rows.turns(traceDir, opts.head, ask) }
+            .getOrElse { return unreadable(opts.head, traceDir, it) }
         return when {
-            opts.turn != null && selected.isEmpty() -> fail("no turn ${opts.turn} in ${opts.head}'s trace")
-            opts.json -> view.printJson(selected.takeLast(opts.last))
-            opts.turn != null -> view.printTurn(opts.head, selected.single())
-            else -> view.printTable(opts.head, traceDir, selected.takeLast(opts.last), read)
+            opts.turn != null && turns.isEmpty() -> fail("no turn ${opts.turn} in ${opts.head}'s trace")
+            opts.json -> view.printJson(turns)
+            else -> view.printTurn(opts.head, turns.single())
         }
     }
+
+    /** V4-286: a trace dir or day that cannot be read is said, never an empty table blaming the knob. */
+    private fun unreadable(head: String, traceDir: Path, failure: Throwable): Boolean =
+        fail("cannot read $head's trace under $traceDir: ${SafeFailureText.render(failure)}")
 
     /** Deletes the head's day files and says what went and what stayed; nothing else in the directory
      *  is touched. A file that stayed, or a directory that could not be listed, fails the command. */

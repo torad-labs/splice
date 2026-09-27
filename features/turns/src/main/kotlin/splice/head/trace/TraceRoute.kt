@@ -64,29 +64,43 @@ public class TraceRoute(
         }
     }
 
+    /** V4-338: the list says how many turns are on disk, so it reads every line, holding one at a time and
+     *  the records of the turns it lists; one turn's read stops once it holds that turn. Both run on [io]. */
     private suspend fun answer(key: String, traceDir: Path, query: TraceQuery, last: Int): JsonReply {
-        // V4-286: a trace dir or day that cannot be read is said, never an empty list blaming the knob.
-        val read = withContext(io) { Cancellables.runCatchingCancellable { rows.read(traceDir, key) } }
-            .getOrElse { failure ->
-                val why = SafeFailureText.render(failure)
-                return refuse(HttpStatusCode.InternalServerError, "cannot read $key's trace under $traceDir: $why")
-            }
         val turn = query.turn?.takeIf { it.isNotBlank() }
-        val selected = read.selected(query.session?.takeIf { it.isNotBlank() }, turn)
-        return when {
-            turn == null -> JsonReply(HttpStatusCode.OK, listJson(key, traceDir, selected.takeLast(last), read))
-            selected.isEmpty() -> refuse(HttpStatusCode.BadRequest, "no turn $turn in $key's trace")
-            else -> JsonReply(HttpStatusCode.OK, turnJson(key, selected.single()))
+        val ask = TraceAsk(last, query.session?.takeIf { it.isNotBlank() }, turn)
+        return if (turn == null) list(key, traceDir, ask) else one(key, traceDir, ask, turn)
+    }
+
+    private suspend fun list(key: String, traceDir: Path, ask: TraceAsk): JsonReply {
+        val read = withContext(io) { Cancellables.runCatchingCancellable { rows.read(traceDir, key, ask) } }
+            .getOrElse { return unreadable(key, traceDir, it) }
+        return JsonReply(HttpStatusCode.OK, listJson(key, traceDir, read))
+    }
+
+    private suspend fun one(key: String, traceDir: Path, ask: TraceAsk, turn: String): JsonReply {
+        val turns = withContext(io) { Cancellables.runCatchingCancellable { rows.turns(traceDir, key, ask) } }
+            .getOrElse { return unreadable(key, traceDir, it) }
+        return if (turns.isEmpty()) {
+            refuse(HttpStatusCode.BadRequest, "no turn $turn in $key's trace")
+        } else {
+            JsonReply(HttpStatusCode.OK, turnJson(key, turns.single()))
         }
     }
 
-    private fun listJson(key: String, traceDir: Path, turns: List<TracedTurn>, read: TraceRead): String =
+    /** V4-286: a trace dir or day that cannot be read is said, never an empty list blaming the knob. */
+    private fun unreadable(key: String, traceDir: Path, failure: Throwable): JsonReply {
+        val why = SafeFailureText.render(failure)
+        return refuse(HttpStatusCode.InternalServerError, "cannot read $key's trace under $traceDir: $why")
+    }
+
+    private fun listJson(key: String, traceDir: Path, read: TraceRead): String =
         buildJsonObject {
             put("head", key)
             put("files", "$traceDir/$key-YYYY-MM-DD.jsonl")
-            put("on_disk", read.turns.size)
+            put("on_disk", read.onDisk)
             put("skipped_lines", read.skippedLines)
-            putJsonArray("turns") { turns.forEach { add(summary(it)) } }
+            putJsonArray("turns") { read.turns.forEach { add(summary(it)) } }
         }.toString()
 
     private fun turnJson(key: String, turn: TracedTurn): String = buildJsonObject {

@@ -4,6 +4,16 @@
 // DayFiles, so the CLI needs no daemon — the perf/logs idiom — and can never disagree with the
 // writer about where a head's trace lives. A line this reader cannot place is counted, not fatal:
 // a torn append heals on the next write (JsonlSink) and the operator is told how many were skipped.
+//
+// V4-338: read from the NEWEST line back, one line at a time, holding only the records of the turns it
+// answers with. It held every record of every day before taking the last N, and a record carries the
+// whole conversation: on claudex's 3.7 GB of 2-3 MB lines (2026-09-26) `splice trace --last 3 --json`
+// died with an OutOfMemoryError, and the console's trace page would have taken the daemon with it. The
+// newest turns are the ones whose LATEST record is newest: every record of a turn lies at or before its
+// latest, so a read from the end meets its turns in that order and holds each one until its opening
+// record (its first attempt, or a turn record that made none) is read, and a turn whose first attempt
+// came with no turn record yet through the minute before it, where a late-written turn record would lie.
+// A count of the turns on disk reads every line and keeps one. The read itself is [TraceTail].
 package splice.head.trace
 
 import kotlinx.serialization.json.Json
@@ -11,9 +21,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.perf.PerfKeys
 import splice.core.storage.DayFiles
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.head.wire.TraceKinds
 import java.io.IOException
 import java.nio.file.Path
 
@@ -50,56 +58,40 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
  *  no total. */
 internal data class TurnEnding(val outcome: String, val rounds: String, val attempts: String, val totalMs: String?)
 
-internal data class TraceRead(val turns: List<TracedTurn>, val skippedLines: Int) {
-    /** The turns a reader asked for, oldest first: those of sessions starting with [session], and the
-     *  one whose id is [turn]; null asks for every one. */
-    fun selected(session: String?, turn: String?): List<TracedTurn> = turns
-        .filter { session == null || it.session?.startsWith(session) == true }
-        .filter { turn == null || it.id == turn }
+/** What a reader asked for: the newest [last] turns, of the sessions starting with [session] when one is
+ *  given, or the one turn whose id is [turn]. */
+internal data class TraceAsk(val last: Int, val session: String? = null, val turn: String? = null) {
+    /** How many turns answer it: one, for a turn id. */
+    val wanted: Int get() = if (turn != null) 1 else last
+
+    fun admits(id: String, sessionId: String?): Boolean =
+        (turn == null || id == turn) && (session == null || sessionId?.startsWith(session) == true)
 }
+
+/** The turns asked for, oldest first, and the store they came from: [onDisk] turns on disk and
+ *  [skippedLines] lines no turn placed, over every line of every day. */
+internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val skippedLines: Int)
 
 internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = true }) {
 
     /** The head's day files, everything on disk (retention is the daemon's business, V4-273). */
     internal fun days(traceDir: Path, head: String): DayFiles = DayFiles(traceDir, head)
 
-    /** Every turn on disk for [head], oldest first; a turn's records may straddle a UTC midnight,
-     *  which is why grouping happens over the whole read rather than per file. A trace dir or a day
-     *  that cannot be read throws why (V4-286), so no turns means none on disk. */
+    /** The turns [ask] names, oldest first, with how many turns and skipped lines the store holds: every
+     *  line is read, one at a time. A trace dir or a day that cannot be read throws why (V4-286), so no
+     *  turns means none on disk. */
     @Throws(IOException::class)
-    internal fun read(traceDir: Path, head: String): TraceRead {
-        var skipped = 0
-        val byTurn = LinkedHashMap<String, Pair<MutableList<JsonObject>, JsonObject?>>()
-        for (line in days(traceDir, head).lines()) {
-            val record = parse(line)
-            if (record == null || !place(record, byTurn)) skipped += 1
-        }
-        val turns = byTurn.map { (id, records) -> TracedTurn(id, records.first, records.second) }
-        return TraceRead(turns, skipped)
+    internal fun read(traceDir: Path, head: String, ask: TraceAsk): TraceRead {
+        val tail = TraceTail(ask, census = true, json)
+        days(traceDir, head).newestFirst(tail)
+        return TraceRead(tail.turns(), tail.onDisk(), tail.skipped())
     }
 
-    /** Files [record] under its turn, or false when this reader has no place for it: no turn id,
-     *  or a kind with no branch here. A turn is created ONLY by a kind that puts a record IN it —
-     *  a line carrying a turn id under a kind this reader has no branch for (a foreign line, or a
-     *  record kind a newer writer has) must be counted and dropped, never left as a turn holding
-     *  nothing for TracedTurn.first to read a column off. */
-    private fun place(
-        record: JsonObject,
-        byTurn: MutableMap<String, Pair<MutableList<JsonObject>, JsonObject?>>,
-    ): Boolean {
-        val id = JsonScalars.str(record, "turn") ?: return false
-        val kind = JsonScalars.str(record, "kind")
-        if (!placed(kind)) return false
-        // The attempt list is shared by reference across the pair rewrite below, so an attempt
-        // that lands after the turn record (a late file-lane write) still joins its turn.
-        val (attempts, _) = byTurn.getOrPut(id) { mutableListOf<JsonObject>() to null }
-        if (kind == TraceKinds.TURN) byTurn[id] = attempts to record else attempts += record
-        return true
+    /** The turns [ask] names, oldest first, read from the newest line only until each is whole. */
+    @Throws(IOException::class)
+    internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> {
+        val tail = TraceTail(ask, census = false, json)
+        days(traceDir, head).newestFirst(tail)
+        return tail.turns()
     }
-
-    private fun placed(kind: String?): Boolean = kind == TraceKinds.ATTEMPT || kind == TraceKinds.TURN
-
-    private fun parse(line: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- V4-174: a torn or foreign line is counted as skipped by the caller and shown to the operator
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
 }

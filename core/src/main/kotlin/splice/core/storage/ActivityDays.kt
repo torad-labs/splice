@@ -199,9 +199,22 @@ public class ActivityDays(
  *  store that writes the files ([ActivityDays]). */
 public class DayFiles(private val dir: Path, prefix: String) {
     private val namePattern = Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl")
+    private val backward = BackwardLines()
 
     /** Every line of every day on disk, oldest day first. */
     public fun lines(): Sequence<String> = linesFrom(LocalDate.MIN)
+
+    /** V4-338: every line of every day on disk, NEWEST first (the newest day's file from its end, then that
+     *  day's rolled half, then the day before), to [visit] one at a time until it answers false. Holds one
+     *  line, where [lines] reads each day whole: the `splice trace` reader stops once it holds its turns.
+     *  A directory or a day that cannot be read throws why, as [lines] does. */
+    @Throws(IOException::class)
+    public fun newestFirst(visit: LineVisit) {
+        for ((_, file) in days().asReversed()) {
+            if (!backward.read(file, visit)) return
+            if (!backward.read(file.resolveSibling("${file.fileName}$ROLLED_SUFFIX"), visit)) return
+        }
+    }
 
     /** V4-174: deletes EVERY day file of this store, whatever its age, with JsonlSink's siblings —
      *  the `splice trace --purge` verb. Answers what went and what did not (V4-286: it answered the

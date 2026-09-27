@@ -21,18 +21,18 @@ private const val SESSION_COLUMN_CHARS = 8
 internal class TraceView(private val output: TerminalOutput) {
 
     /** One line per turn: when, id, session, model, outcome, rounds/attempts, total ms. */
-    fun printTable(head: String, traceDir: Path, turns: List<TracedTurn>, read: TraceRead): Boolean {
+    fun printTable(head: String, traceDir: Path, read: TraceRead): Boolean {
         val where = "$traceDir/$head-YYYY-MM-DD.jsonl"
         output.line(
-            "${BOLD}splice trace $head$RESET$DIM: ${turns.size} of ${read.turns.size} turn(s) on disk, " +
+            "${BOLD}splice trace $head$RESET$DIM: ${read.turns.size} of ${read.onDisk} turn(s) on disk, " +
                 "oldest first ($where)$RESET",
         )
-        if (read.turns.isEmpty()) {
+        if (read.onDisk == 0) {
             output.line(
                 "  ${DIM}no turns traced yet. Is [heads.$head.overrides] trace = true (restart required)?$RESET",
             )
         }
-        turns.forEach { turn -> output.line("  " + line(turn)) }
+        read.turns.forEach { turn -> output.line("  " + line(turn)) }
         if (read.skippedLines > 0) {
             output.line("  $YELLOW${read.skippedLines} line(s) skipped (not a trace record)$RESET")
         }

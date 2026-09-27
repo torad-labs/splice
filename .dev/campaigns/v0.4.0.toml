@@ -8318,3 +8318,11 @@ verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or th
 claimed_by = "splice-lead"
 claimed_at = "2026-09-27T05:49:41.374Z"
 # [2026-09-27] CLAIM: owner=splice-lead at=2026-09-27T05:49:41Z
+
+[[items]]
+id = "V4-350"
+phase = "release"
+title = "A model the provider lists without a display name is named by its id, on the status line and in the /model picker (operator 2026-09-27: 'the model name is not showing up on muse heads'). ModelEntry.label defaults to \"\" (ModelCatalog.kt:42) and UpstreamRoster.kt:158 writes \"\" when /v1/models carries no display_name (Meta's rows are {id, object, created, owned_by}), so labelFor's '?: id' (ModelCatalog.kt:248) never fires for a catalog row: /statusline/claude-muse renders '●    no rate card' for muse-spark-1.3-contributor (measured 2026-09-27 1:50 AM CT) while the pinned row reads 'Muse Spark 1.3', and discoveryRows sends display_name \"\" to the picker."
+files = ["core/src/main/kotlin/splice/core/model/ModelCatalog.kt", "core/src/test/kotlin/splice/core/model/ModelCatalogTest.kt"]
+status = "todo"
+verify = "red first: ModelCatalogTest asserts labelFor and discoveryRows name an unlabeled row by its id, failing on today's tree; green: the same test, plus the mutant (drop the blank check) goes red; live: /statusline/claude-muse for model id muse-spark-1.3-contributor renders the id, before and after in the receipt"

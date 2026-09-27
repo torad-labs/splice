@@ -8277,6 +8277,7 @@ title = "I can open a request and read it whole (build order 2; acceptance Q48, 
 files = ["console/src/pages/turns/", "console/src/widgets/request-detail/", "features/turns/src/main/kotlin/splice/head/trace/", "features/turns/src/test/kotlin/splice/head/trace/"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+# depends:V4-343
 
 [[items]]
 id = "V4-346"

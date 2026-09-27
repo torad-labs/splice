@@ -7,13 +7,14 @@ import type { AccountRow } from '../src/entities/account';
 import type { UsagePayload } from '../src/shared/api';
 import { AccountsBoard, openHeadKey } from '../src/pages/accounts';
 import { accountKey } from '../src/widgets/account-table';
-import { sessionKey } from '../src/entities/session';
+import { sessionKey, useSessionRegistry } from '../src/entities/session';
 import type { SessionRow } from '../src/entities/session';
 import { DEFAULT_VIEWS, SessionsBoard, stateWord } from '../src/pages/sessions';
 import { statOf, tableOf } from './lib/markup';
 import { Conversation } from '../src/widgets/conversation';
 import type { TranscriptSlice } from '../src/entities/transcript';
 import { transcriptStore } from '../src/entities/transcript/model/store';
+import { registryForView, sessionRegistryStore } from '../src/entities/session/model/store';
 
 const NOW = 1_800_000_000_000;
 const HOUR = 3_600;
@@ -55,6 +56,28 @@ const byProject = DEFAULT_VIEWS.find((entry) => entry.id === 'by-project');
 if (byProject === undefined) throw new Error('Sessions is missing its project view');
 
 describe('transcript view off', () => {
+  test('the shared registry masks cached titles for pending and off but retains them after a fresh on verdict', () => {
+    const cached = {
+      data: { note: 'Live registry', sessions: [{ ...historical, name: 'PRIVATE_TITLE' }] },
+      error: null, loading: false, lastUpdated: NOW,
+    };
+    for (const verdict of ['pending', 'off'] as const) {
+      expect(registryForView(cached, verdict).data?.sessions[0]?.name).toBeNull();
+    }
+    expect(registryForView(cached, 'on')).toBe(cached);
+    expect(registryForView(cached, 'on').data?.sessions[0]?.name).toBe('PRIVATE_TITLE');
+    expect(cached.data.sessions[0]?.name).toBe('PRIVATE_TITLE');
+  });
+
+  test('a new registry consumer cannot render a cached title before its fresh verdict', () => {
+    sessionRegistryStore.setData({ note: 'Live registry', sessions: [{ ...historical, name: 'PRIVATE_TITLE' }] });
+    function RegistryConsumer() {
+      const registry = useSessionRegistry((state) => state.data);
+      return createElement('span', null, registry?.sessions[0]?.name ?? 'hidden');
+    }
+    expect(renderToStaticMarkup(createElement(RegistryConsumer))).toBe('<span>hidden</span>');
+  });
+
   test('a prior registry title stays hidden until the live switch answers this visit', () => {
     const html = renderToStaticMarkup(createElement(SessionsBoard, {
       payload: { note: 'Live registry', sessions: [{ ...historical, name: 'PRIVATE_TITLE', availability: 'live' }] },

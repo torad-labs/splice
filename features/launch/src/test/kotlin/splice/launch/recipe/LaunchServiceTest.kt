@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
-import splice.client.resume.SessionOwnership
 import splice.launch.HeadTrees
 import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
@@ -480,25 +479,6 @@ class LaunchServiceTest {
             Files.exists(tmp.resolve(".claude-picker/projects/-home-x/abc-123.jsonl")),
             "the picker must see this head's tree only",
         )
-    }
-
-    // V4-183: the whole path — a session this head started (recorded by its SessionStart hook)
-    // is what a later bare -c in the same cwd resumes, by name, through the ordinary resume flag.
-    @Test
-    fun `a bare -c resumes this head's own newest session in the cwd, by name`() {
-        val mine = spec("owner")
-        val cwd = Files.createDirectories(tmp.resolve("owner-work")).toString()
-        val transcript = tmp.resolve(".claude-owner/projects/-owner-work/own-session.jsonl")
-        Files.createDirectories(transcript.parent)
-        Files.writeString(transcript, "")
-        SessionOwnership(mine.trees.own).record("own-session", cwd, transcript)
-
-        val recipe = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
-
-        val argv = recipe.argv
-        assertEquals(listOf("--resume", "own-session"), argv.takeLast(2), argv.toString())
-        assertFalse(argv.contains("-c"))
-        assertNull(recipe.warning, "resuming one's own session is the quiet path: ${recipe.warning}")
     }
 
     @Test

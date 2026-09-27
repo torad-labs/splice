@@ -136,6 +136,22 @@ class ResumeRecipeRouteTest {
     }
 
     @Test
+    fun `an empty transcript is refused as empty rather than absent without changing the tree`() {
+        val empty = transcript(sibling)
+        Files.writeString(empty, "")
+        val before = files()
+
+        val reply = route().answer(SESSION, "codex")
+
+        assertEquals(HttpStatusCode.Conflict, reply.status)
+        assertEquals(
+            error("the session's transcript exists but is empty; choose another session or start a new one"),
+            json(reply),
+        )
+        assertEquals(before, files())
+    }
+
+    @Test
     fun `a session in no tree is refused naming the trees searched, and a bad id without echoing it`() {
         Files.createDirectories(own.resolve("projects"))
         Files.createDirectories(sibling.resolve("projects"))

@@ -213,6 +213,9 @@ public class LaunchService(
                 "${adoption.searchedHeads.size} heads (${adoption.searchedHeads.joinToString(", ")}). " +
                 "Nothing was copied, so Claude Code will refuse the id: check the id, or start a new " +
                 "session in this head"
+        is SessionAdoption.Empty ->
+            "session ${adoption.sessionId}'s transcript exists but is empty at ${adoption.transcript}. " +
+                "Nothing was copied; choose another session or start a new one"
         is SessionAdoption.Refused ->
             "session ${adoption.sessionId} could not be copied out of ${adoption.from} " +
                 "(${adoption.cause}). That tree is untouched: retry the launch, or resume the session " +

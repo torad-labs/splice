@@ -59,6 +59,10 @@ public class ResumeRecipeRoute(
                 HttpStatusCode.NotFound,
                 "the session is in no head's transcript tree (searched: ${plan.searchedHeads.joinToString(", ")})",
             )
+            is ResumePlan.Empty -> refused(
+                HttpStatusCode.Conflict,
+                "the session's transcript exists but is empty; choose another session or start a new one",
+            )
             is ResumePlan.Owned -> recipe(sessionId, head, plan.transcript, plan.transcript)
             is ResumePlan.Copy -> recipe(sessionId, head, plan.from, plan.into)
         }

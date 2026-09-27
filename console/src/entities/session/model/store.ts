@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createKeyed, createResource } from '@shared/lib';
+import type { Resource } from '@shared/lib';
 import type { BoardEdgesPayload, SessionEdgesPayload, SessionHistoryRead, SessionsPayload } from './types';
 
 // THREE stores live in this slice and their names say which is which. `sessionStore` is the
@@ -24,6 +25,17 @@ export const sessionStore = create<SessionState>(() => ({
 /** The registry. Not a PendingRoute union: /api/sessions exists (ControlServer.kt:154), so a 404
  *  here is an error to report, not a route to wait for. */
 export const sessionRegistryStore = createResource<SessionsPayload>();
+
+/** A cached registry title is private until this visit has a fresh, positive transcript verdict. */
+export function registryForView(
+  registry: Resource<SessionsPayload>, verdict: 'pending' | 'off' | 'on',
+): Resource<SessionsPayload> {
+  if (verdict === 'on' || registry.data === null) return registry;
+  return {
+    ...registry,
+    data: { ...registry.data, sessions: registry.data.sessions.map((row) => ({ ...row, name: null })) },
+  };
+}
 
 /** Bounded pages from the durable transcript/history index, keyed by the query that fetched them. */
 export const sessionHistoryStore = createResource<SessionHistoryRead & { query: string }>();

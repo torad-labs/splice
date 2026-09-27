@@ -78,6 +78,7 @@ export const S = {
   findHint: 'Name or repository',
   searching: 'Searching sessions',
   off: 'View off',
+  checkingView: 'Checking view',
   moreSessions: 'More sessions',
   account: 'Account',
   sessionId: 'Session ID',

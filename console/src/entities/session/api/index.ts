@@ -40,6 +40,11 @@ export function startSessionsPolling(intervalMs = 5000): () => void {
   return poll(fetchSessions, intervalMs);
 }
 
+export async function fetchTranscriptPolicy(): Promise<'off' | 'on'> {
+  const read = await request<SessionHistoryRead>('/api/sessions/history?limit=1&query=');
+  return 'state' in read ? 'off' : 'on';
+}
+
 let historyRequest = 0;
 
 /** Search every durable session by name or repository, a bounded page at a time. A later query

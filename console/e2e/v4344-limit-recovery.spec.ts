@@ -4,16 +4,24 @@
 import { expect, test } from '@playwright/test';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { AccountWire } from '../src/entities/account';
 import { STACK } from './stack';
 
 const SESSION = '3f2a9c1e-0000-4000-8000-000000000009';
 const NOW = Date.now() + 60 * 60 * 1000;
-const account = (label: string, used: number) => ({
-  kind: 'chatgpt-oauth', label, single_login: false, credential_path: null,
+const account = (label: string, used: number): AccountWire => ({
+  kind: 'chatgpt-oauth', label, single_login: false, credential_path: null, plan: 'plus',
   primary: label === 'near', selected: label === 'near', available: true,
   pinned: false, next_target: label === 'spare', credential_present: true,
+  auth_excluded_until_epoch_millis: null, auth_exclusion_reason: null,
   heads: [label === 'spare' ? STACK.soloHead : STACK.oauthHead],
-  windows: [{ seconds: 18_000, used_percent: used, reset_epoch_seconds: NOW / 1000 }],
+  five_hour_used_percent: used,
+  five_hour_reset_epoch_seconds: Math.floor(NOW / 1000),
+  five_hour_window_seconds: 18_000,
+  seven_day_used_percent: null,
+  seven_day_reset_epoch_seconds: null,
+  seven_day_window_seconds: null,
+  observed_at_epoch_seconds: Math.floor(Date.now() / 1000),
 });
 
 const history = {

@@ -15,7 +15,10 @@ class HeadBoundedContinueTest {
     private fun owned(home: Path, id: String, cwd: Path) {
         val transcript = home.resolve("projects/-work/$id.jsonl")
         Files.createDirectories(transcript.parent)
-        Files.writeString(transcript, "")
+        Files.writeString(
+            transcript,
+            """{"type":"user","sessionId":"$id","message":{"role":"user","content":"hi"}}""" + "\n",
+        )
         SessionOwnership(home.resolve(".claude-codex")).record(id, cwd.toString(), transcript)
     }
 
@@ -42,6 +45,19 @@ class HeadBoundedContinueTest {
 
         assertEquals(emptyList<String>(), resolved.args, "the client's own -c would continue a foreign session")
         assertTrue(resolved.warning.orEmpty().startsWith("no session of this head in $cwd"), resolved.warning)
+    }
+
+    @Test
+    fun `an empty-only own session starts new with a truthful warning`(@TempDir home: Path) {
+        val cwd = Files.createDirectories(home.resolve("work"))
+        owned(home, "empty-session", cwd)
+        Files.writeString(home.resolve("projects/-work/empty-session.jsonl"), "")
+
+        val resolved = HeadBoundedContinue()
+            .resolve(home.resolve(".claude-codex"), listOf("-c"), cwd.toString())
+
+        assertEquals(emptyList<String>(), resolved.args)
+        assertTrue(resolved.warning.orEmpty().contains("transcript is empty"), resolved.warning)
     }
 
     @Test

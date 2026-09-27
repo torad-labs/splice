@@ -181,13 +181,13 @@ class ResumeAcrossHeadsTest {
         val foreign = write(other.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("$id.jsonl"), "")
         val resume = ResumeAcrossHeads()
         assertTrue(Files.isRegularFile(foreign), "the refusal distinguishes an empty file from no file")
-        assertTrue(resume.plan(calling, listOf(other), id, log = {}) is ResumePlan.Absent)
-        assertTrue(adoption(calling, listOf(other), id) is SessionAdoption.Absent)
+        assertEquals(foreign, (resume.plan(calling, listOf(other), id, log = {}) as ResumePlan.Empty).transcript)
+        assertEquals(foreign, (adoption(calling, listOf(other), id) as SessionAdoption.Empty).transcript)
         assertFalse(Files.exists(calling.resolve(Keys.PROJECTS), NOFOLLOW_LINKS))
 
         val own = write(calling.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("$id.jsonl"), "")
         assertTrue(Files.isRegularFile(own))
-        assertTrue(resume.plan(calling, listOf(other), id, log = {}) is ResumePlan.Absent)
+        assertEquals(own, (resume.plan(calling, listOf(other), id, log = {}) as ResumePlan.Empty).transcript)
     }
 
     @Test

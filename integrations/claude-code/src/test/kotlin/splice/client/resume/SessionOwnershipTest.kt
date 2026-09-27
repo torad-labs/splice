@@ -30,7 +30,10 @@ class SessionOwnershipTest {
     private fun transcript(home: Path, id: String): Path {
         val file = home.resolve("projects/-work/$id.jsonl")
         Files.createDirectories(file.parent)
-        return Files.writeString(file, "")
+        return Files.writeString(
+            file,
+            """{"type":"user","sessionId":"$id","message":{"role":"user","content":"hi"}}""" + "\n",
+        )
     }
 
     @Test
@@ -59,6 +62,18 @@ class SessionOwnershipTest {
 
         Files.delete(first)
         assertEquals("second", own.newestFor(work)?.id, "a deleted transcript cannot be continued")
+    }
+
+    @Test
+    fun `bare continue skips an empty newest file and selects the older usable session`(@TempDir home: Path) {
+        val own = ownership(home)
+        val work = Files.createDirectories(home.resolve("work")).toString()
+        val older = transcript(home, "older")
+        own.record("older", work, older)
+        val empty = Files.writeString(older.resolveSibling("newer.jsonl"), "")
+        own.record("newer", work, empty)
+
+        assertEquals("older", own.newestFor(work)?.id)
     }
 
     @Test

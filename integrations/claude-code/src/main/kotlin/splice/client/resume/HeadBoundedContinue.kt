@@ -36,11 +36,17 @@ public class HeadBoundedContinue {
     }
 
     private fun bounded(ownTree: Path, rest: List<String>, cwd: String): ContinueResolution {
-        val newest = SessionOwnership(ownTree).newestFor(cwd)
+        val owned = SessionOwnership(ownTree)
+        val newest = owned.newestFor(cwd)
             ?: return ContinueResolution(
                 rest,
-                "no session of this head in $cwd to continue, so a new one starts " +
-                    "(join another head's session by name with -r <id>)",
+                if (owned.newestEmptyFor(cwd) != null) {
+                    "this head's transcript is empty in $cwd, so a new session starts " +
+                        "(choose another session by name with -r <id>)"
+                } else {
+                    "no session of this head in $cwd to continue, so a new one starts " +
+                        "(join another head's session by name with -r <id>)"
+                },
             )
         return ContinueResolution(rest + listOf(RESUME_LONG, newest.id), null)
     }

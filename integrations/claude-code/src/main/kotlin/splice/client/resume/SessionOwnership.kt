@@ -79,13 +79,27 @@ public class SessionOwnership(
         save(kept.sortedByDescending(OwnedSession::at).take(MAX_OWNED_SESSIONS))
     }
 
-    /** The newest session this head owns in [cwd] whose transcript still exists, or null. */
-    public fun newestFor(cwd: String): OwnedSession? {
-        val wanted = canonical(cwd)
+    /** The newest session this head owns in [cwd] whose transcript can be resumed, or null. */
+    public fun newestFor(cwd: String): OwnedSession? = newestWith(cwd, ResumableTranscript.State.USABLE)
+
+    /** An empty owned transcript, used only to make an otherwise failed -c warning truthful. */
+    internal fun newestEmptyFor(cwd: String): OwnedSession? = newestWith(cwd, ResumableTranscript.State.EMPTY)
+
+    private fun newestWith(cwd: String, wanted: ResumableTranscript.State): OwnedSession? {
+        val canonicalCwd = canonical(cwd)
         return load()
-            .filter { it.cwd == wanted }
+            .filter { it.cwd == canonicalCwd }
             .sortedByDescending(OwnedSession::at)
-            .firstOrNull { Files.isRegularFile(Path.of(it.transcript)) }
+            .firstOrNull { entry ->
+                Cancellables.runCatchingCancellable { ResumableTranscript.state(Path.of(entry.transcript)) }
+                    .onFailure { cause ->
+                        log(
+                            "[sessions] transcript could not be checked " +
+                                "(${SafeFailureText.render(cause)}); not eligible\n",
+                        )
+                    }
+                    .getOrDefault(ResumableTranscript.State.MISSING) == wanted
+            }
     }
 
     private fun load(): List<OwnedSession> {

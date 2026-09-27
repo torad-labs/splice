@@ -10,10 +10,14 @@
 // it.
 package splice.launch.recipe
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.resume.SessionOwnership
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import java.nio.file.Files
@@ -44,6 +48,58 @@ class LaunchResumeSpellingsTest {
         inferenceToken = "test-inference-token",
         apiTimeoutMs = 960_000,
     )
+
+    @Test
+    fun `a bare -c resumes this head's own newest session in the cwd, by name`() {
+        val mine = spec("owner")
+        val cwd = Files.createDirectories(tmp.resolve("owner-work")).toString()
+        val transcript = tmp.resolve(".claude-owner/projects/-owner-work/own-session.jsonl")
+        Files.createDirectories(transcript.parent)
+        Files.writeString(
+            transcript,
+            """{"type":"user","sessionId":"own-session","message":{"role":"user","content":"resume me"}}""" + "\n",
+        )
+        SessionOwnership(mine.trees.own).record("own-session", cwd, transcript)
+
+        val recipe = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
+        assertEquals(listOf("--resume", "own-session"), recipe.argv.takeLast(2), recipe.argv.toString())
+        assertFalse(recipe.argv.contains("-c"))
+        assertNull(recipe.warning, "resuming one's own session is the quiet path: ${recipe.warning}")
+    }
+
+    @Test
+    fun `bare -c chooses the older usable own session when the newest transcript is empty`() {
+        val mine = spec("owner-empty")
+        val cwd = Files.createDirectories(tmp.resolve("owner-work")).toString()
+        val root = tmp.resolve(".claude-owner-empty/projects/-owner-work")
+        Files.createDirectories(root)
+        val older = Files.writeString(
+            root.resolve("older.jsonl"),
+            """{"type":"user","sessionId":"older","message":{"role":"user","content":"resume me"}}""" + "\n",
+        )
+        val empty = Files.writeString(root.resolve("newer.jsonl"), "")
+        val owned = SessionOwnership(mine.trees.own)
+        owned.record("older", cwd, older)
+        owned.record("newer", cwd, empty)
+
+        val recipe = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
+        assertEquals(listOf("--resume", "older"), recipe.argv.takeLast(2), recipe.argv.toString())
+        assertNull(recipe.warning, "an older usable own session is still a quiet continue")
+    }
+
+    @Test
+    fun `explicit resume names an empty transcript rather than claiming the session is absent`() {
+        val mine = spec("empty-resume")
+        val empty = tmp.resolve(".claude-empty-resume/projects/-owner-work/empty-session.jsonl")
+        Files.createDirectories(empty.parent)
+        Files.writeString(empty, "")
+
+        val recipe = service.launch(mine, extraArgs = listOf("-r", "empty-session"), dangerouslySkipPermissions = false)
+
+        assertTrue(recipe.warning.orEmpty().contains("transcript exists but is empty"), recipe.warning)
+        assertFalse(recipe.warning.orEmpty().contains("no transcript tree"), recipe.warning)
+        assertEquals(0L, Files.size(empty), "the refused transcript remains untouched")
+    }
 
     private fun spellingsSpec(sibling: Path) =
         spec("spellings").copy(trees = HeadTrees(tmp.resolve(".claude-spellings"), listOf(sibling)))

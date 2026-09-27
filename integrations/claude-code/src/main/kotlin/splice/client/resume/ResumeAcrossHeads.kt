@@ -63,7 +63,15 @@ private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
 /** One primary transcript is eligible for -r only when its own regular file has conversation bytes.
  *  The durable history index uses this same rule; a zero-byte file remains in its source census. */
 internal object ResumableTranscript {
-    fun accepts(file: Path): Boolean = Files.isRegularFile(file, NOFOLLOW_LINKS) && Files.size(file) > 0L
+    enum class State { MISSING, EMPTY, USABLE }
+
+    fun state(file: Path): State = when {
+        !Files.isRegularFile(file, NOFOLLOW_LINKS) -> State.MISSING
+        Files.size(file) == 0L -> State.EMPTY
+        else -> State.USABLE
+    }
+
+    fun accepts(file: Path): Boolean = state(file) == State.USABLE
 }
 
 private const val NOT_A_SESSION_ID = "a session id is letters, digits, '-' and '_' only, up to 128 characters"
@@ -77,6 +85,9 @@ public sealed class ResumePlan {
 
     /** The id is in another head's tree ([fromHead]): the launch copies [from] to [into]. */
     public data class Copy(public val from: Path, public val fromHead: Path, public val into: Path) : ResumePlan()
+
+    /** The primary transcript exists but contains no conversation bytes. */
+    public data class Empty(public val sessionId: String, public val transcript: Path) : ResumePlan()
 
     /** The id is in no head's tree; [searchedHeads] names where it looked. */
     public data class Absent(public val sessionId: String, public val searchedHeads: List<String>) : ResumePlan()
@@ -100,6 +111,9 @@ public sealed class SessionAdoption {
         public val into: Path,
         public val modelsRewritten: Int,
     ) : SessionAdoption()
+
+    /** The primary transcript exists but has no bytes; no adoption was attempted. */
+    public data class Empty(public val sessionId: String, public val transcript: Path) : SessionAdoption()
 
     /** The id is in no head's projects tree. Carries WHICH trees were searched, so the caller can
      *  name them: a refusal that does not say where it looked leaves the operator nothing to do. */
@@ -137,6 +151,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         return when (val plan = plan(callingConfigDir, otherConfigDirs, sessionId, log)) {
             is ResumePlan.Invalid -> SessionAdoption.Invalid(plan.cause)
             is ResumePlan.Absent -> SessionAdoption.Absent(plan.sessionId, plan.searchedHeads)
+            is ResumePlan.Empty -> SessionAdoption.Empty(plan.sessionId, plan.transcript)
             is ResumePlan.Owned ->
                 SessionAdoption.HeadOwned(plan.transcript, rewriteInPlace(plan.transcript, roster, log))
             is ResumePlan.Copy -> copyIn(callingConfigDir, plan, sessionId, roster, log)
@@ -155,16 +170,20 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         // before either.
         if (!SESSION_ID_SHAPE.matches(sessionId)) return ResumePlan.Invalid(NOT_A_SESSION_ID)
         val others = otherConfigDirs.filter { it != callingConfigDir }.distinct()
-        val own = findAllIn(callingConfigDir, sessionId, log).firstOrNull()
+        val own = findAllIn(callingConfigDir, sessionId, log)
         val foreign = others.flatMap { dir -> findAllIn(dir, sessionId, log) }
+        val ownedUsable = own.firstOrNull { it.state == ResumableTranscript.State.USABLE }
+        val foreignUsable = foreign.filter { it.state == ResumableTranscript.State.USABLE }
         return when {
-            own != null -> ResumePlan.Owned(own.transcript)
-            foreign.isEmpty() -> ResumePlan.Absent(sessionId, (listOf(callingConfigDir) + others).map(::headName))
-            else -> preferSameCwd(callingConfigDir, foreign, log).let { chosen ->
+            ownedUsable != null -> ResumePlan.Owned(ownedUsable.transcript)
+            foreignUsable.isNotEmpty() -> preferSameCwd(callingConfigDir, foreignUsable, log).let { chosen ->
                 val into = callingConfigDir.resolve(Keys.PROJECTS).resolve(chosen.cwdDir)
                     .resolve(sessionId + TRANSCRIPT_SUFFIX)
                 ResumePlan.Copy(chosen.transcript, chosen.headConfigDir, into)
             }
+            else -> (own + foreign).firstOrNull { it.state == ResumableTranscript.State.EMPTY }
+                ?.let { ResumePlan.Empty(sessionId, it.transcript) }
+                ?: ResumePlan.Absent(sessionId, (listOf(callingConfigDir) + others).map(::headName))
         }
     }
 
@@ -192,7 +211,12 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
 
     /** The encoded-cwd directory a transcript was found under — Claude Code's name for the session's
      *  own working directory, which the copy must preserve or the resumed session resolves no project. */
-    private data class Located(val headConfigDir: Path, val cwdDir: String, val transcript: Path)
+    private data class Located(
+        val headConfigDir: Path,
+        val cwdDir: String,
+        val transcript: Path,
+        val state: ResumableTranscript.State,
+    )
 
     /** EVERY transcript of [sessionId] in [configDir]'s OWN projects tree — one per encoded-cwd
      *  directory it appears under, because a session can be recorded under more than one. Only ever
@@ -202,11 +226,19 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
             .filter { Files.isDirectory(it, NOFOLLOW_LINKS) }
             .mapNotNull { cwdDir ->
                 val transcript = cwdDir.resolve(sessionId + TRANSCRIPT_SUFFIX)
-                val eligible = Cancellables.runCatchingCancellable { ResumableTranscript.accepts(transcript) }
-                eligible.exceptionOrNull()?.let { cause ->
-                    log("[resume] transcript could not be checked (${SafeFailureText.render(cause)}); not eligible\n")
+                val state = Cancellables.runCatchingCancellable { ResumableTranscript.state(transcript) }
+                    .onFailure { cause ->
+                        log(
+                            "[resume] transcript could not be checked " +
+                                "(${SafeFailureText.render(cause)}); not eligible\n",
+                        )
+                    }
+                    .getOrDefault(ResumableTranscript.State.MISSING)
+                if (state != ResumableTranscript.State.MISSING) {
+                    Located(configDir, cwdDir.fileName.toString(), transcript, state)
+                } else {
+                    null
                 }
-                if (eligible.getOrDefault(false)) Located(configDir, cwdDir.fileName.toString(), transcript) else null
             }
 
     /** Same encoded cwd first, then any — see the header for why the calling head's own tree is the

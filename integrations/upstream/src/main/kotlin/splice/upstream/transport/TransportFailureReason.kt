@@ -16,6 +16,7 @@
 // carries "[url=<the full request url>", which the detail now reports as host and port only.
 package splice.upstream.transport
 
+import io.ktor.utils.io.ClosedByteChannelException
 import splice.upstream.retry.MS_PER_S
 import java.io.EOFException
 import java.io.IOException
@@ -46,12 +47,16 @@ public object TransportFailureReason {
         val detail = chain.firstNotNullOfOrNull { t -> t.message?.trim()?.takeIf { it.isNotEmpty() } }
             ?.replace(KTOR_URL, "url=$where")
         return when {
-            // Throwable.toString() is the class name when there is no message — named, not reflected.
-            named == null -> detail ?: "$root from $where, with no message"
+            // V4-349: with nothing to name and no text, the line still says what failed in words; the class
+            // rides as a parenthetical for whoever debugs it, never as the headline a person reads.
+            named == null -> detail ?: unnamed(where, root)
             detail == null || named.contains(detail, ignoreCase = true) -> named
             else -> "$named: $detail"
         }
     }
+
+    private fun unnamed(where: String, root: Throwable): String =
+        "the connection to $where failed, and it gave no reason (${root::class.simpleName})"
 
     // A failed resolve is named wherever it sits: the JDK buries it under two ConnectExceptions.
     // So is a stalled write (V4-272): ktor wraps it in a socket timeout that would read as a read one.
@@ -91,8 +96,16 @@ public object TransportFailureReason {
     private fun streamReason(t: Throwable, where: String): String? = when {
         t is SocketTimeoutException || t is HttpTimeoutException -> "$where stopped responding (read timed out)"
         t is SSLException -> "the TLS handshake with $where failed"
+        else -> closedReason(t, where)
+    }
+
+    // How a connection that was answering ended, tested after the timeout and TLS arms above, in this order.
+    private fun closedReason(t: Throwable, where: String): String? = when {
         t is EOFException -> "$where closed the connection before the response ended"
         t is SocketException -> "the connection to $where broke"
+        // V4-349: ktor's OkHttp engine throws the closed-channel pair, with no message, when the connection
+        // goes while the request or its answer is still moving; which of the two it was is not in the throwable.
+        t is ClosedByteChannelException -> "the connection to $where closed mid-request"
         // The JDK's own literal for a server that accepted the socket and closed it unanswered.
         t is IOException && t.message == JDK_NO_RESPONSE ->
             "$where accepted the connection and closed it without answering"

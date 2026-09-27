@@ -143,11 +143,36 @@ class TransportFailureReasonTest {
         assertTrue(text.contains("the write stalled"), text)
     }
 
-    // The floor: an unknown class keeps its own text, and with none it is named — never "no detail".
+    // V4-349 (Marlin's baseline walk, 2026-09-27): the console's one failure read "io.ktor.utils.io.
+    // ClosedWriteChannelException from chatgpt.com:443, with no message". Ktor's OkHttp engine throws the
+    // closed-channel pair with no message when the connection goes while the request or its answer is still
+    // moving. Mutant: drop the closed-channel arm, and both cells fall to the floor.
     @Test
-    fun `an unknown failure keeps its text, and without one names its class`() {
+    fun `a connection that closed mid-request is said in words`() {
+        val chatgpt = "https://chatgpt.com/backend-api/codex/responses"
+        assertEquals(
+            "the connection to chatgpt.com:443 closed mid-request",
+            reason(io.ktor.utils.io.ClosedWriteChannelException(), chatgpt),
+        )
+        assertEquals(
+            "the connection to chatgpt.com:443 closed mid-request",
+            reason(io.ktor.utils.io.ClosedReadChannelException(), chatgpt),
+        )
+    }
+
+    // The floor: an unknown class keeps its own text; with none, the line says in words what failed and
+    // against which endpoint, and the class rides only as a parenthetical (V4-349: a person reads the
+    // headline, never a fully qualified class name). Mutant: the old "<class> from <where>, with no message".
+    @Test
+    fun `an unknown failure keeps its text, and without one says in words that the connection failed`() {
         assertEquals("boom", reason(IOException("boom")))
-        assertEquals("java.io.IOException from 127.0.0.1:8099, with no message", reason(IOException()))
-        assertEquals("java.io.IOException from the upstream, with no message", reason(IOException(), "not a url"))
+        assertEquals(
+            "the connection to 127.0.0.1:8099 failed, and it gave no reason (IOException)",
+            reason(IOException()),
+        )
+        assertEquals(
+            "the connection to the upstream failed, and it gave no reason (IOException)",
+            reason(IOException(), "not a url"),
+        )
     }
 }

@@ -88,10 +88,10 @@ Teardown kills the process \
 where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
 middle of a turn. These need MORE naming than a shared shape, not less."""
 
-# ── 11 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+# ── 13 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Boolean"
-dated = "2026-09-17"
+dated = "2026-09-27"
 names = [
     "ClientFrameEmitted",
     "ClientGone",
@@ -100,6 +100,7 @@ names = [
     "DaemonRestart",
     "DaemonSupervised",
     "KeyPresenceProbe",
+    "SessionTranscriptViewEnabled",
     "StderrEcho",
     "TerminalSeen",
     "TopologyStale",
@@ -110,8 +111,8 @@ reason = """THE CANONICAL GROUP, documented in kt-no-lambda-seam.yml's own heade
 client hung up, so abandon the turn) and ClientFrameEmitted (the client already saw output, so a \
 retry would duplicate it) are read a few lines apart on the same retry path and drive OPPOSITE \
 decisions; swapping them compiled before HD-22 and produced either an abandoned healthy turn or \
-duplicate bytes on the wire. The remaining eight are each a different predicate about a different \
-subject: ContentReached (has any content frame left the emitter yet — the question the pre-content \
+duplicate bytes on the wire. The remaining names describe distinct decisions about different \
+subjects: ContentReached (has any content frame left the emitter yet — the question the pre-content \
 wire-type rule turns on), WatchdogTripped (did the turn watchdog fire), TerminalSeen (has the WS \
 stream produced its terminal event), TopologyStale (has splice.toml changed under the running \
 daemon), KeyPresenceProbe (is a management key present right now), ConsolePresence (is a TTY \
@@ -123,6 +124,10 @@ apart most carefully, because they read as near-synonyms and sit on the same rou
 ASKS whether a restart is survivable and DaemonRestart ACTS. Swapping them turns the console's restart \
 button into a stop button on an unsupervised daemon — the route refuses precisely so that cannot \
 happen, and collapsing the two types is the one edit that would make the refusal unreachable. \
+SessionTranscriptViewEnabled (V4-354, 2026-09-27) reads the live global transcript-view knob \
+before either the sessions or turns route opens a Claude Code transcript; one port owned by \
+sessions serves both routes, and confusing it with a client disconnect or daemon-state probe \
+would silently expose private conversation text or hide it despite the operator's switch. \
 StderrEcho (V4-353, 2026-09-27: should this daemon.log line also go to stderr, which is daemon-boot.log \
 until the daemon is up) is a logging decision read per line; read as any of the others it would either \
 re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a failed boot prints. A single \

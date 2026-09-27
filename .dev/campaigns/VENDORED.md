@@ -185,6 +185,13 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     fixture now carries its own git identity, so its commits land on a CI runner too); five mutants
     (no detached check, retry on index.lock only, a deferral that fails the verb, the untracked
     warning dropped, manifest.ts never committing) each red on its own.
+20. **The packet's typecheck line names this repository's gate verb (2026-09-27).** `packet` told
+    every builder `plus: bun run typecheck`, a script splice's package.json never had: a builder
+    reported it on 2026-09-20 (v0.4.0.toml's note of that date) and claude-builder and console again
+    on V4-359 and V4-361. The line now reads `bun tools/gate typecheck`, the typecheck wall
+    (tools/gate/src/commands/typecheck.ts). One selftest arm resolves the verb on the packet's plus
+    line against tools/gate/src/commands/ (195 ledger); red on the old line (194/195), and a
+    misspelled verb (`typechek`) is red on the same arm.
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

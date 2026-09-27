@@ -433,7 +433,7 @@ function renderPacket(lines: readonly string[], block: ItemBlock): string {
     ``,
     `VERIFY (what YOU run before reporting done — scoped, never the full suite):`,
     `  ${item.verify === "" ? "(none declared — do not dispatch without one)" : item.verify}`,
-    `  plus: bun run typecheck. Do NOT run the whole suite; it runs in CI once, on the milestone push.`,
+    `  plus: bun tools/gate typecheck. Do NOT run the whole suite; it runs in CI once, on the milestone push.`,
     `  Review and the milestone exit gate happen ONCE per milestone, not on this row.`,
     ``,
     ...(() => {
@@ -2816,6 +2816,14 @@ async function selftest(): Promise<number> {
   check("each row carries the dated gate note, in manifest.py's wording (delta 13)", (await run("get", "M2")).includes(`VERIFY-PHASE m1 ${today()}: ci run 123 green`));
   check("rows are verified", (await run("get", "M1")).includes("[verified]"));
   check("packet tells the builder not to run the suite", (await run("packet", "H3")).includes("never the full suite"));
+  // Delta 20: the packet's typecheck line names a gate verb this repository has. It said `bun run typecheck` from
+  // the vendoring until 2026-09-27, a script package.json never had (builders reported it on 2026-09-20 and again
+  // on V4-359); the verb is resolved against tools/gate/src/commands/, two levels above this file.
+  {
+    const verb = /plus: bun tools\/gate (\S+?)\./.exec(await run("packet", "H3"))?.[1];
+    const verbFile = verb === undefined ? "" : resolve(dirname(import.meta.path), "../../tools/gate/src/commands", `${verb}.ts`);
+    check("packet's typecheck line names a gate verb this repo has (delta 20)", verbFile !== "" && existsSync(verbFile), verb ?? "no `bun tools/gate <verb>` on the plus line");
+  }
 
   // THE CLI COMMITS ITS OWN WRITES (operator, 2026-09-26). The fixture ledger is tracked since the
   // commit above, so each write is its own commit: by path, the ledger alone, a peer's staged file

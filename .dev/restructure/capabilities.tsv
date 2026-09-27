@@ -2618,3 +2618,4 @@ console/src/widgets/connect-plan/model.ts	8e50ee152acfbe51008abaf60462922c44d3bd
 console/src/widgets/connect-plan/strings.ts	290bb254f24694b312a531f47a94df7c47eedfd93bc92e1d41be0b6c6ad61e35	created		added by V4-346: the provider chooser's labels and help under the copy gate
 console/src/widgets/connect-plan/connect-plan.css	c2b3c1307f0db284ba7c2ab0a00a5ba025a13d33d2b8f2563c611216d66b39be	created		added by V4-346: responsive provider chooser layout using console tokens
 console/tests/v4346-first-hour.test.ts	2abdf12b1e71d8691d0b7638ad34d18b5a2bc9e031d4a32721c69a04b42a4800	created		added by V4-346: red-first first-hour choices, setup state, one-click login and copyable command checks
+console/e2e/v4346-first-hour.spec.ts	10c524e1ff45a21a12e72780d9810c3e1676606c2ab8ae359dd031aa4f1e639a	created		added by V4-346: isolated-browser fake-provider first-hour journey, one-gesture sign-in and copyable command, with outbound requests blocked

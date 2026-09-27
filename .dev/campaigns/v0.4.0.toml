@@ -8586,6 +8586,7 @@ verify = "red first: a page test lists every store splice writes about conversat
 claimed_by = "console"
 claimed_at = "2026-09-27T19:18:16.971Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T19:18:16Z
+# [2026-09-27] Console (Sep 27, ~2:2x PM CT): edges have no switch today (Knob.kt:458-483), so the page shows edges as an honest always-on row with the real switches for labels, trace, wire tap and transcript view, and wires the edges switch when V4-367 (claude-builder) lands its messageEdges knob.
 
 [[items]]
 id = "V4-365"

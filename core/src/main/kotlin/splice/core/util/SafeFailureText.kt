@@ -4,6 +4,32 @@
 // file's parse cause copied token/env bytes into daemon.log and /mgmt introspection.
 package splice.core.util
 
+// why: cap an operator-defined TOML key in the one diagnostic printed during a failed boot.
+private const val MAX_DIAGNOSTIC_KEY_LENGTH = 512
+
+/** A topology type diagnosis built only from a key, a source line and a fixed expected-type label.
+ *  The parser's message and the operator's value never become fields or a cause. */
+public class TopologyTypeFailure(
+    public val key: String,
+    public val line: Int,
+    public val expected: Expected,
+) : IllegalArgumentException("splice.toml: $key at line $line expects ${expected.label}") {
+    public enum class Expected(public val label: String) {
+        QUOTED_STRING("quoted string"),
+        INTEGER("integer"),
+        BOOLEAN("boolean"),
+        NUMBER("number"),
+        TABLE("table"),
+        ARRAY("array"),
+    }
+
+    init {
+        require(key.isNotBlank() && key.length <= MAX_DIAGNOSTIC_KEY_LENGTH)
+        require(key.none { Character.isISOControl(it) })
+        require(line > 0)
+    }
+}
+
 public object SafeFailureText {
 
     /** Filesystem and network failures keep their full text — their messages are paths, hosts
@@ -12,8 +38,11 @@ public object SafeFailureText {
      *  reachable through overridable toString() (reflection is walled), so a throwable that
      *  overrides toString() colon-free would ride any prefix-taking render into diagnostics
      *  verbatim (codex probe, 2026-08-31). No virtual call happens outside the allowlist. */
-    // SAFE-RENDER-EXEMPT[2026-09-01]: this IS the sanctioned renderer, and the allowlist below is the law's own definition of a throwable that cannot quote file bytes — a path, a host, a timeout. Routing it would recurse; the marker sits here so the allowlist carries its justification where DR-187 made it visible, rather than being the one render the wall structurally cannot ask about.
     public fun render(failure: Throwable): String = when (failure) {
+        is TopologyTypeFailure ->
+            "splice.toml: ${failure.key} at line ${failure.line} expects ${failure.expected.label}"
+        // SAFE-RENDER-EXEMPT[2026-09-01]: these exact filesystem/network classes carry paths,
+        // hosts or timeouts, never parsed file values; this sanctioned renderer cannot recurse.
         is java.nio.file.FileSystemException,
         is java.net.SocketException,
         is java.net.UnknownHostException,

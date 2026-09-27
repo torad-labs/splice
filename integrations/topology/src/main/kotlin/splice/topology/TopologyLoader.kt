@@ -6,7 +6,12 @@
 package splice.topology
 
 import com.akuleshov7.ktoml.Toml
+import com.akuleshov7.ktoml.exceptions.TomlDecodingException
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.SerialKind
+import kotlinx.serialization.descriptors.StructureKind
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.config.UserHome
@@ -14,6 +19,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SecureFile
+import splice.core.util.TopologyTypeFailure
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -32,6 +38,104 @@ internal fun interface StarterWrite {
 internal object ExclusiveStarterWrite : StarterWrite {
     override fun claim(path: java.nio.file.Path, starter: ByteArray) {
         SecureFile.createNew0600(path, starter)
+    }
+}
+
+private data class WrongTopologyType(val key: String, val line: Int, val expected: TopologyTypeFailure.Expected)
+
+/** Diagnose only a type mismatch the schema and masked source BOTH prove. The mask hides values and
+ *  comments but preserves line numbers; parser exception text is never used, since it may quote a
+ *  header credential. Called only after ktoml refuses the input, so valid TOML is never regraded. */
+private object TopologyTypeMismatch {
+    private val table = Regex("^[ \\t]*\\[{1,2}(.+?)\\]{1,2}[ \\t]*$")
+    private val segments = Regex("\\\"[^\\\"]+\\\"|'[^']+'|[A-Za-z0-9_-]+")
+    private val assignment = Regex("^[ \\t]*([A-Za-z0-9_.-]+|\\?[ \\t]*)[ \\t]*=[ \\t]*(\\S)")
+    private val inlineEntry = Regex("[{},][ \\t]*([A-Za-z0-9_-]+)[ \\t]*=[ \\t]*(\\S)")
+
+    fun first(text: String): WrongTopologyType? {
+        var section = ""
+        val sourceLines = text.lineSequence().iterator()
+        TomlStructureMasker(text).mask().lineSequence().forEachIndexed { at, line ->
+            val source = sourceLines.next()
+            val header = table.matchEntire(line)
+            if (header != null) {
+                section = source.substring(checkNotNull(header.groups[1]).range)
+            } else {
+                diagnoseLine(section, line, source, at + 1)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun diagnoseLine(section: String, line: String, source: String, lineNumber: Int): WrongTopologyType? {
+        val found = assignment.find(line)
+        return if (found == null) {
+            null
+        } else {
+            val member = source.substring(checkNotNull(found.groups[1]).range).trim()
+            val key = listOf(section, member).filter(String::isNotEmpty).joinToString(".")
+            val expected = expected(key)
+            val actual = actual(found.groupValues[2].single())
+            val numeric = expected == TopologyTypeFailure.Expected.NUMBER &&
+                actual == TopologyTypeFailure.Expected.INTEGER
+            when {
+                expected == null || actual == null -> null
+                actual != expected && !numeric -> WrongTopologyType(key, lineNumber, expected)
+                actual == TopologyTypeFailure.Expected.TABLE ->
+                    inlineMismatch(key, lineNumber, line.substring(found.range.last))
+                else -> null
+            }
+        }
+    }
+
+    /** Inline tables can hold map values, e.g. extra_headers = { x = { ... } }. Inspect only
+     *  masked entry keys and each value's first structural character, never the value's text. */
+    private fun inlineMismatch(parent: String, line: Int, value: String): WrongTopologyType? {
+        for (entry in inlineEntry.findAll(value)) {
+            val key = "$parent.${entry.groupValues[1]}"
+            val expected = expected(key)
+            val actual = actual(entry.groupValues[2].single())
+            if (actual != null && expected != null) {
+                if (actual != expected) return WrongTopologyType(key, line, expected)
+            }
+        }
+        return null
+    }
+
+    private fun expected(key: String): TopologyTypeFailure.Expected? = when (fieldDescriptor(key)?.kind) {
+        PrimitiveKind.STRING, SerialKind.ENUM -> TopologyTypeFailure.Expected.QUOTED_STRING
+        PrimitiveKind.INT, PrimitiveKind.LONG -> TopologyTypeFailure.Expected.INTEGER
+        PrimitiveKind.BOOLEAN -> TopologyTypeFailure.Expected.BOOLEAN
+        PrimitiveKind.FLOAT, PrimitiveKind.DOUBLE -> TopologyTypeFailure.Expected.NUMBER
+        StructureKind.MAP, StructureKind.CLASS -> TopologyTypeFailure.Expected.TABLE
+        StructureKind.LIST -> TopologyTypeFailure.Expected.ARRAY
+        else -> null
+    }
+
+    private fun fieldDescriptor(key: String): SerialDescriptor? {
+        var descriptor: SerialDescriptor = Topology.serializer().descriptor
+        for (segment in segments.findAll(key).map { it.value.replace("\"", "").replace("'", "") }) {
+            while (descriptor.kind == StructureKind.LIST) descriptor = descriptor.getElementDescriptor(0)
+            descriptor = when (descriptor.kind) {
+                StructureKind.MAP -> descriptor.getElementDescriptor(1)
+                StructureKind.CLASS -> {
+                    val index = (0 until descriptor.elementsCount)
+                        .firstOrNull { descriptor.getElementName(it) == segment } ?: return null
+                    descriptor.getElementDescriptor(index)
+                }
+                else -> return null
+            }
+        }
+        return descriptor
+    }
+
+    private fun actual(first: Char): TopologyTypeFailure.Expected? = when (first) {
+        '?' -> TopologyTypeFailure.Expected.QUOTED_STRING
+        '{' -> TopologyTypeFailure.Expected.TABLE
+        '[' -> TopologyTypeFailure.Expected.ARRAY
+        't', 'f' -> TopologyTypeFailure.Expected.BOOLEAN
+        in '0'..'9', '-', '+' -> TopologyTypeFailure.Expected.INTEGER
+        else -> null
     }
 }
 
@@ -174,7 +278,12 @@ command = "claude-openrouter"
         // Structural guards ktoml lacks (duplicate models keys, reopened tables, string rosters)
         // live in TomlStructurePreflight — extracted with its masker, 2026-08-31 concentration.
         TomlStructurePreflight.check(text)
-        return Toml.decodeFromString(text)
+        return try {
+            Toml.decodeFromString(text)
+        } catch (failure: TomlDecodingException) {
+            val mismatch = TopologyTypeMismatch.first(text) ?: throw failure
+            throw TopologyTypeFailure(mismatch.key, mismatch.line, mismatch.expected)
+        }
     }
 
     public fun expandHome(raw: String): String =

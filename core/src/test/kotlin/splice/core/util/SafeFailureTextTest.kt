@@ -32,6 +32,26 @@ class SafeFailureTextTest {
     }
 
     @Test
+    fun `only the typed topology diagnosis can name a key while parser text stays withheld - V4-355`() {
+        val safe = TopologyTypeFailure("heads.x.overrides.trace", 7, TopologyTypeFailure.Expected.QUOTED_STRING)
+        assertEquals(
+            "splice.toml: heads.x.overrides.trace at line 7 expects quoted string",
+            SafeFailureText.render(safe),
+        )
+        assertEquals(safe.message, SafeFailureText.render(safe))
+        val quoted = TopologyTypeFailure(
+            "projects.\"/repo with space\".system_prompt",
+            4,
+            TopologyTypeFailure.Expected.QUOTED_STRING,
+        )
+        assertTrue(SafeFailureText.render(quoted).contains("/repo with space"))
+        assertEquals(
+            "failure (message withheld: it may quote file bytes)",
+            SafeFailureText.render(SerializationException("trace = V4355_VALUE_MUST_NOT_LEAVE_FILE")),
+        )
+    }
+
+    @Test
     fun `filesystem failures keep their safe diagnostic text - DR-65 control`() {
         val fs = java.nio.file.NoSuchFileException("/somewhere/auth.json")
         assertTrue(SafeFailureText.render(fs).contains("/somewhere/auth.json"))

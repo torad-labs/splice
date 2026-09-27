@@ -151,9 +151,16 @@ internal object Concentration {
      *  25e6a0796 (14, CI run 36266163596), so V4-307 between them moved no file in or out of the band.
      *  Knob.kt 3.04 -> 2.95 left the band, the file unchanged: the row's ResumeRecipeRoute.kt imports
      *  splice.core.config's InstallPaths, which made splice.launch.resume a new neighbour of Knob.kt's
-     *  package with its own vote in the denominator. */
-    const val RATCHET_RECORDED = "2026-09-26"
-    const val RATCHET_MAX_HIGH = 14
+     *  package with its own vote in the denominator.
+     *
+     *  2026-09-27, 14 -> 13, V4-349, cause `neighbourhood`, measured with this law's census (a scratch
+     *  baseline of 0 to list the band) at 2669df65e (14), at 51034d10c, the row's parent (14), at
+     *  161ffe8a4, the row's commit (13), and at bad51ed65 (13, CI run 36304794101), so V4-218 and V4-350
+     *  moved no file in or out of the band. TurnPreparation.kt 3.10 -> 2.95 left the band, the file
+     *  unchanged: it imports splice.upstream.transport's HeaderRedaction, and the row grew that package's
+     *  TransportFailureReason.kt (closedReason, and the unnamed-failure sentence). */
+    const val RATCHET_RECORDED = "2026-09-27"
+    const val RATCHET_MAX_HIGH = 13
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

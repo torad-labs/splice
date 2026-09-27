@@ -15,7 +15,8 @@ export const S = {
   head: 'Head',
   aboutNext: 'About next',
   nearestLimit: 'Nearest limit',
-  nextReset: 'Next reset',
+  limitResets: 'Limit resets',
+  findSession: 'Find session',
   excluded: 'Excluded',
   noHeads: 'No heads',
   claudeLogins: 'Claude logins',
@@ -52,6 +53,7 @@ export const H = {
   keyStore: 'No key yet; store one and the next request uses it.',
   keyReplace: 'This replaces the stored key; an exported variable still wins.',
   unverified: 'Checked when upstream answers this head\'s next turn.',
+  grokUnknown: 'Grok billing has not returned a current credit reading.',
 } as const;
 
 export const U = {

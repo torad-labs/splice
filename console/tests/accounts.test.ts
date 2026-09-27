@@ -33,7 +33,7 @@ import {
   windowFigure, windowName,
 } from '../src/widgets/account-table';
 import { LoginTicket, refusalOf } from '../src/features/account-login';
-import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget, nextReset } from '../src/pages/accounts/model';
+import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget } from '../src/pages/accounts/model';
 import { signInOf } from '../src/entities/auth';
 import type { LoginStatusPayload } from '../src/entities/auth';
 import { dispositions } from '../src/pages/accounts/coverage';
@@ -687,9 +687,8 @@ describe('the accounts table', () => {
   });
 });
 
-describe('the next reset', () => {
+describe('the nearest limit reset', () => {
   const at = (seconds: number) => NOW / 1000 + seconds;
-  // the review's capture: work's five-hour window resets in 41m 24s, its weekly one in 3d 10h
   const pool = [
     account({ label: 'work', windows: [
       { seconds: HOUR_5, used_percent: 12, reset_epoch_seconds: at(41 * 60 + 24) },
@@ -701,18 +700,19 @@ describe('the next reset', () => {
     ] }),
   ];
 
-  test('is the soonest reset of any window, a five-hour one ahead of the weekly one nearest its limit', () => {
-    expect(nextReset(pool, NOW)).toBe(at(41 * 60 + 24));
+  test('belongs to the limit named beside it, rather than the soonest window of another plan', () => {
     const out = render(h(AccountsBoard, { payload: { accounts: pool }, nowMs: NOW }));
-    expect(statOf(out, S.nextReset)?.value).toBe(countdown(at(41 * 60 + 24), NOW));
     expect(statOf(out, S.nearestLimit)?.value).toBe('64%');
+    expect(statOf(out, S.limitResets)?.value).toBe('in 3d 10h');
   });
 
-  test('a reset already past is not the next one, and no reset ahead prints the absence', () => {
-    const passed = account({ label: 'old', windows: [{ seconds: HOUR_5, used_percent: 50, reset_epoch_seconds: at(-60) }] });
-    expect(nextReset([passed, ...pool], NOW)).toBe(at(41 * 60 + 24));
-    expect(nextReset([passed], NOW)).toBeNull();
-    expect(statOf(render(h(AccountsBoard, { payload: { accounts: [passed] }, nowMs: NOW })), S.nextReset)?.value).toBe(ABSENT);
+  test('a reset already past is not a live limit, and an absent reset remains absent', () => {
+    const passed = account({ label: 'old', windows: [{ seconds: HOUR_5, used_percent: 99, reset_epoch_seconds: at(-60) }] });
+    const out = render(h(AccountsBoard, { payload: { accounts: [passed, ...pool] }, nowMs: NOW }));
+    expect(statOf(out, S.nearestLimit)?.value).toBe('64%');
+    expect(statOf(out, S.limitResets)?.value).toBe('in 3d 10h');
+    const unknown = account({ label: 'unknown-reset', windows: [{ seconds: HOUR_5, used_percent: 50, reset_epoch_seconds: null }] });
+    expect(statOf(render(h(AccountsBoard, { payload: { accounts: [unknown] }, nowMs: NOW })), S.limitResets)?.value).toBe(ABSENT);
   });
 });
 

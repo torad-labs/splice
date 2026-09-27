@@ -14,28 +14,30 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { startAccountsPolling, useAccounts } from '@entities/account';
+import { NOT_REPORTED, NOT_REREAD, isStale } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import { signInOf, startAuthPolling, startKeysPolling, useAuth, useKeys } from '@entities/auth';
 import type { KeysPayload, KeyState, SignInState } from '@entities/auth';
 import { HeadMark } from '@entities/control-status';
 import { familyName } from '@entities/heads';
-import { startUsagePolling, useUsage } from '@entities/usage';
+import { planLevel, planWindows, resetsInText, startUsagePolling, useUsage } from '@entities/usage';
+import type { PlanWindow } from '@entities/usage';
 import { AccountActions, AccountLogin, HeadActions } from '@features/account-login';
 import { ApiKeyForm, sourceWord } from '@features/api-key';
 import { limitText, limitTone, nearestLimit } from '@features/nearest-limit';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import type { AuthPayload, UsagePayload } from '@shared/api';
-import { Blank, Fault } from '@shared/controls';
+import { Blank, Fault, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, useLinkedId, useOpen } from '@shared/lib';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Meter, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import {
-  AccountFacts, AccountStateBadge, accountColumns, accountKey, accountName, accountTone, countdown, stateOf, stateParts,
+  AccountFacts, AccountStateBadge, accountColumns, accountKey, accountName, accountTone, stateOf, stateParts,
 } from '@widgets/account-table';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
 import { dispositions } from './coverage';
-import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget, nextReset, orderText } from './model';
+import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget, orderText } from './model';
 import type { HeadRow } from './model';
 import { H, S, U } from './strings';
 import './accounts.css';
@@ -87,7 +89,7 @@ function useNow(intervalMs: number, fixed: number | null): number {
 }
 
 /** The figures the page leads with: every account by state, the nearest limit (the one definition
- *  the strip and the fleet print), the soonest reset of any window, and how many accounts the pools
+ *  the strip and the fleet print), that same window's reset, and how many accounts the pools
  *  are refusing. */
 function Figures({ accounts, usage, auth, nowMs }: {
   accounts: readonly AccountRow[];
@@ -96,7 +98,6 @@ function Figures({ accounts, usage, auth, nowMs }: {
   nowMs: number;
 }) {
   const nearest = nearestLimit({ accounts, usage, auth }, nowMs);
-  const reset = nextReset(accounts, nowMs);
   const excluded = accounts.filter((account) => stateOf(account, nowMs) === 'excluded').length;
   const nearestTile = nearest === null ? <Stat label={S.nearestLimit} value={ABSENT} /> : (
     <Stat
@@ -115,7 +116,7 @@ function Figures({ accounts, usage, auth, nowMs }: {
         chart={<StackedBar parts={stateParts(accounts, nowMs)} label={S.accounts} legend format={fmtInt} />}
       />
       {nearestTile}
-      <Stat label={S.nextReset} value={(reset === null ? null : countdown(reset, nowMs)) ?? ABSENT} />
+      <Stat label={S.limitResets} value={nearest?.reset ?? ABSENT} />
       <Stat label={S.excluded} value={fmtInt(excluded)} {...(excluded > 0 ? { tone: 'warn' as const } : {})} />
     </StatRow>
   );
@@ -144,6 +145,36 @@ function headColumns(nowMs: number): Column<HeadRow>[] {
     },
     { key: 'note', label: S.note, cell: (row) => headNote(row, nowMs) },
   ];
+}
+
+/** Claude keeps its own login, but its windows belong beside every pooled login's windows. A
+ *  missing or reset reading is unknown, never a zero-percent bar. */
+function claudeColumns(nowMs: number, usage: UsagePayload | null): Column<HeadRow>[] {
+  const columns = headColumns(nowMs);
+  const windowColumn = (slot: PlanWindow['window']): Column<HeadRow> => ({
+    key: slot,
+    label: slot,
+    width: '17%',
+    cell: (row) => {
+      const source = usage?.heads.find((entry) => entry.key === row.head)?.usage ?? null;
+      const window = planWindows(source, nowMs).find((entry) => entry.window === slot);
+      const measured = window !== undefined && !window.stale;
+      const level = measured ? planLevel(window.pct, usage?.warn_pct ?? 80) : 'none';
+      const tone = level === 'critical' ? 'danger' : level === 'none' ? 'neutral' : level;
+      const figure = window?.stale ? NOT_REREAD : window === undefined ? NOT_REPORTED : `${Math.round(window.pct)}%`;
+      const reset = measured ? resetsInText(window.resetsAt, nowMs) : null;
+      return (
+        <span className="myx-at-win">
+          <span className="myx-meter-row">
+            <Meter value={measured ? window.pct / 100 : null} tone={tone} label={`${row.head} ${slot} ${figure}`} />
+            <span className="myx-meter-figure">{figure}</span>
+          </span>
+          {reset === null ? null : <span className="myx-at-win-note">{reset}</span>}
+        </span>
+      );
+    },
+  });
+  return [...columns.slice(0, 3), windowColumn('5h'), windowColumn('7d'), ...columns.slice(3)];
 }
 
 function keyColumns(): Column<HeadRow>[] {
@@ -252,7 +283,7 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
 
   const headTable = (rows: readonly HeadRow[], label: string) => (
     <DataTable
-      columns={headColumns(nowMs)}
+      columns={label === S.claudeLogins ? claudeColumns(nowMs, usage) : headColumns(nowMs)}
       rows={rows}
       rowKey={(row) => row.head}
       label={label}
@@ -296,6 +327,8 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
                   rowTone={(account) => accountTone(account, nowMs)}
                 />
               </Section>
+              {accounts.some((account) => account.kind === 'grok-oauth' && !account.windows.some((window) => window.used_percent !== null && !isStale(window, nowMs)))
+                ? <p className="myx-ac-unknown">{H.grokUnknown}</p> : null}
             </>
           )}
 
@@ -304,6 +337,8 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
               {headTable(claudeHeads, S.claudeLogins)}
             </Section>
           )}
+
+          <p className="myx-ac-help"><KeyLink href="#/sessions">{S.findSession}</KeyLink></p>
 
           {keyHeads.length === 0 ? null : (
             <Section title={S.apiKeys} count={keyHeads.length}>

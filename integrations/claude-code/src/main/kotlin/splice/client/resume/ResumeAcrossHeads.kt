@@ -60,6 +60,12 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 /** A Claude Code session id, and the only shape allowed to become a path component or a message. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
 
+/** One primary transcript is eligible for -r only when its own regular file has conversation bytes.
+ *  The durable history index uses this same rule; a zero-byte file remains in its source census. */
+internal object ResumableTranscript {
+    fun accepts(file: Path): Boolean = Files.isRegularFile(file, NOFOLLOW_LINKS) && Files.size(file) > 0L
+}
+
 private const val NOT_A_SESSION_ID = "a session id is letters, digits, '-' and '_' only, up to 128 characters"
 
 /** What a launch's `-r SESSION_ID` WOULD resolve to, asked without acting (V4-320): the one resolution
@@ -196,11 +202,11 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
             .filter { Files.isDirectory(it, NOFOLLOW_LINKS) }
             .mapNotNull { cwdDir ->
                 val transcript = cwdDir.resolve(sessionId + TRANSCRIPT_SUFFIX)
-                if (Files.isRegularFile(transcript, NOFOLLOW_LINKS)) {
-                    Located(configDir, cwdDir.fileName.toString(), transcript)
-                } else {
-                    null
+                val eligible = Cancellables.runCatchingCancellable { ResumableTranscript.accepts(transcript) }
+                eligible.exceptionOrNull()?.let { cause ->
+                    log("[resume] transcript could not be checked (${SafeFailureText.render(cause)}); not eligible\n")
                 }
+                if (eligible.getOrDefault(false)) Located(configDir, cwdDir.fileName.toString(), transcript) else null
             }
 
     /** Same encoded cwd first, then any — see the header for why the calling head's own tree is the

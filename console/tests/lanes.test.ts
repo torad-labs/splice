@@ -203,7 +203,7 @@ describe('the sessions page draws lanes by default', () => {
     }));
     expect(out).toContain('class="myx-lanes"');
     expect(out.match(/class="myx-lane myx-hue-/g)?.length).toBe(2);
-    expect(out).toContain('aria-label="claudex implementer, Live"');
+    expect(out).toContain('aria-label="claudex implementer, Working"');
     expect(out).toContain('myx-lane-card-title">reviewer<');
     expect(out).toContain('myx-lane-card-meta">payments-api<');
     // the one that needs the operator is tinted, as its row is on the board

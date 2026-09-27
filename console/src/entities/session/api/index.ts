@@ -3,8 +3,8 @@
 // calls those).
 import { bindUnauthorized, currentKey, request, storeKey } from '@shared/api';
 import { poll } from '@shared/lib';
-import { boardEdgesStore, sessionEdgesStore, sessionRegistryStore, sessionStore } from '../model/store';
-import type { BoardEdgesPayload, ResumeRecipe, SessionEdgesPayload, SessionsPayload } from '../model/types';
+import { boardEdgesStore, sessionEdgesStore, sessionHistoryStore, sessionRegistryStore, sessionStore } from '../model/store';
+import type { BoardEdgesPayload, ResumeRecipe, SessionEdgesPayload, SessionHistoryRead, SessionsPayload } from '../model/types';
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -38,6 +38,34 @@ export async function fetchSessions(): Promise<void> {
 
 export function startSessionsPolling(intervalMs = 5000): () => void {
   return poll(fetchSessions, intervalMs);
+}
+
+let historyRequest = 0;
+
+/** Search every durable session by name or repository, a bounded page at a time. A later query
+ *  supersedes an earlier in-flight read, and pagination appends only to its own query. */
+export async function fetchSessionHistory(query: string, cursor: string | null = null): Promise<void> {
+  const sequence = ++historyRequest;
+  if (cursor === null) sessionHistoryStore.startLoading();
+  const params = new URLSearchParams({ limit: '50', query });
+  if (cursor !== null) params.set('cursor', cursor);
+  try {
+    const page = await request<SessionHistoryRead>(`/api/sessions/history?${params}`);
+    if (sequence !== historyRequest) return;
+    if ('state' in page) {
+      sessionHistoryStore.setData({ ...page, query });
+      return;
+    }
+    const previous = sessionHistoryStore.get().data;
+    const prior = previous !== null && 'sessions' in previous && previous.query === query ? previous.sessions : [];
+    const sessions = cursor === null ? page.sessions : [
+      ...prior,
+      ...page.sessions.filter((row) => !prior.some((old) => old.session_id === row.session_id)),
+    ];
+    sessionHistoryStore.setData({ ...page, sessions, query });
+  } catch (err) {
+    if (sequence === historyRequest) sessionHistoryStore.setError(messageOf(err));
+  }
 }
 
 /**

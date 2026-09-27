@@ -119,12 +119,13 @@ Each page answers one question. An action with a row in brackets is not built ye
 
 ## sessions
 
-**Question.** What is running now, and who is handing work to whom?
+**Question.** Which session was I in, and where can I continue it?
 
-**Leaves knowing.** Every live session on its head's lane, with its project and state, and each hand-off between sessions.
+**Leaves knowing.** Live and finished sessions by name and repository, with a copyable resume command and live hand-offs.
 
 **Actions.**
 
+- Find a session by name or repository across history pages
 - Change the view: lanes, by head, by project, by team or timeline
 - Open a session for its detail
 - Read a hand-off's text

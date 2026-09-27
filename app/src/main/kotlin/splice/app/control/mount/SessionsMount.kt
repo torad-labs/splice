@@ -11,18 +11,27 @@ import io.ktor.server.routing.put
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
+import splice.client.transcript.TranscriptHistoryIndex
 import splice.client.transcript.TranscriptReader
 import splice.core.config.ConfigService
+import splice.core.config.UserHome
+import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.CompactionSource
 import splice.sessions.http.ProjectsRoutes
 import splice.sessions.http.RepoOf
 import splice.sessions.http.SentTextSource
+import splice.sessions.http.SessionAccountOf
+import splice.sessions.http.SessionHistoryRoute
+import splice.sessions.http.SessionHistoryRowOf
+import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.StatuslineRootOf
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamsRoutes
 import splice.sessions.registry.SessionSource
+import splice.sessions.transcript.SessionHistoryRoot
+import splice.sessions.transcript.SessionTranscriptViewEnabled
 
 /** Every route here is registered only when a session registry is wired, as /api/sessions always was.
  *  [ports] is read at CALL time: ControlPlane assigns the activity and team stores after construction. */
@@ -34,6 +43,15 @@ internal class SessionsMount(
     private val guard: ControlGuard,
 ) {
     private val sessionHeads = SessionHeadAdapter.adapt(heads)
+    private val sessionAccounts = SessionAccountOf { head, id ->
+        val managed = head?.let(heads::get)
+        val pool = managed?.accountPool
+        when {
+            pool != null -> pool.view(id).selectedLabel
+            managed != null && AuthKindRegistry.isOAuth(managed.authKind) -> "Only login on $head"
+            else -> null
+        }
+    }
 
     private val sessionsRoutes = sessions?.let {
         SessionsRoutes(
@@ -43,6 +61,20 @@ internal class SessionsMount(
             config,
             ActivitySource { ports.activity },
             teams = TeamSource { ports.teams },
+            accountOf = sessionAccounts,
+        )
+    }
+    private val historyRoutes = sessions?.let { registry ->
+        val routes = checkNotNull(sessionsRoutes)
+        val roots = listOf(SessionHistoryRoot(null, UserHome.dir().resolve(".claude"))) +
+            sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
+        SessionHistoryRoute(
+            registry,
+            TranscriptHistoryIndex(),
+            roots,
+            SessionHistoryRowOf(routes::historyRow),
+            SessionTranscriptViewEnabled { config.getConfig().transcriptView },
+            SessionRepoNameOf { record -> routes.repoOf(record)?.root },
         )
     }
     private val teamsRoutes = sessionsRoutes?.let { routes ->
@@ -73,6 +105,14 @@ internal class SessionsMount(
      *  routes, which read the same registry. */
     private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
         route.get("/api/sessions") { guard.guarded(call) { ControlReplies.respond(call, routes.sessionsJson()) } }
+        historyRoutes?.let { history ->
+            route.get("/api/sessions/history") {
+                guard.guarded(call) {
+                    val query = call.request.queryParameters
+                    history.page(query["query"], query["cursor"], query["limit"]?.toIntOrNull()).send(call)
+                }
+            }
+        }
         route.get("/api/sessions/edges") { guard.guarded(call) { routes.edgeRoutes.boardEdges().send(call) } }
         route.get("/api/sessions/{id}/edges") {
             guard.guarded(call) { routes.edgeRoutes.edges(call.parameters["id"].orEmpty()).send(call) }

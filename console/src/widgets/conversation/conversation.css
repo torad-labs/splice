@@ -2,6 +2,7 @@
    with its body behind a reveal. Kit tokens only. */
 
 .myx-cv { display: grid; gap: var(--space-4); min-width: 0; }
+.myx-cv-off { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin: 0; color: var(--fg-subtle); }
 .myx-cv-path { font-family: var(--font-mono); font-size: var(--text-2); overflow-wrap: anywhere; }
 
 .myx-cv-turns { list-style: none; margin: 0; padding: 0; display: grid; }

@@ -46,6 +46,32 @@ class SessionsRoutesTest {
         assertEquals("gone", bare["availability"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `each running session carries its own account instead of the head-wide choice`(@TempDir dir: Path) {
+        listOf("first", "second").forEachIndexed { index, id ->
+            Files.writeString(
+                dir.resolve("${index + 1}.json"),
+                """{"pid":${index + 1},"sessionId":"$id","updatedAt":$now}""",
+            )
+        }
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Head("claudex") },
+            pidAlive = { true },
+            clock = { now },
+        )
+        val route = SessionsRoutes(
+            registry,
+            TestTranscripts(),
+            accountOf = SessionAccountOf { _, session -> if (session == "first") "work" else "spare" },
+        )
+        val rows = Json.parseToJsonElement(route.sessionsJson()).jsonObject.getValue("sessions").jsonArray
+            .map { it.jsonObject }
+            .associateBy { it.getValue("session_id").jsonPrimitive.content }
+        assertEquals("work", rows.getValue("first").getValue("account").jsonPrimitive.content)
+        assertEquals("spare", rows.getValue("second").getValue("account").jsonPrimitive.content)
+    }
+
     // `route` tells apart the two facts `head` folds into "unknown head": a session that never went
     // through splice, and one splice cannot place. The value is the registry's, read once from the
     // process environment; a GONE pid is never read, so its route is unknown whatever it would say.

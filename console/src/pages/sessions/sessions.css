@@ -11,6 +11,9 @@
 }
 
 .myx-sx-window { margin: 0; font-size: var(--text-2); color: var(--fg-subtle); }
+.myx-sx-find { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-3); }
+.myx-sx-find .myx-input-box { max-width: 100%; }
+.myx-sx-off { margin: 0; color: var(--fg-subtle); font-size: var(--text-2); }
 
 .myx-sx-board {
   display: grid;
@@ -89,6 +92,7 @@ button.myx-sx-peer:hover { color: var(--fg); }
 @media (min-width: 3000px) {
   .myx-sx { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); column-gap: var(--space-7); align-items: start; }
   .myx-sx > .myx-ph,
+  .myx-sx > .myx-sx-find,
   .myx-sx > .myx-sx-tally { grid-column: 1 / -1; }
   .myx-sx > .myx-sx-board { grid-column: 1; }
   .myx-sx > .myx-sx-handoffs { grid-column: 2; margin-block-start: 0; }

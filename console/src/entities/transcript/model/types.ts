@@ -2,8 +2,8 @@
 // session's local transcript from its head's CLAUDE_CONFIG_DIR/projects, paginated, redacted") and
 // 4.4 (read as a conversation between participants, not a log tail).
 //
-// PENDING V4-130. The route does not exist, so this is the contract the console builds against: the
-// page renders the pending empty until it does, never a mocked conversation.
+// The route serves a page unless the live transcript-view switch is off. An off answer is a
+// distinct state, not an empty conversation, and contains no path or messages.
 import type { PendingRoute } from '@shared/api';
 
 /** Who spoke. The daemon's reader folds the client's own event kinds into these four, because the
@@ -39,6 +39,14 @@ export interface TranscriptPage {
   total?: number;
 }
 
+/** The live global switch denied reading before a transcript file was opened. */
+export interface TranscriptOff {
+  state: 'off';
+  reason: string;
+}
+
+export type TranscriptRead = TranscriptPage | TranscriptOff;
+
 /** The loaded transcript, and where the next page starts. */
 export interface TranscriptState {
   sessionId: string;
@@ -66,4 +74,4 @@ export interface TranscriptMissing {
   missing: string[];
 }
 
-export type TranscriptSlice = TranscriptState | PendingRoute | TranscriptMissing;
+export type TranscriptSlice = TranscriptState | PendingRoute | TranscriptMissing | TranscriptOff;

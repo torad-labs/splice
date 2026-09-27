@@ -23,6 +23,7 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -41,6 +42,7 @@ import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
 import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptPage
@@ -62,6 +64,11 @@ public class SessionsRoutes(
     private val vanilla: Path = UserHome.dir().resolve(".claude"),
     /** V4-131: the team store the `team` key reads, per request. */
     private val teams: TeamSource = TeamSource { null },
+    /** The session's own selected login, never the head-wide last selection. */
+    private val accountOf: SessionAccountOf = SessionAccountOf { _, _ -> null },
+    private val viewEnabled: SessionTranscriptViewEnabled = SessionTranscriptViewEnabled {
+        config?.getConfig()?.transcriptView ?: true
+    },
 ) {
     /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
     public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity, SentTextSource(::sentTexts))
@@ -80,6 +87,7 @@ public class SessionsRoutes(
 
     /** GET /api/sessions/{id}/transcript?cursor=&limit= */
     public fun transcript(sessionId: String, cursor: String?, limit: Int?): JsonReply {
+        if (!viewEnabled()) return SessionTranscriptOff.reply
         val head = registry.read().firstOrNull { it.sessionId == sessionId }?.head
         return when (
             val lookup = transcripts.page(sessionId, treesFor(head), cursor, limit ?: DEFAULT_TRANSCRIPT_PAGE)
@@ -99,10 +107,13 @@ public class SessionsRoutes(
         }
     }
 
-    private fun row(s: SessionRecord, edges: EdgeIndex?) = buildJsonObject {
+    /** The exact same row projection for a durable-history entry after the live overlay. */
+    public fun historyRow(record: SessionRecord): JsonObject = row(record, null)
+
+    private fun row(s: SessionRecord, edges: EdgeIndex?): JsonObject = buildJsonObject {
         put("pid", s.pid)
         put("session_id", s.sessionId)
-        put("name", s.name)
+        put("name", if (viewEnabled()) s.name else null)
         put("kind", s.kind)
         put("version", s.version)
         put("cwd", s.cwd)
@@ -116,6 +127,7 @@ public class SessionsRoutes(
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
         repoOf(s)?.let { put("repo", repoJson(it)) }
         put("team", s.sessionId?.let { teamOf(it) })
+        put("account", s.sessionId?.let { accountOf.label(s.head, it) })
         val id = s.sessionId
         if (edges != null && id != null) put("edges", edges.summary(id, s.address))
     }
@@ -137,8 +149,10 @@ public class SessionsRoutes(
     public fun statuslineRootOf(path: String, head: String?): TrustedRoot? = resolverFor(head).trustedRootOf(path)
 
     /** V4-131: a sender's SendMessage texts, from the transcript trees this route already searches. */
-    public fun sentTexts(session: String, head: String?, ids: Set<String>): SentTexts =
-        transcripts.sentTexts(session, treesFor(head), ids)
+    public fun sentTexts(session: String, head: String?, ids: Set<String>): SentTexts {
+        if (!viewEnabled()) return SentTexts(null, emptyMap(), ids)
+        return transcripts.sentTexts(session, treesFor(head), ids)
+    }
 
     private fun teamOf(session: String): String? =
         teams()?.bindingsOf(session)?.firstOrNull { (team, _) -> !team.archived }?.first?.id

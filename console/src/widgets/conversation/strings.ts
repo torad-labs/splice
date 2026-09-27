@@ -10,6 +10,7 @@ export const S = {
   loadMore: 'Load more',
   noTranscript: 'No transcript',
   unavailable: 'Transcript unavailable',
+  off: 'View off',
   /** Who spoke, one word per role the daemon's reader folds the client's events into. */
   user: 'User',
   assistant: 'Assistant',

@@ -7,13 +7,14 @@ import type { SessionRow } from '../src/entities/session';
 import {
   availabilityCounts,
   fetchSessions,
+  fetchSessionHistory,
   groupSessions,
   timeline,
   UNKNOWN_HEAD,
   UNATTRIBUTED,
 } from '../src/entities/session';
-import { sessionRegistryStore } from '../src/entities/session/model/store';
-import { advanceCursor, loadTranscript, openCursor, PENDING_TRANSCRIPT } from '../src/entities/transcript';
+import { sessionHistoryStore, sessionRegistryStore } from '../src/entities/session/model/store';
+import { advanceCursor, loadMoreTranscript, loadTranscript, openCursor, PENDING_TRANSCRIPT } from '../src/entities/transcript';
 import { transcriptStore } from '../src/entities/transcript/model/store';
 import { readFor } from '../src/shared/lib';
 import type { TranscriptPage } from '../src/entities/transcript';
@@ -72,6 +73,73 @@ function stubRoutes(routes: Record<string, unknown>): void {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('durable session history pages', () => {
+  test('searches server-side and appends a cursor page without duplicating a session', async () => {
+    const paths: string[] = [];
+    vi.stubGlobal('fetch', (input: unknown): Promise<Response> => {
+      const path = String(input);
+      paths.push(path);
+      const cursor = new URL(path, 'http://localhost').searchParams.get('cursor');
+      const sessions = cursor === null
+        ? [session({ session_id: 'old', name: 'Atlas build' })]
+        : [session({ session_id: 'old' }), session({ session_id: 'older', name: 'Atlas design' })];
+      return Promise.resolve(new Response(JSON.stringify({ sessions, next: cursor === null ? 'older-cursor' : null }), { status: 200 }));
+    });
+    await fetchSessionHistory('Atlas');
+    await fetchSessionHistory('Atlas', 'older-cursor');
+    expect(paths.map((path) => new URL(path, 'http://localhost').searchParams.get('query'))).toEqual(['Atlas', 'Atlas']);
+    expect(paths[1]).toContain('cursor=older-cursor');
+    const page = sessionHistoryStore.get().data;
+    expect(page !== null && 'sessions' in page ? page.sessions.map((row) => row.session_id) : []).toEqual(['old', 'older']);
+    expect(sessionHistoryStore.get().data?.query).toBe('Atlas');
+  });
+
+  test('the off answer replaces old titles rather than becoming an empty page', async () => {
+    vi.stubGlobal('fetch', (): Promise<Response> => Promise.resolve(
+      new Response(JSON.stringify({ state: 'off', reason: 'Turn it on in Request detail.' }), { status: 200 }),
+    ));
+    await fetchSessionHistory('Atlas');
+    expect(sessionHistoryStore.get().data).toEqual({ state: 'off', reason: 'Turn it on in Request detail.', query: 'Atlas' });
+  });
+
+  test('a slower previous search cannot replace the current query', async () => {
+    let answerOld: ((response: Response) => void) | undefined;
+    vi.stubGlobal('fetch', (input: unknown): Promise<Response> => {
+      const query = new URL(String(input), 'http://localhost').searchParams.get('query');
+      if (query === 'old') return new Promise((resolve) => { answerOld = resolve; });
+      return Promise.resolve(new Response(JSON.stringify({ sessions: [session({ session_id: 'new' })], next: null }), { status: 200 }));
+    });
+    const old = fetchSessionHistory('old');
+    await fetchSessionHistory('new');
+    answerOld?.(new Response(JSON.stringify({ sessions: [session({ session_id: 'old' })], next: null }), { status: 200 }));
+    await old;
+    expect(sessionHistoryStore.get().data?.query).toBe('new');
+    const page = sessionHistoryStore.get().data;
+    expect(page !== null && 'sessions' in page ? page.sessions.map((row) => row.session_id) : []).toEqual(['new']);
+  });
+});
+
+describe('transcript view switch', () => {
+  test('a disabled read is a distinct off state, not a page with no messages', async () => {
+    const off = { state: 'off', reason: 'Transcript view is off. Turn it on in Request detail.' };
+    stubRoutes({ '/api/sessions/off-session/transcript': off });
+    await loadTranscript('off-session');
+    expect(readFor(transcriptStore.get(), 'off-session').data).toEqual(off);
+  });
+
+  test('turning view off while reading the next page clears already loaded text', async () => {
+    transcriptStore.land('off-page', {
+      sessionId: 'off-page', path: '/work/transcript.jsonl',
+      messages: [{ index: 0, role: 'user', text: 'PRIVATE_PRIOR_PAGE' }],
+      cursor: { sessionId: 'off-page', next: 'next-cursor', pages: 1, complete: false },
+    });
+    const off = { state: 'off', reason: 'Transcript view is off. Turn it on in Request detail.' };
+    stubRoutes({ '/api/sessions/off-page/transcript': off });
+    await loadMoreTranscript();
+    expect(readFor(transcriptStore.get(), 'off-page').data).toEqual(off);
+  });
 });
 
 // ── grouping ─────────────────────────────────────────────────────────────────

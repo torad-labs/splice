@@ -6,7 +6,7 @@
 // page, and a transcript is thousands of lines the operator did not ask for until they open one.
 // Nothing is prefetched: this reads a page when it is asked to and reads the next only when the
 // reader asks again.
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
 import type { TranscriptRole, TranscriptSlice } from '@entities/transcript';
 import { Fault, Key } from '@shared/controls';
@@ -41,12 +41,19 @@ export function transcriptShown(state: Keyed<string, TranscriptSlice>, sessionId
  */
 export function Conversation({ sessionId, slice }: { sessionId: string; slice?: TranscriptSlice }) {
   const state = useTranscript((s) => s);
+  const [readForId, setReadForId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (slice === undefined) void loadTranscript(sessionId);
+    if (slice !== undefined) return undefined;
+    let current = true;
+    void loadTranscript(sessionId).then(() => { if (current) setReadForId(sessionId); });
+    return () => { current = false; };
   }, [sessionId, slice]);
 
-  const shown = transcriptShown(state, sessionId, slice);
+  // A prior page can hold this session's conversation from before the switch went off. A fresh read
+  // must answer first; otherwise cached private text flashes on the first render after navigation.
+  const shown = slice === undefined && readForId !== sessionId
+    ? { data: null, error: null } : transcriptShown(state, sessionId, slice);
   if (shown.error !== null) return <Fault message={shown.error} />;
   const data = shown.data;
   if (data === null) return null;
@@ -55,6 +62,7 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
     return <Empty text={S.noTranscript} source={data.missing.length === 0 ? H.notWritten : `${H.lookedIn} ${data.missing.join(', ')}`} />;
   }
   if ('pending' in data) return <Empty text={S.unavailable} source={H.pending} />;
+  if ('state' in data) return <p className="myx-cv-off" role="status"><Badge tone="neutral" quiet>{S.off}</Badge>{data.reason}</p>;
 
   return (
     <div className="myx-cv">

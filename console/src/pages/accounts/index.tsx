@@ -150,7 +150,11 @@ function headColumns(nowMs: number): Column<HeadRow>[] {
 /** Claude keeps its own login, but its windows belong beside every pooled login's windows. A
  *  missing or reset reading is unknown, never a zero-percent bar. */
 function claudeColumns(nowMs: number, usage: UsagePayload | null): Column<HeadRow>[] {
-  const columns = headColumns(nowMs);
+  const widths: Record<string, string> = { head: '18%', account: '16%', state: '12%', note: '20%' };
+  const columns = headColumns(nowMs).map((column) => {
+    const width = widths[column.key];
+    return width === undefined ? column : { ...column, width };
+  });
   const windowColumn = (slot: PlanWindow['window']): Column<HeadRow> => ({
     key: slot,
     label: slot,
@@ -237,7 +241,8 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
   sample?: string | undefined;
 }) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
-  const [openKey, setOpenKey] = useOpen(linked === null ? null : linkedAccountKey(linked));
+  const [openKey, setOpenKey] = useOpen(linked === null ? null :
+    linked.startsWith('head:') || linked.startsWith('key:') ? linked : linkedAccountKey(linked));
   const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
 
   const pending = payload !== null && 'pending' in payload;
@@ -249,7 +254,14 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
   const keyHeads = headRows.filter((row) => row.kind === 'api-key');
 
   const opened = accounts.find((account) => openAccountKey(account) === openKey) ?? null;
+  const measured = opened?.windows.filter((window) => !isStale(window, nowMs) && window.used_percent !== null) ?? [];
+  const hasRoom = opened !== null && opened.available !== false && opened.credential_present &&
+    measured.length > 0 && measured.every((window) => window.used_percent !== null && window.used_percent < 100);
   const openedHead = headRows.find((row) => openHeadKey(row.head) === openKey) ?? null;
+  const headUsage = usage?.heads.find((entry) => entry.key === openedHead?.head)?.usage ?? null;
+  const headPlan = planWindows(headUsage, nowMs);
+  const headHasRoom = openedHead?.kind === 'client' && headPlan.length > 0 &&
+    headPlan.every((window) => !window.stale && window.pct < 100);
   const openedKey = keyHeads.find((row) => openKeyHeadKey(row.head) === openKey) ?? null;
   const anyHead = opened?.heads[0] ?? pooledHeads[0]?.head ?? claudeHeads[0]?.head ?? null;
 
@@ -271,6 +283,14 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
         <AccountFacts account={opened} nowMs={nowMs} />
         {/* Relabel and remove act on a POOL; a single-login head has none. */}
         {opened.label === null ? null : <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} />}
+        {hasRoom ? (
+          <div className="myx-ac-recover">
+            {opened.heads.map((head) => (
+              <KeyLink key={head} href={`#/sessions?head=${encodeURIComponent(head)}`}>{`${S.continueHere} ${head}`}</KeyLink>
+            ))}
+            {opened.label !== null && opened.pinned !== true ? <p className="myx-ac-unknown">{H.pinForResume}</p> : null}
+          </div>
+        ) : null}
         {anyHead === null ? null : <AccountLogin head={anyHead} />}
       </>
     ),
@@ -278,8 +298,19 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
     title: openedKey.head,
     body: <ApiKeyDetail row={openedKey} keyState={keys?.keys.find((each) => each.name === openedKey.envVar) ?? null} />,
   }
-    : openedHead !== null ? { title: openedHead.head, body: <HeadActions head={openedHead.head} /> }
-    : null;
+    : openedHead !== null ? {
+      title: openedHead.head,
+      body: (
+        <>
+          <HeadActions head={openedHead.head} />
+          {headHasRoom ? (
+            <p className="myx-ac-help">
+              <KeyLink href={`#/sessions?head=${encodeURIComponent(openedHead.head)}`}>{`${S.continueHere} ${openedHead.head}`}</KeyLink>
+            </p>
+          ) : null}
+        </>
+      ),
+    } : null;
 
   const headTable = (rows: readonly HeadRow[], label: string) => (
     <DataTable

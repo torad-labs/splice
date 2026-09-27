@@ -190,6 +190,20 @@ describe('the daemon, the plans and the accounts', () => {
     expect(out.find((need) => need.source === 'plans')).toMatchObject({ severity: 'danger', subject: 'work', finding: '5h at 99%' });
   });
 
+  test('a future reset still leaves a near limit visible beside a spare head', () => {
+    const near = account({
+      label: 'near', heads: ['e2e-codex'],
+      windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: NOW / 1000 + 3600 }],
+    });
+    const spare = account({
+      label: 'spare', heads: ['e2e-codex-solo'],
+      windows: [{ seconds: 18_000, used_percent: 20, reset_epoch_seconds: NOW / 1000 + 3600 }],
+    });
+    const plans = needsOf(quiet({ accounts: read({ accounts: [near, spare] }) }), NOW).needs
+      .find((need) => need.source === 'plans');
+    expect(plans).toMatchObject({ finding: '5h at 99%, resets in 1h 0m', fix: { kind: 'open', href: '#/accounts' } });
+  });
+
   test('a pooled login gone and an excluded account are their own items; a single login gone is its head\'s', () => {
     const accounts = [
       account({ label: 'spare', credential_present: false }),

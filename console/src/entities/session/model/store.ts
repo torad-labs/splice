@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createKeyed, createResource } from '@shared/lib';
-import type { BoardEdgesPayload, SessionEdgesPayload, SessionsPayload } from './types';
+import type { BoardEdgesPayload, SessionEdgesPayload, SessionHistoryRead, SessionsPayload } from './types';
 
 // THREE stores live in this slice and their names say which is which. `sessionStore` is the
 // management-key gate the shell's unlock-mgmt reads (locked/hasKey); `sessionRegistryStore` is
@@ -24,6 +24,9 @@ export const sessionStore = create<SessionState>(() => ({
 /** The registry. Not a PendingRoute union: /api/sessions exists (ControlServer.kt:154), so a 404
  *  here is an error to report, not a route to wait for. */
 export const sessionRegistryStore = createResource<SessionsPayload>();
+
+/** Bounded pages from the durable transcript/history index, keyed by the query that fetched them. */
+export const sessionHistoryStore = createResource<SessionHistoryRead & { query: string }>();
 
 /** One session's message edges (GET /api/sessions/{id}/edges), read when it is opened, by session
  *  id: the panel of the session opened next asks for its own (V4-304). */

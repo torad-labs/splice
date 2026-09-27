@@ -4,7 +4,7 @@
 import { MgmtError, pendingOf, request } from '@shared/api';
 import { advanceCursor, openCursor } from '../model/cursor';
 import { transcriptStore } from '../model/store';
-import type { TranscriptPage, TranscriptState } from '../model/types';
+import type { TranscriptRead, TranscriptState } from '../model/types';
 
 /** The v0.4.0 item that serves the transcript route, named for a daemon older than it. */
 export const PENDING_TRANSCRIPT = 'V4-130';
@@ -22,7 +22,7 @@ export function searchedOf(err: unknown): string[] | null {
  *  route is pending or there is no file. */
 function loaded(): { sessionId: string; state: TranscriptState } | null {
   const last = transcriptStore.get().last;
-  if (last === null || 'pending' in last.data || 'missing' in last.data) return null;
+  if (last === null || 'pending' in last.data || 'missing' in last.data || 'state' in last.data) return null;
   return { sessionId: last.key, state: last.data };
 }
 
@@ -50,7 +50,11 @@ function pagePath(sessionId: string, cursor: string | null): string {
  *  from the top, and a re-read after a failure must not resume mid-conversation. */
 export async function loadTranscript(sessionId: string): Promise<void> {
   try {
-    const page = await request<TranscriptPage>(pagePath(sessionId, null));
+    const page = await request<TranscriptRead>(pagePath(sessionId, null));
+    if ('state' in page) {
+      transcriptStore.land(sessionId, page);
+      return;
+    }
     const { cursor } = advanceCursor(openCursor(sessionId), page);
     transcriptStore.land(sessionId, {
       sessionId: page.session_id,
@@ -75,7 +79,11 @@ export async function loadMoreTranscript(): Promise<void> {
   const token = state.cursor.next;
   if (state.cursor.pages === 0 || token === null) return;
   try {
-    const page = await request<TranscriptPage>(pagePath(state.sessionId, token));
+    const page = await request<TranscriptRead>(pagePath(state.sessionId, token));
+    if ('state' in page) {
+      transcriptStore.land(sessionId, page);
+      return;
+    }
     const { cursor, reset } = advanceCursor(state.cursor, page);
     if (reset) {
       transcriptStore.land(sessionId, { sessionId: page.session_id, path: page.path, messages: page.messages, cursor });

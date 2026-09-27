@@ -1,10 +1,11 @@
-import { boardEdgesStore, sessionEdgesStore, sessionRegistryStore, sessionStore } from './model/store';
+import { boardEdgesStore, sessionEdgesStore, sessionHistoryStore, sessionRegistryStore, sessionStore } from './model/store';
 
 export {
   initSession,
   unlock,
   fetchBoardEdges,
   fetchSessions,
+  fetchSessionHistory,
   fetchSessionEdges,
   fetchResumeRecipe,
   startBoardEdgesPolling,
@@ -31,6 +32,8 @@ export type {
   SessionAvailability,
   SessionEdge,
   SessionEdgesPayload,
+  SessionHistoryPayload,
+  SessionHistoryRead,
   SessionRepo,
   SessionRoute,
   SessionRow,
@@ -39,5 +42,6 @@ export type {
 export { LIVE_KINDS } from './model/live';
 export const useSession = sessionStore;
 export const useSessionRegistry = sessionRegistryStore.use;
+export const useSessionHistory = sessionHistoryStore.use;
 export const useSessionEdges = sessionEdgesStore.use;
 export const useBoardEdges = boardEdgesStore.use;

@@ -13,6 +13,7 @@ import type { Disposition, PageJob } from '@shared/coverage';
 
 export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/sessions', disposition: 'read-only' },
+  { kind: 'route', name: '/api/sessions/history', disposition: 'read-only' },
   // Never a route: FEATURES.md section 6 left the shape open and the 2026-09-18 decision made the repo
   // a FIELD on /api/sessions (entities/session SessionRow.repo), so nothing will ever serve this.
   {
@@ -33,9 +34,10 @@ export const dispositions: Disposition[] = [
 
 /** What this page is for (V4-219, rendered into docs/design/JOBS.md). */
 export const job: PageJob = {
-  question: 'What is running now, and who is handing work to whom?',
-  leaves: 'Every live session on its head\'s lane, with its project and state, and each hand-off between sessions.',
+  question: 'Which session was I in, and where can I continue it?',
+  leaves: 'Live and finished sessions by name and repository, with a copyable resume command and live hand-offs.',
   actions: [
+    { name: 'Find a session by name or repository across history pages' },
     { name: 'Change the view: lanes, by head, by project, by team or timeline' },
     { name: 'Open a session for its detail' },
     { name: 'Read a hand-off\'s text' },

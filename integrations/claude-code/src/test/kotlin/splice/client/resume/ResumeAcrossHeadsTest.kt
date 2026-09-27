@@ -173,6 +173,36 @@ class ResumeAcrossHeadsTest {
         )
     }
 
+    @Test
+    fun `an empty primary transcript is counted but never offered as a resume recipe`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        val other = headConfig(home, "kimi")
+        val id = "empty-1"
+        val foreign = write(other.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("$id.jsonl"), "")
+        val resume = ResumeAcrossHeads()
+        assertTrue(Files.isRegularFile(foreign), "the refusal distinguishes an empty file from no file")
+        assertTrue(resume.plan(calling, listOf(other), id, log = {}) is ResumePlan.Absent)
+        assertTrue(adoption(calling, listOf(other), id) is SessionAdoption.Absent)
+        assertFalse(Files.exists(calling.resolve(Keys.PROJECTS), NOFOLLOW_LINKS))
+
+        val own = write(calling.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("$id.jsonl"), "")
+        assertTrue(Files.isRegularFile(own))
+        assertTrue(resume.plan(calling, listOf(other), id, log = {}) is ResumePlan.Absent)
+    }
+
+    @Test
+    fun `an empty own copy falls through to a sibling that has conversation bytes`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        val id = "empty-1"
+        write(calling.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("$id.jsonl"), "")
+        val foreign = register(home, "kimi", encodedCwd("repo"), id, model = pinned)
+        val other = headConfig(home, "kimi")
+        val plan = ResumeAcrossHeads().plan(calling, listOf(other), id, log = {}) as ResumePlan.Copy
+        assertEquals(foreign, plan.from)
+        val adopted = adoption(calling, listOf(other), id) as SessionAdoption.Adopted
+        assertTrue(Files.size(adopted.into) > 0L, "the empty own file was replaced by real conversation bytes")
+    }
+
     // V4-320: plan() is the resolution adopt() acts on, asked without acting, so a resume recipe and the
     // `-r` launch it describes cannot disagree. On one fixture, each plan names what the adoption then
     // does, and asking every plan writes nothing.

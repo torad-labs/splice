@@ -69,7 +69,31 @@ export interface SessionRow {
    *  null"): the daemon binds sessions to slots, and the console groups by that binding. Null for a
    *  session bound to no team, which is most of them. */
   team?: string | null;
+  /** The selected login for this session when the daemon can attribute one, not the head's
+   *  currently selected account for an unrelated session. */
+  account?: string | null;
+  /** Which durable sources found a historical session. Absent on live registry-only rows. */
+  source?: 'history+transcript' | 'history-only' | 'transcript-only' | 'registry-only';
+  /** A primary file may exist but have no conversation bytes yet. Such a row is counted, not offered
+   *  as a resumable session. Absent on older daemons that did not measure it. */
+  resumable?: boolean;
 }
+
+export interface SessionHistoryOff {
+  state: 'off';
+  reason: string;
+}
+
+export interface SessionHistoryPayload {
+  /** A page, not every stored session. Cursor continues after its last sort key. */
+  sessions: SessionRow[];
+  next: string | null;
+  /** A source that could not be listed. Partial rows remain visible, never passed off as complete. */
+  errors?: string[];
+  skipped?: Record<string, number>;
+}
+
+export type SessionHistoryRead = SessionHistoryPayload | SessionHistoryOff;
 
 export interface SessionsPayload {
   /**

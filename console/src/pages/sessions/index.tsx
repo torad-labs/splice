@@ -24,6 +24,7 @@
 // state, never its current one), and it is also the fixture seam.
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useLocation } from 'react-router';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
 import { ArrowLeftIcon } from '@phosphor-icons/react/dist/csr/ArrowLeft';
@@ -33,6 +34,7 @@ import { HeadlessMark, HeadMark, hueClass, NO_SPLICE_HEAD, NO_SPLICE_HEAD_WHY, u
 import { useHeads } from '@entities/heads';
 import {
   fetchResumeRecipe,
+  fetchSessionHistory,
   fetchSessionEdges,
   peerLabel,
   sessionKey,
@@ -42,15 +44,16 @@ import {
   useBoardEdges,
   useSession,
   useSessionEdges,
+  useSessionHistory,
   useSessionRegistry,
   UNKNOWN_HEAD,
 } from '@entities/session';
-import type { BoardEdgesPayload, ResumeRecipe, SessionEdgesPayload, SessionRow, SessionsPayload } from '@entities/session';
+import type { BoardEdgesPayload, ResumeRecipe, SessionEdgesPayload, SessionHistoryPayload, SessionRow, SessionsPayload } from '@entities/session';
 import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Lanes, LifetimeBar, PageHeader, Reveal, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
-import { Choice, Copy, Fault } from '@shared/controls';
+import { Choice, Copy, Fault, Input, Key } from '@shared/controls';
 import { readFor, timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import type { Keyed } from '@shared/lib';
 import { H, S, U } from './strings';
@@ -74,6 +77,15 @@ export const DEFAULT_VIEWS: View[] = [
 
 /** The daemon's availability word, as the board prints it. */
 const AVAILABILITY: Record<SessionRow['availability'], string> = { live: S.live, stale: S.stale, gone: S.gone };
+
+/** Claude Code writes busy, shell and idle on live registrations. Stale or gone stays a fact about
+ *  availability; a quiet client is not called stuck without a stall measurement. */
+export function stateWord(row: SessionRow): string {
+  if (row.availability !== 'live') return AVAILABILITY[row.availability];
+  if (row.status === 'busy' || row.status === 'shell') return S.working;
+  if (row.status === 'idle') return S.waiting;
+  return S.live;
+}
 
 /** Why a session has no head: splice did not start it, or the daemon could not read how it was
  *  started. It says only what the registry knows: where a turn goes is the turns page's fact. */
@@ -227,12 +239,12 @@ export function firstOtherHead(keys: readonly string[], own: string): string | n
 /** The opened session resumed on a head the operator picks, first any head but its own. Splice
  *  starts no client, so the answer is the command and what its launch will do; the page keys this by
  *  session, so a pick never outlives the session it was made for. */
-function ResumeElsewhere({ sessionId, own }: { sessionId: string; own: string }) {
+function ResumeElsewhere({ sessionId, own, target = null }: { sessionId: string; own: string; target?: string | null }) {
   const heads = useHeads((state) => state.data);
   const [picked, setPicked] = useState<string | null>(null);
   const [answer, setAnswer] = useState<{ head: string; recipe: ResumeRecipe | null; fault: string | null } | null>(null);
   const keys = (heads ?? []).map((head) => head.key);
-  const head = picked ?? firstOtherHead(keys, own);
+  const head = picked ?? (target !== null && keys.includes(target) ? target : firstOtherHead(keys, own));
 
   useEffect(() => {
     if (head === null) return undefined;
@@ -294,8 +306,17 @@ const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '20%', project: '18%'
 const WIDTH_WITH_HEAD: Record<string, string> = { name: '16%', head: '14%', project: '16%', life: '24%', peer: '20%' };
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, view, linked = null, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
+export function SessionsBoard({ payload, history = null, historyOff = null, historyQuery = '', onHistoryQuery, onHistoryNext, historyError = null, historyLoading = false, resumeHead = null, view, linked = null, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
   payload: SessionsPayload | null;
+  history?: SessionHistoryPayload | null;
+  historyOff?: string | null;
+  historyQuery?: string;
+  onHistoryQuery?: (query: string) => void;
+  onHistoryNext?: () => void;
+  historyError?: string | null;
+  historyLoading?: boolean;
+  /** The head chosen beside an available login on Accounts. */
+  resumeHead?: string | null;
   /** The view to draw; the page's active saved view when omitted. A test names the one it is about. */
   view?: View;
   /** The session a link asks to open (`?open=<session key>`), read by the page. */
@@ -319,17 +340,37 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
   const active = view ?? saved;
   const [openId, setOpenId] = useOpen(linked);
 
-  const rows = payload?.sessions ?? [];
+  const needle = historyQuery.trim().toLowerCase();
+  const indexed = new Map((history?.sessions ?? []).map((row) => [row.session_id, row]));
+  const live = (payload?.sessions ?? []).map((entry): SessionRow => {
+    const row = historyOff === null ? entry : { ...entry, name: null };
+    const durable = indexed.get(row.session_id);
+    if (durable === undefined) return row;
+    const repo = row.repo ?? durable.repo;
+    return {
+      ...durable, ...row,
+      name: row.name ?? durable.name,
+      cwd: row.cwd ?? durable.cwd,
+      ...(repo === undefined ? {} : { repo }),
+      head: row.head === UNKNOWN_HEAD ? durable.head : row.head,
+      ...(durable.account === undefined ? {} : { account: durable.account }),
+      ...(durable.source === undefined ? {} : { source: durable.source }),
+    };
+  }).filter((row) => needle === '' ||
+    [sessionLabel(row), row.repo?.root, row.cwd, row.head].some((value) => value?.toLowerCase().includes(needle)));
+  const liveIds = new Set(live.map((row) => row.session_id).filter((id) => id !== null));
+  const rows = [...live, ...(history?.sessions ?? []).filter((row) => row.session_id === null || !liveIds.has(row.session_id))];
   const open = rows.find((row) => sessionKey(row) === openId) ?? null;
 
   // The OPENED session's hand-offs bay reads its own edges route when it opens; the peer column of
   // every row comes from the one board-wide read (GET /api/sessions/edges, the route M2-02 asked
   // V4-130 for), so no row needs a request of its own.
   useEffect(() => {
-    if (open?.session_id != null) void fetchSessionEdges(open.session_id);
-  }, [open?.session_id]);
+    if (historyOff === null && open?.session_id != null) void fetchSessionEdges(open.session_id);
+  }, [historyOff, open?.session_id]);
 
-  const handoffs = open?.session_id == null || edges === null ? null : readFor(edges, open.session_id);
+  const handoffs = historyOff !== null || open?.session_id == null || edges === null
+    ? null : readFor(edges, open.session_id);
 
   const peerFor = (row: SessionRow): Peer | null => {
     if (boardEdges === null || row.session_id === null) return null;
@@ -348,7 +389,6 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
     : 0;
 
   if (locked) return <Empty text={S.locked} />;
-  if (error !== null && payload === null) return <Fault message={error} />;
 
   // THE COLUMNS ARE THE VIEW'S FIELDS, in its order, with the status closing the row the way an
   // airport board prints its remark last. A grouped view does not repeat its group as a column:
@@ -398,7 +438,7 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
         cell: (row) => fieldsOf(row, null, [key])[0]?.value ?? S.absent,
       }];
     }),
-    { key: 'status', label: S.status, width: '10%', cell: (row) => <Badge tone={toneOf(row)} quiet>{AVAILABILITY[row.availability]}</Badge> },
+    { key: 'status', label: S.status, width: '10%', cell: (row) => <Badge tone={toneOf(row)} quiet>{stateWord(row)}</Badge> },
   ];
 
   const groupTitle = (key: string): ReactNode => {
@@ -457,7 +497,7 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
         title: sessionLabel(row),
         meta: projectText(row),
         tone: toneOf(row),
-        word: AVAILABILITY[row.availability],
+        word: stateWord(row),
         start: row.started_at,
       })),
     };
@@ -471,6 +511,7 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
 
   const count = (state: SessionRow['availability']) => rows.filter((row) => row.availability === state).length;
   const stale = count('stale');
+  const registryError = error ?? payload?.error ?? null;
 
   return (
     <div className="myx-sx">
@@ -481,6 +522,13 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
       >
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </PageHeader>
+
+      <div className="myx-sx-find">
+        <Input label={S.findSession} value={historyQuery} onChange={onHistoryQuery ?? (() => {})} w={32} disabled={onHistoryQuery === undefined} placeholder={S.findHint} />
+        {resumeHead === null ? null : <span className="myx-sx-window">{S.resumeOn} <HeadMark head={resumeHead} /></span>}
+        {historyOff === null ? null : <p className="myx-sx-off" role="status">{historyOff}</p>}
+        {historyLoading ? <span className="myx-sx-window">{S.searching}</span> : null}
+      </div>
 
       {rows.length === 0 ? null : (
         <div className="myx-sx-tally">
@@ -512,12 +560,17 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
         <div className="myx-sx-list">
           {/* A registry read that fails after one landed keeps the rows and says so: the fault used
               to show only while nothing had loaded, so a dead daemon's sessions read as live. */}
-          {error === null ? null : <Fault message={error} lastRead={lastRead} />}
+          {registryError === null ? null : <Fault message={registryError} lastRead={lastRead} />}
+          {historyError === null || rows.length === 0 ? null : <Fault message={historyError} />}
+          {historyOff === null || rows.length === 0 ? null : <Empty text={S.off} />}
           {/* An edges read that failed leaves every peer unknown, and says why: unwatched is not
               the same fact as "no hand-offs". */}
           {edgesError === null ? null : <Fault message={edgesError} />}
           {rows.length === 0 ? (
-            <Empty text={S.noSessions} source={H.noSessions} />
+            historyOff !== null ? <Empty text={S.off} />
+              : historyError !== null ? <Fault message={historyError} /> : registryError !== null ? null
+                : historyLoading ? <Empty text={S.searching} />
+                : <Empty text={needle === '' ? S.noSessions : S.noMatches} source={H.noSessions} />
           ) : isLanes(active) ? (
             <Lanes
               lanes={lanes}
@@ -541,6 +594,9 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
               rowHue={(row) => hueClass(hueOf(row.head))}
             />
           )}
+          {history?.next === null || history === null ? null : (
+            <Key onClick={() => onHistoryNext?.()} busy={historyLoading} disabled={onHistoryNext === undefined}>{S.moreSessions}</Key>
+          )}
         </div>
 
         {/* THE DETAIL IS UNMOUNTED AT REST: nothing holds a column until a row is opened, and an
@@ -549,12 +605,17 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
           <DetailPanel
             title={sessionLabel(open)}
             label={S.detail}
-            status={<Badge tone={toneOf(open)} quiet>{AVAILABILITY[open.availability]}</Badge>}
+            status={<Badge tone={toneOf(open)} quiet>{stateWord(open)}</Badge>}
             onClose={() => setOpenId(null)}
             closeLabel={S.close}
           >
+            <KeyValue rows={[[S.sessionId, open.session_id ?? S.absent], [S.account, open.account ?? S.accountUnknown]]} />
             <Section title={S.conversation}>
-              {open.session_id === null ? (
+              {open.source === 'history-only' || open.source === 'registry-only' ? (
+                <Empty text={S.noTranscript} source={H.noTranscript} />
+              ) : open.resumable === false ? (
+                <Empty text={S.emptyTranscript} source={H.emptyTranscript} />
+              ) : open.session_id === null ? (
                 <Empty text={S.noSessionId} />
               ) : (
                 <Conversation sessionId={open.session_id} />
@@ -568,17 +629,25 @@ export function SessionsBoard({ payload, view, linked = null, edges = null, boar
               )}
             </Section>
             <Section title={S.handoffs}>
-              {handoffs?.error == null ? null : <Fault message={handoffs.error} />}
-              <EdgeRows edges={handoffs?.data ?? null} rows={rows} />
+              {historyOff !== null ? <Empty text={S.off} /> : (
+                <>
+                  {handoffs?.error == null ? null : <Fault message={handoffs.error} />}
+                  <EdgeRows edges={handoffs?.data ?? null} rows={rows} />
+                </>
+              )}
             </Section>
             <Section title={S.sendTo} info={{ text: H.sendTo, label: S.sendWhy }}>
               <SendCall row={open} />
             </Section>
             <Section title={S.resume} info={{ text: H.resume, label: S.resumeWhy }}>
-              {open.session_id === null ? (
+              {open.source === 'history-only' || open.source === 'registry-only' ? (
+                <Empty text={S.noTranscript} source={H.noTranscript} />
+              ) : open.resumable === false ? (
+                <Empty text={S.emptyTranscript} source={H.emptyTranscript} />
+              ) : open.session_id === null ? (
                 <Empty text={S.noSessionId} />
               ) : (
-                <ResumeElsewhere key={open.session_id} sessionId={open.session_id} own={open.head} />
+                <ResumeElsewhere key={open.session_id} sessionId={open.session_id} own={open.head} target={resumeHead} />
               )}
             </Section>
           </DetailPanel>
@@ -614,8 +683,16 @@ function fixtureName(): string | null {
 }
 
 export default function SessionsPage() {
+  const location = useLocation();
+  const requestedHead = new URLSearchParams(location.search).get('head');
+  const availableHeads = useHeads((state) => state.data);
+  const resumeHead = availableHeads?.some((head) => head.key === requestedHead) ? requestedHead : null;
   const locked = useSession((s) => s.locked);
   const registry = useSessionRegistry((s) => s);
+  const history = useSessionHistory((s) => s);
+  const [query, setQuery] = useState('');
+  const [historyReady, setHistoryReady] = useState(false);
+  const [paging, setPaging] = useState(false);
   const edges = useSessionEdges((s) => s);
   const boardEdges = useBoardEdges((s) => s);
   const linked = useLinkedId();
@@ -627,6 +704,14 @@ export default function SessionsPage() {
     const stops = [startSessionsPolling(5000), startBoardEdgesPolling(5000)];
     return () => stops.forEach((stop) => stop());
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      void fetchSessionHistory(query).then(() => { if (active) setHistoryReady(true); });
+    }, query === '' ? 0 : 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [query]);
 
   // The fixture is imported by name at runtime, never bundled: the shipped dist
   // carries no sample bytes, and the branch is dead outside DEV.
@@ -652,9 +737,27 @@ export default function SessionsPage() {
     };
   }, [name]);
 
+  const historyRead = fixture === null && historyReady && history.data?.query === query ? history.data : null;
+  const search = (next: string) => { setHistoryReady(false); setQuery(next); };
+  const historyPage = historyRead !== null && 'sessions' in historyRead ? historyRead : null;
+  const historyOff = historyRead !== null && 'state' in historyRead ? historyRead.reason : null;
+  const loadMore = () => {
+    if (paging || historyPage?.next == null) return;
+    setPaging(true);
+    void fetchSessionHistory(query, historyPage.next).finally(() => setPaging(false));
+  };
+
   return (
     <SessionsBoard
       payload={fixture ?? registry.data}
+      history={historyPage}
+      historyOff={historyOff}
+      historyQuery={query}
+      onHistoryQuery={search}
+      onHistoryNext={loadMore}
+      resumeHead={resumeHead}
+      historyLoading={fixture === null && (paging || !historyReady)}
+      historyError={fixture === null && historyReady ? (history.error ?? historyPage?.errors?.join('; ')) || null : null}
       linked={linked}
       edges={edges}
       // Live edges never join a sample's rows: a capture's peers would be another board's.

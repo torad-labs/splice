@@ -48,6 +48,9 @@ private const val MAX_DRIBBLE = 7
 // why: the most mutations a mixed case chains
 private const val MAX_CHAIN = 3
 
+// why: the bytes an escape spans after its backslash at most, a \u and its four hex digits
+private const val ESCAPE_REACH = 5
+
 // why: how much of a failing line a message quotes
 private const val PREVIEW = 300
 
@@ -97,6 +100,10 @@ class JsonLineShapeFuzzTest {
         val table = counts.entries.joinToString { (mutation, n) -> "$mutation ${n[0]} counted/${n[1]} declined" }
         assertTrue(counts.values.sumOf { it[0] } >= OUTCOME_FLOOR) { "too few lines counted to test: $table" }
         assertTrue(counts.values.sumOf { it[1] } >= OUTCOME_FLOOR) { "too few lines declined to test: $table" }
+        // A decline is always safe for the count, since kotlinx reads the line instead, so a fast path that declines
+        // what it should pass hides from every check above while the page goes back to 21 s: every record the
+        // writer makes is one the shape must vouch for.
+        assertEquals(0, counts.getValue(Mutation.NONE)[1]) { "an undamaged record was declined: $table" }
     }
 
     /** The shape counted [line]: kotlinx must decode it to the same stamp, and parse it whole into one object,
@@ -143,18 +150,24 @@ private object Bases {
         }.toString(),
     ).toString()
 
+    /** A response as a stream carries it, colour codes and a control character included, which the writer escapes
+     *  in the record itself as \u001b and \u0001: escapes in a string the shape passes rather than keeps. */
+    private val stream = JsonPrimitive(
+        "event: done\ndata: {\"ok\":true}\n\n" + Char(0x1b) + "[32mok" + Char(0x1b) + "[0m " + Char(1),
+    ).toString()
+
     private fun attempt(i: Int): String =
         """{"kind":"attempt","turn":"t-$i","ts":${DAY + i},"head":"claudex","session":"0f0eef86-$i",""" +
             """"model":"gpt-6-sol","clientModel":"claude-opus-5-5","compact":false,"round":1,""" +
             """"attempt":${i % 3 + 1},"transport":"http","request":{"headers":{"content-type":"application/json",""" +
             """"x-ids":["a",1,true,null]},"body":$body,"truncated":false},""" +
-            """"response":{"text":$body,"truncated":true},"durationMs":${40 + i}}"""
+            """"response":{"text":$stream,"truncated":true},"durationMs":${40 + i}}"""
 
     private fun turn(i: Int): String =
         """{"kind":"turn","turn":"t-$i","ts":${DAY + i + 1},"head":"claudex","session":"0f0eef86-$i",""" +
             """"model":"gpt-6-sol","clientModel":"claude-opus-5-5","compact":true,"client":{"method":"POST",""" +
             """"path":"/v1/messages","headers":{"anthropic-version":"2023-06-01"},"body":$body,"truncated":false},""" +
-            """"answer":{"status":200,"stream":true,"body":"","truncated":false},"outcome":"ok","rounds":1,""" +
+            """"answer":{"status":200,"stream":true,"body":$stream,"truncated":false},"outcome":"ok","rounds":1,""" +
             """"attempts":${i % 4},"perf":{"marks":{"total":120,"first":1.5E-2},"counters":{}}}"""
 
     private fun odd(i: Int): String =
@@ -177,6 +190,7 @@ private enum class Mutation(val apply: (ByteArray, Random) -> ByteArray) {
     DUPLICATE(Damage::duplicate),
     NEST(Damage::nest),
     OVERSIZE(Damage::oversize),
+    ESCAPE(Damage::escape),
     MIXED(Damage::mixed),
 }
 
@@ -232,6 +246,17 @@ private object Damage {
             else -> "\"" + "${U}00e9".repeat(OVERSIZED / U.length) + "\""
         }
         return Edits.replaced(base, listOf("turn", "ts", "session").random(random), value)
+    }
+
+    /** An escape broken where the string skip passes whole ones: its letter or a hex digit replaced, or the
+     *  bytes after its backslash cut short. */
+    fun escape(base: ByteArray, random: Random): ByteArray {
+        val slashes = base.indices.filter { base[it] == BACKSLASH.code.toByte() }
+        val at = if (slashes.isEmpty()) base.size else slashes.random(random) + 1 + random.nextInt(ESCAPE_REACH)
+        if (at >= base.size) return base
+        if (random.nextBoolean()) return base.copyOf().also { it[at] = anyByte(random) }
+        val resume = minOf(base.size, at + 1 + random.nextInt(ESCAPE_REACH))
+        return base.copyOfRange(0, at) + base.copyOfRange(resume, base.size)
     }
 
     fun mixed(base: ByteArray, random: Random): ByteArray {

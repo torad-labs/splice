@@ -11,7 +11,8 @@
 // V4-343: a line is handed over as a [DayLine], read no further than its reader asks. Every line was
 // decoded to a String before its reader saw it, and on claudex's 3.6 GB store that decode was 21% of the
 // console trace page's 21.4 s, most of the rest being kotlinx skipping the bodies of those Strings; a count
-// that needs a few fields of each record now streams its bytes and decodes none of the body.
+// that needs a few fields of each record now streams its bytes and decodes none of the body. The search for
+// the line before steps eight bytes at a time (ByteWords) while none of them ends a line.
 package splice.core.storage
 
 import java.io.IOException
@@ -89,6 +90,8 @@ private const val WINDOW_BYTES = 64 * 1024
 
 private val LF: Byte = '\n'.code.toByte()
 private val CR: Byte = '\r'.code.toByte()
+private val LF_WORD = ByteWords.repeated(LF)
+private val CR_WORD = ByteWords.repeated(CR)
 
 /** Reads files' lines from their end. */
 internal class BackwardLines {
@@ -109,6 +112,7 @@ internal class BackwardLines {
  *  read, and the torn half of an append in flight reads as the line it is. */
 private class BackwardCursor(private val reads: ChannelReads) {
     private val window = ByteArray(WINDOW_BYTES)
+    private val words = ByteWords.view(window)
     private var windowStart = 0L
     private var windowEnd = 0L
 
@@ -142,6 +146,8 @@ private class BackwardCursor(private val reads: ChannelReads) {
         while (at >= 0) {
             hold(at) // the scan below runs over the window's array
             var i = (at - windowStart).toInt()
+            // V4-343: eight bytes a step while none of them ends a line, then the last few a byte at a time
+            while (i >= Long.SIZE_BYTES - 1 && !endsAny(words.getLong(i - (Long.SIZE_BYTES - 1)))) i -= Long.SIZE_BYTES
             while (i >= 0 && !ends(window[i])) i -= 1
             if (i >= 0) return windowStart + i
             at = windowStart - 1
@@ -150,6 +156,8 @@ private class BackwardCursor(private val reads: ChannelReads) {
     }
 
     private fun ends(byte: Byte): Boolean = byte == LF || byte == CR
+
+    private fun endsAny(word: Long): Boolean = (ByteWords.equal(word, LF_WORD) or ByteWords.equal(word, CR_WORD)) != 0L
 
     private fun byteAt(offset: Long): Byte {
         hold(offset)

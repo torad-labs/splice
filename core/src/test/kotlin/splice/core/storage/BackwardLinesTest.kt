@@ -57,6 +57,16 @@ class BackwardLinesTest {
     }
 
     @Test
+    fun `lines of every short length split alike, so a terminator falls at every offset of a scanned word`(
+        @TempDir dir: Path,
+    ) {
+        // V4-343: the scan steps eight bytes at a time, so each terminator must be found wherever it lands.
+        val terminators = listOf("\n", "\r\n", "\r")
+        val text = (0..40).joinToString("") { n -> "x".repeat(n) + terminators[n % terminators.size] }
+        assertMirrors(dir, text.toByteArray(), "short lines")
+    }
+
+    @Test
     fun `a CRLF split across the scan window is one terminator`(@TempDir dir: Path) {
         // From the end, the first window starts exactly at the \n, so its \r is read by the next one.
         val text = "a".repeat(70_000) + "\r\n" + "b".repeat(WINDOW - 1)

@@ -8465,6 +8465,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-27T14:55:29.144Z"
 # [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T14:55:29Z
 # [2026-09-27] amend by=orchestrator: files were ["integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt", "integrations/topology/src/test/kotlin/splice/topology/v4355/"]
+# [2026-09-27] Code 62585cb76 (claude-builder): a wrong-typed splice.toml value raises one typed topology diagnostic carrying only the dotted key, its line and the expected type (from the TOML mask and the serializer descriptor), the single new SafeFailureText allowlist entry; every other decoder failure stays withheld. Red first: TopologyTypeDiagnosticTest 3 failed on the withheld generic; inline-table and quoted-key mutants failed before their fixes. Green: core 482, topology 42, architecture 250, detekt, census 0. Raw-render mutant (SafeFailureText else -> failure.message) red on the planted markers. Verified once CI's gate passes on the train sha.
 
 [[items]]
 id = "V4-356"

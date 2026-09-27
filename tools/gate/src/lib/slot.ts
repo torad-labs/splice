@@ -1,7 +1,9 @@
-// The gradle slot: ONE gradle at a time per worktree, enforced by a lock instead of by convention.
+// The gradle slot: ONE gradle at a time per repository (the checkout and every worktree of it),
+// enforced by a lock instead of by convention.
 //
-// A port of checks/gradle-slot.sh, kept behaviourally identical on the same lock path so the two
-// entries can never both hold the slot. Every line below that looks like a quirk is one:
+// A port of checks/gradle-slot.sh, kept behaviourally identical to it; the lock moved from the
+// worktree's build root to the git common dir with V4-341 (lockPath). Every line below that looks
+// like a quirk is one:
 //   - an EMPTY task list is DID NOT RUN, never PASSED (exit 2) — `./gradlew` with no task prints
 //     BUILD SUCCESSFUL having compiled nothing (gradle-slot.sh:15-23);
 //   - the holder file is written BEFORE any JVM starts and removed under a trap (:33-34);
@@ -13,6 +15,7 @@
 //     seat, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
 //     milliseconds. That is why gradle is orchestrated asynchronously below (:98-131).
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { takeExclusive } from "./flock.ts";
 import type { Layout } from "./repo.ts";
 import { exitForSignal, exitStatusOf } from "./status.ts";
@@ -37,7 +40,33 @@ export interface SlotOptions {
 }
 
 export function lockPath(layout: Layout, env: Record<string, string | undefined> = Bun.env): string {
-  return env.GRADLE_SLOT_LOCK || `${layout.buildRoot}/.gradle-slot.lock`;
+  return env.GRADLE_SLOT_LOCK || sharedLock(layout) || `${layout.buildRoot}/.gradle-slot.lock`;
+}
+
+/**
+ * V4-341: `<git common dir>/gradle-slot.lock`, one path for the checkout and every `git worktree add`
+ * of it, so a seat's detached-worktree build queues behind the checkout's and every other worktree's.
+ * Per worktree, on 2026-09-26 two seats' worktrees both held "the slot" at once, and the contention
+ * pushed HeadServerLoadTest past its 30 s cap (34.2 s; 4.3 s alone). Resolved from the layout's own
+ * root only: the caller's GIT_* variables (a hook sets them) and any repository above the root are
+ * ignored. Undefined when git cannot say, and the caller falls back to the build root.
+ */
+function sharedLock(layout: Layout): string | undefined {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(Bun.env)) {
+    if (typeof value === "string" && !key.startsWith("GIT_")) env[key] = value;
+  }
+  env.GIT_CEILING_DIRECTORIES = dirname(layout.repoRoot);
+  const git = Bun.which("git", { PATH: env.PATH ?? "" });
+  if (!git) return undefined;
+  const common = Bun.spawnSync([git, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    cwd: layout.repoRoot,
+    env,
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const dir = common.exitCode === 0 ? common.stdout.toString().trim() : "";
+  return dir ? join(dir, "gradle-slot.lock") : undefined;
 }
 
 /** `date -Is`: seconds precision, local time, numeric offset — the format the holder line carries. */

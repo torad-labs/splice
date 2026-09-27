@@ -1,7 +1,7 @@
 // The slot's contract, and the one property that makes the port safe to land beside the shell
 // script it ports: both take flock(2) on the SAME path, so they can never both hold the slot.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isoSeconds, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
@@ -10,8 +10,16 @@ import { layout } from "../src/lib/repo.ts";
 
 const real = layout();
 const workspaces: string[] = [];
+// The suite runs on its own locks. runUnderSlot lays the process environment under its options (#170),
+// so a seat that exports GRADLE_SLOT_LOCK (the V4-341 workaround for worktrees at older shas) sent six
+// of these runs to that lock instead of their own, red, and holding the repository's real slot.
+const inherited = { lock: process.env.GRADLE_SLOT_LOCK, wait: process.env.GRADLE_SLOT_WAIT_S };
+delete process.env.GRADLE_SLOT_LOCK;
+delete process.env.GRADLE_SLOT_WAIT_S;
 afterAll(() => {
   for (const dir of workspaces) rmSync(dir, { recursive: true, force: true });
+  if (inherited.lock !== undefined) process.env.GRADLE_SLOT_LOCK = inherited.lock;
+  if (inherited.wait !== undefined) process.env.GRADLE_SLOT_WAIT_S = inherited.wait;
 });
 
 /** A build root whose `gradlew` records how it was called — and what the holder file said. */
@@ -30,16 +38,21 @@ function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') 
 }
 
 describe("the gradle slot", () => {
-  test("the lock path is the one .gitignore keeps out of the tree", () => {
+  test("the lock is the repository's: in its git common dir, where nothing is ever tracked (V4-341)", () => {
+    const common = git(real.repoRoot, "rev-parse", "--path-format=absolute", "--git-common-dir").trim();
+    expect(lockPath(real, {})).toBe(join(common, "gradle-slot.lock"));
+  });
+
+  test("with no repository at the root, the lock falls back to the path .gitignore keeps out of the tree", () => {
     // checks/gradle-slot.sh used to be the oracle; since PR 5 the external record of the lock's
     // name is the ignore line — a lock the CLI wrote under any other name would be committed.
     const ignore = readFileSync(join(real.repoRoot, ".gitignore"), "utf8");
     const line = /^\/(\.gradle-slot\.lock)\*$/m.exec(ignore);
     expect(line, ".gitignore must still name the slot lock the way this test reads it").not.toBeNull();
-    expect(lockPath(real, {})).toBe(join(real.repoRoot, line![1]!));
-    // and the CLI derives it from the build root rather than the literal `gateway`, so it follows
-    // the build root when the restructure moves it to the repository root
-    expect(lockPath(real, {})).toBe(join(real.buildRoot, ".gradle-slot.lock"));
+    // and the fallback derives it from the build root rather than the literal `gateway`, so it
+    // follows the build root when the restructure moves it to the repository root
+    const fake = fakeBuildRoot();
+    expect(lockPath(fake.layout, {})).toBe(join(fake.layout.buildRoot, line![1]!));
   });
 
   test("GRADLE_SLOT_LOCK overrides it, as in the script", () => {
@@ -214,7 +227,9 @@ describe("the gradle slot", () => {
       `import { runUnderSlot } from ${JSON.stringify(join(import.meta.dir, "..", "src", "lib", "slot.ts"))};\n` +
         `process.exit(await runUnderSlot(${JSON.stringify(options)}));\n`,
     );
-    return Bun.spawn([process.execPath, runner], { stdio: ["ignore", "ignore", "ignore"] });
+    // process.env passed explicitly: the spawn's default is the environment the suite started with,
+    // GRADLE_SLOT_LOCK included, not the one it cleared above
+    return Bun.spawn([process.execPath, runner], { stdio: ["ignore", "ignore", "ignore"], env: { ...process.env } });
   }
 
   async function waitForFile(path: string, what: string, ms = 10_000): Promise<void> {
@@ -259,6 +274,93 @@ describe("the gradle slot", () => {
       expect(existsSync(holder)).toBe(false);
     });
   }
+
+  // ── one slot per repository (V4-341) ──────────────────────────────────────────────────────────
+  //
+  // The lock used to sit in each worktree's build root, so a seat's `git worktree add --detach` build
+  // never queued behind the checkout's, or behind another seat's worktree: on 2026-09-26 two seats'
+  // worktrees both "held the slot" at once and the contention pushed HeadServerLoadTest past its 30 s
+  // cap.
+
+  /** A scratch repository and a detached worktree of it: two layouts on one git common dir. Each root's
+   *  fake gradle writes its pid and then becomes a 5 s sleep, so a run holds the slot while it sleeps. */
+  function worktreePair() {
+    const base = mkdtempSync(join(tmpdir(), "gate-slot-pair-"));
+    workspaces.push(base);
+    const checkout = join(base, "checkout");
+    const worktree = join(base, "worktree");
+    mkdirSync(checkout);
+    git(checkout, "init", "-q");
+    git(checkout, "-c", "user.name=gate", "-c", "user.email=gate@test", "-c", "commit.gpgsign=false",
+      "-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "base");
+    git(checkout, "worktree", "add", "-q", "--detach", worktree);
+    const root = (dir: string) => {
+      writeFileSync(join(dir, "gradlew"), '#!/usr/bin/env bash\necho $$ >"$(dirname "$0")/started"\nexec sleep 5\n');
+      chmodSync(join(dir, "gradlew"), 0o755);
+      return { layout: { repoRoot: dir, buildRoot: dir }, dir, receipt: join(dir, "receipt.txt"), path: "/usr/bin:/bin" };
+    };
+    return { checkout: root(checkout), worktree: root(worktree), common: realpathSync(join(checkout, ".git")) };
+  }
+
+  /** git without the caller's GIT_* variables: a suite run from a hook must never touch the real repository. */
+  function git(cwd: string, ...args: string[]): string {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+    const run = Bun.spawnSync(["git", ...args], { cwd, env, stdout: "pipe", stderr: "pipe" });
+    if (run.exitCode !== 0) throw new Error(`git ${args.join(" ")} in ${cwd}: ${run.stderr.toString()}`);
+    return run.stdout.toString();
+  }
+
+  test("the checkout and its worktree resolve one lock, and GRADLE_SLOT_LOCK still overrides it", () => {
+    const pair = worktreePair();
+    const shared = join(pair.common, "gradle-slot.lock");
+    expect(lockPath(pair.checkout.layout, {})).toBe(shared);
+    expect(lockPath(pair.worktree.layout, {})).toBe(shared);
+    expect(lockPath(pair.worktree.layout, { GRADLE_SLOT_LOCK: "/tmp/elsewhere.lock" })).toBe("/tmp/elsewhere.lock");
+  });
+
+  test("the lock is resolved from the layout's own root: not a repository above it, not the caller's GIT_DIR", () => {
+    const pair = worktreePair();
+    const nested = join(pair.checkout.dir, "nested");
+    mkdirSync(nested);
+    expect(lockPath({ repoRoot: nested, buildRoot: nested }, {})).toBe(join(nested, ".gradle-slot.lock"));
+    const outside = fakeBuildRoot();
+    const before = process.env.GIT_DIR;
+    process.env.GIT_DIR = join(pair.checkout.dir, ".git");
+    try {
+      expect(lockPath(outside.layout, {})).toBe(join(outside.dir, ".gradle-slot.lock"));
+    } finally {
+      if (before === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = before;
+    }
+  });
+
+  test("a checkout and a worktree of it share one slot: the second run waits on the first", async () => {
+    const pair = worktreePair();
+    const first = wrapperProcess(pair.checkout, "checkout-run");
+    try {
+      await waitForExec(join(pair.checkout.dir, "started"), "sleep");
+      const stderr: string[] = [];
+      const original = console.error;
+      console.error = (...parts: unknown[]) => void stderr.push(parts.join(" "));
+      let code: number;
+      try {
+        code = await runUnderSlot({
+          layout: pair.worktree.layout,
+          label: "worktree-run",
+          args: ["check"],
+          env: { CI: "1", PATH: pair.worktree.path, GRADLE_SLOT_WAIT_S: "1" },
+          pollMs: 25,
+        });
+      } finally {
+        console.error = original;
+      }
+      expect(code, "the worktree's run must queue behind the checkout's, not beside it").toBe(SLOT_TIMEOUT_EXIT);
+      expect(stderr.join("\n")).toContain("gradle-slot: waiting (held by: checkout-run pid=");
+      expect(existsSync(join(pair.worktree.dir, "started")), "the worktree's gradle never started").toBe(false);
+    } finally {
+      first.kill();
+      await first.exited;
+    }
+  }, 20_000);
 
   test("the slot and the holder are kept until the child is actually GONE", async () => {
     // The obvious wrong fix — drop the holder and release the lock inside the signal handler, then

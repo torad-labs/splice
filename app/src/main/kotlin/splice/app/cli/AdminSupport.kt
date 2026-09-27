@@ -4,6 +4,7 @@
 // moved to features/lifecycle (LAYOUT-01); app composes them in LifecycleWiring.
 package splice.app.cli
 
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
@@ -98,7 +99,7 @@ internal object AdminSupport {
      *  integrations/daemon-client since LAYOUT-01; this delegate keeps app's call sites unchanged. */
     fun readMgmtKey(envReader: EnvReader = EnvReader(System::getenv)): MgmtKeyRead = MgmtKeyFile().read(envReader)
 
-    fun home(): Path = Paths.get(System.getProperty("user.home"))
+    fun home(): Path = UserHome.dir()
 
     // DR-70 (the DR-59 posture at CLI assembly): denied access to an auth file is not
     // logged-out — status/setup must not tell the operator to re-login through a chmod.

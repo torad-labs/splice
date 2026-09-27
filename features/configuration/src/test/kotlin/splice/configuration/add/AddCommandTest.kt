@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.Knob
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.EnvReader
@@ -30,12 +31,8 @@ class AddCommandTest {
     private var restarted = 0
 
     private fun withHome(home: Path, block: () -> Unit) {
-        val prev = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        try {
+        UserHome.within(home) {
             block()
-        } finally {
-            System.setProperty("user.home", prev)
         }
     }
 

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeLogins
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -67,15 +68,11 @@ class LoginCommandTest {
         Files.writeString(primary, "{}")
         val account = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
         assertTrue(SignInPersistence().persist(primary, """{"access_token":"kimi-secret"}""", account))
-        val savedHome = System.getProperty("user.home")
-        System.setProperty("user.home", tmp.toString())
-        try {
+        UserHome.within(tmp) {
             CliSignIn().writeLoginOutcome("kimi", ok = true, account = account)
             val receipt = requireNotNull(LoginOutcomeFile.consume(StatePaths().stateDir, "kimi"))
             assertTrue(receipt.contains("signed in as 'kimi-2'"), receipt)
             assertFalse(receipt.contains("'auto'"), receipt)
-        } finally {
-            System.setProperty("user.home", savedHome)
         }
     }
 
@@ -112,8 +109,8 @@ class LoginCommandTest {
      *  and reads the derived var off the real resolution chain: config -> head -> provider ->
      *  masked prompt. `[heads.fast] provider = "openrouter"` with NO explicit auth.env is the
      *  shape that discriminates: head-derived is FAST_API_KEY, provider-derived OPENROUTER_API_KEY.
-     *  user.home is redirected so BOTH the config path and the login receipt land in the temp
-     *  tree (StatePaths reads the same property) — the DR-111 law: a test never writes a real
+     *  The home is redirected so BOTH the config path and the login receipt land in the temp
+     *  tree (StatePaths resolves through the same UserHome) — the DR-111 law: a test never writes a real
      *  receipt. */
     @Test
     fun `OAuth account refusal prints its authored reason`() {
@@ -141,23 +138,22 @@ class LoginCommandTest {
         val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
         Files.createDirectories(config.parent)
         Files.writeString(config, FAST_HEAD_TOML)
-        val savedHome = System.getProperty("user.home")
-        System.setProperty("user.home", tmp.toString())
         val out = java.io.ByteArrayOutputStream()
         val savedOut = System.out
         System.setOut(java.io.PrintStream(out))
         try {
-            // PREMISE, asserted not assumed: an ambient SPLICE_CONFIG / XDG_CONFIG_HOME would
-            // point login() at the operator's own config and make every assertion below vacuous.
-            assertEquals(
-                config,
-                TopologyLoader.configPath(),
-                "the redirected config path must be the one login() reads",
-            )
-            kotlinx.coroutines.runBlocking { LoginCommand().login("fast") }
+            UserHome.within(tmp) {
+                // PREMISE, asserted not assumed: an ambient SPLICE_CONFIG / XDG_CONFIG_HOME would
+                // point login() at the operator's own config and make every assertion below vacuous.
+                assertEquals(
+                    config,
+                    TopologyLoader.configPath(),
+                    "the redirected config path must be the one login() reads",
+                )
+                kotlinx.coroutines.runBlocking { LoginCommand().login("fast") }
+            }
         } finally {
             System.setOut(savedOut)
-            System.setProperty("user.home", savedHome)
         }
         val printed = out.toString()
         // PREMISE: the no-console fallback is what carries the var to stdout (JDK 21 returns a

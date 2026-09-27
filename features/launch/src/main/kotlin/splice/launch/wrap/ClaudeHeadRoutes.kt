@@ -23,11 +23,11 @@ import splice.client.wrap.ClaudeHeadStatus
 import splice.client.wrap.UnwrapResult
 import splice.client.wrap.WrapResult
 import splice.client.wrap.WrappedHead
+import splice.core.config.UserHome
 import splice.launch.LaunchHeads
 import splice.launch.LaunchReplies
 import splice.launch.LaunchSpec
 import java.nio.file.Path
-import java.nio.file.Paths
 
 /** The one head wrap targets (app/src/main/resources/splice.example.toml:682-692): the splice-owned Claude head
  *  whose command is deliberately NOT `claude` (its own comment says why), so wrap borrows its
@@ -38,7 +38,7 @@ internal const val CLAUDE_HEAD_KEY = "claude-splice"
 
 public class ClaudeHeadRoutes(
     private val heads: LaunchHeads,
-    home: Path = Paths.get(System.getProperty("user.home")),
+    home: Path = UserHome.dir(),
     private val wrappedHead: WrappedHead = WrappedHead(home),
     private val claudeLogins: ClaudeLogins = ClaudeLogins(),
 ) {

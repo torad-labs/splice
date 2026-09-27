@@ -24,6 +24,7 @@
 // move between two polls.
 package splice.sessions.registry
 
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
@@ -73,7 +74,7 @@ private data class CachedRoot(val root: RepoRoot, val expiresAtMs: Long)
 
 public class RepoResolver(
     extraRoots: List<String> = emptyList(),
-    home: String? = System.getProperty("user.home"),
+    home: String? = UserHome.dir().toString(),
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     /** Resolved once: the root set is process-invariant. A root that does not exist on this host

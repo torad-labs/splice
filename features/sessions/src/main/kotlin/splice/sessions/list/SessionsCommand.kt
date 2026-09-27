@@ -10,6 +10,7 @@
 // A sessions slice since LAYOUT-01, beside the registry it reads; the lines leave through TerminalOutput.
 package splice.sessions.list
 
+import splice.core.config.UserHome
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
@@ -31,7 +32,6 @@ import splice.sessions.registry.SessionRoute
 import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.Paths
 
 private const val MS_PER_MINUTE = 60_000L
 private const val MINUTES_PER_HOUR = 60L
@@ -54,7 +54,7 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
         registry: SessionRegistry = defaultRegistry(envReader),
         now: WallClock = WallClock { System.currentTimeMillis() },
     ): Boolean {
-        val home = Paths.get(System.getProperty("user.home")).toString()
+        val home = UserHome.dir(envReader).toString()
         output.line("${BOLD}splice sessions$RESET$DIM: Claude Code sessions registered in ~/.claude/sessions$RESET")
         output.line("")
         val listing = registry.list()
@@ -132,7 +132,7 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
         val heads = readHeads(envReader)
         val environment = ProcessEnvironment()
         return SessionRegistry(
-            Paths.get(System.getProperty("user.home"), ".claude", "sessions"),
+            UserHome.dir(envReader).resolve(".claude/sessions"),
             RouteOfPid { pid ->
                 environment.route(pid) { port -> heads.entries.firstOrNull { it.value.port == port }?.key }
             },

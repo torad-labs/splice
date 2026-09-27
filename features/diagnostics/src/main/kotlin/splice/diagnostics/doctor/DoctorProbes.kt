@@ -9,6 +9,7 @@ package splice.diagnostics.doctor
 
 import splice.client.wrap.WrappedHead
 import splice.core.config.RunningJar
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -28,7 +29,7 @@ internal class DoctorProbes(
     runningJar: RunningJar,
     /** V4-129 (FEATURES.md 4.12): read fresh per report — wrap/unwrap can flip between two `splice
      *  doctor` runs, and a cached mode would report a stale one. */
-    private val wrappedHead: WrappedHead = WrappedHead(Paths.get(System.getProperty("user.home"))),
+    private val wrappedHead: WrappedHead = WrappedHead(UserHome.dir()),
 ) {
 
     private val path = DoctorPathCheck(this)

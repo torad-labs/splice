@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.sessions.registry.SessionRegistry
@@ -162,13 +163,9 @@ class SessionsCommandTest {
         Files.writeString(sessions.resolve("$me.json"), """{"pid":$me,"name":"self","updatedAt":$now}""")
         val bad = home.resolve("bad.toml")
         Files.writeString(bad, "not = [toml")
-        val prev = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
         val env = EnvReader { name -> bad.toString().takeIf { name == "SPLICE_CONFIG" } }
-        val out = try {
+        val out = UserHome.within(home) {
             capture { sessionsCommand().sessions(env) { now } }
-        } finally {
-            System.setProperty("user.home", prev)
         }
         val expected = if (System.getenv("SPLICE") == "1") "unknown head" else "direct"
         assertTrue(out.lines().any { "self" in it && expected in it }, out)

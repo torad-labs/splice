@@ -55,12 +55,14 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-8";
+const SPLICE_SHIM_VERSION = "shim-9";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
 const env = process.env;
-const HOME = env.HOME || os.homedir();
+// Match UserHome: whitespace is not a home. os.homedir() echoes a whitespace HOME on POSIX,
+// whereas os.userInfo() reads the passwd entry, like the JVM's user.home fallback.
+const HOME = env.HOME?.trim() ? env.HOME : os.userInfo().homedir;
 /** `${VAR:-default}`: unset AND empty both fall through, exactly as the shell spelling did. */
 const or = (value, fallback) => (value !== undefined && value !== "" ? value : fallback);
 
@@ -76,9 +78,9 @@ const warn = (message) => {
 };
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-function topologyControlPort() {
-  let config = or(env.SPLICE_CONFIG, path.join(or(env.XDG_CONFIG_HOME, path.join(HOME, ".config")), "splice", "splice.toml"));
-  if (config.startsWith("~/")) config = path.join(HOME, config.slice(2));
+function topologyControlPort(home, environment) {
+  let config = or(environment.SPLICE_CONFIG, path.join(or(environment.XDG_CONFIG_HOME, path.join(home, ".config")), "splice", "splice.toml"));
+  if (config.startsWith("~/")) config = path.join(home, config.slice(2));
   let text;
   try {
     text = fs.readFileSync(config, "utf8");
@@ -98,10 +100,10 @@ function topologyControlPort() {
 
 const STATE_DIR = liveStateDir(HOME, env);
 
-function stateControlPort() {
+function stateControlPort(stateDir) {
   let value;
   try {
-    value = JSON.parse(fs.readFileSync(path.join(STATE_DIR, "config.json"), "utf8")).controlPort;
+    value = JSON.parse(fs.readFileSync(path.join(stateDir, "config.json"), "utf8")).controlPort;
   } catch {
     return "";
   }
@@ -112,10 +114,14 @@ function stateControlPort() {
 // Remembered before the resolution below overwrites it: an inherited CONTROL_PORT is a caller-local
 // endpoint selector, and the unit-first cold start must not answer it (unitDefaults).
 const CONTROL_PORT_FROM_ENV = or(env.CONTROL_PORT, "");
-// Match ConfigService exactly: default < TOML < state/config.json < env aliases.
-let CONTROL_PORT = or(topologyControlPort(), "3096");
-CONTROL_PORT = or(stateControlPort(), CONTROL_PORT);
-CONTROL_PORT = or(env.SPLICE_CONTROL_PORT, or(env.CONTROL_PROXY_PORT, CONTROL_PORT));
+// Match ConfigService exactly: default < TOML < state/config.json < env aliases. The same resolver
+// reads the unit manager's home before an alternate profile is allowed to contact its port.
+function controlPortFor(home, environment, stateDir = liveStateDir(home, environment)) {
+  let port = or(topologyControlPort(home, environment), "3096");
+  port = or(stateControlPort(stateDir), port);
+  return or(environment.SPLICE_CONTROL_PORT, or(environment.CONTROL_PROXY_PORT, port));
+}
+const CONTROL_PORT = controlPortFor(HOME, env, STATE_DIR);
 const CONTROL = `http://127.0.0.1:${CONTROL_PORT}`;
 const JAR = or(env.SPLICE_JAR, path.join(or(env.SPLICE_SHARE_DIR, path.join(HOME, ".local", "share", "splice")), "splice.jar"));
 // Bounded heap by default (a 1000-stream fleet with unbounded per-stream buffers OOMs the JVM
@@ -128,6 +134,10 @@ const SPLICE_JVM_OPTS = or(env.SPLICE_JVM_OPTS, "-Xmx2048m -XX:+UseStringDedupli
 // so `splice dashboard` printed the management key into an agent's transcript. This flag is the
 // documented restore of "a console only on a terminal"; JDK 21 and 25+ already behave that way.
 const CLI_CONSOLE = "-Djdk.console=java.base";
+// V4-218: every JVM started here gets the home this shim resolved. The jar resolves ~ from HOME first
+// (splice.core.config.UserHome), and this names the same home to the JDK and to any library that
+// reads user.home, which is otherwise the passwd home.
+const USER_HOME = `-Duser.home=${HOME}`;
 // JW-01: the spawned JVM's output lands here, never /dev/null — a boot-dead daemon must leave a
 // tailable stack trace. One rolled generation at 1MB, same cap discipline as daemon.log.
 const LOGS_DIR = path.join(STATE_DIR, "..", "logs");
@@ -187,7 +197,7 @@ const args = process.argv.slice(2);
 // (setup, status, dashboard, login <head>, install, …). The CLI self-manages the daemon.
 if (HEAD === "splice") {
   needJar();
-  exec(["java", CLI_CONSOLE, "-jar", JAR, ...args], env);
+  exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, ...args], env);
 }
 
 // `<command> login [--label NAME]` runs the OAuth browser flow for this head directly (no daemon
@@ -195,7 +205,7 @@ if (HEAD === "splice") {
 // account of this head's kind).
 if (args[0] === "login") {
   needJar();
-  exec(["java", CLI_CONSOLE, "-jar", JAR, "login", HEAD, ...args.slice(1)], env);
+  exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, "login", HEAD, ...args.slice(1)], env);
 }
 
 /** One HTTP exchange against the control plane: the body on ANY status (curl without -f), "" on a
@@ -287,20 +297,11 @@ async function replaceStaleDaemon() {
 }
 
 // UNIT-FIRST cold start (a host requirement: the supervising unit owns the daemon's process). When the
-// user unit exists, the daemon is started THROUGH it and this shim only waits for health. A raw
-// spawn from here runs the daemon inside the calling agent's scope, wins the startup lock and locks
-// splice.service out of its own port: the unit then loops "another splice daemon serves on :3096"
-// (restart counter 22,463 once; three squatters on 2026-09-21 alone, each born in the seconds a
-// `systemctl restart` left the port empty, each holding a stale jar until SIGKILLed). Every
-// `splice install` used to revert the unit-first patch because it lived only in the installed
-// copy; it lives here now. The raw spawn below remains ONLY for a machine with no unit, or for a
-// shim pointed away from the unit's defaults — any of the config, jar, state or control-endpoint
-// selectors this file reads (SPLICE_CONFIG, XDG_CONFIG_HOME, SPLICE_JAR, SPLICE_SHARE_DIR,
-// SPLICE_STATE_DIR, CLAUDEX_STATE_DIR, SPLICE_CONTROL_PORT, CONTROL_PROXY_PORT, CONTROL_PORT) set:
-// that daemon is a harness's own, never the unit's, and the unit could not serve it (the launcher
-// rehearsal, heads and docker e2e all run that way). The unit is the operator's
-// SPLICE_SUPERVISOR_UNIT (splice.core.config.Knob SUPERVISOR_UNIT, default splice.service) — the
-// same name the daemon drains into on `POST /api/daemon/restart`.
+// user unit serves this HOME, the daemon is started THROUGH it and this shim only waits for health.
+// A raw spawn on the unit's port would squat beside it (restart counter 22,463 once). An alternate
+// HOME is a different profile: it may raw-spawn only on a different control port, checked BEFORE
+// health can accept a same-version daemon from the unit's home. The other selectors below likewise
+// identify a harness's own daemon. The unit is SPLICE_SUPERVISOR_UNIT (default splice.service).
 function unitDefaults() {
   const selectors = [
     env.SPLICE_CONFIG, env.XDG_CONFIG_HOME, env.SPLICE_JAR, env.SPLICE_SHARE_DIR, env.SPLICE_STATE_DIR,
@@ -318,9 +319,30 @@ function unitExists(unit) {
   }
 }
 
-async function startThroughUnit() {
-  const unit = or(env.SPLICE_SUPERVISOR_UNIT, "splice.service");
-  if (!(HEALTH_JSON === "" && unitDefaults() && unitExists(unit))) return;
+// Read only the manager's path selectors: its HOME and control port define the user unit's profile.
+// Do not print show-environment: other variables in it may contain credentials.
+function unitEnvironment() {
+  try {
+    const text = execFileSync("systemctl", ["--user", "show-environment"], { encoding: "utf8" });
+    const names = new Set([
+      "HOME", "SPLICE_CONFIG", "XDG_CONFIG_HOME", "SPLICE_STATE_DIR", "CLAUDEX_STATE_DIR",
+      "SPLICE_CONTROL_PORT", "CONTROL_PROXY_PORT",
+    ]);
+    const result = {};
+    for (const line of text.split("\n")) {
+      const equals = line.indexOf("=");
+      const name = line.slice(0, equals);
+      if (equals > 0 && names.has(name)) result[name] = line.slice(equals + 1);
+    }
+    result.HOME = result.HOME?.trim() ? result.HOME : os.userInfo().homedir;
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+async function startThroughUnit(unit, managerHome, present) {
+  if (!(HEALTH_JSON === "" && present && HOME === managerHome && unitDefaults())) return;
   warn(`splice: starting ${unit}…`);
   try {
     execFileSync("systemctl", ["--user", "start", unit], { stdio: "ignore" });
@@ -354,7 +376,7 @@ function tail(file, lines) {
 async function coldStart() {
   if (HEALTH_JSON !== "") return;
   if (!isFile(JAR)) fail(`splice: daemon jar not found at ${JAR} (run: splice install, or set SPLICE_JAR)`);
-  warn("splice: starting daemon (no splice.service on this machine)…");
+  warn("splice: starting daemon (no matching splice.service for this profile)…");
   try {
     fs.mkdirSync(LOGS_DIR, { recursive: true });
   } catch {
@@ -374,7 +396,8 @@ async function coldStart() {
   }
   // V4-258: a daemon whose stderr is the boot log is told so, and keeps daemon.log's lines out of it.
   const bootLogged = Array.isArray(stdio) ? [BOOT_LOG_FLAG] : [];
-  const argv = [...SPLICE_JVM_OPTS.split(/\s+/).filter(Boolean), "-jar", JAR, "daemon", ...bootLogged];
+  // USER_HOME goes first, so a -Duser.home in SPLICE_JVM_OPTS (the later flag wins) still overrides it.
+  const argv = [USER_HOME, ...SPLICE_JVM_OPTS.split(/\s+/).filter(Boolean), "-jar", JAR, "daemon", ...bootLogged];
   const daemon = spawn("java", argv, { detached: true, stdio });
   daemon.on("error", (failure) => {
     // A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used
@@ -464,9 +487,16 @@ async function launch() {
 }
 
 async function main() {
+  const unit = or(env.SPLICE_SUPERVISOR_UNIT, "splice.service");
+  const present = unitExists(unit);
+  const managed = present ? unitEnvironment() : null;
+  if (present && managed === null) fail(`splice: cannot read ${unit}'s HOME; no daemon was contacted`);
+  if (managed !== null && HOME !== managed.HOME && Number(CONTROL_PORT) === Number(controlPortFor(managed.HOME, managed))) {
+    fail(`splice: ${unit} belongs to another HOME on port ${CONTROL_PORT}; set SPLICE_CONTROL_PORT to an isolated port`);
+  }
   HEALTH_JSON = await health();
   if (HEALTH_JSON !== "") await replaceStaleDaemon();
-  await startThroughUnit();
+  await startThroughUnit(unit, managed?.HOME, present);
   await coldStart();
   handshake();
   warnings();

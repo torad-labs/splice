@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.SHIM_VERSION
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -22,16 +23,12 @@ import kotlin.io.path.readSymbolicLink
 class InstallCommandTest {
 
     // Hermetic env: the first real CI run failed on the runner's ambient XDG_CONFIG_HOME steering
-    // configPath away from the swapped user.home. Every command call pins env to nothing.
+    // configPath away from the redirected home. Every command call pins env to nothing.
     private val noEnv: (String) -> String? = { null }
 
     private fun withHome(home: Path, block: () -> Unit) {
-        val prev = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        try {
+        UserHome.within(home) {
             block()
-        } finally {
-            System.setProperty("user.home", prev)
         }
     }
 
@@ -237,12 +234,8 @@ class InstallLinkerClaimTest {
     private val noEnv: (String) -> String? = { null }
 
     private fun withHome(home: java.nio.file.Path, block: () -> Unit) {
-        val prev = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        try {
+        UserHome.within(home) {
             block()
-        } finally {
-            System.setProperty("user.home", prev)
         }
     }
 
@@ -367,12 +360,8 @@ class UninstallUnreadableTopologyTest {
     private val noEnv: (String) -> String? = { null }
 
     private fun withHome(home: Path, block: () -> Unit) {
-        val prev = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        try {
+        UserHome.within(home) {
             block()
-        } finally {
-            System.setProperty("user.home", prev)
         }
     }
 
@@ -462,12 +451,8 @@ class InstallContainmentTest {
     private val noEnv: (String) -> String? = { null }
 
     private fun withHome(home: Path, block: () -> Unit) {
-        val prev = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        try {
+        UserHome.within(home) {
             block()
-        } finally {
-            System.setProperty("user.home", prev)
         }
     }
 

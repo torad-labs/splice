@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.AdminSupport
+import splice.core.config.UserHome
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -115,13 +116,11 @@ class CliAuthPresenceTest {
         )
     }
 
-    // user.home saved/restored (the AdminSupportTest java.class.path idiom); under a test JVM the
+    // The home through UserHome.within (V4-218); under a test JVM the
     // class resource is a file: URL, so selfJar() always reaches the installed-copy branch.
     @Test
     fun `an unreadable installed jar is still the installed jar - DR-70`(@TempDir tmp: Path) {
-        val savedHome = System.getProperty("user.home")
-        try {
-            System.setProperty("user.home", tmp.toString())
+        UserHome.within(tmp) {
             val spliceDir = Files.createDirectories(tmp.resolve(".local/share/splice"))
             val jar = spliceDir.resolve("splice.jar")
             Files.writeString(jar, "not really a jar")
@@ -132,8 +131,6 @@ class CliAuthPresenceTest {
 
             Files.delete(jar)
             assertNull(AdminSupport.selfJar(), "proven absence is the only dev-build fallthrough")
-        } finally {
-            System.setProperty("user.home", savedHome)
         }
     }
 }

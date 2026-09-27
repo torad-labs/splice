@@ -33,8 +33,11 @@ class DoctorFixIdTest {
         val underHome = home.resolve(".local").resolve("bin")
         assertEquals(
             "add to your shell rc: export PATH=\"\$HOME/.local/bin:\$PATH\"",
-            pathFix(underHome, env = emptyMap()),
+            pathFix(underHome, env = mapOf("HOME" to home.toString())),
         )
+        val fallback = "add to your shell rc: export PATH=\"" +
+            "\$(node -p 'require(\"node:os\").userInfo().homedir')/.local/bin:\$PATH\""
+        assertEquals(fallback, pathFix(underHome, env = emptyMap()), "a blank HOME must survive report redaction")
         // A bin dir outside home (SPLICE_BIN_DIR) is splice's own directory to the redaction, but
         // only when the quote ends the path: `/opt/splice/bin:$PATH` was one foreign token.
         val outside = Paths.get("/opt/splice/bin")
@@ -71,7 +74,7 @@ class DoctorFixIdTest {
     }
 
     private fun pathFix(bin: Path, env: Map<String, String>): String {
-        val onlyUsrBin = EnvReader { name -> if (name == "PATH") "/usr/bin" else null }
+        val onlyUsrBin = EnvReader { name -> if (name == "PATH") "/usr/bin" else env[name] }
         val row = DoctorPathCheck(DoctorTestPorts.probes()).check(bin, onlyUsrBin)
         return checks(listOf(row), env).single().getValue("fix").jsonPrimitive.content
     }

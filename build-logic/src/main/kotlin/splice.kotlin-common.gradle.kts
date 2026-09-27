@@ -104,6 +104,9 @@ tasks.withType<Test>().configureEach {
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.
     systemProperty("splice.noSystemBrowser", "1")
     systemProperty("user.home", testHome.absolutePath)
+    // HOME outranks user.home (UserHome.kt, V4-218), so the rig home is named in both: a test JVM that kept
+    // the shell's HOME would resolve every ~/ path into the developer's real home again.
+    environment("HOME", testHome.absolutePath)
     // A TEST THAT RETURNS A VALUE NEVER RUNS, AND NOW THAT FAILS THE MODULE'S OWN RUN. Kotlin makes the
     // shape easy (`fun x() = runBlocking { ... }` returns the block's last expression), and JUnit skips a
     // non-void @Test with a WARNING discovery issue, "must not return a value. It will not be executed."

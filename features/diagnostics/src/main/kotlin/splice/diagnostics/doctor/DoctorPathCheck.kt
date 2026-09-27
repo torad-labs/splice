@@ -3,13 +3,13 @@
 // neighbourhood floor drift. Same-package FQCN is unchanged.
 package splice.diagnostics.doctor
 
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.Paths
 
 internal class DoctorPathCheck(private val probes: DoctorProbes) {
     fun check(binDir: Path, envReader: EnvReader): DoctorCheck {
@@ -24,7 +24,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                 "PATH",
                 CheckStatus.FAIL,
                 "$binDir is not on PATH, so installed commands won't resolve",
-                "add to your shell rc: ${rcLine(binDir)}",
+                "add to your shell rc: ${rcLine(binDir, envReader)}",
             )
         }
     }
@@ -32,13 +32,19 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
     // V4-220 item 4: the one fix meant for pasting must survive the report's redaction. Expanded, the
     // line read `export PATH="~/.local/bin:$PATH"` after DoctorRedaction, which takes everything up to
     // the quote as ONE path token, finds no allowed prefix for `~/.local/bin:$PATH`, and masks it —
-    // the console showed `export PATH="<redacted:path>"`. `$HOME` names no path at all, so the line
-    // passes unchanged and pastes into any rc; a bin dir outside home is quoted on its own, where the
-    // redaction reads it as splice's own directory.
-    private fun rcLine(binDir: Path): String {
-        val home = Paths.get(System.getProperty("user.home"))
+    // the console showed `export PATH="<redacted:path>"`. `$HOME` survives redaction when set.
+    // Without it a default JVM and Node both fall back to the passwd home; resolve that at paste time
+    // instead of printing an absolute home path that the report masks to a quoted, inert `~`.
+    // The test-only UserHome.within override cannot cross into a shell command.
+    private fun rcLine(binDir: Path, envReader: EnvReader): String {
+        val home = UserHome.dir(envReader)
         return if (binDir.startsWith(home) && binDir != home) {
-            "export PATH=\"\$HOME/${home.relativize(binDir)}:\$PATH\""
+            val shellHome = if (UserHome.environmentHome(envReader) != null) {
+                "\$HOME"
+            } else {
+                "\$(node -p 'require(\"node:os\").userInfo().homedir')"
+            }
+            "export PATH=\"$shellHome/${home.relativize(binDir)}:\$PATH\""
         } else {
             "export PATH=\"$binDir\":\"\$PATH\""
         }

@@ -11,6 +11,7 @@ import splice.client.ClaudeHead
 import splice.client.ClaudeLoginResult
 import splice.client.ClaudeLogins
 import splice.client.HeadSessions
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.sessions.registry.ProcessEnvironment
@@ -21,12 +22,11 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import java.nio.file.Path
-import java.nio.file.Paths
 
 internal class ClaudeLoginLabel(
     private val output: TerminalOutput,
     private val logins: ClaudeLogins = ClaudeLogins(),
-    private val sessionsDir: Path = Paths.get(System.getProperty("user.home"), ".claude", "sessions"),
+    private val sessionsDir: Path = UserHome.dir().resolve(".claude/sessions"),
     private val processes: ProcessEnvironment = ProcessEnvironment(),
 ) {
     internal fun login(headKey: String, topology: Topology, label: String?, discard: Boolean): Boolean {

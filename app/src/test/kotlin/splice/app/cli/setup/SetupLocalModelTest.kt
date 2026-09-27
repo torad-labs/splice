@@ -21,6 +21,7 @@ import splice.configuration.add.RuntimeHead
 import splice.configuration.add.WrapperInstall
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Dialect
 import splice.core.util.EnvReader
@@ -230,11 +231,9 @@ class SetupLocalModelTest {
         hasConsole = ConsolePresence { true },
     )
 
-    /** The whole wizard under a temporary user.home, the heads and the restart recorded in [events]. */
+    /** The whole wizard under a temporary home, the heads and the restart recorded in [events]. */
     private fun runWizard(home: Path, prompts: SetupPrompts, local: SetupLocalModel, events: MutableList<String>) {
-        val previousHome = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        try {
+        UserHome.within(home) {
             val share = home.resolve(".local").resolve("share").resolve("splice")
             Files.createDirectories(share)
             Files.writeString(share.resolve("splice-launch"), "#!/usr/bin/env bash\n")
@@ -254,8 +253,6 @@ class SetupLocalModelTest {
                     localModel = local,
                 ).setup()
             }
-        } finally {
-            System.setProperty("user.home", previousHome)
         }
     }
 
@@ -456,20 +453,14 @@ class SetupLocalModelTest {
 
     /** One whole run: a fake llama-server on a port it bound itself, a fake rig that describes it, and
      *  the REAL AddVerb with fake ports (no wrapper link, no real daemon) under a hermetic SPLICE_CONFIG
-     *  and a temporary user.home (the control-port resolution reads the state root under it). */
+     *  and a temporary home (the control-port resolution reads the state root under it). */
     private fun <T> served(
         home: Path,
         restarts: IntArray = intArrayOf(0),
         seedKey: String? = null,
         read: (EnvReader) -> T,
     ): T {
-        val previousHome = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        try {
-            return servedAt(home, restarts, seedKey, read)
-        } finally {
-            System.setProperty("user.home", previousHome)
-        }
+        return UserHome.within(home) { servedAt(home, restarts, seedKey, read) }
     }
 
     private fun <T> servedAt(home: Path, restarts: IntArray, seedKey: String?, read: (EnvReader) -> T): T {

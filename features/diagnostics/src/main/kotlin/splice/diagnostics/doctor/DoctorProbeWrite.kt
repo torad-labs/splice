@@ -5,6 +5,7 @@
 package splice.diagnostics.doctor
 
 import kotlinx.serialization.json.jsonObject
+import splice.core.config.UserHome
 import splice.core.perf.OutcomeTag
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -15,7 +16,6 @@ import splice.diagnostics.doctor.report.FileProbeWrite
 import splice.diagnostics.doctor.report.ProbeWrite
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
 private val OUTCOME_TAG = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
@@ -25,7 +25,7 @@ private val OUTCOME_TAG = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 internal class DoctorProbeWrite(
     private val write: ProbeWrite = FileProbeWrite,
     private val files: DoctorReportFiles =
-        DoctorReportFiles(DoctorRedaction(Paths.get(System.getProperty("user.home")))),
+        DoctorReportFiles(DoctorRedaction(UserHome.dir())),
 ) {
 
     /** JW-17: write-and-delete a dot-prefixed probe in [dir] (created first, as the daemon would).

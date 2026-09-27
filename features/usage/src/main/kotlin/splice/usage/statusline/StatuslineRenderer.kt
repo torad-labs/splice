@@ -59,11 +59,14 @@ internal class StatuslineRenderer(
      *  Code's own figure is priced at this upstream's card and may stand in for splice's. False on
      *  every other head, where a model splice cannot price says "no rate card" instead. */
     private val anthropicUpstream: Boolean = false,
+    /** The home trusted beside /tmp and [extraGitRoots]: the route passes UserHome's answer, so the
+     *  renderer reads no process state (V4-218). Null trusts /tmp and the configured roots only. */
+    home: java.nio.file.Path? = null,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
 
-    // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
+    // Operator-trusted roots beyond the home and /tmp for the git-branch lookup (statuslineGitRoots
     // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
     private val extraGitRoots: List<java.nio.file.Path> = extraGitRoots.mapNotNull { root ->
         // A configured root that is not a usable path is simply not a trusted root. The statusline
@@ -74,14 +77,14 @@ internal class StatuslineRenderer(
     }
 
     // Real (symlink-resolved) trusted roots for safeGitCwd's containment check — resolved ONCE here
-    // since the root set ($HOME, /tmp, extraGitRoots) is process-invariant, unlike the per-request
+    // since the root set (the home, /tmp, extraGitRoots) is process-invariant, unlike the per-request
     // candidate cwd (still resolved fresh on each call). A root missing at construction is dropped,
     // same as the old per-call runCatching { root.toRealPath() }.getOrNull().
     // An ABSENT trusted root is not a failure to report: /workspace and /srv do not exist on most
     // hosts, and the containment check treats "unresolvable" and "not under a trusted root" as the
     // same answer.
     private val trustedRoots: List<java.nio.file.Path> = (
-        listOfNotNull(System.getProperty("user.home"), "/tmp").map { java.nio.file.Paths.get(it) } +
+        listOfNotNull(home, java.nio.file.Paths.get("/tmp")) +
             this.extraGitRoots
         // ast-grep-ignore: kt-no-silent-result-collapse -- an absent optional root proves absence, not failure
         ).mapNotNull { root -> Cancellables.runCatchingCancellable { root.toRealPath() }.getOrNull() }

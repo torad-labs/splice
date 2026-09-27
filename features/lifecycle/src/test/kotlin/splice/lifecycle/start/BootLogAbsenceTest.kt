@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.RunningJar
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.daemonclient.DaemonHealth
 import java.io.ByteArrayOutputStream
@@ -18,9 +19,8 @@ import java.nio.file.Path
 
 class BootLogAbsenceTest {
 
-    // StatePaths' default root rides user.home (saved/restored, the AdminSupportTest idiom for
-    // JVM-global properties); logs/ occupied by a FILE makes the boot-log read fail with a
-    // present-but-unreadable class (NotDirectory), no chmod needed.
+    // StatePaths' default root rides the home (UserHome.within, V4-218); logs/ occupied by a FILE makes
+    // the boot-log read fail with a present-but-unreadable class (NotDirectory), no chmod needed.
     //
     // V4-177: the fake home has no `<root>/state` under either root name, so StatePaths takes the
     // current default. The root is spelled here rather than imported — it is :core-internal, and
@@ -44,16 +44,15 @@ class BootLogAbsenceTest {
     private fun spawn() = DaemonSpawn(TerminalOutput(::println), DaemonHealth(), RunningJar { null })
 
     private fun withHomeCapturingStdout(home: Path, block: () -> Unit): String {
-        val savedHome = System.getProperty("user.home")
         val savedOut = System.out
         val out = ByteArrayOutputStream()
         try {
-            System.setProperty("user.home", home.toString())
-            System.setOut(PrintStream(out, true))
-            block()
+            UserHome.within(home) {
+                System.setOut(PrintStream(out, true))
+                block()
+            }
         } finally {
             System.setOut(savedOut)
-            System.setProperty("user.home", savedHome)
         }
         return out.toString()
     }

@@ -16,6 +16,7 @@
 // trailing block and the client's cache breakpoints are never moved.
 package splice.core.prompt
 
+import splice.core.config.UserHome
 import splice.core.topology.ProjectConfig
 import java.nio.file.Files
 import java.nio.file.Path
@@ -32,7 +33,7 @@ public class SystemPromptLayers(
     head: HeadSystemPrompt,
     projects: Map<String, ProjectConfig> = emptyMap(),
     headKey: String = "",
-    home: String = System.getProperty("user.home"),
+    home: String = UserHome.dir().toString(),
     readFile: SystemPromptFileRead = SystemPromptFileRead { Files.readString(it) },
 ) {
     private val headLayer: EffectiveSystemPrompt? = head.resolve()

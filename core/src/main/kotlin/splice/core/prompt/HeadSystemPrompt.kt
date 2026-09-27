@@ -10,6 +10,7 @@ package splice.core.prompt
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.nio.file.Files
@@ -90,7 +91,7 @@ public class HeadSystemPrompt(
     text: String? = null,
     file: String? = null,
     private val mode: SystemPromptMode = SystemPromptMode.APPEND,
-    private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
+    private val configDir: Path = UserHome.dir().resolve(".config/splice"),
     private val readFile: SystemPromptFileRead = SystemPromptFileRead { Files.readString(it) },
     private val source: String = "head",
 ) {
@@ -141,12 +142,7 @@ public class HeadSystemPrompt(
     /** Mirrors [splice.core.compaction.CompactionInstructions]'s rule for its `file =`: `~/` is the
      *  home directory and a relative path is under the topology's directory. */
     private fun resolvePath(raw: String): Path {
-        val expanded = if (raw.startsWith("~/")) {
-            System.getProperty("user.home") + raw.substring(1)
-        } else {
-            raw
-        }
-        val path = Paths.get(expanded)
+        val path = Paths.get(UserHome.expand(raw))
         return if (path.isAbsolute) path.normalize() else configDir.resolve(path).normalize()
     }
 }

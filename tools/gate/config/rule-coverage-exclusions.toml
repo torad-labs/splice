@@ -47,7 +47,8 @@ rules = [
   "kt-quota-tracker-single-resolution", "kt-responses-assistant-item-single-author",
   "kt-secure-file-single-source", "kt-shared-summary-parts-single-source",
   "kt-state-paths-single-source", "kt-tool-partition-no-transcript",
-  "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone", "kt-ws-frame-without-epoch",
+  "kt-turn-finally-flush-quietly", "kt-user-home-single-resolver", "kt-wire-catch-ioexception-alone",
+  "kt-ws-frame-without-epoch",
 ]
 sourceSets = ["test", "testFixtures"]
 date = "2026-09-20"
@@ -434,6 +435,17 @@ reason = """
 The rule's three dated exemptions: StatePaths.kt is the resolver, LaunchSpecFactory carries the
 per-head CLAUDE_CONFIG_DIR contract, and McpSources names `.claude-plugin`, a plugin manifest
 dirname rather than a state root.
+"""
+
+[[exclusion]]
+rule = "kt-user-home-single-resolver"
+files = ["core/src/main/kotlin/splice/core/config/UserHome.kt"]
+date = "2026-09-27"
+reason = """
+The resolver (V4-218): UserHome.kt is the one place a splice path reads HOME or the JVM's user.home,
+so it is the rule's `ignores:`. Its two hits are the HOME and user.home constants; every other src/main
+read (32 in 25 files on 7540b6291) now goes through it, and the tree has 0 hits with the ignore in.
+Tests give a home through UserHome.within, never by moving the property.
 """
 
 [[exclusion]]

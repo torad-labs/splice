@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.UserHome
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -59,12 +60,8 @@ class StatusCommandTest {
         )
         val creds = Files.createDirectories(tmp.resolve(".config").resolve("splice").resolve("auth"))
         Files.writeString(creds.resolve("kimi.json"), """{"access_token":"k"}""")
-        val savedHome = System.getProperty("user.home")
-        System.setProperty("user.home", tmp.toString())
-        try {
+        UserHome.within(tmp) {
             assertTrue(StatusCommand().authPresent("kimi", provider) { null })
-        } finally {
-            System.setProperty("user.home", savedHome)
         }
     }
 

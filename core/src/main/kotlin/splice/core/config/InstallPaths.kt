@@ -16,9 +16,9 @@ public class InstallPaths(
 ) {
     public val binDir: Path = binOverride
         ?: envReader("SPLICE_BIN_DIR")?.let { Paths.get(it) }
-        ?: Paths.get(System.getProperty("user.home"), ".local", "bin")
+        ?: UserHome.dir(envReader).resolve(".local/bin")
 
     public val shareDir: Path = shareOverride
         ?: envReader("SPLICE_SHARE_DIR")?.let { Paths.get(it) }
-        ?: Paths.get(System.getProperty("user.home"), ".local", "share", "splice")
+        ?: UserHome.dir(envReader).resolve(".local/share/splice")
 }

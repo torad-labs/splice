@@ -9,6 +9,7 @@
 // wizard.
 package splice.app.cli.setup
 
+import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import java.io.IOException
@@ -65,7 +66,7 @@ internal class ProcessRig(
         val onPath = env("PATH").orEmpty().split(':').filter { it.isNotEmpty() }
             .map { dir -> Paths.get(dir, RIG_BINARY) }
             .firstOrNull { Files.isExecutable(it) }
-        val local = Paths.get(System.getProperty("user.home"), ".local", "bin", RIG_BINARY)
+        val local = UserHome.dir().resolve(".local/bin").resolve(RIG_BINARY)
         return listOf((onPath ?: local).toString()) + args
     }
 }

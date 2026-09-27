@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.configuration.add.AddProfiles
 import splice.configuration.add.DaemonRestart
+import splice.core.config.UserHome
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
 import splice.core.topology.AuthConfig
@@ -582,12 +583,8 @@ class SetupCommandTest {
     }
 
     private fun <T> withHome(home: Path, block: () -> T): T {
-        val prev = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        return try {
+        return UserHome.within(home) {
             block()
-        } finally {
-            System.setProperty("user.home", prev)
         }
     }
 

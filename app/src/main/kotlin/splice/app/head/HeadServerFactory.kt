@@ -13,6 +13,7 @@ import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.TurnKey
+import splice.core.config.UserHome
 import splice.core.prompt.SystemPromptLayers
 import splice.core.topology.ProjectConfig
 import splice.core.util.LogSink
@@ -30,7 +31,6 @@ import splice.head.wire.WireTap
 import splice.upstream.Provider
 import splice.upstream.retry.InflightGate
 import java.nio.file.Path
-import java.nio.file.Paths
 
 internal class HeadServerFactory(
     private val config: ConfigService,
@@ -167,7 +167,7 @@ internal class HeadServerFactory(
 internal data class HeadPromptInputs(
     /** The topology's directory: a relative `system_prompt_file` under [splice.core.topology.HeadConfig]
      *  resolves against it, the same rule `[compaction] file =` follows (V4-36). */
-    val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
+    val configDir: Path = UserHome.dir().resolve(".config/splice"),
     /** V4-124: the topology's `[projects."ROOT"]` tables. Every head gets its own layers from them. */
     val projects: Map<String, ProjectConfig> = emptyMap(),
     /** One session-to-cwd resolver for every head's prompt layers. It is consulted only when a

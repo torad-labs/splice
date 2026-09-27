@@ -15,6 +15,7 @@ package splice.core.compaction
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
@@ -30,8 +31,8 @@ private const val MAX_PROJECT_MISSES = 1_024
 /** Maps Claude Code's session id to its working directory. The live registry wins; headless runs
  *  fall back to the transcript whose directory encodes the cwd and whose rows retain it exactly. */
 public class SessionProject(
-    private val sessionsDir: Path = Paths.get(System.getProperty("user.home"), ".claude", "sessions"),
-    private val projectsDir: Path = Paths.get(System.getProperty("user.home"), ".claude", "projects"),
+    private val sessionsDir: Path = UserHome.dir().resolve(".claude/sessions"),
+    private val projectsDir: Path = UserHome.dir().resolve(".claude/projects"),
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     private val headProjectsDirs: List<Path> = emptyList(),
 ) {

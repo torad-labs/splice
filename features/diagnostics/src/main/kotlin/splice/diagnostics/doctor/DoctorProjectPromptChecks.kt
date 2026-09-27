@@ -10,6 +10,7 @@
 // here, so the shape is the tree's own.
 package splice.diagnostics.doctor
 
+import splice.core.config.UserHome
 import splice.core.prompt.SystemPromptMode
 import splice.core.topology.Topology
 import java.nio.file.Files
@@ -30,8 +31,7 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
     internal fun projectPromptChecks(topology: Topology): List<DoctorCheck> =
         topology.projects.flatMap { (key, project) ->
             val raw = key.trim('"')
-            val home = System.getProperty("user.home")
-            val root = Paths.get(if (raw.startsWith("~/")) home + raw.substring(1) else raw)
+            val root = Paths.get(UserHome.expand(raw))
             if (!root.isAbsolute) {
                 return@flatMap listOf(
                     DoctorCheck(

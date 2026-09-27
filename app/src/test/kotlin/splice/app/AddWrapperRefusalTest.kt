@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.configuration.add.DaemonRestart
+import splice.core.config.UserHome
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
@@ -35,15 +36,14 @@ class AddWrapperRefusalTest {
     private fun stdoutOf(home: Path, block: () -> Unit): String {
         val buf = ByteArrayOutputStream()
         val prevOut = System.out
-        val prevHome = System.getProperty("user.home")
         System.setOut(PrintStream(buf, true))
-        System.setProperty("user.home", home.toString())
         return try {
-            block()
-            buf.toString()
+            UserHome.within(home) {
+                block()
+                buf.toString()
+            }
         } finally {
             System.setOut(prevOut)
-            System.setProperty("user.home", prevHome)
         }
     }
 

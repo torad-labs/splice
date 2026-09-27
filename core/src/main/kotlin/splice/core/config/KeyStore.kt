@@ -330,16 +330,10 @@ public object KeyStorePath {
     public fun defaultPath(envReader: EnvReader = EnvReader(System::getenv)): Path {
         val override = envReader("SPLICE_CONFIG")
         if (override != null) {
-            val expanded =
-                if (override.startsWith("~/")) {
-                    System.getProperty("user.home") + override.substring(1)
-                } else {
-                    override
-                }
-            return Paths.get(expanded).resolveSibling("keys.toml")
+            return Paths.get(UserHome.expand(override, envReader)).resolveSibling("keys.toml")
         }
         val xdg = envReader("XDG_CONFIG_HOME")
-        val base = if (xdg != null) Paths.get(xdg) else Paths.get(System.getProperty("user.home"), ".config")
+        val base = if (xdg != null) Paths.get(xdg) else UserHome.dir(envReader).resolve(".config")
         return base.resolve("splice").resolve("keys.toml")
     }
 }

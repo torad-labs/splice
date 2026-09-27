@@ -119,7 +119,7 @@ internal sealed class RootProbe {
 public class StatePaths(
     baseOverride: Path? = null,
     envReader: EnvReader = EnvReader(System::getenv),
-    homeDir: Path = Paths.get(System.getProperty("user.home")),
+    homeDir: Path = UserHome.dir(envReader),
 ) {
     private val fromEnv: Path? =
         pathOrNull(envReader(STATE_DIR_ENV)) ?: pathOrNull(envReader(LEGACY_STATE_DIR_ENV))

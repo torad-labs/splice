@@ -6,6 +6,7 @@
 package splice.topology
 
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import java.io.IOException
@@ -16,7 +17,7 @@ import java.nio.file.Paths
 
 public class TopologyStatePaths(
     private val envReader: EnvReader = EnvReader(System::getenv),
-    private val homeDir: Path = Paths.get(System.getProperty("user.home")),
+    private val homeDir: Path = UserHome.dir(envReader),
 ) {
     /** The daemon's resolution for [topology]: a usable `[daemon].state_dir` wins over everything (it
      *  is StatePaths' baseOverride, above the environment), otherwise the environment and the default

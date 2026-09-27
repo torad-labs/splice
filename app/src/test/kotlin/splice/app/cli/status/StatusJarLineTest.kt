@@ -6,6 +6,7 @@ package splice.app.cli.status
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.UserHome
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -25,19 +26,15 @@ class StatusJarLineTest {
     // parent denied, the line must say unreadable rather than render the healthy path.
     @Test
     fun `status jarLine names an unreadable jar instead of the healthy path - DR-86`(@TempDir tmp: Path) {
-        val savedHome = System.getProperty("user.home")
         val spliceShare = Files.createDirectories(
             tmp.resolve("home").resolve(".local").resolve("share").resolve("splice"),
         )
         Files.writeString(spliceShare.resolve("splice.jar"), "jar-bytes")
-        System.setProperty("user.home", tmp.resolve("home").toString())
-        try {
+        UserHome.within(tmp.resolve("home")) {
             val healthy = StatusCommand().jarLine()
             assertTrue(healthy.endsWith("splice.jar"), healthy) // control: a readable jar is a path
             val denied = withDenied(spliceShare) { StatusCommand().jarLine() }
             assertTrue(denied.contains("unreadable"), denied)
-        } finally {
-            System.setProperty("user.home", savedHome)
         }
     }
 }

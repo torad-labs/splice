@@ -28,6 +28,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.ConfigService
+import splice.core.config.UserHome
 import splice.http.JsonReply
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.RepoResolver
@@ -44,7 +45,6 @@ import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptPage
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 
 internal const val UNKNOWN_HEAD = "unknown head"
@@ -59,7 +59,7 @@ public class SessionsRoutes(
     private val activity: ActivitySource = ActivitySource { null },
     /** The vanilla config root. Read only, never written (HEAD ISOLATION); a parameter so a test
      *  never reads the operator's own ~/.claude. */
-    private val vanilla: Path = Paths.get(System.getProperty("user.home"), ".claude"),
+    private val vanilla: Path = UserHome.dir().resolve(".claude"),
     /** V4-131: the team store the `team` key reads, per request. */
     private val teams: TeamSource = TeamSource { null },
 ) {

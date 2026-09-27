@@ -9,6 +9,7 @@ import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.config.UserHome
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -113,9 +114,9 @@ command = "claude-openrouter"
 
     public fun configPath(env: EnvReader = EnvReader(System::getenv)): Path {
         val override = env("SPLICE_CONFIG")
-        if (override != null) return Paths.get(expandHome(override))
+        if (override != null) return Paths.get(UserHome.expand(override, env))
         val xdg = env("XDG_CONFIG_HOME")
-        val base = if (xdg != null) Paths.get(xdg) else Paths.get(System.getProperty("user.home"), ".config")
+        val base = if (xdg != null) Paths.get(xdg) else UserHome.dir(env).resolve(".config")
         return base.resolve("splice").resolve("splice.toml")
     }
 
@@ -177,7 +178,7 @@ command = "claude-openrouter"
     }
 
     public fun expandHome(raw: String): String =
-        if (raw.startsWith("~/")) System.getProperty("user.home") + raw.substring(1) else raw
+        UserHome.expand(raw)
 
     // Version seams so CLI files can drop a splice.core import (median 1.0) without
     // taking the floor. Same pattern as DaemonHealth.cliVersion / ControlPayloads.gatewayVersion.

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.login.LoginOutcomeFile
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.oauth.SignInPersistence
 import splice.oauth.codex.LoginCodex
 import java.nio.file.Files
@@ -49,15 +50,11 @@ class LoginReceiptTest {
         val persisted = requireNotNull(account.persistedLabel())
         assertNotEquals("auto", persisted)
 
-        val savedHome = System.getProperty("user.home")
-        System.setProperty("user.home", dir.toString())
-        try {
+        UserHome.within(dir) {
             CliSignIn().writeLoginOutcome("codex", ok = true, account = account)
             val receipt = requireNotNull(LoginOutcomeFile.consume(StatePaths().stateDir, "codex"))
             assertTrue(receipt.contains("signed in as '$persisted'"), receipt)
             assertFalse(receipt.contains("'auto'"), receipt)
-        } finally {
-            System.setProperty("user.home", savedHome)
         }
     }
 }

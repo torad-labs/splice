@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.configuration.add.AddRefused
+import splice.core.config.UserHome
 import splice.launch.install.InstallRefused
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -94,10 +95,8 @@ class CliExitCodeTest {
         val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
         Files.createDirectories(config.parent)
         Files.writeString(config, MALFORMED_CONFIG_TOML)
-        val savedHome = System.getProperty("user.home")
-        System.setProperty("user.home", tmp.toString())
         var code = -1
-        try {
+        UserHome.within(tmp) {
             // PREMISE, asserted not assumed: an ambient SPLICE_CONFIG / XDG_CONFIG_HOME would aim
             // the verb at the operator's own config and make every assertion below vacuous.
             assertEquals(
@@ -110,8 +109,6 @@ class CliExitCodeTest {
             assertTrue(err.startsWith("splice: "), "one safe line from the boundary, was: $err")
             assertFalse(err.contains("\tat "), "no stack trace may reach the operator: $err")
             assertFalse(err.contains(CONFIG_SENTINEL), "config bytes must be withheld (DR-92/DR-65): $err")
-        } finally {
-            System.setProperty("user.home", savedHome)
         }
     }
 

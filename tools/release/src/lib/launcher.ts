@@ -21,6 +21,7 @@
 // The arms run IN ORDER in ONE sandbox, as the script's did — several depend on what the previous
 // one left in the daemon-state file.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { shimMarkers } from "./shim.ts";
 import { makeSandbox, writeStub } from "./sandbox.ts";
@@ -48,6 +49,7 @@ interface Daemon {
   topologyStale: boolean;
   injectEnvKey: boolean;
   pwnedFile: string;
+  healthReads: number;
   lastLaunch?: Exchange;
   lastShutdown?: Exchange;
   /** Drop what the last arm recorded. A method, not an assignment: an arm that cleared a field by
@@ -273,6 +275,96 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // V4-218: the jar resolves ~ from HOME first (splice.core.config.UserHome), and every JVM the shim
+    // starts is given that same home as -Duser.home, so the JDK and any library that reads user.home agree
+    // with it instead of naming the passwd entry's home. All three paths: a CLI verb, `<head> login`, and
+    // the daemon's raw spawn. Next to the console arm at the end, and for the same reason: the java mock
+    // marks the daemon "new".
+    name: "V4-218 every java the shim starts runs under the launch's HOME",
+    run: async (ctx) => {
+      const home = `-Duser.home=${ctx.env.HOME}`;
+      const javaRuns = () => read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+      ctx.cold();
+      await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
+      const daemon = javaRuns().find((javaArgv) => javaArgv.includes("daemon"));
+      if (daemon === undefined) return `the raw spawn never ran the daemon: ${JSON.stringify(javaRuns())}`;
+      if (!daemon.includes(home)) return `the daemon's java ran without ${home}: ${JSON.stringify(daemon)}`;
+      const paths: readonly (readonly [string, readonly string[]])[] = [["splice", ["status"]], ["test", ["login"]]];
+      for (const [head, argv] of paths) {
+        rmSync(ctx.captures.javaArgv, { force: true });
+        await ctx.launch({ SPLICE_HEAD: head }, argv);
+        const runs = javaRuns();
+        const label = `${head} ${argv.join(" ")}`;
+        if (runs.length === 0) return `${label}: java never ran`;
+        if (!runs.every((javaArgv) => javaArgv.includes(home))) {
+          return `${label}: java ran without ${home}: ${JSON.stringify(runs)}`;
+        }
+      }
+      return null;
+    },
+  },
+  {
+    // V4-218: another HOME is another profile. Even if the service answers the same version, it
+    // owns a different config and key. The shim must refuse the service's port before probing it;
+    // a different configured port must raw-spawn, not start the service under the old HOME.
+    name: "V4-218 another HOME never borrows the unit's daemon",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "other-home");
+      const config = join(otherHome, ".config", "splice", "splice.toml");
+      mkdirSync(join(otherHome, ".local", "share", "splice"), { recursive: true });
+      mkdirSync(join(otherHome, ".splice", "state"), { recursive: true });
+      mkdirSync(join(otherHome, ".config", "splice"), { recursive: true });
+      writeFileSync(join(otherHome, ".local", "share", "splice", "splice.jar"), "");
+      writeFileSync(join(otherHome, ".splice", "state", "mgmt-key"), "test-key\n");
+      writeFileSync(config, `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      ctx.cold();
+      const readsBefore = ctx.daemon.healthReads;
+      const conflict = await ctx.launch({ HOME: otherHome });
+      if (ctx.daemon.healthReads !== readsBefore) return "another HOME contacted the unit's daemon before refusing";
+      if (conflict.code !== 1 || !conflict.stderr.includes("SPLICE_CONTROL_PORT")) {
+        return `a second HOME on the unit's port must refuse before health: ${conflict.output}`;
+      }
+      if (existsSync(ctx.captures.unit) || existsSync(ctx.captures.java)) {
+        return "the conflicting HOME must neither start the unit nor spawn java";
+      }
+      ctx.cold();
+      const aliasReads = ctx.daemon.healthReads;
+      const aliased = await ctx.launch({
+        HOME: otherHome,
+        SPLICE_CONTROL_PORT: String(ctx.daemon.toml).padStart(6, "0"),
+      });
+      if (ctx.daemon.healthReads !== aliasReads || aliased.code !== 1) {
+        return "a zero-padded spelling of the unit's port must also refuse before health";
+      }
+      writeFileSync(config, `[daemon]\ncontrol_port = ${ctx.daemon.state}\n`);
+      ctx.cold();
+      const isolated = await ctx.launch({ HOME: otherHome });
+      if (isolated.code !== 0) return `a second HOME on its own port must launch: ${isolated.output}`;
+      if (existsSync(ctx.captures.unit)) return "a second HOME must never start the first HOME's unit";
+      if (!existsSync(ctx.captures.java)) return "a second HOME on its own port must raw-spawn";
+      return ctx.daemon.lastLaunch?.url === `http://127.0.0.1:${ctx.daemon.state}/launch/test`
+        ? null
+        : "the second HOME did not reach its own port";
+    },
+  },
+  {
+    // Blank and whitespace-only HOME are not directories. The shim and JVM must agree on the
+    // passwd fallback, including when an explicit config and jar point into a test sandbox.
+    name: "V4-218 an unset or blank HOME uses the JVM's fallback home",
+    run: async (ctx) => {
+      const expected = `-Duser.home=${userInfo().homedir}`;
+      for (const home of [undefined, "", "  "]) {
+        rmSync(ctx.captures.javaArgv, { force: true });
+        await ctx.launch({ ...ctx.harness, SPLICE_HEAD: "splice", HOME: home }, ["status"]);
+        const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+        if (runs.length !== 1 || !runs[0]?.includes(expected)) {
+          return `HOME=${JSON.stringify(home)} must use ${expected}, got ${JSON.stringify(runs)}`;
+        }
+      }
+      return null;
+    },
+  },
+  {
     // v0.4.0 review: the CLI asks System.console() whether a person is at a terminal, and on JDK 22-24
     // it answers yes into a pipe unless java runs with -Djdk.console=java.base: `splice dashboard` then
     // prints the management key into an agent's transcript. Both paths that run the CLI must carry it.
@@ -354,6 +446,7 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
     base.LAUNCHER_START_CAPTURE = captures.unit;
     base.LAUNCHER_UNIT_PRESENT = "1";
     base.LAUNCHER_UNIT_BOOTS = "1";
+    base.LAUNCHER_UNIT_HOME = base.HOME;
 
     const ctx: Ctx = {
       dir,
@@ -437,6 +530,7 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
     const authorization = request.headers.get("authorization") ?? "";
     const state = existsSync(statePath) ? readFileSync(statePath, "utf8").trim() : "down";
     if (url.pathname === "/health") {
+      daemon.healthReads += 1;
       if (state === "up" || state === "new") {
         return new Response(
           `{"ok":true,"version":"${gateway}","wantShimVersion":"${shimVersion}","topologyStale":${daemon.topologyStale}}\n`,
@@ -469,6 +563,7 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
     topologyStale: false,
     injectEnvKey: false,
     pwnedFile,
+    healthReads: 0,
     forget() {
       daemon.lastLaunch = undefined;
       daemon.lastShutdown = undefined;
@@ -504,6 +599,7 @@ function writeMocks(bin: string): void {
       "const argv = process.argv.slice(2);\n" +
       'if (argv[0] !== "--user") { process.stderr.write(`unexpected systemctl args: ${argv.join(" ")}\\n`); process.exit(2); }\n' +
       'if (argv[1] === "cat") process.exit(process.env.LAUNCHER_UNIT_PRESENT === "1" ? 0 : 1);\n' +
+      'if (argv[1] === "show-environment") { process.stdout.write(`HOME=${process.env.LAUNCHER_UNIT_HOME}\\n`); process.exit(0); }\n' +
       'if (argv[1] === "start") {\n' +
       '  appendFileSync(process.env.LAUNCHER_START_CAPTURE, `${argv[2] ?? ""}\\n`);\n' +
       '  if (process.env.LAUNCHER_UNIT_BOOTS === "1") { writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n"); process.exit(0); }\n' +

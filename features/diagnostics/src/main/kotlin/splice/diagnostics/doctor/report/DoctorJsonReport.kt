@@ -18,13 +18,13 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.GATEWAY_VERSION
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.diagnostics.doctor.CheckStatus
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.time.Instant
 
 private const val SCHEMA_VERSION = 1
@@ -33,7 +33,7 @@ private const val VERSION = "version"
 internal class DoctorJsonReport(
     envReader: EnvReader = EnvReader(System::getenv),
     private val claudeVersion: ClaudeVersionRead,
-    private val home: Path = Paths.get(System.getProperty("user.home")),
+    private val home: Path = UserHome.dir(envReader),
     /** Resolved by the caller through TopologyStatePaths, so a declared `[daemon].state_dir` is the
      *  root this report reads (V4-109). No default: a default here is the drift that row closed. */
     private val statePaths: StatePaths,

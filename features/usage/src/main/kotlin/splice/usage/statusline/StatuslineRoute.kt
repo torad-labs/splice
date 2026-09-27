@@ -9,6 +9,7 @@ import io.ktor.server.response.respondText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import splice.core.config.ConfigService
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.version.ClientVersionTracker
@@ -52,6 +53,7 @@ public class StatuslineRoute(
                 // same way — the SOURCE, never a count, so the cached renderer reads it live.
                 perfSkips = managed.perf as? HeadPerfSkipSource,
                 anthropicUpstream = managed.anthropicUpstream,
+                home = UserHome.dir(),
             )
         }
         val sessionId = sessionId(stdin)

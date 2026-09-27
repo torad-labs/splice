@@ -2,6 +2,7 @@
 // per-project rows, chosen per request so a model switch selects the new rule at once.
 package splice.core.compaction
 
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -20,7 +21,7 @@ public fun interface CompactionFileRead {
 
 public class CompactionInstructions(
     config: CompactionConfig = CompactionConfig(),
-    private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
+    private val configDir: Path = UserHome.dir().resolve(".config/splice"),
     private val readFile: CompactionFileRead = CompactionFileRead { Files.readString(it) },
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
@@ -214,12 +215,7 @@ public class CompactionInstructions(
     }
 
     private fun resolvePath(raw: String): Path {
-        val expanded = if (raw.startsWith("~/")) {
-            System.getProperty("user.home") + raw.substring(1)
-        } else {
-            raw
-        }
-        val path = Paths.get(expanded)
+        val path = Paths.get(UserHome.expand(raw))
         return realPath(if (path.isAbsolute) path.normalize() else configDir.resolve(path).normalize())
     }
 }

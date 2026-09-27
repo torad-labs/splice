@@ -3,10 +3,10 @@
 package splice.control.mcp
 
 import splice.client.mcp.McpServerSpec
+import splice.core.config.UserHome
 import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.concurrent.Executors
 
 /** Spawns the child; a seam so tests can run a scripted server and the host never hard-codes Java's launcher. */
@@ -24,7 +24,7 @@ public fun interface McpProcessLauncher {
  *  (a slice the host caps) and its oom_score_adj (off splice's inherited -1000). Null keeps the
  *  plain spawn, which is what a test wants and what a box with no such slice gets anyway. */
 public class StdioProcessLauncher(
-    private val workingDir: Path = Paths.get(System.getProperty("user.home")),
+    private val workingDir: Path = UserHome.dir(),
     private val containment: McpContainment? = null,
 ) : McpProcessLauncher {
     override fun invoke(spec: McpServerSpec): Process {

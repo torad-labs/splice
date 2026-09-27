@@ -21,6 +21,7 @@ import splice.client.resume.SessionAdoption
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
+import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
@@ -47,7 +48,7 @@ public class LaunchService(
      *  the wrap that is written and the wrap a launch reads are one object over one home (ControlPlane
      *  passes the daemon's). Carried here because LaunchService is the one launch object the control
      *  server is handed; the default is the real home, exactly what ClaudeHeadRoutes defaulted to. */
-    public val wrap: WrappedHead = WrappedHead(Paths.get(System.getProperty("user.home")), materializer = materializer),
+    public val wrap: WrappedHead = WrappedHead(UserHome.dir(), materializer = materializer),
     /** V4-129: the real absolute claude binary when the default `claude` command is WRAPPED —
      *  app/src/main/dist/bin/splice-launch execs argv[0] by resolving it through PATH, and a wrapped `claude` on PATH
      *  IS the shim, so planting the bare [claudeBinary] string there would make EVERY head's launch

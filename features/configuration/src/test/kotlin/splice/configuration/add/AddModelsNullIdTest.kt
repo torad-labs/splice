@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
@@ -27,12 +28,8 @@ class AddModelsNullIdTest {
     private val env = EnvReader { name -> if (name == "FW_API_KEY") "k" else null }
 
     private fun <T> withHome(home: Path, block: () -> T): T {
-        val previous = System.getProperty("user.home")
-        System.setProperty("user.home", home.toString())
-        return try {
+        return UserHome.within(home) {
             block()
-        } finally {
-            System.setProperty("user.home", previous)
         }
     }
 

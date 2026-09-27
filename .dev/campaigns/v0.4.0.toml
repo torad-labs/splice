@@ -8647,6 +8647,7 @@ verify = "red first: a test that drives Connect a plan, ChatGPT, Continue, Sign 
 claimed_by = "console"
 claimed_at = "2026-09-27T19:37:14.552Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T19:37:14Z
+# [2026-09-27] Marlin reproduced it on p18 at 2:35 PM CT: the Sign in tab stayed at about:blank over 20 s; the laptop daemon log's last line is 'add codex: opened from codex', with nothing after the click. Discriminate before fixing: the walker browser is a real Chrome attached over CDP by agent-browser, and the Playwright e2e passes; a red test with browser_url announced only on a later poll decides whether the product drops the late URL (fix it) or the handoff only fails under a CDP-attached browser (then the harness is the defect, and the check moves to a plain browser).
 
 [[items]]
 id = "V4-370"

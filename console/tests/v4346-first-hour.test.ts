@@ -190,6 +190,21 @@ describe('first-hour connection', () => {
     expect(unlinked).not.toContain('<code>claudex</code>');
   });
 
+  test('the sign-in action has a distinct accessible name from its help control', () => {
+    const view: AddView = {
+      id: 'add-1', profile: 'codex', key: 'codex', command: 'claudex',
+      auth_kind: 'chatgpt-oauth', base_url: null, models: [], sign_in_by: 'login', key_env: null,
+      credential: { present: false, detail: 'Sign in to ChatGPT.' }, sign_in: null, checks: null, saved: null,
+    };
+    const html = renderToStaticMarkup(createElement(OpenAdd, {
+      view, checks: null, busy: false, onSignIn: () => undefined, onVerify: () => undefined,
+      onSave: () => undefined, onDiscard: () => undefined,
+    }));
+    expect(html).toContain('>Sign in<');
+    expect(html).not.toContain('aria-label="Sign in"');
+    expect(html).toContain('aria-label="About sign-in"');
+  });
+
   test('a local runtime without a key does not claim to forward a Claude login', () => {
     const view: AddView = {
       id: 'local-1', profile: 'local', key: 'local', command: 'claude-local',

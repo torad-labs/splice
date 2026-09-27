@@ -131,7 +131,7 @@ function SignIn({ view, busy, onSignIn }: { view: AddView; busy: boolean; onSign
     <>
       <div className="myx-add-row">
         <Key disabled={busy || running || view.credential.present} onClick={onSignIn}>{S.signIn}</Key>
-        <InfoTip text={H.login} label={S.signIn} />
+        <InfoTip text={H.login} label={S.aboutSignIn} />
       </div>
       {login === null ? null : <LoginTicket status={login} />}
       {login?.failure_reason == null ? null : <Fault message={login.failure_reason} />}

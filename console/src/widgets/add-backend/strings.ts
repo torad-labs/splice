@@ -31,6 +31,7 @@ export const S = {
   passed: 'Passed',
   failed: 'Failed',
   aboutChecks: 'About the checks',
+  aboutSignIn: 'About sign-in',
   aboutProfile: 'About this profile',
 } as const;
 

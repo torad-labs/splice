@@ -1,10 +1,13 @@
-// NEW: validates and resumes active or lost code-mode records from client tool results.
+// NEW: validates and resumes active or lost code-mode records from client tool results, and (V4-336)
+// reads what else the client sent while a script was parked.
 package splice.provider.codex
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -54,7 +57,8 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
-        val hasExtraContent = wire.hasExtraContent(bodyJson, record, candidateMedia(record, context.turn))
+        val extra = wire.extraContent(bodyJson, record, candidateMedia(record, context.turn))
+        val hasExtraContent = extra != CodeModeExtra.NONE
         val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
         val supplied = suppliedResults(record, context.turn, mode)
         supplied.error?.let { return failure(it) }
@@ -63,17 +67,17 @@ internal class CodexCodeModeResume(
             val message = "code-mode tool '${pending.name}' is no longer in the current tool catalog"
             return reject(record, context, bodyJson, hasExtraContent, message)
         }
-        return accept(record, context, bodyJson, hasExtraContent, supplied.results)
+        return accept(record, context, bodyJson, extra, supplied.results)
     }
 
     private suspend fun accept(
         record: CodeModeRecord,
         context: CodeModeRunContext,
         bodyJson: String,
-        hasExtraContent: Boolean,
+        extra: CodeModeExtra,
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome {
-        val advanced = advance(record, context, hasExtraContent, supplied)
+        val advanced = advance(record, context, extra, supplied)
         return if (record.phase != CodeModePhase.COMPLETED) {
             advanced
         } else {
@@ -84,10 +88,10 @@ internal class CodexCodeModeResume(
     private suspend fun advance(
         record: CodeModeRecord,
         context: CodeModeRunContext,
-        hasExtraContent: Boolean,
+        extra: CodeModeExtra,
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome = when {
-        hasExtraContent -> {
+        interrupts(extra, record) -> {
             machine.interrupt(record)
         }
         context.disableParallel && record.pending.any { !it.exposed } -> {
@@ -164,6 +168,23 @@ internal class CodexCodeModeResume(
         turn: CodexCodeModeBridge.Turn,
     ): Map<String, List<JsonElement>> = turn.toolMedia.filterKeys { it !in record.results }
 
+    /**
+     * V4-336: whether what the client added stops the script. Role=system content (a peer's message,
+     * a task notification, a hook's output) waits for the script's output once every call the script
+     * issued has its result, and the rewrite keeps it after the record's canonical output: live, 85 of
+     * the 86 records cut by "additional client content arrived" had every result back, and the model
+     * re-issued the batch. It still stops a script with a call unanswered, or one a sequential batch has
+     * not exposed yet. Steering (anything the operator's side gave) stops the script as it always did.
+     */
+    private fun interrupts(extra: CodeModeExtra, record: CodeModeRecord): Boolean = when (extra) {
+        CodeModeExtra.NONE -> false
+        CodeModeExtra.SYSTEM -> !answered(record)
+        CodeModeExtra.STEERING -> true
+    }
+
+    private fun answered(record: CodeModeRecord): Boolean =
+        record.pending.all { it.clientId in record.results }
+
     private fun runtimeResults(record: CodeModeRecord): List<CodeModeResult> = record.pending.map { pending ->
         val result = record.results.getValue(pending.clientId)
         CodeModeResult(pending.runtimeId, result.output, result.isError)
@@ -177,3 +198,89 @@ internal class CodexCodeModeResume(
             phase = FailurePhase.MID_OUTPUT,
         )
 }
+
+/**
+ * What the client added after a parked script's baseline that the script does not own (V4-336):
+ * nothing; only role=system messages, which Claude Code sends for a peer's message, a task
+ * notification or a hook's output, and which wait for the script's output when its every call is
+ * answered; or STEERING, anything else the operator's side gave (typed text, an image, a replay item
+ * nobody expected, a baseline that no longer matches), which stops the script as it always did.
+ */
+internal enum class CodeModeExtra { NONE, SYSTEM, STEERING }
+
+/**
+ * The logical items after the baseline (and after its continuity, while that is intact) that are
+ * neither the script's callbacks nor their follow-ups, and any replay item in a slot nothing put it in.
+ */
+internal class CodeModeExtraContent(
+    private val codec: CodexCodeModeHistoryCodec,
+    private val ownership: CodeModeOwnership,
+) {
+    fun of(bodyJson: String, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
+        val projected = onBaseline(bodyJson, record) ?: return CodeModeExtra.STEERING
+        val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
+        val logicalExtra = unownedItems(projected.logicalItems, record, owned, candidateMedia)
+        return when {
+            unexpectedReplay(projected, record, owned) || logicalExtra.any { !isSystemMessage(it) } ->
+                CodeModeExtra.STEERING
+            logicalExtra.isNotEmpty() -> CodeModeExtra.SYSTEM
+            else -> CodeModeExtra.NONE
+        }
+    }
+
+    /** The request's conversation, or null when it no longer starts with the record's baseline. */
+    private fun onBaseline(bodyJson: String, record: CodeModeRecord): ResponsesCodeModeInput? {
+        val input = codec.root(bodyJson)?.second ?: return null
+        val projected = codec.conversation(codec.projection.project(input)).body
+        val validBaseline = codec.validFullPrefix(input, record) ||
+            codec.validPrefix(projected.logicalItems, record)
+        return projected.takeIf { validBaseline }
+    }
+
+    private fun unownedItems(
+        items: List<JsonElement>,
+        record: CodeModeRecord,
+        owned: Set<String>,
+        candidateMedia: Map<String, List<JsonElement>>,
+    ): List<JsonElement> {
+        val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
+        val tailStart = record.baselineLogicalCount
+        val afterContinuity = if (codec.continuityAt(items, tailStart, record.continuity)) {
+            tailStart + record.continuity.size
+        } else {
+            tailStart
+        }
+        return (afterContinuity until items.size).filter { index ->
+            !ownership.isCallback(items[index], owned) && index !in ownedFollowUps
+        }.map(items::get)
+    }
+
+    private fun unexpectedReplay(
+        projected: ResponsesCodeModeInput,
+        record: CodeModeRecord,
+        owned: Set<String>,
+    ): Boolean {
+        val baselineReplay = record.nativeSegments.map { it.logicalOffset to it.items }.toSet()
+        val continuityReplay = record.continuityReplay.map {
+            record.baselineLogicalCount + it.logicalOffset to it.items
+        }.toSet()
+        return projected.replayItems.any { replay ->
+            val slot = replay.logicalOffset to replay.items
+            val expected = slot in baselineReplay || slot in continuityReplay
+            !expected && replay.callbackId !in owned
+        }
+    }
+
+    /** A role=system message: how Claude Code sends a peer's message, a task notification or a hook's
+     *  output (the live claudex wire, 2026-09-26). */
+    private fun isSystemMessage(element: JsonElement): Boolean {
+        val item = element as? JsonObject
+        val message = codec.string(item, CODE_MODE_FIELD_TYPE) in MESSAGE_TYPES
+        return message && codec.string(item, CODE_MODE_FIELD_ROLE) == ROLE_SYSTEM
+    }
+}
+
+private const val ROLE_SYSTEM = "system"
+
+/** The builder writes a plain {role, content} message with no `type`; an explicit one says message. */
+private val MESSAGE_TYPES = setOf("", "message")

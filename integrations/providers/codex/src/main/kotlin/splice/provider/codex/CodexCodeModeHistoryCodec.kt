@@ -58,6 +58,18 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         return digest(JsonArray(rawBody.take(record.baselineInputCount)).toString()) == record.baselineInputDigest
     }
 
+    /**
+     * Whether [items] hold a record's [continuity] at [at]: item by item, `phase` ignored (V4-336). The
+     * one rule for the rewrite that places a record and the reader that finds what the client added.
+     * The record's item is the one kept: its preface preceded the outer splice_exec call upstream, so
+     * commentary is its true phase, while the client reads final_answer off a message whose script
+     * call it never saw (a script that made no client call).
+     */
+    fun continuityAt(items: List<JsonElement>, at: Int, continuity: List<JsonElement>): Boolean {
+        val end = at + continuity.size
+        return end <= items.size && items.subList(at, end).map(::phaseless) == continuity.map(::phaseless)
+    }
+
     fun rebuilt(root: JsonObject, conversation: CodeModeConversation, body: ResponsesCodeModeInput): CodeModeRewrite {
         val offset = conversation.preamble.size
         val joined = ResponsesCodeModeInput(
@@ -86,8 +98,11 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
 
     private fun isPreamble(element: JsonElement): Boolean {
         val item = element as? JsonObject ?: return false
-        return string(item, FIELD_ROLE) == ROLE_DEVELOPER && string(item, FIELD_CALL_ID).isEmpty()
+        return string(item, CODE_MODE_FIELD_ROLE) == ROLE_DEVELOPER && string(item, FIELD_CALL_ID).isEmpty()
     }
+
+    private fun phaseless(element: JsonElement): JsonElement =
+        (element as? JsonObject)?.let { JsonObject(it - FIELD_PHASE) } ?: element
 
     private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray())
@@ -102,10 +117,11 @@ internal data class CodeModeConversation(
 
 internal const val CODE_MODE_FIELD_CALL_ID = "call_id"
 internal const val CODE_MODE_FIELD_TYPE = "type"
+internal const val CODE_MODE_FIELD_ROLE = "role"
 private const val FIELD_INPUT = "input"
 private const val FIELD_OUTPUT = "output"
-private const val FIELD_ROLE = "role"
 private const val ROLE_DEVELOPER = "developer"
+private const val FIELD_PHASE = "phase"
 private const val FIELD_CALL_ID = CODE_MODE_FIELD_CALL_ID
 private const val FIELD_TYPE = CODE_MODE_FIELD_TYPE
 internal const val TYPE_CUSTOM_OUTPUT = "custom_tool_call_output"

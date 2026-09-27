@@ -11,45 +11,19 @@ internal class CodexCodeModeHistory(json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)
     private val nativeReplayValidator = NativeReplayValidator()
     private val ownership = CodeModeOwnership(codec)
+    private val extras = CodeModeExtraContent(codec, ownership)
 
     fun inputBoundary(bodyJson: String): CodeModeInputBoundary? = codec.inputBoundary(bodyJson)
 
-    /** [candidateMedia]: follow-ups rendered for results the record has not accepted yet (this
-     *  turn's), owned on sight so a screenshot arriving for a parked script is not "extra content". */
-    fun hasExtraContent(
+    /** What the client added after the record's baseline that the record does not own (V4-336),
+     *  sorted by [CodeModeExtraContent]. [candidateMedia]: follow-ups rendered for results the record
+     *  has not accepted yet (this turn's), owned on sight so a screenshot arriving for a parked script
+     *  is not "extra content". */
+    fun extraContent(
         bodyJson: String,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): Boolean {
-        val input = codec.root(bodyJson)?.second ?: return true
-        val projected = codec.conversation(codec.projection.project(input)).body
-        val validBaseline = codec.validFullPrefix(input, record) ||
-            codec.validPrefix(projected.logicalItems, record)
-        if (!validBaseline) return true
-        val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
-        val items = projected.logicalItems
-        val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
-        val tailStart = record.baselineLogicalCount
-        val continuityEnd = tailStart + record.continuity.size
-        val afterContinuity = if (items.subList(tailStart, minOf(continuityEnd, items.size)) == record.continuity) {
-            continuityEnd
-        } else {
-            tailStart
-        }
-        val logicalExtra = (afterContinuity until items.size).any { index ->
-            !ownership.isCallback(items[index], owned) && index !in ownedFollowUps
-        }
-        val baselineReplay = record.nativeSegments.map { it.logicalOffset to it.items }.toSet()
-        val continuityReplay = record.continuityReplay.map {
-            record.baselineLogicalCount + it.logicalOffset to it.items
-        }.toSet()
-        val replayExtra = projected.replayItems.any { replay ->
-            val slot = replay.logicalOffset to replay.items
-            val expected = slot in baselineReplay || slot in continuityReplay
-            !expected && replay.callbackId !in owned
-        }
-        return logicalExtra || replayExtra
-    }
+    ): CodeModeExtra = extras.of(bodyJson, record, candidateMedia)
 
     /**
      * Rewrites every completed record it can still place. A record whose baseline no longer matches
@@ -207,15 +181,12 @@ internal class CodexCodeModeHistory(json: Json) {
         }
     }
 
-    private fun continuityIndexes(items: List<JsonElement>, boundary: Int, expected: List<JsonElement>): Set<Int> {
-        if (expected.isEmpty()) return emptySet()
-        val end = boundary + expected.size
-        return if (end <= items.size && items.subList(boundary, end) == expected) {
-            (boundary until end).toSet()
+    private fun continuityIndexes(items: List<JsonElement>, boundary: Int, expected: List<JsonElement>): Set<Int> =
+        if (expected.isNotEmpty() && codec.continuityAt(items, boundary, expected)) {
+            (boundary until boundary + expected.size).toSet()
         } else {
             emptySet()
         }
-    }
 
     private fun metadataProblem(record: CodeModeRecord): String? = when {
         record.metadataVersion != CODE_MODE_METADATA_VERSION -> "code-mode replay metadata is unavailable"
@@ -240,7 +211,7 @@ internal class CodexCodeModeHistory(json: Json) {
  * captured, so absent from the map) owns nothing, and whatever the client's history carries for
  * it stays ordinary content, exactly as before this row.
  */
-private class CodeModeOwnership(private val codec: CodexCodeModeHistoryCodec) {
+internal class CodeModeOwnership(private val codec: CodexCodeModeHistoryCodec) {
     /** The indexes a rewrite keeps: everything the record does not own and that is not one of the
      *  [continuity] indexes — or null when owned history sits BEFORE the persisted boundary, which
      *  no rewrite can place. */

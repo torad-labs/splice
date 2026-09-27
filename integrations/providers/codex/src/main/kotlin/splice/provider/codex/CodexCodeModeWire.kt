@@ -50,11 +50,11 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
 
     /** [candidateMedia]: this turn's rendered follow-ups for result ids the record does not hold
      *  yet — owned on sight, so a screenshot arriving for a parked script resumes it. */
-    fun hasExtraContent(
+    fun extraContent(
         bodyJson: String,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): Boolean = history.hasExtraContent(bodyJson, record, candidateMedia)
+    ): CodeModeExtra = history.extraContent(bodyJson, record, candidateMedia)
 
     fun canonicalize(
         bodyJson: String,

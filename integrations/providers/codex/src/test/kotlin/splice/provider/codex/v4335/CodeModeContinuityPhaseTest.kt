@@ -5,6 +5,9 @@
 // its own, and the unmatched copy counted as new client content that stopped the script (CI run
 // 36279360319, the packaged mock's lookup-edit: "assistant continuity was lost, duplicated, or
 // reordered"). A record written before continuity carried a phase is omitted, never placed.
+// V4-336: a script that made no client call leaves its preface in a message with no tool_use, which
+// the client replays as final_answer; the record's copy is still the same item, placed once, and its
+// commentary is the truer phase: the preface did precede the splice_exec call upstream.
 package splice.provider.codex.v4335
 
 import kotlinx.coroutines.test.runTest
@@ -39,6 +42,7 @@ import java.nio.file.Files
 
 private const val PREFACE = "I'll read the config first."
 private const val MODEL = "gpt-6-astra"
+private const val ANSWER = "The timeout is 10 s."
 
 class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
 
@@ -55,7 +59,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val read = finish(manager)
 
-        val upstream = next(manager, read)
+        val upstream = next(manager, answered(read))
 
         assertEquals(2, runtime.cell.advances, "the replayed preface is the record's own, not new content")
         assertEquals(1, prefaces(upstream), upstream)
@@ -67,13 +71,50 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
             val read = finish(bridge(runtime()))
             writtenByV3()
 
-            val upstream = next(bridge(runtime()), read)
+            val upstream = next(bridge(runtime()), answered(read))
 
             assertEquals(1, prefaces(upstream), upstream)
             assertTrue(
                 logLines.any { "history rewrite skipped record" in it && "metadata is unavailable" in it },
                 logLines.joinToString("\n"),
             )
+        }
+
+    @Test
+    fun `a script that made no client call has its preface placed once on the next turn - V4-336`() = runTest {
+        val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("computed")))))
+        var posts = 0
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
+            posts++
+            if (posts == 1) preface() else answer()
+        }
+        val history = replayOf("""{"type":"text","text":"$PREFACE"},{"type":"text","text":"$ANSWER"}""")
+        assertEquals(listOf("final_answer", "final_answer"), history.map { it.getValue("phase").toString().trim('"') })
+
+        val upstream = next(manager, conversation(history))
+
+        assertEquals(1, prefaces(upstream), upstream)
+    }
+
+    @Test
+    fun `a preface the client replays as the answer is still the script's own, not new content - V4-336`() =
+        runTest {
+            val runtime = runtime()
+            val manager = bridge(runtime)
+            val sink = RecordingSink()
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { preface() }
+            val read = sink.tools.single().id
+            val asAnswer = JsonObject(clientReplay() + ("phase" to JsonPrimitive("final_answer")))
+
+            var upstream = ""
+            manager.interceptor(turn(results = listOf(CodeModeResult(read, "A"))), disableParallel = false)
+                .intercept(answered(read, asAnswer), RecordingSink()) {
+                    upstream = it
+                    completedOutcome()
+                }
+
+            assertEquals(2, runtime.cell.advances, "the script got its result")
+            assertEquals(1, prefaces(upstream), upstream)
         }
 
     /** A script that asks for one Read, then finishes. */
@@ -91,9 +132,9 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         return read
     }
 
-    /** The operator's next message, after the finished script: the body posted upstream. */
-    private suspend fun next(manager: CodexCodeModeBridge, read: String): String {
-        val body = Json.parseToJsonElement(answered(read)).jsonObject
+    /** The operator's next message after [history], the finished script's turn: the body posted upstream. */
+    private suspend fun next(manager: CodexCodeModeBridge, history: String): String {
+        val body = Json.parseToJsonElement(history).jsonObject
         val input = body.getValue("input").jsonArray + buildJsonObject {
             put("role", "user")
             put("content", "Now the tests.")
@@ -116,20 +157,37 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         customCalls = listOf(outer()),
     )
 
-    /** What the client sends once it has the Read's result: the preface as the builder replays it,
-     *  then the call and its output. */
-    private fun answered(read: String): String = """{"input":[{"role":"developer","content":"s"},""" +
-        clientReplay() +
-        """,{"type":"function_call","call_id":"$read","name":"Read","arguments":"{}"},""" +
-        """{"type":"function_call_output","call_id":"$read","output":"A"}]}"""
+    private fun answer() = TurnOutcome.Success(
+        hasToolUse = false,
+        incomplete = false,
+        usage = Usage(),
+        bodyText = ANSWER,
+        emittedText = true,
+        messageClosed = true,
+    )
+
+    /** What the client sends once it has the Read's result: [preface] (the builder's replay of it by
+     *  default), then the call and its output. */
+    private fun answered(read: String, preface: JsonObject = clientReplay()): String =
+        """{"input":[{"role":"developer","content":"s"},""" + preface +
+            """,{"type":"function_call","call_id":"$read","name":"Read","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"$read","output":"A"}]}"""
+
+    /** The client's body after the preamble: [items], as the builder replayed them. */
+    private fun conversation(items: List<JsonObject>): String =
+        """{"input":[{"role":"developer","content":"s"},${items.joinToString(",")}]}"""
 
     /** The lite builder's replay of an assistant message holding [PREFACE] and then a tool_use. */
-    private fun clientReplay(): JsonObject {
+    private fun clientReplay(): JsonObject = replayOf(
+        """{"type":"text","text":"$PREFACE"},{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}""",
+    ).single()
+
+    /** The lite builder's replay of an assistant message whose content is [blocks]: its assistant items. */
+    private fun replayOf(blocks: String): List<JsonObject> {
         val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"claude-codex--$MODEL","max_tokens":100,"messages":[
                 {"role":"user","content":"Fix the config."},
-                {"role":"assistant","content":[{"type":"text","text":"$PREFACE"},
-                  {"type":"tool_use","id":"toolu_1","name":"Read","input":{}}]}]}""",
+                {"role":"assistant","content":[$blocks]}]}""",
         )
         val opts = BuildOptions(
             compact = false,
@@ -143,7 +201,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         )
         val input = ResponsesRequestBuilder(CodexQuirks().defaultQuirks()).build(parsed.typed, parsed.raw, opts)
             .req.getValue("input").jsonArray
-        return input.single { roleOf(it) == "assistant" }.jsonObject
+        return input.filter { roleOf(it) == "assistant" }.map { it.jsonObject }
     }
 
     /** The state file as a v3 daemon left it: the version it stamped, its continuity with no phase. */

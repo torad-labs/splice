@@ -8638,6 +8638,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-27T20:03:38.090Z"
 # [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T20:03:38Z
 # [2026-09-27] amend by=orchestrator: files were ["core/src/main/kotlin/splice/core/config/Knob.kt", "core/src/main/kotlin/splice/core/storage/ActivityDays.kt", "core/src/test/kotlin/splice/core/storage/v4367/", "features/sessions/src/main/kotlin/splice/sessions/activity/", "features/sessions/src/main/kotlin/splice/sessions/http/ActivityRoutes.kt", "features/sessions/src/main/kotlin/splice/sessions/http/SessionsRoutes.kt", "features/sessions/src/main/kotlin/splice/sessions/http/TeamsReads.kt", "app/src/main/kotlin/splice/app/ConsoleWiring.kt", "features/sessions/src/test/kotlin/splice/sessions/v4367/"]
+# [2026-09-27] Paused for V4-373 CI repair. Uncommitted, fenced work in core ActivityDays.kt, Knob.kt, the two v4367 test dirs, and ActivityStore.kt import: day-file source enumeration/inventory, queued delete marker seam and baseline tests. No V4-367 Gradle run or receipt yet; keep these changes for fix-forward continuation.
 
 [[items]]
 id = "V4-368"

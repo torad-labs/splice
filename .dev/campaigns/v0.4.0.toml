@@ -8285,6 +8285,7 @@ files = ["console/src/pages/accounts/", "console/src/pages/usage/", "console/src
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
 # depends:V4-218
+# [2026-09-27] Marlin, 2026-09-27 (walker proof): this row carries the resume line, one line ready to paste. The walkers guessed 'claudex --resume' and '--continue', which are Claude Code's own flags and would have worked: the path exists, and splice never shows it. Its walk runs on the rebuilt, quiet film home (F4), with the window announced to splice-website first, and with the proven walkers (control ports below 32768, a free head port).
 
 [[items]]
 id = "V4-345"

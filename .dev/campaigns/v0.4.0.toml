@@ -8686,3 +8686,11 @@ title = "Settings shows a per-head knob's pending value beside the running one w
 files = ["console/src/widgets/knob-form/", "console/src/pages/settings/", "console/tests/v4372-pending-knob.test.ts"]
 status = "todo"
 verify = "red first: a per-head knob whose declared value differs from its running value renders both ('On in splice.toml, Off until restart') and links the restart (fails today: only the running value); equal values render as today; console lint, test, bun tools/gate typecheck green; walked with V4-360's re-walk."
+
+[[items]]
+id = "V4-373"
+phase = "release"
+title = "Gate red on 1feac41bb from V4-359 (CI run 36346415857, 3:16 PM CT), fix forward, two legs. (1) ModuleLawsTest.kt:655 MODULE DEPENDENCY DIRECTION (HD-11, V4-91): ':features-turns may not depend on :integrations-topology in a TEST configuration' (allowed: core, features-sessions, the three dialects, integrations-http, integrations-upstream); V4-359 added testImplementation(project(\":integrations-topology\")) to features/turns/build.gradle.kts, which the orchestrator approved and the law refuses. The real-parser round-trip moves to :app, which depends on both (claude-builder's first proposal), and the build line goes. (2) consoleE2e console.spec.ts:1072 'turns writes body capture ... re-reads it' asserts at :1126 that splice.toml holds trace = \"false\" after Off, which is the old behaviour V4-359 fixed; the e2e now asserts the head's overrides carry no trace key after Off and /health reads topologyStale=false."
+files = ["features/turns/build.gradle.kts", "features/turns/src/test/kotlin/splice/head/wire/v4359/", "app/src/test/kotlin/splice/app/v4359/", "console/e2e/console.spec.ts", ".dev/restructure/capabilities.tsv"]
+status = "todo"
+verify = "ModuleLawsTest green with features/turns/build.gradle.kts back to its pre-V4-359 test dependencies; the v4359 test runs from app/src/test/kotlin/splice/app/v4359/ and still fails 3 of 4 against pre-fix CaptureRoutes (red re-proven in a detached pre-fix tree) and passes 4 of 4 now; console.spec.ts:1072 asserts no trace key under [heads.<oauth>.overrides] after Off and topologyStale false; the census row moves to the new path; CI gate green on the pushed sha."

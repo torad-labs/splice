@@ -8542,6 +8542,7 @@ claimed_by = "console"
 claimed_at = "2026-09-27T19:14:41.012Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T19:14:41Z
 # [2026-09-27] RECEIPT cmd="npm run test --prefix console -- --run tests/needs-you.test.ts tests/copy.test.ts && npm run lint --prefix console && npm run build --prefix console && bun tools/gate typecheck" exit=0 tests=39 touched=console/src/pages/needs-you/model.ts,console/src/pages/needs-you/strings.ts,console/tests/needs-you.test.ts tail="Red-first: health topology=true plus Doctor daemon/topology WARN produced 2 items, expected 1. Green: 39/39 scoped tests, lint 0, tsc/bundle PASS, typecheck covers 568 tracked TS files and adds 0 diagnostics. Doctor alone still shows its row; Needs you names splice.toml with one restart fix. Code commit 365bc2d8c."
+# [2026-09-27] CI gate run 36344258690 on 47920066d (which carries 365bc2d8c): success, 2:40 PM CT. Awaits Marlin's walk.
 
 [[items]]
 id = "V4-361"

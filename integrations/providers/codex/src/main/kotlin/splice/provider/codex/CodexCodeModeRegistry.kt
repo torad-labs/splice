@@ -5,6 +5,10 @@
 // stops once no record is kept, and the next record, or a daemon start that finds records on disk,
 // starts it again. A head stop does not stop it: the bridge and its records outlive the stop
 // (Provider.onHeadStop), and so does the promise that the records go.
+//
+// V4-337: what it keeps is decided per conversation ([CodeModeRecordRetention]). A new script made room
+// by taking the head's oldest finished record, whatever conversation it belonged to, so on a busy head
+// a live conversation lost its first records within the hour, and every later record of it with them.
 package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
@@ -12,6 +16,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
+import java.time.Clock
 import kotlin.time.Duration
 
 internal class CodexCodeModeRegistry(
@@ -23,7 +28,8 @@ internal class CodexCodeModeRegistry(
     private val store = CodexCodeModeStore(config.stateFile, json)
     private val loaded = store.load()
     private val records = loaded.records.map(CodeModeRecordSnapshot::restore).toMutableList()
-    private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.maxRecords)
+    private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)
+    private val retention = CodeModeRecordRetention(config.retention, json, config.log)
     private val cells = mutableMapOf<String, CodeModeCell>()
     private val admissions = mutableMapOf<String, Long>()
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history)
@@ -37,9 +43,12 @@ internal class CodexCodeModeRegistry(
         sweepInterval,
     )
 
+    /** V4-337: where each code-mode turn starts, before its history is built. */
+    val turnStart = CodeModeTurnStart(monitor, retention, records, history, store, config.clock)
+
     init {
         synchronized(monitor) {
-            val changed = sweeper.sweep() or history.trim(records, config.clock.millis())
+            val changed = sweeper.sweep() or retention.trim(records, history, config.clock.millis())
             if (changed) store.save(records, history.entries)
             timed.arm()
         }
@@ -84,12 +93,8 @@ internal class CodexCodeModeRegistry(
     fun add(record: CodeModeRecord): Boolean = synchronized(monitor) {
         if (sweeper.sweep()) store.save(records, history.entries)
         val candidate = records.toMutableList()
-        val candidateHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.maxRecords)
-        while (candidate.size >= config.maxRecords) {
-            val index = candidate.indexOfFirst(CodeModeRecord::terminal)
-            if (index < 0) return@synchronized false
-            candidateHistory.remember(candidate.removeAt(index), config.clock.millis())
-        }
+        val candidateHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.retention.records)
+        if (!retention.makeRoom(candidate, candidateHistory, record, config.clock.millis())) return@synchronized false
         candidate += record
         // Admission and evictions are reversible until execution: publish only after durable save.
         store.save(candidate, candidateHistory.entries)
@@ -124,8 +129,8 @@ internal class CodexCodeModeRegistry(
 
     fun cell(record: CodeModeRecord): CodeModeCell? = synchronized(monitor) { cells[record.id] }
 
-    fun save(retryOnly: Boolean = false) = synchronized(monitor) {
-        store.save(records, history.entries, retryOnly)
+    fun save() = synchronized(monitor) {
+        store.save(records, history.entries)
     }
 
     fun complete(record: CodeModeRecord, output: String) = synchronized(monitor) {
@@ -193,5 +198,23 @@ internal class CodexCodeModeRegistry(
             record.accepted.restore(prior)
             throw error
         }
+    }
+}
+
+/** V4-337: the start of a conversation's turn, under the registry's [monitor] and on its own collections.
+ *  Only there — the registry's completed() also runs mid-turn, where a record that went could run again. */
+internal class CodeModeTurnStart(
+    private val monitor: Any,
+    private val retention: CodeModeRecordRetention,
+    private val records: MutableList<CodeModeRecord>,
+    private val history: CodeModeExpiredHistory,
+    private val store: CodexCodeModeStore,
+    private val clock: Clock,
+) {
+    /** Before [key]'s history is built: a save an earlier turn could not make is made, and
+     *  [CodeModeRecordRetention.beginTurn] runs, so a script this turn starts is measured on what stays. */
+    fun begin(key: String) = synchronized(monitor) {
+        val changed = retention.beginTurn(records, history, key, clock.millis())
+        store.save(records, history.entries, retryOnly = !changed)
     }
 }

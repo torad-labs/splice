@@ -37,10 +37,29 @@ internal class CodeModeRuntimeRun(private val runtimes: CodeModeRuntimes) {
     }
 }
 
+// why: the head's records as stored, past which its least recently used conversations go (V4-337).
+// Under the 128-record cap's worst case (128 records of the largest seen, 436 KB: ~55 MB), and ~3.6x
+// the 8.8 MB its 128 records took live on 2026-09-26, which covered 93 minutes of 17 conversations.
+private const val DEFAULT_RETAINED_BYTES: Long = 32L * 1024 * 1024
+
+/** V4-337: what a head's code mode keeps. The unit is the conversation (a record's key): its records
+ *  place in its history in order, each on top of the one before, so a record that goes takes every
+ *  later one of its conversation with it. The bounds therefore take whole conversations, least
+ *  recently used first, and never the conversation a new script belongs to. */
+public data class CodeModeRetention(
+    /** The most records one conversation keeps; past it, that conversation's own oldest finished one goes. */
+    val perConversation: Int = 128,
+    /** The most records the head keeps; a script that no finished record can make room for is refused. */
+    val records: Int = 1024,
+    /** The most the head's records take as stored (UTF-8 JSON). Never a reason to refuse a script. */
+    val bytes: Long = DEFAULT_RETAINED_BYTES,
+)
+
 public data class CodeModeBridgeConfig(
     val runtimes: CodeModeRuntimes,
     val stateFile: Path,
-    val maxRecords: Int = 128,
+    /** V4-337: per conversation and by total size; was 128 records for the whole head. */
+    val retention: CodeModeRetention = CodeModeRetention(),
     val ttl: Duration = 24.hours,
     val maxSourceChars: Int = DEFAULT_MAX_SOURCE_CHARS,
     val maxOutputChars: Int = DEFAULT_MAX_OUTPUT_CHARS,
@@ -94,7 +113,9 @@ public class CodexCodeModeBridge(
     private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, config.log)
 
     init {
-        require(config.maxRecords > 0) { "code-mode maxRecords must be positive" }
+        require(config.retention.perConversation > 0) { "code-mode retention.perConversation must be positive" }
+        require(config.retention.records > 0) { "code-mode retention.records must be positive" }
+        require(config.retention.bytes > 0) { "code-mode retention.bytes must be positive" }
         require(config.ttl.isPositive()) { "code-mode ttl must be positive" }
         require(config.cellIdleTimeout.isPositive()) { "code-mode cellIdleTimeout must be positive" }
         require(config.cellEvictionFloor.isPositive()) { "code-mode cellEvictionFloor must be positive" }

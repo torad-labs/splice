@@ -5,9 +5,15 @@
 // only when the registry was built or a code-mode turn touched it, so a head that ran one script and
 // went idle kept the record, with the model's reasoning summaries in plaintext, for as long as the
 // daemon stayed up. Parking a cell is splice's own act, not a use, so it keeps the record's time.
+//
+// V4-337: the 24 hours run from the last use of the record's CONVERSATION, and what the head keeps
+// past its bounds goes a conversation at a time ([CodeModeRecordRetention]). A record that expired
+// alone took every later record of its conversation with it: they place on top of it.
 package splice.provider.codex
 
+import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
@@ -105,7 +111,9 @@ internal class CodexCodeModeSweeper(
 
     private fun expireRecords(): Boolean {
         val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
-        val stale = records.filter { it.updatedAt < cutoff }
+        val lastUse = records.groupBy(CodeModeRecord::key)
+            .mapValues { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) }
+        val stale = records.filter { lastUse.getValue(it.key) < cutoff }
         if (stale.isEmpty()) return false
         stale.forEach { record ->
             admissions.remove(record.id)
@@ -137,6 +145,111 @@ internal class CodexCodeModeSweeper(
         record.error = "$message; source was not rerun"
         config.log("[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): $message")
     }
+}
+
+/** V4-337: which records the head keeps within [bounds], a conversation at a time. Runs under the
+ *  registry's monitor; each record that goes is remembered in the expired history, as an expired one is.
+ *
+ *  A conversation's finished records go TOGETHER, never its oldest alone: every later record, and a script
+ *  started on top of them, was measured on the oldest's canonical items, so without it none of them places
+ *  again (canonicalize omits each, every turn; a running one is abandoned). They therefore go before the
+ *  history a new script is measured on is built: at the start of that conversation's turn ([beginTurn])
+ *  when it alone reached a bound, and for any OTHER conversation at an admission ([makeRoom]). Its scripts
+ *  so far then stay in its history as the ordinary tool calls the client already saw, and a script it runs
+ *  afterwards is measured on that history and places as any other. */
+internal class CodeModeRecordRetention(
+    private val bounds: CodeModeRetention,
+    private val json: Json,
+    private val log: LogSink,
+) {
+
+    /** At the start of conversation [key]'s turn: its finished records go together when it reached
+     *  [CodeModeRetention.perConversation] records or alone holds more than [CodeModeRetention.bytes],
+     *  and none of its records is running (a running script's baseline sits on them). True when any went. */
+    fun beginTurn(
+        records: MutableList<CodeModeRecord>,
+        expired: CodeModeExpiredHistory,
+        key: String,
+        now: Long,
+    ): Boolean {
+        val own = records.filter { it.key == key }
+        if (own.isEmpty() || !own.all(CodeModeRecord::terminal)) return false
+        val why = when {
+            own.size >= bounds.perConversation -> "it reached ${bounds.perConversation} records"
+            own.sumOf(::bytesOf) > bounds.bytes -> "it alone holds more than ${bounds.bytes} bytes"
+            else -> return false
+        }
+        return Gone(records, expired, now).finished(key, why) != null
+    }
+
+    /** Makes room in [records] for [record] by letting other conversations go, least recently used first.
+     *  [record]'s own finished records go only when the head's count leaves no other way, which the
+     *  defaults never reach (records > perConversation). False when nothing finished can go: the registry
+     *  refuses the script, as before V4-337. The byte bound never refuses. */
+    fun makeRoom(
+        records: MutableList<CodeModeRecord>,
+        expired: CodeModeExpiredHistory,
+        record: CodeModeRecord,
+        now: Long,
+    ): Boolean {
+        val gone = Gone(records, expired, now)
+        val full = "the head holds ${bounds.records} records"
+        while (records.size >= bounds.records) {
+            gone.leastRecent(record.key, full) ?: gone.finished(record.key, "$full, none of them idle") ?: return false
+        }
+        var held = records.sumOf(::bytesOf) + bytesOf(record)
+        while (held > bounds.bytes) {
+            held -= gone.leastRecent(record.key, "the head's records passed ${bounds.bytes} bytes") ?: break
+        }
+        return true
+    }
+
+    /** At the registry's start, where nothing runs: each conversation past its own bound goes whole, then
+     *  the least recently used ones until the head is within its bounds. True when any went. */
+    fun trim(records: MutableList<CodeModeRecord>, expired: CodeModeExpiredHistory, now: Long): Boolean {
+        val before = records.size
+        records.map(CodeModeRecord::key).distinct().forEach { key -> beginTurn(records, expired, key, now) }
+        val gone = Gone(records, expired, now)
+        while (records.size > bounds.records) gone.leastRecent(null, "the head held ${records.size} records") ?: break
+        var held = records.sumOf(::bytesOf)
+        while (held > bounds.bytes) held -= gone.leastRecent(null, "the head's records held $held bytes") ?: break
+        return records.size != before
+    }
+
+    /** Lets records go from [records] at [now], each remembered in [expired]. */
+    private inner class Gone(
+        private val records: MutableList<CodeModeRecord>,
+        private val expired: CodeModeExpiredHistory,
+        private val now: Long,
+    ) {
+        /** The least recently used conversation other than [except] whose records are all finished, whole.
+         *  The bytes freed, or null when there is none. */
+        fun leastRecent(except: String?, why: String): Long? {
+            val idle = records.groupBy(CodeModeRecord::key)
+                .filter { (key, kept) -> key != except && kept.all(CodeModeRecord::terminal) }
+                .minByOrNull { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) }
+                ?: return null
+            return finished(idle.key, "least recently used, and $why")
+        }
+
+        /** Every finished record of conversation [key], together. The bytes freed, or null when it has none. */
+        fun finished(key: String, why: String): Long? {
+            val going = records.filter { it.key == key && it.terminal() }
+            if (going.isEmpty()) return null
+            records.removeAll(going.toSet())
+            going.forEach { expired.remember(it, now) }
+            val freed = going.sumOf(::bytesOf)
+            log(
+                "[code-mode] conversation ${key.take(RECORD_ID_LOG_CHARS)}: ${going.size} record(s), $freed bytes, " +
+                    "let go ($why); its scripts so far stay in its history as ordinary tool calls",
+            )
+            return freed
+        }
+    }
+
+    private fun bytesOf(record: CodeModeRecord): Long =
+        json.encodeToString(CodeModeRecordSnapshot.serializer(), record.snapshot())
+            .toByteArray(Charsets.UTF_8).size.toLong()
 }
 
 private const val MILLIS_PER_MINUTE: Long = 60_000L

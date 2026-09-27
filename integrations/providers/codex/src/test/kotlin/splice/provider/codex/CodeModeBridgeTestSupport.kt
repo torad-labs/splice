@@ -38,17 +38,19 @@ abstract class CodeModeBridgeTestSupport {
     /** Every line the bridge logged through its head-scoped sink, across every bridge built here. */
     protected val logLines = mutableListOf<String>()
 
+    /** [maxRecords] is the head's record count (V4-337's [CodeModeRetention.records]). */
     protected fun bridge(
         runtime: CodeModeRuntime,
         maxRecords: Int = 8,
         maxRounds: Int = 32,
         ttl: Duration = 24.hours,
         clock: Clock = Clock.systemUTC(),
+        retention: CodeModeRetention = CodeModeRetention(records = maxRecords),
     ) = CodexCodeModeBridge(
         CodeModeBridgeConfig(
             { runtime },
             tempDir.resolve("bridge.json"),
-            maxRecords = maxRecords,
+            retention = retention,
             ttl = ttl,
             maxRounds = maxRounds,
             clock = clock,

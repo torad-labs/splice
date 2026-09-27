@@ -34,17 +34,6 @@ internal class CodeModeExpiredHistory(
         )
         while (entries.size > limit) entries.removeAt(0)
     }
-
-    fun trim(records: MutableList<CodeModeRecord>, now: Long): Boolean {
-        var changed = false
-        while (records.size > limit) {
-            val index = records.indexOfFirst(CodeModeRecord::terminal)
-            if (index < 0) return changed
-            remember(records.removeAt(index), now)
-            changed = true
-        }
-        return changed
-    }
 }
 
 @Serializable

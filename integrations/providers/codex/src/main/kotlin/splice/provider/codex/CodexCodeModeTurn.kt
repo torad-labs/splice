@@ -68,7 +68,8 @@ internal class CodexCodeModeTurn(
         )
         return locks[(key.hashCode() and Int.MAX_VALUE) % locks.size].withLock {
             try {
-                registry.save(retryOnly = true)
+                // V4-337: before this turn's history is built, so a script it starts is measured on what stays.
+                registry.turnStart.begin(context.key)
                 runLocked(context, input.initialOuter, input.bodyJson)
             } catch (error: CodeModePersistenceException) {
                 error.outcome()

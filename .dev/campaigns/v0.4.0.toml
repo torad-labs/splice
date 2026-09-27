@@ -8268,3 +8268,11 @@ title = "When I hit a limit, the console carries me to where I can keep working 
 files = ["console/src/pages/accounts/", "console/src/pages/usage/", "console/src/pages/sessions/", "console/src/pages/needs-you/", "features/sessions/src/main/kotlin/splice/sessions/", "features/sessions/src/test/kotlin/splice/sessions/"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+
+[[items]]
+id = "V4-345"
+phase = "release"
+title = "I can open a request and read it whole (build order 2; acceptance Q48, Q47). Clicking a request opens everything the model received (instructions, messages, tools) and everything it sent back, with tokens, time, cache and cost, beside the list. Today clicking a Turns row only highlights it; the operator's own ask of 2026-09-26: the prompt for a request cannot be seen in the console."
+files = ["console/src/pages/turns/", "console/src/widgets/request-detail/", "features/turns/src/main/kotlin/splice/head/trace/", "features/turns/src/test/kotlin/splice/head/trace/"]
+status = "todo"
+verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."

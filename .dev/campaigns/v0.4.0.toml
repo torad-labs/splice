@@ -8292,3 +8292,11 @@ title = "The console never sends me to the terminal for something it can do itse
 files = ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+
+[[items]]
+id = "V4-348"
+phase = "release"
+title = "Every page uses my words (build order 5; acceptance Q0c, Q31, Q32, Q64): plans, sessions, requests, instructions, commands, ChatGPT; never head, knobs, daemon, backend, codex, registry, 'bound session', 'tiers filled'. Settings gets an instructions group a person would notice. Plus the baseline's craft faults: Fleet's Head and Provider headers print on top of each other, Add backend squeezes the heads table until the command name disappears, Turns truncates model names and cache percentages."
+files = ["console/src/"]
+status = "todo"
+verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."

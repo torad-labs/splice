@@ -49,6 +49,7 @@ import type {
 import { useHeads, startHeadsPolling } from '@entities/heads';
 import { HeadMark } from '@entities/control-status';
 import { useSession } from '@entities/session';
+import { RequestDetail, RequestNotKept } from '@widgets/request-detail';
 import { RequestDrawer, TurnWaterfall } from '@widgets/waterfall';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
@@ -56,7 +57,9 @@ import { Fault } from '@shared/controls';
 import { fmtMs, fmtShare, fmtTokens, poll, timeAgo } from '@shared/lib';
 import { atText, badgesOf, Gates, inflightColumns, landedColumns, landedKeysOf, lengthOf, slotsFrom, summaryColumns } from './columns';
 import type { HeadSlots } from './columns';
-import { clockOf, groupByOf, isTimeline, rowKeyer, selectionOf, sinceOf } from './select';
+import { TurnFilters } from './filters';
+import { clockOf, filterTurns, groupByOf, isFiltered, isTimeline, NO_FILTER, rowKeyer, selectionOf, sinceOf } from './select';
+import type { TurnFilter } from './select';
 import { H, S, U } from './strings';
 import './turns.css';
 
@@ -65,15 +68,15 @@ export type { HeadSlots } from './columns';
 
 const PAGE_ID = 'turns';
 
-const LANDED_FIELDS = ['time', 'head', 'model', 'outcome', 'timing', 'firstByte', 'cache', 'tokensIn', 'tokensOut'];
+const LANDED_FIELDS = ['time', 'head', 'model', 'session', 'outcome', 'timing', 'firstByte', 'cache', 'tokensIn', 'tokensOut'];
 
 /** The landed columns kept while a turn is open beside the table. */
-const OPEN_KEYS: ReadonlySet<string> = new Set(['time', 'head', 'model', 'outcome', 'timing']);
+const OPEN_KEYS: ReadonlySet<string> = new Set(['time', 'head', 'model', 'session', 'outcome', 'timing']);
 
 /** The four views this page ships. `table` is the default and stands first. */
 const DEFAULT_VIEWS: View[] = [
   { id: 'table', name: S.table, layout: 'table', filter: {}, sort: null, group: null, fields: LANDED_FIELDS },
-  { id: 'timeline', name: S.timeline, layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['time', 'head', 'model', 'outcome', 'timing'] },
+  { id: 'timeline', name: S.timeline, layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['time', 'head', 'model', 'session', 'outcome', 'timing'] },
   { id: 'by-model', name: S.byModel, layout: 'table', filter: {}, sort: null, group: 'model', fields: LANDED_FIELDS },
   { id: 'by-outcome', name: S.byOutcome, layout: 'table', filter: {}, sort: null, group: 'outcome', fields: LANDED_FIELDS },
 ];
@@ -325,23 +328,30 @@ export interface TurnsBoardProps {
 export function TurnsBoard({ slots = [], inflight, landed, summary, capture, locked = false, error = null, lastRead = null, sample }: TurnsBoardProps) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [filter, setFilter] = useState<TurnFilter>(NO_FILTER);
 
   const pending = landed !== null && 'pending' in landed;
-  const rows = landed !== null && !pending ? landed.landed : [];
+  const loaded = landed !== null && !pending ? landed.landed : [];
+  const now = Date.now();
+  // Everything below reads the filtered turns: the table, and the stages and tokens that say they
+  // read "the landed turns below" (V4-345, Q47).
+  const rows = filterTurns(loaded, filter, now);
+  const filtered = isFiltered(filter);
   const unread = landed !== null && !pending ? landed.unread : [];
   // The rows carry the head KEY (`bonsai`); the summary and the fleet print its label
   // (`claude-bonsai`), the name the operator launches it by. One name per head on the page.
   const labels = new Map((summary?.heads ?? []).map((head) => [head.key, head.label]));
   const nameOf = (key: string): string => labels.get(key) ?? key;
 
-  const selection = selectionOf(rows, active, Date.now());
-  // A row's key is its head and ts, with an ordinal only among twins, computed ONCE per render so
-  // the table, the selection and the open panel all read the same key for the same row.
+  const selection = selectionOf(rows, active, now);
+  // Assign identities over the full unfiltered read, in file order, before a filter or grouping
+  // can remove a timestamp twin. Traced rows use their unique turn id; legacy twins keep the same
+  // ordinal even when one is hidden (V4-345).
   const keyer = rowKeyer();
+  const keys = new Map(loaded.map((row) => [row, keyer(row)]));
   const listed = selection.kind === 'table' ? selection.rows
     : selection.kind === 'groups' ? selection.groups.flatMap((group) => group.rows)
       : [...selection.timeline.buckets.flatMap((bucket) => bucket.rows), ...selection.timeline.undated];
-  const keys = new Map(listed.map((row) => [row, keyer(row)]));
   const keyOf = (row: TurnRow): string => keys.get(row) ?? `${row.head}:${row.ts}`;
   const open = listed.find((row) => keyOf(row) === openKey) ?? null;
 
@@ -393,8 +403,12 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
     : 0;
   const cutText = cutAt === null ? '' : `, ${U.completeFrom} ${atText(cutAt) ?? S.absent}`;
   // An hour is idle only where every head was read: a head that could not be read may have served
-  // turns in any of them, and it is named above the table (V4-300).
-  const idleText = unread.length > 0 ? '' : `, ${idleHours} ${U.idle}`;
+  // turns in any of them, and it is named above the table (V4-300). Under a filter an empty hour
+  // held no MATCHING turn, which is not idle either.
+  const idleText = unread.length > 0 || filtered ? '' : `, ${idleHours} ${U.idle}`;
+  const windowText = selection.kind === 'timeline' ? `${selection.window.hours}h ${U.window}${cutText}${idleText}` : null;
+  const ofText = filtered ? `${U.of} ${loaded.length}` : null;
+  const landedMeta = [ofText, windowText].filter((part) => part !== null).join(', ');
   const ran = summary?.heads.filter((head) => !head.empty) ?? [];
   const counted = slots.reduce((held, head) => held + head.inflight, 0);
   const unlisted = Math.max(0, counted - inflight.length);
@@ -403,6 +417,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
 
   let landedBody: ReactNode;
   if (pending) landedBody = <Empty text={S.historyUnavailable} source={H.historyUnavailable} />;
+  else if (listed.length === 0 && filtered) landedBody = <Empty text={S.noMatch} />;
   else if (listed.length === 0) landedBody = <Empty text={S.noTurns} source={H.noTurns} />;
   else {
     const table = {
@@ -491,7 +506,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
         <Section
           title={S.landed}
           {...(pending ? {} : { count: rows.length })}
-          {...(selection.kind === 'timeline' ? { meta: `${selection.window.hours}h ${U.window}${cutText}${idleText}` } : {})}
+          {...(landedMeta === '' ? {} : { meta: landedMeta })}
           actions={listed.length === 0 ? undefined : <Legend items={[
             { mark: STAGE_MARKS.ingest, label: STAGE_NAMES.ingest },
             { mark: STAGE_MARKS.upstream, label: S.waits },
@@ -501,6 +516,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
           {/* A head whose turns could not be read is NAMED, in the daemon's words: the table below
               is missing its rows, and a table that silently lost a head reads like one that idled. */}
           {unread.map((head) => <Fault key={`${head.head}:${head.reason}`} message={`${nameOf(head.head)}: ${head.reason}`} />)}
+          {pending || loaded.length === 0 ? null : <TurnFilters rows={loaded} filter={filter} onFilter={setFilter} nameOf={nameOf} />}
           {landedBody}
         </Section>
 
@@ -524,6 +540,17 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
             <Section title={S.tokens}>
               <TurnTokens row={open} />
             </Section>
+            {/* What the model received and sent back, read by the trace turn the row names (V4-345);
+                keyed by it, so one turn's read never shows under another's. A row that names none
+                says why nothing was kept and what changes it. */}
+            {open.turn === undefined ? (
+              <RequestNotKept
+                capture={captureFor(capture, open.head).capture}
+                onSwitch={(enabled) => void putCapture(open.head, enabled)}
+              />
+            ) : (
+              <RequestDetail key={`${open.head}:${open.turn}`} head={open.head} turn={open.turn} />
+            )}
             <Section title={S.capture}>
               {/* Only this turn's head: another head's capture or failure never stands in while this
                   head's read is in flight, or after it never lands (V4-301). */}

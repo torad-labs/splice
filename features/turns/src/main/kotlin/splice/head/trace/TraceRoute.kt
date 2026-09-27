@@ -4,7 +4,9 @@
 //
 //   no turn      {head, files, on_disk, skipped_lines, turns: [{id, ts, session, model, compact, open,
 //                 outcome, rounds, attempts, total_ms}]}, the newest [last] (default 20), oldest first
-//   ?turn=ID     {head, turn: <that summary>, records: [every record of the turn, as written]}
+//   ?turn=ID     {head, turn: <that summary>, cost_usd, records: [every record of the turn, as written]}
+//                (V4-345: cost_usd is the ended turn priced at its model's card, null with no card, and
+//                absent for an open turn)
 //
 // THE LIST CARRIES NO BODY. A body is the user's conversation; it leaves only for the one turn a reader
 // opened, as `splice trace --turn` prints it. The records are the TraceStore's own, headers redacted by
@@ -24,8 +26,11 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.model.TurnPrice
 import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.wire.BAD_LAST
 import splice.http.JsonReply
@@ -52,24 +57,24 @@ public class TraceRoute(
     private val rows = TraceRows()
 
     public suspend fun read(head: String, query: TraceQuery): JsonReply {
-        val key = heads.byName(head).firstOrNull()?.key
+        val found = heads.byName(head).firstOrNull()
         val last = query.last?.takeIf { it.isNotBlank() }
         val count = if (last == null) DEFAULT_LAST else last.toIntOrNull()?.takeIf { it > 0 }
         val traceDir = dir()
         return when {
-            key == null -> refuse(HttpStatusCode.BadRequest, "unknown head: $head")
+            found == null -> refuse(HttpStatusCode.BadRequest, "unknown head: $head")
             count == null -> refuse(HttpStatusCode.BadRequest, BAD_LAST)
             traceDir == null -> refuse(HttpStatusCode.ServiceUnavailable, TRACE_UNWIRED)
-            else -> answer(key, traceDir, query, count)
+            else -> answer(found, traceDir, query, count)
         }
     }
 
     /** V4-338: the list says how many turns are on disk, so it reads every line, holding one at a time and
      *  the records of the turns it lists; one turn's read stops once it holds that turn. Both run on [io]. */
-    private suspend fun answer(key: String, traceDir: Path, query: TraceQuery, last: Int): JsonReply {
+    private suspend fun answer(head: TurnsHead, traceDir: Path, query: TraceQuery, last: Int): JsonReply {
         val turn = query.turn?.takeIf { it.isNotBlank() }
         val ask = TraceAsk(last, query.session?.takeIf { it.isNotBlank() }, turn)
-        return if (turn == null) list(key, traceDir, ask) else one(key, traceDir, ask, turn)
+        return if (turn == null) list(head.key, traceDir, ask) else one(head, traceDir, ask, turn)
     }
 
     private suspend fun list(key: String, traceDir: Path, ask: TraceAsk): JsonReply {
@@ -78,13 +83,14 @@ public class TraceRoute(
         return JsonReply(HttpStatusCode.OK, listJson(key, traceDir, read))
     }
 
-    private suspend fun one(key: String, traceDir: Path, ask: TraceAsk, turn: String): JsonReply {
+    private suspend fun one(head: TurnsHead, traceDir: Path, ask: TraceAsk, turn: String): JsonReply {
+        val key = head.key
         val turns = withContext(io) { Cancellables.runCatchingCancellable { rows.turns(traceDir, key, ask) } }
             .getOrElse { return unreadable(key, traceDir, it) }
         return if (turns.isEmpty()) {
             refuse(HttpStatusCode.BadRequest, "no turn $turn in $key's trace")
         } else {
-            JsonReply(HttpStatusCode.OK, turnJson(key, turns.single()))
+            JsonReply(HttpStatusCode.OK, turnJson(key, turns.single(), TurnPrice(head.catalog)))
         }
     }
 
@@ -103,14 +109,25 @@ public class TraceRoute(
             putJsonArray("turns") { read.turns.forEach { add(summary(it)) } }
         }.toString()
 
-    private fun turnJson(key: String, turn: TracedTurn): String = buildJsonObject {
+    private fun turnJson(key: String, turn: TracedTurn, price: TurnPrice): String = buildJsonObject {
         put("head", key)
         put("turn", summary(turn))
+        // V4-345: what the turn cost, priced by the daemon at the head's card for the turn's own model
+        // from its closing record's counters (the snapshot its perf row carries), the arithmetic the
+        // budget and the economics rollup use (V4-221), so the console multiplies nothing. Null for a
+        // model with no card. An open turn has no closing record and so no cost.
+        turn.turn?.let { ending -> put("cost_usd", price.usd(JsonScalars.str(ending, "model"), countersOf(ending))) }
         putJsonArray("records") {
             turn.attempts.forEach { add(it) }
             turn.turn?.let { add(it) }
         }
     }.toString()
+
+    /** A turn record's perf counters (TurnTrace.turnRecord writes them under perf.counters). */
+    private fun countersOf(ending: JsonObject): Map<String, Long> {
+        val counters = (ending["perf"] as? JsonObject)?.get("counters") as? JsonObject ?: return emptyMap()
+        return buildMap { counters.keys.forEach { name -> JsonScalars.long(counters, name)?.let { put(name, it) } } }
+    }
 
     /** The verb's table line as fields. An open turn has no record to close it: its rounds and attempts
      *  are the attempts on disk, as the verb prints them. */

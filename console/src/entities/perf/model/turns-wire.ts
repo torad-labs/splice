@@ -2,16 +2,18 @@
 // model (TurnRow[], one flat list with the head stamped on each row).
 import type { PerfTurnsWire, TruncatedHead, TurnRow, TurnRowWire, UnreadHead } from './types';
 
-/** A wire row as a page row. The daemon writes an absent session, account or cache tag as null;
- *  the page model spells the same absence by leaving the field out, which is what its readers test. */
+/** A wire row as a page row. The daemon writes an absent session, account, cache tag or trace turn
+ *  as null; the page model spells the same absence by leaving the field out, which is what its
+ *  readers test. */
 function rowFromWire(head: string, wire: TurnRowWire): TurnRow {
-  const { session, account, cache_cold: cacheCold, ...rest } = wire;
+  const { session, account, cache_cold: cacheCold, turn, ...rest } = wire;
   return {
     ...rest,
     head,
     ...(session !== null ? { session } : {}),
     ...(account !== null ? { account } : {}),
     ...(cacheCold !== null ? { cache_cold: cacheCold } : {}),
+    ...(turn !== null ? { turn } : {}),
   };
 }
 

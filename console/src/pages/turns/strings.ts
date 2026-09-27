@@ -36,6 +36,7 @@ export const S = {
   noSummary: 'No summary yet',
   noTurns: 'No turns yet',
   historyUnavailable: 'History unavailable',
+  noMatch: 'No matching turns',
   /** The columns. */
   time: 'Time',
   head: 'Head',
@@ -69,6 +70,17 @@ export const S = {
   /** Printed before the heads a window holds no turns for. */
   noTurnsIn: 'No turns',
   never: 'Never',
+  /** The landed turns' filters (Q47) and their choices. */
+  filters: 'Filters',
+  command: 'Command',
+  status: 'Status',
+  all: 'All',
+  ok: 'OK',
+  anyTime: 'Any time',
+  last15: 'Last 15 minutes',
+  lastHour: 'Last hour',
+  last6: 'Last 6 hours',
+  clear: 'Clear filters',
   /** What any cell with no value prints (ABSENT in @shared/lib). */
   absent: ABSENT,
 } as const;
@@ -95,4 +107,6 @@ export const U = {
   queued: 'queued',
   unlisted: 'not listed',
   last: 'last',
+  /** Between the filtered count and every loaded turn. */
+  of: 'of',
 } as const;

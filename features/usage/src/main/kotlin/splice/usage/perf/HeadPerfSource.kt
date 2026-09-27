@@ -90,6 +90,8 @@ public data class PerfRow(
     val account: String? = null,
     val cacheCold: Boolean? = null,
     val compact: Boolean? = null,
+    /** V4-345: the trace turn that recorded this turn's request, on a head that keeps a trace. */
+    val turn: String? = null,
 )
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */

@@ -204,7 +204,7 @@ describe('a trace turn read is the daemon\'s own keys', () => {
   const keys = (declared: object): string[] => Object.keys(declared).sort();
   // Every key each type declares, held exact by the typecheck: a key added to or dropped from the
   // type is a compile error here until this list says it too.
-  const TURN_KEYS: Record<keyof TraceTurnWire, true> = { head: true, turn: true, records: true };
+  const TURN_KEYS: Record<keyof TraceTurnWire, true> = { head: true, turn: true, cost_usd: true, records: true };
   const SUMMARY_KEYS: Record<keyof TracedTurnWire, true> = {
     id: true, ts: true, session: true, model: true, compact: true, open: true, outcome: true, rounds: true,
     attempts: true, total_ms: true,

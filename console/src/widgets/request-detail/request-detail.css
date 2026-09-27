@@ -1,0 +1,37 @@
+/* One request, read whole (V4-345): the cost, what the model received, what it sent back and what the
+   provider got, each text in a scrolling block, everything large behind its reveal with its size
+   beside it. Spacing, type size and colour only through the token sheet. */
+
+.myx-rq,
+.myx-rq-body,
+.myx-rq-messages { display: grid; gap: var(--space-4); min-width: 0; }
+.myx-rq-sub {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-1);
+  font-weight: 500;
+  color: var(--fg-subtle);
+}
+.myx-rq-list { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.myx-rq-message,
+.myx-rq-part { display: grid; gap: var(--space-2); min-width: 0; justify-items: start; }
+.myx-rq-message { padding-block-start: var(--space-3); border-top: var(--hair) solid var(--line); }
+.myx-rq-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-2); }
+.myx-rq-tool,
+.myx-rq-value { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg); overflow-wrap: anywhere; }
+.myx-rq-size { font-family: var(--font-mono); font-size: var(--text-1); color: var(--fg-subtle); }
+.myx-rq-about { font-size: var(--text-2); color: var(--fg-muted); }
+.myx-rq-text {
+  justify-self: stretch;
+  margin: 0;
+  padding: var(--space-4);
+  max-height: 34vh;
+  overflow: auto;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

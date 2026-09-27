@@ -61,6 +61,61 @@ export function sinceOf(view: View, now: number): number | null {
   return isTimeline(view) ? windowOf(view, now).from : null;
 }
 
+/**
+ * What the landed turns are narrowed to (acceptance Q47: by command, model, session, status and time),
+ * each field null for every value. The page holds it while it is open; a saved view keeps the layout
+ * and grouping it always kept. It narrows everything drawn from the landed turns, so the stage and
+ * token sections, which say they read "the landed turns below", still read exactly the table.
+ */
+export interface TurnFilter {
+  head: string | null;
+  model: string | null;
+  session: string | null;
+  /** `ok`, or `failed` for every other outcome tag. */
+  status: 'ok' | 'failed' | null;
+  /** Only turns that landed within this many ms of now. */
+  within: number | null;
+}
+
+export const NO_FILTER: TurnFilter = { head: null, model: null, session: null, status: null, within: null };
+
+export function isFiltered(filter: TurnFilter): boolean {
+  return Object.values(filter).some((value) => value !== null);
+}
+
+export function filterTurns(rows: readonly TurnRow[], filter: TurnFilter, now: number): TurnRow[] {
+  return rows.filter((row) => (filter.head === null || row.head === filter.head)
+    && (filter.model === null || row.model === filter.model)
+    && (filter.session === null || row.session === filter.session)
+    && (filter.status === null || (row.outcome === 'ok') === (filter.status === 'ok'))
+    && (filter.within === null || (Number.isFinite(row.ts) && row.ts >= now - filter.within)));
+}
+
+export interface FilterChoices {
+  heads: string[];
+  models: string[];
+  sessions: string[];
+}
+
+/** The values each filter chooses among: every one a loaded turn carries, sorted, and a chosen one
+ *  kept even once no loaded turn carries it, so a filter still applied can always be cleared. */
+export function filterChoices(rows: readonly TurnRow[], filter: TurnFilter): FilterChoices {
+  const values = (pick: (row: TurnRow) => string | null | undefined, chosen: string | null): string[] => {
+    const found = new Set<string>();
+    for (const row of rows) {
+      const value = pick(row);
+      if (value !== null && value !== undefined) found.add(value);
+    }
+    if (chosen !== null) found.add(chosen);
+    return [...found].sort();
+  };
+  return {
+    heads: values((row) => row.head, filter.head),
+    models: values((row) => row.model, filter.model),
+    sessions: values((row) => row.session, filter.session),
+  };
+}
+
 export interface BoardGroup {
   key: string;
   count: number;
@@ -89,15 +144,15 @@ export function selectionOf(rows: readonly TurnRow[], view: View, now: number): 
 }
 
 /**
- * A row's key: its head and ts, plus an ordinal only among rows that share both (a per-head file can
- * hold two turns in the same millisecond, and a wrong key is a row React reuses for another row's
- * data). NOT THE LIST INDEX: the list is newest first, so every new turn shifted every other row's
- * index, and an opened turn lost its key, and the detail column closed, on the next poll. One keyer
- * per list, so the ordinals count within it.
+ * A traced row's key is its head and the trace turn id the daemon minted. Legacy rows without a
+ * trace use head, timestamp and an ordinal among rows sharing both. Keys are assigned over the
+ * UNFILTERED list: if the first timestamp twin is filtered away, the second must not inherit its
+ * key and show a different request in the open panel (V4-345).
  */
 export function rowKeyer(): (row: TurnRow) => string {
   const seen = new Map<string, number>();
   return (row) => {
+    if (row.turn !== undefined) return `${row.head}:turn:${row.turn}`;
     const base = `${row.head}:${row.ts}`;
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);

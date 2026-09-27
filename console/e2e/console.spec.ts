@@ -409,6 +409,26 @@ function headRow(page: Page, head: string) {
   return page.getByRole('button', { name: `Open head ${head}`, exact: true });
 }
 
+// V4-345: Fleet uses the same stretched row opener as Turns (pages/fleet/index.tsx:435-443).
+// A held press on a non-name cell must open the head, even after the global pressed-button transform
+// finishes. Marlin's default-install walk saw a highlighted Fleet row with no detail before the fix.
+test('a held press on a Fleet row state cell opens the head detail', async ({ page }) => {
+  const faults = await open(page, 'fleet');
+  const opener = headRow(page, STACK.oauthHead);
+  await expect(opener).toBeVisible({ timeout: 15_000 });
+  const state = page.getByRole('row').filter({ has: opener }).getByRole('cell').nth(1);
+  const box = await state.boundingBox();
+  if (box === null) throw new Error('the Fleet state cell drew no box');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(PRESS_MS);
+  await page.mouse.up();
+  const detail = page.getByRole('complementary', { name: 'Head detail' });
+  await expect(detail, 'a press away from the name opened nothing').toHaveCount(1);
+  await expect(detail.getByRole('heading', { level: 2 }).first()).toHaveText(STACK.oauthHead);
+  expect(faults.pageErrors, 'the Fleet row press threw').toEqual([]);
+});
+
 /** One account's row in an opened head's pool table, found by the account's name cell. A pool
  *  account opens nothing, so its row carries no button; it is found by its cell text. */
 function poolRow(detail: Locator, account: string): Locator {
@@ -955,6 +975,36 @@ test('compaction lists the instruction rules the daemon has in effect, with thei
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });
 
+/** How long the journey holds a press: a person's press, past the 120 ms press transition (--dur-1),
+ *  so a transform the press gives the opener has landed before the release (row-opener.test.ts). */
+const PRESS_MS = 250;
+
+// V4-345 (acceptance Q48): a press anywhere on a landed row opens it, and the detail reads the request
+// whole. On the film home's jar a press held on any cell but the model name opened nothing: the press
+// transform shrank the row's overlay to the name, the release landed on the cell, and the click went
+// to the row. The solo head keeps a trace from boot (stack.ts), so the turn this drives is kept.
+test('a turn opens from a press on its time cell, with what the model received and sent back', async ({ page }) => {
+  const faults = await open(page, 'turns');
+  await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), undefined, STACK.soloModel);
+  const opener = page.getByRole('button', { name: `Turn detail ${STACK.soloHead} ${STACK.soloModel}` });
+  await expect(opener).toHaveCount(1, { timeout: 15_000 });
+  const time = page.getByRole('row').filter({ has: opener }).getByRole('cell').first();
+  const box = await time.boundingBox();
+  if (box === null) throw new Error('the time cell drew no box');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(PRESS_MS);
+  await page.mouse.up();
+
+  const detail = page.getByRole('complementary', { name: 'Turn detail' });
+  await expect(detail, 'a press on the time cell opened nothing').toHaveCount(1);
+  const section = (name: string) => detail.locator('section').filter({ has: page.locator('.myx-sec-name', { hasText: new RegExp(`^${name}$`) }) });
+  await expect(section('Model received')).toContainText(TURN_PROMPT, { timeout: 15_000 });
+  await expect(section('Model sent back')).toContainText('console e2e answer');
+  expect(faults.pageErrors, 'opening the turn threw').toEqual([]);
+  expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
+});
+
 /** The capture route of the stack's OAuth head. */
 const CAPTURE_PATH = `/api/heads/${STACK.oauthHead}/capture`;
 
@@ -980,6 +1030,9 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
   // Off by default, and saying so (PRODUCT.md: nothing is recorded that the operator did not ask for).
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(detail).not.toContainText('Recording bodies');
+  // The turn kept no request, and its detail says why beside the key that changes it (V4-345).
+  await expect(detail).toContainText('Capture is off');
+  await expect(detail.getByRole('button', { name: 'Turn on capture', exact: true })).toBeVisible();
 
   await toggle.click();
   await expect.poll(() => wroteThenReread(true), { message: 'the switch never wrote enabled=true and re-read' }).toBe(true);
@@ -990,8 +1043,8 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
   const toml = readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8');
   expect(toml, 'the write did not reach splice.toml').toMatch(new RegExp(`\\[heads\\.${STACK.oauthHead}\\.overrides\\][^[]*trace = "true"`));
 
-  // A turn driven AFTER the write: its bodies are not recorded until the daemon restarts, and no
-  // route serves a body, so opening it must not print one. The table lists the newest turn first.
+  // A turn driven AFTER the write: its bodies are not recorded until the daemon restarts, so its row
+  // names no trace turn and opening it must not print one. The table lists the newest turn first.
   const before = await turns.count();
   await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'));
   await expect(turns).toHaveCount(before + 1, { timeout: 15_000 });

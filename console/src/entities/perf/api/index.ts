@@ -16,6 +16,7 @@ import type {
   PerfSummaryPayload,
   PerfTurnsWire,
   PerfWindowLabel,
+  KeptTurn,
   TraceListWire,
   TraceTurnWire,
   WireRead,
@@ -196,6 +197,18 @@ export async function readTrace(head: string): Promise<TraceListWire> {
 /** GET /api/heads/{head}/trace?turn=ID: one turn's records, bodies included. */
 export async function readTraceTurn(head: string, turn: string): Promise<TraceTurnWire> {
   return request<TraceTurnWire>(`${headPath(head, 'trace')}?turn=${encodeURIComponent(turn)}`);
+}
+
+/** The same read for a turn a perf row names (V4-345): its records, or the daemon's sentence that its
+ *  trace holds no such turn (a 400 from TraceRoute.one: retention deleted it, or the files were
+ *  purged), which is a state the request detail says and not a failure. */
+export async function readKeptTurn(head: string, turn: string): Promise<KeptTurn> {
+  try {
+    return { read: await readTraceTurn(head, turn) };
+  } catch (err) {
+    if (err instanceof MgmtError && err.status === 400) return { gone: err.message };
+    throw err;
+  }
 }
 
 /** GET /api/heads/{head}/wire: the head's kept upstream bodies, or the daemon's sentence that its tap

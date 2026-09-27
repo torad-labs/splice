@@ -78,6 +78,8 @@ export interface Stack {
   key: string;
   /** The OAuth head's own port, so a journey can drive a turn through it. */
   oauthPort: number;
+  /** The solo head's own port: the head that keeps a trace from boot (V4-345). */
+  soloPort: number;
   /** splice.toml as the daemon booted it, so a journey can read what a console write put there. */
   configFile: string;
   /** The repository's real path, which is the project id /api/projects reports. */
@@ -202,6 +204,11 @@ function config(ports: { control: number; mock: number; oauth: number; solo: num
     'discovery_prefix = "claude-e2e-solo--"',
     `pinned_model = "${STACK.soloModel}"`,
     '',
+    // V4-345: the solo head keeps its trace from boot, so a turn a journey drives through it opens with
+    // its request whole. The OAuth head keeps none: the capture journey turns its trace on and off.
+    `[heads.${STACK.soloHead}.overrides]`,
+    'trace = true',
+    '',
     '[providers.openrouter]',
     'dialect = "openai-chat"',
     'base_url = "https://openrouter.invalid/api/v1"',
@@ -280,8 +287,9 @@ async function until<T>(what: string, timeoutMs: number, probe: () => Promise<T 
   }
 }
 
-/** The prompt of the plain turn. Exported so a journey can assert the console never prints it: no
- *  route serves a turn's body, so the text must not reach the page from anywhere. */
+/** The prompt of the plain turn. Exported so a journey can assert where the console prints it: in the
+ *  request of a turn a traced head kept, which the turn's detail reads whole (V4-345), and nowhere for
+ *  a turn no trace kept. */
 export const TURN_PROMPT = 'one turn so the console has a row';
 
 async function postTurn(headPort: number, key: string, body: unknown, headers: Record<string, string> = {}): Promise<void> {
@@ -293,7 +301,7 @@ async function postTurn(headPort: number, key: string, body: unknown, headers: R
   });
   const text = await res.text();
   if (res.status !== 200 || !text.includes('message_stop')) {
-    throw new Error(`console e2e: the turn through ${STACK.oauthHead} failed (${res.status}): ${text.slice(0, 400)}`);
+    throw new Error(`console e2e: the turn through the head on :${headPort} failed (${res.status}): ${text.slice(0, 400)}`);
   }
 }
 
@@ -323,13 +331,14 @@ export function localDayWait(spanMs: number, now = Date.now()): number {
 }
 
 /** One plain turn through a head. Exported: a journey drives its own turn after a console write.
- *  With `sessionId` the turn carries the client's session header, so its perf row is tagged to it. */
-export async function driveOneTurn(headPort: number, key: string, sessionId?: string): Promise<void> {
+ *  With `sessionId` the turn carries the client's session header, so its perf row is tagged to it;
+ *  `model` is the head's own model, so a turn through the solo head names the solo model. */
+export async function driveOneTurn(headPort: number, key: string, sessionId?: string, model: string = STACK.model): Promise<void> {
   await postTurn(
     headPort,
     key,
     {
-      model: STACK.model,
+      model,
       max_tokens: 64,
       stream: true,
       messages: [{ role: 'user', content: TURN_PROMPT }],
@@ -472,7 +481,7 @@ export async function startStack(): Promise<Stack> {
       const body = (await read('/api/sessions/edges')) as { sessions?: Record<string, unknown[]> } | null;
       return (body?.sessions?.[STACK.sender.id]?.length ?? 0) > 0 ? true : null;
     });
-    return { base, key, oauthPort: ports.oauth, configFile, repo, peerAddress, stop };
+    return { base, key, oauthPort: ports.oauth, soloPort: ports.solo, configFile, repo, peerAddress, stop };
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     const detail = `${why}\n-- upstream requests: ${upstream.join(', ') || 'none'}\n-- daemon log tail:\n${tail(log)}`;

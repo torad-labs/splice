@@ -16,8 +16,13 @@ import { H, S, U } from './strings';
 // ---------------------------------------------------------------------------------- landed
 
 /** The landed table's columns, by the field keys a view lists, in the order the table prints. */
-export const LANDED_KEYS = ['time', 'head', 'model', 'outcome', 'timing', 'firstByte', 'cache', 'tokensIn', 'tokensOut'] as const;
+export const LANDED_KEYS = ['time', 'head', 'model', 'session', 'outcome', 'timing', 'firstByte', 'cache', 'tokensIn', 'tokensOut'] as const;
 export type LandedKey = (typeof LANDED_KEYS)[number];
+
+/** A column a view saved before it existed still shows, beside the column it reads with: a stored
+ *  view keeps the fields it was saved with, and no view edits its fields, so without this the session
+ *  column (V4-345, acceptance Q47) would reach only a browser that never saved a view. */
+const BESIDE: Partial<Record<LandedKey, LandedKey>> = { model: 'session' };
 
 /** Field keys a saved view may still carry from before the tables drew their numbers: each names
  *  the column that now shows it, or nothing where the column became a badge on the outcome. */
@@ -32,12 +37,18 @@ const ALIASES: Record<string, LandedKey | null> = {
 };
 
 /** A view's fields as the landed table's columns: known keys and their aliases, once each, in the
- *  view's order. */
+ *  view's order, each followed by the column it reads with where the view does not list that one. */
 export function landedKeysOf(fields: readonly string[]): LandedKey[] {
-  const keys: LandedKey[] = [];
-  for (const field of fields) {
+  const listed = fields.flatMap((field) => {
     const key = (LANDED_KEYS as readonly string[]).includes(field) ? (field as LandedKey) : ALIASES[field] ?? null;
-    if (key !== null && !keys.includes(key)) keys.push(key);
+    return key === null ? [] : [key];
+  });
+  const keys: LandedKey[] = [];
+  for (const key of listed) {
+    const beside = BESIDE[key];
+    for (const each of beside === undefined || listed.includes(beside) ? [key] : [key, beside]) {
+      if (!keys.includes(each)) keys.push(each);
+    }
   }
   return keys;
 }
@@ -82,13 +93,15 @@ const figure = (value: number | undefined, format: (n: number) => string): strin
  *  waterfall shares one axis; `nameOf` prints a head by the label the daemon gives it. */
 export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf: (key: string) => string): Column<TurnRow>[] {
   const all: Record<LandedKey, Column<TurnRow>> = {
-    time: { key: 'time', label: S.time, width: '10%', mono: true, cell: (row) => atText(row.ts) ?? S.absent },
-    head: { key: 'head', label: S.head, width: '14%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
-    model: { key: 'model', label: S.model, width: '12%', primary: true, cell: (row) => row.model ?? S.absent },
+    time: { key: 'time', label: S.time, width: '8%', mono: true, cell: (row) => atText(row.ts) ?? S.absent },
+    head: { key: 'head', label: S.head, width: '12%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
+    // A model is read whole: `claude-opu…` named no model (Marlin's walk, Q47), so a long id breaks.
+    model: { key: 'model', label: S.model, width: '15%', primary: true, wrap: true, cell: (row) => row.model ?? S.absent },
+    session: { key: 'session', label: S.session, width: '8%', mono: true, cell: (row) => row.session ?? S.absent },
     outcome: {
       key: 'outcome',
       label: S.outcome,
-      width: '11%',
+      width: '10%',
       cell: (row) => (
         <span className="myx-tn-badges">
           {badgesOf(row).map((badge) => <Badge key={badge.key} tone={badge.tone} quiet>{badge.text}</Badge>)}
@@ -98,7 +111,7 @@ export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf:
     timing: {
       key: 'timing',
       label: S.timing,
-      width: '19.5%',
+      width: '16%',
       cell: (row) => {
         const length = lengthOf(row);
         return (
@@ -113,7 +126,7 @@ export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf:
         );
       },
     },
-    firstByte: { key: 'firstByte', label: S.firstByte, width: '8.5%', align: 'end', mono: true, cell: (row) => figure(row.first_byte, fmtMs) },
+    firstByte: { key: 'firstByte', label: S.firstByte, width: '7.5%', align: 'end', mono: true, cell: (row) => figure(row.first_byte, fmtMs) },
     cache: {
       key: 'cache',
       label: S.cacheHit,
@@ -123,8 +136,8 @@ export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf:
         return hit === null ? S.absent : <Meter tone="neutral" value={hit} label={`${S.cacheHit} ${fmtShare(hit)}`} figure={fmtShare(hit)} />;
       },
     },
-    tokensIn: { key: 'tokensIn', label: S.input, width: '7.5%', align: 'end', mono: true, cell: (row) => figure(row.in_tokens, fmtTokens) },
-    tokensOut: { key: 'tokensOut', label: S.output, width: '7%', align: 'end', mono: true, cell: (row) => figure(row.out_tokens, fmtTokens) },
+    tokensIn: { key: 'tokensIn', label: S.input, width: '6.5%', align: 'end', mono: true, cell: (row) => figure(row.in_tokens, fmtTokens) },
+    tokensOut: { key: 'tokensOut', label: S.output, width: '6.5%', align: 'end', mono: true, cell: (row) => figure(row.out_tokens, fmtTokens) },
   };
   return keys.map((key) => all[key]);
 }

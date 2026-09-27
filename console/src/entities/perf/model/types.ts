@@ -120,6 +120,9 @@ export interface TurnRow {
   account?: string;
   /** Whether the account switch left the prompt cache cold; written only beside `account`. */
   cache_cold?: boolean;
+  /** The trace turn that recorded this turn's request and answer (V4-345, PerfRowMeta.turn): the id
+   *  the detail opens the request by. Absent on a head that kept no trace when the turn ran. */
+  turn?: string;
   recv?: number;
   parse?: number;
   build?: number;
@@ -163,10 +166,11 @@ export interface TurnRow {
 
 /** One row exactly as PerfRoutes.rowJson writes it: the numeric bag, then the named facts, each of
  *  which is null (never absent) when the row did not carry it. */
-export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_cold'> & {
+export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_cold' | 'turn'> & {
   session: string | null;
   account: string | null;
   cache_cold: boolean | null;
+  turn: string | null;
 };
 
 /** One head's block. A head the daemon cannot read is listed with `error` in place of its rows, so
@@ -298,8 +302,15 @@ export interface TraceRecord {
 export interface TraceTurnWire {
   head: string;
   turn: TracedTurnWire;
+  /** What the turn cost in USD, priced by the daemon at the head's card for the turn's model (V4-345,
+   *  TraceRoute.turnJson): null for a model with no card, never $0; absent for a turn still open. */
+  cost_usd?: number | null;
   records: TraceRecord[];
 }
+
+/** A kept turn's read: its records, or the daemon's sentence that its trace no longer holds it (a
+ *  400), which the request detail prints as a state and never as a failure. */
+export type KeptTurn = { read: TraceTurnWire } | { gone: string };
 
 /** One upstream request body a head sent, as its wire tap kept it (WireTap.json). */
 export interface WireRecordWire {

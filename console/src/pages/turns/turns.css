@@ -88,6 +88,21 @@
 /* an opened turn's prompt: the split with its figures, then the totals */
 .myx-tn-turn-tokens { display: grid; gap: var(--space-5); }
 
+/* the landed turns' filters over the table (Q47): each box keeps its own height, so one opened
+   list pushes only its own column down */
+.myx-tn-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4) var(--space-5);
+  margin-block-end: var(--space-5);
+}
+
+/* The ten landed columns need room for whole timestamps, session tags, status and cache figures.
+   The table scrolls within its own edge when the board is narrower; clipping these facts to ellipses
+   left Time and Session unreadable at 1440px (V4-345, Q47). */
+.myx-tn-table .myx-dt { min-width: calc(92 * var(--u)); }
+
 /* the landed table, and the opened turn beside it */
 .myx-tn-board {
   display: grid;

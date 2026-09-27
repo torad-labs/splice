@@ -39,8 +39,5 @@ export function perHour(
   }, 0));
 }
 
-/** Dollars at the precision a figure that small needs: cents from a dollar up, a tenth of a cent
- *  below it. */
-export function fmtUsd(usd: number): string {
-  return `$${usd >= 1 ? usd.toFixed(2) : usd.toFixed(3)}`;
-}
+/** Dollars as every figure prints them (@shared/lib's fmtUsd, kept under this page's name). */
+export { fmtUsd } from '@shared/lib';

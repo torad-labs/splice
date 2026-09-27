@@ -175,6 +175,8 @@ public class PerfRoutes(
         put("account", row.account)
         put("cache_cold", row.cacheCold)
         put("compact", row.compact)
+        // V4-345: the trace turn the console opens this row's request by; null where none was kept.
+        put("turn", row.turn)
     }
 
     private suspend fun refuse(call: ApplicationCall, message: String, status: HttpStatusCode) {

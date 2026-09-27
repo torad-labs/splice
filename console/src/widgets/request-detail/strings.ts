@@ -1,0 +1,59 @@
+// Every word the request detail prints (docs/design/DESIGN.md section 10). S holds labels: three words
+// or fewer, sentence case. H holds help: one sentence of twelve words or fewer. U holds the unit words
+// printed beside a figure. tests/copy.test.ts holds all three.
+export const S = {
+  /** The two halves of a request, in Q48's own words. */
+  sent: 'Model received',
+  answer: 'Model sent back',
+  asSent: 'Provider received',
+  instructions: 'Instructions',
+  messages: 'Messages',
+  tools: 'Tools',
+  earlier: 'Show earlier',
+  input: 'Show input',
+  result: 'Show result',
+  thinking: 'Thinking',
+  showThinking: 'Show thinking',
+  schema: 'Show schema',
+  json: 'Show block',
+  body: 'Show body',
+  reply: 'Show reply',
+  rawRequest: 'Raw request',
+  rawAnswer: 'Raw answer',
+  requestHeaders: 'Request headers',
+  called: 'Called',
+  resultOf: 'Result of',
+  failed: 'Failed',
+  stopped: 'Stopped',
+  cost: 'Cost',
+  unpriced: 'No price card',
+  attempt: 'Attempt',
+  cut: 'Cut short',
+  unreadable: 'Not a request',
+  loading: 'Reading',
+  user: 'User',
+  assistant: 'Assistant',
+  /** Why a turn opens no request, each one factual line beside what to do. */
+  captureOff: 'Capture is off',
+  turnOn: 'Turn on capture',
+  atRestart: 'Restart to apply',
+  notKept: 'Not kept',
+  gone: 'No longer kept',
+} as const;
+
+export const H = {
+  asSent: 'What splice sent the provider after translating, one body per attempt.',
+  cut: 'Longer than the body cap; its first part is shown as sent.',
+  unreadable: 'Not a request splice can read, so it is shown as sent.',
+  unpriced: 'No price card for this model, so its cost is not counted.',
+  captureOff: 'Requests are kept only while body capture is on.',
+  atRestart: 'Capture is saved; the next requests are kept after splice restarts.',
+  notKept: 'This turn ran while capture was off, or before splice linked requests.',
+  gone: 'Capture keeps requests for its retention days; this one is deleted.',
+} as const;
+
+export const U = {
+  chars: 'chars',
+  messages: 'messages',
+  tools: 'tools',
+} as const;

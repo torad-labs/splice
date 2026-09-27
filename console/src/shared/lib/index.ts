@@ -141,6 +141,12 @@ export function fmtShare(share: number): string {
   return `${value < 10 ? value.toFixed(1) : value.toFixed(0)}%`;
 }
 
+/** Dollars at the precision a figure that small needs: cents from a dollar up, a tenth of a cent
+ *  below it. One copy: the usage page's totals and one request's cost (V4-345) print the same way. */
+export function fmtUsd(usd: number): string {
+  return `$${usd >= 1 ? usd.toFixed(2) : usd.toFixed(3)}`;
+}
+
 /** A value against the largest of its column, 0..1 for a meter, and 0 when the column is empty
  *  rather than the NaN a bare division gives. */
 export function ratio(value: number, max: number): number {

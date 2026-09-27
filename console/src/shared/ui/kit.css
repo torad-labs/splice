@@ -126,6 +126,14 @@
   inset: 0;
   border-radius: var(--radius-1);
 }
+/* A pressed opener keeps its overlay the row's (V4-345). app.css presses every button with a transform,
+   and a transformed button becomes its ::after's containing block: the overlay shrank to the model name
+   on mousedown, the mouseup landed on the cell under the pointer, and the click went to the row, so a
+   press anywhere but the model name opened nothing. tests/row-opener.test.ts holds every sheet to it. */
+.myx-dt-open .myx-dt-opener:active { transform: none; }
+/* A column that is read whole (`wrap`) breaks in its opener too: the opener's own nowrap clipped the
+   model name of every openable table to `claude-opu…` (V4-345, Q47). */
+.myx-dt td.myx-dt-break .myx-dt-opener { white-space: normal; overflow-wrap: anywhere; }
 .myx-dt-opener:focus-visible { outline: none; }
 .myx-dt-opener:focus-visible::after {
   outline: var(--focus-width) solid var(--focus);

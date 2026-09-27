@@ -73,6 +73,9 @@ private const val ACCOUNT_KEY = "account"
 private const val CACHE_COLD_KEY = "cache_cold"
 private const val COMPACT_KEY = "compact"
 
+// V4-345: the trace turn a row's request was recorded under (PerfRowMeta.turn).
+private const val TURN_KEY = "turn"
+
 /** What one pass over a generation's lines does (a lambda at the call site, never a stored seam). */
 private fun interface LineScan {
     fun over(lines: Sequence<String>)
@@ -252,8 +255,12 @@ public class PerfRowsFileSource(
             (obj["ts"] as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
 
         private fun row(ts: Long, obj: JsonObject): PerfRow {
+            // The marks and counters, which the writer puts as numbers. A string is a fact, never a count,
+            // even one of digits alone: a session tag or a turn id (V4-345) of digits read as a number.
             val fields = buildMap {
-                obj.forEach { (k, v) -> (v as? JsonPrimitive)?.longOrNull?.let { n -> put(k, n) } }
+                obj.forEach { (k, v) ->
+                    (v as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull?.let { n -> put(k, n) }
+                }
             }
             val outcome = JsonScalars.str(obj, "outcome")?.takeUnless { REPLACEMENT_CHAR in it } ?: UNATTRIBUTED
             // V4-127: the writer's string-and-flag facts, read BY NAME off the same parsed object the
@@ -268,6 +275,7 @@ public class PerfRowsFileSource(
                 account = text(obj, ACCOUNT_KEY),
                 cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
                 compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,
+                turn = text(obj, TURN_KEY),
             )
         }
 

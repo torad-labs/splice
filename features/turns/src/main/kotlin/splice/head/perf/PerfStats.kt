@@ -59,6 +59,10 @@ public data class PerfRowMeta(
      *  Written only when it is non-zero, so a row without retries looks exactly as it did before
      *  this field existed — the alternative would put layers=0 on every success in the file. */
     val layers: Int = 0,
+    /** V4-345: the id of the trace turn that recorded this turn's request and answer, on a head that
+     *  keeps a trace, so the console opens the request a person clicked by its id rather than guessing
+     *  it by time. Null on a head that keeps none, and then the row carries no `turn`. */
+    val turn: String? = null,
 )
 
 private const val DEFAULT_TAIL = 200
@@ -128,6 +132,7 @@ public class PerfStats(
             put("outcome", meta.outcome)
             put("compact", meta.compact)
             meta.session?.let { put("session", it) }
+            meta.turn?.let { put("turn", it) }
             meta.cause?.let { put("cause", it) }
             if (meta.layers > 0) put("layers", meta.layers)
             meta.account?.let { account ->

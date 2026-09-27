@@ -742,6 +742,11 @@ command = "claude-splice"
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
 # quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage
 # maxQueued = "512"                                         # requests; admission queue cap, 0 = unlimited (HOT)
+# transcriptView = "true"                                  # HOT, global: read Claude Code's already-written
+#                                                           #     redacted conversation. The console switch sets
+#                                                           #     this false live; full request/response tracing
+#                                                           #     stays per-head opt-in (trace below). No env alias
+#                                                           #     can override the console's one off switch.
 # upstreamRetries = "4"                                     # attempts; upstream re-POSTs per round before failing
 # wireTap = "0"                                             # bodies; how many of this head's most recent upstream
 #                                                           #     REQUEST BODIES to keep, in memory only, for

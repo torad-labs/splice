@@ -67,7 +67,7 @@ class TranscriptReaderTest {
         assertEquals(
             listOf(
                 TranscriptMessage(0, TranscriptRole.USER, TS_MS, "read the config"),
-                TranscriptMessage(1, TranscriptRole.ASSISTANT, TS_MS, "Reading it now."),
+                TranscriptMessage(1, TranscriptRole.ASSISTANT, TS_MS, "Reading it now.", messageId = "msg_1"),
                 TranscriptMessage(
                     2,
                     TranscriptRole.ASSISTANT,
@@ -75,11 +75,12 @@ class TranscriptReaderTest {
                     """{"file_path":"/w/splice.toml"}""",
                     "Read",
                     false,
+                    messageId = "msg_1",
                 ),
                 TranscriptMessage(3, TranscriptRole.TOOL, TS_MS, "api_key = [redacted]", "Read", true),
                 TranscriptMessage(4, TranscriptRole.SYSTEM, null, "<command-name>/model</command-name>"),
                 TranscriptMessage(5, TranscriptRole.SYSTEM, null, "API error: overloaded_error"),
-                TranscriptMessage(6, TranscriptRole.ASSISTANT, null, "Done."),
+                TranscriptMessage(6, TranscriptRole.ASSISTANT, null, "Done.", messageId = "msg_2"),
             ),
             page.messages,
         )

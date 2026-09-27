@@ -39,6 +39,17 @@ export const S = {
   atRestart: 'Restart to apply',
   notKept: 'Not kept',
   gone: 'No longer kept',
+  /** V4-354: the default, redacted conversation view and its independent local switch. */
+  transcript: 'Transcript view',
+  localTranscript: 'Local transcript',
+  exact: 'Exact bytes',
+  source: 'Source',
+  offState: 'Transcript off',
+  noReply: 'No saved reply',
+  system: 'System',
+  tool: 'Tool',
+  on: 'On',
+  off: 'Off',
 } as const;
 
 export const H = {
@@ -50,6 +61,11 @@ export const H = {
   atRestart: 'Capture is saved; the next requests are kept after splice restarts.',
   notKept: 'This turn ran while capture was off, or before splice linked requests.',
   gone: 'Capture keeps requests for its retention days; this one is deleted.',
+  exact: 'Exact instructions and tools need request capture.',
+  localTranscript: 'Claude Code saved this redacted conversation locally, not raw request bytes.',
+  offState: 'Turn on transcript view here to read Claude Code’s saved conversation.',
+  noReply: 'The session may be missing, pruned, or still writing this reply.',
+  earlier: 'Open the session in Sessions to read messages before this window.',
 } as const;
 
 export const U = {

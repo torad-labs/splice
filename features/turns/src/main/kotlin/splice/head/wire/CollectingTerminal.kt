@@ -32,6 +32,7 @@ internal class CollectingTerminal(
     private val envelope = SseEmitter.TerminalEnvelope()
 
     override val hasEnded: Boolean get() = ended.get()
+    override val responseMessageId: String get() = messageId
 
     private var body: JsonObject? = null
     private var status = HttpStatus.BAD_GATEWAY

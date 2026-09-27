@@ -182,6 +182,9 @@ export const KNOB_META: Record<string, KnobMeta> = {
   },
 
   // recording and history
+  transcriptView: {
+    group: 'records',
+  },
   trace: {
     group: 'records',
     headOnly: true,

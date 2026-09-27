@@ -186,7 +186,7 @@ public enum class Knob(
     // locally. ON by default because it collects no new bytes. The operator's 2026-09-20 opt-in ruling
     // for exact request/response bodies still belongs to per-head TRACE below, OFF by default;
     // this switch neither changes TRACE nor exposes its instructions, tools or raw headers.
-    TRANSCRIPT_VIEW("transcriptView", KnobKind.BOOL, emptyList(), true),
+    TRANSCRIPT_VIEW("transcriptView", KnobKind.BOOL, listOf(), true),
     UPSTREAM_RETRIES(
         "upstreamRetries",
         KnobKind.NUMBER,

@@ -19,6 +19,7 @@ import type {
   KeptTurn,
   TraceListWire,
   TraceTurnWire,
+  TranscriptConversationWire,
   WireRead,
   WireTapWire,
 } from '../model/types';
@@ -209,6 +210,13 @@ export async function readKeptTurn(head: string, turn: string): Promise<KeptTurn
     if (err instanceof MgmtError && err.status === 400) return { gone: err.message };
     throw err;
   }
+}
+
+/** One default-install request's redacted conversation through the client-facing response id.
+ *  The daemon's live global knob gates the read; the client cannot override it in a query. */
+export async function readConversation(head: string, sessionId: string, responseId: string): Promise<TranscriptConversationWire> {
+  const query = new URLSearchParams({ session: sessionId, message: responseId });
+  return request<TranscriptConversationWire>(`${headPath(head, 'conversation')}?${query}`);
 }
 
 /** GET /api/heads/{head}/wire: the head's kept upstream bodies, or the daemon's sentence that its tap

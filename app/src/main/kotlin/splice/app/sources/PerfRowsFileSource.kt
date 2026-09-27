@@ -69,6 +69,8 @@ private const val UNATTRIBUTED = "?"
 // place to look rather than five (the split is reported; the writer is outside this row's fence).
 private const val MODEL_KEY = "model"
 private const val SESSION_KEY = "session"
+private const val SESSION_ID_KEY = "session_id"
+private const val RESPONSE_ID_KEY = "response_message_id"
 private const val ACCOUNT_KEY = "account"
 private const val CACHE_COLD_KEY = "cache_cold"
 private const val COMPACT_KEY = "compact"
@@ -272,6 +274,8 @@ public class PerfRowsFileSource(
                 fields = fields,
                 model = text(obj, MODEL_KEY),
                 session = text(obj, SESSION_KEY),
+                sessionId = text(obj, SESSION_ID_KEY),
+                responseMessageId = text(obj, RESPONSE_ID_KEY),
                 account = text(obj, ACCOUNT_KEY),
                 cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
                 compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,

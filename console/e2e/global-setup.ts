@@ -9,6 +9,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   process.env.CONSOLE_E2E_KEY = stack.key;
   process.env.CONSOLE_E2E_OAUTH_PORT = String(stack.oauthPort);
   process.env.CONSOLE_E2E_SOLO_PORT = String(stack.soloPort);
+  process.env.CONSOLE_E2E_TRANSCRIPT_ROOT = stack.transcriptRoot;
   process.env.CONSOLE_E2E_CONFIG = stack.configFile;
   process.env.CONSOLE_E2E_REPO = stack.repo;
   process.env.CONSOLE_E2E_PEER_ADDRESS = stack.peerAddress;

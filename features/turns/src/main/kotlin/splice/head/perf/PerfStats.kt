@@ -18,6 +18,7 @@ package splice.head.perf
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -63,7 +64,17 @@ public data class PerfRowMeta(
      *  keeps a trace, so the console opens the request a person clicked by its id rather than guessing
      *  it by time. Null on a head that keeps none, and then the row carries no `turn`. */
     val turn: String? = null,
-)
+    /** The full client session id and splice's client-facing response message id, for joining the
+     *  local transcript without guessing by timestamp or the shortened session tag (V4-354). */
+    val sessionId: String? = null,
+    val responseMessageId: String? = null,
+) {
+    /** These optional string facts never enter the row's numeric snapshot. */
+    internal fun putTranscriptFacts(into: JsonObjectBuilder) {
+        sessionId?.let { into.put("session_id", it) }
+        responseMessageId?.let { into.put("response_message_id", it) }
+    }
+}
 
 private const val DEFAULT_TAIL = 200
 
@@ -132,6 +143,7 @@ public class PerfStats(
             put("outcome", meta.outcome)
             put("compact", meta.compact)
             meta.session?.let { put("session", it) }
+            meta.putTranscriptFacts(this)
             meta.turn?.let { put("turn", it) }
             meta.cause?.let { put("cause", it) }
             if (meta.layers > 0) put("layers", meta.layers)

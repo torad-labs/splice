@@ -10,11 +10,11 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { mergeTurns } from '../src/entities/perf';
-import type { CaptureState, CaptureWire, TracedTurnWire, TraceTurnWire, TurnRow } from '../src/entities/perf';
+import type { CaptureState, CaptureWire, TranscriptConversationWire, TracedTurnWire, TraceTurnWire, TurnRow } from '../src/entities/perf';
 import { landedKeysOf } from '../src/pages/turns/columns';
 import { TurnFilters } from '../src/pages/turns/filters';
 import { filterChoices, filterTurns, isFiltered, NO_FILTER, rowKeyer } from '../src/pages/turns/select';
-import { readAnswer, readRequest, RequestDetail, RequestNotKept, RequestRead } from '../src/widgets/request-detail';
+import { readAnswer, readRequest, RequestDetail, RequestNotKept, RequestRead, TranscriptRequestRead } from '../src/widgets/request-detail';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -299,10 +299,71 @@ describe('a perf row names the trace turn its request was kept under', () => {
   test('the wire\'s turn id reaches the row, and its null is an absence, never a value', () => {
     const wire = { ts: 1, model: 'm', outcome: 'ok', compact: false, session: null, account: null, cache_cold: null };
     const merged = mergeTurns([{ since: 0, n: 20, heads: [{ key: 'claudex', label: 'claudex', rows: [
-      { ...wire, turn: '3f2a9c01d4e5' },
-      { ...wire, ts: 2, turn: null },
+      { ...wire, turn: '3f2a9c01d4e5', session_id: 'sess-v4345', response_message_id: 'msg_42', cost_usd: 0.0014 },
+      { ...wire, ts: 2, turn: null, session_id: null, response_message_id: null, cost_usd: null },
     ] }] }]);
     expect(merged.landed.map((landed) => landed.turn)).toEqual(['3f2a9c01d4e5', undefined]);
+    expect(merged.landed[0]?.session_id).toBe('sess-v4345');
+    expect(merged.landed[0]?.response_message_id).toBe('msg_42');
+    expect(merged.landed[0]?.cost_usd).toBe(0.0014);
+    expect(merged.landed[1]?.session_id).toBeUndefined();
     expect('turn' in (merged.landed[1] ?? {})).toBe(false);
+  });
+});
+
+const SAVED: TranscriptConversationWire = {
+  state: 'found',
+  session_id: 'sess-v4354',
+  response_message_id: 'msg_42_7',
+  earlier: 0,
+  messages: [
+    { index: 0, role: 'user', text: 'why is the build red' },
+    { index: 1, role: 'assistant', text: 'the config key is invalid', selected: true },
+  ],
+};
+
+describe('default-install request from the client transcript (V4-354)', () => {
+  test('the selected prompt and reply show with an honest boundary for exact bytes', () => {
+    const out = render(h(TranscriptRequestRead, { read: SAVED, viewOn: true, onSwitch: () => undefined }));
+    expect(out).toContain('>Model received<');
+    expect(out).toContain('>why is the build red<');
+    expect(out).toContain('>the config key is invalid<');
+    expect(out).toContain('Local transcript');
+    expect(out).toContain('Exact instructions and tools need request capture.');
+    expect(out).toContain('aria-label="Transcript view"');
+    expect(out).toContain('aria-checked="true"');
+    expect(out).not.toContain('No price card');
+  });
+
+  test('the switch off hides every saved message and says how to turn it back on', () => {
+    const out = render(h(TranscriptRequestRead, {
+      read: { state: 'off', reason: 'Transcript view is off. Turn it on in Request detail.' },
+      viewOn: false,
+      onSwitch: () => undefined,
+    }));
+    expect(out).toContain('Transcript off');
+    expect(out).toContain('Turn on transcript');
+    expect(out).toContain('aria-checked="false"');
+    expect(out).not.toContain(PROMPT);
+    const stale = render(h(TranscriptRequestRead, { read: SAVED, viewOn: false, onSwitch: () => undefined }));
+    expect(stale).not.toContain(PROMPT);
+  });
+
+  test('a bounded context links to its session for earlier messages', () => {
+    const out = render(h(TranscriptRequestRead, {
+      read: { ...SAVED, earlier: 5 }, viewOn: true, onSwitch: () => undefined,
+    }));
+    expect(out).toContain('Show earlier 5');
+    expect(out).toContain('href="#/sessions?open=sess-v4354"');
+  });
+
+  test('a missing or pruned transcript says so, not an empty conversation', () => {
+    const out = render(h(TranscriptRequestRead, {
+      read: { state: 'missing', reason: 'No matching reply in this session\'s saved transcript.' },
+      viewOn: true,
+      onSwitch: () => undefined,
+    }));
+    expect(out).toContain('No saved reply');
+    expect(out).toContain('No matching reply');
   });
 });

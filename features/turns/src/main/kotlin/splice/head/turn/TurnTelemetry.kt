@@ -86,6 +86,8 @@ internal class TurnTelemetry(
                 // V4-345: the trace turn the row's request and answer were recorded under, so the
                 // console opens that request by its id.
                 turn = drive.trace?.turnId,
+                sessionId = drive.meta.sessionId,
+                responseMessageId = drive.emitter.responseMessageId,
             ),
             snap,
         )
@@ -167,7 +169,14 @@ internal class TurnTelemetry(
         perf.mark(PerfKeys.TOTAL)
         val snap = perf.snapshot()
         trace?.finish(tag, snap)
-        val rowMeta = PerfRowMeta(meta.upstreamModel, tag, meta.compact, session, turn = trace?.turnId)
+        val rowMeta = PerfRowMeta(
+            meta.upstreamModel,
+            tag,
+            meta.compact,
+            session,
+            turn = trace?.turnId,
+            sessionId = meta.sessionId,
+        )
         val rowTs = perfStats.record(rowMeta, snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
         events.turnEnded(rowTs.toString(), tag)

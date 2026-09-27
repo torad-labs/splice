@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STACK, TURN_PROMPT, driveOneTurn, localDayWait, sendHandOff, utcDayWait } from './stack';
+import { STACK, TURN_PROMPT, driveOneTurn, localDayWait, saveTranscript, sendHandOff, utcDayWait } from './stack';
 
 const PAGES_DIR = join(dirname(fileURLToPath(import.meta.url)), '../src/pages');
 const PAGES = readdirSync(PAGES_DIR, { withFileTypes: true })
@@ -1006,6 +1006,63 @@ test('a turn opens from a press on its time cell, with what the model received a
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });
 
+// V4-354: the default OAuth head keeps no trace, but Claude Code's own saved conversation joins
+// through the response id the client saw. Off is a server answer before any transcript is read.
+test('a default-install turn opens its saved prompt and reply, and the transcript switch turns it off', async ({ page }) => {
+  const faults = await open(page, 'turns');
+  const turns = page.getByRole('button', { name: `Turn detail ${STACK.oauthHead} ${STACK.model}` });
+  await expect(turns.first()).toBeVisible({ timeout: 15_000 });
+  const before = await turns.count();
+  const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
+  saveTranscript(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), STACK.sender.id, responseId, TURN_PROMPT, 'console e2e answer');
+  await expect(turns).toHaveCount(before + 1, { timeout: 15_000 });
+  await turns.first().click();
+
+  const detail = page.getByRole('complementary', { name: 'Turn detail' });
+  await expect(detail).toContainText('Local transcript', { timeout: 15_000 });
+  await expect(detail).toContainText(TURN_PROMPT);
+  await expect(detail).toContainText('console e2e answer');
+  await expect(detail).toContainText('Cost');
+  const toggle = detail.getByRole('switch', { name: 'Transcript view' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+  // A separate browser profile opens this same reply BEFORE the first turns the live knob off.
+  // It must then clear the already-rendered text without a reload, not merely block a new reader.
+  const browser = page.context().browser();
+  if (browser === null) throw new Error('the browser did not expose a second context');
+  const otherContext = await browser.newContext();
+  try {
+    const other = await otherContext.newPage();
+    const otherFaults = await open(other, 'turns');
+    await other.getByRole('button', { name: `Turn detail ${STACK.oauthHead} ${STACK.model}` }).first().click();
+    const otherDetail = other.getByRole('complementary', { name: 'Turn detail' });
+    await expect(otherDetail).toContainText(TURN_PROMPT);
+
+    const patch = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/config'
+      && response.request().method() === 'PATCH');
+    const off = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/heads/${STACK.oauthHead}/conversation`
+      && response.request().method() === 'GET');
+    await toggle.click();
+    expect((await (await patch).json() as { applied: { transcriptView?: boolean } }).applied.transcriptView).toBe(false);
+    expect((await (await off).json() as { state: string }).state).toBe('off');
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await expect(detail).toContainText('Transcript off');
+    await expect(detail).not.toContainText(TURN_PROMPT);
+    await expect(otherDetail).toContainText('Transcript off', { timeout: 10_000 });
+    await expect(otherDetail).not.toContainText(TURN_PROMPT);
+    expect(otherFaults.pageErrors).toEqual([]);
+  } finally {
+    await otherContext.close();
+  }
+  await page.reload();
+  await turns.first().click();
+  await expect(detail).toContainText('Transcript off');
+  await toggle.click();
+  await expect(detail).toContainText(TURN_PROMPT, { timeout: 15_000 });
+  expect(faults.pageErrors, 'default request detail threw').toEqual([]);
+  expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
+});
+
 /** The capture route of the stack's OAuth head. */
 const CAPTURE_PATH = `/api/heads/${STACK.oauthHead}/capture`;
 
@@ -1025,6 +1082,11 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
 
   const turns = page.getByRole('button', { name: `Turn detail ${STACK.oauthHead} ${STACK.model}` });
   await expect(turns.first()).toBeVisible({ timeout: 15_000 });
+  // The earlier journey wrote a Claude Code transcript for one turn. This capture test opens its
+  // own turn WITHOUT a session, so its empty exact-body state does not depend on journey order.
+  const existing = await turns.count();
+  await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'));
+  await expect(turns).toHaveCount(existing + 1, { timeout: 15_000 });
   await turns.first().click();
   const detail = page.getByRole('complementary', { name: 'Turn detail' });
   const toggle = detail.getByRole('switch', { name: 'Body capture' });

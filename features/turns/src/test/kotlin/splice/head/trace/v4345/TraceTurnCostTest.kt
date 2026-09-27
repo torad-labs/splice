@@ -86,7 +86,7 @@ class TraceTurnCostTest {
 
     /** turn-1 ran on the priced model and turn-2 on one with no card, both ended; turn-3 is still open. */
     private fun writeTrace(dir: Path) {
-        val ids = ArrayDeque(listOf("turn-1", "turn-2", "turn-3"))
+        val ids = ArrayDeque(listOf("turn-1", "turn-2", "turn-3", "turn-4"))
         val days = ActivityDays(dir, HEAD, 7, WallClock { DAY }, true)
         val store = TraceStore(days, HEAD, 1 shl 20, now = WallClock { DAY }, ids = TurnIdMint { ids.removeFirst() })
         listOf("kimi-k3", "unlisted-model").forEach { model ->
@@ -94,6 +94,8 @@ class TraceTurnCostTest {
                 .finish("ok", PerfSnapshot(mapOf("total" to 900L), COUNTERS))
         }
         val _ = store.begin(meta("kimi-k3"), ClientInbound("POST", "/v1/messages", emptyMap(), "{}"))
+        store.begin(meta("kimi-k3"), ClientInbound("POST", "/v1/messages", emptyMap(), "{}"))
+            .finish("ok", PerfSnapshot(mapOf("total" to 900L), emptyMap()))
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
     }
 
@@ -116,6 +118,13 @@ class TraceTurnCostTest {
         writeTrace(dir)
 
         assertEquals(JsonNull, read(dir, "turn-2")["cost_usd"])
+    }
+
+    @Test
+    fun `an ended turn without token counters does not claim a zero-dollar cost`(@TempDir dir: Path) {
+        writeTrace(dir)
+
+        assertEquals(JsonNull, read(dir, "turn-4")["cost_usd"])
     }
 
     @Test

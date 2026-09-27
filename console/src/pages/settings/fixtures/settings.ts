@@ -34,6 +34,8 @@ const EFFECTIVE = {
   wireTap: 0,
   // V4-174: Knob.kt's defaults — off, a week, 4 MiB of characters.
   trace: false, traceRetentionDays: 7, traceMaxBodyChars: 4194304,
+  // V4-354: redacted conversation already on disk is readable; full trace stays off.
+  transcriptView: true,
   // V4-133: Knob.kt's defaults. budgetDefaultAction is hot (read live per PUT /api/budgets);
   // perfArchiveRetentionDays is restart-required like activityRetentionDays.
   budgetDefaultAction: 'warn', perfArchiveRetentionDays: 90,
@@ -55,10 +57,9 @@ export const fixtureConfig: ConfigPayload = {
     env: { debug: true },
     runtime: { quotaPoll: 'auto' },
   },
-  // The four hot knobs (FEATURES 2.2's three, plus V4-133's live-read budget default), and
-  // nothing else.
+  // The daemon reads these five knobs live; the transcript switch is global and has no restart.
   restart_required_keys: Object.keys(EFFECTIVE).filter(
-    (key) => !['maxInflight', 'maxQueued', 'statuslineGitRoots', 'budgetDefaultAction'].includes(key),
+    (key) => !['maxInflight', 'maxQueued', 'statuslineGitRoots', 'budgetDefaultAction', 'transcriptView'].includes(key),
   ),
   source: 'fixture',
 };

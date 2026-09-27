@@ -31,7 +31,7 @@ export interface SchemaNode {
 }
 
 /**
- * The 53 runtime knobs `[defaults]` accepts ("any runtime knob", FEATURES 2.3, defined in 2.2): every
+ * The runtime knobs `[defaults]` accepts ("any runtime knob", FEATURES 2.3, defined in 2.2): every
  * Knob.kt entry but the head-only ones (`wireTap`, `trace`), which ConfigService drops from every
  * global layer and takes from `[heads.KEY.overrides]` alone.
  *
@@ -43,7 +43,7 @@ export interface SchemaNode {
 export const RUNTIME_KNOBS = [
   'port', 'chatgptApiBase', 'codexAuthPath', 'pinnedModel', 'effort', 'summary', 'showReasoning',
   'replayReasoning', 'mirrorReasoning', 'progressLine', 'foldReasoningModels', 'foldMaxContinue',
-  'foldMarkerText', 'foldMaxTier', 'toolSurface', 'quotaPoll', 'maxInflight', 'maxQueued',
+  'foldMarkerText', 'foldMaxTier', 'toolSurface', 'quotaPoll', 'maxInflight', 'maxQueued', 'transcriptView',
   'upstreamRetries', 'upstreamTimeoutMs', 'firstByteTimeoutMs', 'streamIdleMs', 'authCacheMs',
   'debug', 'contextWindowOverride', 'grokPort', 'grokModel', 'xaiApiBase', 'grokAuthPath',
   'controlPort', 'usageWarnPct', 'usageWarnTokens5h', 'statuslineGitRoots',

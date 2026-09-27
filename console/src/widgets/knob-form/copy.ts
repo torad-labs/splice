@@ -53,6 +53,7 @@ export const KNOB_HELP: Record<string, string> = {
   mcpSlice: 'The systemd slice for shared MCP servers; its memory limit caps all.',
 
   // recording and history
+  transcriptView: "Read Claude Code's already-saved redacted conversation; off hides it everywhere.",
   trace: 'Record whole conversations for one head, secrets removed; use only to investigate.',
   traceRetentionDays: 'Days of trace files kept; older days are deleted.',
   traceMaxBodyChars: 'Longer bodies are cut in the trace and marked as cut.',

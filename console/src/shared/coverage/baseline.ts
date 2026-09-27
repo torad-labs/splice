@@ -49,6 +49,7 @@ const PENDING: readonly PendingGroup[] = [
       'QUOTA_POLL_INTERVAL_MS',
       'MAX_INFLIGHT',
       'MAX_QUEUED',
+      'TRANSCRIPT_VIEW',
       'UPSTREAM_RETRIES',
       'RETRY_BACKOFF_BASE_MS',
       'RETRY_BACKOFF_CAP_MS',

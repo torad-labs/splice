@@ -114,6 +114,7 @@ export const KNOB_LABELS = {
   trace: 'Full trace',
   traceMaxBodyChars: 'Trace body cap',
   traceRetentionDays: 'Trace history',
+  transcriptView: 'Transcript view',
   upstreamRetries: 'Retry attempts',
   upstreamTimeoutMs: 'Turn time limit',
   usageWarnPct: 'Usage warning',

@@ -80,6 +80,8 @@ export interface Stack {
   oauthPort: number;
   /** The solo head's own port: the head that keeps a trace from boot (V4-345). */
   soloPort: number;
+  /** The OAuth head's isolated Claude Code config tree, for a recorded transcript fixture. */
+  transcriptRoot: string;
   /** splice.toml as the daemon booted it, so a journey can read what a console write put there. */
   configFile: string;
   /** The repository's real path, which is the project id /api/projects reports. */
@@ -292,7 +294,7 @@ async function until<T>(what: string, timeoutMs: number, probe: () => Promise<T 
  *  a turn no trace kept. */
 export const TURN_PROMPT = 'one turn so the console has a row';
 
-async function postTurn(headPort: number, key: string, body: unknown, headers: Record<string, string> = {}): Promise<void> {
+async function postTurn(headPort: number, key: string, body: unknown, headers: Record<string, string> = {}): Promise<string> {
   const res = await fetch(`http://127.0.0.1:${headPort}/v1/messages`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': key, ...headers },
@@ -303,6 +305,11 @@ async function postTurn(headPort: number, key: string, body: unknown, headers: R
   if (res.status !== 200 || !text.includes('message_stop')) {
     throw new Error(`console e2e: the turn through the head on :${headPort} failed (${res.status}): ${text.slice(0, 400)}`);
   }
+  // The id in splice's client-facing message_start, not the mock provider's upstream id.
+  const start = text.split('\n').find((line) => line.startsWith('data:') && line.includes('message_start'));
+  const event = start === undefined ? null : JSON.parse(start.slice('data:'.length).trim()) as { message?: { id?: string } };
+  if (event?.message?.id === undefined) throw new Error('console e2e: the reply carried no message id');
+  return event.message.id;
 }
 
 const DAY_MS = 86_400_000;
@@ -333,8 +340,8 @@ export function localDayWait(spanMs: number, now = Date.now()): number {
 /** One plain turn through a head. Exported: a journey drives its own turn after a console write.
  *  With `sessionId` the turn carries the client's session header, so its perf row is tagged to it;
  *  `model` is the head's own model, so a turn through the solo head names the solo model. */
-export async function driveOneTurn(headPort: number, key: string, sessionId?: string, model: string = STACK.model): Promise<void> {
-  await postTurn(
+export async function driveOneTurn(headPort: number, key: string, sessionId?: string, model: string = STACK.model): Promise<string> {
+  return postTurn(
     headPort,
     key,
     {
@@ -345,6 +352,19 @@ export async function driveOneTurn(headPort: number, key: string, sessionId?: st
     },
     sessionId === undefined ? {} : { 'x-claude-code-session-id': sessionId },
   );
+}
+
+/** A minimal Claude Code transcript in this stack's isolated head config tree. The e2e driver is
+ *  an HTTP client, not a running Claude Code process, so it writes exactly the records the client
+ *  would have appended for the response id it just received. No real session or secret is read. */
+export function saveTranscript(root: string, sessionId: string, responseId: string, prompt: string, answer: string): void {
+  const dir = join(root, 'projects', 'console-e2e');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const records = [
+    { type: 'user', message: { role: 'user', content: prompt } },
+    { type: 'assistant', message: { id: responseId, content: [{ type: 'text', text: answer }] } },
+  ];
+  writeFileSync(join(dir, `${sessionId}.jsonl`), records.map((record) => JSON.stringify(record)).join('\n') + '\n', { mode: 0o600 });
 }
 
 /** The sender's turn after its SendMessage call: the call is the last assistant message of the
@@ -481,7 +501,10 @@ export async function startStack(): Promise<Stack> {
       const body = (await read('/api/sessions/edges')) as { sessions?: Record<string, unknown[]> } | null;
       return (body?.sessions?.[STACK.sender.id]?.length ?? 0) > 0 ? true : null;
     });
-    return { base, key, oauthPort: ports.oauth, soloPort: ports.solo, configFile, repo, peerAddress, stop };
+    return {
+      base, key, oauthPort: ports.oauth, soloPort: ports.solo,
+      transcriptRoot: join(home, `.claude-${STACK.oauthHead}`), configFile, repo, peerAddress, stop,
+    };
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     const detail = `${why}\n-- upstream requests: ${upstream.join(', ') || 'none'}\n-- daemon log tail:\n${tail(log)}`;

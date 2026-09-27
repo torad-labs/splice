@@ -31,6 +31,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -142,6 +144,7 @@ public class PerfRoutes(
     private fun turnsFor(head: UsageHead, source: PerfRowsSource, asked: AskedWindow): JsonObject {
         val read = source.window(asked.since)
         val rows = read.rows.takeLast(asked.n)
+        val price = head.catalog?.let(::TurnPrice)
         return buildJsonObject {
             put("key", head.key)
             put("label", head.label)
@@ -153,7 +156,7 @@ public class PerfRoutes(
             put("oldest_held_ts", read.oldestHeldTs)
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
-            putJsonArray("rows") { rows.forEach { add(rowJson(it)) } }
+            putJsonArray("rows") { rows.forEach { add(rowJson(it, price)) } }
         }
     }
 
@@ -161,7 +164,7 @@ public class PerfRoutes(
      *  facts written OVER it, so a key the writer put in both is reported by the typed fact and never
      *  by the bag. `ts` is the only such key today and is skipped from the bag to avoid writing it
      *  twice; the ordering is what makes that a safety net rather than a coincidence. */
-    private fun rowJson(row: PerfRow): JsonObject = buildJsonObject {
+    private fun rowJson(row: PerfRow, price: TurnPrice?): JsonObject = buildJsonObject {
         row.fields.forEach { (key, value) -> if (key != TS) put(key, value) }
         put(TS, row.ts)
         put("outcome", row.outcome)
@@ -177,6 +180,12 @@ public class PerfRoutes(
         put("compact", row.compact)
         // V4-345: the trace turn the console opens this row's request by; null where none was kept.
         put("turn", row.turn)
+        put("session_id", row.sessionId)
+        put("response_message_id", row.responseMessageId)
+        // A cost needs both reported token totals; an early refusal without them is not a $0 turn.
+        // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson).
+        val known = PerfKeys.IN_TOKENS in row.fields && PerfKeys.OUT_TOKENS in row.fields
+        put("cost_usd", if (known) price?.usd(row.model, row.fields) else null)
     }
 
     private suspend fun refuse(call: ApplicationCall, message: String, status: HttpStatusCode) {

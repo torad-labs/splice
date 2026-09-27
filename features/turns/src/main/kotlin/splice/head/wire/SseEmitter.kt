@@ -64,6 +64,7 @@ internal class SseEmitter(
     private val envelope = TerminalEnvelope()
 
     override val hasEnded: Boolean get() = seal.get() == SealState.ENDED
+    override val responseMessageId: String get() = start.messageId
 
     // A tool_use block already on the wire must still derive stop_reason=tool_use when a
     // deterministic failure ends the turn in words — the client runs what it was shown.

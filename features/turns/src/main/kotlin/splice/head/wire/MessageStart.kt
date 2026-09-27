@@ -25,7 +25,7 @@ internal const val PING_FRAME: String = "event: ping\ndata: {\"type\":\"ping\"}\
 internal class MessageStart(
     private val frames: SseFrameWriter,
     private val model: String,
-    private val messageId: String,
+    internal val messageId: String,
     private val usagePayload: UsagePayloadBuilder,
 ) {
     // Volatile: written by the turn's own coroutine, READ by the keepalive pinger's — the pinger

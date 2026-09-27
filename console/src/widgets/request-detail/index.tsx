@@ -16,11 +16,12 @@
 // the first turn a person opens kept nothing: the detail names that state in one line and puts the
 // one control that changes it beside it (turn capture on, then restart), not an empty box.
 import { useEffect, useState } from 'react';
-import { captureView, readKeptTurn } from '@entities/perf';
-import type { CaptureState, KeptTurn, TraceRecord, TraceTurnWire } from '@entities/perf';
+import { applyConfigPatch, fetchConfig, useConfig } from '@entities/config';
+import { captureView, readConversation, readKeptTurn } from '@entities/perf';
+import type { CaptureState, ConversationMessageWire, KeptTurn, TraceRecord, TraceTurnWire, TranscriptConversationWire } from '@entities/perf';
 import { DaemonRestart } from '@features/daemon-restart';
-import { Fault, Key } from '@shared/controls';
-import { fmtInt, fmtUsd } from '@shared/lib';
+import { Fault, Flag, Key, KeyLink } from '@shared/controls';
+import { fmtInt, fmtUsd, readFor } from '@shared/lib';
 import { Badge, Empty, InfoTip, KeyValue, Reveal, Section } from '@shared/ui';
 import { readAnswer, readRequest } from './model';
 import type { Message, Part, RequestView } from './model';
@@ -247,4 +248,139 @@ export function RequestDetail({ head, turn, read: handed }: { head: string; turn
   if ('gone' in fetched) return <Section title={S.sent}><Empty text={S.gone} source={H.gone} /></Section>;
   if ('fault' in fetched) return <Section title={S.sent}><Fault message={fetched.fault} /></Section>;
   return <RequestRead read={fetched.read} />;
+}
+
+/** One redacted conversation message as Claude Code kept it. Text a person sent and the reply show;
+ *  tool bodies still wait behind a reveal, as in the exact trace view above. */
+function TranscriptMessage({ message }: { message: ConversationMessageWire }) {
+  const who: Record<ConversationMessageWire['role'], string> = {
+    user: S.user, assistant: S.assistant, system: S.system, tool: S.tool,
+  };
+  return (
+    <li className="myx-rq-message">
+      <span className="myx-rq-line">
+        <Badge tone="neutral" quiet>{who[message.role]}</Badge>
+        {message.tool === undefined ? null : <code className="myx-rq-tool">{message.tool}</code>}
+        {message.result === true ? <Badge tone="neutral" quiet>{S.result}</Badge> : null}
+      </span>
+      {message.tool === undefined && message.role !== 'tool' ? (
+        <pre className="myx-rq-text">{message.text}</pre>
+      ) : (
+        <Reveal label={`${S.body} · ${size(message.text)}`}><pre className="myx-rq-text">{message.text}</pre></Reveal>
+      )}
+    </li>
+  );
+}
+
+/** The default-install view reads the client's own redacted transcript, not a reconstruction of
+ *  the exact Messages request. The opt-in trace above remains the only exact-byte view. */
+export function TranscriptRequestRead({ read, viewOn, onSwitch, writing = false }: {
+  read: TranscriptConversationWire | null;
+  viewOn: boolean;
+  onSwitch: (next: boolean) => void;
+  writing?: boolean;
+}) {
+  const control = <Flag on={viewOn} onLabel={S.on} offLabel={S.off} ariaLabel={S.transcript} disabled={writing} onChange={onSwitch} />;
+  if (!viewOn || read?.state === 'off') {
+    return <Section title={S.sent} actions={control}><Empty text={S.offState} source={H.offState} /></Section>;
+  }
+  if (read === null) return <Section title={S.sent} actions={control}><Empty text={S.loading} /></Section>;
+  if (read.state !== 'found') {
+    return <Section title={S.sent} actions={control}><Empty text={S.noReply} source={read.reason} /></Section>;
+  }
+  const context = read.messages.filter((message) => message.selected !== true);
+  const reply = read.messages.filter((message) => message.selected === true);
+  return (
+    <div className="myx-rq">
+      <Section title={S.sent} actions={control} info={{ text: H.exact, label: S.exact }}>
+        <KeyValue rows={[[S.source, S.localTranscript]]} />
+        {read.earlier > 0 ? (
+          <span className="myx-rq-line">
+            <KeyLink href={`#/sessions?open=${encodeURIComponent(read.session_id)}`}>
+              {`${S.earlier} ${fmtInt(read.earlier)}`}
+            </KeyLink>
+            <InfoTip text={H.earlier} label={S.earlier} />
+          </span>
+        ) : null}
+        <ol className="myx-rq-list" aria-label={S.messages}>
+          {context.map((message) => <TranscriptMessage key={message.index} message={message} />)}
+        </ol>
+      </Section>
+      <Section title={S.answer} info={{ text: H.localTranscript, label: S.localTranscript }}>
+        {reply.length === 0 ? <Empty text={S.noReply} source={H.noReply} /> : (
+          <ol className="myx-rq-list" aria-label={S.answer}>
+            {reply.map((message) => <TranscriptMessage key={message.index} message={message} />)}
+          </ol>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+// why: a second browser's off switch must clear an already-open request; poll only the small
+// global config while this detail is mounted, never its conversation body.
+const CONFIG_POLL_MS = 2_000;
+
+/** An untraced turn whose full session and response id let the console read Claude Code's saved
+ *  conversation. The live daemon knob is the ONE switch for every browser, not localStorage. An
+ *  accepted PATCH re-reads config before a GET of this response; while the write is in flight the
+ *  old conversation leaves the document immediately. */
+export function TranscriptRequestDetail({ head, sessionId, responseId, read: handed }: {
+  head: string;
+  sessionId: string;
+  responseId: string;
+  read?: TranscriptConversationWire;
+}) {
+  const config = useConfig((state) => state);
+  const running = readFor(config, null);
+  const [requested, setRequested] = useState<boolean | null>(null);
+  const [read, setRead] = useState<TranscriptConversationWire | null>(handed ?? null);
+  const [fault, setFault] = useState<string | null>(null);
+  const viewOn = requested ?? (running.data?.effective.transcriptView !== false);
+  const ready = running.data !== null;
+
+  useEffect(() => {
+    if (handed !== undefined) return undefined;
+    void fetchConfig();
+    const timer = setInterval(() => { void fetchConfig(); }, CONFIG_POLL_MS);
+    return () => clearInterval(timer);
+  }, [handed]);
+  useEffect(() => { if (!viewOn) setRead(null); }, [viewOn]);
+  useEffect(() => {
+    if (handed !== undefined || requested !== null || !ready) return undefined;
+    let live = true;
+    readConversation(head, sessionId, responseId).then(
+      (value) => {
+        if (!live) return;
+        setRead(value);
+        if (value.state === 'off' && viewOn) void fetchConfig();
+      },
+      (error: unknown) => { if (live) setFault(error instanceof Error ? error.message : String(error)); },
+    );
+    return () => { live = false; };
+  }, [head, sessionId, responseId, viewOn, requested, handed, ready]);
+
+  const onSwitch = (next: boolean) => {
+    if (handed !== undefined) return;
+    setRequested(next);
+    setRead(null);
+    setFault(null);
+    applyConfigPatch({ transcriptView: next }).then(
+      (result) => {
+        const refused = result.rejected.transcriptView;
+        if (refused !== undefined) setFault(refused);
+        if (result.persisted === null) setFault(result.not_persisted);
+      },
+      (error: unknown) => setFault(error instanceof Error ? error.message : String(error)),
+    ).finally(() => setRequested(null));
+  };
+  if (running.data === null && requested === null && handed === undefined) {
+    return <Section title={S.sent}><Empty text={S.loading} />{running.error === null ? null : <Fault message={running.error} />}</Section>;
+  }
+  return (
+    <>
+      <TranscriptRequestRead read={read} viewOn={viewOn && read?.state !== 'off'} onSwitch={onSwitch} writing={requested !== null || handed !== undefined} />
+      {fault === null ? null : <Fault message={fault} />}
+    </>
+  );
 }

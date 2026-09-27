@@ -78,6 +78,11 @@ internal interface TurnTerminal : WireSink {
      *  instrument. */
     public val degradedReason: String? get() = null
 
+    /** The id on the response Claude Code actually received, for joining its own transcript to a
+     *  perf row. Null only for a test or terminal that cannot supply one; real stream and collect
+     *  terminals expose the same id they put on the wire (V4-354). */
+    public val responseMessageId: String? get() = null
+
     /** Open the turn on the wire NOW, before any content exists.
      *
      * message_start needs nothing from upstream — the id, model and a zeroed usage payload are all

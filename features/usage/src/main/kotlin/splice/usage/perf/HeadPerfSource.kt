@@ -92,6 +92,9 @@ public data class PerfRow(
     val compact: Boolean? = null,
     /** V4-345: the trace turn that recorded this turn's request, on a head that keeps a trace. */
     val turn: String? = null,
+    /** V4-354: the full session and the response id the client recorded in its local transcript. */
+    val sessionId: String? = null,
+    val responseMessageId: String? = null,
 )
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */

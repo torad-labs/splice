@@ -24,6 +24,8 @@ export const S = {
   /** The legend's name for the two waits, which share a grey. */
   waits: 'Waits',
   tokens: 'Tokens',
+  cost: 'Cost',
+  unpriced: 'Not priced',
   tokensKey: 'Token key',
   landed: 'Landed',
   detail: 'Turn detail',

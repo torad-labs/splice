@@ -8,6 +8,7 @@ export {
   fetchPerfSummary,
   fetchPerfTurns,
   putCapture,
+  readConversation,
   readKeptTurn,
   readTrace,
   readTraceTurn,
@@ -25,6 +26,7 @@ export { MARK_KEYS, PERF_WINDOWS } from './model/types';
 export type {
   CaptureState,
   CaptureWire,
+  ConversationMessageWire,
   InflightTurn,
   KeptTurn,
   MarkKey,
@@ -40,6 +42,7 @@ export type {
   TraceSide,
   TracedTurnWire,
   TraceTurnWire,
+  TranscriptConversationWire,
   TurnRow,
   TurnRowWire,
   TurnsState,

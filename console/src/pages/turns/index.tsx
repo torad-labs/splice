@@ -49,12 +49,12 @@ import type {
 import { useHeads, startHeadsPolling } from '@entities/heads';
 import { HeadMark } from '@entities/control-status';
 import { useSession } from '@entities/session';
-import { RequestDetail, RequestNotKept } from '@widgets/request-detail';
+import { RequestDetail, RequestNotKept, TranscriptRequestDetail } from '@widgets/request-detail';
 import { RequestDrawer, TurnWaterfall } from '@widgets/waterfall';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { fmtMs, fmtShare, fmtTokens, poll, timeAgo } from '@shared/lib';
+import { fmtMs, fmtShare, fmtTokens, fmtUsd, poll, timeAgo } from '@shared/lib';
 import { atText, badgesOf, Gates, inflightColumns, landedColumns, landedKeysOf, lengthOf, slotsFrom, summaryColumns } from './columns';
 import type { HeadSlots } from './columns';
 import { TurnFilters } from './filters';
@@ -253,6 +253,7 @@ function TurnTokens({ row }: { row: TurnRow }) {
   const input = row.in_tokens ?? 0;
   const cached = row.cached_tokens ?? 0;
   const write = row.cache_write_tokens ?? 0;
+  const cost = row.cost_usd === undefined ? S.absent : row.cost_usd === null ? S.unpriced : fmtUsd(row.cost_usd);
   return (
     <div className="myx-tn-turn-tokens">
       <StackedBar
@@ -269,6 +270,7 @@ function TurnTokens({ row }: { row: TurnRow }) {
         rows={[
           [S.input, row.in_tokens === undefined ? S.absent : fmtTokens(row.in_tokens)],
           [S.output, row.out_tokens === undefined ? S.absent : fmtTokens(row.out_tokens)],
+          ...(row.turn === undefined ? [[S.cost, cost] as const] : []),
           [S.firstByte, row.first_byte === undefined ? S.absent : fmtMs(row.first_byte)],
         ]}
       />
@@ -540,16 +542,23 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
             <Section title={S.tokens}>
               <TurnTokens row={open} />
             </Section>
-            {/* What the model received and sent back, read by the trace turn the row names (V4-345);
-                keyed by it, so one turn's read never shows under another's. A row that names none
-                says why nothing was kept and what changes it. */}
-            {open.turn === undefined ? (
+            {/* Exact request bytes when this head kept a trace; otherwise Claude Code's own redacted
+                conversation, joined by the response id splice sent it. A row with neither source
+                says why and offers capture. Each read is keyed to its turn, never to a time. */}
+            {open.turn !== undefined ? (
+              <RequestDetail key={`${open.head}:${open.turn}`} head={open.head} turn={open.turn} />
+            ) : open.session_id !== undefined && open.response_message_id !== undefined ? (
+              <TranscriptRequestDetail
+                key={`${open.head}:${open.response_message_id}`}
+                head={open.head}
+                sessionId={open.session_id}
+                responseId={open.response_message_id}
+              />
+            ) : (
               <RequestNotKept
                 capture={captureFor(capture, open.head).capture}
                 onSwitch={(enabled) => void putCapture(open.head, enabled)}
               />
-            ) : (
-              <RequestDetail key={`${open.head}:${open.turn}`} head={open.head} turn={open.turn} />
             )}
             <Section title={S.capture}>
               {/* Only this turn's head: another head's capture or failure never stands in while this

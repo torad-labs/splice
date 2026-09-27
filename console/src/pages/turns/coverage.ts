@@ -22,6 +22,7 @@ export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/perf/turns', disposition: 'read-only' },
   { kind: 'route', name: '/api/heads/{head}/capture', disposition: 'editable' },
   { kind: 'route', name: '/api/heads/{head}/trace', disposition: 'read-only' },
+  { kind: 'route', name: '/api/heads/{head}/conversation', disposition: 'read-only' },
   { kind: 'route', name: '/api/heads/{head}/wire', disposition: 'read-only' },
   // The CLI verbs this page answers (V4-219: every CLI capability has a console answer; CommandParser.kt).
   { kind: 'verb', name: 'perf', disposition: 'read-only', via: '/api/perf/summary' },

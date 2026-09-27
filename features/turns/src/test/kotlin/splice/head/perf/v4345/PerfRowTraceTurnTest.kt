@@ -12,6 +12,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -169,6 +170,29 @@ class PerfRowTraceTurnTest {
         val days = Files.list(head.trace).use { it.toList() }.filter { it.toString().endsWith(".jsonl") }
         val turn = days.flatMap(::lines).single { it.text("kind") == "turn" }
         return row to checkNotNull(turn.text("turn")) { "the turn record carries its id" }
+    }
+
+    @Test
+    fun `an untraced turn's perf row names the response the client saw and its full session`() {
+        val head = start(traced = false)
+        val reply = runBlocking {
+            val response = client.post("http://127.0.0.1:${head.server.port}/v1/messages") {
+                header("Authorization", "Bearer $TOKEN")
+                header("Content-Type", "application/json")
+                header("x-claude-code-session-id", "sess-v4345")
+                setBody(REQUEST)
+            }
+            response.status to response.bodyAsText()
+        }
+        assertEquals(HttpStatusCode.OK, reply.first)
+        val opener = reply.second.lineSequence().first { it.startsWith("data:") && it.contains("message_start") }
+        val message = json.parseToJsonElement(opener.removePrefix("data:").trim()).jsonObject
+            .getValue("message").jsonObject
+        val responseId = checkNotNull(message["id"]?.jsonPrimitive?.content)
+        assertTrue(AsyncFileIo.drain(), "the file lane drained")
+        val row = lines(head.perf).single()
+        assertEquals(responseId, row.text("response_message_id"), "the exact id Claude Code recorded")
+        assertEquals("sess-v4345", row.text("session_id"), "the lookup needs the full session id")
     }
 
     @Test

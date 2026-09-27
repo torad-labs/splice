@@ -76,7 +76,7 @@ describe('settings: the knob form', () => {
 
   test('hot and restart-only knobs print different words', () => {
     const live = knobs.filter((knob) => knob.hot).map((knob) => knob.key);
-    expect(live).toEqual(['budgetDefaultAction', 'maxInflight', 'maxQueued', 'statuslineGitRoots']);
+    expect(live).toEqual(['budgetDefaultAction', 'maxInflight', 'maxQueued', 'statuslineGitRoots', 'transcriptView']);
     expect(rack.split('aria-label="Applies live"').length - 1).toBe(live.length);
     expect(rack.split('aria-label="Applies on restart"').length - 1).toBe(knobs.length - live.length);
     for (const key of live) expect(rowOf(rack, key)).toContain('aria-label="Applies live"');
@@ -84,8 +84,8 @@ describe('settings: the knob form', () => {
   });
 
   test('the live view shows the hot knobs and nothing else', () => {
-    expect(knobsForView(knobs, DEFAULT_VIEWS[1])).toHaveLength(4);
-    expect(knobsForView(knobs, DEFAULT_VIEWS[2])).toHaveLength(knobs.length - 4);
+    expect(knobsForView(knobs, DEFAULT_VIEWS[1])).toHaveLength(5);
+    expect(knobsForView(knobs, DEFAULT_VIEWS[2])).toHaveLength(knobs.length - 5);
     expect(knobsForView(knobs, DEFAULT_VIEWS[0])).toHaveLength(knobs.length);
   });
 });

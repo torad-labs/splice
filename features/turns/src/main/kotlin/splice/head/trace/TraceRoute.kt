@@ -27,6 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -115,8 +116,13 @@ public class TraceRoute(
         // V4-345: what the turn cost, priced by the daemon at the head's card for the turn's own model
         // from its closing record's counters (the snapshot its perf row carries), the arithmetic the
         // budget and the economics rollup use (V4-221), so the console multiplies nothing. Null for a
-        // model with no card. An open turn has no closing record and so no cost.
-        turn.turn?.let { ending -> put("cost_usd", price.usd(JsonScalars.str(ending, "model"), countersOf(ending))) }
+        // model with no card. An open turn has no closing record and so no cost. An ended turn with
+        // missing input or output counters has an UNKNOWN cost, not a measured $0 (V4-354).
+        turn.turn?.let { ending ->
+            val counters = countersOf(ending)
+            val known = PerfKeys.IN_TOKENS in counters && PerfKeys.OUT_TOKENS in counters
+            put("cost_usd", if (known) price.usd(JsonScalars.str(ending, "model"), counters) else null)
+        }
         putJsonArray("records") {
             turn.attempts.forEach { add(it) }
             turn.turn?.let { add(it) }

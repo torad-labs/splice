@@ -10,20 +10,26 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
+import splice.app.control.SessionHeadAdapter
 import splice.app.control.TurnsHeadAdapter
 import splice.app.control.api.HeadResolver
+import splice.client.transcript.TranscriptMessageLookup
 import splice.core.config.ConfigService
+import splice.core.config.UserHome
 import splice.core.topology.TopologyWriterSource
 import splice.head.compact.CompactPayloads
 import splice.head.compaction.CompactionInstructionsRoute
 import splice.head.trace.TraceDirPort
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
+import splice.head.trace.TranscriptRequestRoute
+import splice.head.trace.TranscriptRoots
 import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
 import splice.head.wire.CaptureRoutes
 import splice.head.wire.WireRoutes
 import splice.head.wire.WireTapsSource
+import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.upstream.codemode.ProcessDispatchers
 
 /** Reads [ConsolePorts.compaction] and [ConsolePorts.topology] at CALL time: ControlPlane assigns them
@@ -40,6 +46,23 @@ internal class TurnsMount(
     private val compactionRoute = CompactionInstructionsRoute(turnsLookup)
     private val captureRoutes = CaptureRoutes(turnsLookup, config, TopologyWriterSource { ports.topology })
     private val traceRoute = TraceRoute(turnsLookup, TraceDirPort { ports.traceDir }, ProcessDispatchers().io())
+    private val sessionHeads = SessionHeadAdapter.adapt(heads)
+    private val transcriptRoute = TranscriptRequestRoute(
+        TranscriptMessageLookup(),
+        TranscriptRoots { key ->
+            if (key !in heads) {
+                null
+            } else {
+                // The same priority SessionsRoutes uses: this head's tree, vanilla Claude Code,
+                // then every other head's own tree. The request supplies neither a path nor a root.
+                val own = sessionHeads[key]?.transcriptRoot
+                val others = sessionHeads.values.mapNotNull { it.transcriptRoot }.filter { it != own }
+                (listOfNotNull(own) + listOf(UserHome.dir().resolve(".claude")) + others).distinct()
+            }
+        },
+        SessionTranscriptViewEnabled { config.getConfig().transcriptView },
+        ProcessDispatchers().io(),
+    )
     private val wireRoutes = WireRoutes(turnsLookup, WireTapsSource { ports.wires })
     private val liveTurnsRoutes = LiveTurnsRoutes(turnsLookup, LiveTurnsSource { ports.liveTurns })
 
@@ -67,6 +90,16 @@ internal class TurnsMount(
                 val query = call.request.queryParameters
                 val asked = TraceQuery(last = query["last"], session = query["session"], turn = query["turn"])
                 traceRoute.read(call.parameters["head"].orEmpty(), asked).send(call)
+            }
+        }
+        route.get("/api/heads/{head}/conversation") {
+            guard.guarded(call) {
+                val ask = call.request.queryParameters
+                transcriptRoute.read(
+                    call.parameters["head"].orEmpty(),
+                    ask["session"],
+                    ask["message"],
+                ).send(call)
             }
         }
         route.get("/api/heads/{head}/wire") {

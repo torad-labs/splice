@@ -120,9 +120,16 @@ export interface TurnRow {
   account?: string;
   /** Whether the account switch left the prompt cache cold; written only beside `account`. */
   cache_cold?: boolean;
-  /** The trace turn that recorded this turn's request and answer (V4-345, PerfRowMeta.turn): the id
-   *  the detail opens the request by. Absent on a head that kept no trace when the turn ran. */
+  /** The trace turn that recorded this turn's exact request and answer when capture was on. */
   turn?: string;
+  /** The full client session id, for locating its own local transcript. The short `session` tag
+   *  remains the visible column and filter; neither id is a request body or credential. */
+  session_id?: string;
+  /** The id splice emitted in the client-facing response. The transcript joins on this id,
+   *  not the upstream's id or a timestamp shared by concurrent turns. */
+  response_message_id?: string;
+  /** The daemon's USD figure at this head's model card, null when it cannot price the turn. */
+  cost_usd?: number | null;
   recv?: number;
   parse?: number;
   build?: number;
@@ -166,11 +173,13 @@ export interface TurnRow {
 
 /** One row exactly as PerfRoutes.rowJson writes it: the numeric bag, then the named facts, each of
  *  which is null (never absent) when the row did not carry it. */
-export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_cold' | 'turn'> & {
+export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_cold' | 'turn' | 'session_id' | 'response_message_id'> & {
   session: string | null;
   account: string | null;
   cache_cold: boolean | null;
   turn: string | null;
+  session_id: string | null;
+  response_message_id: string | null;
 };
 
 /** One head's block. A head the daemon cannot read is listed with `error` in place of its rows, so
@@ -311,6 +320,24 @@ export interface TraceTurnWire {
 /** A kept turn's read: its records, or the daemon's sentence that its trace no longer holds it (a
  *  400), which the request detail prints as a state and never as a failure. */
 export type KeptTurn = { read: TraceTurnWire } | { gone: string };
+
+/** A redacted message Claude Code wrote locally, not the raw request splice sent upstream. */
+export interface ConversationMessageWire {
+  index: number;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  text: string;
+  ts?: number;
+  tool?: string;
+  result?: boolean;
+  /** True on the client-facing reply this perf row names, false on earlier context. */
+  selected?: boolean;
+}
+
+/** GET /api/heads/{head}/conversation: the context through one client-facing response id, or why
+ *  it cannot be shown. The `off` branch proves the daemon read no private file for that request. */
+export type TranscriptConversationWire =
+  | { state: 'found'; session_id: string; response_message_id: string; messages: ConversationMessageWire[]; earlier: number }
+  | { state: 'missing' | 'off'; reason: string };
 
 /** One upstream request body a head sent, as its wire tap kept it (WireTap.json). */
 export interface WireRecordWire {

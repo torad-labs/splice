@@ -6,7 +6,7 @@ import type { PerfTurnsWire, TruncatedHead, TurnRow, TurnRowWire, UnreadHead } f
  *  as null; the page model spells the same absence by leaving the field out, which is what its
  *  readers test. */
 function rowFromWire(head: string, wire: TurnRowWire): TurnRow {
-  const { session, account, cache_cold: cacheCold, turn, ...rest } = wire;
+  const { session, account, cache_cold: cacheCold, turn, session_id: sessionId, response_message_id: responseId, ...rest } = wire;
   return {
     ...rest,
     head,
@@ -14,6 +14,8 @@ function rowFromWire(head: string, wire: TurnRowWire): TurnRow {
     ...(account !== null ? { account } : {}),
     ...(cacheCold !== null ? { cache_cold: cacheCold } : {}),
     ...(turn !== null ? { turn } : {}),
+    ...(sessionId !== null ? { session_id: sessionId } : {}),
+    ...(responseId !== null ? { response_message_id: responseId } : {}),
   };
 }
 
